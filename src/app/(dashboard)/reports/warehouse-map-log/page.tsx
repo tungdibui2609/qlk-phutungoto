@@ -35,6 +35,7 @@ interface MapMovement {
         code: string;
         productionOrderCode?: string | null;
         productionLotCode?: string | null;
+        inboundDate?: string | null;
         products: Array<{
             name: string;
             sku: string;
@@ -46,6 +47,15 @@ interface MapMovement {
     oldLot: {
         id: string;
         code: string;
+        productionOrderCode?: string | null;
+        productionLotCode?: string | null;
+        inboundDate?: string | null;
+        products?: Array<{
+            name: string;
+            sku: string;
+            quantity: number;
+            unit: string;
+        }>;
     } | null;
     sourcePositionCode?: string; // For "moved" type
 }
@@ -64,6 +74,8 @@ export default function WarehouseMapLogPage() {
     const [typeFilter, setTypeFilter] = useState<'all' | MovementType>('all')
     const [prodOrderSearch, setProdOrderSearch] = useState('')
     const [prodLotSearch, setProdLotSearch] = useState('')
+    const [productSearch, setProductSearch] = useState('')
+    const [inboundDateFilter, setInboundDateFilter] = useState('')
 
     const fetchMovements = useCallback(async () => {
         if (!currentSystem?.code) return
@@ -123,7 +135,8 @@ export default function WarehouseMapLogPage() {
                 for (let i = 0; i < ids.length; i += 150) {
                     const chunk = ids.slice(i, i + 150)
                     const { data, error } = await supabase.from('lots').select(`
-                        id, code, production_code, production_lot_id,
+                        id, code, production_code, production_lot_id, inbound_date, quantity,
+                        products(name, sku, unit, weight_kg),
                         production_lots!production_lot_id(lot_code),
                         productions!production_id(code),
                         lot_items(quantity, unit, products(name, sku))
@@ -145,23 +158,44 @@ export default function WarehouseMapLogPage() {
             
             const lotMap = new Map<string, any>()
             allLots.forEach((l: any) => {
-                const products = l.lot_items?.map((li: any) => ({
-                    name: li.products?.name || 'Unknown',
-                    sku: li.products?.sku || 'N/A',
-                    quantity: li.quantity,
-                    unit: li.unit || 'Kg'
-                })) || []
+                const products: Array<{ name: string; sku: string; quantity: number; unit: string }> = []
+                
+                if (l.products) {
+                    products.push({
+                        name: l.products.name || 'Unknown',
+                        sku: l.products.sku || 'N/A',
+                        quantity: l.quantity || 0,
+                        unit: l.products.unit || 'Kg'
+                    })
+                }
 
-                const totalWeightKg = l.lot_items?.reduce((sum: number, li: any) => {
+                l.lot_items?.forEach((li: any) => {
+                    if (li.products) {
+                        products.push({
+                            name: li.products.name || 'Unknown',
+                            sku: li.products.sku || 'N/A',
+                            quantity: li.quantity,
+                            unit: li.unit || 'Kg'
+                        })
+                    }
+                })
+
+                let totalWeightKg = l.lot_items?.reduce((sum: number, li: any) => {
                     const weightFactor = extractWeightFromName(li.unit) || (li.products as any)?.weight_kg || 0
                     return sum + ((li.quantity || 0) * weightFactor)
                 }, 0) || 0
+
+                if (totalWeightKg === 0 && l.products) {
+                    const weightFactor = extractWeightFromName(l.products.unit) || l.products.weight_kg || 0
+                    totalWeightKg = (l.quantity || 0) * weightFactor
+                }
 
                 lotMap.set(l.id, {
                     id: l.id,
                     code: l.code,
                     productionOrderCode: l.productions?.code || null,
                     productionLotCode: l.production_lots?.lot_code || l.production_code || null,
+                    inboundDate: l.inbound_date || null,
                     products,
                     totalWeightKg
                 })
@@ -291,6 +325,15 @@ export default function WarehouseMapLogPage() {
         }
     }, [currentSystem?.code, dateFrom, dateTo, showToast])
 
+    // Tự động kéo lùi khoảng thời gian truy vết khi chọn ngày nhập kho để fetch được dữ liệu audit logs
+    useEffect(() => {
+        if (inboundDateFilter) {
+            if (dateFrom > inboundDateFilter) {
+                setDateFrom(inboundDateFilter);
+            }
+        }
+    }, [inboundDateFilter, dateFrom]);
+
     useEffect(() => {
         if (currentSystem?.code) {
             fetchMovements()
@@ -303,22 +346,30 @@ export default function WarehouseMapLogPage() {
             
             const searchLower = searchTerm.toLowerCase();
             const matchesSearch = !searchTerm || 
-                m.position.code.toLowerCase().includes(searchLower) ||
-                m.lot?.code.toLowerCase().includes(searchLower) ||
-                m.oldLot?.code.toLowerCase().includes(searchLower) ||
-                m.sourcePositionCode?.toLowerCase().includes(searchLower) ||
-                m.lot?.products.some(p => p.name.toLowerCase().includes(searchLower) || p.sku.toLowerCase().includes(searchLower)) ||
-                m.performedBy?.fullName.toLowerCase().includes(searchLower);
+                m.position?.code?.toLowerCase()?.includes(searchLower) ||
+                m.lot?.code?.toLowerCase()?.includes(searchLower) ||
+                m.oldLot?.code?.toLowerCase()?.includes(searchLower) ||
+                m.sourcePositionCode?.toLowerCase()?.includes(searchLower) ||
+                m.lot?.products?.some(p => p.name?.toLowerCase()?.includes(searchLower) || p.sku?.toLowerCase()?.includes(searchLower)) ||
+                m.performedBy?.fullName?.toLowerCase()?.includes(searchLower);
 
             const matchesProdOrder = !prodOrderSearch || 
-                m.lot?.productionOrderCode?.toLowerCase().includes(prodOrderSearch.toLowerCase());
+                (m.lot?.productionOrderCode?.toLowerCase()?.includes(prodOrderSearch.toLowerCase()) ?? false);
                 
             const matchesProdLot = !prodLotSearch || 
-                m.lot?.productionLotCode?.toLowerCase().includes(prodLotSearch.toLowerCase());
+                (m.lot?.productionLotCode?.toLowerCase()?.includes(prodLotSearch.toLowerCase()) ?? false);
 
-            return matchesType && matchesSearch && matchesProdOrder && matchesProdLot;
+            const matchesProduct = !productSearch ||
+                m.lot?.products?.some(p => p.name?.toLowerCase()?.includes(productSearch.toLowerCase()) || p.sku?.toLowerCase()?.includes(productSearch.toLowerCase())) ||
+                m.oldLot?.products?.some(p => p.name?.toLowerCase()?.includes(productSearch.toLowerCase()) || p.sku?.toLowerCase()?.includes(productSearch.toLowerCase()));
+
+            const inboundDateStr = m.lot?.inboundDate || m.oldLot?.inboundDate;
+            const matchesInboundDate = !inboundDateFilter ||
+                (inboundDateStr && inboundDateStr.startsWith(inboundDateFilter)) || false;
+
+            return matchesType && matchesSearch && matchesProdOrder && matchesProdLot && matchesProduct && matchesInboundDate;
         });
-    }, [movements, typeFilter, searchTerm, prodOrderSearch, prodLotSearch]);
+    }, [movements, typeFilter, searchTerm, prodOrderSearch, prodLotSearch, productSearch, inboundDateFilter]);
 
     const handleExportExcel = () => {
         if (!currentSystem) return;
@@ -460,6 +511,34 @@ export default function WarehouseMapLogPage() {
                                     value={prodLotSearch} 
                                     onChange={e => setProdLotSearch(e.target.value)} 
                                     className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 rounded-[20px] py-3 pl-12 pr-6 text-xs font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-500/50 transition-all shadow-sm" 
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Advanced Filters */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-4 border-t border-dashed border-zinc-100 dark:border-zinc-800">
+                        <div className="space-y-3">
+                            <label className="text-[11px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-[0.2em] ml-2">Sản phẩm (Tên hoặc SKU)</label>
+                            <div className="relative group">
+                                <PackagePlus className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+                                <input 
+                                    placeholder="Nhập tên hoặc SKU sản phẩm..." 
+                                    value={productSearch} 
+                                    onChange={e => setProductSearch(e.target.value)} 
+                                    className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 rounded-[20px] py-3 pl-12 pr-6 text-xs font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-500/50 transition-all shadow-sm" 
+                                />
+                            </div>
+                        </div>
+                        <div className="space-y-3">
+                            <label className="text-[11px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-[0.2em] ml-2">Ngày nhập kho (Inbound Date)</label>
+                            <div className="relative group">
+                                <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={18} />
+                                <input 
+                                    type="date" 
+                                    value={inboundDateFilter} 
+                                    onChange={(e) => setInboundDateFilter(e.target.value)} 
+                                    className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 rounded-[20px] py-3 pl-12 pr-6 text-xs font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-500/50 transition-all shadow-sm cursor-pointer" 
                                 />
                             </div>
                         </div>

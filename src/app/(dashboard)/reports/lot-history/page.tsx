@@ -129,12 +129,12 @@ export default function LotHistoryPage() {
     const filteredLots = lots.filter(lot => {
         const searchLower = searchTerm.toLowerCase()
         const matchesSearch =
-            lot.code.toLowerCase().includes(searchLower) ||
-            lot.products?.name.toLowerCase().includes(searchLower) ||
-            lot.products?.sku.toLowerCase().includes(searchLower) ||
-            lot.lot_items.some(item =>
-                item.products?.name.toLowerCase().includes(searchLower) ||
-                item.products?.sku.toLowerCase().includes(searchLower)
+            lot.code?.toLowerCase()?.includes(searchLower) ||
+            lot.products?.name?.toLowerCase()?.includes(searchLower) ||
+            lot.products?.sku?.toLowerCase()?.includes(searchLower) ||
+            lot.lot_items?.some(item =>
+                item.products?.name?.toLowerCase()?.includes(searchLower) ||
+                item.products?.sku?.toLowerCase()?.includes(searchLower)
             )
 
         const matchesDate = !dateFilter || (lot.created_at && lot.created_at.startsWith(dateFilter))

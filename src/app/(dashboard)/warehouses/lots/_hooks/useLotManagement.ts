@@ -186,6 +186,19 @@ export function useLotManagement() {
         setExistingTags(uniqueTags)
     }
 
+    // Helper to apply date filter to subqueries
+    const applyDateFilterToSubQuery = (q: any, fieldPrefix = '') => {
+        if (!startDate || !endDate) return q;
+        const field = fieldPrefix ? `${fieldPrefix}.${dateFilterField}` : dateFilterField;
+        if (dateFilterField === 'created_at' || dateFilterField === 'peeling_date' || dateFilterField === 'raw_material_date') {
+            const startLocal = new Date(`${startDate}T00:00:00`);
+            const endLocal = new Date(`${endDate}T23:59:59.999`);
+            return q.gte(field, startLocal.toISOString()).lte(field, endLocal.toISOString());
+        } else {
+            return q.gte(field, startDate).lte(field, endDate);
+        }
+    };
+
     async function fetchLots(showLoading = true) {
         if (!currentSystem?.code) return;
 
@@ -364,18 +377,12 @@ export function useLotManagement() {
                                     .select('id')
                                     .in('production_id', prodIds)
                                     .eq('daily_seq', sttTerm)
-                                    .eq('system_code', currentSystem.code);
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
                                 
                                 // Apply date filter to advanced search too
-                                if (startDate && endDate) {
-                                    if (dateFilterField === 'created_at') {
-                                        const startLocal = new Date(`${startDate}T00:00:00`);
-                                        const endLocal = new Date(`${endDate}T23:59:59.999`);
-                                        subQuery = subQuery.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString());
-                                    } else {
-                                        subQuery = subQuery.gte(dateFilterField, startDate).lte(dateFilterField, endDate);
-                                    }
-                                }
+                                subQuery = applyDateFilterToSubQuery(subQuery);
 
                                 const { data: foundLots } = await subQuery;
                                 
@@ -384,15 +391,7 @@ export function useLotManagement() {
                                     query = query.in('id', matchingIds.slice(0, 150));
                                     
                                     // Apply date filter again to the main query for absolute safety
-                                    if (startDate && endDate) {
-                                        if (dateFilterField === 'created_at') {
-                                            const startLocal = new Date(`${startDate}T00:00:00`);
-                                            const endLocal = new Date(`${endDate}T23:59:59.999`);
-                                            query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString());
-                                        } else {
-                                            query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate);
-                                        }
-                                    }
+                                    query = applyDateFilterToSubQuery(query);
 
                                     const { data, error, count } = await query
                                         .range(page * pageSize, (page + 1) * pageSize - 1);
@@ -421,40 +420,11 @@ export function useLotManagement() {
                             (isUUID && p.id === searchTerm)
                         )
                         .map(p => p.id);
-                    
-                    // Debug log if products loaded but none match
-                    if (prodIds.length === 0 && searchTerm.length > 2) {
-                        console.log('[Search Debug] Products loaded but no local match for:', searchTerm);
-                        console.log('[Search Debug] Sample products:', products.slice(0, 3).map(p => p.name));
-                    }
                 } else {
-                    // Fallback to server query if products not loaded yet
-                    console.log('[Search Debug] Products not loaded, using fallback query for:', searchTerm);
                     let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
                     if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
-                    const { data: prods, error: prodError } = await (supabase.from('products') as any).select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
-                    if (prodError) {
-                        console.error('[Search Debug] Error fetching products:', prodError);
-                    }
+                    const { data: prods } = await (supabase.from('products') as any).select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
                     prodIds = prods?.map((p: any) => p.id) || [];
-                }
-
-                // Suppliers - prefer local filtering
-                let suppIds: string[] = [];
-                if (suppliers && suppliers.length > 0) {
-                    suppIds = suppliers.filter((s: any) => localMatch(s.name)).map((s: any) => s.id);
-                } else {
-                    const { data: supps } = await (supabase.from('suppliers') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    suppIds = supps?.map((s: any) => s.id) || [];
-                }
-
-                // QC - prefer local filtering
-                let qcIds: string[] = [];
-                if (qcList && qcList.length > 0) {
-                    qcIds = qcList.filter((q: any) => localMatch(q.name)).map((q: any) => q.id);
-                } else {
-                    const { data: qcs } = await (supabase.from('qc_info') as any).select('id').ilike('name', term).eq('system_code', currentSystem.code);
-                    qcIds = qcs?.map((q: any) => q.id) || [];
                 }
 
                 // Advanced parser for server-side
@@ -465,10 +435,6 @@ export function useLotManagement() {
                     const andParts = orQuery.split('&').map((q: any) => q.trim()).filter(Boolean);
                     if (andParts.length === 0) continue;
 
-                    // For each OR group, we want to find lots that match ALL andParts
-                    // Since Supabase .or() is (A OR B OR C), we need to resolve ANDs first.
-                    // A simple way is to find lot IDs that match each part and then intersect them.
-                    
                     let groupLotIds: string[] | null = null;
 
                     for (const rawPart of andParts) {
@@ -494,32 +460,72 @@ export function useLotManagement() {
                             const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
                             const pIds = pMatched?.map((p: any) => p.id) || [];
                             
-                            const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${partNormalized}%`), 'lot_id');
+                            let tagLotsQuery = (supabase.from('lot_tags') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .ilike('tag', `%${partNormalized}%`)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            tagLotsQuery = applyDateFilterToSubQuery(tagLotsQuery, 'lots');
+                            const { data: tagLots } = await tagLotsQuery;
                             const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
 
                             let itemLotIds: string[] = [];
                             if (pIds.length > 0) {
-                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                let itemQuery = (supabase.from('lot_items') as any)
+                                    .select('lot_id, lots!inner(id, system_code, status)')
+                                    .in('product_id', pIds)
+                                    .eq('lots.system_code', currentSystem.code)
+                                    .neq('lots.status', 'hidden')
+                                    .neq('lots.status', 'exported');
+                                itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                                const { data: items } = await itemQuery;
                                 if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
-                                const { data: direct } = await (supabase.from('lots') as any).select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+
+                                let directQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .in('product_id', pIds)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                directQuery = applyDateFilterToSubQuery(directQuery);
+                                const { data: direct } = await directQuery;
                                 if (direct) itemLotIds.push(...direct.map((l: any) => l.id));
                             }
                             
-                            const { data: posLots } = await (supabase.from('positions') as any).select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
+                            let posQuery = (supabase.from('positions') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .ilike('code', partTerm)
+                                .not('lot_id', 'is', null)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            posQuery = applyDateFilterToSubQuery(posQuery, 'lots');
+                            const { data: posLots } = await posQuery;
                             const posIds = (posLots?.map((p: any) => p.lot_id).filter(Boolean) || []) as string[];
 
-                             // Production Orders search in 'all' mode
+                            // Production Orders search in 'all' mode
                             const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
                             const prodIdsInAll = prodMatched?.map((p: any) => p.id) || [];
                             
-                            // 🟢 Search in production_lots (Bridge Search)
-                            const { data: prodLotsBridge } = await (supabase.from('production_lots') as any).select('id, production_id, product_id').ilike('lot_code', partTerm).eq('company_id', currentSystem.company_id);
+                            let prodLotsBridgeQuery = (supabase.from('production_lots') as any)
+                                .select('id, production_id, product_id')
+                                .ilike('lot_code', partTerm)
+                                .eq('company_id', currentSystem.company_id);
+                            const { data: prodLotsBridge } = await prodLotsBridgeQuery;
                             
                             let prodLotIds: string[] = [];
 
                             // 1. Direct match by Production Order ID
                             if (prodIdsInAll.length > 0) {
-                                const { data: linkedLots } = await (supabase.from('lots') as any).select('id').in('production_id', prodIdsInAll).eq('system_code', currentSystem.code);
+                                let linkedQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .in('production_id', prodIdsInAll)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                linkedQuery = applyDateFilterToSubQuery(linkedQuery);
+                                const { data: linkedLots } = await linkedQuery;
                                 if (linkedLots) prodLotIds.push(...linkedLots.map((l: any) => l.id));
                             }
 
@@ -528,13 +534,28 @@ export function useLotManagement() {
                                 const bridgePLIds = prodLotsBridge.map((b: any) => b.id).filter(Boolean);
                                 if (bridgePLIds.length > 0) {
                                     // Ưu tiên: match trực tiếp qua FK production_lot_id
-                                    const { data: directMatch } = await (supabase.from('lots') as any).select('id').in('production_lot_id', bridgePLIds).eq('system_code', currentSystem.code);
+                                    let directMatchQuery = (supabase.from('lots') as any)
+                                        .select('id')
+                                        .in('production_lot_id', bridgePLIds)
+                                        .eq('system_code', currentSystem.code)
+                                        .neq('status', 'hidden')
+                                        .neq('status', 'exported');
+                                    directMatchQuery = applyDateFilterToSubQuery(directMatchQuery);
+                                    const { data: directMatch } = await directMatchQuery;
                                     if (directMatch) prodLotIds.push(...directMatch.map((l: any) => l.id));
                                 }
                                 // Fallback cho dữ liệu legacy (chưa có production_lot_id)
                                 for (const bridge of prodLotsBridge) {
                                     if (!bridge.production_id || !bridge.product_id) continue;
-                                    const { data: lotsByProd } = await (supabase.from('lots') as any).select('id').eq('production_id', bridge.production_id).is('production_lot_id', null).eq('system_code', currentSystem.code);
+                                    let lotsByProdQuery = (supabase.from('lots') as any)
+                                        .select('id')
+                                        .eq('production_id', bridge.production_id)
+                                        .is('production_lot_id', null)
+                                        .eq('system_code', currentSystem.code)
+                                        .neq('status', 'hidden')
+                                        .neq('status', 'exported');
+                                    lotsByProdQuery = applyDateFilterToSubQuery(lotsByProdQuery);
+                                    const { data: lotsByProd } = await lotsByProdQuery;
                                     if (lotsByProd && lotsByProd.length > 0) {
                                         const candidateIds = lotsByProd.map((l: any) => l.id);
                                         const { data: matchingItems } = await (supabase.from('lot_items') as any).select('lot_id').in('lot_id', candidateIds).eq('product_id', bridge.product_id);
@@ -543,16 +564,28 @@ export function useLotManagement() {
                                 }
                             }
 
-                            const { data: lotsDirect } = await (supabase.from('lots') as any).select('id')
+                            let directLotsQuery = (supabase.from('lots') as any)
+                                .select('id')
                                 .or(`code.ilike.${partTerm},notes.ilike.${partTerm},production_code.ilike.${partTerm}`)
-                                .eq('system_code', currentSystem.code);
+                                .eq('system_code', currentSystem.code)
+                                .neq('status', 'hidden')
+                                .neq('status', 'exported');
+                            directLotsQuery = applyDateFilterToSubQuery(directLotsQuery);
+                            const { data: lotsDirect } = await directLotsQuery;
                             const directIds = lotsDirect?.map((l: any) => l.id) || [];
 
                             // STT search in 'all' mode
                             let sttIds: string[] = [];
                             const sttNum = parseInt(part);
                             if (!isNaN(sttNum)) {
-                                const { data: sttLots } = await (supabase.from('lots') as any).select('id').eq('daily_seq', sttNum).eq('system_code', currentSystem.code);
+                                let sttLotsQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .eq('daily_seq', sttNum)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                sttLotsQuery = applyDateFilterToSubQuery(sttLotsQuery);
+                                const { data: sttLots } = await sttLotsQuery;
                                 if (sttLots) sttIds = sttLots.map((l: any) => l.id);
                             }
 
@@ -561,7 +594,14 @@ export function useLotManagement() {
                         else if (searchMode === 'stt') {
                             const sttNum = parseInt(part);
                             if (!isNaN(sttNum)) {
-                                const { data: sttLots } = await (supabase.from('lots') as any).select('id').eq('daily_seq', sttNum).eq('system_code', currentSystem.code);
+                                let sttLotsQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .eq('daily_seq', sttNum)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                sttLotsQuery = applyDateFilterToSubQuery(sttLotsQuery);
+                                const { data: sttLots } = await sttLotsQuery;
                                 if (sttLots) currentMatchIds = sttLots.map((l: any) => l.id);
                             }
                         }
@@ -570,14 +610,22 @@ export function useLotManagement() {
                             const prodIds = prodMatched?.map((p: any) => p.id) || [];
                             
                             // 🟢 Search in production_lots (Bridge Search)
-                            const { data: prodLotsBridge } = await (supabase.from('production_lots') as any)
+                            let prodLotsBridgeQuery = (supabase.from('production_lots') as any)
                                 .select('id, production_id, product_id')
                                 .ilike('lot_code', partTerm)
                                 .eq('company_id', currentSystem.company_id);
+                            const { data: prodLotsBridge } = await prodLotsBridgeQuery;
 
                             // Match by parent production ID
                             if (prodIds.length > 0) {
-                                const { data: linkedLots } = await (supabase.from('lots') as any).select('id').in('production_id', prodIds).eq('system_code', currentSystem.code);
+                                let linkedQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .in('production_id', prodIds)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                linkedQuery = applyDateFilterToSubQuery(linkedQuery);
+                                const { data: linkedLots } = await linkedQuery;
                                 if (linkedLots) currentMatchIds.push(...linkedLots.map((l: any) => l.id));
                             }
 
@@ -586,13 +634,28 @@ export function useLotManagement() {
                                 const bridgePLIds = prodLotsBridge.map((b: any) => b.id).filter(Boolean);
                                 if (bridgePLIds.length > 0) {
                                     // Ưu tiên: match trực tiếp qua FK production_lot_id
-                                    const { data: directMatch } = await (supabase.from('lots') as any).select('id').in('production_lot_id', bridgePLIds).eq('system_code', currentSystem.code);
+                                    let directMatchQuery = (supabase.from('lots') as any)
+                                        .select('id')
+                                        .in('production_lot_id', bridgePLIds)
+                                        .eq('system_code', currentSystem.code)
+                                        .neq('status', 'hidden')
+                                        .neq('status', 'exported');
+                                    directMatchQuery = applyDateFilterToSubQuery(directMatchQuery);
+                                    const { data: directMatch } = await directMatchQuery;
                                     if (directMatch) currentMatchIds.push(...directMatch.map((l: any) => l.id));
                                 }
                                 // Fallback cho dữ liệu legacy (chưa có production_lot_id)
                                 for (const bridge of prodLotsBridge) {
                                     if (!bridge.production_id || !bridge.product_id) continue;
-                                    const { data: lotsByProd } = await (supabase.from('lots') as any).select('id').eq('production_id', bridge.production_id).is('production_lot_id', null).eq('system_code', currentSystem.code);
+                                    let lotsByProdQuery = (supabase.from('lots') as any)
+                                        .select('id')
+                                        .eq('production_id', bridge.production_id)
+                                        .is('production_lot_id', null)
+                                        .eq('system_code', currentSystem.code)
+                                        .neq('status', 'hidden')
+                                        .neq('status', 'exported');
+                                    lotsByProdQuery = applyDateFilterToSubQuery(lotsByProdQuery);
+                                    const { data: lotsByProd } = await lotsByProdQuery;
                                     if (lotsByProd && lotsByProd.length > 0) {
                                         const candidateIds = lotsByProd.map((l: any) => l.id);
                                         const { data: matchingItems } = await (supabase.from('lot_items') as any).select('lot_id').in('lot_id', candidateIds).eq('product_id', bridge.product_id);
@@ -602,16 +665,38 @@ export function useLotManagement() {
                             }
                             
                             // Include direct lot production_code matches
-                            const { data: lotsProdCode } = await (supabase.from('lots') as any).select('id').ilike('production_code', partTerm).eq('system_code', currentSystem.code);
+                            let lotsProdCodeQuery = (supabase.from('lots') as any)
+                                .select('id')
+                                .ilike('production_code', partTerm)
+                                .eq('system_code', currentSystem.code)
+                                .neq('status', 'hidden')
+                                .neq('status', 'exported');
+                            lotsProdCodeQuery = applyDateFilterToSubQuery(lotsProdCodeQuery);
+                            const { data: lotsProdCode } = await lotsProdCodeQuery;
                             if (lotsProdCode) currentMatchIds.push(...lotsProdCode.map((l: any) => l.id));
 
                             // Include products to support "Production & Product" combination queries
                             const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
                             const pIdsProd = pMatched?.map((p: any) => p.id) || [];
                             if (pIdsProd.length > 0) {
-                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIdsProd);
+                                let itemQuery = (supabase.from('lot_items') as any)
+                                    .select('lot_id, lots!inner(id, system_code, status)')
+                                    .in('product_id', pIdsProd)
+                                    .eq('lots.system_code', currentSystem.code)
+                                    .neq('lots.status', 'hidden')
+                                    .neq('lots.status', 'exported');
+                                itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                                const { data: items } = await itemQuery;
                                 if (items) currentMatchIds.push(...items.map((i: any) => i.lot_id));
-                                const { data: directProductLots } = await (supabase.from('lots') as any).select('id').in('product_id', pIdsProd).eq('system_code', currentSystem.code);
+
+                                let directProductQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .in('product_id', pIdsProd)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                directProductQuery = applyDateFilterToSubQuery(directProductQuery);
+                                const { data: directProductLots } = await directProductQuery;
                                 if (directProductLots) currentMatchIds.push(...directProductLots.map((l: any) => l.id));
                             }
                         }
@@ -619,31 +704,76 @@ export function useLotManagement() {
                             const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`name.ilike.${partTerm},internal_name.ilike.${partTerm}`).eq('system_type', currentSystem.code);
                             const pIds = pMatched?.map((p: any) => p.id) || [];
                             if (pIds.length > 0) {
-                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                let itemQuery = (supabase.from('lot_items') as any)
+                                    .select('lot_id, lots!inner(id, system_code, status)')
+                                    .in('product_id', pIds)
+                                    .eq('lots.system_code', currentSystem.code)
+                                    .neq('lots.status', 'hidden')
+                                    .neq('lots.status', 'exported');
+                                itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                                const { data: items } = await itemQuery;
                                 if (items) currentMatchIds.push(...items.map((i: any) => i.lot_id));
-                                const { data: direct } = await (supabase.from('lots') as any).select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+
+                                let directQuery = (supabase.from('lots') as any)
+                                    .select('id')
+                                    .in('product_id', pIds)
+                                    .eq('system_code', currentSystem.code)
+                                    .neq('status', 'hidden')
+                                    .neq('status', 'exported');
+                                directQuery = applyDateFilterToSubQuery(directQuery);
+                                const { data: direct } = await directQuery;
                                 if (direct) currentMatchIds.push(...direct.map((l: any) => l.id));
                             }
                         }
                         else if (searchMode === 'code') {
                             const { data: pMatched } = await (supabase.from('products') as any).select('id').or(`sku.ilike.${partTerm},internal_code.ilike.${partTerm}`).eq('system_type', currentSystem.code);
                             const pIds = pMatched?.map((p: any) => p.id) || [];
-                            const { data: lotsDirect } = await (supabase.from('lots') as any).select('id').ilike('code', partTerm).eq('system_code', currentSystem.code);
+                            
+                            let directQuery = (supabase.from('lots') as any)
+                                .select('id')
+                                .ilike('code', partTerm)
+                                .eq('system_code', currentSystem.code)
+                                .neq('status', 'hidden')
+                                .neq('status', 'exported');
+                            directQuery = applyDateFilterToSubQuery(directQuery);
+                            const { data: lotsDirect } = await directQuery;
                             const directIds = lotsDirect?.map((l: any) => l.id) || [];
                             
                             let itemLotIds: string[] = [];
                             if (pIds.length > 0) {
-                                const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                let itemQuery = (supabase.from('lot_items') as any)
+                                    .select('lot_id, lots!inner(id, system_code, status)')
+                                    .in('product_id', pIds)
+                                    .eq('lots.system_code', currentSystem.code)
+                                    .neq('lots.status', 'hidden')
+                                    .neq('lots.status', 'exported');
+                                itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                                const { data: items } = await itemQuery;
                                 if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
                             }
                             currentMatchIds = Array.from(new Set([...itemLotIds, ...directIds]));
                         }
                         else if (searchMode === 'tag') {
-                            const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${partNormalized}%`), 'lot_id');
+                            let tagQuery = (supabase.from('lot_tags') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .ilike('tag', `%${partNormalized}%`)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            tagQuery = applyDateFilterToSubQuery(tagQuery, 'lots');
+                            const { data: tagLots } = await tagQuery;
                             currentMatchIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
                         }
                         else if (searchMode === 'position') {
-                            const { data: posLots } = await (supabase.from('positions') as any).select('lot_id').ilike('code', partTerm).not('lot_id', 'is', null);
+                            let posQuery = (supabase.from('positions') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .ilike('code', partTerm)
+                                .not('lot_id', 'is', null)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            posQuery = applyDateFilterToSubQuery(posQuery, 'lots');
+                            const { data: posLots } = await posQuery;
                             currentMatchIds = (posLots?.map((p: any) => p.lot_id).filter(Boolean) || []) as string[];
                         }
                         else if (searchMode === 'category') {
@@ -653,9 +783,24 @@ export function useLotManagement() {
                                  const { data: rels } = await (supabase.from('product_category_rel') as any).select('product_id').in('category_id', catIds);
                                  const pIds = rels?.map((r: any) => r.product_id) || [];
                                  if (pIds.length > 0) {
-                                     const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', pIds);
+                                     let itemQuery = (supabase.from('lot_items') as any)
+                                         .select('lot_id, lots!inner(id, system_code, status)')
+                                         .in('product_id', pIds)
+                                         .eq('lots.system_code', currentSystem.code)
+                                         .neq('lots.status', 'hidden')
+                                         .neq('lots.status', 'exported');
+                                     itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                                     const { data: items } = await itemQuery;
                                      if (items) currentMatchIds.push(...items.map((i: any) => i.lot_id));
-                                     const { data: directLots } = await (supabase.from('lots') as any).select('id').in('product_id', pIds).eq('system_code', currentSystem.code);
+
+                                     let directQuery = (supabase.from('lots') as any)
+                                         .select('id')
+                                         .in('product_id', pIds)
+                                         .eq('system_code', currentSystem.code)
+                                         .neq('status', 'hidden')
+                                         .neq('status', 'exported');
+                                     directQuery = applyDateFilterToSubQuery(directQuery);
+                                     const { data: directLots } = await directQuery;
                                      if (directLots) currentMatchIds.push(...directLots.map((l: any) => l.id));
                                  }
                              }
@@ -685,7 +830,7 @@ export function useLotManagement() {
 
             // 2. Date Range
             if (startDate && endDate) {
-                if (dateFilterField === 'created_at') {
+                if (dateFilterField === 'created_at' || dateFilterField === 'peeling_date' || dateFilterField === 'raw_material_date') {
                     // For timestamp fields, use precise local boundaries converted to ISO
                     const startLocal = new Date(`${startDate}T00:00:00`)
                     const endLocal = new Date(`${endDate}T23:59:59.999`)
@@ -822,7 +967,17 @@ export function useLotManagement() {
                     suppIds = supps?.map((s: any) => s.id) || [];
                 }
 
-                const tagLots = await fetchAllPaginated('lot_tags', (q) => (q as any).ilike('tag', `%${escapedTerm}%`), 'lot_id');
+                const tagLots = await fetchAllPaginated(
+                    'lot_tags',
+                    q => {
+                        let filteredQuery = q.ilike('tag', `%${escapedTerm}%`)
+                            .eq('lots.system_code', currentSystem.code)
+                            .neq('lots.status', 'hidden')
+                            .neq('lots.status', 'exported');
+                        return applyDateFilterToSubQuery(filteredQuery, 'lots');
+                    },
+                    'lot_id, lots!inner(id, system_code, status)'
+                );
                 const tagLotIds = (tagLots || []).map((t: any) => t.lot_id).filter(Boolean);
 
                 let qcIds: string[] = [];
@@ -838,15 +993,26 @@ export function useLotManagement() {
                     const CHUNK = 500;
                     for (let i = 0; i < prodIds.length; i += CHUNK) {
                         const slice = prodIds.slice(i, i + CHUNK);
-                        const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', slice);
+                        let itemQuery = (supabase.from('lot_items') as any)
+                            .select('lot_id, lots!inner(id, system_code, status)')
+                            .in('product_id', slice)
+                            .eq('lots.system_code', currentSystem.code)
+                            .neq('lots.status', 'hidden')
+                            .neq('lots.status', 'exported');
+                        itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                        const { data: items } = await itemQuery;
                         if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
                     }
                     
                     // Also search in lots.product_id directly (for lots created without lot_items)
-                    const { data: lotsWithProductId } = await (supabase.from('lots') as any)
+                    let lotsWithProductQuery = (supabase.from('lots') as any)
                         .select('id')
                         .in('product_id', prodIds)
-                        .eq('system_code', currentSystem.code);
+                        .eq('system_code', currentSystem.code)
+                        .neq('status', 'hidden')
+                        .neq('status', 'exported');
+                    lotsWithProductQuery = applyDateFilterToSubQuery(lotsWithProductQuery);
+                    const { data: lotsWithProductId } = await lotsWithProductQuery;
                     if (lotsWithProductId) {
                         itemLotIds.push(...lotsWithProductId.map((l: any) => l.id));
                     }
@@ -864,15 +1030,7 @@ export function useLotManagement() {
                 query = query.or(orConditions.join(','));
             }
 
-            if (startDate && endDate) {
-                if (dateFilterField === 'created_at') {
-                    const startLocal = new Date(`${startDate}T00:00:00`)
-                    const endLocal = new Date(`${endDate}T23:59:59.999`)
-                    query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString())
-                } else {
-                    query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate)
-                }
-            }
+            query = applyDateFilterToSubQuery(query);
 
             if (selectedZoneId) {
                 const { data: allZones } = await (supabase.from('zones') as any).select('id, parent_id').eq('system_type', currentSystem.code);
@@ -1011,8 +1169,28 @@ export function useLotManagement() {
                     const CHUNK = 500;
                     for (let i = 0; i < prodIds.length; i += CHUNK) {
                         const slice = prodIds.slice(i, i + CHUNK);
-                        const { data: items } = await (supabase.from('lot_items') as any).select('lot_id').in('product_id', slice);
+                        let itemQuery = (supabase.from('lot_items') as any)
+                            .select('lot_id, lots!inner(id, system_code, status)')
+                            .in('product_id', slice)
+                            .eq('lots.system_code', currentSystem.code)
+                            .neq('lots.status', 'hidden')
+                            .neq('lots.status', 'exported');
+                        itemQuery = applyDateFilterToSubQuery(itemQuery, 'lots');
+                        const { data: items } = await itemQuery;
                         if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
+                    }
+
+                    // Also search in lots.product_id directly (for lots created without lot_items)
+                    let lotsWithProductQuery = (supabase.from('lots') as any)
+                        .select('id')
+                        .in('product_id', prodIds)
+                        .eq('system_code', currentSystem.code)
+                        .neq('status', 'hidden')
+                        .neq('status', 'exported');
+                    lotsWithProductQuery = applyDateFilterToSubQuery(lotsWithProductQuery);
+                    const { data: lotsWithProductId } = await lotsWithProductQuery;
+                    if (lotsWithProductId) {
+                        itemLotIds.push(...lotsWithProductId.map((l: any) => l.id));
                     }
                 }
 
@@ -1028,15 +1206,7 @@ export function useLotManagement() {
                 query = query.or(orConditions.join(','));
             }
 
-            if (startDate && endDate) {
-                if (dateFilterField === 'created_at') {
-                    const startLocal = new Date(`${startDate}T00:00:00`)
-                    const endLocal = new Date(`${endDate}T23:59:59.999`)
-                    query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString())
-                } else {
-                    query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate)
-                }
-            }
+            query = applyDateFilterToSubQuery(query);
 
             // Fetch ALL lots then filter untagged client-side for accuracy
             // Use pagination to overcome Supabase limits
