@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { User } from '@supabase/supabase-js'
 import { APP_ROUTES, RouteItem } from '@/config/routes'
+import { SUPER_ADMIN_EMAIL } from '@/lib/constants'
 
 type UserProfile = {
     id: string
@@ -74,7 +75,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                             // Update profile with company name
                             setProfile(prev => prev ? { ...prev, company_name: companyData.name } : null)
                             
-                            if (authUser.email === 'tungdibui2609@gmail.com') {
+                            if (authUser.email === SUPER_ADMIN_EMAIL) {
                                 const allModules = [
                                     'inbound_basic', 'inbound_supplier', 'inbound_type', 'inbound_financials', 'inbound_documents', 'inbound_logistics', 'inbound_images', 'inbound_accounting', 'inbound_ui_compact', 'inbound_conversion',
                                     'outbound_basic', 'outbound_customer', 'outbound_type', 'outbound_financials', 'outbound_images', 'outbound_logistics', 'outbound_documents', 'outbound_accounting', 'outbound_ui_compact', 'outbound_conversion',
@@ -88,7 +89,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
                             }
                         } else {
                             // SUPERUSER BYPASS even if company fetch fails
-                            if (authUser.email === 'tungdibui2609@gmail.com') {
+                            if (authUser.email === SUPER_ADMIN_EMAIL) {
                                 const allModules = [
                                     'inbound_basic', 'inbound_supplier', 'inbound_type', 'inbound_financials', 'inbound_documents', 'inbound_logistics', 'inbound_images', 'inbound_accounting', 'inbound_ui_compact', 'inbound_conversion',
                                     'outbound_basic', 'outbound_customer', 'outbound_type', 'outbound_financials', 'outbound_images', 'outbound_logistics', 'outbound_documents', 'outbound_accounting', 'outbound_ui_compact', 'outbound_conversion',
@@ -121,11 +122,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     }
 
     useEffect(() => {
-        fetchProfile()
+        let initialized = false
 
         // Listen for auth changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(() => {
-            fetchProfile()
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+            if (!initialized || event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+                initialized = true
+                fetchProfile()
+            }
         })
 
         return () => {
@@ -135,7 +139,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     const hasPermission = (permissionCode: string): boolean => {
         // SUPERUSER BYPASS
-        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
+        if (profile?.email === SUPER_ADMIN_EMAIL || user?.email === SUPER_ADMIN_EMAIL) {
             return true
         }
 
@@ -154,7 +158,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     const isRouteBlocked = (path: string): boolean => {
         // SUPERUSER BYPASS
-        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
+        if (profile?.email === SUPER_ADMIN_EMAIL || user?.email === SUPER_ADMIN_EMAIL) {
             return false
         }
 
@@ -235,7 +239,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
 
     const checkSubscription = (moduleCode: string): boolean => {
         // SUPERUSER BYPASS
-        if (profile?.email === 'tungdibui2609@gmail.com' || user?.email === 'tungdibui2609@gmail.com') {
+        if (profile?.email === SUPER_ADMIN_EMAIL || user?.email === SUPER_ADMIN_EMAIL) {
             return true
         }
         return activeModules.includes(moduleCode)

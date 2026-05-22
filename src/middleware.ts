@@ -110,7 +110,8 @@ export async function middleware(request: NextRequest) {
                 // If user has no profile or belongs to different company -> Redirect/Error
                 // Exception: Super Admin (but Super Admin should probably use main domain? Or allowed?)
                 // Let's strictly enforce: Accessing via custom domain requires membership.
-                const isSuperAdmin = user.email === 'tungdibui2609@gmail.com'
+                const SUPER_ADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || 'tungdibui2609@gmail.com'
+                const isSuperAdmin = user.email === SUPER_ADMIN_EMAIL
 
                 if (profile && profile.company_id !== company.id && !isSuperAdmin) {
                     // Unauthorized for this tenant
@@ -140,7 +141,7 @@ export async function middleware(request: NextRequest) {
     }
 
     // Constants
-    const SUPER_ADMIN_EMAIL = 'tungdibui2609@gmail.com'
+    const SUPER_ADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || 'tungdibui2609@gmail.com'
     const IS_ADMIN_ROUTE = path.startsWith('/admin')
     const IS_LOGIN_PAGE = path === '/login'
     const IS_ADMIN_LOGIN_PAGE = path === '/admin/login' // Updated path

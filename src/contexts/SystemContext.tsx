@@ -274,6 +274,45 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
 
   const currentSystem = systems.find(s => s.code === systemType)
 
+  // Tối ưu hóa phân tích module bằng useMemo và Set
+  const systemModuleSets = React.useMemo(() => {
+    const inboundSet = new Set<string>()
+    const outboundSet = new Set<string>()
+    const otherSet = new Set<string>()
+
+    if (!currentSystem) return { inboundSet, outboundSet, otherSet }
+
+    const getArr = (val: any) => Array.isArray(val) ? val : []
+
+    getArr(currentSystem.inbound_modules).forEach((m: any) => inboundSet.add(m))
+    getArr(currentSystem.outbound_modules).forEach((m: any) => outboundSet.add(m))
+    getArr(currentSystem.lot_modules).forEach((m: any) => otherSet.add(m))
+    getArr(currentSystem.dashboard_modules).forEach((m: any) => otherSet.add(m))
+
+    const rawModules = currentSystem.modules
+    let productModules: string[] = []
+    if (Array.isArray(rawModules)) {
+      productModules = rawModules
+    } else if (typeof rawModules === 'object' && rawModules !== null) {
+      productModules = Array.isArray((rawModules as any).product_modules) ? (rawModules as any).product_modules : []
+      
+      const legacyModules = rawModules as any
+      const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
+      utilityModules.forEach((m: any) => otherSet.add(m))
+      
+      // Legacy boolean properties
+      Object.keys(legacyModules).forEach(key => {
+        if (legacyModules[key] === true) {
+          otherSet.add(key)
+        }
+      })
+    }
+    
+    productModules.forEach((m: any) => otherSet.add(m))
+
+    return { inboundSet, outboundSet, otherSet }
+  }, [currentSystem])
+
   const hasModule = React.useCallback((moduleId: string) => {
     // 1. Core System Modules: Always Enabled, Hidden from Admin
     const CORE_MODULES = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'images', 'warehouse_name', 'production_code']
@@ -294,42 +333,22 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // 2. Advanced modules check: Must be configured for current system
     if (!currentSystem) return false
 
-    // Look in all possible module buckets
-    const getArr = (val: any) => Array.isArray(val) ? val : []
-
-    const rawModules = currentSystem.modules
-    let productModules: string[] = []
-    if (Array.isArray(rawModules)) {
-      productModules = rawModules
-    } else if (typeof rawModules === 'object' && rawModules !== null) {
-      productModules = Array.isArray((rawModules as any).product_modules) ? (rawModules as any).product_modules : []
-    }
-    const inboundModules = getArr(currentSystem.inbound_modules)
-    const outboundModules = getArr(currentSystem.outbound_modules)
-    const dashboardModules = getArr(currentSystem.dashboard_modules)
-    const lotModules = getArr(currentSystem.lot_modules)
-
-    const legacyModules = currentSystem.modules && !Array.isArray(currentSystem.modules) ? currentSystem.modules as any : {}
-    const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
+    const { inboundSet, outboundSet, otherSet } = systemModuleSets
 
     // 3. Strict check for new column types
     if (moduleId.startsWith('inbound_') && moduleId !== 'inbound_date') {
       if (!isBasic && !unlockedModules.includes(moduleId)) return false
-      return inboundModules.includes(moduleId)
+      return inboundSet.has(moduleId)
     }
     if (moduleId.startsWith('outbound_')) {
       if (!isBasic && !unlockedModules.includes(moduleId)) return false
-      return outboundModules.includes(moduleId)
+      return outboundSet.has(moduleId)
     }
 
     if (!isBasic && !unlockedModules.includes(moduleId)) return false
 
-    return productModules.includes(moduleId) ||
-      dashboardModules.includes(moduleId) ||
-      lotModules.includes(moduleId) ||
-      utilityModules.includes(moduleId) ||
-      !!legacyModules?.[moduleId]
-  }, [currentSystem, unlockedModules, basicModuleIds])
+    return otherSet.has(moduleId)
+  }, [currentSystem, unlockedModules, basicModuleIds, systemModuleSets])
 
   const value = React.useMemo(() => ({
     systemType,

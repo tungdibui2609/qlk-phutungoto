@@ -196,6 +196,21 @@ export default function WarehouseMovementsSnapshotPage() {
             const unpairedLogs = [...logs] as any[]
             const pairedIds = new Set<string>()
 
+            // Xây dựng Map lập chỉ mục log theo lot_id để tối ưu hóa việc tìm counterpart từ O(N^2) xuống O(N)
+            const lotLogsMap = new Map<string, any[]>()
+            unpairedLogs.forEach(log => {
+                const oldId = log.old_data?.lot_id
+                const newId = log.new_data?.lot_id
+                if (oldId) {
+                    if (!lotLogsMap.has(oldId)) lotLogsMap.set(oldId, [])
+                    lotLogsMap.get(oldId)!.push(log)
+                }
+                if (newId && newId !== oldId) {
+                    if (!lotLogsMap.has(newId)) lotLogsMap.set(newId, [])
+                    lotLogsMap.get(newId)!.push(log)
+                }
+            })
+
             for (let i = 0; i < unpairedLogs.length; i++) {
                 const log = unpairedLogs[i]
                 if (pairedIds.has(log.id)) continue
@@ -208,8 +223,9 @@ export default function WarehouseMovementsSnapshotPage() {
 
                 // Detect Move/Assign/Export (Same logic as audit log)
                 if (!oldLotId && newLotId) {
-                    const counterpart = unpairedLogs.find((other, idx) => 
-                        idx !== i && !pairedIds.has(other.id) &&
+                    const candidates = lotLogsMap.get(newLotId) || []
+                    const counterpart = candidates.find(other => 
+                        other.id !== log.id && !pairedIds.has(other.id) &&
                         other.old_data?.lot_id === newLotId && !other.new_data?.lot_id &&
                         other.record_id !== log.record_id &&
                         Math.abs(new Date(other.created_at).getTime() - timestamp) < 24 * 60 * 60 * 1000
@@ -235,8 +251,9 @@ export default function WarehouseMovementsSnapshotPage() {
                         }
                     }
                 } else if (oldLotId && !newLotId) {
-                    const counterpart = unpairedLogs.find((other, idx) => 
-                        idx !== i && !pairedIds.has(other.id) &&
+                    const candidates = lotLogsMap.get(oldLotId) || []
+                    const counterpart = candidates.find(other => 
+                        other.id !== log.id && !pairedIds.has(other.id) &&
                         other.new_data?.lot_id === oldLotId && !other.old_data?.lot_id &&
                         other.record_id !== log.record_id &&
                         Math.abs(new Date(other.created_at).getTime() - timestamp) < 24 * 60 * 60 * 1000
