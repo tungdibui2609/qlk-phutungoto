@@ -108,7 +108,10 @@ export function LotFilter({
                                 "Tìm kiếm..."
                             }
                             value={localSearchTerm}
-                            onChange={(e) => setLocalSearchTerm(e.target.value)}
+                            onChange={(e) => {
+                                setLocalSearchTerm(e.target.value)
+                                onSearchChange(e.target.value)
+                            }}
                             onKeyDown={handleKeyDown}
                             className="w-full pl-9 pr-28 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
                         />

@@ -289,8 +289,8 @@ export function useLotManagement() {
                 }
             }
 
-            if (positionFilter === 'unassigned') {
-                // Unassigned: Use RPC for scalable filtering
+            if (positionFilter === 'unassigned' && !searchTerm) {
+                // Unassigned & No search: Use RPC for scalable filtering
                 // Left Join on positions is still needed to fetch (empty) positions array for type consistency
                 selectQuery += `, positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id))`
 
@@ -298,7 +298,7 @@ export function useLotManagement() {
                     .select(selectQuery)
                 // RPC handles system_code and status check internally
             } else {
-                // Standard Logic — use left join for positions (zone filtering done via lot IDs now)
+                // Standard Logic — use left join for positions
                 if (positionFilter === 'assigned') {
                     selectQuery += `, positions!positions_lot_id_fkey!inner(id, code, zone_positions!left(zone_id))`
                 } else {
@@ -830,6 +830,16 @@ export function useLotManagement() {
                         else groupLotIds = groupLotIds.filter(id => currentMatchIds.includes(id));
                         
                         if (groupLotIds.length === 0) break; // Optimization
+                    }
+
+                    if (positionFilter === 'unassigned' && groupLotIds && groupLotIds.length > 0) {
+                        const { data: assigned } = await supabase
+                            .from('positions')
+                            .select('lot_id')
+                            .in('lot_id', groupLotIds)
+                            .not('lot_id', 'is', null);
+                        const assignedIds = (assigned || []).map((p: any) => p.lot_id).filter(Boolean) as string[];
+                        groupLotIds = groupLotIds.filter(id => !assignedIds.includes(id));
                     }
 
                     if (groupLotIds && groupLotIds.length > 0) {
