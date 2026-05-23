@@ -186,13 +186,17 @@ export function useLotManagement() {
         setExistingTags(uniqueTags)
     }
 
-    // Helper to apply date filter to subqueries
+    // Helper to apply date filter to subqueries with high-robustness checks
     const applyDateFilterToSubQuery = (q: any, fieldPrefix = '') => {
-        if (!startDate || !endDate) return q;
+        if (!startDate || !endDate || startDate === 'Invalid date' || endDate === 'Invalid date') return q;
         const field = fieldPrefix ? `${fieldPrefix}.${dateFilterField}` : dateFilterField;
         if (dateFilterField === 'created_at' || dateFilterField === 'peeling_date' || dateFilterField === 'raw_material_date') {
             const startLocal = new Date(`${startDate}T00:00:00`);
             const endLocal = new Date(`${endDate}T23:59:59.999`);
+            if (isNaN(startLocal.getTime()) || isNaN(endLocal.getTime())) {
+                console.warn('[applyDateFilterToSubQuery] Invalid date values detected:', startDate, endDate);
+                return q;
+            }
             return q.gte(field, startLocal.toISOString()).lte(field, endLocal.toISOString());
         } else {
             return q.gte(field, startDate).lte(field, endDate);
@@ -364,10 +368,13 @@ export function useLotManagement() {
 
                         if (!isNaN(sttTerm)) {
                             // 1. Find production IDs
-                            const { data: matchedProds } = await (supabase.from('productions') as any)
+                            let matchedProdsQuery = (supabase.from('productions') as any)
                                 .select('id')
-                                .or(`code.ilike.%${lsxTerm}%,name.ilike.%${lsxTerm}%`)
-                                .eq('company_id', currentSystem.company_id);
+                                .or(`code.ilike.%${lsxTerm}%,name.ilike.%${lsxTerm}%`);
+                            if (currentSystem.company_id) {
+                                matchedProdsQuery = matchedProdsQuery.eq('company_id', currentSystem.company_id);
+                            }
+                            const { data: matchedProds } = await matchedProdsQuery;
                             
                             const prodIds = matchedProds?.map((p: any) => p.id) || [];
                             
@@ -505,13 +512,19 @@ export function useLotManagement() {
                             const posIds = (posLots?.map((p: any) => p.lot_id).filter(Boolean) || []) as string[];
 
                             // Production Orders search in 'all' mode
-                            const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
+                            let prodMatchedQuery = (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`);
+                            if (currentSystem.company_id) {
+                                prodMatchedQuery = prodMatchedQuery.eq('company_id', currentSystem.company_id);
+                            }
+                            const { data: prodMatched } = await prodMatchedQuery;
                             const prodIdsInAll = prodMatched?.map((p: any) => p.id) || [];
                             
                             let prodLotsBridgeQuery = (supabase.from('production_lots') as any)
                                 .select('id, production_id, product_id')
-                                .ilike('lot_code', partTerm)
-                                .eq('company_id', currentSystem.company_id);
+                                .ilike('lot_code', partTerm);
+                            if (currentSystem.company_id) {
+                                prodLotsBridgeQuery = prodLotsBridgeQuery.eq('company_id', currentSystem.company_id);
+                            }
                             const { data: prodLotsBridge } = await prodLotsBridgeQuery;
                             
                             let prodLotIds: string[] = [];
@@ -606,14 +619,20 @@ export function useLotManagement() {
                             }
                         }
                         else if (searchMode === 'production') {
-                            const { data: prodMatched } = await (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`).eq('company_id', currentSystem.company_id);
+                            let prodMatchedQuery = (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`);
+                            if (currentSystem.company_id) {
+                                prodMatchedQuery = prodMatchedQuery.eq('company_id', currentSystem.company_id);
+                            }
+                            const { data: prodMatched } = await prodMatchedQuery;
                             const prodIds = prodMatched?.map((p: any) => p.id) || [];
                             
                             // 🟢 Search in production_lots (Bridge Search)
                             let prodLotsBridgeQuery = (supabase.from('production_lots') as any)
                                 .select('id, production_id, product_id')
-                                .ilike('lot_code', partTerm)
-                                .eq('company_id', currentSystem.company_id);
+                                .ilike('lot_code', partTerm);
+                            if (currentSystem.company_id) {
+                                prodLotsBridgeQuery = prodLotsBridgeQuery.eq('company_id', currentSystem.company_id);
+                            }
                             const { data: prodLotsBridge } = await prodLotsBridgeQuery;
 
                             // Match by parent production ID
@@ -829,17 +848,7 @@ export function useLotManagement() {
             }
 
             // 2. Date Range
-            if (startDate && endDate) {
-                if (dateFilterField === 'created_at' || dateFilterField === 'peeling_date' || dateFilterField === 'raw_material_date') {
-                    // For timestamp fields, use precise local boundaries converted to ISO
-                    const startLocal = new Date(`${startDate}T00:00:00`)
-                    const endLocal = new Date(`${endDate}T23:59:59.999`)
-                    query = query.gte(dateFilterField, startLocal.toISOString()).lte(dateFilterField, endLocal.toISOString())
-                } else {
-                    // For DATE fields (inbound_date, peeling_date, etc.), use raw YYYY-MM-DD
-                    query = query.gte(dateFilterField, startDate).lte(dateFilterField, endDate)
-                }
-            }
+            query = applyDateFilterToSubQuery(query);
 
             // Pagination
             const from = page * pageSize
