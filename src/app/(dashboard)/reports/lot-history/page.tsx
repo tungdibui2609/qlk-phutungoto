@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { History, Search, Download, Calendar, Boxes, ArrowRightLeft, Combine, Split, Package, Building2, Tag as TagIcon, Filter, Layers, ChevronDown, ArrowUpRight } from 'lucide-react'
+import { History, Search, Download, Calendar, Boxes, ArrowRightLeft, Combine, Split, Package, Building2, Tag as TagIcon, Filter, Layers, ChevronDown, ArrowUpRight, MapPin } from 'lucide-react'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -15,6 +15,8 @@ type LotWithDetails = {
     metadata: any
     suppliers: { name: string } | null
     products: { name: string; sku: string; unit: string } | null
+    productions: { code: string; name: string } | null
+    positions: Array<{ id: string; code: string }> | null
     lot_items: Array<{
         id: string
         quantity: number
@@ -47,6 +49,8 @@ export default function LotHistoryPage() {
                 *,
                 suppliers (name),
                 products (name, sku, unit),
+                productions (code, name),
+                positions!positions_lot_id_fkey (id, code),
                 lot_items (
                     id,
                     quantity,
@@ -197,6 +201,66 @@ export default function LotHistoryPage() {
         )
     }
 
+    const productSummary = useMemo(() => {
+        const summary: Record<string, { name: string; sku: string; unit: string; totalQty: number }> = {}
+
+        filteredLots.forEach(lot => {
+            const actionData = getLotActionData(lot)
+            const lastExport = lot.metadata?.system_history?.exports?.[lot.metadata?.system_history?.exports?.length - 1]
+
+            // 1. Trường hợp là Export
+            if (actionData.type === 'export' && lastExport?.items) {
+                Object.values(lastExport.items).forEach((item: any) => {
+                    const sku = item.product_sku || '-'
+                    const key = `${item.product_id}_${item.unit || 'Đơn vị'}`
+                    if (!summary[key]) {
+                        summary[key] = {
+                            name: item.product_name || 'Sản phẩm không tên',
+                            sku: sku,
+                            unit: item.unit || 'Đơn vị',
+                            totalQty: 0
+                        }
+                    }
+                    summary[key].totalQty += (item.exported_quantity || 0)
+                })
+                return
+            }
+
+            // 2. Trường hợp mặc định hoặc các hành động khác
+            if (lot.lot_items && lot.lot_items.length > 0) {
+                lot.lot_items.forEach((item: any) => {
+                    const sku = item.products?.sku || '-'
+                    const u = item.unit || item.products?.unit || 'Đơn vị'
+                    const key = `${item.product_id}_${u}`
+                    if (!summary[key]) {
+                        summary[key] = {
+                            name: item.products?.name || 'Sản phẩm không tên',
+                            sku: sku,
+                            unit: u,
+                            totalQty: 0
+                        }
+                    }
+                    summary[key].totalQty += (item.quantity || 0)
+                })
+            } else {
+                const sku = lot.products?.sku || '-'
+                const u = lot.products?.unit || 'Đơn vị'
+                const key = `${lot.product_id}_${u}`
+                if (!summary[key]) {
+                    summary[key] = {
+                        name: lot.products?.name || 'Sản phẩm không tên',
+                        sku: sku,
+                        unit: u,
+                        totalQty: 0
+                    }
+                }
+                summary[key].totalQty += (lot.quantity || 0)
+            }
+        })
+
+        return Object.values(summary).sort((a, b) => b.totalQty - a.totalQty)
+    }, [filteredLots])
+
     return (
         <div className="space-y-6 pb-20">
             {/* Header section with glassmorphism style */}
@@ -268,6 +332,34 @@ export default function LotHistoryPage() {
                 </div>
             </div>
 
+            {/* Summary Statistics Section */}
+            {productSummary.length > 0 && (
+                <div className="bg-stone-50 dark:bg-slate-800/40 border border-stone-200 dark:border-slate-800 p-5 rounded-2xl shadow-sm space-y-4">
+                    <h4 className="text-xs font-black text-stone-700 dark:text-stone-300 uppercase tracking-widest flex items-center gap-2">
+                        <div className="w-1.5 h-4 bg-orange-500 rounded-full"></div>
+                        Tổng hợp sản lượng đã lọc ({productSummary.length} sản phẩm)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        {productSummary.map((item, idx) => (
+                            <div key={idx} className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-stone-200 dark:border-slate-800 shadow-sm flex items-center justify-between group hover:border-orange-300 dark:hover:border-orange-950 transition-all">
+                                <div className="min-w-0 flex-1 pr-2">
+                                    <div className="text-[10px] font-bold text-blue-600 dark:text-blue-400 mb-0.5 tracking-tight font-mono">{item.sku}</div>
+                                    <div className="text-[11px] font-bold text-stone-800 dark:text-stone-200 truncate" title={item.name}>{item.name}</div>
+                                </div>
+                                <div className="text-right shrink-0">
+                                    <span className="text-base font-black text-orange-600 dark:text-orange-500 tabular-nums">
+                                        {item.totalQty.toLocaleString('vi-VN')}
+                                    </span>
+                                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wide block">
+                                        {item.unit}
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* Main Table Content */}
             <div className="bg-white dark:bg-slate-900 rounded-2xl border border-stone-200 dark:border-slate-800 shadow-sm overflow-hidden">
                 <div className="overflow-x-auto">
@@ -287,12 +379,14 @@ export default function LotHistoryPage() {
                         <table className="w-full text-sm border-collapse">
                             <thead>
                                 <tr className="bg-stone-50/80 dark:bg-slate-800/50 border-b border-stone-200 dark:border-slate-700">
-                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px]">Thời gian</th>
-                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px]">Mã LOT</th>
-                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px]">Sản phẩm</th>
-                                    <th className="text-center px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px]">SL & Đơn vị</th>
-                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px]">Hình thức</th>
-                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px]">Nhà cung cấp</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[12%]">Thời gian</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[12%]">Mã LOT</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[18%]">Lệnh SX & Lô SX</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[25%]">Sản phẩm</th>
+                                    <th className="text-center px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[10%]">SL & Đơn vị</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[13%]">Vị trí</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[10%]">Hình thức</th>
+                                    <th className="text-left px-6 py-4 font-bold text-stone-600 dark:text-stone-400 uppercase tracking-wider text-[11px] w-[10%]">Nhà cung cấp</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100 dark:divide-slate-800">
@@ -320,28 +414,52 @@ export default function LotHistoryPage() {
                                                 {lot.code}
                                             </div>
                                         </td>
-                                        <td className="px-6 py-4 min-w-[300px]">
-                                            <div className="space-y-2">
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex flex-col gap-1">
+                                                {lot.productions ? (
+                                                    <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded text-[10px] font-bold border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tighter w-fit" title={lot.productions.name}>
+                                                        LSX: {lot.productions.code}
+                                                    </span>
+                                                ) : lot.production_code ? (
+                                                    <span className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 rounded text-[10px] font-bold border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tighter w-fit">
+                                                        LSX: {lot.production_code}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] text-stone-400 font-medium italic">Không xác định</span>
+                                                )}
+                                                {lot.batch_code || lot.metadata?.batch_code ? (
+                                                    <span className="text-[10px] text-stone-600 dark:text-stone-400 font-mono font-bold">
+                                                        Lô: {lot.batch_code || lot.metadata?.batch_code}
+                                                    </span>
+                                                ) : (
+                                                    <span className="text-[10px] text-stone-400 font-medium italic">Không có mã lô</span>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 min-w-[250px]">
+                                            <div className="space-y-3">
                                                 {lot.lot_items && lot.lot_items.length > 0 ? (
                                                     lot.lot_items.map((item, idx) => (
-                                                        <div key={item.id} className="flex flex-col">
-                                                            <div className="flex items-center gap-2 mb-0.5">
-                                                                <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter">
+                                                        <div key={item.id} className="flex flex-col gap-1">
+                                                            {/* Dòng 1: Mã sản phẩm & Mã Tag cùng dòng */}
+                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter shrink-0">
                                                                     {item.products?.sku}
                                                                 </span>
-                                                                <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[200px]" title={item.products?.name}>
-                                                                    {item.products?.name}
-                                                                </span>
+                                                                {/* Show tags for items if available */}
+                                                                {lot.lot_tags && lot.lot_tags.some(t => t.lot_item_id === item.id) && (
+                                                                    <div className="inline-flex shrink-0">
+                                                                        <TagDisplay
+                                                                            tags={lot.lot_tags.filter(t => t.lot_item_id === item.id).map(t => t.tag)}
+                                                                            placeholderMap={{ '@': item.products?.sku || '' }}
+                                                                        />
+                                                                    </div>
+                                                                )}
                                                             </div>
-                                                            {/* Show tags for items if available */}
-                                                            {lot.lot_tags && lot.lot_tags.some(t => t.lot_item_id === item.id) && (
-                                                                <div className="mt-1">
-                                                                    <TagDisplay
-                                                                        tags={lot.lot_tags.filter(t => t.lot_item_id === item.id).map(t => t.tag)}
-                                                                        placeholderMap={{ '@': item.products?.sku || '' }}
-                                                                    />
-                                                                </div>
-                                                            )}
+                                                            {/* Dòng 2: Tên sản phẩm */}
+                                                            <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[220px]" title={item.products?.name}>
+                                                                {item.products?.name}
+                                                            </span>
                                                         </div>
                                                     ))
                                                 ) : (
@@ -351,37 +469,41 @@ export default function LotHistoryPage() {
 
                                                         if (actionData.type === 'export' && lastExport?.items) {
                                                             return Object.values(lastExport.items).map((item: any, idx) => (
-                                                                <div key={idx} className="flex flex-col">
-                                                                    <div className="flex items-center gap-2 mb-0.5">
-                                                                        <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter">
+                                                                <div key={idx} className="flex flex-col gap-1">
+                                                                    {/* Dòng 1: Mã sản phẩm */}
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter shrink-0">
                                                                             {item.product_sku}
                                                                         </span>
-                                                                        <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[200px]" title={item.product_name}>
-                                                                            {item.product_name}
-                                                                        </span>
                                                                     </div>
+                                                                    {/* Dòng 2: Tên sản phẩm */}
+                                                                    <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[220px]" title={item.product_name}>
+                                                                        {item.product_name}
+                                                                    </span>
                                                                 </div>
                                                             ));
                                                         }
 
                                                         return (
-                                                            <div className="flex flex-col">
-                                                                <div className="flex items-center gap-2">
-                                                                    <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter">
+                                                            <div className="flex flex-col gap-1">
+                                                                {/* Dòng 1: Mã sản phẩm & Mã tag chung */}
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded text-[10px] font-bold border border-blue-100 dark:border-blue-800/50 uppercase tracking-tighter shrink-0">
                                                                         {lot.products?.sku || 'N/A'}
                                                                     </span>
-                                                                    <span className="font-bold text-stone-900 dark:text-stone-100">
-                                                                        {lot.products?.name || 'Sản phẩm không xác định'}
-                                                                    </span>
+                                                                    {lot.lot_tags && lot.lot_tags.length > 0 && (
+                                                                        <div className="inline-flex shrink-0">
+                                                                            <TagDisplay
+                                                                                tags={lot.lot_tags.map(t => t.tag)}
+                                                                                placeholderMap={{ '@': lot.products?.sku || '' }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                                {lot.lot_tags && lot.lot_tags.length > 0 && (
-                                                                    <div className="mt-1">
-                                                                        <TagDisplay
-                                                                            tags={lot.lot_tags.map(t => t.tag)}
-                                                                            placeholderMap={{ '@': lot.products?.sku || '' }}
-                                                                        />
-                                                                    </div>
-                                                                )}
+                                                                {/* Dòng 2: Tên sản phẩm */}
+                                                                <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[220px]" title={lot.products?.name}>
+                                                                    {lot.products?.name || 'Sản phẩm không xác định'}
+                                                                </span>
                                                             </div>
                                                         );
                                                     })()
@@ -436,6 +558,22 @@ export default function LotHistoryPage() {
                                                         </div>
                                                     ))
                                                 })()}
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-4 whitespace-nowrap">
+                                            <div className="flex flex-wrap gap-1 max-w-[150px]">
+                                                {lot.positions && lot.positions.length > 0 ? (
+                                                    lot.positions.map(pos => (
+                                                        <span key={pos.id} className="inline-flex items-center gap-1 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 rounded text-[10px] font-bold border border-emerald-100 dark:border-emerald-800/50 uppercase tracking-tight">
+                                                            <MapPin size={10} className="shrink-0" />
+                                                            {pos.code}
+                                                        </span>
+                                                    ))
+                                                ) : (
+                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-stone-100 dark:bg-slate-800 text-stone-400 dark:text-slate-500 rounded text-[10px] font-bold border border-stone-200 dark:border-slate-700 uppercase tracking-tight">
+                                                        Chưa gán vị trí
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">

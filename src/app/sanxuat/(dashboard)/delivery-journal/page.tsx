@@ -156,6 +156,7 @@ export default function SanXuatDeliveryJournalPage() {
     const [interimNotes, setInterimNotes] = useState('')
     const [interimSummary, setInterimSummary] = useState<any>(null)
     const [showSubShiftsPanel, setShowSubShiftsPanel] = useState(false)
+    const [viewMode, setViewMode] = useState<'sub-shift' | 'shift'>('sub-shift')
 
     // Chỉnh sửa số liệu (Edit)
     const [editModal, setEditModal] = useState<DeliveryJournal | null>(null)
@@ -530,8 +531,21 @@ export default function SanXuatDeliveryJournalPage() {
                 .eq('company_id', companyId)
 
             if (activeShiftData) {
+                let fromTime = activeShiftData.opened_at
+                if (viewMode === 'sub-shift') {
+                    const { data: latestSub } = await (supabase as any)
+                        .from('delivery_sub_shifts')
+                        .select('to_time')
+                        .eq('shift_id', activeShiftData.id)
+                        .order('sub_shift_number', { ascending: false })
+                        .limit(1)
+                        .maybeSingle()
+                    if (latestSub) {
+                        fromTime = latestSub.to_time
+                    }
+                }
                 // Nếu có ca đang mở, chỉ lấy các đợt giao nhận phát sinh trong ca
-                journalQuery = journalQuery.gte('sent_at', activeShiftData.opened_at)
+                journalQuery = journalQuery.gte('sent_at', fromTime)
             } else {
                 // Nếu chưa mở ca, không lấy đợt nào cả để reset về 0 hết
                 journalQuery = journalQuery.eq('id', '00000000-0000-0000-0000-000000000000')
@@ -602,7 +616,7 @@ export default function SanXuatDeliveryJournalPage() {
         } finally {
             setLoading(false)
         }
-    }, [currentSystem, profile, selectedMoId])
+    }, [currentSystem, profile, selectedMoId, viewMode])
 
     useEffect(() => {
         const companyId = currentSystem?.company_id || profile?.company_id
@@ -907,6 +921,22 @@ export default function SanXuatDeliveryJournalPage() {
                                 )}
                             </div>
                             <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto gap-2">
+                                {subShifts.length > 0 && (
+                                    <div className="flex bg-stone-100 dark:bg-zinc-800 rounded-lg p-0.5 mr-2">
+                                        <button
+                                            onClick={() => setViewMode('sub-shift')}
+                                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${viewMode === 'sub-shift' ? 'bg-white shadow-sm text-amber-600' : 'text-stone-500 hover:text-stone-700'}`}
+                                        >
+                                            Ca hiện tại
+                                        </button>
+                                        <button
+                                            onClick={() => setViewMode('shift')}
+                                            className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${viewMode === 'shift' ? 'bg-white shadow-sm text-indigo-600' : 'text-stone-500 hover:text-stone-700'}`}
+                                        >
+                                            Tổng cả ngày
+                                        </button>
+                                    </div>
+                                )}
                                 <Link href="/sanxuat/delivery-shifts" className="text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-300 text-[10px] sm:text-[11px] font-bold underline">
                                     Lịch sử
                                 </Link>
