@@ -51,6 +51,11 @@ export default function WarehouseMapPrintPage() {
     const [isGrouped, setIsGrouped] = useState(true)
     const [isEmptyMap, setIsEmptyMap] = useState(false)
     const [onlyShowChecked, setOnlyShowChecked] = useState(false)
+    const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
+
+    useEffect(() => {
+        setLocalSearchTerm(searchTerm)
+    }, [searchTerm])
 
     // --- State: Data ---
     const [positions, setPositions] = useState<PositionWithZone[]>([])
@@ -224,16 +229,23 @@ export default function WarehouseMapPrintPage() {
         }
 
         if (searchTerm) {
-            const lowTerm = searchTerm.toLowerCase().trim()
-            result = result.filter(p => {
-                const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : {})
-                return p.code.toLowerCase().includes(lowTerm) ||
-                    (pLot.items || []).some((item: any) =>
-                        item.product_name?.toLowerCase().includes(lowTerm) ||
-                        item.sku?.toLowerCase().includes(lowTerm)
-                    ) ||
-                    pLot.code?.toLowerCase().includes(lowTerm)
-            })
+            const terms = searchTerm.split(',').map(t => t.toLowerCase().trim()).filter(Boolean)
+            if (terms.length > 0) {
+                result = result.filter(p => {
+                    const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : {})
+                    return terms.some(lowTerm => 
+                        p.code.toLowerCase().includes(lowTerm) ||
+                        (pLot.items || []).some((item: any) =>
+                            item.product_name?.toLowerCase().includes(lowTerm) ||
+                            item.sku?.toLowerCase().includes(lowTerm) ||
+                            item.internal_code?.toLowerCase().includes(lowTerm) ||
+                            item.internal_name?.toLowerCase().includes(lowTerm)
+                        ) ||
+                        pLot.code?.toLowerCase().includes(lowTerm) ||
+                        pLot.batch_code?.toLowerCase().includes(lowTerm)
+                    )
+                })
+            }
         }
 
         // --- Hierarchical Sorting for Table View ---
@@ -699,7 +711,38 @@ export default function WarehouseMapPrintPage() {
                     </button>
 
                     {isSettingsOpen && (
-                        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-hidden flex flex-col p-4 gap-6 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="absolute top-full right-0 mt-2 w-80 bg-white rounded-xl shadow-2xl border border-gray-200 overflow-y-auto max-h-[85vh] custom-scrollbar flex flex-col p-4 gap-6 animate-in fade-in slide-in-from-top-2 duration-200 z-50">
+                            {/* 0. Product Search */}
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2"><Search size={12} /> Tìm kiếm Sản phẩm / Vị trí</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={localSearchTerm}
+                                        onChange={(e) => setLocalSearchTerm(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                const params = new URLSearchParams(searchParams.toString());
+                                                if (localSearchTerm) params.set('search', localSearchTerm);
+                                                else params.delete('search');
+                                                router.replace(`${pathname}?${params.toString()}`);
+                                            }
+                                        }}
+                                        placeholder="Tên, mã SP, mã vị trí (ngăn cách bằng phẩy)" 
+                                        className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
+                                    />
+                                    <button 
+                                        onClick={() => {
+                                            const params = new URLSearchParams(searchParams.toString());
+                                            if (localSearchTerm) params.set('search', localSearchTerm);
+                                            else params.delete('search');
+                                            router.replace(`${pathname}?${params.toString()}`);
+                                        }}
+                                        className="px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors cursor-pointer"
+                                    >Lọc</button>
+                                </div>
+                            </div>
+
                             {/* 1. Zone Selection */}
                             <div className="flex flex-col gap-2">
                                 <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
