@@ -245,6 +245,7 @@ export default function DeliveryJournalPage() {
                 products: Record<string, {
                     product_name: string;
                     unit: string;
+                    from_department: string;
                     sent: number;
                     received: number;
                     cancelled: number;
@@ -269,10 +270,11 @@ export default function DeliveryJournalPage() {
                 if (!mo_summary[moCode]) {
                     mo_summary[moCode] = { mo_code: moCode, products: {} }
                 }
-                const prodKey = `${prodName}_${unit}`
+                const fromDept = j.from_department || 'Kho'
+                const prodKey = `${prodName}_${unit}_${fromDept}`
                 if (!mo_summary[moCode].products[prodKey]) {
                     mo_summary[moCode].products[prodKey] = {
-                        product_name: prodName, unit, sent: 0, received: 0, cancelled: 0
+                        product_name: prodName, unit, from_department: fromDept, sent: 0, received: 0, cancelled: 0
                     }
                 }
                 mo_summary[moCode].products[prodKey].sent += j.quantity_sent || 0
@@ -360,6 +362,7 @@ export default function DeliveryJournalPage() {
                 products: Record<string, {
                     product_name: string;
                     unit: string;
+                    from_department: string;
                     sent: number;
                     received: number;
                     cancelled: number;
@@ -389,11 +392,13 @@ export default function DeliveryJournalPage() {
                         products: {}
                     }
                 }
-                const prodKey = `${prodName}_${unit}`
+                const fromDept = j.from_department || 'Kho'
+                const prodKey = `${prodName}_${unit}_${fromDept}`
                 if (!mo_summary[moCode].products[prodKey]) {
                     mo_summary[moCode].products[prodKey] = {
                         product_name: prodName,
                         unit: unit,
+                        from_department: fromDept,
                         sent: 0,
                         received: 0,
                         cancelled: 0
