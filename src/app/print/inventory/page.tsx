@@ -223,7 +223,7 @@ export default function PrintInventoryPage() {
             const [unitRes, catRes, catRelRes] = await Promise.all([
                 supabase.from('units').select('*').eq('is_active', true).order('name'),
                 supabase.from('categories').select('*').order('name'),
-                supabase.from('product_category_rel').select('id, product_id, category_id')
+                supabase.from('product_category_rel').select('id, product_id, category_id, is_primary')
             ])
 
             const fetchedUnits = unitRes.data || []
@@ -235,9 +235,13 @@ export default function PrintInventoryPage() {
 
             // Build Product -> Categories Map for Multi-Category Support
             const prodToCatMap = new Map<string, string[]>()
+            const prodToPrimaryCatMap = new Map<string, string>()
             catRelData.forEach((rel: any) => {
                 if (!prodToCatMap.has(rel.product_id)) prodToCatMap.set(rel.product_id, [])
                 prodToCatMap.get(rel.product_id)!.push(rel.category_id)
+                if (rel.is_primary) {
+                    prodToPrimaryCatMap.set(rel.product_id, rel.category_id)
+                }
             })
 
             const preFetchedDataStr = searchParams.get('data')
@@ -337,7 +341,7 @@ export default function PrintInventoryPage() {
                             suppliers(name),
                             productions(code),
                             lot_tags(tag),
-                            lot_items(id, quantity, unit, product_id, lot_tags(tag), products(name, sku, unit)),
+                            lot_items(id, quantity, unit, product_id, lot_tags(tag), products(name, sku, unit, category_id)),
                             positions!positions_lot_id_fkey(id, code)
                         `)
                         .eq('status', 'active')
@@ -387,6 +391,9 @@ export default function PrintInventoryPage() {
                         if (lot.lot_items && lot.lot_items.length > 0) {
                             return lot.lot_items.map((item: any, idx: number) => {
                                 const itemTags = (item.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
+                                const productId = item.product_id || item.products?.product_code || ''
+                                const primaryCatId = item.products?.category_id || prodToPrimaryCatMap.get(productId) || (prodToCatMap.get(productId)?.[0])
+
                                 return {
                                     ...lotData,
                                     id: item.id || `${lot.id}-item-${idx}`,
@@ -397,16 +404,16 @@ export default function PrintInventoryPage() {
                                     productUnit: item.unit || item.products?.unit || '-',
                                     quantity: item.quantity,
                                     kg: 0,
-                                    productId: item.product_id || item.products?.product_code || '',
-                                    categoryIds: Array.from(new Set([
-                                        ...(item.products?.category_id ? [item.products.category_id] : []),
-                                        ...(prodToCatMap.get(item.product_id || item.products?.product_code || '') || [])
-                                    ])),
+                                    productId: productId,
+                                    categoryIds: primaryCatId ? [primaryCatId] : [],
                                     baseUnit: item.products?.unit || '',
                                     tags: Array.from(new Set([...itemTags, ...lotTags])) 
                                 }
                             })
                         } else if (lot.products) {
+                            const productId = lot.product_id || lot.products.product_code || ''
+                            const primaryCatId = lot.products.category_id || prodToPrimaryCatMap.get(productId) || (prodToCatMap.get(productId)?.[0])
+
                             return [{
                                 ...lotData,
                                 id: lot.id,
@@ -417,11 +424,8 @@ export default function PrintInventoryPage() {
                                 productUnit: lot.products.unit,
                                 quantity: lot.quantity,
                                 kg: 0,
-                                productId: lot.product_id || lot.products.product_code || '',
-                                categoryIds: Array.from(new Set([
-                                    ...(lot.products.category_id ? [lot.products.category_id] : []),
-                                    ...(prodToCatMap.get(lot.product_id || lot.products.product_code || '') || [])
-                                ])),
+                                productId: productId,
+                                categoryIds: primaryCatId ? [primaryCatId] : [],
                                 baseUnit: lot.products.unit || ''
                             }]
                         }
@@ -504,31 +508,24 @@ export default function PrintInventoryPage() {
                             displayQty = convertUnit(item.productId, item.productUnit, (targetUnit as any).name, item.quantity, item.baseUnit)
                         }
 
-                        if (reportType === 'category') {
-                            let itemCatIds: (string | null)[] = item.categoryIds && item.categoryIds.length > 0 ? Array.from(new Set(item.categoryIds)) : [null]
-                            
-                            // If user has specific categories selected, only show those categories in the report
-                            if (selectedCategoryIds.length > 0) {
-                                itemCatIds = itemCatIds.filter(cid => cid && selectedCategoryIds.includes(cid))
-                            }
-
-                            itemCatIds.forEach(catId => {
-                                const category = catId ? (fetchedCategories as any[]).find(c => c.id === catId) : null
-                                const groupHeader = (category as any)?.name || 'Chưa phân loại'
-                                const groupKey = `${groupHeader}__${item.productSku}__${canonicalizeUnit(displayUnit)}`
-                                addToGroups(groupKey, groupHeader, displayUnit, displayQty, item, groupsMap)
-                            })
-                        } else {
-                            const groupKey = `${item.productSku}__${canonicalizeUnit(displayUnit)}`
-                            addToGroups(groupKey, '', displayUnit, displayQty, item, groupsMap)
+                        let itemCatIds: (string | null)[] = item.categoryIds && item.categoryIds.length > 0 ? Array.from(new Set(item.categoryIds)) : [null]
+                        
+                        // If user has specific categories selected, only show those categories in the report
+                        if (selectedCategoryIds.length > 0) {
+                            itemCatIds = itemCatIds.filter(cid => cid && selectedCategoryIds.includes(cid))
                         }
+
+                        itemCatIds.forEach(catId => {
+                            const category = catId ? (fetchedCategories as any[]).find(c => c.id === catId) : null
+                            const groupHeader = (category as any)?.name || 'Chưa phân loại'
+                            const groupKey = `${groupHeader}__${item.productSku}__${canonicalizeUnit(displayUnit)}`
+                            addToGroups(groupKey, groupHeader, displayUnit, displayQty, item, groupsMap)
+                        })
                     })
 
                     setGroupedLots(Array.from(groupsMap.values()).sort((a: any, b: any) => {
-                        if (reportType === 'category') {
-                            const catComp = (a.categoryName || '').localeCompare(b.categoryName || '')
-                            if (catComp !== 0) return catComp
-                        }
+                        const catComp = (a.categoryName || '').localeCompare(b.categoryName || '')
+                        if (catComp !== 0) return catComp
                         return a.productSku.localeCompare(b.productSku)
                     }))
                 }
@@ -939,7 +936,7 @@ export default function PrintInventoryPage() {
                                 groupedLots.map((group, gIdx) => {
                                     const reportType = searchParams.get('type') || 'lot'
                                     const prevGroup = gIdx > 0 ? groupedLots[gIdx - 1] : null
-                                    const showCategoryHeader = reportType === 'category' && group.categoryName && group.categoryName !== prevGroup?.categoryName
+                                    const showCategoryHeader = group.categoryName && group.categoryName !== prevGroup?.categoryName
 
                                     // Calculate category totals if header is shown
                                     let catTotalQty = 0

@@ -18,8 +18,25 @@ function cleanNum(val: any): number {
 
 export async function exportInventoryReportToExcel(data: InventoryReportExportData) {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Bao Cao Ton Kho');
+    
+    if (data.type === 'lot') {
+        const ws1 = workbook.addWorksheet('Chi tiết');
+        buildWorksheet(ws1, data, false);
 
+        const ws2 = workbook.addWorksheet('Tổng hợp');
+        buildWorksheet(ws2, data, true);
+    } else {
+        const ws = workbook.addWorksheet('Bao Cao Ton Kho');
+        buildWorksheet(ws, data, false);
+    }
+
+    // Save
+    const buffer = await workbook.xlsx.writeBuffer();
+    const fileName = `Ton_kho_${new Date().toISOString().split('T')[0]}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
+}
+
+function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExportData, isLotSummary: boolean) {
     // 1. Define Columns based on report type
     let cols: any[] = [];
     if (data.type === 'accounting') {
@@ -35,11 +52,12 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
         ];
     } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
+        const showTags = data.type !== 'category' && !isLotSummary;
         cols = [
             { header: 'STT', key: 'stt', width: 6 },
             { header: 'Mã SP', key: 'productCode', width: 20 },
             { header: 'Tên sản phẩm', key: 'productName', width: 40 },
-            ...(data.type !== 'category' ? [{ header: 'Mã phụ / Phân loại', key: 'tags', width: 30 }] : []),
+            ...(showTags ? [{ header: 'Mã phụ / Phân loại', key: 'tags', width: 30 }] : []),
             { header: 'ĐVT', key: 'unit', width: 10 },
             { header: 'Số lượng', key: 'quantity', width: 15 },
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
@@ -86,9 +104,9 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
     const title = data.type === 'accounting' 
         ? 'BÁO CÁO TỔNG HỢP NHẬP XUẤT TỒN' 
         : (data.type === 'lot' || data.type === 'tags')
-            ? 'BÁO CÁO TỒN KHO THEO LOT' 
+            ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO LOT') 
             : data.type === 'category'
-                ? 'BÁO CÁO TỒN KHO THEO DANH MỤC'
+                ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO DANH MỤC')
                 : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
     
     const lastCol = String.fromCharCode(65 + cols.length - 1);
@@ -225,6 +243,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             });
         });
     } else if (data.type === 'lot' || data.type === 'category' || data.type === 'tags') {
+        const showTags = data.type !== 'category' && !isLotSummary;
         // Here item is GroupedLot or variant logic
         // We'll follow the visual structure: Main row then variant rows
         let stt = 1;
@@ -232,7 +251,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
         
         data.items.forEach((group: any) => {
             // Category Header Logic
-            if (data.type === 'category' && group.categoryName && group.categoryName !== lastCategory) {
+            if (group.categoryName && group.categoryName !== lastCategory) {
                 const catItems = data.items.filter((g: any) => g.categoryName === group.categoryName);
                 const catTotalQty = catItems.reduce((sum: number, item: any) => sum + (item.totalQuantity || 0), 0);
                 const catTotalKg = catItems.reduce((sum: number, item: any) => sum + (item.totalKg || 0), 0);
@@ -274,7 +293,7 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             ];
             
             // Insert tags if not category
-            if (data.type !== 'category') {
+            if (showTags) {
                 rowValues.splice(3, 0, ''); // Insert empty tag at index 3
             }
 
@@ -283,139 +302,144 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
             mainRow.eachCell(cell => {
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
             });
-            const qtyCol = data.type === 'category' ? 5 : 6;
-            const kgCol = data.type === 'category' ? 6 : 7;
+            const qtyCol = showTags ? 6 : 5;
+            const kgCol = showTags ? 7 : 6;
             [qtyCol, kgCol].forEach(col => {
-                mainRow.getCell(col).alignment = { horizontal: 'right' };
-                mainRow.getCell(col).numFmt = '#,##0';
+                const cell = mainRow.getCell(col);
+                if (cell) {
+                    cell.alignment = { horizontal: 'right' };
+                    cell.numFmt = '#,##0';
+                }
             });
 
             // Variants logic synced with Web (InventoryTable.tsx)
             // Note: variants is Map<string, { totalQuantity: number, totalKg: number, items: any[] }>
-            const variantEntries = Array.from(group.variants.entries() as [string, any][]);
-            const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ');
-            
-            if (hasRealVariants && data.type !== 'category') {
-                const lsxGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>();
-                const nonLsxItems: { tag: string, qty: number, kg: number }[] = [];
+            if (!isLotSummary) {
+                const variantEntries = Array.from(group.variants.entries() as [string, any][]);
+                const hasRealVariants = variantEntries.length > 1 || (variantEntries.length === 1 && variantEntries[0][0] !== 'Không có mã phụ');
+                
+                if (hasRealVariants && data.type !== 'category') {
+                    const lsxGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>();
+                    const nonLsxItems: { tag: string, qty: number, kg: number }[] = [];
 
-                variantEntries.forEach(([tagStr, vData]) => {
-                    const qty = vData.totalQuantity || 0;
-                    const kg = vData.totalKg || 0;
+                    variantEntries.forEach(([tagStr, vData]) => {
+                        const qty = vData.totalQuantity || 0;
+                        const kg = vData.totalKg || 0;
 
-                    if (tagStr.includes('LSX: ')) {
-                        const parts = tagStr.split('; ').map(p => p.trim());
-                        const lsxPart = parts.find(p => p.startsWith('LSX: '));
-                        if (lsxPart) {
-                            const otherParts = parts.filter(p => !p.startsWith('LSX: '));
-                            const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ';
-                            if (!lsxGroups.has(lsxPart)) {
-                                lsxGroups.set(lsxPart, { totalQty: 0, totalKg: 0, items: [] });
-                            }
-                            const vGroup = lsxGroups.get(lsxPart)!;
-                            vGroup.totalQty += qty;
-                            vGroup.totalKg += kg;
-                            vGroup.items.push({ tag: subTags, qty, kg });
-                            return;
-                        }
-                    }
-                    nonLsxItems.push({ tag: tagStr, qty, kg });
-                });
-
-                // 1. Render LSX Groups
-                Array.from(lsxGroups.entries())
-                    .sort((a, b) => b[1].totalQty - a[1].totalQty)
-                    .forEach(([lsxName, vGroup]) => {
-                        // LSX Header Row
-                        const lsxRow = worksheet.addRow([
-                            '',
-                            '',
-                            '',
-                            lsxName, // Tag column
-                            group.productUnit,
-                            cleanNum(vGroup.totalQty),
-                            cleanNum(vGroup.totalKg)
-                        ]);
-                        lsxRow.font = { bold: true, color: { argb: 'C65911' } }; // Dark orange
-                        lsxRow.eachCell((cell, colIdx) => {
-                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                            if (colIdx === 4) cell.alignment = { horizontal: 'left' };
-                            if (colIdx >= 6) {
-                                cell.alignment = { horizontal: 'right' };
-                                const val = cell.value;
-                                if (typeof val === 'number' && Number.isInteger(val)) {
-                                    cell.numFmt = '#,##0';
-                                } else {
-                                    cell.numFmt = '#,##0.###';
+                        if (tagStr.includes('LSX: ')) {
+                            const parts = tagStr.split('; ').map(p => p.trim());
+                            const lsxPart = parts.find(p => p.startsWith('LSX: '));
+                            if (lsxPart) {
+                                const otherParts = parts.filter(p => !p.startsWith('LSX: '));
+                                const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ';
+                                if (!lsxGroups.has(lsxPart)) {
+                                    lsxGroups.set(lsxPart, { totalQty: 0, totalKg: 0, items: [] });
                                 }
+                                const vGroup = lsxGroups.get(lsxPart)!;
+                                vGroup.totalQty += qty;
+                                vGroup.totalKg += kg;
+                                vGroup.items.push({ tag: subTags, qty, kg });
+                                return;
                             }
-                        });
-                        lsxRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } };
+                        }
+                        nonLsxItems.push({ tag: tagStr, qty, kg });
+                    });
 
-                        // LSX Sub-items
-                        vGroup.items
-                            .sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty))
-                            .forEach((subItem) => {
-                                const isNoTag = subItem.tag === 'Không có mã phụ';
-                                const subRow = worksheet.addRow([
-                                    '',
-                                    '',
-                                    '',
-                                    isNoTag ? '   (Không có mã phụ)' : `   ${subItem.tag.replace(/@/g, group.productSku)}`,
-                                    group.productUnit,
-                                    cleanNum(subItem.qty),
-                                    cleanNum(subItem.kg)
-                                ]);
-                                subRow.eachCell((cell, colIdx) => {
-                                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                                    if (colIdx === 4) cell.font = { italic: true, color: { argb: isNoTag ? 'BFBFBF' : '404040' } };
-                                    if (colIdx >= 6) {
-                                        cell.alignment = { horizontal: 'right' };
-                                        const val = cell.value;
-                                        if (typeof val === 'number' && Number.isInteger(val)) {
-                                            cell.numFmt = '#,##0';
-                                        } else {
-                                            cell.numFmt = '#,##0.###';
-                                        }
+                    // 1. Render LSX Groups
+                    Array.from(lsxGroups.entries())
+                        .sort((a, b) => b[1].totalQty - a[1].totalQty)
+                        .forEach(([lsxName, vGroup]) => {
+                            // LSX Header Row
+                            const lsxRow = worksheet.addRow([
+                                '',
+                                '',
+                                '',
+                                lsxName, // Tag column
+                                group.productUnit,
+                                cleanNum(vGroup.totalQty),
+                                cleanNum(vGroup.totalKg)
+                            ]);
+                            lsxRow.font = { bold: true, color: { argb: 'C65911' } }; // Dark orange
+                            lsxRow.eachCell((cell, colIdx) => {
+                                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                                if (colIdx === 4) cell.alignment = { horizontal: 'left' };
+                                if (colIdx >= 6) {
+                                    cell.alignment = { horizontal: 'right' };
+                                    const val = cell.value;
+                                    if (typeof val === 'number' && Number.isInteger(val)) {
+                                        cell.numFmt = '#,##0';
+                                    } else {
+                                        cell.numFmt = '#,##0.###';
                                     }
-                                });
-                            });
-                    });
-
-                // 2. Render Non-LSX Items
-                nonLsxItems
-                    .sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty))
-                    .forEach((subItem) => {
-                        const isNoTag = subItem.tag === 'Không có mã phụ';
-                        const vRow = worksheet.addRow([
-                            '',
-                            '',
-                            '',
-                            isNoTag ? 'Gốc ( còn lại )' : subItem.tag.replace(/@/g, group.productSku),
-                            group.productUnit,
-                            cleanNum(subItem.qty),
-                            cleanNum(subItem.kg)
-                        ]);
-
-                        if (isNoTag) {
-                            vRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9C4' } }; // Very light yellow
-                            vRow.getCell(4).font = { italic: true, bold: true };
-                        }
-
-                        vRow.eachCell((cell, colIdx) => {
-                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                            if (colIdx === 4 && !isNoTag) cell.font = { italic: true };
-                            if (colIdx >= 6) {
-                                cell.alignment = { horizontal: 'right' };
-                                const val = cell.value;
-                                if (typeof val === 'number' && Number.isInteger(val)) {
-                                    cell.numFmt = '#,##0';
-                                } else {
-                                    cell.numFmt = '#,##0.###';
                                 }
-                            }
+                            });
+                            lsxRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } };
+
+                            // LSX Sub-items
+                            vGroup.items
+                                .sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty))
+                                .forEach((subItem) => {
+                                    const isNoTag = subItem.tag === 'Không có mã phụ';
+                                    const subRow = worksheet.addRow([
+                                        '',
+                                        '',
+                                        '',
+                                        isNoTag ? '   (Không có mã phụ)' : `   ${subItem.tag.replace(/@/g, group.productSku)}`,
+                                        group.productUnit,
+                                        cleanNum(subItem.qty),
+                                        cleanNum(subItem.kg)
+                                    ]);
+                                    subRow.eachCell((cell, colIdx) => {
+                                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                                        if (colIdx === 4) cell.font = { italic: true, color: { argb: isNoTag ? 'BFBFBF' : '404040' } };
+                                        if (colIdx >= 6) {
+                                            cell.alignment = { horizontal: 'right' };
+                                            const val = cell.value;
+                                            if (typeof val === 'number' && Number.isInteger(val)) {
+                                                cell.numFmt = '#,##0';
+                                            } else {
+                                                cell.numFmt = '#,##0.###';
+                                            }
+                                        }
+                                    });
+                                });
                         });
-                    });
+
+                    // 2. Render Non-LSX Items
+                    nonLsxItems
+                        .sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty))
+                        .forEach((subItem) => {
+                            const isNoTag = subItem.tag === 'Không có mã phụ';
+                            const vRow = worksheet.addRow([
+                                '',
+                                '',
+                                '',
+                                isNoTag ? 'Gốc ( còn lại )' : subItem.tag.replace(/@/g, group.productSku),
+                                group.productUnit,
+                                cleanNum(subItem.qty),
+                                cleanNum(subItem.kg)
+                            ]);
+
+                            if (isNoTag) {
+                                vRow.getCell(4).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9C4' } }; // Very light yellow
+                                vRow.getCell(4).font = { italic: true, bold: true };
+                            }
+
+                            vRow.eachCell((cell, colIdx) => {
+                                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                                if (colIdx === 4 && !isNoTag) cell.font = { italic: true };
+                                if (colIdx >= 6) {
+                                    cell.alignment = { horizontal: 'right' };
+                                    const val = cell.value;
+                                    if (typeof val === 'number' && Number.isInteger(val)) {
+                                        cell.numFmt = '#,##0';
+                                    } else {
+                                        cell.numFmt = '#,##0.###';
+                                    }
+                                }
+                            });
+                        });
+                }
             }
         });
     } else {
@@ -458,9 +482,4 @@ export async function exportInventoryReportToExcel(data: InventoryReportExportDa
     signTitleRow.getCell(Math.floor(lastColIdx / 2) + 1).value = 'Thủ Kho';
     signTitleRow.getCell(lastColIdx - 1).value = 'Giám Đốc';
     signTitleRow.eachCell(cell => { cell.font = { bold: true }; cell.alignment = { horizontal: 'center' }; });
-
-    // Save
-    const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `Ton_kho_${new Date().toISOString().split('T')[0]}.xlsx`;
-    saveAs(new Blob([buffer]), fileName);
 }
