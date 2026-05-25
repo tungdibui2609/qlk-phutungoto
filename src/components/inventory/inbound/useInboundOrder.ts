@@ -6,6 +6,9 @@ import { useUser } from '@/contexts/UserContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Product, Supplier, Unit, OrderItem } from '../types'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
+import { calculateNewInQtyByProduct } from '@/lib/lotSummaryUtils'
+import { format } from 'date-fns'
+
 
 export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
@@ -42,6 +45,8 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
     const [categories, setCategories] = useState<any[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [submitting, setSubmitting] = useState(false)
+    const [syncingWithLot, setSyncingWithLot] = useState(false)
+
 
     useEffect(() => {
         if (isOpen) {
@@ -302,6 +307,112 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         }
     }
 
+    const handleSyncWithLot = async () => {
+        if (!createdAt) {
+            showToast('Không tìm thấy ngày của phiếu nhập', 'error')
+            return
+        }
+
+        setSyncingWithLot(true)
+        try {
+            const start = new Date(createdAt)
+            start.setHours(0, 0, 0, 0)
+            const end = new Date(createdAt)
+            end.setHours(23, 59, 59, 999)
+
+            const startStr = format(start, "yyyy-MM-dd")
+            const endStr = format(end, "yyyy-MM-dd")
+
+            // 1. Fetch lots for this day and systemCode
+            const { data: lots, error } = await supabase
+                .from('lots')
+                .select(`
+                    id,
+                    code,
+                    status,
+                    created_at,
+                    inbound_date,
+                    metadata,
+                    product_id,
+                    quantity,
+                    products(name),
+                    lot_items(id, quantity, product_id, unit, products(name, unit))
+                `)
+                .eq('system_code', systemCode)
+                .neq('status', 'hidden')
+                .or(`inbound_date.gte.${startStr},created_at.gte.${format(start, "yyyy-MM-dd'T'00:00:00")}`)
+
+            if (error) throw error
+
+            const filteredLots = (lots || []).filter(lot => {
+                const effectiveDateStr = lot.inbound_date || lot.created_at
+                const effectiveDate = new Date(effectiveDateStr)
+                return effectiveDate >= start && effectiveDate <= end
+            })
+
+            if (filteredLots.length === 0) {
+                showToast(`Không tìm thấy Lot sản xuất nào trong ngày ${format(start, 'dd/MM/yyyy')}`, 'warning')
+                return
+            }
+
+            // 2. Compute newInQty by product using shared utility
+            const newInSummary = calculateNewInQtyByProduct(filteredLots)
+
+            if (newInSummary.size === 0) {
+                showToast('Không có sản phẩm nhập mới nào trong các Lot của ngày hôm đó', 'warning')
+                return
+            }
+
+            // 3. Update current form items
+            let updatedCount = 0
+            const newItemsList = [...items]
+
+            newInSummary.forEach((summary, pid) => {
+                if (summary.newInQty <= 0) return
+
+                const existingItemIndex = newItemsList.findIndex(item => item.productId === pid)
+                if (existingItemIndex > -1) {
+                    const item = newItemsList[existingItemIndex]
+                    if (item.quantity !== summary.newInQty) {
+                        newItemsList[existingItemIndex] = {
+                            ...item,
+                            quantity: summary.newInQty,
+                            document_quantity: summary.newInQty
+                        }
+                        updatedCount++
+                    }
+                } else {
+                    // Add new item to order items list
+                    const prod = products.find(p => p.id === pid)
+                    newItemsList.push({
+                        id: crypto.randomUUID(),
+                        productId: pid,
+                        productName: summary.product_name,
+                        unit: prod?.unit || summary.unit || '-',
+                        quantity: summary.newInQty,
+                        document_quantity: summary.newInQty,
+                        price: (prod as any)?.cost_price || 0,
+                        note: `Tự động đồng bộ từ Lot (${summary.lotCodes.join(', ')})`,
+                        categoryId: prod?.category_id || null
+                    })
+                    updatedCount++
+                }
+            })
+
+            if (updatedCount > 0) {
+                setItems(newItemsList)
+                showToast(`Đã đồng bộ thành công ${updatedCount} mặt hàng từ Lot thực tế! Hãy nhấn 'Cập Nhật Phiếu' để lưu lại.`, 'success')
+            } else {
+                showToast('Số lượng trên phiếu nhập hiện tại đã khớp hoàn toàn với Lot sản xuất thực tế!', 'info')
+            }
+        } catch (e: any) {
+            console.error(e)
+            showToast('Lỗi khi đồng bộ dữ liệu Lot: ' + e.message, 'error')
+        } finally {
+            setSyncingWithLot(false)
+        }
+    }
+
     return {
         code, setCode,
         supplierId, handleSupplierChange,
@@ -321,6 +432,8 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         products, suppliers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         hasModule,
-        convertUnit
+        convertUnit,
+        syncingWithLot,
+        handleSyncWithLot
     }
 }

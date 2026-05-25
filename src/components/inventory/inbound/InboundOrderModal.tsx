@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Save, FileText, Hash } from 'lucide-react'
+import { Plus, Save, FileText, Hash, RefreshCw, Loader2 } from 'lucide-react'
 import { OrderFormLayout } from '../shared/OrderFormLayout'
 import { OrderGeneralInfo } from '../shared/OrderGeneralInfo'
 import { PartnerSelect } from '../shared/PartnerSelect'
@@ -32,7 +32,9 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         products, suppliers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         hasModule,
-        convertUnit
+        convertUnit,
+        syncingWithLot,
+        handleSyncWithLot
     } = useInboundOrder(props)
 
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
@@ -70,13 +72,30 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
             onClose={props.onClose}
             maxWidth={hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'}
             headerActions={
-                <button
-                    onClick={() => setDisplayInternalCode(!displayInternalCode)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-bold transition-all ${displayInternalCode ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-stone-100 text-stone-600 dark:bg-zinc-800 dark:text-gray-300'}`}
-                    title="Hiển thị mã sản phẩm nội bộ"
-                >
-                    <Hash size={16} /> Nhập Mã Nội Bộ
-                </button>
+                <div className="flex items-center gap-2">
+                    {props.editOrderId && (
+                        <button
+                            onClick={handleSyncWithLot}
+                            disabled={syncingWithLot}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-bold bg-amber-100 hover:bg-amber-200 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 transition-all disabled:opacity-50"
+                            title="Tự động đồng bộ số lượng thực tế từ Lot sản xuất cùng ngày"
+                        >
+                            {syncingWithLot ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <RefreshCw className="w-4 h-4" />
+                            )}
+                            Cân bằng theo Lot
+                        </button>
+                    )}
+                    <button
+                        onClick={() => setDisplayInternalCode(!displayInternalCode)}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded text-sm font-bold transition-all ${displayInternalCode ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' : 'bg-stone-100 text-stone-600 dark:bg-zinc-800 dark:text-gray-300'}`}
+                        title="Hiển thị mã sản phẩm nội bộ"
+                    >
+                        <Hash size={16} /> Nhập Mã Nội Bộ
+                    </button>
+                </div>
             }
             footer={footerButtons}
         >

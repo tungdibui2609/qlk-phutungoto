@@ -50,6 +50,52 @@ export default function InboundPage() {
         updateBufferCount()
     }, [systemType, currentSystem])
 
+    // Tự động mở modal chỉnh sửa nếu có editCode trên URL
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const params = new URLSearchParams(window.location.search)
+        const editCode = params.get('editCode')
+        if (!editCode || !systemType) return
+
+        const handleUrlEditCode = async () => {
+            // Thử tìm trong orders đang hiển thị
+            const foundLocal = orders.find(o => o.code === editCode)
+            if (foundLocal) {
+                setSelectedOrderId(foundLocal.id)
+                setIsCreateModalOpen(true)
+                // Clear query string
+                const newUrl = window.location.pathname
+                window.history.replaceState({}, '', newUrl)
+                return
+            }
+
+            // Nếu không tìm thấy, truy vấn Supabase
+            try {
+                const { data, error } = await supabase
+                    .from('inbound_orders')
+                    .select('id')
+                    .eq('code', editCode)
+                    .eq('system_code', systemType)
+                    .single()
+
+                if (error) throw error
+                if (data) {
+                    setSelectedOrderId(data.id)
+                    setIsCreateModalOpen(true)
+                }
+            } catch (e) {
+                console.error('Lỗi khi tìm phiếu nhập từ URL:', e)
+            } finally {
+                // Clear query string
+                const newUrl = window.location.pathname
+                window.history.replaceState({}, '', newUrl)
+            }
+        }
+
+        handleUrlEditCode()
+    }, [orders, systemType])
+
+
     const updateBufferCount = async () => {
         if (!systemType) return
         const { data } = await supabase
