@@ -594,9 +594,10 @@ export default function WarehouseMapPrintPage() {
             const bin = path[2]?.name || parsed?.bin || '-'
             const level = path[3]?.name || (path.length > 4 ? path[path.length - 1].name : (parsed?.level || '-'))
 
-            if (!lot) return [{ code: p.code, warehouse, row, bin, level, subPosition: parsed?.subPosition, notes: '' }]
+            if (!lot) return [{ code: p.code, warehouse, row, bin, level, subPosition: parsed?.subPosition, notes: '', inboundDate: null }]
             return lot.items.map((item: any) => ({
                 code: p.code, warehouse, row, bin, level, subPosition: parsed?.subPosition,
+                inboundDate: lot.inbound_date || null,
                 lotCode: lot.code, productName: displayInternalCode && item.internal_name ? item.internal_name : item.product_name,
                 sku: displayInternalCode && item.internal_code ? item.internal_code : item.sku,
                 unit: item.unit, quantity: item.quantity,

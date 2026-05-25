@@ -198,20 +198,26 @@ export async function POST(request: NextRequest) {
                 }
 
                 // Calculate converted Qty
-                let convertedQty: any = '-'
-                if (hasOutboundConversion && targetUnit && productSource.id) {
-                    if (productSource.product_units) {
-                        const itemUnit = item.unit || ''
-                        const baseUnit = productSource.unit || ''
+                let convertedQty: any = item.quantity || 0
+                if (productSource.id) {
+                    const itemUnitStr = normalizeStr(item.unit)
+                    const baseUnitStr = normalizeStr(productSource.unit)
+                    
+                    if (itemUnitStr && baseUnitStr && itemUnitStr === baseUnitStr) {
+                        convertedQty = item.quantity || 0
+                    } else if (productSource.product_units && productSource.product_units.length > 0) {
                         const uConfig = productSource.product_units.find((pu: any) => {
                             const unitName = pu.unit_id ? unitsMap[pu.unit_id] : ''
-                            return unitName && normalizeStr(unitName) === normalizeStr(itemUnit)
+                            return unitName && normalizeStr(unitName) === itemUnitStr
                         })
                         if (uConfig) {
                             convertedQty = (item.quantity || 0) * (uConfig.conversion_rate || 1)
-                        } else if (itemUnit && baseUnit && normalizeStr(itemUnit) !== normalizeStr(baseUnit)) {
-                            convertedQty = (item.quantity || 0) * 1
+                        } else {
+                            const firstConfig = productSource.product_units[0]
+                            convertedQty = (item.quantity || 0) * (firstConfig.conversion_rate || 1)
                         }
+                    } else if (item.unit && productSource.unit && itemUnitStr !== baseUnitStr) {
+                        convertedQty = (item.quantity || 0) * 1
                     }
                 }
 
@@ -489,15 +495,16 @@ export async function POST(request: NextRequest) {
             // ---- Generate buffer and add to zip ----
             const buffer = await workbook.xlsx.writeBuffer()
             const sanitizedCode = order.code.replace(/[\/\\:*?"<>|]/g, '-')
+            const folderName = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
             const fileName = `Phieu_Xuat_${sanitizedCode}_${dateFormatted}.xlsx`
-            let uniqueName = fileName
+            let uniquePath = `${folderName}/${fileName}`
             let counter = 1
-            while (generatedFiles.includes(uniqueName)) {
-                uniqueName = `Phieu_Xuat_${sanitizedCode}_${dateFormatted}_(${counter}).xlsx`
+            while (generatedFiles.includes(uniquePath)) {
+                uniquePath = `${folderName}/Phieu_Xuat_${sanitizedCode}_${dateFormatted}_(${counter}).xlsx`
                 counter++
             }
-            generatedFiles.push(uniqueName)
-            zip.file(uniqueName, buffer as ArrayBuffer)
+            generatedFiles.push(uniquePath)
+            zip.file(uniquePath, buffer as ArrayBuffer)
         }
 
         // Generate ZIP

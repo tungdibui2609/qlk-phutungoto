@@ -130,7 +130,6 @@ export default function InboundPage() {
             const { data, error } = await query
             if (error) throw error
             setOrders(data || [])
-            setSelectedOrderIds(new Set())
         } catch (error: any) {
             showToast('Lỗi tải danh sách phiếu: ' + error.message, 'error')
         } finally {
@@ -162,7 +161,6 @@ export default function InboundPage() {
             setOrders(data || [])
             setTotalCount(data?.length || 0)
             setCurrentPage(0)
-            setSelectedOrderIds(new Set())
         } catch (e: any) {
             showToast('Lỗi tìm kiếm: ' + e.message, 'error')
         } finally {
@@ -237,11 +235,17 @@ export default function InboundPage() {
 
     const toggleSelectAll = () => {
         const selectableOrders = orders.filter(o => o.status !== 'Cancelled')
-        if (selectedOrderIds.size === selectableOrders.length && selectableOrders.length > 0) {
-            setSelectedOrderIds(new Set())
-        } else {
-            setSelectedOrderIds(new Set(selectableOrders.map((o: any) => o.id)))
-        }
+        const allCurrentSelected = selectableOrders.length > 0 && selectableOrders.every(o => selectedOrderIds.has(o.id))
+        
+        setSelectedOrderIds(prev => {
+            const next = new Set(prev)
+            if (allCurrentSelected) {
+                selectableOrders.forEach(o => next.delete(o.id))
+            } else {
+                selectableOrders.forEach(o => next.add(o.id))
+            }
+            return next
+        })
     }
 
     const handleBatchDownload = async () => {
@@ -418,7 +422,7 @@ export default function InboundPage() {
                                         <tr className="bg-gray-50/50 border-b">
                                             <th className="w-10 px-2 py-3 text-xs font-semibold text-gray-500 uppercase">
                                                 <button onClick={toggleSelectAll} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
-                                                    {selectedOrderIds.size > 0 && selectedOrderIds.size === orders.filter(o => o.status !== 'Cancelled').length ? (
+                                                    {orders.filter(o => o.status !== 'Cancelled').length > 0 && orders.filter(o => o.status !== 'Cancelled').every(o => selectedOrderIds.has(o.id)) ? (
                                                         <CheckSquare className="w-4 h-4 text-indigo-600" />
                                                     ) : (
                                                         <Square className="w-4 h-4 text-gray-400" />
