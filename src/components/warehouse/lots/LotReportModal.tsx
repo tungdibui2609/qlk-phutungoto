@@ -813,46 +813,96 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
 
             // Add rows based on tab
             if (activeTab === 'inward') {
-                groupedInwardData.forEach((group: any) => {
-                    // Add Group Header Row
-                    const productionLabel = group.production_name || group.production_code || 'Không xác định'
-                    const groupHeaderRow = worksheet.addRow([`LỆNH SẢN XUẤT: ${productionLabel}`])
-                    worksheet.mergeCells(`A${groupHeaderRow.number}:G${groupHeaderRow.number}`)
-                    groupHeaderRow.eachCell((cell) => {
-                        cell.font = { bold: true, size: 11 }
-                        cell.fill = {
-                            type: 'pattern',
-                            pattern: 'solid',
-                            fgColor: { argb: 'FFF2CC' }
+                const dateGroups: Record<string, Record<string, { production_code: string, production_name?: string, lots: any[] }>> = {}
+                
+                reportDataInward.forEach(lot => {
+                    const dateStr = format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')
+                    const prodCode = lot.production_code || lot.productions?.code || 'NO_PROD'
+                    const prodName = lot.productions?.name || ''
+                    
+                    if (!dateGroups[dateStr]) dateGroups[dateStr] = {}
+                    if (!dateGroups[dateStr][prodCode]) {
+                        dateGroups[dateStr][prodCode] = {
+                            production_code: prodCode === 'NO_PROD' ? 'Không xác định' : prodCode,
+                            production_name: prodName,
+                            lots: []
                         }
+                    }
+                    dateGroups[dateStr][prodCode].lots.push(lot)
+                })
+
+                // Sort dates (ascending for Excel)
+                const sortedDates = Object.keys(dateGroups).sort((a, b) => {
+                    const [d1, m1, y1] = a.split('/')
+                    const [d2, m2, y2] = b.split('/')
+                    return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime()
+                })
+
+                sortedDates.forEach(dateStr => {
+                    // Add Date Header Row
+                    const dateHeaderRow = worksheet.addRow([`NGÀY: ${dateStr}`])
+                    worksheet.mergeCells(`A${dateHeaderRow.number}:G${dateHeaderRow.number}`)
+                    dateHeaderRow.eachCell((cell) => {
+                        cell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F81BD' } } // Blue background
                         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
                     })
 
-                    group.lots.forEach((lot: any, index: number) => {
-                        const dateStr = format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')
-                        const posStr = lot.positions?.map((p: any) => p.code).join(', ') || '-'
-                        
-                        if (lot.lot_items && lot.lot_items.length > 0) {
-                            lot.lot_items.forEach((item: any, itemIdx: number) => {
-                                const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
-                                const itemHist = lot.metadata?.system_history?.item_history?.[item.id];
-                                let productDisplay = item.products?.name || '-';
-                                if (itemHist?.type === 'merge' || itemHist?.type === 'split') {
-                                    const oDate = itemHist.snapshot?.inbound_date || itemHist.snapshot?.created_at || itemHist.merge_date;
-                                    const typeLabel = itemHist.type === 'merge' ? 'GỘP' : 'TÁCH';
-                                    const dateLabel = oDate ? ` (${format(new Date(oDate), 'dd/MM')})` : '';
-                                    const sourceLabel = itemHist.source_code ? ` từ ${itemHist.source_code}` : '';
-                                    productDisplay += ` [${typeLabel}${dateLabel}${sourceLabel}]`;
-                                }
+                    Object.values(dateGroups[dateStr]).forEach((group: any) => {
+                        // Add Group Header Row
+                        const productionLabel = group.production_name || group.production_code || 'Không xác định'
+                        const groupHeaderRow = worksheet.addRow([`  LỆNH SẢN XUẤT: ${productionLabel}`])
+                        worksheet.mergeCells(`A${groupHeaderRow.number}:G${groupHeaderRow.number}`)
+                        groupHeaderRow.eachCell((cell) => {
+                            cell.font = { bold: true, size: 11, color: { argb: '000000' } }
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                        })
 
+                        let itemIndex = 1
+                        group.lots.forEach((lot: any) => {
+                            const posStr = lot.positions?.map((p: any) => p.code).join(', ') || '-'
+                            
+                            if (lot.lot_items && lot.lot_items.length > 0) {
+                                lot.lot_items.forEach((item: any, itemIdx: number) => {
+                                    const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                                    const itemHist = lot.metadata?.system_history?.item_history?.[item.id];
+                                    let productDisplay = item.products?.name || '-';
+                                    if (itemHist?.type === 'merge' || itemHist?.type === 'split') {
+                                        const oDate = itemHist.snapshot?.inbound_date || itemHist.snapshot?.created_at || itemHist.merge_date;
+                                        const typeLabel = itemHist.type === 'merge' ? 'GỘP' : 'TÁCH';
+                                        const dateLabel = oDate ? ` (${format(new Date(oDate), 'dd/MM')})` : '';
+                                        const sourceLabel = itemHist.source_code ? ` từ ${itemHist.source_code}` : '';
+                                        productDisplay += ` [${typeLabel}${dateLabel}${sourceLabel}]`;
+                                    }
+
+                                    const row = worksheet.addRow({
+                                        stt: itemIdx === 0 ? itemIndex++ : '',
+                                        date: itemIdx === 0 ? dateStr : '',
+                                        prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
+                                        product: productDisplay,
+                                        qty: item.quantity,
+                                        unit: item.unit || item.products?.unit || '-',
+                                        position: itemIdx === 0 ? posStr : ''
+                                    })
+                                    row.eachCell((cell, colNumber) => {
+                                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                                        if (colNumber === 5) {
+                                            cell.alignment = { horizontal: 'right' }
+                                            cell.numFmt = '#,##0'
+                                        }
+                                    })
+                                })
+                            } else if (lot.products) {
+                                const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
                                 const row = worksheet.addRow({
-                                    stt: itemIdx === 0 ? index + 1 : '',
-                                    date: itemIdx === 0 ? dateStr : '',
-                                    prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
-                                    product: productDisplay,
-                                    qty: item.quantity,
-                                    unit: item.unit || item.products?.unit || '-',
-                                    position: itemIdx === 0 ? posStr : ''
+                                    stt: itemIndex++,
+                                    date: dateStr,
+                                    prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
+                                    product: lot.products.name || '-',
+                                    qty: (lot as any).quantity || 0,
+                                    unit: (lot as any).unit || lot.products.unit || '-',
+                                    position: posStr
                                 })
                                 row.eachCell((cell, colNumber) => {
                                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
@@ -861,48 +911,332 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                         cell.numFmt = '#,##0'
                                     }
                                 })
-                            })
-                        } else if (lot.products) {
-                            const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
-                            const row = worksheet.addRow({
-                                stt: index + 1,
+                            }
+                        })
+                    })
+                })
+            } else {
+                // Outward export
+                const dateGroups: Record<string, Record<string, { production_code: string, production_name?: string, rows: any[] }>> = {}
+
+                reportDataOutward.forEach(row => {
+                    const dateStr = format(new Date(row.date), 'dd/MM/yyyy')
+                    const prodCode = row.production_code || 'NO_PROD'
+                    const prodName = row.production_name || ''
+
+                    if (!dateGroups[dateStr]) dateGroups[dateStr] = {}
+                    if (!dateGroups[dateStr][prodCode]) {
+                        dateGroups[dateStr][prodCode] = {
+                            production_code: prodCode === 'NO_PROD' ? 'Không xác định' : prodCode,
+                            production_name: prodName,
+                            rows: []
+                        }
+                    }
+                    dateGroups[dateStr][prodCode].rows.push(row)
+                })
+
+                // Sort dates
+                const sortedDates = Object.keys(dateGroups).sort((a, b) => {
+                    const [d1, m1, y1] = a.split('/')
+                    const [d2, m2, y2] = b.split('/')
+                    return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime()
+                })
+
+                sortedDates.forEach(dateStr => {
+                    // Add Date Header Row
+                    const dateHeaderRow = worksheet.addRow([`NGÀY: ${dateStr}`])
+                    worksheet.mergeCells(`A${dateHeaderRow.number}:H${dateHeaderRow.number}`) // 8 columns for outward
+                    dateHeaderRow.eachCell((cell) => {
+                        cell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F81BD' } }
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    })
+
+                    Object.values(dateGroups[dateStr]).forEach((group: any) => {
+                        const productionLabel = group.production_name || group.production_code || 'Không xác định'
+                        const groupHeaderRow = worksheet.addRow([`  LỆNH SẢN XUẤT: ${productionLabel}`])
+                        worksheet.mergeCells(`A${groupHeaderRow.number}:H${groupHeaderRow.number}`)
+                        groupHeaderRow.eachCell((cell) => {
+                            cell.font = { bold: true, size: 11, color: { argb: '000000' } }
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                        })
+
+                        let itemIndex = 1
+                        group.rows.forEach((row: any) => {
+                            const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || '-'
+                            const excelRow = worksheet.addRow({
+                                stt: itemIndex++,
                                 date: dateStr,
-                                prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
-                                product: lot.products.name || '-',
-                                qty: (lot as any).quantity || 0,
-                                unit: (lot as any).unit || lot.products.unit || '-',
-                                position: posStr
+                                prod_code: `${sxLotCode}${row.lot_code ? ` (${row.lot_code})` : ''}`,
+                                product: row.product_name,
+                                qty: row.quantity,
+                                unit: row.unit,
+                                customer: `${row.production_code || ''} - ${row.production_name || ''}`.trim().replace(/^ - | - $/, '') || '-',
+                                description: row.description
                             })
-                            row.eachCell((cell, colNumber) => {
+                            excelRow.eachCell((cell, colNumber) => {
                                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
                                 if (colNumber === 5) {
                                     cell.alignment = { horizontal: 'right' }
                                     cell.numFmt = '#,##0'
                                 }
                             })
+                        })
+                    })
+                })
+            }
+            
+            // Add Statistics Sheet
+            const statsSheet = workbook.addWorksheet(activeTab === 'inward' ? 'Thống kê Nhập' : 'Thống kê Xuất')
+            if (activeTab === 'inward') {
+                statsSheet.columns = [
+                    { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'SẢN PHẨM', key: 'product', width: 40 },
+                    { header: 'TỔNG SẢN LƯỢNG', key: 'totalQty', width: 20 },
+                    { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
+                    { header: 'NHẬP MỚI', key: 'newIn', width: 15 },
+                    { header: 'GỘP VÀO', key: 'mergedIn', width: 15 },
+                    { header: 'GỘP ĐI', key: 'mergedOut', width: 15 }
+                ]
+                statsSheet.getRow(1).eachCell(cell => {
+                    cell.font = { bold: true }
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F2F2F2' } }
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    cell.alignment = { horizontal: 'center' }
+                })
+
+                const statsByDate: Record<string, Record<string, Record<string, any>>> = {}
+
+                reportDataInward.forEach(lot => {
+                    const dateStr = format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')
+                    if (!statsByDate[dateStr]) statsByDate[dateStr] = {}
+
+                    const items = lot.lot_items || []
+                    const mergedOut = lot.metadata?.system_history?.merged_out || []
+                    const processedPids = new Set<string>()
+
+                    const mergedOutByPid: Record<string, number> = {}
+                    const mergedOutUnitByPid: Record<string, string> = {}
+                    if (Array.isArray(mergedOut)) {
+                        mergedOut.forEach((mo: any) => {
+                            const moPid = mo.product_id || lot.product_id
+                            if (moPid) {
+                                mergedOutByPid[moPid] = (mergedOutByPid[moPid] || 0) + (Number(mo.quantity) || 0)
+                                if (!mergedOutUnitByPid[moPid] && (mo.product_unit || mo.unit)) {
+                                    mergedOutUnitByPid[moPid] = mo.product_unit || mo.unit
+                                }
+                            }
+                        })
+                    }
+
+                    const mergedOutAccountedPids = new Set<string>()
+                    const prodCode = lot.productions?.code || lot.production_code || 'NO_CODE'
+                    const prodName = lot.productions?.name || ''
+                    const prodLabel = prodName ? `${prodCode} | ${prodName}` : prodCode
+                    if (!statsByDate[dateStr][prodLabel]) statsByDate[dateStr][prodLabel] = {}
+                    
+                    const prodStats = statsByDate[dateStr][prodLabel]
+
+                    items.forEach((item: any) => {
+                        const baseUnit = item.unit || item.products?.unit || '-'
+                        const unit = mergedOutUnitByPid[item.product_id] || baseUnit
+                        const key = `${item.product_id}_${unit}`
+                        
+                        if (!prodStats[key]) {
+                            prodStats[key] = { productName: item.products?.name || 'Sản phẩm không tên', totalQty: 0, newInQty: 0, mergedInQty: 0, mergedOutQty: 0, unit: unit }
                         }
+
+                        const hist = lot.metadata?.system_history?.item_history?.[item.id]
+                        const isMergedIn = hist?.type === 'merge' || hist?.type === 'split'
+                        const currentQty = Number(item.quantity) || 0
+                        
+                        let itemMergedOutQty = 0
+                        if (!mergedOutAccountedPids.has(item.product_id) && mergedOutByPid[item.product_id]) {
+                            itemMergedOutQty = mergedOutByPid[item.product_id]
+                            mergedOutAccountedPids.add(item.product_id)
+                        }
+
+                        if (isMergedIn) {
+                            prodStats[key].mergedInQty += currentQty
+                        } else {
+                            prodStats[key].newInQty += currentQty
+                        }
+                        
+                        prodStats[key].mergedOutQty += itemMergedOutQty
+                        prodStats[key].totalQty += (currentQty + itemMergedOutQty)
+                        processedPids.add(item.product_id)
+                    })
+
+                    if (Array.isArray(mergedOut)) {
+                        const allMergedPids: string[] = []
+                        mergedOut.forEach((mo: any) => {
+                            const moPid = mo.product_id || lot.product_id
+                            if (moPid && !allMergedPids.includes(moPid)) allMergedPids.push(moPid)
+                        })
+                        
+                        allMergedPids.forEach((pid: string) => {
+                            if (!processedPids.has(pid)) {
+                                const productMergedInfo = mergedOut.filter((mo: any) => (mo.product_id || lot.product_id) === pid)
+                                const totalMergedQty = productMergedInfo.reduce((acc: number, cur: any) => acc + (Number(cur.quantity) || 0), 0)
+                                const productSample = lot.products?.id === pid ? lot.products : null
+                                const unit = productSample?.unit || productMergedInfo[0]?.product_unit || productMergedInfo[0]?.unit || '-'
+                                const key = `${pid}_${unit}`
+                                
+                                if (!prodStats[key]) {
+                                    prodStats[key] = { productName: productSample?.name || productMergedInfo[0]?.product_name || 'Sản phẩm đã gộp hết', totalQty: 0, newInQty: 0, mergedInQty: 0, mergedOutQty: 0, unit: unit }
+                                }
+                                
+                                prodStats[key].newInQty += totalMergedQty
+                                prodStats[key].mergedOutQty += totalMergedQty
+                                prodStats[key].totalQty += totalMergedQty
+                                processedPids.add(pid)
+                            }
+                        })
+                    }
+
+                    if (processedPids.size === 0 && lot.products) {
+                        const unit = (lot as any).unit || lot.products.unit || '-'
+                        const key = `${lot.product_id}_${unit}`
+                        if (!prodStats[key]) {
+                            prodStats[key] = { productName: lot.products.name || 'Sản phẩm không tên', totalQty: 0, newInQty: 0, mergedInQty: 0, mergedOutQty: 0, unit: unit }
+                        }
+                        const qty = Number((lot as any).quantity) || 0
+                        prodStats[key].newInQty += qty
+                        prodStats[key].totalQty += qty
+                    }
+                })
+
+                // Fill stats sheet inward
+                const sortedDates = Object.keys(statsByDate).sort((a, b) => {
+                    const [d1, m1, y1] = a.split('/')
+                    const [d2, m2, y2] = b.split('/')
+                    return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime()
+                })
+
+                sortedDates.forEach(dateStr => {
+                    const dateHeaderRow = statsSheet.addRow([`NGÀY: ${dateStr}`])
+                    statsSheet.mergeCells(`A${dateHeaderRow.number}:G${dateHeaderRow.number}`) // 7 columns
+                    dateHeaderRow.eachCell((cell) => {
+                        cell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F81BD' } }
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    })
+
+                    Object.keys(statsByDate[dateStr]).sort().forEach(prodLabel => {
+                        const prodHeaderRow = statsSheet.addRow([`  LỆNH SẢN XUẤT: ${prodLabel === 'NO_CODE' ? 'Không xác định' : prodLabel}`])
+                        statsSheet.mergeCells(`A${prodHeaderRow.number}:G${prodHeaderRow.number}`)
+                        prodHeaderRow.eachCell((cell) => {
+                            cell.font = { bold: true, size: 11, color: { argb: '000000' } }
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                        })
+
+                        let stt = 1
+                        const products = Object.values(statsByDate[dateStr][prodLabel]) as any[]
+                        products.sort((a, b) => b.totalQty - a.totalQty).forEach((p: any) => {
+                            const row = statsSheet.addRow({
+                                stt: stt++,
+                                product: p.productName,
+                                totalQty: p.totalQty,
+                                unit: p.unit,
+                                newIn: p.newInQty,
+                                mergedIn: p.mergedInQty,
+                                mergedOut: p.mergedOutQty
+                            })
+                            row.eachCell((cell, colNum) => {
+                                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                                if ([3, 5, 6, 7].includes(colNum)) {
+                                    cell.alignment = { horizontal: 'right' }
+                                    cell.numFmt = '#,##0'
+                                    if (colNum === 3) cell.font = { bold: true, color: { argb: 'FF6600' } }
+                                    if (colNum === 5 && p.newInQty > 0) cell.font = { color: { argb: '008000' } }
+                                    if (colNum === 6 && p.mergedInQty > 0) cell.font = { color: { argb: '0000FF' } }
+                                    if (colNum === 7 && p.mergedOutQty > 0) cell.font = { color: { argb: 'FF0000' } }
+                                }
+                            })
+                        })
                     })
                 })
             } else {
-                // Outward export
-                reportDataOutward.forEach((row, index) => {
-                    const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || '-'
-                    const excelRow = worksheet.addRow({
-                        stt: index + 1,
-                        date: format(new Date(row.date), 'dd/MM/yyyy'),
-                        prod_code: `${sxLotCode}${row.lot_code ? ` (${row.lot_code})` : ''}`,
-                        product: row.product_name,
-                        qty: row.quantity,
-                        unit: row.unit,
-                        customer: `${row.production_code || ''} - ${row.production_name || ''}`.trim().replace(/^ - | - $/, '') || '-',
-                        description: row.description
-                    })
-                    excelRow.eachCell((cell, colNumber) => {
+                // Outward Stats
+                statsSheet.columns = [
+                    { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'SẢN PHẨM', key: 'product', width: 40 },
+                    { header: 'TỔNG SẢN LƯỢNG', key: 'totalQty', width: 20 },
+                    { header: 'ĐƠN VỊ', key: 'unit', width: 10 }
+                ]
+                statsSheet.getRow(1).eachCell(cell => {
+                    cell.font = { bold: true }
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F2F2F2' } }
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    cell.alignment = { horizontal: 'center' }
+                })
+
+                const statsByDate: Record<string, Record<string, Record<string, any>>> = {}
+
+                reportDataOutward.forEach(row => {
+                    const dateStr = format(new Date(row.date), 'dd/MM/yyyy')
+                    if (!statsByDate[dateStr]) statsByDate[dateStr] = {}
+
+                    const prodCode = row.production_code || 'NO_CODE'
+                    const prodName = row.production_name || ''
+                    const prodLabel = prodName ? `${prodCode} | ${prodName}` : prodCode
+                    
+                    if (!statsByDate[dateStr][prodLabel]) statsByDate[dateStr][prodLabel] = {}
+                    const prodStats = statsByDate[dateStr][prodLabel]
+
+                    const unit = row.unit || '-'
+                    const key = `${row.product_id}_${unit}`
+                    if (!prodStats[key]) {
+                        prodStats[key] = { productName: row.product_name, totalQty: 0, unit: unit }
+                    }
+                    prodStats[key].totalQty += (Number(row.quantity) || 0)
+                })
+
+                // Fill stats sheet outward
+                const sortedDates = Object.keys(statsByDate).sort((a, b) => {
+                    const [d1, m1, y1] = a.split('/')
+                    const [d2, m2, y2] = b.split('/')
+                    return new Date(`${y1}-${m1}-${d1}`).getTime() - new Date(`${y2}-${m2}-${d2}`).getTime()
+                })
+
+                sortedDates.forEach(dateStr => {
+                    const dateHeaderRow = statsSheet.addRow([`NGÀY: ${dateStr}`])
+                    statsSheet.mergeCells(`A${dateHeaderRow.number}:D${dateHeaderRow.number}`) // 4 columns
+                    dateHeaderRow.eachCell((cell) => {
+                        cell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
+                        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F81BD' } }
                         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                        if (colNumber === 5) {
-                            cell.alignment = { horizontal: 'right' }
-                            cell.numFmt = '#,##0'
-                        }
+                    })
+
+                    Object.keys(statsByDate[dateStr]).sort().forEach(prodLabel => {
+                        const prodHeaderRow = statsSheet.addRow([`  LỆNH SẢN XUẤT: ${prodLabel === 'NO_CODE' ? 'Không xác định' : prodLabel}`])
+                        statsSheet.mergeCells(`A${prodHeaderRow.number}:D${prodHeaderRow.number}`)
+                        prodHeaderRow.eachCell((cell) => {
+                            cell.font = { bold: true, size: 11, color: { argb: '000000' } }
+                            cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                        })
+
+                        let stt = 1
+                        const products = Object.values(statsByDate[dateStr][prodLabel]) as any[]
+                        products.sort((a, b) => b.totalQty - a.totalQty).forEach((p: any) => {
+                            const row = statsSheet.addRow({
+                                stt: stt++,
+                                product: p.productName,
+                                totalQty: p.totalQty,
+                                unit: p.unit
+                            })
+                            row.eachCell((cell, colNum) => {
+                                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                                if (colNum === 3) {
+                                    cell.alignment = { horizontal: 'right' }
+                                    cell.numFmt = '#,##0'
+                                    cell.font = { bold: true, color: { argb: '008000' } }
+                                }
+                            })
+                        })
                     })
                 })
             }
