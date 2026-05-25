@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
@@ -33,6 +33,7 @@ export default function OutboundPage() {
     const [isAllExportModalOpen, setIsAllExportModalOpen] = useState(false)
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set())
     const [isBatchDownloading, setIsBatchDownloading] = useState(false)
+    const [activeTooltipOrderId, setActiveTooltipOrderId] = useState<string | null>(null)
 
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
@@ -114,7 +115,13 @@ export default function OutboundPage() {
                 .from('outbound_orders')
                 .select(`
                     *,
-                    items:outbound_order_items(note),
+                    items:outbound_order_items(
+                        id,
+                        product_name,
+                        quantity,
+                        unit,
+                        products(sku, internal_name)
+                    ),
                     order_types(name)
                 `)
                 .eq('system_code', systemType)
@@ -147,7 +154,13 @@ export default function OutboundPage() {
                 .from('outbound_orders')
                 .select(`
                     *,
-                    items:outbound_order_items(note),
+                    items:outbound_order_items(
+                        id,
+                        product_name,
+                        quantity,
+                        unit,
+                        products(sku, internal_name)
+                    ),
                     order_types(name)
                 `)
                 .eq('system_code', systemType)
@@ -301,6 +314,61 @@ export default function OutboundPage() {
         }
     }
 
+    const renderOrderItemsSummary = (order: any) => {
+        const items = order.items || []
+        if (items.length === 0) return <span className="text-gray-400 italic text-[11px]">Không có hàng hóa</span>
+        
+        const isOpen = activeTooltipOrderId === order.id
+        
+        return (
+            <div className="relative inline-block">
+                <button
+                    onClick={() => setActiveTooltipOrderId(isOpen ? null : order.id)}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-400 transition-all border border-indigo-100 dark:border-indigo-800 relative z-10"
+                >
+                    Hàng hóa ({items.length})
+                </button>
+                
+                {isOpen && (
+                    <>
+                        <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-zinc-800 p-4 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 z-50 animate-in fade-in slide-in-from-top-2 zoom-in-95 duration-200 pointer-events-auto">
+                            <h4 className="text-[10px] uppercase tracking-wider font-bold text-stone-400 mb-3 border-b border-stone-100 dark:border-zinc-700 pb-1.5 flex justify-between items-center">
+                                <span>Chi tiết hàng hóa ({items.length})</span>
+                                <span className="text-[9px] font-normal text-stone-400 lowercase italic">(bấm ra ngoài để đóng)</span>
+                            </h4>
+                            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1">
+                                {items.map((item: any, idx: number) => {
+                                    const name = item.products?.internal_name || item.product_name || 'N/A'
+                                    const qty = item.quantity
+                                    const unit = item.unit || ''
+                                    return (
+                                        <div key={item.id || idx} className="text-xs leading-normal flex items-center justify-between gap-4 py-2 border-b border-stone-100 dark:border-zinc-700 last:border-0">
+                                            <div className="flex items-start gap-1.5 flex-1 min-w-0">
+                                                <span className="text-indigo-500 mt-0.5">•</span>
+                                                <span className="font-semibold text-stone-800 dark:text-stone-200 text-left break-words">{name}</span>
+                                            </div>
+                                            <div className="flex items-center whitespace-nowrap">
+                                                <span className="px-2.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] border border-indigo-100/50 dark:border-indigo-900/30">
+                                                     {Number(qty).toLocaleString('vi-VN')} {unit}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                            <div className="absolute -top-1.5 left-6 w-3 h-3 bg-white dark:bg-zinc-800 transform rotate-45 border-t border-l border-stone-200 dark:border-zinc-700"></div>
+                        </div>
+                        
+                        <div
+                            className="fixed inset-0 z-0 bg-transparent cursor-default"
+                            onClick={() => setActiveTooltipOrderId(null)}
+                        />
+                    </>
+                )}
+            </div>
+        )
+    }
+
     return (
         <div className="p-6 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -425,84 +493,105 @@ export default function OutboundPage() {
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-100">
-                                        {orders.map((order) => (
-                                            <tr key={order.id} className={`hover:bg-gray-50/80 transition-colors ${selectedOrderIds.has(order.id) ? 'bg-indigo-50/50' : ''}`}>
-                                                <td className="px-4 py-4 whitespace-nowrap">
-                                                    <button onClick={() => toggleSelectOrder(order.id)} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
-                                                        {selectedOrderIds.has(order.id) ? (
-                                                            <CheckSquare className="w-4 h-4 text-indigo-600" />
-                                                        ) : (
-                                                            <Square className="w-4 h-4 text-gray-400" />
-                                                        )}
-                                                    </button>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
-                                                            {order.code}
-                                                        </span>
-                                                        <span className="text-[11px] text-gray-400 mt-0.5">{order.order_types?.name || 'Bán hàng'}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4">
-                                                    <div className="flex flex-col">
-                                                        <span className="text-sm font-medium text-gray-900 line-clamp-1">{order.customer_name || 'Khách lẻ'}</span>
-                                                        <span className="text-xs text-gray-500 line-clamp-1">{order.customer_phone || '---'}</span>
-                                                    </div>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="text-sm text-gray-600">
-                                                        {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm', { locale: vi })}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className="text-sm text-gray-600">{order.created_by_name || 'Hệ thống'}</span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${getStatusColor(order.status)} border`}>
-                                                        {getStatusText(order.status)}
-                                                    </span>
-                                                </td>
-                                                <td className="px-6 py-4 whitespace-nowrap text-right">
-                                                    <div className="flex justify-end items-center gap-2">
-                                                        <button 
-                                                            className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                                                            onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}
-                                                            title="Xem chi tiết"
-                                                        >
-                                                            <ExternalLink className="w-4 h-4" />
+                                        {orders.map((order, index) => {
+                                            const isEven = index % 2 === 0;
+                                            const isSelected = selectedOrderIds.has(order.id);
+                                            const bgClass = isSelected 
+                                                ? 'bg-indigo-50/30 dark:bg-indigo-950/20' 
+                                                : (isEven ? 'bg-white dark:bg-zinc-900' : 'bg-stone-50 dark:bg-zinc-800/30');
+                                            const hoverBgClass = isEven ? 'hover:bg-stone-100/50 dark:hover:bg-zinc-800/50' : 'hover:bg-stone-100 dark:hover:bg-zinc-800/60';
+                                            return (
+                                            <React.Fragment key={order.id}>
+                                                <tr className={`transition-colors ${bgClass} ${hoverBgClass}`}>
+                                                    <td className="px-4 py-4 whitespace-nowrap border-b-2 border-stone-300 dark:border-zinc-700" rowSpan={2}>
+                                                        <button onClick={() => toggleSelectOrder(order.id)} className="flex items-center justify-center w-full hover:text-indigo-600 transition-colors">
+                                                            {selectedOrderIds.has(order.id) ? (
+                                                                <CheckSquare className="w-4 h-4 text-indigo-600" />
+                                                            ) : (
+                                                                <Square className="w-4 h-4 text-gray-400" />
+                                                            )}
                                                         </button>
-                                                        {order.status !== 'Cancelled' && (
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap border-b-2 border-stone-300 dark:border-zinc-700" rowSpan={2}>
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
+                                                                {order.code}
+                                                            </span>
+                                                            <span className="text-[11px] text-gray-400 mt-0.5">{order.order_types?.name || 'Bán hàng'}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-medium text-gray-900 line-clamp-1">{order.customer_name || 'Khách lẻ'}</span>
+                                                            <span className="text-xs text-gray-500 line-clamp-1">{order.customer_phone || '---'}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className="text-sm text-gray-600">
+                                                            {format(new Date(order.created_at), 'dd/MM/yyyy HH:mm', { locale: vi })}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className="text-sm text-gray-600">{order.created_by_name || 'Hệ thống'}</span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap">
+                                                        <span className={`px-2 py-0.5 rounded text-[11px] font-medium ${getStatusColor(order.status)} border`}>
+                                                            {getStatusText(order.status)}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                        <div className="flex justify-end items-center gap-2">
                                                             <button 
-                                                                className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                                                onClick={() => { setSelectedOrderId(order.id); setIsCreateModalOpen(true); }}
-                                                                title="Sửa phiếu"
+                                                                className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                                                                onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}
+                                                                title="Xem chi tiết"
                                                             >
-                                                                <Edit2 className="w-4 h-4" />
+                                                                <ExternalLink className="w-4 h-4" />
                                                             </button>
-                                                        )}
-                                                        {(order.status === 'Pending' || order.status === 'Cancelled') && (
-                                                            <button 
-                                                                className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                                onClick={() => handleDeleteOrder(order.id, order.code)}
-                                                                title="Xóa phiếu"
-                                                            >
-                                                                <Trash2 className="w-4 h-4" />
-                                                            </button>
-                                                        )}
-                                                        {order.status === 'Completed' && (
-                                                            <button 
-                                                                className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                                                onClick={() => handleResetToPending(order.id, order.code)}
-                                                                title="Quay lại Chờ duyệt"
-                                                            >
-                                                                <RotateCcw className="w-4 h-4" />
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                                            {order.status !== 'Cancelled' && (
+                                                                <button 
+                                                                    className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                                    onClick={() => { setSelectedOrderId(order.id); setIsCreateModalOpen(true); }}
+                                                                    title="Sửa phiếu"
+                                                                >
+                                                                    <Edit2 className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                            {(order.status === 'Pending' || order.status === 'Cancelled') && (
+                                                                <button 
+                                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                                                    onClick={() => handleDeleteOrder(order.id, order.code)}
+                                                                    title="Xóa phiếu"
+                                                                >
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                            {order.status === 'Completed' && (
+                                                                <button 
+                                                                    className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
+                                                                    onClick={() => handleResetToPending(order.id, order.code)}
+                                                                    title="Quay lại Chờ duyệt"
+                                                                >
+                                                                    <RotateCcw className="w-4 h-4" />
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                                <tr className={`transition-colors ${bgClass} ${hoverBgClass}`}>
+                                                    <td colSpan={5} className="px-6 py-1.5 text-xs text-gray-600 border-b-2 border-stone-300 dark:border-zinc-700">
+                                                        <div className='flex items-center gap-3'>
+                                                            {renderOrderItemsSummary(order)}
+                                                            {order.description && (
+                                                                <span className='text-gray-500 dark:text-gray-400 italic truncate max-w-[600px] border-l border-gray-200 dark:border-zinc-700 pl-3' title={order.description}>
+                                                                    {order.description}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                             </React.Fragment>
+                                        )})}
                                     </tbody>
                                 </table>
                             </div>
