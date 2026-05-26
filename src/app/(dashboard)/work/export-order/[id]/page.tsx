@@ -44,6 +44,7 @@ interface ExportOrderItem {
     part_number?: string | null
     exported_quantity?: number | null
     metadata?: any
+    production_lot_code?: string | null
 }
 
 interface ExportTask {
@@ -210,6 +211,17 @@ function ExportOrderDetailContent() {
                             id, 
                             code, 
                             inbound_date, 
+                            production_lot_id,
+                            productions!lots_production_id_fkey(
+                                code,
+                                name,
+                                production_lots(id, lot_code, product_id)
+                            ),
+                            production_lots!production_lot_id(
+                                id,
+                                lot_code,
+                                product_id
+                            ),
                             lot_tags (tag, lot_item_id),
                             positions!positions_lot_id_fkey (
                                 id,
@@ -332,6 +344,23 @@ function ExportOrderDetailContent() {
                     } else {
                         displayStatus = statusVal
                     }
+
+                    const lotProdLotId = item.lots?.production_lot_id
+                    const prodData = Array.isArray(item.lots?.productions) ? item.lots?.productions[0] : item.lots?.productions
+                    let prodLotCode = null
+                    
+                    if (item.lots?.production_lots) {
+                        const pl = item.lots.production_lots
+                        prodLotCode = Array.isArray(pl)
+                            ? pl[0]?.lot_code
+                            : pl.lot_code
+                    } else if (prodData?.production_lots) {
+                        const pl = prodData.production_lots.find((pl: any) => {
+                            if (lotProdLotId) return pl.id === lotProdLotId
+                            return pl.product_id === item.product_id
+                        })
+                        if (pl) prodLotCode = pl.lot_code
+                    }
                     
                     return {
                         id: item.id,
@@ -356,7 +385,8 @@ function ExportOrderDetailContent() {
                         zone_path: zonePath,
                         full_position_path: fullPosPath,
                         lot_tags: item.lots?.lot_tags,
-                        part_number: item.products?.part_number
+                        part_number: item.products?.part_number,
+                        production_lot_code: prodLotCode
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -1100,28 +1130,35 @@ function ExportOrderDetailContent() {
                                     </td>
                                     <td className="px-6 py-4 text-center text-stone-400 font-mono text-xs">{idx + 1}</td>
                                     <td className="px-6 py-4">
-                                        <span className="font-mono text-blue-600 font-medium text-sm">{item.lot_code}</span>
-                                        {item.lot_inbound_date && (
-                                            <div className="text-[10px] text-stone-400 mt-0.5">
-                                                Nhập: {format(new Date(item.lot_inbound_date), 'dd/MM/yy')}
-                                            </div>
-                                        )}
+                                        <div className="flex flex-col gap-0.5">
+                                            <span className="font-mono text-blue-600 font-semibold text-xs whitespace-nowrap leading-tight">{item.lot_code}</span>
+                                            {item.production_lot_code && (
+                                                <span className="text-[10px] font-bold text-stone-500 dark:text-zinc-400 font-mono whitespace-nowrap leading-none">
+                                                    Lot SX: <span className="text-blue-600 dark:text-blue-400">{item.production_lot_code}</span>
+                                                </span>
+                                            )}
+                                            {item.lot_inbound_date && (
+                                                <div className="text-[10px] text-stone-400 whitespace-nowrap leading-none">
+                                                    Nhập: {format(new Date(item.lot_inbound_date), 'dd/MM/yy')}
+                                                </div>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="flex flex-col gap-1.5">
+                                        <div className="flex flex-col gap-1">
                                             {item.full_position_path && (
                                                 <span className="text-[10px] text-stone-500 font-bold truncate max-w-[200px]" title={item.full_position_path}>
                                                     {item.zone_path?.join(' - ')}
                                                 </span>
                                             )}
                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                <span className="bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 px-2 py-1 rounded text-xs font-bold text-stone-700 dark:text-zinc-300 font-mono">
+                                                <span className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200/60 dark:border-amber-900/50 px-2 py-1 rounded-lg text-xs font-black text-amber-800 dark:text-amber-300 font-mono shadow-sm">
                                                     {item.full_position_path ? item.position_name.split('-').pop() : item.position_name}
                                                 </span>
                                                 {item.position_name !== item.current_position_name && (
                                                     <>
-                                                        <span className="text-stone-400">➔</span>
-                                                        <span className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 px-2 py-1 rounded text-xs font-bold text-blue-700 dark:text-blue-300 font-mono">
+                                                        <span className="text-amber-400 font-bold">➔</span>
+                                                        <span className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200/60 dark:border-blue-900/50 px-2 py-1 rounded-lg text-xs font-black text-blue-800 dark:text-blue-300 font-mono shadow-sm">
                                                             {item.full_position_path ? item.current_position_name?.split('-').pop() : item.current_position_name}
                                                         </span>
                                                     </>
@@ -1130,14 +1167,15 @@ function ExportOrderDetailContent() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4">
-                                        <div className="flex flex-col">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-bold text-stone-800 dark:text-stone-200 text-sm">{item.sku}</span>
-                                                <span className="text-stone-400">-</span>
-                                                <span className="text-stone-600 dark:text-stone-400 text-sm">{item.product_name}</span>
-                                            </div>
-                                            {item.lot_tags && item.lot_tags.length > 0 && (
-                                                <div className="mt-1 flex items-start">
+                                        <div className="flex flex-col gap-1.5 max-w-[340px]">
+                                            <span className="font-bold text-stone-900 dark:text-stone-100 text-sm leading-tight">
+                                                {item.product_name}
+                                            </span>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="font-mono text-[11px] font-bold text-stone-600 dark:text-zinc-400 bg-stone-100 dark:bg-zinc-800/80 border border-stone-200/60 dark:border-zinc-700 px-1.5 py-0.5 rounded">
+                                                    {item.sku}
+                                                </span>
+                                                {item.lot_tags && item.lot_tags.length > 0 && (
                                                     <TagDisplay
                                                         tags={item.lot_tags
                                                             .filter(t => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
@@ -1145,8 +1183,8 @@ function ExportOrderDetailContent() {
                                                         variant="compact"
                                                         placeholderMap={{ '@': item.sku || 'SẢN PHẨM' }}
                                                     />
-                                                </div>
-                                            )}
+                                                )}
+                                            </div>
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
