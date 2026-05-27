@@ -44,9 +44,10 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
     const valLg = 'text-[12px] font-black text-black'
 
     return (
-        <div className="bg-white border-[2px] border-zinc-800 overflow-hidden flex flex-col shadow-lg print:shadow-none print:border-black px-[2px]" style={{ width: '90mm', height: '60mm', boxSizing: 'border-box', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
-            {/* ── Header: Tên sản phẩm (Cân đối lại) ── */}
-            <div className="bg-white px-2 py-1 flex-shrink-0 border-b-[1.5px] border-zinc-800 print:border-black min-h-[12mm] flex items-center justify-center overflow-hidden">
+        <div className="bg-white overflow-hidden flex flex-col shadow-lg print:shadow-none px-[2px]" style={{ width: '90mm', height: '60mm', boxSizing: 'border-box', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
+            <div className="flex-1 flex flex-col border-[2px] border-zinc-800 print:border-black overflow-hidden">
+                {/* ── Header: Tên sản phẩm (Cân đối lại) ── */}
+                <div className="bg-white px-2 py-1 flex-shrink-0 border-b-[1.5px] border-zinc-800 print:border-black min-h-[12mm] flex items-center justify-center overflow-hidden">
                 <h1
                     className="font-black text-black leading-[1.1] uppercase text-center tracking-tight"
                     style={{
@@ -118,6 +119,7 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
                 </div>
             </div>
         </div>
+    </div>
     )
 }
 
