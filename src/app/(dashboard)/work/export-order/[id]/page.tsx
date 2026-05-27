@@ -925,10 +925,14 @@ function ExportOrderDetailContent() {
             }))
 
             if (assignUpdates.length > 0) {
-                const { error: assignError } = await (supabase.from('positions') as any)
-                    .upsert(assignUpdates, { onConflict: 'id' })
-                
-                if (assignError) throw assignError
+                const updatePromises = assignUpdates.map(upd => 
+                    (supabase.from('positions') as any)
+                        .update({ lot_id: upd.lot_id })
+                        .eq('id', upd.id)
+                )
+                const results = await Promise.all(updatePromises)
+                const firstError = results.find(r => r.error)?.error
+                if (firstError) throw firstError
 
                 // Log assign actions
                 for (const update of assignUpdates) {
