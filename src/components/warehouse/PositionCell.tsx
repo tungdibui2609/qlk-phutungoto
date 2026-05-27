@@ -177,6 +177,11 @@ const PositionCell = React.memo<{
                                     )}
                                     <div className="text-[9px] font-mono text-blue-600 dark:text-blue-400 font-bold break-words">
                                         {codeObj || '-'} : {item.quantity} {item.unit || '-'}
+                                        {isPrintPage && lotDetail.code && (
+                                            <span className="text-[8px] text-gray-500 font-normal ml-1">
+                                                (1 PL)
+                                            </span>
+                                        )}
                                     </div>
                                     {item.tags && item.tags.length > 0 && (
                                         <TagDisplay

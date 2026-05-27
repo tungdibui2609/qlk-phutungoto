@@ -159,6 +159,11 @@ const MergedBigCell = React.memo<{
                                                         </span>
                                                         <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right">
                                                             : {item.quantity} {item.unit || '-'}
+                                                            {item.lotCodes && item.lotCodes.length > 0 && (
+                                                                <span className="text-[9px] text-gray-500 font-normal ml-1">
+                                                                    ({item.lotCodes.length} PL)
+                                                                </span>
+                                                            )}
                                                         </span>
                                                     </React.Fragment>
                                                 )
@@ -183,6 +188,11 @@ const MergedBigCell = React.memo<{
                                         </span>
                                         <span className="text-[10px] font-mono text-blue-600 dark:text-blue-400 font-bold whitespace-nowrap text-right" style={{ verticalAlign: 'middle' }}>
                                             : {item.quantity} {item.unit || '-'}
+                                            {item.lotCodes && item.lotCodes.length > 0 && (
+                                                <span className="text-[9px] text-gray-500 font-normal ml-1">
+                                                    ({item.lotCodes.length} PL)
+                                                </span>
+                                            )}
                                         </span>
                                     </React.Fragment>
                                 )

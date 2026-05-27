@@ -599,7 +599,7 @@ export default function WarehouseMapPrintPage() {
                 code: p.code, warehouse, row, bin, level, subPosition: parsed?.subPosition,
                 inboundDate: lot.inbound_date || null,
                 lotCode: lot.code, productName: displayInternalCode && item.internal_name ? item.internal_name : item.product_name,
-                sku: displayInternalCode && item.internal_code ? item.internal_code : item.sku,
+                sku: item.sku || '',
                 unit: item.unit, quantity: item.quantity,
                 kgQuantity: getBaseToKgRate(item.product_id, item.base_unit) !== null ? toBaseAmount(item.product_id, item.unit, item.quantity, item.base_unit) * getBaseToKgRate(item.product_id, item.base_unit)! : null,
                 tags: [item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null].filter(Boolean).join(' | ') || '-',
@@ -632,7 +632,7 @@ export default function WarehouseMapPrintPage() {
                 const collect = (zoneId: string) => {
                     filteredPositions.filter(p => p.zone_id === zoneId).forEach(p => {
                         const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                        if (lot?.items) lot.items.forEach((it: any) => items.push({ productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name, sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku, unit: it.unit, quantity: it.quantity, lotCode: lot.code, batchCode: lot.batch_code, lotTags: it.tags }))
+                        if (lot?.items) lot.items.forEach((it: any) => items.push({ productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name, sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku, unit: it.unit, quantity: it.quantity, lotCode: lot.code, lotCodes: lot.code ? [lot.code] : [], batchCode: lot.batch_code, lotTags: it.tags }))
                     })
                     filteredZones.filter(z => z.parent_id === zoneId).forEach(child => collect(child.id))
                 }
@@ -656,7 +656,25 @@ export default function WarehouseMapPrintPage() {
                     const collect = (zoneId: string) => {
                         filteredPositions.filter(p => p.zone_id === zoneId).forEach(p => {
                             const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                            if (lot?.items) lot.items.forEach((it: any) => { const key = `${it.sku || it.product_id}_${it.unit}`; const existing = aggregated.get(key); if (existing) existing.quantity += (Number(it.quantity) || 0); else aggregated.set(key, { productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name, sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku, unit: it.unit, quantity: Number(it.quantity) || 0 }) })
+                            if (lot?.items) lot.items.forEach((it: any) => { 
+                                const key = `${it.sku || it.product_id}_${it.unit}`; 
+                                const existing = aggregated.get(key); 
+                                if (existing) {
+                                    existing.quantity += (Number(it.quantity) || 0);
+                                    if (lot.code && !existing.lotCodes.includes(lot.code)) {
+                                        existing.lotCodes.push(lot.code);
+                                    }
+                                } else {
+                                    aggregated.set(key, { 
+                                        productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name, 
+                                        sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku, 
+                                        unit: it.unit, 
+                                        quantity: Number(it.quantity) || 0,
+                                        lotCode: lot.code,
+                                        lotCodes: lot.code ? [lot.code] : []
+                                    });
+                                }
+                            })
                         })
                         filteredZones.filter(z => z.parent_id === zoneId).forEach(child => collect(child.id))
                     }
@@ -667,7 +685,28 @@ export default function WarehouseMapPrintPage() {
                         const levelZone = filteredZones.find(z => z.parent_id === bin.id && z.name === lvlName)
                         const aggregated = new Map<string, any>()
                         const targetZoneId = levelZone ? levelZone.id : (lvlName === 'DỮ LIỆU' ? bin.id : null)
-                        if (targetZoneId) filteredPositions.filter(p => p.zone_id === targetZoneId).forEach(p => { const lot = p.lot_id ? lotInfo[p.lot_id] : null; if (lot?.items) lot.items.forEach((it: any) => { const key = `${it.sku || it.product_id}_${it.unit}`; const existing = aggregated.get(key); if (existing) existing.quantity += (Number(it.quantity) || 0); else aggregated.set(key, { productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name, sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku, unit: it.unit, quantity: Number(it.quantity) || 0 }) }) })
+                        if (targetZoneId) filteredPositions.filter(p => p.zone_id === targetZoneId).forEach(p => { 
+                            const lot = p.lot_id ? lotInfo[p.lot_id] : null; 
+                            if (lot?.items) lot.items.forEach((it: any) => { 
+                                const key = `${it.sku || it.product_id}_${it.unit}`; 
+                                const existing = aggregated.get(key); 
+                                if (existing) {
+                                    existing.quantity += (Number(it.quantity) || 0);
+                                    if (lot.code && !existing.lotCodes.includes(lot.code)) {
+                                        existing.lotCodes.push(lot.code);
+                                    }
+                                } else {
+                                    aggregated.set(key, { 
+                                        productName: displayInternalCode && it.internal_name ? it.internal_name : it.product_name, 
+                                        sku: displayInternalCode && it.internal_code ? it.internal_code : it.sku, 
+                                        unit: it.unit, 
+                                        quantity: Number(it.quantity) || 0,
+                                        lotCode: lot.code,
+                                        lotCodes: lot.code ? [lot.code] : []
+                                    });
+                                }
+                            }) 
+                        })
                         cells.push({ binIndex: binIdx, levelIndex: lvlIdx, items: Array.from(aggregated.values()) })
                     })
                 }

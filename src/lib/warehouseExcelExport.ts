@@ -372,6 +372,7 @@ interface GridCellData {
         quantity: number;
         kgQuantity?: number | null;
         lotCode?: string;
+        lotCodes?: string[];
     }>;
     isMerged?: boolean;
     rowSpan?: number;
@@ -539,8 +540,17 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                             cellData.items.forEach((it: any, itIdx: number) => {
                                 const roundedQty = Math.round((Number(it.quantity) || 0) * 1000) / 1000;
                                 const sttPrefix = it.batchCode ? `[${it.batchCode}] ` : '';
+                                
+                                let plSuffix = '';
+                                if (it.lotCodes && it.lotCodes.length > 0) {
+                                    const uniquePLs = Array.from(new Set(it.lotCodes)) as string[];
+                                    plSuffix = ` (${uniquePLs.length} PL)`;
+                                } else if (it.lotCode) {
+                                    plSuffix = ` (1 PL)`;
+                                }
+
                                 richText.push({ text: `• ${sttPrefix}${it.productName}`, font: { bold: true, size: 9 } });
-                                richText.push({ text: ` : ${roundedQty} ${it.unit}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } }); // Blue for qty
+                                richText.push({ text: ` : ${roundedQty} ${it.unit}${plSuffix}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } }); // Blue for qty
                                 
                                 if (itIdx < cellData.items.length - 1) {
                                     richText.push({ text: '\n', font: { size: 2 } });
@@ -588,18 +598,27 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
 
                 if (allSanhItems.length > 0) {
                     const richText: any[] = [];
-                    const summary: Record<string, { name: string, qty: number, unit: string }> = {};
+                    const summary: Record<string, { name: string, qty: number, unit: string, lotCodes: Set<string> }> = {};
                     allSanhItems.forEach(it => {
                         const normUnit = normalizeUnit(it.unit);
                         const key = `${it.sku || it.productName}_${normUnit}`;
-                        if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: normUnit };
+                        if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: normUnit, lotCodes: new Set() };
                         summary[key].qty += (Number(it.quantity) || 0);
+                        if (it.lotCode) summary[key].lotCodes.add(it.lotCode);
+                        if (it.lotCodes) it.lotCodes.forEach((code: string) => summary[key].lotCodes.add(code));
                     });
 
                     Object.values(summary).forEach((v: any, idx) => {
                         const roundedQty = Math.round(v.qty * 1000) / 1000;
+                        
+                        let plSuffix = '';
+                        if (v.lotCodes && v.lotCodes.size > 0) {
+                            const uniquePLs = Array.from(v.lotCodes) as string[];
+                            plSuffix = ` (${uniquePLs.length} PL)`;
+                        }
+
                         richText.push({ text: `• ${v.name} : `, font: { size: 10, bold: true } });
-                        richText.push({ text: `${roundedQty} ${v.unit}`, font: { size: 10, bold: true, color: { argb: '0000FF' } } });
+                        richText.push({ text: `${roundedQty} ${v.unit}${plSuffix}`, font: { size: 10, bold: true, color: { argb: '0000FF' } } });
                         if (idx < Object.values(summary).length - 1) richText.push({ text: '\n' });
                     });
 

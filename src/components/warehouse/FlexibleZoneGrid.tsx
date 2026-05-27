@@ -290,14 +290,18 @@ export default function FlexibleZoneGrid({
                         // Collect items for this level
                         const levelItemMap = new Map<string, any>()
                         child.positions.forEach((p: PositionWithZone) => {
-                            if (p.lot_id && lotInfo[p.lot_id]?.items) {
-                                lotInfo[p.lot_id].items.forEach((item: any) => {
+                            const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                            if (lot?.items) {
+                                lot.items.forEach((item: any) => {
                                     const key = `${item.sku || ''}_${item.unit || ''}`
                                     const existing = levelItemMap.get(key)
                                     if (existing) {
                                         existing.quantity += (item.quantity || 0)
+                                        if (lot.code && !existing.lotCodes.includes(lot.code)) {
+                                            existing.lotCodes.push(lot.code)
+                                        }
                                     } else {
-                                        levelItemMap.set(key, { ...item, quantity: item.quantity || 0 })
+                                        levelItemMap.set(key, { ...item, quantity: item.quantity || 0, lotCodes: lot.code ? [lot.code] : [] })
                                     }
                                 })
                             }
@@ -326,7 +330,7 @@ export default function FlexibleZoneGrid({
             const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
 
             // Aggregate all lot items from all real positions
-            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string }>()
+            const itemMap = new Map<string, { product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string, lotCodes: string[] }>()
             targetPositions.forEach((p: PositionWithZone) => {
                 const lot = lotInfo[p.lot_id!]
                 if (p.lot_id && lot?.items) {
@@ -338,8 +342,11 @@ export default function FlexibleZoneGrid({
                         const existing = itemMap.get(key)
                         if (existing) {
                             existing.quantity += (item.quantity || 0)
+                            if (lot.code && !existing.lotCodes.includes(lot.code)) {
+                                existing.lotCodes.push(lot.code)
+                            }
                         } else {
-                            itemMap.set(key, { ...item, quantity: item.quantity || 0, production_name: prodName, production_code: prodCode, production_lot_code: prodLotCode })
+                            itemMap.set(key, { ...item, quantity: item.quantity || 0, production_name: prodName, production_code: prodCode, production_lot_code: prodLotCode, lotCodes: lot.code ? [lot.code] : [] })
                         }
                     })
                 }
