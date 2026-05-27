@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react'
-import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar, Undo2, LockOpen, PackageCheck, ShieldAlert } from 'lucide-react'
+import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar, Undo2, LockOpen, PackageCheck, ShieldAlert, Edit2, Check, RefreshCw } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -45,6 +45,8 @@ interface ExportOrderItem {
     exported_quantity?: number | null
     metadata?: any
     production_lot_code?: string | null
+    lot_item_id?: string
+    stock_quantity?: number
 }
 
 interface ExportTask {
@@ -76,6 +78,9 @@ function ExportOrderDetailContent() {
     const [isStatsOpen, setIsStatsOpen] = useState(false)
     const [isEditDatesOpen, setIsEditDatesOpen] = useState(false)
     const [isFinalizing, setIsFinalizing] = useState(false)
+    const [editingItemQtyId, setEditingItemQtyId] = useState<string | null>(null)
+    const [editingStockId, setEditingStockId] = useState<string | null>(null)
+    const [tempQtyInput, setTempQtyInput] = useState<string>('')
 
     const taskId = params.id as string
 
@@ -212,6 +217,11 @@ function ExportOrderDetailContent() {
                             code, 
                             inbound_date, 
                             production_lot_id,
+                            lot_items (
+                                id,
+                                quantity,
+                                product_id
+                            ),
                             productions!lots_production_id_fkey(
                                 code,
                                 name,
@@ -361,6 +371,10 @@ function ExportOrderDetailContent() {
                         })
                         if (pl) prodLotCode = pl.lot_code
                     }
+
+                    const matchingLotItem = Array.isArray(item.lots?.lot_items)
+                        ? item.lots.lot_items.find((li: any) => li.product_id === item.product_id)
+                        : null
                     
                     return {
                         id: item.id,
@@ -386,7 +400,9 @@ function ExportOrderDetailContent() {
                         full_position_path: fullPosPath,
                         lot_tags: item.lots?.lot_tags,
                         part_number: item.products?.part_number,
-                        production_lot_code: prodLotCode
+                        production_lot_code: prodLotCode,
+                        lot_item_id: matchingLotItem?.id,
+                        stock_quantity: matchingLotItem ? Number(matchingLotItem.quantity) : 0
                     }
                 }).sort((a: any, b: any) => {
                     const posA = a.position_name || ''
@@ -464,6 +480,79 @@ function ExportOrderDetailContent() {
             fetchTaskDetails()
         } catch (error: any) {
             showToast('Lỗi: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    async function handleUpdateItemQuantity(itemId: string, newQty: number, silent = false) {
+        if (newQty < 0) {
+            showToast('Số lượng không thể nhỏ hơn 0', 'error')
+            return
+        }
+        if (!silent) setLoading(true)
+        try {
+            const { error } = await (supabase
+                .from('export_task_items') as any)
+                .update({ quantity: newQty })
+                .eq('id', itemId)
+
+            if (error) throw error
+            showToast('Đã cập nhật số lượng yêu cầu của lệnh', 'success')
+            fetchTaskDetails(true)
+        } catch (error: any) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } finally {
+            if (!silent) setLoading(false)
+        }
+    }
+
+    async function handleUpdateStockQuantity(lotItemId: string, lotId: string, newQty: number, productName: string) {
+        if (newQty < 0) {
+            showToast('Số lượng tồn kho không thể nhỏ hơn 0', 'error')
+            return
+        }
+        setLoading(true)
+        try {
+            const { data: oldLot } = await supabase.from('lots').select('*').eq('id', lotId).single()
+            const { data: oldLotItem } = await supabase.from('lot_items').select('*').eq('id', lotItemId).single()
+
+            const { error: itemErr } = await supabase
+                .from('lot_items')
+                .update({ quantity: newQty })
+                .eq('id', lotItemId)
+            if (itemErr) throw itemErr
+
+            const { data: remainingItems } = await supabase
+                .from('lot_items')
+                .select('quantity')
+                .eq('lot_id', lotId)
+            
+            const totalLotQty = (remainingItems || []).reduce((sum: number, li: any) => sum + Number(li.quantity || 0), 0)
+
+            const { error: lotErr } = await supabase
+                .from('lots')
+                .update({ 
+                    quantity: totalLotQty,
+                    status: totalLotQty <= 0.000001 ? 'exported' : (oldLot?.status || 'active')
+                })
+                .eq('id', lotId)
+            if (lotErr) throw lotErr
+
+            await logActivity({
+                supabase,
+                tableName: 'lot_items',
+                recordId: lotItemId,
+                action: 'UPDATE',
+                oldData: oldLotItem,
+                newData: { quantity: newQty },
+                systemCode: currentSystem?.code || ''
+            })
+
+            showToast(`Đã cập nhật tồn kho thực tế cho ${productName}`, 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            showToast('Lỗi cập nhật tồn kho: ' + error.message, 'error')
         } finally {
             setLoading(false)
         }
@@ -1188,7 +1277,143 @@ function ExportOrderDetailContent() {
                                         </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
-                                        <span className="font-bold text-lg text-stone-900 dark:text-stone-100">{Number(item.quantity?.toFixed(6))}</span> <span className="text-xs text-stone-500 dark:text-stone-400">{item.unit}</span>
+                                        <div className="flex flex-col gap-1.5 justify-end items-end">
+                                            {/* Hàng 1: SL Lệnh yêu cầu */}
+                                            <div className="flex items-center gap-1.5 justify-end">
+                                                {editingItemQtyId === item.id ? (
+                                                    <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 border border-blue-500 rounded-lg p-0.5 shadow-sm">
+                                                        <input
+                                                            type="number"
+                                                            step="any"
+                                                            className="w-16 text-right font-bold text-sm bg-transparent border-none outline-none focus:ring-0 p-0 text-stone-900 dark:text-stone-100"
+                                                            value={tempQtyInput}
+                                                            onChange={(e) => setTempQtyInput(e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') {
+                                                                    handleUpdateItemQuantity(item.id!, Number(tempQtyInput))
+                                                                    setEditingItemQtyId(null)
+                                                                } else if (e.key === 'Escape') {
+                                                                    setEditingItemQtyId(null)
+                                                                }
+                                                            }}
+                                                            autoFocus
+                                                        />
+                                                        <button
+                                                            onClick={() => {
+                                                                handleUpdateItemQuantity(item.id!, Number(tempQtyInput))
+                                                                setEditingItemQtyId(null)
+                                                            }}
+                                                            className="p-0.5 hover:bg-stone-100 dark:hover:bg-zinc-700 text-emerald-600 rounded"
+                                                        >
+                                                            <Check size={14} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setEditingItemQtyId(null)}
+                                                            className="p-0.5 hover:bg-stone-100 dark:hover:bg-zinc-700 text-red-500 rounded"
+                                                        >
+                                                            <X size={14} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-1.5 group/qty">
+                                                        {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEditingItemQtyId(item.id!)
+                                                                    setTempQtyInput(String(item.quantity))
+                                                                    setEditingStockId(null)
+                                                                }}
+                                                                className="opacity-0 group-hover/qty:opacity-100 p-1 text-stone-400 hover:text-blue-600 rounded transition-opacity"
+                                                                title="Sửa SL Lệnh"
+                                                            >
+                                                                <Edit2 size={12} />
+                                                            </button>
+                                                        )}
+                                                        <span className="font-bold text-base text-stone-900 dark:text-stone-100">
+                                                            {Number(item.quantity?.toFixed(6))}
+                                                        </span>
+                                                        <span className="text-xs text-stone-500 dark:text-stone-400">
+                                                            {item.unit}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Hàng 2: SL Tồn kho thực tế */}
+                                            {item.lot_item_id ? (
+                                                <div className="flex items-center gap-1 text-[11px] font-medium leading-none">
+                                                    {editingStockId === item.id ? (
+                                                        <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 border border-green-500 rounded-lg p-0.5 shadow-sm">
+                                                            <input
+                                                                type="number"
+                                                                step="any"
+                                                                className="w-16 text-right font-bold text-xs bg-transparent border-none outline-none focus:ring-0 p-0 text-stone-900 dark:text-stone-100"
+                                                                value={tempQtyInput}
+                                                                onChange={(e) => setTempQtyInput(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        handleUpdateStockQuantity(item.lot_item_id!, item.lot_id!, Number(tempQtyInput), item.product_name)
+                                                                        setEditingStockId(null)
+                                                                    } else if (e.key === 'Escape') {
+                                                                        setEditingStockId(null)
+                                                                    }
+                                                                }}
+                                                                autoFocus
+                                                            />
+                                                            <button
+                                                                onClick={() => {
+                                                                    handleUpdateStockQuantity(item.lot_item_id!, item.lot_id!, Number(tempQtyInput), item.product_name)
+                                                                    setEditingStockId(null)
+                                                                }}
+                                                                className="p-0.5 hover:bg-stone-100 dark:hover:bg-zinc-700 text-emerald-600 rounded"
+                                                            >
+                                                                <Check size={12} />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => setEditingStockId(null)}
+                                                                className="p-0.5 hover:bg-stone-100 dark:hover:bg-zinc-700 text-red-500 rounded"
+                                                            >
+                                                                <X size={12} />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex items-center gap-1 flex-wrap justify-end text-stone-500 dark:text-stone-400 group/stock">
+                                                            <span className={`font-semibold ${item.stock_quantity !== undefined && item.stock_quantity < item.quantity ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                                                Tồn: {item.stock_quantity}
+                                                            </span>
+                                                            <span className="text-[10px] text-stone-400">{item.unit}</span>
+
+                                                            {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                                                                <div className="flex items-center gap-0.5 ml-1 opacity-0 group-hover/stock:opacity-100 transition-opacity">
+                                                                    {item.stock_quantity !== undefined && item.stock_quantity !== item.quantity && item.stock_quantity > 0 && (
+                                                                        <button
+                                                                            onClick={() => handleUpdateItemQuantity(item.id!, item.stock_quantity!)}
+                                                                            className="p-0.5 text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded"
+                                                                            title="Cập nhật SL Lệnh = SL Tồn"
+                                                                        >
+                                                                            <RefreshCw size={10} className="animate-pulse" />
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setEditingStockId(item.id!)
+                                                                            setTempQtyInput(String(item.stock_quantity || 0))
+                                                                            setEditingItemQtyId(null)
+                                                                        }}
+                                                                        className="p-0.5 text-stone-400 hover:text-green-600 rounded"
+                                                                        title="Sửa SL Tồn kho thực tế"
+                                                                    >
+                                                                        <Edit2 size={10} />
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <span className="text-[10px] text-rose-500 font-bold">Không tìm thấy LOT</span>
+                                            )}
+                                        </div>
                                     </td>
                                     <td className="px-6 py-4 text-right">
                                         {item.exported_quantity !== undefined && item.exported_quantity !== null ? (
