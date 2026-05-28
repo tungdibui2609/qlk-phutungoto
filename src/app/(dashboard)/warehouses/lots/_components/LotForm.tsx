@@ -688,31 +688,36 @@ export function LotForm({
             }
         }
 
-        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRONG CÙNG NGÀY ---
+        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRÊN TOÀN HỆ THỐNG ---
         const dailySeqVal = encodeSTT(dailySeq)
-        if (dailySeqVal !== null && !isNaN(dailySeqVal) && inboundDate) {
+        if (dailySeqVal !== null && !isNaN(dailySeqVal)) {
             let checkSttQuery = supabase
                 .from('lots')
-                .select('id, code', { count: 'exact', head: true })
+                .select('id, code, inbound_date')
                 .eq('system_code', currentSystem?.code || '')
-                .eq('inbound_date', inboundDate)
                 .eq('daily_seq', dailySeqVal)
+                .neq('status', 'hidden')
+                .neq('status', 'exported')
                 
             if (editingLot?.id) {
                 checkSttQuery = checkSttQuery.neq('id', editingLot.id)
             }
 
-            const { count: sttCount, error: checkSttError } = await checkSttQuery
+            const { data: matchedLots, error: checkSttError } = await checkSttQuery
             
             if (checkSttError) throw checkSttError
             
-            if (sttCount && sttCount > 0) {
-                alert(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đã tồn tại trong ngày nhập kho ${inboundDate.split('-').reverse().join('/')} của phân hệ này. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`)
+            if (matchedLots && matchedLots.length > 0) {
+                const existingLot = matchedLots[0]
+                const formattedDate = existingLot.inbound_date 
+                    ? existingLot.inbound_date.split('-').reverse().join('/') 
+                    : 'không rõ ngày'
+                alert(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đang được sử dụng bởi lô hàng "${existingLot.code}" (nhập ngày ${formattedDate}) vẫn còn tồn tại trong kho. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`)
                 setIsSubmitting(false)
                 return
             }
         }
-        // ---------------------------------------------------------
+        // -------------------------------------------------------------
 
         let lotId = editingLot?.id
         let error
