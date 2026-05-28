@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Printer, Loader2, AlertTriangle } from 'lucide-react'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
+import { decodeSTT } from '@/lib/numberUtils'
 
 export default function ExportLotPrintContent() {
     const searchParams = useSearchParams()
@@ -93,7 +94,7 @@ export default function ExportLotPrintContent() {
                         ...item,
                         final_lot_code: prodLotCode,
                         final_inbound_date: lot.inbound_date,
-                        daily_seq: lot.daily_seq
+                        daily_seq: decodeSTT(lot.daily_seq)
                     }
                 }))
 

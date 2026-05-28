@@ -9,7 +9,7 @@ import Protected from '@/components/auth/Protected'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import React from 'react'
-import { formatQuantityFull } from '@/lib/numberUtils'
+import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
 
 interface LotCardProps {
     lot: Lot
@@ -175,7 +175,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             {lot.code}
                         </span>
                         <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
-                            STT: {(lot as any).daily_seq || '--'}
+                            STT: {decodeSTT((lot as any).daily_seq) || '--'}
                         </span>
                         {(lot.productions?.code || lot.production_code) && (
                             <div className="flex flex-col gap-1">

@@ -17,6 +17,7 @@ import { vi } from 'date-fns/locale'
 import { exportAssignmentHistoryToExcel } from '@/lib/assignmentExcelExport'
 import { extractWeightFromName } from '@/lib/unitConversion'
 import { logActivity } from '@/lib/audit'
+import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 
 type PendingAssignment = {
     id: string
@@ -108,7 +109,7 @@ export default function AssignmentApprovalPage() {
         return historyList.filter(h => {
             const matchesGeneral = !historySearchTerm || 
                 h.position?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) || 
-                h.lot_stt.toString().includes(historySearchTerm) ||
+                decodeSTT(h.lot_stt).toLowerCase().includes(historySearchTerm.toLowerCase()) ||
                 h.lot?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
                 h.lot?.product_names?.some(p => p.toLowerCase().includes(historySearchTerm.toLowerCase()));
             
@@ -564,20 +565,20 @@ export default function AssignmentApprovalPage() {
     const startEdit = (ass: PendingAssignment) => {
         setEditingId(ass.id)
         setEditValues({
-            lot_stt: ass.lot_stt.toString(),
+            lot_stt: decodeSTT(ass.lot_stt),
             position_id: ass.position_id,
             position_code: (ass.position as any)?.code || ''
         })
     }
 
     const handleSaveEdit = (ass: PendingAssignment) => {
-        const newStt = parseInt(editValues.lot_stt)
+        const encodedStt = encodeSTT(editValues.lot_stt)
         const newCode = editValues.position_code.trim()
-        if (isNaN(newStt) || !newCode) {
+        if (encodedStt === null || isNaN(encodedStt) || !newCode) {
             showToast('Vui lòng nhập đầy đủ STT và Mã vị trí', 'error')
             return
         }
-        setManualEdits(prev => ({ ...prev, [ass.id]: { lot_stt: newStt, position_code: newCode } }))
+        setManualEdits(prev => ({ ...prev, [ass.id]: { lot_stt: encodedStt, position_code: newCode } }))
         setEditingId(null)
         showToast(`Đã ghi nhận thay đổi. Nhấn Duyệt để hoàn tất.`, 'success')
     }
@@ -1080,7 +1081,7 @@ export default function AssignmentApprovalPage() {
                                             <div className="flex items-center gap-5">
                                                 <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-900/10 text-blue-600 border border-blue-100 dark:border-blue-900/20 flex flex-col items-center justify-center font-black">
                                                     <span className="text-[10px] opacity-50 uppercase text-zinc-500">STT</span>
-                                                    <span className="text-2xl">#{manualEdits[ass.id]?.lot_stt || ass.lot_stt}</span>
+                                                    <span className="text-2xl">#{decodeSTT(manualEdits[ass.id]?.lot_stt || ass.lot_stt)}</span>
                                                 </div>
                                                 <ArrowRight className="text-zinc-300 dark:text-zinc-700" />
                                                 <div className="flex flex-col gap-2">
@@ -1102,7 +1103,7 @@ export default function AssignmentApprovalPage() {
                                                             return (
                                                                 <div className="px-3 py-2 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-xl animate-in fade-in slide-in-from-top-1 duration-300">
                                                                     <div className="text-[8px] font-black text-red-600 dark:text-red-400 uppercase flex items-center gap-1.5"><AlertTriangle size={10} /> Vị trí này đang chứa:</div>
-                                                                    <div className="text-[10px] font-black text-red-700 dark:text-red-300 mt-0.5">#{occupant?.daily_seq} | {occupant?.code}</div>
+                                                                    <div className="text-[10px] font-black text-red-700 dark:text-red-300 mt-0.5">#{decodeSTT(occupant?.daily_seq)} | {occupant?.code}</div>
                                                                     <div className="text-[8px] text-red-500 font-bold leading-tight mt-1">{occupant?.product_names?.join(', ')}</div>
                                                                 </div>
                                                             )
@@ -1189,7 +1190,7 @@ export default function AssignmentApprovalPage() {
                                                         <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
                                                             <MapPin size={32} className="mx-auto text-amber-400 mb-3 opacity-50" />
                                                             <p className="text-sm font-black text-zinc-900 dark:text-white mb-1">
-                                                                STT #{targetStt} đã được gán vị trí
+                                                                STT #{decodeSTT(targetStt)} đã được gán vị trí
                                                             </p>
                                                             <p className="text-[10px] text-zinc-500 font-bold max-w-[250px] mx-auto">
                                                                 Hệ thống tìm thấy {allMatchedLotsRaw.length} lô hàng mang STT này, nhưng chúng đều đã có vị trí. Vui lòng tắt bộ lọc "Lô Chưa Gán" để duyệt di chuyển.
@@ -1211,7 +1212,7 @@ export default function AssignmentApprovalPage() {
                                                         <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
                                                             <XCircle size={32} className="mx-auto text-amber-400 mb-3 opacity-50" />
                                                             <p className="text-sm font-black text-zinc-900 dark:text-white mb-1">
-                                                                Không có lô hàng mang STT #{targetStt}
+                                                                Không có lô hàng mang STT #{decodeSTT(targetStt)}
                                                             </p>
                                                             <p className="text-[10px] text-zinc-500 font-bold max-w-[250px] mx-auto">
                                                                 Vui lòng dùng công cụ chỉnh sửa để đổi số STT cho khớp, hoặc tạo Lô hàng tương ứng bên mục "Tạo Lô Hàng".
@@ -1293,7 +1294,7 @@ export default function AssignmentApprovalPage() {
                                         <span className="text-[9px] text-zinc-450 dark:text-zinc-500 block uppercase font-bold mb-1">Chuỗi Status chi tiết của các dòng:</span>
                                         <div className="bg-white dark:bg-zinc-900 border border-zinc-150 dark:border-zinc-800 rounded-xl p-2.5 max-h-[100px] overflow-y-auto font-mono text-[9px] whitespace-pre-wrap break-all leading-normal text-zinc-700 dark:text-zinc-350">
                                             {historyList.length > 0 ? (
-                                                historyList.map(h => `STT #${h.lot_stt} | Status: "${h.status}"`).join('\n')
+                                                historyList.map(h => `STT #${decodeSTT(h.lot_stt)} | Status: "${h.status}"`).join('\n')
                                             ) : (
                                                 'Không có dòng lịch sử nào'
                                             )}
@@ -1384,7 +1385,7 @@ export default function AssignmentApprovalPage() {
                                         <tbody className="divide-y divide-zinc-50 dark:divide-zinc-800">
                                             {filteredHistory.map(h => (
                                                     <tr key={h.id} className="hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20 transition-colors">
-                                                        <td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-300">#{h.lot_stt}</td>
+                                                        <td className="px-4 py-3 font-bold text-zinc-900 dark:text-zinc-300">#{decodeSTT(h.lot_stt)}</td>
                                                         <td className="px-4 py-3">
                                                             <div className="flex flex-col gap-0.5">
                                                                 <span className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase">
@@ -1484,7 +1485,7 @@ export default function AssignmentApprovalPage() {
                                 .map(lot => (
                                 <div key={lot.id} className="p-4 bg-zinc-50/50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900 transition-all flex items-center justify-between group">
                                     <div className="flex items-center gap-4">
-                                        <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center font-black text-xs text-zinc-900 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 shadow-sm group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">#{lot.daily_seq}</div>
+                                        <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center font-black text-xs text-zinc-900 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 shadow-sm group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">#{decodeSTT(lot.daily_seq)}</div>
                                         <div>
                                             <div className="text-sm font-black text-zinc-900 dark:text-zinc-100">{lot.code}</div>
                                             <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-wider">{lot.inbound_date ? format(new Date(lot.inbound_date), 'dd/MM/yyyy') : '---'}</div>
@@ -1518,7 +1519,7 @@ export default function AssignmentApprovalPage() {
                         <div className="space-y-6">
                             <div>
                                 <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1.5 ml-1">Số STT Lô hàng</label>
-                                <input type="number" value={editValues.lot_stt} onChange={e => setEditValues(prev => ({...prev, lot_stt: e.target.value}))} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-base font-black text-zinc-900 dark:text-white outline-none focus:border-blue-500 shadow-inner" />
+                                <input type="text" autoCapitalize="characters" value={editValues.lot_stt} onChange={e => setEditValues(prev => ({...prev, lot_stt: e.target.value.toUpperCase()}))} className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 text-base font-black text-zinc-900 dark:text-white outline-none focus:border-blue-500 shadow-inner uppercase" />
                             </div>
                             <div>
                                 <label className="text-[10px] font-black text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1.5 ml-1">Mã số vị trí kệ hàng</label>

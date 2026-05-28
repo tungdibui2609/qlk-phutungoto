@@ -16,6 +16,7 @@ import { LayoutGrid } from 'lucide-react'
 import { getProductionCodeSTT, generateFullProductionCode, extractLevelsFromCode } from '@/lib/productionCodeUtils'
 import { supabase } from '@/lib/supabaseClient'
 import { useUser } from '@/contexts/UserContext'
+import { decodeSTT } from '@/lib/numberUtils'
 // Helper for formatting dates cleanly
 const formatDate = (dateString?: string | null) => {
     if (!dateString) return '---'
@@ -309,7 +310,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                                             <h3 className="font-bold text-zinc-900 dark:text-white text-base leading-none mb-2 flex flex-wrap items-center gap-2">
                                                 {lot.code}
                                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider border ${lot.daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 border-zinc-200 dark:border-zinc-700'}`}>
-                                                    STT: {lot.daily_seq || '--'}
+                                                    STT: {decodeSTT(lot.daily_seq) || '--'}
                                                 </span>
                                                 {lot.production_code && (
                                                     <span className="px-1.5 py-0.5 bg-orange-500/10 border border-orange-500/20 rounded text-[10px] font-black uppercase tracking-wider text-orange-600 dark:text-orange-400">

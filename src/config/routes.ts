@@ -48,6 +48,7 @@ export const APP_ROUTES: RouteItem[] = [
         children: [
             { name: 'Cài đặt giao nhận', path: '/delivery-settings' },
             { name: 'Nhật ký giao nhận kho', path: '/delivery-journal' },
+            { name: 'Giao nhận trực tiếp (1 bên)', path: '/delivery-journal-single' },
             { name: 'Ca làm & Thống kê', path: '/delivery-shifts' },
         ]
     },

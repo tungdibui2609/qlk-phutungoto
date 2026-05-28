@@ -7,6 +7,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { normalizeSearchString } from '@/lib/searchUtils'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
+import { decodeSTT } from '@/lib/numberUtils'
 
 // Fetch data in chunks to avoid URL size limit
 async function fetchInChunks(table: string, field: string, values: string[], select = '*', chunkSize = 500) {
@@ -168,7 +169,7 @@ export default function HallSummaryPage() {
                     lots?.forEach((l: any) => {
                         lotInfo[l.id] = {
                             code: l.code,
-                            daily_seq: l.daily_seq,
+                            daily_seq: decodeSTT(l.daily_seq),
                             tags: l.lot_tags?.map((t: any) => t.tag) || [],
                             items: l.lot_items?.map((li: any) => ({
                                 name: li.products?.name,

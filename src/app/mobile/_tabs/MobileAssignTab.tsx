@@ -9,6 +9,7 @@ import { CheckCircle2, MapPin, Hash, PlayCircle, X, Loader2, Download, RotateCcw
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import { Database } from '@/lib/database.types'
 import { useMobile } from '@/contexts/MobileContext'
+import { encodeSTT, decodeSTT } from '@/lib/numberUtils'
 
 interface LocalLot {
     id: string
@@ -269,7 +270,7 @@ export default function MobileAssignTab() {
         try {
             const toSync = assignments.map((ass: any) => ({
                 position_id: ass.positionId,
-                lot_stt: parseInt(ass.stt),
+                lot_stt: encodeSTT(ass.stt),
                 production_date: ass.productionDate,
                 system_code: currentSystem.code,
                 created_by: profile?.id,
@@ -537,17 +538,15 @@ export default function MobileAssignTab() {
                                         <div className="relative">
                                             <Hash className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500" size={24} />
                                              <input 
-                                                 type="number" 
-                                                 pattern="[0-9]*" 
-                                                 inputMode="numeric" 
+                                                 type="text" 
+                                                 autoCapitalize="characters" 
                                                  value={currentStt} 
-                                                 onChange={e => setCurrentStt(e.target.value)} 
+                                                 onChange={e => setCurrentStt(e.target.value.toUpperCase())} 
                                                  placeholder="Số STT..." 
-                                                 className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 md:py-6 pl-14 pr-6 text-2xl md:text-3xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300 shadow-sm" 
+                                                 className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 focus:border-emerald-500 rounded-2xl py-4 md:py-6 pl-14 pr-6 text-2xl md:text-3xl font-black text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300 shadow-sm uppercase" 
                                                  autoFocus 
                                                  id="mobile-stt-input"
                                                  onKeyDown={(e) => e.key === 'Enter' && currentStt && handleConfirmStt()}
-                                                 onWheel={(e) => e.currentTarget.blur()}
                                              />
                                         </div>
                                         <button onClick={() => handleConfirmStt()} disabled={!currentStt || loading} className={`w-full py-6 rounded-2xl flex items-center justify-center gap-3 text-lg font-black transition-all ${!currentStt || loading ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-300 dark:text-zinc-700' : 'bg-emerald-600 text-white shadow-xl shadow-emerald-500/20 active:scale-95'}`}>

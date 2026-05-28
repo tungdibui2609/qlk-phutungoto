@@ -23,6 +23,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { normalizeSearchString } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { decodeSTT } from '@/lib/numberUtils'
 
 // Reuse the fetching logic from useWarehouseData
 async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 1000) {
@@ -227,7 +228,7 @@ export default function Floor1ReportPage() {
                         lotMap[l.id] = {
                             ...l,
                             products,
-                            stt: l.daily_seq || l.sequence_number || l.stt || null,
+                            stt: decodeSTT(l.daily_seq) || l.sequence_number || l.stt || null,
                             production_name: Array.isArray(l.productions) ? l.productions[0]?.name : l.productions?.name
                         }
                     })

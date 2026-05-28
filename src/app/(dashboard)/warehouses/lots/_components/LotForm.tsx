@@ -5,7 +5,7 @@ import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { logActivity } from '@/lib/audit'
-import { parseQuantity } from '@/lib/numberUtils'
+import { parseQuantity, encodeSTT, decodeSTT } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
 import { useUser } from '@/contexts/UserContext'
@@ -189,7 +189,7 @@ export function LotForm({
             if (editingLot) {
                 // Edit Mode
                 setNewLotCode(editingLot.code)
-                setDailySeq(editingLot.daily_seq || '')
+                setDailySeq(decodeSTT(editingLot.daily_seq))
                 setNewLotNotes(editingLot.notes || '')
                 setProductionCode(editingLot.production_code || '')
                 setSelectedProductionId(editingLot.production_id || '')
@@ -676,7 +676,7 @@ export function LotForm({
             production_code: productionCode || null,
             production_id: selectedProductionId || null,
             production_lot_id: lotItems[0]?.productionLotId || null,
-            daily_seq: dailySeq ? parseInt(String(dailySeq)) : null,
+            daily_seq: encodeSTT(dailySeq),
             quantity: totalQuantity,
             status: 'active',
             system_code: currentSystem?.code,
@@ -892,10 +892,11 @@ export function LotForm({
                             <Hash size={14} className="opacity-70" />
                             <span className="text-[10px] font-black uppercase tracking-wider">STT:</span>
                             <input
-                                type="number"
+                                type="text"
+                                autoCapitalize="characters"
                                 value={dailySeq}
-                                onChange={(e) => setDailySeq(e.target.value)}
-                                className="w-12 bg-transparent text-sm font-black outline-none border-b border-white/30 focus:border-white transition-all text-center [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                onChange={(e) => setDailySeq(e.target.value.toUpperCase())}
+                                className="w-12 bg-transparent text-sm font-black outline-none border-b border-white/30 focus:border-white transition-all text-center uppercase"
                                 placeholder="..."
                             />
                         </div>

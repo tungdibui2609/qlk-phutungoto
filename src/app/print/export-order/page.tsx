@@ -15,6 +15,7 @@ import { EditableText } from '@/components/print/PrintHelpers'
 import { format } from 'date-fns'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { exportExportOrderToExcel } from '@/lib/warehouseExcelExport'
+import { decodeSTT } from '@/lib/numberUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -590,7 +591,7 @@ function ExportOrderPrintContent() {
                 })(),
                 position_code: item.positions?.code || '',
                 notes: item.lots?.notes || '',
-                stt_lot: item.lots?.daily_seq || '',
+                stt_lot: decodeSTT(item.lots?.daily_seq) || '',
                 convertedQty: convertedQty
             }
         })

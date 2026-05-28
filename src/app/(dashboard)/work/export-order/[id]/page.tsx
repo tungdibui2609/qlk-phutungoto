@@ -17,6 +17,7 @@ import { TagDisplay } from '@/components/lots/TagDisplay'
 import { logActivity } from '@/lib/audit'
 import { BulkEditLotDatesModal } from '@/components/export/BulkEditLotDatesModal'
 import { lotService } from '@/services/warehouse/lotService'
+import { decodeSTT } from '@/lib/numberUtils'
 
 interface ExportOrderItem {
     id?: string
@@ -1231,7 +1232,7 @@ function ExportOrderDetailContent() {
                                                 <span className="font-mono text-blue-600 font-semibold text-xs whitespace-nowrap leading-tight">{item.lot_code}</span>
                                                 {item.daily_seq && (
                                                     <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold leading-none" title="STT LOT trong ngày">
-                                                        {item.daily_seq}
+                                                        {decodeSTT(item.daily_seq)}
                                                     </span>
                                                 )}
                                             </div>
