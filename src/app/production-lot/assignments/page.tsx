@@ -74,6 +74,7 @@ export default function AssignmentApprovalPage() {
     const [historyDateFrom, setHistoryDateFrom] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'))
     const [historyDateTo, setHistoryDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'))
     const [historyList, setHistoryList] = useState<PendingAssignment[]>([])
+    const [dateFilterType, setDateFilterType] = useState<'created_at' | 'production_date'>('created_at')
     const [historyLoading, setHistoryLoading] = useState(false)
     const [historyStatusFilter, setHistoryStatusFilter] = useState<'all' | 'approved' | 'rejected'>('all')
     const [historySearchTerm, setHistorySearchTerm] = useState('')
@@ -127,7 +128,13 @@ export default function AssignmentApprovalPage() {
         if (currentSystem?.code) {
             fetchData()
         }
-    }, [currentSystem, dateFrom, dateTo])
+    }, [currentSystem, dateFrom, dateTo, dateFilterType])
+
+    useEffect(() => {
+        if (showHistory && currentSystem?.code) {
+            fetchHistory()
+        }
+    }, [showHistory, currentSystem, historyDateFrom, historyDateTo, dateFilterType])
 
     async function fetchData() {
         if (!currentSystem?.code) {
@@ -146,12 +153,22 @@ export default function AssignmentApprovalPage() {
             if (pendingErr) throw pendingErr
 
             // Lấy các bản ghi đã xử lý (approved, rejected) trong khoảng thời gian lọc
-            const { data: processedData, error: processedErr } = await (supabase.from('pending_assignments') as any)
+            let processedQuery = (supabase.from('pending_assignments') as any)
                 .select('*')
                 .eq('system_code', currentSystem.code)
                 .neq('status', 'pending')
-                .gte('production_date', dateFrom)
-                .lte('production_date', dateTo)
+
+            if (dateFilterType === 'created_at') {
+                processedQuery = processedQuery
+                    .gte('created_at', dateFrom)
+                    .lte('created_at', dateTo + 'T23:59:59.999Z')
+            } else {
+                processedQuery = processedQuery
+                    .gte('production_date', dateFrom)
+                    .lte('production_date', dateTo)
+            }
+
+            const { data: processedData, error: processedErr } = await processedQuery
                 .order('created_at', { ascending: false })
                 .limit(2000)
 
@@ -309,8 +326,18 @@ export default function AssignmentApprovalPage() {
                 .select('*')
                 .in('system_code', [sysCode, 'FROZEN'])
                 .neq('status', 'pending')
-                .gte('production_date', historyDateFrom)
-                .lte('production_date', historyDateTo)
+
+            if (dateFilterType === 'created_at') {
+                query = query
+                    .gte('created_at', historyDateFrom)
+                    .lte('created_at', historyDateTo + 'T23:59:59.999Z')
+            } else {
+                query = query
+                    .gte('production_date', historyDateFrom)
+                    .lte('production_date', historyDateTo)
+            }
+
+            query = query
                 .order('created_at', { ascending: false })
                 .limit(2000)
             
@@ -1000,10 +1027,18 @@ export default function AssignmentApprovalPage() {
                             Duyệt Nhanh ({validBulkCount})
                         </button>
                     )}
-                    <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center">
-                        <Calendar size={16} className="text-zinc-400 mx-2" />
+                    <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-2">
+                        <select 
+                            value={dateFilterType}
+                            onChange={(e) => setDateFilterType(e.target.value as 'created_at' | 'production_date')}
+                            className="bg-transparent border-none outline-none font-black text-xs text-zinc-700 dark:text-zinc-300 pr-2 cursor-pointer border-r border-zinc-200 dark:border-zinc-800 focus:ring-0"
+                        >
+                            <option value="created_at" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">Ngày quét</option>
+                            <option value="production_date" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">Ngày sản xuất</option>
+                        </select>
+                        <Calendar size={16} className="text-zinc-400" />
                         <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="bg-transparent border-none outline-none font-bold text-xs text-zinc-900 dark:text-white" />
-                        <span className="text-zinc-300 mx-1">→</span>
+                        <span className="text-zinc-300">→</span>
                         <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-transparent border-none outline-none font-bold text-xs text-zinc-900 dark:text-white" />
                     </div>
                     {/* Nút Kiểm tra & Dọn dẹp vị trí bị kẹt */}
@@ -1306,6 +1341,14 @@ export default function AssignmentApprovalPage() {
                                     {/* Dòng 1: Thời gian & Hành động */}
                                     <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                                         <div className="flex items-center gap-3 px-5 py-2.5 bg-white dark:bg-zinc-950 rounded-2xl border border-zinc-200/60 dark:border-zinc-800 shadow-sm">
+                                            <select 
+                                                value={dateFilterType}
+                                                onChange={(e) => setDateFilterType(e.target.value as 'created_at' | 'production_date')}
+                                                className="bg-transparent border-none outline-none font-black text-[11px] text-zinc-700 dark:text-zinc-300 pr-2 cursor-pointer border-r border-zinc-200 dark:border-zinc-800 focus:ring-0"
+                                            >
+                                                <option value="created_at" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">Ngày quét</option>
+                                                <option value="production_date" className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-white">Ngày sản xuất</option>
+                                            </select>
                                             <Calendar size={14} className="text-blue-500" />
                                             <div className="flex items-center gap-3">
                                                 <input type="date" value={historyDateFrom} onChange={e => setHistoryDateFrom(e.target.value)} className="bg-transparent text-[11px] font-black text-zinc-900 dark:text-white outline-none cursor-pointer" />
