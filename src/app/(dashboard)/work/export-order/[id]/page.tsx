@@ -27,6 +27,7 @@ interface ExportOrderItem {
     quantity: number
     unit: string
     lot_id?: string
+    daily_seq?: number | null
     position_id?: string
     product_id?: string
     status: 'Pending' | 'Picked' | 'Exported'
@@ -215,6 +216,7 @@ function ExportOrderDetailContent() {
                         lots (
                             id, 
                             code, 
+                            daily_seq,
                             inbound_date, 
                             production_lot_id,
                             lot_items (
@@ -380,6 +382,7 @@ function ExportOrderDetailContent() {
                         id: item.id,
                         lot_id: item.lots?.id,
                         lot_code: item.lots?.code || 'N/A',
+                        daily_seq: item.lots?.daily_seq || null,
                         lot_inbound_date: item.lots?.inbound_date,
                         position_name: originalPosCode,
                         position_id: originalPosId,
@@ -1223,8 +1226,15 @@ function ExportOrderDetailContent() {
                                     </td>
                                     <td className="px-6 py-4 text-center text-stone-400 font-mono text-xs">{idx + 1}</td>
                                     <td className="px-6 py-4">
-                                        <div className="flex flex-col gap-0.5">
-                                            <span className="font-mono text-blue-600 font-semibold text-xs whitespace-nowrap leading-tight">{item.lot_code}</span>
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="font-mono text-blue-600 font-semibold text-xs whitespace-nowrap leading-tight">{item.lot_code}</span>
+                                                {item.daily_seq && (
+                                                    <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold leading-none" title="STT LOT trong ngày">
+                                                        {item.daily_seq}
+                                                    </span>
+                                                )}
+                                            </div>
                                             {item.production_lot_code && (
                                                 <span className="text-[10px] font-bold text-stone-500 dark:text-zinc-400 font-mono whitespace-nowrap leading-none">
                                                     Lot SX: <span className="text-blue-600 dark:text-blue-400">{item.production_lot_code}</span>

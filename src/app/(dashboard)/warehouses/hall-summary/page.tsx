@@ -162,12 +162,13 @@ export default function HallSummaryPage() {
                         'lots', 
                         'id', 
                         lotIds, 
-                        'id, code, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)'
+                        'id, code, daily_seq, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)'
                     )
 
                     lots?.forEach((l: any) => {
                         lotInfo[l.id] = {
                             code: l.code,
+                            daily_seq: l.daily_seq,
                             tags: l.lot_tags?.map((t: any) => t.tag) || [],
                             items: l.lot_items?.map((li: any) => ({
                                 name: li.products?.name,
@@ -215,21 +216,34 @@ export default function HallSummaryPage() {
                         groupKey,
                         items: sortedItems,
                         tag: tag, // Use the normalized joined tags
-                        count: 1
+                        count: 1,
+                        lots: lot ? [{ code: lot.code, daily_seq: lot.daily_seq }] : []
                     }
 
                     // Grand Total Merge
-                    if (!grandTotalGroups[groupKey]) grandTotalGroups[groupKey] = { ...itemData }
-                    else grandTotalGroups[groupKey].count++
+                    if (!grandTotalGroups[groupKey]) {
+                        grandTotalGroups[groupKey] = { ...itemData }
+                    } else {
+                        grandTotalGroups[groupKey].count++
+                        if (lot) grandTotalGroups[groupKey].lots.push({ code: lot.code, daily_seq: lot.daily_seq })
+                    }
 
                     // Per Hall Merge
-                    if (!hallGroups[hallId][groupKey]) hallGroups[hallId][groupKey] = { ...itemData }
-                    else hallGroups[hallId][groupKey].count++
+                    if (!hallGroups[hallId][groupKey]) {
+                        hallGroups[hallId][groupKey] = { ...itemData }
+                    } else {
+                        hallGroups[hallId][groupKey].count++
+                        if (lot) hallGroups[hallId][groupKey].lots.push({ code: lot.code, daily_seq: lot.daily_seq })
+                    }
 
                     // Per Warehouse Merge
                     if (wId) {
-                        if (!warehouseGroups[wId][groupKey]) warehouseGroups[wId][groupKey] = { ...itemData }
-                        else warehouseGroups[wId][groupKey].count++
+                        if (!warehouseGroups[wId][groupKey]) {
+                            warehouseGroups[wId][groupKey] = { ...itemData }
+                        } else {
+                            warehouseGroups[wId][groupKey].count++
+                            if (lot) warehouseGroups[wId][groupKey].lots.push({ code: lot.code, daily_seq: lot.daily_seq })
+                        }
                     }
                 })
                 
@@ -307,20 +321,21 @@ export default function HallSummaryPage() {
 
         const setColumns = (worksheet: ExcelJS.Worksheet) => {
             worksheet.columns = [
-                { width: 8 },
-                { width: 22 },
-                { width: 45 },
-                { width: 18 },
-                { width: 12 },
-                { width: 15 },
-                { width: 12 },
+                { width: 8 },  // STT
+                { width: 22 }, // SKU
+                { width: 15 }, // STT LOT
+                { width: 45 }, // Tên SP
+                { width: 18 }, // Phân loại (Tag)
+                { width: 12 }, // Đơn Vị
+                { width: 15 }, // Số Lượng
+                { width: 12 }, // Tổng Kiện
             ]
         }
 
         const renderTable = (worksheet: ExcelJS.Worksheet, title: string, data: any[], startRow: number) => {
             if (!data || data.length === 0) return startRow
 
-            worksheet.mergeCells(`A${startRow}:G${startRow}`)
+            worksheet.mergeCells(`A${startRow}:H${startRow}`)
             const titleCell = worksheet.getCell(`A${startRow}`)
             titleCell.value = title.toUpperCase()
             titleCell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
@@ -329,7 +344,7 @@ export default function HallSummaryPage() {
 
             let currentRow = startRow + 1
 
-            const headers = ['STT', 'Mã SP (SKU)', 'Tên Sản Phẩm', 'Phân loại (Tag)', 'Đơn Vị', 'Số Lượng', 'Tổng Kiện']
+            const headers = ['STT', 'Mã SP (SKU)', 'STT LOT', 'Tên Sản Phẩm', 'Phân loại (Tag)', 'Đơn Vị', 'Số Lượng', 'Tổng Kiện']
             const headerRow = worksheet.getRow(currentRow)
             headers.forEach((h, i) => {
                 const cell = headerRow.getCell(i + 1)
@@ -345,13 +360,14 @@ export default function HallSummaryPage() {
                 const row = worksheet.getRow(currentRow)
                 row.getCell(1).value = idx + 1
                 row.getCell(2).value = group.items.map((it: any) => it.sku).join('\n')
-                row.getCell(3).value = group.items.map((it: any) => it.name || '').join('\n')
-                row.getCell(4).value = group.tag || ''
-                row.getCell(5).value = group.items.map((it: any) => it.unit || '').join('\n')
-                row.getCell(6).value = group.items.map((it: any) => it.quantity).join('\n')
-                row.getCell(7).value = group.count
+                row.getCell(3).value = group.lots?.map((l: any) => l.daily_seq || '--').join(', ') || '-'
+                row.getCell(4).value = group.items.map((it: any) => it.name || '').join('\n')
+                row.getCell(5).value = group.tag || ''
+                row.getCell(6).value = group.items.map((it: any) => it.unit || '').join('\n')
+                row.getCell(7).value = group.items.map((it: any) => it.quantity).join('\n')
+                row.getCell(8).value = group.count
 
-                for (let i = 1; i <= 7; i++) {
+                for (let i = 1; i <= 8; i++) {
                     const cell = row.getCell(i)
                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
                     cell.alignment = { vertical: 'middle', wrapText: true }
@@ -364,8 +380,8 @@ export default function HallSummaryPage() {
                         }
                     }
                 }
-                row.getCell(6).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true }
-                row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' }
+                row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle', wrapText: true }
+                row.getCell(8).alignment = { horizontal: 'right', vertical: 'middle' }
                 
                 currentRow++
             })
@@ -621,6 +637,17 @@ export default function HallSummaryPage() {
                                                         <p className="text-[9px] font-bold text-stone-300 uppercase tracking-widest leading-none">
                                                             {group.items.length === 1 ? 'MÃ SẢN PHẨM • SKU' : 'KIỆN HÀNG HỖN HỢP'}
                                                         </p>
+                                                        {/* LOTs List */}
+                                                        {group.lots && group.lots.length > 0 && (
+                                                            <div className="flex flex-wrap gap-1 items-center mt-1.5">
+                                                                <span className="text-[9px] font-black text-stone-400 uppercase tracking-wider mr-0.5">STT LOT:</span>
+                                                                {group.lots.map((l: any, lIdx: number) => (
+                                                                    <span key={lIdx} className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-950 text-orange-600 dark:text-orange-400 rounded text-[9px] font-black border border-orange-200 dark:border-orange-900/50" title={`Mã LOT: ${l.code || '-'}`}>
+                                                                        {l.daily_seq || '--'}
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>

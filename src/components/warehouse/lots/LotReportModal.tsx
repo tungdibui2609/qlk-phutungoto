@@ -22,9 +22,10 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
     const { companyInfo } = usePrintCompanyInfo()
 
     const [loading, setLoading] = useState(false)
-    const [activeTab, setActiveTab] = useState<'inward' | 'outward'>('inward')
+    const [activeTab, setActiveTab] = useState<'inward' | 'outward' | 'unassigned'>('inward')
     const [reportDataInward, setReportDataInward] = useState<any[]>([])
     const [reportDataOutward, setReportDataOutward] = useState<any[]>([])
+    const [reportDataUnassigned, setReportDataUnassigned] = useState<any[]>([])
     const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
     const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0])
     const [productionLotsMap, setProductionLotsMap] = useState<Record<string, string>>({})
@@ -173,6 +174,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                     source: 'metadata',
                                     lot_id: lot.id,
                                     lot_code: lot.code,
+                                    daily_seq: lot.daily_seq || null,
                                     date: exp.date,
                                     customer: exp.customer || 'Khách lẻ',
                                     description: exp.description || '',
@@ -209,6 +211,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         lots(
                             id,
                             code,
+                            daily_seq,
                             production_id,
                             productions(code, name)
                         ),
@@ -243,6 +246,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             source: 'export_task',
                             lot_id: lotId,
                             lot_code: item.lots?.code || '-',
+                            daily_seq: item.lots?.daily_seq || null,
                             date: task.created_at,
                             customer: '-',
                             description: `Lệnh xuất: ${task.code}`,
@@ -453,8 +457,28 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 }
             });
 
+            // Step 9: Truy vấn các LOT chưa gán vị trí (unassigned lots)
+            const unassignedLots = await fetchLargeData('lots', `
+                    *,
+                    productions(code, name),
+                    lot_items(
+                        id,
+                        product_id,
+                        quantity,
+                        unit,
+                        products(name, sku, unit)
+                    ),
+                    positions!positions_lot_id_fkey(id, code),
+                    products(name, sku, unit)
+                `, q => q.eq('system_code', currentSystem?.code)
+                        .neq('status', 'exported')
+                        .neq('status', 'hidden')
+            )
+            const filteredUnassigned = unassignedLots.filter((lot: any) => !lot.positions || lot.positions.length === 0)
+
             setReportDataInward(inward)
             setReportDataOutward(mappedOutward)
+            setReportDataUnassigned(filteredUnassigned)
         } catch (err: any) {
             console.error('Error fetching report data:', err)
             const errMsg = err.message || (typeof err === 'object' ? JSON.stringify(err) : String(err))
@@ -698,8 +722,34 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
         return Object.values(stats).sort((a, b) => b.totalQty - a.totalQty)
     }, [reportDataOutward])
 
+    const summaryUnassigned = useMemo(() => {
+        const statsMap = {}
+        reportDataUnassigned.forEach(lot => {
+            const items = lot.lot_items || []
+            items.forEach((item) => {
+                const unit = item.unit || item.products?.unit || '-'
+                const key = `${item.product_id}_${unit}`
+                if (!statsMap[key]) {
+                    statsMap[key] = { productName: item.products?.name || 'Sản phẩm không tên', sku: item.products?.sku || '-', totalQty: 0, unit: unit, lotCount: 0 }
+                }
+                statsMap[key].totalQty += (Number(item.quantity) || 0)
+                statsMap[key].lotCount += 1
+            })
+            if (items.length === 0 && lot.products) {
+                const unit = lot.unit || lot.products.unit || '-'
+                const key = `${lot.product_id}_${unit}`
+                if (!statsMap[key]) {
+                    statsMap[key] = { productName: lot.products.name || 'Sản phẩm không tên', sku: lot.products.sku || '-', totalQty: 0, unit: unit, lotCount: 0 }
+                }
+                statsMap[key].totalQty += (Number(lot.quantity) || 0)
+                statsMap[key].lotCount += 1
+            }
+        })
+        return Object.values(statsMap).sort((a, b) => b.totalQty - a.totalQty)
+    }, [reportDataUnassigned])
+
     const handleExportExcel = async () => {
-        const currentData = activeTab === 'inward' ? reportDataInward : reportDataOutward
+        const currentData = activeTab === 'inward' ? reportDataInward : activeTab === 'outward' ? reportDataOutward : reportDataUnassigned
         if (currentData.length === 0) {
             showToast('Không có dữ liệu để xuất Excel', 'warning')
             return
@@ -707,12 +757,19 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
 
         try {
             const workbook = new ExcelJS.Workbook()
-            const worksheet = workbook.addWorksheet(activeTab === 'inward' ? 'Báo cáo Nhập LOT' : 'Báo cáo Xuất LOT')
+            const worksheet = workbook.addWorksheet(
+                activeTab === 'inward' 
+                    ? 'Báo cáo Nhập LOT' 
+                    : activeTab === 'outward' 
+                        ? 'Báo cáo Xuất LOT' 
+                        : 'LOT Chưa Có Vị Trí'
+            )
 
             // Header definition based on tab
             if (activeTab === 'inward') {
                 worksheet.columns = [
                     { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'STT LOT', key: 'daily_seq', width: 10 },
                     { header: 'NGÀY NHẬP', key: 'date', width: 15 },
                     { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
                     { header: 'SẢN PHẨM', key: 'product', width: 40 },
@@ -720,9 +777,10 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
                     { header: 'VỊ TRÍ', key: 'position', width: 15 }
                 ]
-            } else {
+            } else if (activeTab === 'outward') {
                 worksheet.columns = [
                     { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'STT LOT', key: 'daily_seq', width: 10 },
                     { header: 'NGÀY XUẤT', key: 'date', width: 15 },
                     { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
                     { header: 'SẢN PHẨM', key: 'product', width: 40 },
@@ -730,6 +788,17 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
                     { header: 'MÃ LỆNH SX', key: 'customer', width: 25 },
                     { header: 'GHI CHÚ', key: 'description', width: 25 }
+                ]
+            } else {
+                worksheet.columns = [
+                    { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'STT LOT', key: 'daily_seq', width: 10 },
+                    { header: 'NGÀY TẠO', key: 'date', width: 15 },
+                    { header: 'MÃ LOT SX', key: 'prod_code', width: 25 },
+                    { header: 'SẢN PHẨM', key: 'product', width: 40 },
+                    { header: 'SỐ LƯỢNG', key: 'qty', width: 12 },
+                    { header: 'ĐƠN VỊ', key: 'unit', width: 10 },
+                    { header: 'TRẠNG THÁI', key: 'position', width: 15 }
                 ]
             }
 
@@ -768,7 +837,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             const lastColChar = String.fromCharCode(65 + worksheet.columns.length - 1)
             worksheet.mergeCells(`A${currentRow}:${lastColChar}${currentRow}`)
             const titleCell = worksheet.getCell(`A${currentRow}`)
-            titleCell.value = 'BÁO CÁO TỔNG HỢP LOT'
+            titleCell.value = activeTab === 'inward' ? 'BÁO CÁO NHẬP KHO LOT' : activeTab === 'outward' ? 'BÁO CÁO XUẤT KHO LOT' : 'BÁO CÁO LOT CHƯA GÁN VỊ TRÍ'
             titleCell.font = { bold: true, size: 16 }
             titleCell.alignment = { horizontal: 'center' }
             currentRow++
@@ -776,7 +845,9 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             // 3. Date Range Info
             worksheet.mergeCells(`A${currentRow}:${lastColChar}${currentRow}`)
             const dateRangeCell = worksheet.getCell(`A${currentRow}`)
-            dateRangeCell.value = `Từ ngày: ${format(new Date(startDate), 'dd/MM/yyyy')} đến ngày: ${format(new Date(endDate), 'dd/MM/yyyy')}`
+            dateRangeCell.value = activeTab !== 'unassigned'
+                ? `Từ ngày: ${format(new Date(startDate), 'dd/MM/yyyy')} đến ngày: ${format(new Date(endDate), 'dd/MM/yyyy')}`
+                : `Thời điểm xuất báo cáo: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`
             dateRangeCell.alignment = { horizontal: 'center' }
             dateRangeCell.font = { italic: true }
             currentRow++
@@ -841,7 +912,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 sortedDates.forEach(dateStr => {
                     // Add Date Header Row
                     const dateHeaderRow = worksheet.addRow([`NGÀY: ${dateStr}`])
-                    worksheet.mergeCells(`A${dateHeaderRow.number}:G${dateHeaderRow.number}`)
+                    worksheet.mergeCells(`A${dateHeaderRow.number}:H${dateHeaderRow.number}`)
                     dateHeaderRow.eachCell((cell) => {
                         cell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
                         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F81BD' } } // Blue background
@@ -852,7 +923,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         // Add Group Header Row
                         const productionLabel = group.production_name || group.production_code || 'Không xác định'
                         const groupHeaderRow = worksheet.addRow([`  LỆNH SẢN XUẤT: ${productionLabel}`])
-                        worksheet.mergeCells(`A${groupHeaderRow.number}:G${groupHeaderRow.number}`)
+                        worksheet.mergeCells(`A${groupHeaderRow.number}:H${groupHeaderRow.number}`)
                         groupHeaderRow.eachCell((cell) => {
                             cell.font = { bold: true, size: 11, color: { argb: '000000' } }
                             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }
@@ -878,6 +949,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
 
                                     const row = worksheet.addRow({
                                         stt: itemIdx === 0 ? itemIndex++ : '',
+                                        daily_seq: itemIdx === 0 ? (lot.daily_seq || '-') : '',
                                         date: itemIdx === 0 ? dateStr : '',
                                         prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
                                         product: productDisplay,
@@ -887,7 +959,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                     })
                                     row.eachCell((cell, colNumber) => {
                                         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                                        if (colNumber === 5) {
+                                        if (colNumber === 6) {
                                             cell.alignment = { horizontal: 'right' }
                                             cell.numFmt = '#,##0'
                                         }
@@ -897,6 +969,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
                                 const row = worksheet.addRow({
                                     stt: itemIndex++,
+                                    daily_seq: lot.daily_seq || '-',
                                     date: dateStr,
                                     prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
                                     product: lot.products.name || '-',
@@ -906,7 +979,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 })
                                 row.eachCell((cell, colNumber) => {
                                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                                    if (colNumber === 5) {
+                                    if (colNumber === 6) {
                                         cell.alignment = { horizontal: 'right' }
                                         cell.numFmt = '#,##0'
                                     }
@@ -915,7 +988,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         })
                     })
                 })
-            } else {
+            } else if (activeTab === 'outward') {
                 // Outward export
                 const dateGroups: Record<string, Record<string, { production_code: string, production_name?: string, rows: any[] }>> = {}
 
@@ -945,7 +1018,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                 sortedDates.forEach(dateStr => {
                     // Add Date Header Row
                     const dateHeaderRow = worksheet.addRow([`NGÀY: ${dateStr}`])
-                    worksheet.mergeCells(`A${dateHeaderRow.number}:H${dateHeaderRow.number}`) // 8 columns for outward
+                    worksheet.mergeCells(`A${dateHeaderRow.number}:I${dateHeaderRow.number}`) // 9 columns for outward
                     dateHeaderRow.eachCell((cell) => {
                         cell.font = { bold: true, size: 12, color: { argb: 'FFFFFF' } }
                         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: '4F81BD' } }
@@ -955,7 +1028,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                     Object.values(dateGroups[dateStr]).forEach((group: any) => {
                         const productionLabel = group.production_name || group.production_code || 'Không xác định'
                         const groupHeaderRow = worksheet.addRow([`  LỆNH SẢN XUẤT: ${productionLabel}`])
-                        worksheet.mergeCells(`A${groupHeaderRow.number}:H${groupHeaderRow.number}`)
+                        worksheet.mergeCells(`A${groupHeaderRow.number}:I${groupHeaderRow.number}`)
                         groupHeaderRow.eachCell((cell) => {
                             cell.font = { bold: true, size: 11, color: { argb: '000000' } }
                             cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } }
@@ -967,6 +1040,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || '-'
                             const excelRow = worksheet.addRow({
                                 stt: itemIndex++,
+                                daily_seq: row.daily_seq || '-',
                                 date: dateStr,
                                 prod_code: `${sxLotCode}${row.lot_code ? ` (${row.lot_code})` : ''}`,
                                 product: row.product_name,
@@ -977,7 +1051,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             })
                             excelRow.eachCell((cell, colNumber) => {
                                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
-                                if (colNumber === 5) {
+                                if (colNumber === 6) {
                                     cell.alignment = { horizontal: 'right' }
                                     cell.numFmt = '#,##0'
                                 }
@@ -985,10 +1059,69 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         })
                     })
                 })
+            } else {
+                // unassigned lots mapping
+                let itemIndex = 1
+                reportDataUnassigned.forEach((lot: any) => {
+                    const dateStr = format(new Date(lot.created_at), 'dd/MM/yyyy')
+                    if (lot.lot_items && lot.lot_items.length > 0) {
+                        lot.lot_items.forEach((item, itemIdx) => {
+                            const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                            const row = worksheet.addRow({
+                                stt: itemIdx === 0 ? itemIndex++ : '',
+                                daily_seq: itemIdx === 0 ? (lot.daily_seq || '-') : '',
+                                date: itemIdx === 0 ? dateStr : '',
+                                prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
+                                product: item.products?.name || '-',
+                                qty: item.quantity,
+                                unit: item.unit || item.products?.unit || '-',
+                                position: itemIdx === 0 ? 'Chưa gán vị trí' : ''
+                            })
+                            row.eachCell((cell, colNumber) => {
+                                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                                if (colNumber === 6) {
+                                    cell.alignment = { horizontal: 'right' }
+                                    cell.numFmt = '#,##0'
+                                }
+                                if (colNumber === 8 && cell.value === 'Chưa gán vị trí') {
+                                    cell.font = { color: { argb: 'FF0000' }, bold: true }
+                                }
+                            })
+                        })
+                    } else if (lot.products) {
+                        const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                        const row = worksheet.addRow({
+                            stt: itemIndex++,
+                            daily_seq: lot.daily_seq || '-',
+                            date: dateStr,
+                            prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
+                            product: lot.products.name || '-',
+                            qty: lot.quantity || 0,
+                            unit: lot.unit || lot.products.unit || '-',
+                            position: 'Chưa gán vị trí'
+                        })
+                        row.eachCell((cell, colNumber) => {
+                            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                            if (colNumber === 6) {
+                                cell.alignment = { horizontal: 'right' }
+                                cell.numFmt = '#,##0'
+                            }
+                            if (colNumber === 8) {
+                                cell.font = { color: { argb: 'FF0000' }, bold: true }
+                            }
+                        })
+                    }
+                })
             }
             
             // Add Statistics Sheet
-            const statsSheet = workbook.addWorksheet(activeTab === 'inward' ? 'Thống kê Nhập' : 'Thống kê Xuất')
+            const statsSheet = workbook.addWorksheet(
+                activeTab === 'inward' 
+                    ? 'Thống kê Nhập' 
+                    : activeTab === 'outward' 
+                        ? 'Thống kê Xuất' 
+                        : 'Thống kê Chưa Vị Trí'
+            )
             if (activeTab === 'inward') {
                 statsSheet.columns = [
                     { header: 'STT', key: 'stt', width: 5 },
@@ -1158,7 +1291,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         })
                     })
                 })
-            } else {
+            } else if (activeTab === 'outward') {
                 // Outward Stats
                 statsSheet.columns = [
                     { header: 'STT', key: 'stt', width: 5 },
@@ -1228,7 +1361,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 totalQty: p.totalQty,
                                 unit: p.unit
                             })
-                            row.eachCell((cell, colNum) => {
+                                                        row.eachCell((cell, colNum) => {
                                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
                                 if (colNum === 3) {
                                     cell.alignment = { horizontal: 'right' }
@@ -1237,6 +1370,59 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 }
                             })
                         })
+                    })
+                })
+            } else {
+                // unassigned stats
+                statsSheet.columns = [
+                    { header: 'STT', key: 'stt', width: 5 },
+                    { header: 'SẢN PHẨM', key: 'product', width: 40 },
+                    { header: 'TỔNG SẢN LƯỢNG', key: 'totalQty', width: 20 },
+                    { header: 'ĐƠN VỊ', key: 'unit', width: 10 }
+                ]
+                statsSheet.getRow(1).eachCell(cell => {
+                    cell.font = { bold: true }
+                    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F2F2F2' } }
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                    cell.alignment = { horizontal: 'center' }
+                })
+
+                const stats = {}
+                reportDataUnassigned.forEach(lot => {
+                    const items = lot.lot_items || []
+                    items.forEach((item) => {
+                        const unit = item.unit || item.products?.unit || '-'
+                        const key = `${item.product_id}_${unit}`
+                        if (!stats[key]) {
+                            stats[key] = { productName: item.products?.name || 'Sản phẩm không tên', totalQty: 0, unit: unit }
+                        }
+                        stats[key].totalQty += (Number(item.quantity) || 0)
+                    })
+                    if (items.length === 0 && lot.products) {
+                        const unit = lot.unit || lot.products.unit || '-'
+                        const key = `${lot.product_id}_${unit}`
+                        if (!stats[key]) {
+                            stats[key] = { productName: lot.products.name || 'Sản phẩm không tên', totalQty: 0, unit: unit }
+                        }
+                        stats[key].totalQty += (Number(lot.quantity) || 0)
+                    }
+                })
+
+                let stt = 1
+                Object.values(stats).sort((a, b) => b.totalQty - a.totalQty).forEach((p) => {
+                    const row = statsSheet.addRow({
+                        stt: stt++,
+                        product: p.productName,
+                        totalQty: p.totalQty,
+                        unit: p.unit
+                    })
+                    row.eachCell((cell, colNum) => {
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } }
+                        if (colNum === 3) {
+                            cell.alignment = { horizontal: 'right' }
+                            cell.numFmt = '#,##0'
+                            cell.font = { bold: true, color: { argb: 'FF0000' } }
+                        }
                     })
                 })
             }
@@ -1261,7 +1447,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
             })
 
             const buffer = await workbook.xlsx.writeBuffer()
-            const fileName = `Bao_cao_${activeTab === 'inward' ? 'Nhap' : 'Xuat'}_LOT_${startDate}_to_${endDate}.xlsx`
+            const fileName = `Bao_cao_${activeTab === 'inward' ? 'Nhap' : activeTab === 'outward' ? 'Xuat' : 'Chua_Vi_Tri'}_LOT_${startDate}_to_${endDate}.xlsx`
             saveAs(new Blob([buffer]), fileName)
             showToast('Đã xuất file Excel thành công', 'success')
         } catch (err: any) {
@@ -1271,7 +1457,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
     }
 
     const handlePrint = (orientation: 'portrait' | 'landscape' = 'portrait') => {
-        const currentData = activeTab === 'inward' ? reportDataInward : reportDataOutward
+        const currentData = activeTab === 'inward' ? reportDataInward : activeTab === 'outward' ? reportDataOutward : reportDataUnassigned
         if (currentData.length === 0) {
             showToast('Không có dữ liệu để in', 'warning')
             return
@@ -1388,41 +1574,59 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                     DANH SÁCH XUẤT
                                 </div>
                             </button>
+                            <button
+                                onClick={() => setActiveTab('unassigned')}
+                                className={`px-6 py-2.5 rounded-xl text-sm font-black transition-all ${activeTab === 'unassigned' 
+                                    ? 'bg-white dark:bg-slate-900 text-indigo-600 dark:text-indigo-400 shadow-md scale-100' 
+                                    : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 scale-95 opacity-70'}`}
+                            >
+                                <div className="flex items-center gap-2">
+                                    <div className={`w-2 h-2 rounded-full ${activeTab === 'unassigned' ? 'bg-indigo-500' : 'bg-slate-400'}`}></div>
+                                    LOT CHƯA CÓ VỊ TRÍ
+                                </div>
+                            </button>
                         </div>
 
                         <div className="flex flex-col sm:flex-row sm:items-center gap-4">
-                            <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
-                                <Calendar size={16} className="text-orange-500 shrink-0" />
-                                <div className="flex items-center gap-1 sm:gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
-                                    <input
-                                        type="date"
-                                        value={startDate}
-                                        onChange={(e) => setStartDate(e.target.value)}
-                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-[130px] md:w-[145px] text-center"
-                                    />
-                                    <span className="text-slate-400">→</span>
-                                    <input
-                                        type="date"
-                                        value={endDate}
-                                        onChange={(e) => setEndDate(e.target.value)}
-                                        className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-[130px] md:w-[145px] text-center"
-                                    />
+                            {activeTab !== 'unassigned' ? (
+                                <div className="flex items-center gap-2 bg-white dark:bg-slate-900 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm relative">
+                                    <Calendar size={16} className="text-orange-500 shrink-0" />
+                                    <div className="flex items-center gap-1 sm:gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+                                        <input
+                                            type="date"
+                                            value={startDate}
+                                            onChange={(e) => setStartDate(e.target.value)}
+                                            className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-[130px] md:w-[145px] text-center"
+                                        />
+                                        <span className="text-slate-400">→</span>
+                                        <input
+                                            type="date"
+                                            value={endDate}
+                                            onChange={(e) => setEndDate(e.target.value)}
+                                            className="bg-transparent border-none p-0 focus:ring-0 outline-none w-[110px] sm:w-[130px] md:w-[145px] text-center"
+                                        />
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                <div className="flex items-center gap-2 bg-indigo-50 dark:bg-indigo-950/30 px-4 py-2.5 rounded-xl border border-indigo-100 dark:border-indigo-900/30 shadow-inner">
+                                    <div className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse"></div>
+                                    <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400">Hiện trạng thực tế chưa gán vị trí</span>
+                                </div>
+                            )}
                             <div className="text-[10px] sm:text-xs font-black text-slate-400 uppercase tracking-widest bg-slate-100 dark:bg-slate-800 px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700/50 w-fit">
-                                {activeTab === 'inward' ? 'Nhập kho: ' : 'Xuất kho: '}
+                                {activeTab === 'inward' ? 'Nhập kho: ' : activeTab === 'outward' ? 'Xuất kho: ' : 'Chưa vị trí: '}
                                 <span className={`${activeTab === 'inward' ? 'text-orange-600' : 'text-emerald-600'} text-sm sm:text-base ml-1`}>
-                                    {activeTab === 'inward' ? reportDataInward.length : reportDataOutward.length}
+                                    {activeTab === 'inward' ? reportDataInward.length : activeTab === 'outward' ? reportDataOutward.length : reportDataUnassigned.length}
                                 </span> 
-                                <span className="ml-0.5">{activeTab === 'inward' ? 'LOT' : 'Dòng'}</span>
+                                <span className="ml-0.5">{activeTab === 'inward' ? 'LOT' : activeTab === 'outward' ? 'Dòng' : 'LOT'}</span>
                             </div>
                         </div>
 
                         <div className="flex items-center justify-between sm:justify-end gap-2 w-full md:w-auto">
                             <button
                                 onClick={handleExportExcel}
-                                disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0)}
-                                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-black shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:grayscale ${activeTab === 'inward' ? 'bg-orange-600 shadow-orange-600/20' : 'bg-emerald-600 shadow-emerald-600/20'}`}
+                                disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : activeTab === 'outward' ? reportDataOutward.length === 0 : reportDataUnassigned.length === 0)}
+                                className={`flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-black shadow-lg active:scale-95 transition-all disabled:opacity-50 disabled:grayscale ${activeTab === 'inward' ? 'bg-orange-600 shadow-orange-600/20' : activeTab === 'outward' ? 'bg-emerald-600 shadow-emerald-600/20' : 'bg-indigo-600 shadow-indigo-600/20'}`}
                             >
                                 <Download size={18} />
                                 <span className="sm:inline">Excel</span>
@@ -1430,7 +1634,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             <div className="flex-1 sm:flex-none flex items-center bg-slate-800 dark:bg-slate-700 rounded-xl overflow-hidden p-0.5 shadow-lg shadow-slate-900/20">
                                 <button
                                     onClick={() => handlePrint('portrait')}
-                                    disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0)}
+                                    disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : activeTab === 'outward' ? reportDataOutward.length === 0 : reportDataUnassigned.length === 0)}
                                     title="In dọc (Portrait)"
                                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
                                 >
@@ -1440,7 +1644,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 <div className="w-px h-5 bg-slate-600 mx-0.5 opacity-50"></div>
                                 <button
                                     onClick={() => handlePrint('landscape')}
-                                    disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0)}
+                                    disabled={loading || (activeTab === 'inward' ? reportDataInward.length === 0 : activeTab === 'outward' ? reportDataOutward.length === 0 : reportDataUnassigned.length === 0)}
                                     title="In ngang (Landscape)"
                                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-3 sm:px-4 py-2 rounded-lg bg-transparent hover:bg-black text-white text-sm font-bold transition-all disabled:opacity-50"
                                 >
@@ -1459,10 +1663,10 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             <Loader2 size={40} className="animate-spin text-orange-500" />
                             <p className="text-sm font-bold text-slate-500 animate-pulse">Đang nạp dữ liệu...</p>
                         </div>
-                    ) : (activeTab === 'inward' ? reportDataInward.length === 0 : reportDataOutward.length === 0) ? (
+                    ) : (activeTab === 'inward' ? reportDataInward.length === 0 : activeTab === 'outward' ? reportDataOutward.length === 0 : reportDataUnassigned.length === 0) ? (
                         <div className="h-64 flex flex-col items-center justify-center gap-4 text-slate-400 no-print">
                             <LayoutList size={48} strokeWidth={1} />
-                            <p className="font-medium">Không tìm thấy dữ liệu {activeTab === 'inward' ? 'nhập' : 'xuất'} nào trong khoảng ngày này</p>
+                            <p className="font-medium">Không tìm thấy dữ liệu {activeTab === 'inward' ? 'nhập' : activeTab === 'outward' ? 'xuất' : 'chưa gán vị trí'} nào</p>
                         </div>
                     ) : (
                         <div className="report-root">
@@ -1486,27 +1690,29 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 </div>
                                 <div style={{ textAlign: 'center', marginBottom: '25px' }}>
                                     <h2 style={{ fontSize: '20pt', fontWeight: '900', margin: '0 0 8px 0', textTransform: 'uppercase', color: '#0f172a', letterSpacing: '1px' }}>
-                                        BÁO CÁO {activeTab === 'inward' ? 'DANH SÁCH LOT ĐÃ NHẬP' : 'DANH SÁCH LOT ĐÃ XUẤT'}
+                                        BÁO CÁO {activeTab === 'inward' ? 'DANH SÁCH LOT ĐÃ NHẬP' : activeTab === 'outward' ? 'DANH SÁCH LOT ĐÃ XUẤT' : 'DANH SÁCH LOT CHƯA GÁN VỊ TRÍ'}
                                     </h2>
                                     <p style={{ fontSize: '11pt', fontStyle: 'italic', color: '#475569', margin: '0' }}>
-                                        Từ ngày: {format(new Date(startDate), 'dd/MM/yyyy')} đến ngày: {format(new Date(endDate), 'dd/MM/yyyy')}
+                                        {activeTab !== 'unassigned' 
+                                            ? `Từ ngày: ${format(new Date(startDate), 'dd/MM/yyyy')} đến ngày: ${format(new Date(endDate), 'dd/MM/yyyy')}`
+                                            : `Thời điểm xuất báo cáo: ${format(new Date(), 'dd/MM/yyyy HH:mm')}`}
                                     </p>
                                 </div>
                             </div>
                             
                             {/* Summary Statistics */}
                             {(() => {
-                                const stats = activeTab === 'inward' ? summaryInward : summaryOutward;
+                                const stats = activeTab === 'inward' ? summaryInward : activeTab === 'outward' ? summaryOutward : summaryUnassigned;
                                 if (stats.length === 0) return null;
                                 return (
                                     <div className="mb-8 print-avoid-break">
                                         <h4 className="text-sm font-black text-slate-800 dark:text-slate-200 uppercase tracking-widest mb-4 flex items-center gap-2">
                                             <div className={`w-1.5 h-4 ${activeTab === 'inward' ? 'bg-orange-500' : 'bg-emerald-500'} rounded-full`}></div>
-                                            Tổng hợp sản lượng ({activeTab === 'inward' ? 'Nhập' : 'Xuất'})
+                                            Tổng hợp sản lượng ({activeTab === 'inward' ? 'Nhập' : activeTab === 'outward' ? 'Xuất' : 'Chưa gán vị trí'})
                                         </h4>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                                             {stats.map((stat, sIdx) => (
-                                                <div key={sIdx} className={`p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group transition-all shadow-sm ${activeTab === 'inward' ? 'hover:border-orange-200 dark:hover:border-orange-900/30' : 'hover:border-emerald-200 dark:hover:border-emerald-900/30'}`}>
+                                                <div key={sIdx} className={`p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between group transition-all shadow-sm ${activeTab === 'inward' ? 'hover:border-orange-200 dark:hover:border-orange-900/30' : activeTab === 'outward' ? 'hover:border-emerald-200 dark:hover:border-emerald-900/30' : 'hover:border-indigo-200 dark:hover:border-indigo-900/30'}`}>
                                                     <div className="flex-1 min-w-0 pr-3">
                                                         <div className="text-[10px] font-black text-slate-400 uppercase mb-1">{stat.productName}</div>
                                                         <div className="text-lg font-black text-slate-900 dark:text-slate-100 flex items-baseline gap-1">
@@ -1538,7 +1744,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                     </span>
                                                                                 )}
                                                                             </div>
-                                                                            <span className={`text-[10px] font-black shrink-0 ${activeTab === 'inward' ? 'text-orange-600' : 'text-emerald-600'}`}>
+                                                                            <span className={`text-[10px] font-black shrink-0 ${activeTab === 'inward' ? 'text-orange-600' : activeTab === 'outward' ? 'text-emerald-600' : 'text-indigo-600'}`}>
                                                                                 {formatQuantityFull(pQty as number)}
                                                                             </span>
                                                                         </div>
@@ -1548,7 +1754,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                         )}
                                                     </div>
                                                     <div className="shrink-0 flex flex-col items-end">
-                                                        <div className={`px-2 py-1 rounded text-[10px] font-black ${activeTab === 'inward' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400'}`}>
+                                                        <div className={`px-2 py-1 rounded text-[10px] font-black ${activeTab === 'inward' ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400' : activeTab === 'outward' ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400'}`}>
                                                             {stat.lotCount} dòng
                                                         </div>
                                                     </div>
@@ -1577,6 +1783,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                     <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800">
                                                         <tr>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[4%]">STT</th>
+                                                            <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[8%]">STT LOT</th>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[11%]">Ngày nhập</th>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[20%]">Mã LOT SX</th>
                                                             <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[33%]">Sản phẩm</th>
@@ -1631,6 +1838,11 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                     {itemIdx === 0 && (
                                                                                         <>
                                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
+                                                                                            <td className="py-4 px-2 font-black text-slate-900 dark:text-white" rowSpan={rowSpan}>
+                                                                                                <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                                                    {lot.daily_seq || '--'}
+                                                                                                </span>
+                                                                                            </td>
                                                                                             <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
                                                                                                 {format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}
                                                                                             </td>
@@ -1714,6 +1926,11 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     ) : lot.products ? (
                                                                         <tr className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                                            <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
+                                                                                <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                                    {lot.daily_seq || '--'}
+                                                                                </span>
+                                                                            </td>
                                                                             <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
                                                                             <td className="py-4 px-2">
                                                                                 <div className="flex flex-col gap-1.5">
@@ -1754,6 +1971,11 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     ) : (
                                                                         <tr className="border-b border-slate-100 dark:border-slate-800/50">
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                                            <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
+                                                                                <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                                    {lot.daily_seq || '--'}
+                                                                                </span>
+                                                                            </td>
                                                                             <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
                                                                             <td className="py-4 px-2">
                                                                                 <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-400 font-bold text-[11px]">
@@ -1775,13 +1997,14 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                         </div>
                                     ))}
                                 </div>
-                            ) : (
+                            ) : activeTab === 'outward' ? (
                                 <div className="outward-table-wrapper">
                                     <div className="overflow-x-auto">
                                         <table className="w-full text-left border-collapse">
                                             <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800">
                                                 <tr>
                                                     <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[4%]">STT</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[8%]">STT LOT</th>
                                                     <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[11%]">Ngày xuất</th>
                                                     <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[18%]">Mã LOT SX</th>
                                                     <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[25%]">Sản phẩm</th>
@@ -1795,6 +2018,11 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                 {reportDataOutward.map((row, idx) => (
                                                     <tr key={row.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
                                                         <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                        <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
+                                                            <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                {row.daily_seq || '--'}
+                                                            </span>
+                                                        </td>
                                                         <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400">
                                                             {format(new Date(row.date), 'dd/MM/yyyy')}
                                                         </td>
@@ -1885,6 +2113,129 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                         </td>
                                                     </tr>
                                                 ))}
+                                            </tbody>
+                                        </table>
+                                                                        </div>
+                                </div>
+                            ) : (
+                                <div className="unassigned-table-wrapper">
+                                    <div className="overflow-x-auto">
+                                        <table className="w-full text-left border-collapse">
+                                            <thead className="bg-slate-50 dark:bg-slate-900 border-b-2 border-slate-200 dark:border-slate-800">
+                                                <tr>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[5%]">STT</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[10%]">STT LOT</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[12%]">Ngày tạo</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[18%]">Mã LOT SX</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[30%]">Sản phẩm</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right w-[12%]">Số lượng</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[8%]">Đơn vị</th>
+                                                    <th className="py-3 px-2 text-[10px] font-black text-slate-500 uppercase tracking-widest w-[15%]">Trạng thái</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {reportDataUnassigned.map((lot, idx) => {
+                                                    const displayItems = lot.lot_items || []
+                                                    const rowSpan = Math.max(displayItems.length, 1)
+                                                    
+                                                    return (
+                                                        <React.Fragment key={lot.id}>
+                                                            {displayItems.length > 0 ? (
+                                                                displayItems.map((item, itemIdx) => {
+                                                                    const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
+                                                                    return (
+                                                                        <tr key={item.id} className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                                            {itemIdx === 0 && (
+                                                                                <>
+                                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
+                                                                                    <td className="py-4 px-2 font-black text-slate-900 dark:text-white" rowSpan={rowSpan}>
+                                                                                        <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                                            {lot.daily_seq || '--'}
+                                                                                        </span>
+                                                                                    </td>
+                                                                                    <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
+                                                                                        {format(new Date(lot.created_at), 'dd/MM/yyyy')}
+                                                                                    </td>
+                                                                                    <td className="py-4 px-2" rowSpan={rowSpan}>
+                                                                                        <span className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] border border-indigo-100 dark:border-indigo-800/30 w-fit">
+                                                                                            {sxLotCode}
+                                                                                        </span>
+                                                                                    </td>
+                                                                                </>
+                                                                            )}
+                                                                            <td className="py-2 px-2">
+                                                                                <div className="font-bold text-slate-800 dark:text-slate-200">{item.products?.name}</div>
+                                                                                <span className="text-[10px] text-slate-400 font-mono">{item.products?.sku}</span>
+                                                                            </td>
+                                                                            <td className="py-2 px-2 text-right font-black text-indigo-600">
+                                                                                {formatQuantityFull(Number(item.quantity) || 0)}
+                                                                            </td>
+                                                                            <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
+                                                                                {item.unit || item.products?.unit || '-'}
+                                                                            </td>
+                                                                            {itemIdx === 0 && (
+                                                                                <td className="py-2 px-2" rowSpan={rowSpan}>
+                                                                                    <span className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-[10px] font-black border border-rose-100 dark:border-rose-900/30">
+                                                                                        Chưa vị trí
+                                                                                    </span>
+                                                                                </td>
+                                                                            )}
+                                                                        </tr>
+                                                                    )
+                                                                })
+                                                            ) : lot.products ? (
+                                                                <tr className="border-b border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/20 text-sm">
+                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                                    <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
+                                                                        <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                            {lot.daily_seq || '--'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.created_at), 'dd/MM/yyyy')}</td>
+                                                                    <td className="py-4 px-2">
+                                                                        <span className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] border border-indigo-100 dark:border-indigo-800/30 w-fit">
+                                                                            {productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="py-2 px-2">
+                                                                        <div className="font-bold text-slate-800 dark:text-slate-200">{lot.products.name || '-'}</div>
+                                                                        <span className="text-[10px] text-slate-400 font-mono">{lot.products.sku || '-'}</span>
+                                                                    </td>
+                                                                    <td className="py-2 px-2 text-right font-black text-indigo-600">
+                                                                        {formatQuantityFull(Number(lot.quantity) || 0)}
+                                                                    </td>
+                                                                    <td className="py-2 px-2 font-bold text-[10px] text-slate-400 uppercase">
+                                                                        {lot.unit || lot.products.unit || '-'}
+                                                                    </td>
+                                                                    <td className="py-2 px-2">
+                                                                        <span className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-[10px] font-black border border-rose-100 dark:border-rose-900/30">
+                                                                            Chưa vị trí
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            ) : (
+                                                                <tr className="border-b border-slate-100 dark:border-slate-800/50">
+                                                                    <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
+                                                                    <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
+                                                                        <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
+                                                                            {lot.daily_seq || '--'}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.created_at), 'dd/MM/yyyy')}</td>
+                                                                    <td className="py-2 px-2">-</td>
+                                                                    <td className="py-2 px-2 italic text-slate-400 text-xs">Không có dữ liệu hàng hóa</td>
+                                                                    <td className="py-2 px-2 text-right">-</td>
+                                                                    <td className="py-2 px-2 text-slate-400">-</td>
+                                                                    <td className="py-2 px-2">
+                                                                        <span className="px-2 py-1 rounded bg-rose-50 dark:bg-rose-950/30 text-rose-600 dark:text-rose-400 text-[10px] font-black border border-rose-100 dark:border-rose-900/30">
+                                                                            Chưa vị trí
+                                                                        </span>
+                                                                    </td>
+                                                                </tr>
+                                                            )}
+                                                        </React.Fragment>
+                                                    )
+                                                })}
                                             </tbody>
                                         </table>
                                     </div>
