@@ -160,8 +160,8 @@ export default function AssignmentApprovalPage() {
 
             if (dateFilterType === 'created_at') {
                 processedQuery = processedQuery
-                    .gte('created_at', dateFrom)
-                    .lte('created_at', dateTo + 'T23:59:59.999Z')
+                    .gte('created_at', dateFrom + 'T00:00:00+07:00')
+                    .lte('created_at', dateTo + 'T23:59:59.999+07:00')
             } else {
                 processedQuery = processedQuery
                     .gte('production_date', dateFrom)
@@ -329,8 +329,8 @@ export default function AssignmentApprovalPage() {
 
             if (dateFilterType === 'created_at') {
                 query = query
-                    .gte('created_at', historyDateFrom)
-                    .lte('created_at', historyDateTo + 'T23:59:59.999Z')
+                    .gte('created_at', historyDateFrom + 'T00:00:00+07:00')
+                    .lte('created_at', historyDateTo + 'T23:59:59.999+07:00')
             } else {
                 query = query
                     .gte('production_date', historyDateFrom)
