@@ -775,7 +775,7 @@ function ProductionLotPrintContent() {
                                     </div>
                                     <div className="flex items-center gap-1">
                                         <span className="text-[7px] font-black uppercase text-zinc-400">Ngày ĐG:</span>
-                                        <span className="text-[10px] font-black text-zinc-900">{new Date(printConfig.packing_date).toLocaleDateString('vi-VN')}</span>
+                                        <span className="text-[10px] font-black text-zinc-900">{printConfig.packing_date ? new Date(printConfig.packing_date).toLocaleDateString('vi-VN') : '---'}</span>
                                     </div>
                                 </div>
                             </div>
@@ -1202,7 +1202,7 @@ function ProductionLotPrintContent() {
                                                 <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Quy cách:</span> <span className="font-black text-zinc-900 text-sm leading-tight uppercase">{printConfig.specification || '---'}</span></div>
                                                 <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Khối lượng:</span> <span className="font-black text-zinc-900 text-sm uppercase">{printConfig.net_weight || '---'}</span></div>
                                                 <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Ngày SX:</span> <span className="font-black text-zinc-900 text-sm leading-none">{new Date(printConfig.production_date).toLocaleDateString('vi-VN')}</span></div>
-                                                <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Ngày ĐG:</span> <span className="font-black text-zinc-900 text-sm leading-none">{new Date(printConfig.packing_date).toLocaleDateString('vi-VN')}</span></div>
+                                                <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Ngày ĐG:</span> <span className="font-black text-zinc-900 text-sm leading-none">{printConfig.packing_date ? new Date(printConfig.packing_date).toLocaleDateString('vi-VN') : '---'}</span></div>
                                             </div>
                                         </section>
                                     </div>
