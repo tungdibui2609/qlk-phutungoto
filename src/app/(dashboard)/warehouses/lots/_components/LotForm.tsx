@@ -446,27 +446,6 @@ export function LotForm({
             }
         }
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
-
-        // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG NHẢY THEO NGÀY) --
-        const startOfDay = new Date()
-        startOfDay.setHours(0, 0, 0, 0)
-        
-        const { data: lastSttData } = await supabase
-            .from('lots')
-            .select('daily_seq')
-            .eq('system_code', currentSystem.code)
-            .gte('created_at', startOfDay.toISOString())
-            .order('created_at', { ascending: false })
-            .limit(1)
-
-        let nextDailySeq = 1
-        if (lastSttData && lastSttData.length > 0) {
-            const lastSeq = (lastSttData as any)[0].daily_seq
-            if (lastSeq !== null && !isNaN(Number(lastSeq))) {
-                nextDailySeq = Number(lastSeq) + 1
-            }
-        }
-        setDailySeq(nextDailySeq)
     }
 
     async function handleSubmit() {
