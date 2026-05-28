@@ -688,6 +688,32 @@ export function LotForm({
             }
         }
 
+        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRONG CÙNG NGÀY ---
+        const dailySeqVal = encodeSTT(dailySeq)
+        if (dailySeqVal !== null && !isNaN(dailySeqVal) && inboundDate) {
+            let checkSttQuery = supabase
+                .from('lots')
+                .select('id, code', { count: 'exact', head: true })
+                .eq('system_code', currentSystem?.code || '')
+                .eq('inbound_date', inboundDate)
+                .eq('daily_seq', dailySeqVal)
+                
+            if (editingLot?.id) {
+                checkSttQuery = checkSttQuery.neq('id', editingLot.id)
+            }
+
+            const { count: sttCount, error: checkSttError } = await checkSttQuery
+            
+            if (checkSttError) throw checkSttError
+            
+            if (sttCount && sttCount > 0) {
+                alert(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đã tồn tại trong ngày nhập kho ${inboundDate.split('-').reverse().join('/')} của phân hệ này. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`)
+                setIsSubmitting(false)
+                return
+            }
+        }
+        // ---------------------------------------------------------
+
         let lotId = editingLot?.id
         let error
 
