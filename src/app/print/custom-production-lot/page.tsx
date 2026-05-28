@@ -37,8 +37,8 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
     const hsdDisplay = config.expiry_date ? new Date(config.expiry_date).toLocaleDateString('vi-VN') : '---'
     const barcode = config.barcode || data?.lot_code || ''
     // Cột cố định thẳng hàng: C1=25% | C2=25% | C3=25% | C4=25%
-    const cell = 'border-b-[1.5px] border-r-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px]'
-    const cellLast = 'border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px]'
+    const cell = 'border-b-[1.5px] border-r-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center'
+    const cellLast = 'border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center'
     const lbl = 'text-[9px] font-black text-black uppercase tracking-tighter'
     const val = 'text-[10px] font-black text-black'
     const valLg = 'text-[12px] font-black text-black'
@@ -70,40 +70,40 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
                 {/* NCC | value */}
                 <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>NCC</div>
-                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] ${val} text-center`}>{config.customer_name || 'CT'}</div>
+                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center justify-center ${val} text-center`}>{config.customer_name || 'CT'}</div>
                 </div>
 
                 {/* Số Lot | value | TL | value */}
                 <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>Số Lot</div>
-                    <div className={`w-[40%] ${cell} ${valLg} tracking-tight text-center`}>
+                    <div className={`w-[40%] ${cell} justify-center ${valLg} tracking-tight text-center`}>
                         {lotCode}
                     </div>
-                    <div className={`w-[12%] ${cell} ${lbl}`}>TL</div>
-                    <div className={`w-[30%] ${cellLast} ${val} text-center`}>{config.net_weight || '10'}</div>
+                    <div className={`w-[12%] ${cell} justify-center ${lbl}`}>TL</div>
+                    <div className={`w-[30%] ${cellLast} justify-center ${val} text-center`}>{config.net_weight || '10'}</div>
                 </div>
 
                 {/* Kiện số | value | NSX | value */}
                 <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>Kiện số</div>
-                    <div className={`w-[40%] ${cell} ${valLg} text-center`}>{index.toString().padStart(2, '0')}</div>
-                    <div className={`w-[12%] ${cell} ${lbl}`}>NSX</div>
-                    <div className={`w-[30%] ${cellLast} ${val} text-center`}>{nsxDisplay}</div>
+                    <div className={`w-[40%] ${cell} justify-center ${valLg} text-center`}>{index.toString().padStart(2, '0')}</div>
+                    <div className={`w-[12%] ${cell} justify-center ${lbl}`}>NSX</div>
+                    <div className={`w-[30%] ${cellLast} justify-center ${val} text-center`}>{nsxDisplay}</div>
                 </div>
 
                 {/* ĐVT | value | HSD | value */}
                 <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>ĐVT</div>
-                    <div className={`w-[40%] ${cell} ${val} text-center`}>{config.unit || 'Kg'}</div>
-                    <div className={`w-[12%] ${cell} ${lbl}`}>HSD</div>
-                    <div className={`w-[30%] ${cellLast} ${val} text-center`}>{hsdDisplay}</div>
+                    <div className={`w-[40%] ${cell} justify-center ${val} text-center`}>{config.unit || 'Kg'}</div>
+                    <div className={`w-[12%] ${cell} justify-center ${lbl}`}>HSD</div>
+                    <div className={`w-[30%] ${cellLast} justify-center ${val} text-center`}>{hsdDisplay}</div>
                 </div>
 
                 {/* Đơn hàng | value | Tham chiếu */}
                 <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
                     <div className={`w-[18%] ${cell} ${lbl}`}>Đơn hàng</div>
-                    <div className={`w-[40%] ${cell} ${val} text-center font-black`}>{config.order_code || 'NF-CT'}</div>
-                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] text-center ${lbl}`}>BARCODE</div>
+                    <div className={`w-[40%] ${cell} justify-center ${val} text-center font-black`}>{config.order_code || 'NF-CT'}</div>
+                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center justify-center text-center ${lbl}`}>BARCODE</div>
                 </div>
 
                 {/* Tham chiếu text | Barcode sọc (Mã Lot) ── */}

@@ -94,6 +94,11 @@ export default function AssignmentApprovalPage() {
     // Global positions for manual join
     const [allPositions, setAllPositions] = useState<any[]>([])
     
+    // Orphaned positions state
+    const [orphanedPositions, setOrphanedPositions] = useState<any[]>([])
+    const [showOrphanedModal, setShowOrphanedModal] = useState(false)
+    const [checkingOrphans, setCheckingOrphans] = useState(false)
+    
     // Editing state
     const [editingId, setEditingId] = useState<string | null>(null)
     const [editValues, setEditValues] = useState<{ lot_stt: string, position_id: string, position_code: string }>({ lot_stt: '', position_id: '', position_code: '' })
@@ -130,17 +135,28 @@ export default function AssignmentApprovalPage() {
         }
         setLoading(true)
         try {
-            // 1. Fetch Assignments
-            const { data: pData, error: pErr } = await (supabase.from('pending_assignments') as any)
+            // 1. Fetch Assignments: Lấy toàn bộ các bản ghi đang chờ duyệt (pending) của phân hệ hiện tại bất kể thời gian
+            const { data: pendingData, error: pendingErr } = await (supabase.from('pending_assignments') as any)
                 .select('*')
                 .eq('system_code', currentSystem.code)
+                .eq('status', 'pending')
+                .order('created_at', { ascending: false })
+
+            if (pendingErr) throw pendingErr
+
+            // Lấy các bản ghi đã xử lý (approved, rejected) trong khoảng thời gian lọc
+            const { data: processedData, error: processedErr } = await (supabase.from('pending_assignments') as any)
+                .select('*')
+                .eq('system_code', currentSystem.code)
+                .neq('status', 'pending')
                 .gte('production_date', dateFrom)
                 .lte('production_date', dateTo)
                 .order('created_at', { ascending: false })
                 .limit(2000)
 
-            if (pErr) throw pErr
-            const assignments = pData || []
+            if (processedErr) throw processedErr
+
+            const assignments = [...(pendingData || []), ...(processedData || [])]
 
             // 2. Fetch required positions for these assignments
             const posIds = Array.from(new Set(assignments.map((a: any) => a.position_id).filter(Boolean)))
@@ -182,7 +198,16 @@ export default function AssignmentApprovalPage() {
             setRejectedList(enrichedAssignments.filter((a: any) => a.status === 'rejected'))
 
             const pendingStts = Array.from(new Set(assignments.map((a: any) => a.lot_stt)))
-            const expandedLotDateFrom = format(subDays(new Date(dateFrom), 45), 'yyyy-MM-dd')
+            
+            // Tính toán ngày nhỏ nhất của các yêu cầu pending để lấy bổ sung lô hàng khớp STT
+            const pendingDates = assignments.filter((a: any) => a.status === 'pending').map((a: any) => a.production_date).filter(Boolean)
+            let minPendingDate = dateFrom
+            if (pendingDates.length > 0) {
+                pendingDates.forEach((d: string) => {
+                    if (d < minPendingDate) minPendingDate = d
+                })
+            }
+            const expandedLotDateFrom = format(subDays(new Date(minPendingDate), 45), 'yyyy-MM-dd')
 
             // === SPLIT INTO 2 QUERIES to avoid PostgREST .or() + .neq() interaction issues ===
             
@@ -256,6 +281,8 @@ export default function AssignmentApprovalPage() {
             }))
 
             setLotsInDay(formattedLots)
+            // Tự động kiểm tra vị trí kho bị kẹt dữ liệu (chạy ngầm)
+            checkOrphanedPositions(true)
         } catch (e: any) {
             console.error('Fetch error:', e)
             showToast('Lỗi tải dữ liệu: ' + (e.message || 'Không xác định'), 'error')
@@ -696,6 +723,132 @@ export default function AssignmentApprovalPage() {
         }
     }
 
+    const handleDeleteAssignment = async (assId: string) => {
+        const confirmed = await showConfirm('Lô hàng của yêu cầu này không tồn tại (có thể đã bị xóa trực tiếp). Bạn có chắc chắn muốn XÓA VĨNH VIỄN yêu cầu gán vị trí này khỏi hệ thống không?')
+        if (!confirmed) return
+        setActionLoading(assId)
+        try {
+            const { error } = await (supabase.from('pending_assignments') as any).delete().eq('id', assId)
+            if (error) throw error
+            showToast('Đã xóa vĩnh viễn yêu cầu gán vị trí', 'success')
+            fetchData()
+        } catch (e: any) {
+            showToast('Lỗi khi xóa: ' + e.message, 'error')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
+    async function checkOrphanedPositions(silent = false) {
+        if (!currentSystem?.code) return
+        if (!silent) setCheckingOrphans(true)
+        try {
+            // 1. Tải tất cả các vị trí đang có liên kết lot_id trong phân hệ hiện tại
+            const { data: activePositions, error: posErr } = await (supabase.from('positions') as any)
+                .select('id, code, lot_id')
+                .eq('system_type', currentSystem.code)
+                .not('lot_id', 'is', null)
+
+            if (posErr) throw posErr
+            const positionsList = activePositions || []
+
+            if (positionsList.length === 0) {
+                setOrphanedPositions([])
+                if (!silent) showToast('Không phát hiện vị trí nào bị mắc kẹt dữ liệu.', 'success')
+                return
+            }
+
+            // 2. Gom danh sách lot_id duy nhất
+            const uniqueLotIds = Array.from(new Set(positionsList.map((p: any) => p.lot_id)))
+
+            // 3. Kiểm tra sự tồn tại của các lot_id này trong bảng lots
+            let existingLots: any[] = []
+            if (uniqueLotIds.length > 0) {
+                // Chia chunk 100 để tránh URL quá dài
+                for (let i = 0; i < uniqueLotIds.length; i += 100) {
+                    const chunk = uniqueLotIds.slice(i, i + 100)
+                    const { data: lotsData, error: lotsErr } = await supabase
+                        .from('lots')
+                        .select('id')
+                        .eq('system_code', currentSystem.code)
+                        .in('id', chunk)
+                    if (lotsErr) throw lotsErr
+                    if (lotsData) existingLots.push(...lotsData)
+                }
+            }
+
+            const existingLotIdsSet = new Set(existingLots.map((l: any) => l.id))
+
+            // 4. Tìm các vị trí kho có lot_id không tồn tại trong existingLotIdsSet (lô hàng đã bị xóa trực tiếp)
+            const orphans = positionsList.filter((p: any) => !existingLotIdsSet.has(p.lot_id))
+
+            setOrphanedPositions(orphans)
+            
+            if (!silent) {
+                if (orphans.length > 0) {
+                    showToast(`Phát hiện ${orphans.length} vị trí kho bị mắc kẹt dữ liệu lô hàng đã xóa!`, 'warning')
+                    setShowOrphanedModal(true)
+                } else {
+                    showToast('Tất cả vị trí kho đều ở trạng thái dữ liệu chính xác!', 'success')
+                }
+            }
+        } catch (e: any) {
+            console.error('[ORPHANS SCAN] Error:', e)
+            if (!silent) showToast('Lỗi quét vị trí kẹt: ' + e.message, 'error')
+        } finally {
+            if (!silent) setCheckingOrphans(false)
+        }
+    }
+
+    async function handleReleaseOrphanedPositions(targetPosIds: string[]) {
+        if (!profile) {
+            showToast('Vui lòng đăng nhập để thực hiện tác vụ này', 'error')
+            return
+        }
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn giải phóng ${targetPosIds.length} vị trí kho này? Trạng thái vị trí sẽ được đưa về trống.`)
+        if (!confirmed) return
+
+        setActionLoading('orphans-release')
+        try {
+            let count = 0
+            for (const posId of targetPosIds) {
+                const targetPos = orphanedPositions.find((p: any) => p.id === posId)
+                if (!targetPos) continue
+
+                // 1. Cập nhật lot_id = null để giải phóng vị trí
+                const { error: updateErr } = await (supabase.from('positions') as any)
+                    .update({ lot_id: null })
+                    .eq('id', posId)
+                
+                if (updateErr) throw new Error(`Lỗi cập nhật vị trí ${targetPos.code}: ${updateErr.message}`)
+
+                // 2. Ghi audit log
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: posId,
+                    action: 'UPDATE',
+                    oldData: { lot_id: targetPos.lot_id },
+                    newData: { lot_id: null },
+                    systemCode: currentSystem?.code || ''
+                })
+                count++
+            }
+
+            showToast(`Đã giải phóng thành công ${count} vị trí kho bị kẹt!`, 'success')
+            setShowOrphanedModal(false)
+            // Quét lại
+            checkOrphanedPositions(true)
+            // Tải lại dữ liệu trang
+            fetchData()
+        } catch (e: any) {
+            console.error('[ORPHANS RELEASE] Error:', e)
+            showToast('Lỗi giải phóng vị trí: ' + e.message, 'error')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
     const validBulkCount = useMemo(() => {
         let count = 0;
         const seenLots = new Set()
@@ -852,6 +1005,35 @@ export default function AssignmentApprovalPage() {
                         <span className="text-zinc-300 mx-1">→</span>
                         <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="bg-transparent border-none outline-none font-bold text-xs text-zinc-900 dark:text-white" />
                     </div>
+                    {/* Nút Kiểm tra & Dọn dẹp vị trí bị kẹt */}
+                    <button 
+                        onClick={() => {
+                            if (orphanedPositions.length > 0) {
+                                setShowOrphanedModal(true)
+                            } else {
+                                checkOrphanedPositions(false)
+                            }
+                        }}
+                        disabled={checkingOrphans}
+                        title="Kiểm tra và giải phóng vị trí bị mắc kẹt dữ liệu do lô hàng bị xóa"
+                        className={`px-4 py-2.5 rounded-[12px] text-xs font-black uppercase flex items-center gap-2 border transition-all relative ${
+                            orphanedPositions.length > 0 
+                                ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30' 
+                                : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                        }`}
+                    >
+                        {checkingOrphans ? (
+                            <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                            <AlertTriangle size={16} className={orphanedPositions.length > 0 ? "text-red-500" : "text-zinc-400"} />
+                        )}
+                        Vị trí kẹt
+                        {orphanedPositions.length > 0 && (
+                            <span className="absolute -top-2 -right-2 w-5 h-5 bg-red-650 text-white rounded-full flex items-center justify-center text-[9px] font-black tracking-normal shadow-md">
+                                {orphanedPositions.length}
+                            </span>
+                        )}
+                    </button>
                     <button onClick={fetchData} className="p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                         <RefreshCcw size={18} className={`${loading ? 'animate-spin' : ''} text-zinc-600 dark:text-zinc-400`} />
                     </button>
@@ -1020,9 +1202,10 @@ export default function AssignmentApprovalPage() {
                                                             <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
                                                                 <AlertCircle size={14} /> KHÔNG TÌM THẤY LÔ HÀNG
                                                             </div>
-                                                            <div className="flex gap-2">
-                                                                <button onClick={() => startEdit(ass)} className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
-                                                                <button onClick={() => handleReject(ass)} className="p-1.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                                                            <div className="flex gap-2 items-center">
+                                                                <button onClick={() => startEdit(ass)} title="Sửa STT/vị trí" className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
+                                                                <button onClick={() => handleReject(ass)} title="Từ chối yêu cầu" className="p-1.5 text-zinc-300 hover:text-amber-600 transition-colors"><XCircle size={16} /></button>
+                                                                <button onClick={() => handleDeleteAssignment(ass.id)} title="Xóa vĩnh viễn yêu cầu" className="p-1.5 text-red-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
                                                             </div>
                                                         </div>
                                                         <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
@@ -1344,8 +1527,69 @@ export default function AssignmentApprovalPage() {
                             </div>
                         </div>
                         <div className="flex gap-4 mt-10">
-                            <button onClick={() => setEditingId(null)} className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-black rounded-2xl text-xs uppercase tracking-widest transition-all active:scale-95">Hủy bỏ</button>
+                            <button onClick={() => setEditingId(null)} className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-650 dark:text-zinc-400 font-black rounded-2xl text-xs uppercase tracking-widest transition-all active:scale-95">Hủy bỏ</button>
                             <button onClick={() => handleSaveEdit(pendingList.find(a => a.id === editingId)!)} className="flex-1 py-4 bg-blue-600 text-white font-black rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-blue-600/20 active:scale-95 transition-all">Lưu nháp</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Modal Dọn dẹp vị trí kẹt */}
+            {showOrphanedModal && (
+                <div className="fixed inset-0 bg-black/70 backdrop-blur-md z-50 flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-zinc-900 rounded-[40px] p-8 w-full max-w-lg shadow-2xl border border-zinc-100 dark:border-zinc-800 animate-in zoom-in duration-300">
+                        <div className="flex items-center justify-between mb-6">
+                            <div className="flex items-center gap-4">
+                                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-2xl text-red-600"><AlertTriangle size={24} /></div>
+                                <div>
+                                    <h3 className="text-2xl font-black text-zinc-900 dark:text-white">Dọn dẹp vị trí kẹt</h3>
+                                    <p className="text-zinc-500 dark:text-zinc-400 text-xs font-bold uppercase tracking-widest mt-0.5">Phát hiện dữ liệu mồ côi</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowOrphanedModal(false)} className="p-2 text-zinc-400 hover:text-zinc-600 transition-colors"><X size={20} /></button>
+                        </div>
+
+                        <div className="bg-red-50/50 dark:bg-red-950/10 border border-red-100 dark:border-red-900/20 rounded-3xl p-5 mb-6 text-xs text-red-750 dark:text-red-400 font-semibold leading-relaxed">
+                            ⚠️ Các vị trí dưới đây đang liên kết với lô sản xuất đã bị xóa trực tiếp. Vị trí này sẽ không được xem là "Trống" trên Mobile và gây sai lệch bản đồ kho. Vui lòng bấm <strong>Giải phóng</strong> để đưa vị trí về trống.
+                        </div>
+
+                        <div className="max-h-[300px] overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
+                            {orphanedPositions.map((pos) => (
+                                <div key={pos.id} className="flex items-center justify-between p-4 bg-zinc-50/50 dark:bg-zinc-950 rounded-2xl border border-zinc-150 dark:border-zinc-800">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 bg-red-50 dark:bg-red-900/10 text-red-500 rounded-xl flex items-center justify-center font-black text-sm"><MapPin size={18} /></div>
+                                        <div>
+                                            <div className="text-sm font-black text-zinc-900 dark:text-white uppercase">{pos.code}</div>
+                                            <div className="text-[10px] text-zinc-550 dark:text-zinc-450 font-bold uppercase tracking-wider">Lot ID kẹt: {pos.lot_id?.slice(0, 8)}...</div>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => handleReleaseOrphanedPositions([pos.id])}
+                                        disabled={actionLoading === 'orphans-release'}
+                                        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white font-black text-[10px] uppercase rounded-xl shadow-md shadow-red-500/10 transition-all active:scale-95"
+                                    >
+                                        Giải phóng
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex gap-4 mt-8">
+                            <button 
+                                onClick={() => setShowOrphanedModal(false)} 
+                                className="flex-1 py-4 bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 font-black rounded-2xl text-xs uppercase tracking-widest transition-all active:scale-95"
+                            >
+                                Đóng lại
+                            </button>
+                            {orphanedPositions.length > 1 && (
+                                <button 
+                                    onClick={() => handleReleaseOrphanedPositions(orphanedPositions.map(p => p.id))}
+                                    disabled={actionLoading === 'orphans-release'}
+                                    className="flex-1 py-4 bg-red-600 text-white font-black rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-red-650/20 active:scale-95 transition-all"
+                                >
+                                    Giải phóng tất cả ({orphanedPositions.length})
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>

@@ -36,6 +36,11 @@ export function CreateExportTaskModal({
     const [loading, setLoading] = useState(false)
     const [notes, setNotes] = useState('')
     const [code, setCode] = useState(() => `EXT-${new Date().getTime().toString().slice(-6)}`)
+    const [createdAt, setCreatedAt] = useState(() => {
+        const now = new Date()
+        const offset = now.getTimezoneOffset() * 60000
+        return new Date(now.getTime() - offset).toISOString().slice(0, 16)
+    })
 
     // Group items by Product + Unit for easier review
     const groupedItems = useMemo(() => {
@@ -74,7 +79,8 @@ export function CreateExportTaskModal({
                     status: 'Pending',
                     created_by: user.id,
                     system_code: currentSystem.code,
-                    notes: notes
+                    notes: notes,
+                    created_at: new Date(createdAt).toISOString()
                 })
                 .select()
                 .single()
@@ -122,19 +128,30 @@ export function CreateExportTaskModal({
 
                 <div className="flex-1 overflow-y-auto pr-2 space-y-6 py-4">
                     {/* General Info */}
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-stone-300">
-                                Mã lệnh
+                                Tên lệnh xuất
                             </label>
                             <input
                                 className="flex h-10 w-full rounded-md border border-stone-200 bg-transparent px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-stone-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-800 dark:bg-stone-950 dark:ring-offset-stone-950 dark:placeholder:text-stone-400 dark:focus-visible:ring-stone-800 dark:text-stone-100"
                                 value={code}
                                 onChange={e => setCode(e.target.value)}
-                                placeholder="Nhập mã lệnh..."
+                                placeholder="Nhập tên lệnh xuất..."
                             />
                         </div>
                         <div className="space-y-2">
+                            <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-stone-300">
+                                Ngày giờ lệnh xuất
+                            </label>
+                            <input
+                                type="datetime-local"
+                                className="flex h-10 w-full rounded-md border border-stone-200 bg-transparent px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-stone-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:border-stone-800 dark:bg-stone-950 dark:ring-offset-stone-950 dark:placeholder:text-stone-400 dark:focus-visible:ring-stone-800 dark:text-stone-100"
+                                value={createdAt}
+                                onChange={e => setCreatedAt(e.target.value)}
+                            />
+                        </div>
+                        <div className="space-y-2 md:col-span-2">
                             <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 dark:text-stone-300">
                                 Ghi chú
                             </label>
@@ -143,7 +160,7 @@ export function CreateExportTaskModal({
                                 value={notes}
                                 onChange={e => setNotes(e.target.value)}
                                 placeholder="Ghi chú cho lệnh xuất..."
-                                rows={1}
+                                rows={2}
                             />
                         </div>
                     </div>
