@@ -849,7 +849,7 @@ function ProductionLotPrintContent() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-orange-500 px-1">Số lượng phiếu cần in</label>
                         <input
@@ -857,15 +857,6 @@ function ProductionLotPrintContent() {
                             value={printConfig.label_count}
                             onChange={e => setPrintConfig(prev => ({ ...prev, label_count: parseInt(e.target.value) || 1 }))}
                             className="w-full px-4 py-3 rounded-2xl bg-orange-50 border border-orange-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-black text-lg text-orange-600"
-                        />
-                    </div>
-                    <div className="space-y-2">
-                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">STT bắt đầu</label>
-                        <input
-                            type="number" min={1}
-                            value={printConfig.start_index}
-                            onChange={e => setPrintConfig(prev => ({ ...prev, start_index: parseInt(e.target.value) || 1 }))}
-                            className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-zinc-100 transition-all font-bold text-sm text-zinc-800"
                         />
                     </div>
                     <div className="space-y-2">
@@ -1154,7 +1145,7 @@ function ProductionLotPrintContent() {
 
                             {/* Content */}
                             <div className="flex-1">
-                                <div className="grid grid-cols-3 gap-6">
+                                <div className="grid grid-cols-2 gap-6">
                                     {/* Col 1: Lệnh SX + Sản phẩm */}
                                     <div className="space-y-8">
                                         <section>
@@ -1214,20 +1205,6 @@ function ProductionLotPrintContent() {
                                                 <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Ngày ĐG:</span> <span className="font-black text-zinc-900 text-sm leading-none">{new Date(printConfig.packing_date).toLocaleDateString('vi-VN')}</span></div>
                                             </div>
                                         </section>
-                                    </div>
-
-                                    {/* Col 3: STT lớn */}
-                                    <div className="flex flex-col items-stretch justify-center">
-                                        <div className="w-full py-12 border-4 border-black rounded-[4rem] text-center bg-white shadow-[0_0_40px_rgba(0,0,0,0.05)] flex flex-col items-center justify-center">
-                                            <div className="text-[14px] font-black text-black uppercase tracking-[0.5em] mb-4 leading-none">STT / INDEX</div>
-                                            <div className={`font-black text-black leading-none tabular-nums tracking-tighter ${
-                                                label.index >= 1000 ? 'text-[120px]' : 
-                                                label.index >= 100 ? 'text-[165px]' : 
-                                                'text-[250px]'
-                                            }`}>
-                                                {label.index.toString().padStart(2, '0')}
-                                            </div>
-                                        </div>
                                     </div>
                                 </div>
                             </div>
