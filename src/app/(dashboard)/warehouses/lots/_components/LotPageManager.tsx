@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine } from 'lucide-react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotMergeModal } from '@/components/warehouse/lots/LotMergeModal'
@@ -25,6 +26,7 @@ import { LotFilter } from './LotFilter'
 import { LotForm } from './LotForm'
 import { LotList } from './LotList'
 import { QrCodeModal } from './QrCodeModal'
+import { OddLotSuggestions } from './OddLotSuggestions'
 
 export function LotPageManager() {
     const { hasPermission } = useUser()
@@ -71,10 +73,13 @@ export function LotPageManager() {
         isFifoAvailable,
         isFifoActive,
         toggleFifo,
-        productions
+        productions,
+        zones
     } = useLotManagement()
 
     const { currentSystem } = useSystem()
+    const pathname = usePathname()
+    const isSanxuat = pathname?.startsWith('/sanxuat') || false
 
     // UI States
     const [showCreateForm, setShowCreateForm] = useState(false)
@@ -86,11 +91,13 @@ export function LotPageManager() {
     const [viewingLot, setViewingLot] = useState<Lot | null>(null)
     const [taggingLot, setTaggingLot] = useState<Lot | null>(null)
     const [mergingLot, setMergingLot] = useState<Lot | null>(null)
+    const [mergeSourceLotIds, setMergeSourceLotIds] = useState<string[]>([])
     const [splittingLot, setSplittingLot] = useState<Lot | null>(null)
     const [exportingLot, setExportingLot] = useState<Lot | null>(null)
     const [bulkCloningLot, setBulkCloningLot] = useState<Lot | null>(null)
     const [assigningLot, setAssigningLot] = useState<Lot | null>(null)
     const [showReportModal, setShowReportModal] = useState(false)
+    const [showOddLotSuggestions, setShowOddLotSuggestions] = useState(false)
 
     useEffect(() => {
         if (currentSystem?.code) {
@@ -130,6 +137,11 @@ export function LotPageManager() {
         setMergingLot(lot)
     }
 
+    const handleMergeFromSuggestions = (target: Lot, sourceIds: string[]) => {
+        setMergingLot(target)
+        setMergeSourceLotIds(sourceIds)
+    }
+
     const handleSplit = (lot: Lot) => {
         setSplittingLot(lot)
     }
@@ -158,6 +170,18 @@ export function LotPageManager() {
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3">
+                    <button
+                        onClick={() => setShowOddLotSuggestions(!showOddLotSuggestions)}
+                        className={`px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2 cursor-pointer ${
+                            showOddLotSuggestions 
+                                ? 'ring-2 ring-indigo-500 border-indigo-300 text-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/20' 
+                                : 'text-slate-700 dark:text-slate-300'
+                        }`}
+                    >
+                        <Combine size={18} className="text-indigo-500 shrink-0" />
+                        Lot lẻ
+                    </button>
+
                     <Link
                         href="/warehouses/lots/export"
                         className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
@@ -246,6 +270,17 @@ export function LotPageManager() {
                 showMobileFilters={showMobileFilters}
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
             />
+
+            {/* Gợi ý ghép Lot lẻ */}
+            {showOddLotSuggestions && (
+                <OddLotSuggestions
+                    lots={lots}
+                    products={products}
+                    zones={zones}
+                    onMerge={handleMergeFromSuggestions}
+                    isSanxuat={isSanxuat}
+                />
+            )}
 
             {/* FIFO Toggle + Main Grid */}
             <div className="space-y-4">
@@ -388,9 +423,14 @@ export function LotPageManager() {
                 <LotMergeModal
                     targetLot={mergingLot}
                     lots={lots}
-                    onClose={() => setMergingLot(null)}
+                    initialSourceLotIds={mergeSourceLotIds}
+                    onClose={() => {
+                        setMergingLot(null);
+                        setMergeSourceLotIds([]);
+                    }}
                     onSuccess={() => {
                         setMergingLot(null);
+                        setMergeSourceLotIds([]);
                         fetchLots();
                     }}
                 />

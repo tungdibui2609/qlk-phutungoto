@@ -136,6 +136,7 @@ export default function ProductForm({ initialData, isEditMode = false, readOnly 
                             handleChange={handleChange}
                             readOnly={readOnly}
                             inputClass={inputClass}
+                            units={units}
                         />
                     )}
                 </div>

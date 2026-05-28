@@ -80,6 +80,7 @@ export function useLotManagement() {
     const [branches, setBranches] = useState<any[]>([])
     const [existingTags, setExistingTags] = useState<string[]>([])
     const [productions, setProductions] = useState<any[]>([])
+    const [zones, setZones] = useState<any[]>([])
 
     // Use Ref to access latest fetchLots in subscription without re-subscribing
     const fetchLotsRef = useRef(fetchLots)
@@ -163,7 +164,7 @@ export function useLotManagement() {
     async function fetchCommonData() {
         if (!currentSystem?.code) return
 
-        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData, productionData] = await Promise.all([
+        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData, productionData, zoneData] = await Promise.all([
             fetchAllPaginated('products', q => q.eq('system_type', currentSystem!.code).order('name')),
             fetchAllPaginated('suppliers', q => q.eq('system_code', currentSystem!.code).order('name')),
             fetchAllPaginated('qc_info', q => q.eq('system_code', currentSystem!.code).order('name')),
@@ -171,7 +172,8 @@ export function useLotManagement() {
             fetchAllPaginated('units'),
             fetchAllPaginated('product_units'),
             fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)'),
-            fetchAllPaginated('productions', q => q.order('code', { ascending: false }), '*, products:product_id(*), production_lots(*, products(*))')
+            fetchAllPaginated('productions', q => q.order('code', { ascending: false }), '*, products:product_id(*), production_lots(*, products(*))'),
+            fetchAllPaginated('zones', q => q.eq('system_type', currentSystem!.code), 'id, parent_id, is_hall')
         ])
 
         setProducts(prodData)
@@ -181,6 +183,7 @@ export function useLotManagement() {
         setUnits(unitData)
         setProductUnits(pUnitData)
         setProductions(productionData)
+        setZones(zoneData)
         
         const uniqueTags = Array.from(new Set(tagData.map((t: any) => t.tag))).filter(Boolean) as string[]
         setExistingTags(uniqueTags)
@@ -1342,6 +1345,7 @@ export function useLotManagement() {
         branches,
         existingTags,
         productions,
+        zones,
 
         // Actions
         fetchLots,

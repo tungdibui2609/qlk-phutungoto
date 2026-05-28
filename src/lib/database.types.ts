@@ -258,6 +258,8 @@ export interface Database {
           image_url: string | null
           created_at: string | null
           system_code: string | null
+          quantity_per_pallet: number | null
+          pallet_unit: string | null
         }
         Insert: {
           id?: string
@@ -268,6 +270,8 @@ export interface Database {
           image_url?: string | null
           created_at?: string | null
           system_code?: string | null
+          quantity_per_pallet?: number | null
+          pallet_unit?: string | null
         }
         Update: {
           id?: string
@@ -278,6 +282,8 @@ export interface Database {
           image_url?: string | null
           created_at?: string | null
           system_code?: string | null
+          quantity_per_pallet?: number | null
+          pallet_unit?: string | null
         }
       }
       // Add other tables as needed to satisfy imports

@@ -3,7 +3,8 @@
 import React, { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Hash, ArrowLeft, CheckCircle2, AlertTriangle, X, RotateCcw, Lock, Unlock } from 'lucide-react'
+import { Printer, Loader2, Hash, ArrowLeft, CheckCircle2, AlertTriangle, X, RotateCcw, Lock, Unlock, Search, Copy } from 'lucide-react'
+import { useSystem } from '@/contexts/SystemContext'
 
 export default function CustomLabelPrintPage() {
     return (
@@ -129,6 +130,7 @@ function CustomLabelContent() {
     const lotId = searchParams.get('id')
     const token = searchParams.get('token')
 
+    const { systemType } = useSystem()
     const [loading, setLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
     const [data, setData] = useState<any>(null)
@@ -156,6 +158,83 @@ function CustomLabelContent() {
         start_index: 1,
         lot_number_custom: '',
     })
+
+    const [showLoadModal, setShowLoadModal] = useState(false)
+    const [oldLots, setOldLots] = useState<any[]>([])
+    const [searchQuery, setSearchQuery] = useState('')
+    const [selectedOldLot, setSelectedOldLot] = useState<any | null>(null)
+    const [loadingOldLots, setLoadingOldLots] = useState(false)
+
+    // Tải danh sách lô cũ đã có cấu hình tem khách hàng
+    const fetchOldLots = async () => {
+        setLoadingOldLots(true)
+        const currentSystemCode = data?.productions?.target_system_code || systemType
+        try {
+            const { data: res, error } = await (supabase
+                .from('production_lots')
+                .select('id, lot_code, print_config, created_at, products(name), productions!inner(target_system_code)')
+                .eq('productions.target_system_code', currentSystemCode)
+                .not('print_config', 'is', null)
+                .order('created_at', { ascending: false })
+                .limit(50) as any)
+
+            if (error) throw error
+            setOldLots(res || [])
+        } catch (e: any) {
+            console.error('Lỗi khi tải danh sách lô cũ:', e)
+            showToast('Lỗi khi tải danh sách lô cũ: ' + (e.message || e.details || JSON.stringify(e)), 'error')
+        } finally {
+            setLoadingOldLots(false)
+        }
+    }
+
+    // Mỗi khi mở Modal, tự động fetch danh sách lô cũ
+    useEffect(() => {
+        if (showLoadModal) {
+            fetchOldLots()
+            setSelectedOldLot(null)
+            setSearchQuery('')
+        }
+    }, [showLoadModal])
+
+    // Lọc danh sách lô cũ client-side
+    const filteredOldLots = oldLots.filter(lot => {
+        if (!searchQuery.trim()) return true
+        const q = searchQuery.toLowerCase()
+        return lot.lot_code.toLowerCase().includes(q) || 
+               (lot.products?.name || '').toLowerCase().includes(q)
+    })
+
+    // Áp dụng cấu hình cũ vào cấu hình hiện tại
+    const applyOldConfig = (oldLot: any) => {
+        const oldConfig = oldLot?.print_config
+        if (!oldConfig) return
+        
+        // Tính lại HSD dựa trên NSX hiện tại và số năm HSD của lô cũ
+        const expYears = oldConfig.expiry_years || 2
+        const pDate = config.production_date || new Date().toISOString().split('T')[0]
+        const eDate = new Date(new Date(pDate).setFullYear(new Date(pDate).getFullYear() + expYears)).toISOString().split('T')[0]
+        
+        setConfig(prev => ({
+            ...prev,
+            product_name_custom: oldConfig.product_name_custom ?? prev.product_name_custom,
+            customer_name: oldConfig.customer_name ?? prev.customer_name,
+            product_sign: oldConfig.product_sign ?? prev.product_sign,
+            group_sign: oldConfig.group_sign ?? prev.group_sign,
+            year_sign: oldConfig.year_sign ?? prev.year_sign,
+            julian_custom: oldConfig.julian_custom ?? prev.julian_custom,
+            order_code: oldConfig.order_code ?? prev.order_code,
+            net_weight: oldConfig.net_weight ?? prev.net_weight,
+            unit: oldConfig.unit ?? prev.unit,
+            expiry_years: expYears,
+            expiry_date: oldConfig.expiry_date || eDate,
+            barcode: oldConfig.barcode ?? prev.barcode,
+            lot_number_custom: oldConfig.lot_number_custom ?? prev.lot_number_custom,
+        }))
+        
+        setShowLoadModal(false)
+        showToast('Đã nạp dữ liệu tem từ lệnh cũ thành công')
+    }
 
     const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
         setToast({ show: true, msg, type })
@@ -320,6 +399,13 @@ function CustomLabelContent() {
                     <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-lg">
                         Đã in: {data.total_printed_labels || 0} tem
                     </span>
+                    <button
+                        onClick={() => setShowLoadModal(true)}
+                        className="flex items-center gap-2 bg-amber-50 hover:bg-amber-100 text-amber-800 px-5 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 border border-amber-200"
+                    >
+                        <RotateCcw size={16} className="text-amber-600 animate-pulse" />
+                        Nạp từ lệnh cũ
+                    </button>
                     <button
                         onClick={handleSaveConfig}
                         disabled={isSaving}
@@ -611,6 +697,179 @@ function CustomLabelContent() {
                     </React.Fragment>
                 ))}
             </div>
+
+            {/* ── Modal Nạp Cấu Hình ── */}
+            {showLoadModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:hidden" onClick={() => setShowLoadModal(false)}>
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+                        {/* Header */}
+                        <div className="px-6 py-5 bg-gradient-to-r from-amber-500 to-orange-500 flex items-center justify-between text-white">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-xl bg-white/25 flex items-center justify-center">
+                                    <RotateCcw size={20} />
+                                </div>
+                                <div>
+                                    <h2 className="text-lg font-black uppercase tracking-tight text-white">Nạp Cấu Hình Tem Khách Hàng</h2>
+                                    <p className="text-amber-100 text-xs font-medium">Chỉ hiển thị các lệnh sản xuất có cấu hình tem trong phân hệ hiện tại</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowLoadModal(false)} className="w-10 h-10 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl font-black transition-colors">✕</button>
+                        </div>
+
+                        {/* Thanh tìm kiếm */}
+                        <div className="p-4 bg-zinc-50 border-b border-zinc-100">
+                            <div className="relative">
+                                <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <input
+                                    type="text"
+                                    placeholder="Tìm lô cũ theo Mã Lô hoặc Tên sản phẩm..."
+                                    value={searchQuery}
+                                    onChange={e => setSearchQuery(e.target.value)}
+                                    className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all placeholder:text-zinc-400"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Body chia làm 2 cột */}
+                        <div className="flex-1 flex overflow-hidden min-h-0">
+                            {/* Cột trái: Danh sách lô cũ */}
+                            <div className="w-5/12 border-r border-zinc-100 flex flex-col">
+                                <div className="p-3 bg-zinc-100/50 text-[10px] font-black uppercase text-zinc-400 tracking-wider">
+                                    Danh sách lệnh sản xuất ({filteredOldLots.length})
+                                </div>
+                                <div className="flex-1 overflow-y-auto divide-y divide-zinc-50 p-2">
+                                    {loadingOldLots ? (
+                                        <div className="h-full flex items-center justify-center py-12">
+                                            <Loader2 className="animate-spin text-orange-500 w-8 h-8" />
+                                        </div>
+                                    ) : filteredOldLots.length === 0 ? (
+                                        <div className="h-full flex flex-col items-center justify-center py-12 text-center text-zinc-400">
+                                            <Hash size={32} className="text-zinc-300 mb-2" />
+                                            <p className="text-xs font-bold">Không tìm thấy lệnh sản xuất nào phù hợp</p>
+                                        </div>
+                                    ) : (
+                                        filteredOldLots.map((lot: any) => {
+                                            const lotConfig = lot.print_config || {}
+                                            const isSelected = selectedOldLot?.id === lot.id
+                                            return (
+                                                <button
+                                                    key={lot.id}
+                                                    onClick={() => setSelectedOldLot(lot)}
+                                                    className={`w-full text-left p-3 rounded-xl transition-all flex items-start gap-3 border ${
+                                                        isSelected
+                                                            ? 'bg-amber-50/70 border-amber-200 shadow-sm'
+                                                            : 'border-transparent hover:bg-zinc-50'
+                                                    }`}
+                                                >
+                                                    <span className={`w-8 h-8 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
+                                                        isSelected ? 'bg-amber-500 text-white' : 'bg-zinc-100 text-zinc-600'
+                                                    }`}>
+                                                        {lotConfig.customer_name || 'CT'}
+                                                    </span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center justify-between gap-2">
+                                                            <span className="text-sm font-black text-zinc-800 tracking-tight leading-none truncate">{lot.lot_code}</span>
+                                                            <span className="text-[9px] font-bold text-zinc-400 shrink-0">
+                                                                {new Date(lot.created_at).toLocaleDateString('vi-VN')}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-zinc-500 truncate mt-1 font-medium">{lot.products?.name || '---'}</p>
+                                                        <div className="flex gap-2 mt-1.5 flex-wrap">
+                                                            <span className="px-1.5 py-0.5 bg-zinc-100 text-[10px] text-zinc-600 font-bold rounded text-zinc-800 font-black">
+                                                                {lotConfig.net_weight || '10'} {lotConfig.unit || 'Kg'}
+                                                            </span>
+                                                            {lotConfig.order_code && (
+                                                                <span className="px-1.5 py-0.5 bg-zinc-100 text-[10px] text-zinc-600 font-bold rounded text-zinc-800 font-black">
+                                                                    ĐH: {lotConfig.order_code}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </button>
+                                            )
+                                        })
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Cột phải: Xem trước và so sánh */}
+                            <div className="w-7/12 flex flex-col bg-zinc-50/30 overflow-hidden">
+                                {selectedOldLot ? (
+                                    <div className="flex-1 flex flex-col overflow-hidden">
+                                        <div className="p-4 bg-zinc-50 border-b border-zinc-100 flex items-center justify-between shrink-0">
+                                            <div>
+                                                <h3 className="text-sm font-black text-zinc-800 uppercase tracking-tight">Chi tiết cấu hình từ lô cũ</h3>
+                                                <p className="text-xs text-zinc-500 font-medium">Bảng so sánh thông số tem khách hàng</p>
+                                            </div>
+                                            <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-black rounded-lg">
+                                                Lô chọn: {selectedOldLot.lot_code}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex-1 overflow-y-auto p-4 shrink-0 max-h-[calc(85vh-250px)]">
+                                            <table className="w-full border-collapse text-xs">
+                                                <thead>
+                                                    <tr className="border-b border-zinc-200 text-zinc-400 text-[10px] font-black uppercase tracking-wider text-left">
+                                                        <th className="py-2 pr-4 font-black">Thông số</th>
+                                                        <th className="py-2 pr-4 font-black">Lô hiện tại</th>
+                                                        <th className="py-2 font-black text-orange-600">Sẽ nạp từ lô cũ</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-zinc-100">
+                                                    {[
+                                                        { label: 'Tên SP hiển thị', key: 'product_name_custom', current: config.product_name_custom, old: selectedOldLot.print_config?.product_name_custom },
+                                                        { label: 'NCC (Khách hàng)', key: 'customer_name', current: config.customer_name, old: selectedOldLot.print_config?.customer_name },
+                                                        { label: 'Ký hiệu SP', key: 'product_sign', current: config.product_sign, old: selectedOldLot.print_config?.product_sign },
+                                                        { label: 'Ký hiệu nhóm', key: 'group_sign', current: config.group_sign, old: selectedOldLot.print_config?.group_sign },
+                                                        { label: 'Mã năm', key: 'year_sign', current: config.year_sign, old: selectedOldLot.print_config?.year_sign },
+                                                        { label: 'Julian tùy chỉnh', key: 'julian_custom', current: config.julian_custom, old: selectedOldLot.print_config?.julian_custom },
+                                                        { label: 'Trọng lượng', key: 'net_weight', current: config.net_weight, old: selectedOldLot.print_config?.net_weight },
+                                                        { label: 'Đơn vị tính', key: 'unit', current: config.unit, old: selectedOldLot.print_config?.unit },
+                                                        { label: 'Đơn hàng', key: 'order_code', current: config.order_code, old: selectedOldLot.print_config?.order_code },
+                                                        { label: 'Tham chiếu Barcode', key: 'barcode', current: config.barcode, old: selectedOldLot.print_config?.barcode },
+                                                        { label: 'HSD (năm)', key: 'expiry_years', current: config.expiry_years, old: selectedOldLot.print_config?.expiry_years },
+                                                        { label: 'Số lot ghi đè', key: 'lot_number_custom', current: config.lot_number_custom, old: selectedOldLot.print_config?.lot_number_custom },
+                                                    ].map((row, idx) => {
+                                                        const isChanged = row.current !== row.old
+                                                        return (
+                                                            <tr key={idx} className={`hover:bg-zinc-50/50 transition-colors ${isChanged ? 'bg-amber-50/20' : ''}`}>
+                                                                <td className="py-2.5 pr-4 font-bold text-zinc-500">{row.label}</td>
+                                                                <td className="py-2.5 pr-4 text-zinc-600 font-medium break-all max-w-[150px]">{row.current || <span className="text-zinc-300 italic">Trống</span>}</td>
+                                                                <td className={`py-2.5 font-bold break-all max-w-[200px] ${isChanged ? 'text-amber-600' : 'text-zinc-600'}`}>
+                                                                    {row.old || <span className="text-zinc-300 italic font-medium">Trống</span>}
+                                                                </td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div className="p-4 bg-zinc-50 border-t border-zinc-100 flex items-center justify-between shrink-0">
+                                            <span className="text-xs text-zinc-500 font-bold italic">Bấm nút để áp dụng toàn bộ thông số trên</span>
+                                            <button
+                                                onClick={() => applyOldConfig(selectedOldLot)}
+                                                className="flex items-center gap-2 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-orange-500/25"
+                                            >
+                                                <Copy size={16} />
+                                                Xác Nhận Nạp
+                                            </button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-zinc-400">
+                                        <div className="w-16 h-16 rounded-3xl bg-zinc-100 flex items-center justify-center text-zinc-300 mb-4">
+                                            <Copy size={32} />
+                                        </div>
+                                        <h4 className="text-sm font-black text-zinc-700 uppercase tracking-tight">Chưa chọn lệnh sản xuất</h4>
+                                        <p className="text-xs text-zinc-400 font-medium mt-1 max-w-sm">Vui lòng click chọn một lệnh sản xuất trong danh sách bên trái để xem trước và nạp cấu hình tem</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* ── Toast ── */}
             {toast.show && (
