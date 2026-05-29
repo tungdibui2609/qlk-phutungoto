@@ -1,9 +1,11 @@
 'use client'
 
-import React, { useMemo, useState } from 'react'
-import { Sparkles, Combine, AlertCircle, ArrowRight, HelpCircle } from 'lucide-react'
+import React, { useMemo, useState, useEffect } from 'react'
+import { Sparkles, Combine, AlertCircle, ArrowRight, HelpCircle, Loader2, ChevronDown, Package } from 'lucide-react'
 import { Lot } from '../_hooks/useLotManagement'
 import { decodeSTT } from '@/lib/numberUtils'
+import { supabase } from '@/lib/supabaseClient'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface OddLotSuggestionsProps {
     lots: Lot[]
@@ -31,15 +33,95 @@ interface OddLotSuggestion {
         daily_seq: number | null
         quantity: number
         lot: Lot
-        location: string // 'Chưa gán' hoặc 'Sảnh: [Tên_sảnh]'
+        location: string
         unit: string
-        lotItemId: string // ID đại diện của dòng đầu tiên
+        lotItemId: string
     }[]
 }
 
 export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = false }: OddLotSuggestionsProps) {
+    const { currentSystem } = useSystem()
     // Quản lý các lô hàng lẻ được tích chọn thông qua ID duy nhất của lot_item đại diện để tránh trùng lặp
     const [checkedLotItemIds, setCheckedLotItemIds] = useState<Record<string, string[]>>({})
+    // Quản lý ẩn/hiện chi tiết theo sản phẩm
+    const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
+    
+    // State để lưu toàn bộ lot fetch từ DB (không phân trang)
+    const [allLots, setAllLots] = useState<Lot[]>([])
+    const [isLoadingAll, setIsLoadingAll] = useState(true)
+
+    // Fetch toàn bộ lot trong hệ thống khi component mount
+    useEffect(() => {
+        if (!currentSystem?.code || isSanxuat) return
+
+        const fetchAllLots = async () => {
+            setIsLoadingAll(true)
+            try {
+                let allData: Lot[] = []
+                let from = 0
+                const batchSize = 1000
+
+                while (true) {
+                    const { data, error } = await supabase
+                        .from('lots')
+                        .select(`
+                            *,
+                            lot_items(
+                                id, quantity, product_id, unit,
+                                products(name, unit, sku, internal_name, internal_code)
+                            ),
+                            lot_tags(tag, lot_item_id),
+                            positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id))
+                        `)
+                        .eq('system_code', currentSystem.code)
+                        .neq('status', 'hidden')
+                        .neq('status', 'exported')
+                        .range(from, from + batchSize - 1)
+
+                    if (error) {
+                        console.error('Error fetching all lots for odd-lot scan:', error)
+                        break
+                    }
+                    if (!data || data.length === 0) break
+                    allData = [...allData, ...(data as unknown as Lot[])]
+                    if (data.length < batchSize) break
+                    from += batchSize
+                }
+
+                setAllLots(allData)
+            } catch (err) {
+                console.error('Failed to fetch all lots:', err)
+            } finally {
+                setIsLoadingAll(false)
+            }
+        }
+
+        fetchAllLots()
+    }, [currentSystem?.code, isSanxuat])
+
+    // Re-sync khi prop lots thay đổi (ví dụ sau khi gộp lot thành công)
+    useEffect(() => {
+        if (!currentSystem?.code || isSanxuat || isLoadingAll) return
+        
+        // Cập nhật lại allLots bằng dữ liệu mới nhất từ prop lots
+        setAllLots(prev => {
+            const updated = [...prev]
+            lots.forEach(freshLot => {
+                const idx = updated.findIndex(l => l.id === freshLot.id)
+                if (idx >= 0) {
+                    updated[idx] = freshLot // Cập nhật lot đã thay đổi
+                }
+            })
+            // Loại bỏ lot đã bị xóa/ẩn (không còn trong danh sách active)
+            return updated.filter(l => {
+                // Nếu lot này nằm trong trang hiện tại và đã bị xóa thì loại bỏ
+                const inCurrentPage = lots.find(pl => pl.id === l.id)
+                if (inCurrentPage) return true // Vẫn tồn tại
+                // Lot không nằm trong trang hiện tại -> giữ nguyên
+                return true
+            })
+        })
+    }, [lots])
 
     if (isSanxuat) return null
 
@@ -91,9 +173,9 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
         return { isUnplaced: false, label: '' }
     }, [isZoneInHall])
 
-    // 4. Tính toán các gợi ý ghép lot lẻ
+    // 4. Tính toán các gợi ý ghép lot lẻ (quét toàn bộ lot trong hệ thống)
     const suggestions = useMemo(() => {
-        if (!lots || lots.length === 0 || !products || products.length === 0) return []
+        if (!allLots || allLots.length === 0 || !products || products.length === 0) return []
 
         // Lọc ra các sản phẩm có quantity_per_pallet > 0
         const prodPalletMap = new Map<string, any>()
@@ -105,14 +187,17 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
 
         if (prodPalletMap.size === 0) return []
 
-        // Gom nhóm các lot lẻ (chưa lên kệ) theo product_id và sau đó theo lot.id để tránh lặp lô hàng trên giao diện
+        // Gom nhóm tất cả lot lẻ theo product_id và sau đó theo lot.id để tránh lặp lô hàng trên giao diện
         const oddLotsByProduct = new Map<string, Map<string, { lot: Lot; lotItemIds: string[]; quantity: number; label: string; unit: string }>>()
 
-        lots.forEach(lot => {
+        allLots.forEach(lot => {
             if (!lot.lot_items || lot.lot_items.length === 0) return
 
+            // Xác định vị trí hiện tại của lot để hiển thị (không dùng để lọc)
             const placement = getLotPlacementStatus(lot)
-            if (!placement.isUnplaced) return // Bỏ qua nếu lot đã cất lên kệ thực tế
+            const locationLabel = placement.isUnplaced
+                ? placement.label // 'Chưa gán' hoặc 'Sảnh (xxx)'
+                : (lot.positions?.map(p => p.code).join(', ') || 'Đã gán vị trí')
 
             lot.lot_items.forEach(item => {
                 const product = prodPalletMap.get(item.product_id)
@@ -135,7 +220,7 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                                 lot,
                                 lotItemIds: sameProductItems.map(i => i.id),
                                 quantity: totalQtyInLot, // Gộp chung tổng số lượng (ví dụ: 12 + 3 = 15)
-                                label: placement.label,
+                                label: locationLabel,
                                 unit: item.unit || product.unit || 'đơn vị'
                             })
                         }
@@ -171,7 +256,7 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
         })
 
         return result
-    }, [lots, products, getLotPlacementStatus])
+    }, [allLots, products, getLotPlacementStatus])
 
     // Effect tự động tích chọn sẵn toàn bộ lô lẻ khi load gợi ý mới
     React.useEffect(() => {
@@ -221,17 +306,33 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
         })
     }
 
+    if (isLoadingAll) {
+        return (
+            <div className="bg-gradient-to-r from-indigo-50/60 to-blue-50/60 dark:from-indigo-950/20 dark:to-slate-900/40 rounded-3xl border border-indigo-100 dark:border-indigo-950/50 p-6 shadow-sm">
+                <div className="flex items-center gap-3">
+                    <Loader2 size={20} className="text-indigo-500 animate-spin" />
+                    <div>
+                        <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">Đang quét toàn bộ kho hàng...</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                            Hệ thống đang kiểm tra tất cả lô hàng để tìm lot lẻ có thể ghép.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        )
+    }
+
     if (suggestions.length === 0) {
         return (
             <div className="bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/10 dark:to-slate-900/30 rounded-3xl border border-emerald-100 dark:border-emerald-950/20 p-6 shadow-sm flex items-center justify-between gap-4">
                 <div className="flex items-center gap-3">
                     <div className="p-2 rounded-xl bg-emerald-500 text-white shadow-md shadow-emerald-500/20">
-                        <Sparkles size={20} />
+                        <Combine size={20} />
                     </div>
                     <div>
                         <h3 className="font-bold text-sm text-slate-800 dark:text-slate-200">Kho hàng rất tối ưu</h3>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            Hiện tại không có các lô hàng lẻ chưa lên kệ nào của cùng một sản phẩm cần được ghép.
+                            Hiện tại không có các lô hàng lẻ nào của cùng một sản phẩm cần được ghép.
                         </p>
                     </div>
                 </div>
@@ -244,20 +345,23 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
             <div className="flex items-center justify-between border-b border-indigo-100/50 dark:border-indigo-950/30 pb-3">
                 <div className="flex items-center gap-2.5">
                     <div className="p-2 rounded-xl bg-indigo-500 text-white shadow-md shadow-indigo-500/20 animate-pulse">
-                        <Sparkles size={20} />
+                        <Combine size={20} />
                     </div>
                     <div>
                         <h2 className="font-bold text-lg text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                            Gợi ý ghép Lot lẻ chưa lên kệ
+                            Gợi ý ghép Lot lẻ
+                            <span className="text-[10px] font-bold text-indigo-500 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-lg border border-indigo-200 dark:border-indigo-800">
+                                Đã quét {allLots.length} lot
+                            </span>
                         </h2>
                         <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                            Phát hiện các lô chưa đầy pallet (chưa gán vị trí hoặc đang ở sảnh) có thể ghép lại với nhau. Hãy tích chọn các lô có cùng mã phụ (tag) để ghép.
+                            Phát hiện các lô chưa đầy pallet có thể ghép lại với nhau. Hãy tích chọn các lô có cùng mã phụ (tag) để ghép.
                         </p>
                     </div>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
                 {suggestions.map(suggestion => {
                     const allSuggestedItemIds = suggestion.suggestedLots.map(l => l.lotItemId)
                     const checkedItemIds = checkedLotItemIds[suggestion.productId] || []
@@ -269,148 +373,172 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                     const remainder = totalQty % suggestion.quantityPerPallet
                     const isAllChecked = allSuggestedItemIds.every(id => checkedItemIds.includes(id))
                     const canMerge = checkedLots.length >= 2
+                    const isExpanded = expandedProducts[suggestion.productId] || false
 
                     return (
-                        <div key={suggestion.productId} className="bg-white dark:bg-slate-900 rounded-2xl p-4 border border-slate-100 dark:border-slate-800 shadow-sm flex flex-col justify-between hover:shadow-md transition-shadow">
-                            <div>
-                                <div className="flex items-start justify-between mb-3 border-b border-slate-50 dark:border-slate-800 pb-2">
-                                    <div className="min-w-0">
-                                        <span className="font-mono font-bold text-xs bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tight">
-                                            {suggestion.productSku}
-                                        </span>
-                                        <h3 className="font-bold text-slate-800 dark:text-slate-200 mt-2 truncate text-sm" title={suggestion.productName}>
-                                            {suggestion.productName}
-                                        </h3>
+                        <div key={suggestion.productId} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                            {/* Header - Luôn hiển thị, click để toggle */}
+                            <div 
+                                onClick={() => setExpandedProducts(prev => ({ ...prev, [suggestion.productId]: !prev[suggestion.productId] }))}
+                                className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
+                            >
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                    <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-500 shrink-0">
+                                        <Package size={16} />
                                     </div>
-                                    <span className="text-[11px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-lg shrink-0 border border-amber-100 dark:border-amber-900/30">
-                                        Quy cách: {suggestion.quantityPerPallet} {suggestion.productUnit}/Pallet
-                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="font-mono font-bold text-[10px] bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800/50 uppercase">
+                                                {suggestion.productSku}
+                                            </span>
+                                            <span className="font-bold text-sm text-slate-800 dark:text-slate-200 truncate">
+                                                {suggestion.productName}
+                                            </span>
+                                        </div>
+                                    </div>
                                 </div>
-
-                                <div className="space-y-2 mb-4">
-                                    <div className="flex items-center justify-between px-1 mb-1">
-                                        <div className="text-[10px] font-black uppercase text-slate-400">Các lô hàng lẻ hiện tại:</div>
-                                        <button
-                                            onClick={() => handleToggleAllLotItems(suggestion.productId, allSuggestedItemIds)}
-                                            className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                                        >
-                                            {isAllChecked ? 'Bỏ chọn hết' : 'Tích chọn hết'}
-                                        </button>
-                                    </div>
-                                    <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
-                                        {suggestion.suggestedLots.map((item) => {
-                                            const isChecked = checkedItemIds.includes(item.lotItemId)
-                                            return (
-                                                <div 
-                                                    key={item.lotItemId} // Dùng ID duy nhất của lot_item để tránh hoàn toàn lỗi trùng React key
-                                                    onClick={() => handleToggleLotItem(suggestion.productId, item.lotItemId)}
-                                                    className={`flex items-start gap-2.5 text-xs p-2 rounded-xl border transition-all cursor-pointer select-none ${
-                                                        isChecked 
-                                                            ? 'bg-indigo-50/40 dark:bg-indigo-950/15 border-indigo-200 dark:border-indigo-900/60' 
-                                                            : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                                    }`}
-                                                >
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={isChecked}
-                                                        onChange={() => {}} // Đã được xử lý bởi div onClick
-                                                        className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 shrink-0 mt-0.5 pointer-events-none"
-                                                    />
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
-                                                                <span className="font-bold text-slate-700 dark:text-slate-300 shrink-0">
-                                                                    STT: {decodeSTT(item.daily_seq) || '--'}
-                                                                </span>
-                                                                <span className="text-slate-400 font-mono text-[10px] truncate">({item.code})</span>
-                                                                <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 text-[9px] font-medium border border-zinc-300 dark:border-zinc-700 shrink-0">
-                                                                    {item.location}
-                                                                </span>
-                                                            </div>
-                                                            <span className="font-bold text-indigo-600 dark:text-indigo-400 shrink-0 ml-1">
-                                                                {item.quantity} {item.unit}
-                                                            </span>
-                                                        </div>
-
-                                                        {/* Hiển thị Mã Phụ (Tags) tương ứng chính xác của tất cả dòng sản phẩm này trong lô */}
-                                                        {(() => {
-                                                            // Tìm tất cả lot_item_ids của sản phẩm này trong lô
-                                                            const productItemIds = item.lot.lot_items
-                                                                ?.filter(i => i.product_id === suggestion.productId)
-                                                                ?.map(i => i.id) || [];
-
-                                                            const itemTags = item.lot.lot_tags?.filter(t => t.lot_item_id && productItemIds.includes(t.lot_item_id)) || [];
-                                                            if (itemTags.length > 0) {
-                                                                return (
-                                                                    <div className="flex flex-wrap gap-1 mt-1.5">
-                                                                        {itemTags.map((tagObj, tIdx) => (
-                                                                            <span 
-                                                                                key={tIdx} 
-                                                                                className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 text-[8.5px] font-bold rounded border border-orange-200 dark:border-orange-900/50 uppercase font-mono tracking-wide"
-                                                                            >
-                                                                                {tagObj.tag}
-                                                                            </span>
-                                                                        ))}
-                                                                    </div>
-                                                                );
-                                                            }
-                                                            return (
-                                                                <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 italic">
-                                                                    Không có mã phụ
-                                                                </div>
-                                                            );
-                                                        })()}
-                                                    </div>
-                                                </div>
-                                            )
-                                        })}
-                                    </div>
+                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                    <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-900/30 hidden sm:inline-block">
+                                        {suggestion.quantityPerPallet} {suggestion.productUnit}/Pallet
+                                    </span>
+                                    <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">
+                                        {suggestion.suggestedLots.length} lot lẻ
+                                    </span>
+                                    <ChevronDown 
+                                        size={16} 
+                                        className={`text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} 
+                                    />
                                 </div>
                             </div>
 
-                            <div className="border-t border-slate-100 dark:border-slate-800 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                                <div className="text-xs text-slate-500 dark:text-slate-400">
-                                    <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300 mb-0.5">
-                                        <span>Tổng sau gộp: {totalQty} {suggestion.productUnit}</span>
+                            {/* Chi tiết - Ẩn/hiện */}
+                            <div className={`transition-all duration-300 ease-in-out overflow-hidden ${isExpanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}`}>
+                                <div className="px-4 pb-4 border-t border-slate-50 dark:border-slate-800">
+                                    <div className="space-y-2 mt-3">
+                                        <div className="flex items-center justify-between px-1 mb-1">
+                                            <div className="text-[10px] font-black uppercase text-slate-400">Các lô hàng lẻ hiện tại:</div>
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); handleToggleAllLotItems(suggestion.productId, allSuggestedItemIds); }}
+                                                className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                            >
+                                                {isAllChecked ? 'Bỏ chọn hết' : 'Tích chọn hết'}
+                                            </button>
+                                        </div>
+                                        <div className="space-y-1.5 max-h-[280px] overflow-y-auto pr-1">
+                                            {suggestion.suggestedLots.map((item) => {
+                                                const isChecked = checkedItemIds.includes(item.lotItemId)
+                                                return (
+                                                    <div 
+                                                        key={item.lotItemId}
+                                                        onClick={(e) => { e.stopPropagation(); handleToggleLotItem(suggestion.productId, item.lotItemId); }}
+                                                        className={`flex items-start gap-2.5 text-xs p-2 rounded-xl border transition-all cursor-pointer select-none ${
+                                                            isChecked 
+                                                                ? 'bg-indigo-50/40 dark:bg-indigo-950/15 border-indigo-200 dark:border-indigo-900/60' 
+                                                                : 'bg-slate-50/50 dark:bg-slate-800/30 border-slate-100 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                        }`}
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isChecked}
+                                                            onChange={() => {}}
+                                                            className="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 shrink-0 mt-0.5 pointer-events-none"
+                                                        />
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center justify-between">
+                                                                <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                                                    <span className="font-bold text-slate-700 dark:text-slate-300 shrink-0">
+                                                                        STT: {decodeSTT(item.daily_seq) || '--'}
+                                                                    </span>
+                                                                    <span className="text-slate-400 font-mono text-[10px] truncate">({item.code})</span>
+                                                                    <span className="px-1.5 py-0.5 rounded bg-zinc-200 dark:bg-zinc-800 text-zinc-500 text-[9px] font-medium border border-zinc-300 dark:border-zinc-700 shrink-0">
+                                                                        {item.location}
+                                                                    </span>
+                                                                </div>
+                                                                <span className="font-bold text-indigo-600 dark:text-indigo-400 shrink-0 ml-1">
+                                                                    {item.quantity} {item.unit}
+                                                                </span>
+                                                            </div>
+
+                                                            {/* Hiển thị Mã Phụ (Tags) */}
+                                                            {(() => {
+                                                                const productItemIds = item.lot.lot_items
+                                                                    ?.filter(i => i.product_id === suggestion.productId)
+                                                                    ?.map(i => i.id) || [];
+
+                                                                const itemTags = item.lot.lot_tags?.filter(t => t.lot_item_id && productItemIds.includes(t.lot_item_id)) || [];
+                                                                if (itemTags.length > 0) {
+                                                                    return (
+                                                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                                                            {itemTags.map((tagObj, tIdx) => (
+                                                                                <span 
+                                                                                    key={tIdx} 
+                                                                                    className="px-1.5 py-0.5 bg-orange-100 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400 text-[8.5px] font-bold rounded border border-orange-200 dark:border-orange-900/50 uppercase font-mono tracking-wide"
+                                                                                >
+                                                                                    {tagObj.tag}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    );
+                                                                }
+                                                                return (
+                                                                    <div className="text-[9px] text-slate-400 dark:text-slate-500 mt-1 italic">
+                                                                        Không có mã phụ
+                                                                    </div>
+                                                                );
+                                                            })()}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
-                                        <AlertCircle size={10} className="shrink-0" />
-                                        <span>
-                                            {totalQty > 0 ? (
-                                                fullPallets > 0 
-                                                    ? `Đủ ${fullPallets} Pallet${remainder > 0 ? ` và dư ${remainder} ${suggestion.productUnit}` : ''}` 
-                                                    : `Vẫn là 1 lot lẻ (${totalQty}/${suggestion.quantityPerPallet})`
-                                            ) : (
-                                                'Vui lòng tích chọn lô hàng để ghép'
-                                            )}
-                                        </span>
+
+                                    {/* Footer: Tổng sau gộp + Nút ghép */}
+                                    <div className="border-t border-slate-100 dark:border-slate-800 pt-3 mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">
+                                            <div className="flex items-center gap-1.5 font-bold text-slate-700 dark:text-slate-300 mb-0.5">
+                                                <span>Tổng sau gộp: {totalQty} {suggestion.productUnit}</span>
+                                            </div>
+                                            <div className="flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400 font-medium">
+                                                <AlertCircle size={10} className="shrink-0" />
+                                                <span>
+                                                    {totalQty > 0 ? (
+                                                        fullPallets > 0 
+                                                            ? `Đủ ${fullPallets} Pallet${remainder > 0 ? ` và dư ${remainder} ${suggestion.productUnit}` : ''}` 
+                                                            : `Vẫn là 1 lot lẻ (${totalQty}/${suggestion.quantityPerPallet})`
+                                                    ) : (
+                                                        'Vui lòng tích chọn lô hàng để ghép'
+                                                    )}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                if (canMerge) {
+                                                    const targetLot = checkedLots[0].lot
+                                                    const sourceLotIds = Array.from(new Set(
+                                                        checkedLots.slice(1)
+                                                            .map(l => l.lot.id)
+                                                            .filter(id => id !== targetLot.id)
+                                                    ))
+                                                    onMerge(targetLot, sourceLotIds)
+                                                }
+                                            }}
+                                            disabled={!canMerge}
+                                            className={`flex items-center justify-center gap-1.5 px-4 py-2 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0 cursor-pointer ${
+                                                canMerge 
+                                                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/10' 
+                                                    : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                            }`}
+                                        >
+                                            <Combine size={14} />
+                                            Ghép ngay
+                                            <ArrowRight size={12} />
+                                        </button>
                                     </div>
                                 </div>
-
-                                <button
-                                    onClick={() => {
-                                        if (canMerge) {
-                                            const targetLot = checkedLots[0].lot
-                                            // Danh sách các lô nguồn: là ID của các lô hàng khác với targetLot (tránh gửi trùng ID của lô đích)
-                                            const sourceLotIds = Array.from(new Set(
-                                                checkedLots.slice(1)
-                                                    .map(l => l.lot.id)
-                                                    .filter(id => id !== targetLot.id)
-                                            ))
-                                            onMerge(targetLot, sourceLotIds)
-                                        }
-                                    }}
-                                    disabled={!canMerge}
-                                    className={`flex items-center justify-center gap-1.5 px-4 py-2 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0 cursor-pointer ${
-                                        canMerge 
-                                            ? 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/10' 
-                                            : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                                    }`}
-                                >
-                                    <Combine size={14} />
-                                    Ghép ngay
-                                    <ArrowRight size={12} />
-                                </button>
                             </div>
                         </div>
                     )
