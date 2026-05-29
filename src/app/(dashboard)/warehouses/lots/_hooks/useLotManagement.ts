@@ -8,6 +8,7 @@ import { matchDateRange } from '@/lib/dateUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
+import { encodeSTT } from '@/lib/numberUtils'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -367,9 +368,9 @@ export function useLotManagement() {
                     const parts = searchTerm.split(':').map(p => p.trim());
                     if (parts.length === 2 && parts[0] && parts[1]) {
                         const lsxTerm = parts[0];
-                        const sttTerm = parseInt(parts[1]);
+                        const sttTerm = encodeSTT(parts[1]);
 
-                        if (!isNaN(sttTerm)) {
+                        if (sttTerm !== null) {
                             // 1. Find production IDs
                             let matchedProdsQuery = (supabase.from('productions') as any)
                                 .select('id')
@@ -592,8 +593,8 @@ export function useLotManagement() {
 
                             // STT search in 'all' mode
                             let sttIds: string[] = [];
-                            const sttNum = parseInt(part);
-                            if (!isNaN(sttNum)) {
+                            const sttNum = encodeSTT(part);
+                            if (sttNum !== null) {
                                 let sttLotsQuery = (supabase.from('lots') as any)
                                     .select('id')
                                     .eq('daily_seq', sttNum)
@@ -608,8 +609,8 @@ export function useLotManagement() {
                             currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds, ...sttIds]));
                         }
                         else if (searchMode === 'stt') {
-                            const sttNum = parseInt(part);
-                            if (!isNaN(sttNum)) {
+                            const sttNum = encodeSTT(part);
+                            if (sttNum !== null) {
                                 let sttLotsQuery = (supabase.from('lots') as any)
                                     .select('id')
                                     .eq('daily_seq', sttNum)
