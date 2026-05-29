@@ -5,7 +5,7 @@ import { X, FileText, Download, Printer, Loader2, Calendar, LayoutList } from 'l
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
-import { formatQuantityFull } from '@/lib/numberUtils'
+import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
 import { format } from 'date-fns'
 import { vi } from 'date-fns/locale'
 import ExcelJS from 'exceljs'
@@ -949,7 +949,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
 
                                     const row = worksheet.addRow({
                                         stt: itemIdx === 0 ? itemIndex++ : '',
-                                        daily_seq: itemIdx === 0 ? (lot.daily_seq || '-') : '',
+                                        daily_seq: itemIdx === 0 ? (decodeSTT(lot.daily_seq) || '-') : '',
                                         date: itemIdx === 0 ? dateStr : '',
                                         prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
                                         product: productDisplay,
@@ -969,7 +969,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                 const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
                                 const row = worksheet.addRow({
                                     stt: itemIndex++,
-                                    daily_seq: lot.daily_seq || '-',
+                                    daily_seq: decodeSTT(lot.daily_seq) || '-',
                                     date: dateStr,
                                     prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
                                     product: lot.products.name || '-',
@@ -1040,7 +1040,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             const sxLotCode = productionLotsMap[`${row.production_id}_${row.product_id}`] || '-'
                             const excelRow = worksheet.addRow({
                                 stt: itemIndex++,
-                                daily_seq: row.daily_seq || '-',
+                                daily_seq: decodeSTT(row.daily_seq) || '-',
                                 date: dateStr,
                                 prod_code: `${sxLotCode}${row.lot_code ? ` (${row.lot_code})` : ''}`,
                                 product: row.product_name,
@@ -1069,7 +1069,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                             const sxLotCode = productionLotsMap[`${lot.production_id}_${item.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
                             const row = worksheet.addRow({
                                 stt: itemIdx === 0 ? itemIndex++ : '',
-                                daily_seq: itemIdx === 0 ? (lot.daily_seq || '-') : '',
+                                daily_seq: itemIdx === 0 ? (decodeSTT(lot.daily_seq) || '-') : '',
                                 date: itemIdx === 0 ? dateStr : '',
                                 prod_code: itemIdx === 0 ? `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}` : '',
                                 product: item.products?.name || '-',
@@ -1092,7 +1092,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                         const sxLotCode = productionLotsMap[`${lot.production_id}_${lot.product_id}`] || lot.batch_code || lot.production_code || lot.productions?.code || '-'
                         const row = worksheet.addRow({
                             stt: itemIndex++,
-                            daily_seq: lot.daily_seq || '-',
+                            daily_seq: decodeSTT(lot.daily_seq) || '-',
                             date: dateStr,
                             prod_code: `${sxLotCode}${lot.code ? ` (${lot.code})` : ''}`,
                             product: lot.products.name || '-',
@@ -1840,7 +1840,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
                                                                                             <td className="py-4 px-2 font-black text-slate-900 dark:text-white" rowSpan={rowSpan}>
                                                                                                 <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                                                    {lot.daily_seq || '--'}
+                                                                                                    {decodeSTT(lot.daily_seq) || '--'}
                                                                                                 </span>
                                                                                             </td>
                                                                                             <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
@@ -1928,7 +1928,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
                                                                             <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
                                                                                 <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                                    {lot.daily_seq || '--'}
+                                                                                    {decodeSTT(lot.daily_seq) || '--'}
                                                                                 </span>
                                                                             </td>
                                                                             <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
@@ -1973,7 +1973,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                             <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
                                                                             <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
                                                                                 <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                                    {lot.daily_seq || '--'}
+                                                                                    {decodeSTT(lot.daily_seq) || '--'}
                                                                                 </span>
                                                                             </td>
                                                                             <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.inbound_date || lot.created_at), 'dd/MM/yyyy')}</td>
@@ -2020,7 +2020,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                         <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
                                                         <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
                                                             <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                {row.daily_seq || '--'}
+                                                                {decodeSTT(row.daily_seq) || '--'}
                                                             </span>
                                                         </td>
                                                         <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400">
@@ -2150,7 +2150,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                                     <td className="py-4 px-2 font-mono text-slate-500 font-bold" rowSpan={rowSpan}>{idx + 1}</td>
                                                                                     <td className="py-4 px-2 font-black text-slate-900 dark:text-white" rowSpan={rowSpan}>
                                                                                         <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                                            {lot.daily_seq || '--'}
+                                                                                            {decodeSTT(lot.daily_seq) || '--'}
                                                                                         </span>
                                                                                     </td>
                                                                                     <td className="py-4 px-2 font-medium text-slate-600 dark:text-slate-400" rowSpan={rowSpan}>
@@ -2188,7 +2188,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
                                                                     <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
                                                                         <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                            {lot.daily_seq || '--'}
+                                                                            {decodeSTT(lot.daily_seq) || '--'}
                                                                         </span>
                                                                     </td>
                                                                     <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.created_at), 'dd/MM/yyyy')}</td>
@@ -2218,7 +2218,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
                                                                     <td className="py-4 px-2 font-mono text-slate-500 font-bold">{idx + 1}</td>
                                                                     <td className="py-4 px-2 font-black text-slate-900 dark:text-white">
                                                                         <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold">
-                                                                            {lot.daily_seq || '--'}
+                                                                            {decodeSTT(lot.daily_seq) || '--'}
                                                                         </span>
                                                                     </td>
                                                                     <td className="py-4 px-2 text-slate-600 dark:text-slate-400 font-medium">{format(new Date(lot.created_at), 'dd/MM/yyyy')}</td>
