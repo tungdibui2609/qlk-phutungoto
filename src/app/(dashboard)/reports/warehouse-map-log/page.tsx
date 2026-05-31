@@ -14,6 +14,7 @@ import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns'
 import { vi } from 'date-fns/locale'
 import { exportWarehouseMovementsToExcel } from '@/lib/warehouseMovementExcelExport'
 import { extractWeightFromName } from '@/lib/unitConversion'
+import { decodeSTT } from '@/lib/numberUtils'
 
 type MovementType = 'assigned' | 'moved' | 'exported' | 'replaced' | 'unknown';
 
@@ -35,6 +36,7 @@ interface MapMovement {
         code: string;
         productionOrderCode?: string | null;
         productionLotCode?: string | null;
+        dailySeq?: number | string | null;
         inboundDate?: string | null;
         products: Array<{
             name: string;
@@ -49,6 +51,7 @@ interface MapMovement {
         code: string;
         productionOrderCode?: string | null;
         productionLotCode?: string | null;
+        dailySeq?: number | string | null;
         inboundDate?: string | null;
         products?: Array<{
             name: string;
@@ -135,7 +138,7 @@ export default function WarehouseMapLogPage() {
                 for (let i = 0; i < ids.length; i += 150) {
                     const chunk = ids.slice(i, i + 150)
                     const { data, error } = await supabase.from('lots').select(`
-                        id, code, production_code, production_lot_id, inbound_date, quantity,
+                        id, code, production_code, daily_seq, production_lot_id, inbound_date, quantity,
                         products(name, sku, unit, weight_kg),
                         productions(code, production_lots(lot_code)),
                         lot_items(quantity, unit, products(name, sku))
@@ -195,6 +198,7 @@ export default function WarehouseMapLogPage() {
                     productionOrderCode: l.productions?.code || null,
                     productionLotCode: (Array.isArray(l.productions?.production_lots) ? l.productions.production_lots[0]?.lot_code : l.productions?.production_lots?.lot_code) || l.production_code || null,
                     inboundDate: l.inbound_date || null,
+                    dailySeq: l.daily_seq || null,
                     products,
                     totalWeightKg
                 })
@@ -205,7 +209,7 @@ export default function WarehouseMapLogPage() {
                 if (!id) return null
                 const lot = lotMap.get(id)
                 if (lot) return lot
-                return { id, code: `LOT-ID:${id.slice(0,8)}...`, products: [], totalWeightKg: 0 }
+                return { id, code: `LOT-ID:${id.slice(0,8)}...`, products: [], totalWeightKg: 0, dailySeq: null }
             }
 
             // 4. Process logs into movements
@@ -220,6 +224,7 @@ export default function WarehouseMapLogPage() {
             for (let i = 0; i < unpairedLogs.length; i++) {
                 const log = unpairedLogs[i]
                 if (pairedIds.has(log.id)) continue
+                pairedIds.add(log.id)
 
                 const oldLotId = log.old_data?.lot_id
                 const newLotId = log.new_data?.lot_id
@@ -589,7 +594,7 @@ export default function WarehouseMapLogPage() {
                     <div className="flex-1 overflow-y-auto pr-4 space-y-6 custom-scrollbar">
                         {filteredMovements.map((m, idx) => (
                             <div 
-                                key={m.id} 
+                                key={`${m.id}-${m.type}-${idx}`} 
                                 className="group relative bg-white dark:bg-zinc-900/80 rounded-[32px] border border-zinc-100 dark:border-zinc-800 p-6 flex flex-col lg:flex-row gap-8 hover:shadow-2xl hover:shadow-blue-500/10 transition-all duration-500 animate-in fade-in slide-in-from-bottom-4"
                                 style={{ animationDelay: `${idx * 50}ms` }}
                             >
@@ -702,20 +707,40 @@ export default function WarehouseMapLogPage() {
                                 {/* Right Side: Lot & Product Metadata */}
                                 <div className="lg:w-80 space-y-4">
                                     {(m.lot || m.oldLot) && (
-                                        <div className="space-y-3">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
-                                                    <span className="text-sm font-black text-zinc-900 dark:text-white font-mono tracking-tight">
-                                                        {m.lot?.code || m.oldLot?.code}
+                                        <div className="space-y-2.5">
+                                            {/* Dòng 1: Mã pallet và STT */}
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                                                <span className="text-sm font-black text-zinc-900 dark:text-white font-mono tracking-tight">
+                                                    {m.lot?.code || m.oldLot?.code}
+                                                </span>
+                                                {(m.lot?.dailySeq || m.oldLot?.dailySeq) && (
+                                                    <span className="text-[9px] font-black px-1.5 py-0.5 rounded bg-orange-600 text-white shadow-sm font-mono shrink-0">
+                                                        STT: {decodeSTT(m.lot?.dailySeq || m.oldLot?.dailySeq)}
                                                     </span>
-                                                </div>
-                                                {m.lot?.totalWeightKg ? (
-                                                    <span className="text-[10px] font-black px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-500">
-                                                        {Number(m.lot.totalWeightKg).toLocaleString('vi-VN')} KG
-                                                    </span>
-                                                ) : null}
+                                                )}
                                             </div>
+
+                                            {/* Dòng 2: LSX, LOT SX và Khối lượng nằm ngang */}
+                                            {(m.lot?.productionOrderCode || m.oldLot?.productionOrderCode || m.lot?.productionLotCode || m.oldLot?.productionLotCode || m.lot?.totalWeightKg || m.oldLot?.totalWeightKg) && (
+                                                <div className="flex flex-wrap items-center gap-2 ml-4">
+                                                    {(m.lot?.productionOrderCode || m.oldLot?.productionOrderCode) && (
+                                                        <span className="text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded border border-amber-100/50 dark:border-amber-800 font-mono shrink-0">
+                                                            LSX: {m.lot?.productionOrderCode || m.oldLot?.productionOrderCode}
+                                                        </span>
+                                                    )}
+                                                    {(m.lot?.productionLotCode || m.oldLot?.productionLotCode) && (
+                                                        <span className="text-[9px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100/50 dark:border-blue-800 font-mono shrink-0">
+                                                            LOT SX: {m.lot?.productionLotCode || m.oldLot?.productionLotCode}
+                                                        </span>
+                                                    )}
+                                                    {(m.lot?.totalWeightKg || m.oldLot?.totalWeightKg) ? (
+                                                        <span className="text-[9px] font-bold px-1.5 py-0.5 bg-zinc-50 dark:bg-zinc-800 rounded text-zinc-500 font-mono shrink-0 border border-zinc-200 dark:border-zinc-700 shadow-sm">
+                                                            {Number(m.lot?.totalWeightKg || m.oldLot?.totalWeightKg).toLocaleString('vi-VN')} KG
+                                                        </span>
+                                                    ) : null}
+                                                </div>
+                                            )}
                                             
                                             {m.lot?.products.map((p, pIdx) => (
                                                 <div key={pIdx} className="p-3 bg-zinc-50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800 group-hover:border-blue-200 dark:group-hover:border-blue-900 transition-colors">
