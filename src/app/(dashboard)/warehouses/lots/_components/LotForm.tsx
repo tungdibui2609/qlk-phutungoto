@@ -881,6 +881,8 @@ export function LotForm({
             }
         }
 
+
+
         // Audit Log
         try {
             await logActivity({
@@ -1543,6 +1545,8 @@ export function LotForm({
                             ))}
                         </div>
                     </div>
+
+
 
                 <div className="flex items-center justify-between gap-3 mt-8 pt-6 border-t border-zinc-100 dark:border-zinc-800">
                     <div className="flex items-center gap-4">

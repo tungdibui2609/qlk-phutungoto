@@ -31,6 +31,7 @@ const menuItems: MenuItem[] = [
             { id: 'semi_finished_lots', name: 'Lô bán thành phẩm', href: '/sanxuat/semi-finished-lots', icon: Boxes },
             { id: 'finished_lots', name: 'Lô thành phẩm', href: '/sanxuat/finished-lots', icon: Package },
             { id: 'print_labels', name: 'In tem thùng', href: '/sanxuat/print-labels', icon: Printer },
+            { id: 'print_history', name: 'Lịch sử in tem', href: '/sanxuat/print-history', icon: History },
         ]
     },
     {

@@ -44,6 +44,7 @@ export default function PrintLabelsPage() {
     // Refs để click outside
     const semiRef = useRef<HTMLDivElement>(null)
     const finishedRef = useRef<HTMLDivElement>(null)
+    const isProcessingPrintRef = useRef(false)
 
     // Form states
     const [semiLotCode, setSemiLotCode] = useState('') // Lô bán thành phẩm đầu vào
@@ -54,6 +55,9 @@ export default function PrintLabelsPage() {
     const [printQty, setPrintQty] = useState(10)
     const [notes, setNotes] = useState('')
     const [reference, setReference] = useState('') // Thông tin tham chiếu
+    const [currentIndexStart, setCurrentIndexStart] = useState(1)
+    const [countLabels, setCountLabels] = useState<number | null>(null)
+    const [isCounting, setIsCounting] = useState(false)
 
     // Data states
     interface ProductionLotSys {
@@ -284,29 +288,84 @@ export default function PrintLabelsPage() {
         showToast(`Đã chọn Lô Thành phẩm: ${lot.code}`, 'success')
     }
 
+    // Tự động đếm số lượng tem đã in để lấy index bắt đầu
+    useEffect(() => {
+        if (!semiLotCode.trim() || !finishedLotCode.trim() || !selectedProductId || !currentSystem?.code) {
+            setCurrentIndexStart(1)
+            setCountLabels(null)
+            return
+        }
+
+        let isMounted = true
+        async function fetchPrintedCount() {
+            setIsCounting(true)
+            try {
+                const { count, error } = await supabase
+                    .from('box_labels')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('semi_finished_lot_code', semiLotCode.trim().toUpperCase())
+                    .eq('finished_lot_code', finishedLotCode.trim().toUpperCase())
+                    .eq('product_id', selectedProductId)
+                    .eq('system_code', currentSystem.code)
+
+                if (error) throw error
+
+                if (isMounted) {
+                    const currentCount = count || 0
+                    setCountLabels(currentCount)
+                    setCurrentIndexStart(currentCount + 1)
+                }
+            } catch (err) {
+                console.error('Lỗi khi đếm số lượng tem đã in:', err)
+                if (isMounted) {
+                    setCountLabels(0)
+                    setCurrentIndexStart(1)
+                }
+            } finally {
+                if (isMounted) setIsCounting(false)
+            }
+        }
+
+        fetchPrintedCount()
+        return () => {
+            isMounted = false
+        }
+    }, [semiLotCode, finishedLotCode, selectedProductId, currentSystem?.code])
+
     // Tự động sinh danh sách tem preview khi thông tin thay đổi
     useEffect(() => {
-        // Mã nền để sinh QR: ưu tiên mã thành phẩm đầu ra, nếu chưa có thì dùng mã bán thành phẩm
-        const baseCode = finishedLotCode.trim() || semiLotCode.trim()
+        const cleanFinished = finishedLotCode.replace(/\s+/g, '').toUpperCase()
+        const cleanSemi = semiLotCode.replace(/\s+/g, '').toUpperCase()
         
-        if (!baseCode) {
+        if (!cleanFinished && !cleanSemi) {
             setGeneratedLabels([])
             return
         }
 
+        // Tìm SKU của sản phẩm đang chọn
+        const selectedProductInLot = availableProductionLots.find(pl => pl.product_id === selectedProductId)?.products
+        const selectedProduct = selectedProductInLot || products.find(p => p.id === selectedProductId)
+        const productSku = selectedProduct ? selectedProduct.sku : 'SKU'
+        const cleanSku = productSku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+
         const labels = Array.from({ length: printQty }).map((_, i) => {
-            const index = i + 1
+            const index = currentIndexStart + i
             const indexStr = String(index).padStart(3, '0')
-            const cleanBase = baseCode.replace(/\s+/g, '').toUpperCase()
+            
+            const partTP = cleanFinished || 'PENDINGTP'
+            const partBTP = cleanSemi || 'PENDINGBTP'
+            
             return {
-                code: `BOX-${cleanBase}-${indexStr}`,
+                code: `BOX-${partTP}-${partBTP}-${cleanSku}-${indexStr}`,
                 index
             }
         })
         setGeneratedLabels(labels)
-    }, [semiLotCode, finishedLotCode, printQty])
+    }, [semiLotCode, finishedLotCode, selectedProductId, printQty, currentIndexStart, availableProductionLots, products])
 
     const handlePrint = async () => {
+        if (isProcessingPrintRef.current) return
+        
         if (!semiLotCode.trim()) {
             showToast('Vui lòng điền mã Lô Bán Thành Phẩm!', 'warning')
             return
@@ -320,6 +379,7 @@ export default function PrintLabelsPage() {
             return
         }
 
+        isProcessingPrintRef.current = true
         setIsPrinting(true)
         try {
             // Chuẩn bị dữ liệu lưu vào DB bảng box_labels
@@ -342,20 +402,53 @@ export default function PrintLabelsPage() {
 
             if (dbErr) {
                 console.warn('[DB WARNING] Không thể lưu tem vào bảng box_labels:', dbErr.message)
-                showToast('Chưa lưu vào DB (Hãy chạy SQL migration). Tiếp tục mở trình in...', 'warning')
+                showToast(`Chưa lưu vào DB: ${dbErr.message}. Vẫn mở trình in...`, 'warning')
             } else {
                 showToast('Đã lưu thông tin liên kết thùng hàng thành công!', 'success')
+                
+                // Ghi lịch sử in vào bảng box_label_print_logs
+                try {
+                    const printLog = {
+                        semi_finished_lot_code: semiLotCode.trim().toUpperCase(),
+                        finished_lot_code: finishedLotCode.trim().toUpperCase(),
+                        product_id: selectedProductId,
+                        print_qty: printQty,
+                        start_index: currentIndexStart,
+                        end_index: currentIndexStart + printQty - 1,
+                        system_code: currentSystem.code,
+                        company_id: profile?.company_id || null,
+                        created_by: profile?.id || null
+                    }
+                    
+                    const { error: logErr } = await supabase
+                        .from('box_label_print_logs')
+                        .insert(printLog as any)
+                        
+                    if (logErr) {
+                        console.warn('[DB WARNING] Không thể lưu lịch sử in vào box_label_print_logs:', logErr.message)
+                    }
+                } catch (logEx) {
+                    console.error('Lỗi khi ghi lịch sử in:', logEx)
+                }
             }
 
-            // Mở cửa sổ in của trình duyệt
+            // Tự động tăng dải tem in đợt sau
+            setCurrentIndexStart(prev => prev + printQty)
+            if (countLabels !== null) {
+                setCountLabels(prev => (prev || 0) + printQty)
+            }
+
+            // Mở cửa sổ in của trình duyệt sau khi Toast đã kịp hiển thị
             setTimeout(() => {
                 window.print()
+                isProcessingPrintRef.current = false
                 setIsPrinting(false)
-            }, 500)
+            }, 800)
 
         } catch (err: any) {
             console.error('Lỗi in ấn:', err)
             window.print()
+            isProcessingPrintRef.current = false
             setIsPrinting(false)
         }
     }
@@ -810,10 +903,37 @@ export default function PrintLabelsPage() {
                             </div>
                         </div>
 
+                        {/* Bộ đếm và dải số tem in thông minh */}
+                        {semiLotCode.trim() && finishedLotCode.trim() && selectedProductId && (
+                            <div className="bg-emerald-50/20 dark:bg-zinc-800/60 border border-emerald-100/50 dark:border-zinc-700/50 rounded-2xl p-4 text-xs space-y-2.5 transition-all">
+                                <div className="flex justify-between items-center text-stone-600 dark:text-stone-400">
+                                    <span className="font-medium flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        Đã in trước đó:
+                                    </span>
+                                    <span className="font-bold text-stone-900 dark:text-white">
+                                        {isCounting ? 'Đang tính toán...' : `${countLabels !== null ? countLabels : 0} tem`}
+                                    </span>
+                                </div>
+                                <div className="flex justify-between items-center text-stone-600 dark:text-stone-400">
+                                    <span className="font-medium flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                        Số tem đợt này:
+                                    </span>
+                                    <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 dark:bg-emerald-400/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
+                                        #{currentIndexStart} → #{currentIndexStart + printQty - 1}
+                                    </span>
+                                </div>
+                                <p className="text-[10px] text-stone-400 dark:text-zinc-500 text-center italic leading-relaxed pt-1 border-t border-stone-100 dark:border-zinc-800">
+                                    Hệ thống tự động cộng dồn. Đổi lô hoặc sản phẩm sẽ tạo bộ đếm mới.
+                                </p>
+                            </div>
+                        )}
+
                         {/* Nút in tem */}
                         <button
                             onClick={handlePrint}
-                            disabled={isPrinting || !semiLotCode || !finishedLotCode || !selectedProductId}
+                            disabled={isPrinting || !semiLotCode.trim() || !finishedLotCode.trim() || !selectedProductId}
                             className="w-full flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl font-bold hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-600/10 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
                         >
                             <Printer size={18} />

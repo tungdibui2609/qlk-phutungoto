@@ -118,7 +118,8 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                 }
 
                 // 2. Delete lot_tags (Child)
-                await supabase.from('lot_tags').delete().eq('lot_id', lotId)
+                const { error: tagError } = await supabase.from('lot_tags').delete().eq('lot_id', lotId)
+                if (tagError) throw tagError
 
                 // 3. Delete lot_items (Child)
                 const { error: itemError } = await supabase
@@ -139,8 +140,17 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                 showToast('Đã xóa LOT thành công', 'success')
                 onRefreshMap()
             } catch (error: any) {
-                console.error('Delete lot error:', error)
-                showToast(error.message || "Lỗi khi xóa LOT (có thể do ràng buộc dữ liệu khác)", 'error')
+                console.error('Delete lot error details:', {
+                    message: error?.message,
+                    details: error?.details,
+                    hint: error?.hint,
+                    code: error?.code,
+                    error
+                })
+                const errorMsg = error?.message 
+                    ? `${error.message}${error.details ? ` (${error.details})` : ''}`
+                    : "Lỗi khi xóa LOT (có thể do ràng buộc dữ liệu khác)"
+                showToast(errorMsg, 'error')
             }
             return
         }

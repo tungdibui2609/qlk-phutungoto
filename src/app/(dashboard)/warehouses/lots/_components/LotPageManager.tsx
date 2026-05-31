@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
@@ -183,6 +183,14 @@ export function LotPageManager() {
                         <Combine size={18} className="text-indigo-500 shrink-0" />
                         Lot lẻ
                     </button>
+
+                    <Link
+                        href="/warehouses/lots/scan"
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
+                    >
+                        <QrCode size={18} className="text-orange-500" />
+                        Liên kết Tem
+                    </Link>
 
                     <Link
                         href="/warehouses/lots/export"
