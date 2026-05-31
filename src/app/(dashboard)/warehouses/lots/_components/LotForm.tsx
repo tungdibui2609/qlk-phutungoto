@@ -688,7 +688,7 @@ export function LotForm({
             }
         }
 
-        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRÊN TOÀN HỆ THỐNG ---
+        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRONG CÙNG NGÀY NHẬP KHO ---
         const dailySeqVal = encodeSTT(dailySeq)
         if (dailySeqVal !== null && !isNaN(dailySeqVal)) {
             let checkSttQuery = supabase
@@ -698,6 +698,10 @@ export function LotForm({
                 .eq('daily_seq', dailySeqVal)
                 .neq('status', 'hidden')
                 .neq('status', 'exported')
+                
+            if (inboundDate) {
+                checkSttQuery = checkSttQuery.eq('inbound_date', inboundDate)
+            }
                 
             if (editingLot?.id) {
                 checkSttQuery = checkSttQuery.neq('id', editingLot.id)
@@ -712,12 +716,12 @@ export function LotForm({
                 const formattedDate = existingLot.inbound_date 
                     ? existingLot.inbound_date.split('-').reverse().join('/') 
                     : 'không rõ ngày'
-                alert(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đang được sử dụng bởi lô hàng "${existingLot.code}" (nhập ngày ${formattedDate}) vẫn còn tồn tại trong kho. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`)
+                alert(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đang được sử dụng bởi lô hàng "${existingLot.code}" (nhập ngày ${formattedDate}) trong cùng ngày nhập kho này. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`)
                 setIsSubmitting(false)
                 return
             }
         }
-        // -------------------------------------------------------------
+        // -------------------------------------------------------------------
 
         let lotId = editingLot?.id
         let error

@@ -11,7 +11,7 @@ interface OddLotSuggestionsProps {
     lots: Lot[]
     products: any[]
     zones: any[]
-    onMerge: (targetLot: Lot, sourceLotIds: string[]) => void
+    onMerge: (targetLot: Lot, sourceLotIds: string[], sourceLots: Lot[]) => void
     isSanxuat?: boolean
 }
 
@@ -518,12 +518,9 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                                                 e.stopPropagation();
                                                 if (canMerge) {
                                                     const targetLot = checkedLots[0].lot
-                                                    const sourceLotIds = Array.from(new Set(
-                                                        checkedLots.slice(1)
-                                                            .map(l => l.lot.id)
-                                                            .filter(id => id !== targetLot.id)
-                                                    ))
-                                                    onMerge(targetLot, sourceLotIds)
+                                                    const sourceLots = checkedLots.slice(1).map(l => l.lot).filter(l => l.id !== targetLot.id)
+                                                    const sourceLotIds = sourceLots.map(l => l.id)
+                                                    onMerge(targetLot, sourceLotIds, sourceLots)
                                                 }
                                             }}
                                             disabled={!canMerge}

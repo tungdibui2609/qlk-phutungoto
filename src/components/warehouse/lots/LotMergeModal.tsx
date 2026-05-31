@@ -13,6 +13,7 @@ interface LotMergeModalProps {
     targetLot: Lot
     lots: Lot[] // All available lots in the system
     initialSourceLotIds?: string[]
+    initialSourceLots?: Lot[]
     onClose: () => void
     onSuccess: () => void
 }
@@ -27,9 +28,9 @@ const deduplicateLots = (lotsArr: Lot[]): Lot[] => {
     })
 }
 
-export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, initialSourceLotIds = [], onClose, onSuccess }) => {
+export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, initialSourceLotIds = [], initialSourceLots = [], onClose, onSuccess }) => {
     const [searchTerm, setSearchTerm] = useState('')
-    const [filterTab, setFilterTab] = useState<'all' | 'unplaced' | 'placed' | 'starred'>('unplaced')
+    const [filterTab, setFilterTab] = useState<'suggested' | 'unplaced' | 'placed' | 'starred'>('unplaced')
     const [expandedLots, setExpandedLots] = useState<Record<string, boolean>>({})
     const [selectedItems, setSelectedItems] = useState<Record<string, number>>({}) // itemId -> quantity to merge
     const [loading, setLoading] = useState(false)
@@ -111,6 +112,16 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
         return () => clearTimeout(timer)
     }, [searchTerm, currentSystem?.code, targetLot.id])
 
+    // Load initial source lots if passed directly
+    React.useEffect(() => {
+        if (initialSourceLots && initialSourceLots.length > 0) {
+            setModalLots(prev => {
+                const combined = [...prev, ...initialSourceLots]
+                return deduplicateLots(combined)
+            })
+        }
+    }, [initialSourceLots])
+
     // Update modalLots if the parent 'lots' reference changes and we are not searching
     React.useEffect(() => {
         if (!searchTerm) {
@@ -121,9 +132,17 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                     combined.push(sl)
                 }
             })
+            // Ensure initialSourceLots are also preserved in combined lots
+            if (initialSourceLots && initialSourceLots.length > 0) {
+                initialSourceLots.forEach(sl => {
+                    if (!combined.some(l => l.id === sl.id)) {
+                        combined.push(sl)
+                    }
+                })
+            }
             setModalLots(deduplicateLots(combined))
         }
-    }, [lots, searchTerm, starredLots])
+    }, [lots, searchTerm, starredLots, initialSourceLots])
 
     // Load Starred Lots on mount
     React.useEffect(() => {
@@ -161,6 +180,46 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
         fetchStarred()
     }, [currentSystem?.code])
     
+    // Fetch initial source lots if they are not already loaded in modalLots (fallback)
+    React.useEffect(() => {
+        if (!initialSourceLotIds || initialSourceLotIds.length === 0 || !currentSystem?.code) return
+
+        const fetchInitialSourceLots = async () => {
+            const existingIds = new Set(modalLots.map(l => l.id))
+            const missingIds = initialSourceLotIds.filter(id => !existingIds.has(id))
+
+            if (missingIds.length === 0) return
+
+            try {
+                const { data, error } = await supabase
+                    .from('lots')
+                    .select(`
+                        *,
+                        positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id)),
+                        lot_items(
+                            id, quantity, product_id, unit,
+                            products(name, sku, internal_name, internal_code, unit)
+                        ),
+                        lot_tags(tag, lot_item_id),
+                        suppliers(name),
+                        qc_info(name)
+                    `)
+                    .in('id', missingIds)
+
+                if (!error && data) {
+                    setModalLots(prev => {
+                        const combined = [...prev, ...(data as unknown as Lot[])]
+                        return deduplicateLots(combined)
+                    })
+                }
+            } catch (err) {
+                console.error('Error fetching initial source lots:', err)
+            }
+        }
+
+        fetchInitialSourceLots()
+    }, [initialSourceLotIds, currentSystem?.code])
+    
     // Auto-select and expand source lots from suggestion banner
     React.useEffect(() => {
         if (initialSourceLotIds && initialSourceLotIds.length > 0 && modalLots.length > 0) {
@@ -187,6 +246,13 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
         }
     }, [initialSourceLotIds, modalLots])
 
+    // Auto-select tab suggested when there are suggested lots
+    React.useEffect(() => {
+        if (initialSourceLotIds && initialSourceLotIds.length > 0) {
+            setFilterTab('suggested')
+        }
+    }, [initialSourceLotIds])
+
 
     // 1. Filter Source Lots (exclude target lot, deduplicate)
     const sourceLots = useMemo(() => {
@@ -195,12 +261,14 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
         let filtered = uniqueLots.filter(l => l.id !== targetLot.id)
 
         // Tab Filter
-        if (filterTab === 'unplaced') {
-            filtered = filtered.filter(l => !l.positions || l.positions.length === 0)
+        if (filterTab === 'suggested') {
+            filtered = filtered.filter(l => initialSourceLotIds.includes(l.id))
+        } else if (filterTab === 'unplaced') {
+            filtered = filtered.filter(l => (!l.positions || l.positions.length === 0) || initialSourceLotIds.includes(l.id))
         } else if (filterTab === 'placed') {
-            filtered = filtered.filter(l => l.positions && l.positions.length > 0)
+            filtered = filtered.filter(l => (l.positions && l.positions.length > 0) || initialSourceLotIds.includes(l.id))
         } else if (filterTab === 'starred') {
-            filtered = filtered.filter(l => l.metadata?.is_starred)
+            filtered = filtered.filter(l => l.metadata?.is_starred || initialSourceLotIds.includes(l.id))
         }
 
         // Filter is already handled mostly by server if searching
@@ -218,17 +286,18 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
         }
 
         return filtered
-    }, [modalLots, targetLot.id, filterTab, searchTerm])
+    }, [modalLots, targetLot.id, filterTab, searchTerm, initialSourceLotIds])
 
     // Stats for Tabs
     const stats = useMemo(() => {
         const others = modalLots.filter(l => l.id !== targetLot.id)
         return {
+            suggested: others.filter(l => initialSourceLotIds.includes(l.id)).length,
             unplaced: others.filter(l => !l.positions || l.positions.length === 0).length,
             placed: others.filter(l => l.positions && l.positions.length > 0).length,
             starred: others.filter(l => l.metadata?.is_starred).length
         }
-    }, [modalLots, targetLot.id])
+    }, [modalLots, targetLot.id, initialSourceLotIds])
 
     const toggleExpand = (lotId: string) => {
         setExpandedLots(prev => ({ ...prev, [lotId]: !prev[lotId] }))
@@ -534,6 +603,15 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                         </div>
 
                         <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-xl gap-1">
+                            {initialSourceLotIds && initialSourceLotIds.length > 0 && (
+                                <button
+                                    onClick={() => setFilterTab('suggested')}
+                                    className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${filterTab === 'suggested' ? 'bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                >
+                                    <Boxes size={14} />
+                                    Lot lẻ ({stats.suggested})
+                                </button>
+                            )}
                             <button
                                 onClick={() => setFilterTab('unplaced')}
                                 className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-2 ${filterTab === 'unplaced' ? 'bg-white dark:bg-slate-700 text-emerald-600 dark:text-emerald-400 shadow-sm' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}

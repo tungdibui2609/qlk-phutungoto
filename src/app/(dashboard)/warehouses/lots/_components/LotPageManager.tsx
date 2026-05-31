@@ -92,6 +92,7 @@ export function LotPageManager() {
     const [taggingLot, setTaggingLot] = useState<Lot | null>(null)
     const [mergingLot, setMergingLot] = useState<Lot | null>(null)
     const [mergeSourceLotIds, setMergeSourceLotIds] = useState<string[]>([])
+    const [mergeSourceLots, setMergeSourceLots] = useState<Lot[]>([])
     const [splittingLot, setSplittingLot] = useState<Lot | null>(null)
     const [exportingLot, setExportingLot] = useState<Lot | null>(null)
     const [bulkCloningLot, setBulkCloningLot] = useState<Lot | null>(null)
@@ -137,9 +138,10 @@ export function LotPageManager() {
         setMergingLot(lot)
     }
 
-    const handleMergeFromSuggestions = (target: Lot, sourceIds: string[]) => {
+    const handleMergeFromSuggestions = (target: Lot, sourceIds: string[], sourceLots: Lot[]) => {
         setMergingLot(target)
         setMergeSourceLotIds(sourceIds)
+        setMergeSourceLots(sourceLots)
     }
 
     const handleSplit = (lot: Lot) => {
@@ -424,13 +426,16 @@ export function LotPageManager() {
                     targetLot={mergingLot}
                     lots={lots}
                     initialSourceLotIds={mergeSourceLotIds}
+                    initialSourceLots={mergeSourceLots}
                     onClose={() => {
                         setMergingLot(null);
                         setMergeSourceLotIds([]);
+                        setMergeSourceLots([]);
                     }}
                     onSuccess={() => {
                         setMergingLot(null);
                         setMergeSourceLotIds([]);
+                        setMergeSourceLots([]);
                         fetchLots();
                     }}
                 />
