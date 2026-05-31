@@ -174,7 +174,7 @@ export function useLotManagement() {
             fetchAllPaginated('product_units'),
             fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)'),
             fetchAllPaginated('productions', q => q.order('code', { ascending: false }), '*, products:product_id(*), production_lots(*, products(*))'),
-            fetchAllPaginated('zones', q => q.eq('system_type', currentSystem!.code), 'id, parent_id, is_hall')
+            fetchAllPaginated('zones', q => q.eq('system_type', currentSystem!.code).order('level').order('name').order('id'), 'id, parent_id, name, code, level, display_order, system_type, is_hall')
         ])
 
         setProducts(prodData)
@@ -262,10 +262,13 @@ export function useLotManagement() {
 
                 if (isVirtualZone) {
                     // Virtual zones don't exist in DB — resolve to real zone IDs
-                    const rawZones = await fetchAllPaginated('zones',
-                        q => q.eq('system_type', currentSystem.code).order('level').order('name'),
-                        'id, parent_id, name, code, level, display_order, system_type'
-                    );
+                    let rawZones = zones;
+                    if (rawZones.length === 0) {
+                        rawZones = await fetchAllPaginated('zones',
+                            q => q.eq('system_type', currentSystem.code).order('level').order('name').order('id'),
+                            'id, parent_id, name, code, level, display_order, system_type'
+                        );
+                    }
                     const { virtualToRealMap } = groupWarehouseData(rawZones as any[], []);
                     const mapped = virtualToRealMap?.get(selectedZoneId);
                     realZoneIds = mapped && mapped.length > 0 ? [...mapped] : [];

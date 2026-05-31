@@ -22,6 +22,7 @@ interface LotFilterProps {
     onEndDateChange: (value: string) => void
     showMobileFilters: boolean
     toggleMobileFilters: () => void
+    zones?: any[]
 }
 
 export function LotFilter({
@@ -40,7 +41,8 @@ export function LotFilter({
     endDate,
     onEndDateChange,
     showMobileFilters,
-    toggleMobileFilters
+    toggleMobileFilters,
+    zones
 }: LotFilterProps) {
     // Local state for search to avoid immediate filtering (Manual trigger like Map)
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
@@ -207,6 +209,7 @@ export function LotFilter({
                     compact={true}
                     variant="subtle"
                     grouped={true}
+                    zones={zones}
                 />
             </div>
         </div>

@@ -78,7 +78,7 @@ export default function HorizontalZoneFilter({
                 return results
             }
 
-            fetchAllPaginated('zones', '*', (q) => q.eq('system_type', systemType).order('level').order('name'))
+            fetchAllPaginated('zones', '*', (q) => q.eq('system_type', systemType).order('level').order('name').order('id'))
                 .then((zonesData) => {
                     setInternalZones(zonesData)
                     setLoading(false)
@@ -100,10 +100,8 @@ export default function HorizontalZoneFilter({
         if (grouped && rawZones.length > 0) {
             // If we're grouped, we call groupWarehouseData to get the virtual structure.
             // We pass an empty array for positions since the filter only needs the zone hierarchy.
-            if (!externalZones) {
-                const { zones: gZones } = groupWarehouseData(rawZones, [])
-                return gZones
-            }
+            const { zones: gZones } = groupWarehouseData(rawZones, [])
+            return gZones
         }
         return rawZones
     }, [externalZones, internalZones, grouped])

@@ -271,6 +271,7 @@ export function LotPageManager() {
                 onEndDateChange={setEndDate}
                 showMobileFilters={showMobileFilters}
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
+                zones={zones}
             />
 
             {/* Gợi ý ghép Lot lẻ */}
