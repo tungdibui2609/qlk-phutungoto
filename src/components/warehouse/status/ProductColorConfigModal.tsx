@@ -192,8 +192,7 @@ export function ProductColorConfigModal({ onClose, onSaved, displayInternalInfo 
                 const updateData: any = {};
                 if (modifications[id] !== undefined) updateData.color = modifications[id];
                 if (orderModifications[id] !== undefined) updateData.sort_order = orderModifications[id];
-                
-                return supabase.from('products').update(updateData).eq('id', id);
+                return (supabase.from('products') as any).update(updateData).eq('id', id);
             });
 
             await Promise.all(promises);

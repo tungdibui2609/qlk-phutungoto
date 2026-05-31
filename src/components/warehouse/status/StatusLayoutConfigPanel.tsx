@@ -225,8 +225,8 @@ export default function StatusLayoutConfigPanel({
     async function handleApplyBatchToPersistence(batch: any[]) {
         try {
             console.log('Applying deep paste batch:', batch);
-            const { error: batchError } = await supabase
-                .from(tableName as any)
+            const { error: batchError } = await (supabase
+                .from(tableName as any) as any)
                 .upsert(batch, { onConflict: 'zone_id' });
 
             if (batchError) {
@@ -267,8 +267,8 @@ export default function StatusLayoutConfigPanel({
                 updated_at: new Date().toISOString()
             };
 
-            const { data, error } = await supabase
-                .from(tableName as any)
+            const { data, error } = await (supabase
+                .from(tableName as any) as any)
                 .upsert(payload, { onConflict: 'zone_id' })
                 .select()
                 .single();
@@ -311,8 +311,8 @@ export default function StatusLayoutConfigPanel({
                 updated_at: now
             }));
 
-            const { data, error } = await supabase
-                .from(tableName as any)
+            const { data, error } = await (supabase
+                .from(tableName as any) as any)
                 .upsert(upsertData, { onConflict: 'zone_id' })
                 .select();
 

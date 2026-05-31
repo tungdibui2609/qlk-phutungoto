@@ -137,8 +137,7 @@ export default function WarehouseMapLogPage() {
                     const { data, error } = await supabase.from('lots').select(`
                         id, code, production_code, production_lot_id, inbound_date, quantity,
                         products(name, sku, unit, weight_kg),
-                        production_lots!production_lot_id(lot_code),
-                        productions!production_id(code),
+                        productions(code, production_lots(lot_code)),
                         lot_items(quantity, unit, products(name, sku))
                     `).in('id', chunk)
                     if (error) throw error
@@ -194,7 +193,7 @@ export default function WarehouseMapLogPage() {
                     id: l.id,
                     code: l.code,
                     productionOrderCode: l.productions?.code || null,
-                    productionLotCode: l.production_lots?.lot_code || l.production_code || null,
+                    productionLotCode: (Array.isArray(l.productions?.production_lots) ? l.productions.production_lots[0]?.lot_code : l.productions?.production_lots?.lot_code) || l.production_code || null,
                     inboundDate: l.inbound_date || null,
                     products,
                     totalWeightKg

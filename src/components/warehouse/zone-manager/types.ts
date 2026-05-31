@@ -5,6 +5,9 @@ export type DBPosition = Database['public']['Tables']['positions']['Row']
 
 export interface LocalZone extends DBZone {
     _status?: 'new' | 'modified' | 'deleted' | 'existing'
+    display_order: number | null
+    is_hall: boolean | null
+    company_id: string | null
 }
 
 export interface LocalPosition extends DBPosition {

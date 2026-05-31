@@ -158,6 +158,16 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                 <td className="px-6 py-5 align-top">
                                     <div className="flex items-center justify-end gap-2 mt-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                window.open(`/sanxuat/print-labels?mo_id=${item.id}`, '_blank');
+                                            }}
+                                            className="p-1.5 text-stone-400 hover:text-orange-500 transition-colors"
+                                            title="Trạm in tem thùng"
+                                        >
+                                            <Printer size={16} />
+                                        </button>
+                                        <button
                                             onClick={(e) => { e.stopPropagation(); onView?.(item); }}
                                             className="p-1.5 text-stone-400 hover:text-blue-600 transition-colors"
                                         >

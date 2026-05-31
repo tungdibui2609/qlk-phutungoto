@@ -24,6 +24,7 @@ export interface Database {
           peeling_date: string | null
           daily_seq: number | null
           system_code: string | null
+          production_code: string | null
         }
         Insert: {
           id?: string
@@ -39,6 +40,7 @@ export interface Database {
           peeling_date?: string | null
           daily_seq?: number | null
           system_code?: string | null
+          production_code?: string | null
         }
         Update: {
           id?: string
@@ -54,6 +56,7 @@ export interface Database {
           peeling_date?: string | null
           daily_seq?: number | null
           system_code?: string | null
+          production_code?: string | null
         }
       }
       positions: {
@@ -97,6 +100,9 @@ export interface Database {
           level: number | null
           created_at: string | null
           system_type: string | null
+          display_order: number | null
+          is_hall: boolean | null
+          company_id: string | null
         }
         Insert: {
           id?: string
@@ -106,6 +112,9 @@ export interface Database {
           level?: number | null
           created_at?: string | null
           system_type?: string | null
+          display_order?: number | null
+          is_hall?: boolean | null
+          company_id?: string | null
         }
         Update: {
           id?: string
@@ -115,6 +124,9 @@ export interface Database {
           level?: number | null
           created_at?: string | null
           system_type?: string | null
+          display_order?: number | null
+          is_hall?: boolean | null
+          company_id?: string | null
         }
       }
       zone_positions: {
@@ -152,6 +164,9 @@ export interface Database {
           alternating_rows: boolean | null
           header_color: string | null
           header_text_color: string | null
+          layout_gap: number | null
+          container_height: number | null
+          use_full_title: boolean | null
           created_at: string | null
           updated_at: string | null
         }
@@ -169,6 +184,9 @@ export interface Database {
           alternating_rows?: boolean | null
           header_color?: string | null
           header_text_color?: string | null
+          layout_gap?: number | null
+          container_height?: number | null
+          use_full_title?: boolean | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -186,6 +204,9 @@ export interface Database {
           alternating_rows?: boolean | null
           header_color?: string | null
           header_text_color?: string | null
+          layout_gap?: number | null
+          container_height?: number | null
+          use_full_title?: boolean | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -290,7 +311,16 @@ export interface Database {
       user_profiles: { Row: { id: string; email: string | null; full_name: string; role_id: string | null; company_id: string | null } }
       companies: { Row: { id: string; code: string; name: string } }
       branches: { Row: { id: string; code: string; name: string; system_type: string } }
-      audit_logs: { Row: { id: string; created_at: string; action: string; table_name: string; record_id: string } }
+      audit_logs: {
+        Row: { id: string; created_at: string; action: string; table_name: string; record_id: string; changed_by?: string | null; old_data?: any; new_data?: any; system_code?: string | null }
+        Insert: { id?: string; created_at?: string; action: string; table_name: string; record_id: string; changed_by?: string | null; old_data?: any; new_data?: any; system_code?: string | null }
+        Update: { id?: string; created_at?: string; action?: string; table_name?: string; record_id?: string; changed_by?: string | null; old_data?: any; new_data?: any; system_code?: string | null }
+      }
+      operational_notes: {
+        Row: { id: string; content: string; user_id: string; parent_id?: string | null; images?: string[]; system_code?: string | null; created_at?: string; updated_at?: string }
+        Insert: { id?: string; content: string; user_id: string; parent_id?: string | null; images?: string[]; system_code?: string | null; created_at?: string; updated_at?: string }
+        Update: { id?: string; content?: string; user_id?: string; parent_id?: string | null; images?: string[]; system_code?: string | null; created_at?: string; updated_at?: string }
+      }
     }
     Views: {
       [_ in string]: {

@@ -215,11 +215,11 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                 Mã LSX: {prod?.code || lot?.production_code}
                                             </p>
                                         )}
-                                        {lot?.production_lot_codes && lot.production_lot_codes.length > 0 && (
+                                        {lot.productions && 'production_lots' in lot.productions && Array.isArray((lot.productions as any).production_lots) && (lot.productions as any).production_lots.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-2">
-                                                {lot.production_lot_codes.map((code: string, idx: number) => (
+                                                {(lot.productions as any).production_lots.map((pl: any, idx: number) => (
                                                     <span key={idx} className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-black border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tight shadow-sm">
-                                                        Lot SX: {code}
+                                                        Lot SX: {pl.lot_code}
                                                     </span>
                                                 ))}
                                             </div>

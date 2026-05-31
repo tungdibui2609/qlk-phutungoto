@@ -230,11 +230,6 @@ function ExportOrderDetailContent() {
                                 name,
                                 production_lots(id, lot_code, product_id)
                             ),
-                            production_lots!production_lot_id(
-                                id,
-                                lot_code,
-                                product_id
-                            ),
                             lot_tags (tag, lot_item_id),
                             positions!positions_lot_id_fkey (
                                 id,
@@ -362,12 +357,7 @@ function ExportOrderDetailContent() {
                     const prodData = Array.isArray(item.lots?.productions) ? item.lots?.productions[0] : item.lots?.productions
                     let prodLotCode = null
                     
-                    if (item.lots?.production_lots) {
-                        const pl = item.lots.production_lots
-                        prodLotCode = Array.isArray(pl)
-                            ? pl[0]?.lot_code
-                            : pl.lot_code
-                    } else if (prodData?.production_lots) {
+                    if (prodData?.production_lots) {
                         const pl = prodData.production_lots.find((pl: any) => {
                             if (lotProdLotId) return pl.id === lotProdLotId
                             return pl.product_id === item.product_id
@@ -521,8 +511,8 @@ function ExportOrderDetailContent() {
             const { data: oldLot } = await supabase.from('lots').select('*').eq('id', lotId).single()
             const { data: oldLotItem } = await supabase.from('lot_items').select('*').eq('id', lotItemId).single()
 
-            const { error: itemErr } = await supabase
-                .from('lot_items')
+            const { error: itemErr } = await (supabase
+                .from('lot_items') as any)
                 .update({ quantity: newQty })
                 .eq('id', lotItemId)
             if (itemErr) throw itemErr
@@ -534,11 +524,11 @@ function ExportOrderDetailContent() {
             
             const totalLotQty = (remainingItems || []).reduce((sum: number, li: any) => sum + Number(li.quantity || 0), 0)
 
-            const { error: lotErr } = await supabase
-                .from('lots')
+            const { error: lotErr } = await (supabase
+                .from('lots') as any)
                 .update({ 
                     quantity: totalLotQty,
-                    status: totalLotQty <= 0.000001 ? 'exported' : (oldLot?.status || 'active')
+                    status: totalLotQty <= 0.000001 ? 'exported' : ((oldLot as any)?.status || 'active')
                 })
                 .eq('id', lotId)
             if (lotErr) throw lotErr

@@ -15,6 +15,7 @@ type AuditLogsTable = {
         new_data: any | null
         changed_by: string | null
         created_at: string
+        system_code: string | null
     }
     Insert: {
         id?: string
@@ -25,6 +26,7 @@ type AuditLogsTable = {
         new_data?: any | null
         changed_by?: string | null
         created_at?: string
+        system_code?: string | null
     }
     Update: {
         id?: string
@@ -35,6 +37,7 @@ type AuditLogsTable = {
         new_data?: any | null
         changed_by?: string | null
         created_at?: string
+        system_code?: string | null
     }
     Relationships: [
         {
@@ -278,6 +281,7 @@ type OperationalNotesTable = {
         images: string[]
         created_at: string
         updated_at: string
+        system_code: string | null
     }
     Insert: {
         id?: string
@@ -287,6 +291,7 @@ type OperationalNotesTable = {
         images?: string[]
         created_at?: string
         updated_at?: string
+        system_code?: string | null
     }
     Update: {
         id?: string
@@ -296,6 +301,7 @@ type OperationalNotesTable = {
         images?: string[]
         created_at?: string
         updated_at?: string
+        system_code?: string | null
     }
     Relationships: [
         {

@@ -35,7 +35,7 @@ export async function logActivity({
             changedBy = session?.user?.id
         }
 
-        const { error } = await supabase.from('audit_logs').insert({
+        const { error } = await (supabase.from('audit_logs') as any).insert({
             table_name: tableName,
             record_id: recordId,
             action,
@@ -64,8 +64,8 @@ export async function getAuditLogs(
     recordId: string
 ) {
     // 1. Fetch Logs
-    const { data: logs, error: logError } = await supabase
-        .from('audit_logs')
+    const { data: logs, error: logError } = await (supabase
+        .from('audit_logs') as any)
         .select('*')
         .eq('table_name', tableName)
         .eq('record_id', recordId)
@@ -79,7 +79,7 @@ export async function getAuditLogs(
     if (!logs || logs.length === 0) return []
 
     // 2. Collect unique user IDs
-    const userIds = Array.from(new Set(logs.map(log => log.changed_by).filter(Boolean))) as string[]
+    const userIds = Array.from(new Set(logs.map((log: any) => log.changed_by).filter(Boolean))) as string[]
 
     if (userIds.length === 0) return logs
 
@@ -99,7 +99,7 @@ export async function getAuditLogs(
     // 4. Map profiles to logs
     const profileMap = new Map(profiles?.map((p: any) => [p.id, p]))
 
-    return logs.map(log => ({
+    return logs.map((log: any) => ({
         ...log,
         changed_by_user: log.changed_by ? profileMap.get(log.changed_by) : null
     }))
@@ -114,8 +114,8 @@ export async function getEnrichedAuditLogById(
     logId: string
 ) {
     // 1. Fetch Log
-    const { data: log, error: logError } = await supabase
-        .from('audit_logs')
+    const { data: log, error: logError } = await (supabase
+        .from('audit_logs') as any)
         .select('*')
         .eq('id', logId)
         .single()
@@ -150,8 +150,8 @@ export async function getUserActivityLogs(
     supabase: SupabaseClient<TypedDatabase>,
     userId: string
 ) {
-    const { data: logs, error: logError } = await supabase
-        .from('audit_logs')
+    const { data: logs, error: logError } = await (supabase
+        .from('audit_logs') as any)
         .select('*')
         .eq('changed_by', userId)
         .order('created_at', { ascending: false })
@@ -178,7 +178,7 @@ export async function getUserActivityLogs(
         return logs
     }
 
-    return logs.map(log => ({
+    return logs.map((log: any) => ({
         ...log,
         changed_by_user: profile
     }))
@@ -194,8 +194,8 @@ export async function getGlobalAuditLogs(
     systemCode?: string
 ) {
     // 1. Fetch Logs
-    let query = supabase
-        .from('audit_logs')
+    let query = (supabase
+        .from('audit_logs') as any)
         .select('*')
 
     if (systemCode) {
@@ -214,7 +214,7 @@ export async function getGlobalAuditLogs(
     if (!logs || logs.length === 0) return []
 
     // 2. Collect unique user IDs
-    const userIds = Array.from(new Set(logs.map(log => log.changed_by).filter(Boolean))) as string[]
+    const userIds = Array.from(new Set(logs.map((log: any) => log.changed_by).filter(Boolean))) as string[]
 
     if (userIds.length === 0) return logs
 
@@ -232,7 +232,7 @@ export async function getGlobalAuditLogs(
     // 4. Map profiles to logs
     const profileMap = new Map(profiles?.map((p: any) => [p.id, p]))
 
-    return logs.map(log => ({
+    return logs.map((log: any) => ({
         ...log,
         changed_by_user: log.changed_by ? profileMap.get(log.changed_by) : null
     }))

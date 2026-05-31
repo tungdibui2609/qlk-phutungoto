@@ -97,9 +97,9 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
             try {
                 const realIds = (pos as any).realIds || [pos.id]
                 // 1. Clear lot_id in positions (Reference)
-                const { error: posError } = await supabase
-                    .from('positions')
-                    .update({ lot_id: null } as any)
+                const { error: posError } = await (supabase
+                    .from('positions') as any)
+                    .update({ lot_id: null })
                     .in('id', realIds)
 
                 if (posError) throw posError
@@ -200,9 +200,9 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
     const handleLotFormSuccess = async (lotData?: any) => {
         if (targetPositionId && lotData?.id) {
             const ids = Array.isArray(targetPositionId) ? targetPositionId : [targetPositionId]
-            await supabase
-                .from('positions')
-                .update({ lot_id: lotData.id } as any)
+            await (supabase
+                .from('positions') as any)
+                .update({ lot_id: lotData.id })
                 .in('id', ids)
 
             // Audit Log

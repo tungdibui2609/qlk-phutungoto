@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, LogOut, ChevronRight, ChevronDown, List, FolderTree, Boxes, ShieldAlert, Users, Shield, Tag, PackageSearch, KanbanSquare, FileText, Settings, ClipboardList, Factory, History } from 'lucide-react'
+import { LayoutDashboard, Package, LogOut, ChevronRight, ChevronDown, List, FolderTree, Boxes, ShieldAlert, Users, Shield, Tag, PackageSearch, KanbanSquare, FileText, Settings, ClipboardList, Factory, History, Printer } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -28,7 +28,9 @@ const menuItems: MenuItem[] = [
             { id: 'internal_products', name: 'Sản phẩm nội bộ', href: '/sanxuat/internal-products', icon: PackageSearch },
             { id: 'categories', name: 'Danh mục', href: '/sanxuat/categories', icon: FolderTree },
             { id: 'lot_codes', name: 'Mã phụ', href: '/sanxuat/lot-codes', icon: Tag },
-            { id: 'lots', name: 'Quản lý LOT', href: '/sanxuat/lots', icon: Boxes },
+            { id: 'semi_finished_lots', name: 'Lô bán thành phẩm', href: '/sanxuat/semi-finished-lots', icon: Boxes },
+            { id: 'finished_lots', name: 'Lô thành phẩm', href: '/sanxuat/finished-lots', icon: Package },
+            { id: 'print_labels', name: 'In tem thùng', href: '/sanxuat/print-labels', icon: Printer },
         ]
     },
     {

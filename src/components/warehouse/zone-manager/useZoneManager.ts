@@ -450,25 +450,25 @@ export function useZoneManager() {
 
             // Safe chunked deletion
             // Since we can't easily chunk "not eq 000" we just get all IDs then delete in chunks
-            const { data: zpData } = await supabase.from('zone_positions').select('position_id')
+            const { data: zpData } = await (supabase.from('zone_positions') as any).select('position_id')
             if (zpData && zpData.length > 0) {
-                const ids = zpData.map(d => d.position_id)
+                const ids = zpData.map((d: any) => d.position_id)
                 for (let i = 0; i < ids.length; i += 100) {
                     await (supabase.from('zone_positions') as any).delete().in('position_id', ids.slice(i, i + 100))
                 }
             }
 
-            const { data: pData } = await supabase.from('positions').select('id')
+            const { data: pData } = await (supabase.from('positions') as any).select('id')
             if (pData && pData.length > 0) {
-                const ids = pData.map(d => d.id)
+                const ids = pData.map((d: any) => d.id)
                 for (let i = 0; i < ids.length; i += 100) {
                     await (supabase.from('positions') as any).delete().in('id', ids.slice(i, i + 100))
                 }
             }
 
-            const { data: zData } = await supabase.from('zones').select('id')
+            const { data: zData } = await (supabase.from('zones') as any).select('id')
             if (zData && zData.length > 0) {
-                const ids = zData.map(d => d.id)
+                const ids = zData.map((d: any) => d.id)
                 for (let i = 0; i < ids.length; i += 100) {
                     await (supabase.from('zones') as any).delete().in('id', ids.slice(i, i + 100))
                 }
@@ -518,7 +518,7 @@ export function useZoneManager() {
             if (zoneIdsToDelete.length > 0) {
                 for (let i = 0; i < zoneIdsToDelete.length; i += 100) {
                     const chunk = zoneIdsToDelete.slice(i, i + 100)
-                    const { data: zpData } = await supabase.from('zone_positions').select('position_id').in('zone_id', chunk)
+                    const { data: zpData } = await (supabase.from('zone_positions') as any).select('position_id').in('zone_id', chunk)
                     if (zpData) (zpData as any[]).forEach(item => allPotentialPosIds.add(item.position_id))
                 }
             }
@@ -556,7 +556,7 @@ export function useZoneManager() {
                 let posIdsToDelete: string[] = []
                 for (let i = 0; i < zoneIdsToDelete.length; i += 100) {
                     const chunk = zoneIdsToDelete.slice(i, i + 100)
-                    const { data: zpData } = await supabase.from('zone_positions').select('position_id').in('zone_id', chunk)
+                    const { data: zpData } = await (supabase.from('zone_positions') as any).select('position_id').in('zone_id', chunk)
                     if (zpData) posIdsToDelete.push(...zpData.map((item: any) => item.position_id))
                 }
 

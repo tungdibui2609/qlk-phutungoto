@@ -16,8 +16,8 @@ export type OperationalNote = {
 }
 
 export async function getNotes(systemCode?: string): Promise<OperationalNote[]> {
-    let query = supabase
-        .from('operational_notes')
+    let query = (supabase
+        .from('operational_notes') as any)
         .select(`
             *,
             user:user_profiles (
@@ -45,8 +45,8 @@ export async function createNote(content: string, parentId: string | null, image
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) throw new Error('Not authenticated')
 
-    const { data, error } = await supabase
-        .from('operational_notes')
+    const { data, error } = await (supabase
+        .from('operational_notes') as any)
         .insert({
             content,
             user_id: user.id,
@@ -62,8 +62,8 @@ export async function createNote(content: string, parentId: string | null, image
 }
 
 export async function deleteNote(id: string) {
-    const { error } = await supabase
-        .from('operational_notes')
+    const { error } = await (supabase
+        .from('operational_notes') as any)
         .delete()
         .eq('id', id)
 

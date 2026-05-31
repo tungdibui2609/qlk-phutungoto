@@ -86,8 +86,8 @@ export default function ExportOrderScanPage() {
     async function fetchTasks() {
         setLoading(true)
         try {
-            const { data: tasksData, error } = await supabase
-                .from('export_tasks')
+            const { data: tasksData, error } = await (supabase
+                .from('export_tasks') as any)
                 .select('*, export_task_items(count)')
                 .in('status', ['Pending', 'In Progress'])
                 .order('created_at', { ascending: false })
@@ -95,7 +95,7 @@ export default function ExportOrderScanPage() {
             if (error) throw error
 
             // Fetch user names
-            const userIds = Array.from(new Set((tasksData || []).map(t => t.created_by).filter(Boolean)))
+            const userIds = Array.from(new Set((tasksData || []).map((t: any) => t.created_by).filter(Boolean)))
             let userMap: Record<string, string> = {}
             if (userIds.length > 0) {
                 const { data: usersData } = await supabase
@@ -107,7 +107,7 @@ export default function ExportOrderScanPage() {
                 }
             }
 
-            const formatted: ExportTask[] = (tasksData || []).map((t) => ({
+            const formatted: ExportTask[] = (tasksData || []).map((t: any) => ({
                 id: t.id,
                 code: t.code,
                 status: t.status,
@@ -326,22 +326,22 @@ export default function ExportOrderScanPage() {
 
             // Clear old position
             if (pendingPositionId) {
-                await supabase
-                    .from('positions')
-                    .update({ lot_id: null } as any)
+                await (supabase
+                    .from('positions') as any)
+                    .update({ lot_id: null })
                     .eq('id', pendingPositionId)
             } else {
                 // Clear any position containing this lot
-                await supabase
-                    .from('positions')
-                    .update({ lot_id: null } as any)
+                await (supabase
+                    .from('positions') as any)
+                    .update({ lot_id: null })
                     .eq('lot_id', pendingLotId)
             }
 
             // Assign to new position
-            const { error: updateError } = await supabase
-                .from('positions')
-                .update({ lot_id: pendingLotId } as any)
+            const { error: updateError } = await (supabase
+                .from('positions') as any)
+                .update({ lot_id: pendingLotId })
                 .eq('id', targetPositionId)
 
             if (updateError) throw updateError

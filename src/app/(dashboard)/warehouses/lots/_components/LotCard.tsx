@@ -187,11 +187,11 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                         {(lot.productions as any).production_lots
                                             .filter((pl: any) => {
                                                 const selectedLotId = (lot as any).production_lot_id;
-                                                // If we have a specific lot link, only show that one
-                                                if (selectedLotId) {
+                                                const hasMatchingLot = (lot.productions as any).production_lots.some((p: any) => p.id === selectedLotId);
+                                                if (selectedLotId && hasMatchingLot) {
                                                     return pl.id === selectedLotId;
                                                 }
-                                                // Fallback for legacy data: match by product
+                                                // Fallback for legacy data or unmatched UUIDs after table recreation: match by product
                                                 return lot.lot_items?.some(i => i.product_id === pl.product_id);
                                             })
                                             .map((pl: any, idx: number) => (

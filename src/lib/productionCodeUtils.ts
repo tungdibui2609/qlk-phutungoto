@@ -25,8 +25,8 @@ export async function getProductionCodeSTT(companyId: string, systemCode: string
     try {
         // Find all production codes starting with 'L' this month across ALL systems
         // (Production and Warehouse share data)
-        const { data, error } = await supabase
-            .from('lots')
+        const { data, error } = await (supabase
+            .from('lots') as any)
             .select('production_code')
             .eq('company_id', companyId)
             // .eq('system_code', systemCode) // REMOVED: Shared data between systems
@@ -44,10 +44,10 @@ export async function getProductionCodeSTT(companyId: string, systemCode: string
             let maxSTT = 0
             
             // Optimization: Filter unique values first to speed up loop
-            const uniqueCodes = Array.from(new Set(data.map(item => item.production_code)))
+            const uniqueCodes = Array.from(new Set(data.map((item: any) => item.production_code)))
             
-            uniqueCodes.forEach(code => {
-                const match = code?.match(/^L(\d+)/)
+            uniqueCodes.forEach((code: any) => {
+                const match = (code as string)?.match(/^L(\d+)/)
                 if (match) {
                     const val = parseInt(match[1], 10)
                     if (val > maxSTT) maxSTT = val
@@ -73,8 +73,8 @@ export async function getNextProductionSTT(companyId: string, systemCode: string
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).toISOString()
 
     try {
-        const { count, error } = await supabase
-            .from('lots')
+        const { count, error } = await (supabase
+            .from('lots') as any)
             .select('*', { count: 'exact', head: true })
             .eq('company_id', companyId)
             .eq('system_code', systemCode)

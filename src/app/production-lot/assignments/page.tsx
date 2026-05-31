@@ -400,8 +400,7 @@ export default function AssignmentApprovalPage() {
                     id, code, daily_seq, inbound_date,
                     production_code,
                     production_lot_id,
-                    production_lots!production_lot_id(lot_code),
-                    productions!production_id(code),
+                    productions(code, production_lots(lot_code)),
                     lot_items(quantity, unit, products(name, sku, weight_kg))
                 `)
                 .eq('system_code', sysCode)
@@ -452,8 +451,7 @@ export default function AssignmentApprovalPage() {
                             id, code, daily_seq, inbound_date,
                             production_code,
                             production_lot_id,
-                            production_lots!production_lot_id(lot_code),
-                            productions!production_id(code),
+                            productions(code, production_lots(lot_code)),
                             lot_items(quantity, unit, products(name, sku, weight_kg))
                         `)
                         .in('id', chunk)
@@ -484,7 +482,7 @@ export default function AssignmentApprovalPage() {
                     unit: unit,
                     quantity_display: `${totalQty} ${unit}`.trim() || '---',
                     production_order_code: (l as any).productions?.code || null,
-                    production_lot_code: (l as any).production_lots?.lot_code || l.production_code || null
+                    production_lot_code: (Array.isArray((l as any).productions?.production_lots) ? (l as any).productions.production_lots[0]?.lot_code : (l as any).productions?.production_lots?.lot_code) || l.production_code || null
                 }
             })
 
