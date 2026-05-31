@@ -196,14 +196,66 @@ export function LotForm({
 
                 // Populate items
                 if (editingLot.lot_items && editingLot.lot_items.length > 0) {
-                    setLotItems(editingLot.lot_items.map((item: any) => ({
-                        id: item.id,
-                        productId: item.product_id,
-                        quantity: item.quantity,
-                        unit: (item as any).unit || '',
-                        tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || '',
-                        productionLotId: (editingLot as any).production_lot_id || ''
-                    })))
+                    setLotItems(editingLot.lot_items.map((item: any) => {
+                        const rawUnit = (item as any).unit || ''
+                        
+                        // Chuẩn hóa và so khớp đơn vị để tránh bị tự động nhảy sang option đầu tiên khi chỉnh sửa
+                        let matchedUnit = rawUnit
+                        const product = products.find(p => p.id === item.product_id)
+                        if (product) {
+                            const baseUnit = product.unit || ''
+                            let baseWeight = (product as any).weight_kg || 0
+                            const normBase = normalizeUnit(baseUnit)
+                            if (baseWeight <= 0 && (normBase === 'kg' || normBase === 'kilogram')) {
+                                baseWeight = 1
+                            }
+                            
+                            const availableUnits = new Set<string>()
+                            const formattedBaseUnit = formatUnitWeight(baseUnit, baseWeight)
+                            if (baseUnit) availableUnits.add(formattedBaseUnit)
+                            
+                            const pUnitsOfProduct = productUnits.filter((pu: any) => pu.product_id === item.product_id)
+                            pUnitsOfProduct.forEach((pu: any) => {
+                                const u = units.find((u: any) => u.id === pu.unit_id)
+                                if (u) {
+                                    const normU = normalizeUnit(u.name)
+                                    if (normU === normalizeUnit(baseUnit)) return
+                                    const weight = (pu.conversion_rate || 1) * baseWeight
+                                    const labelStr = formatUnitWeight(u.name, weight)
+                                    availableUnits.add(labelStr)
+                                }
+                            })
+                            
+                            const options = Array.from(availableUnits)
+                            
+                            // 1. Nếu không khớp hoàn hảo, tìm giải pháp thay thế phù hợp
+                            if (!options.includes(rawUnit)) {
+                                // 2. So khớp chuẩn hóa (không khoảng trắng, chữ thường)
+                                const normRaw = rawUnit.normalize('NFC').toLowerCase().replace(/\s+/g, '')
+                                const foundNorm = options.find(opt => opt.normalize('NFC').toLowerCase().replace(/\s+/g, '') === normRaw)
+                                
+                                if (foundNorm) {
+                                    matchedUnit = foundNorm
+                                } else {
+                                    // 3. So khớp theo tên đơn vị gốc (ví dụ: "Thùng" -> "Thùng (20kg)")
+                                    const rawBaseName = rawUnit.split('(')[0].trim().toLowerCase()
+                                    const foundBase = options.find(opt => opt.split('(')[0].trim().toLowerCase() === rawBaseName)
+                                    if (foundBase) {
+                                        matchedUnit = foundBase
+                                    }
+                                }
+                            }
+                        }
+
+                        return {
+                            id: item.id,
+                            productId: item.product_id,
+                            quantity: item.quantity,
+                            unit: matchedUnit,
+                            tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || '',
+                            productionLotId: (editingLot as any).production_lot_id || ''
+                        }
+                    }))
                 } else {
                     setLotItems([{ productId: '', quantity: 0, unit: '', tag: '' }])
                 }
@@ -1326,7 +1378,9 @@ export function LotForm({
                                                         const pUnits = productUnits.filter(pu => pu.product_id === productId)
                                                         const thungUnit = pUnits.find(pu => {
                                                             const u = units.find(ux => ux.id === pu.unit_id)
-                                                            return u && normalizeUnit(u.name) === 'thung'
+                                                            if (!u) return false
+                                                            const normName = normalizeUnit(u.name)
+                                                            return normName === 'thùng' || normName === 'thung'
                                                         })
                                                         
                                                         let initialUnit = baseUnit
