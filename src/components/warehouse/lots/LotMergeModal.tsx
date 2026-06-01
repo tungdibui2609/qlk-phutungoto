@@ -424,91 +424,50 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                     .map(t => t.tag);
                 const sourceTagsSorted = [...sourceTags].sort();
 
-                // 2. Check for duplicate product & same tags in targetLot
-                let matchingTargetItem: any = null;
-                if (targetLot.lot_items) {
-                    for (const tItem of targetLot.lot_items) {
-                        if (tItem.product_id === sourceItem.product_id) {
-                            const tItemTags = (targetLot.lot_tags || [])
-                                .filter(t => t.lot_item_id === tItem.id)
-                                .map(t => t.tag)
-                                .sort();
-                            
-                            const isTagsMatch = sourceTagsSorted.length === tItemTags.length &&
-                                sourceTagsSorted.every((val, index) => val === tItemTags[index]);
-                            
-                            if (isTagsMatch) {
-                                matchingTargetItem = tItem;
-                                break;
-                            }
-                        }
-                    }
-                }
-
                 let targetItemId = '';
 
-                if (matchingTargetItem) {
-                    // 2.1. Update and Increment existing Target item
-                    const updatedQty = (matchingTargetItem.quantity || 0) + entry.qty;
-                    const { data: updatedItem, error: updateError } = await (supabase.from('lot_items') as any)
-                        .update({ quantity: updatedQty })
-                        .eq('id', matchingTargetItem.id)
-                        .select()
-                        .single();
+                // 2. ALWAYS Insert brand new Target item to preserve transaction/history trace
+                const { data: newItem, error: insertError } = await (supabase.from('lot_items') as any).insert({
+                    lot_id: targetLot.id,
+                    product_id: sourceItem.product_id as string,
+                    quantity: entry.qty,
+                    unit: sourceItem.unit || sourceItem.products?.unit
+                }).select().single();
 
-                    if (updateError) throw new Error('Lỗi khi cập nhật gộp: ' + updateError.message);
-                    targetItemId = matchingTargetItem.id;
+                if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);
+                targetItemId = newItem.id;
 
-                    // Delete source tags to avoid duplication in DB
-                    if (sourceTags.length > 0) {
-                        await (supabase.from('lot_tags') as any)
-                            .delete()
-                            .eq('lot_id', sourceLot.id)
-                            .eq('lot_item_id', sourceItem.id);
-                    }
-                } else {
-                    // 2.2. Insert brand new Target item
-                    const { data: newItem, error: insertError } = await (supabase.from('lot_items') as any).insert({
+                // Update local targetLot.lot_items list to make it dynamic in loop
+                if (!targetLot.lot_items) targetLot.lot_items = [];
+                targetLot.lot_items.push({
+                    ...newItem,
+                    products: sourceItem.products
+                });
+
+                // Move tags: re-insert into target lot for the newly inserted item
+                if (sourceTags.length > 0) {
+                    const newTagRows = sourceTags.map(tag => ({
+                        tag: tag,
                         lot_id: targetLot.id,
-                        product_id: sourceItem.product_id as string,
-                        quantity: entry.qty,
-                        unit: sourceItem.unit || sourceItem.products?.unit
-                    }).select().single();
-
-                    if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);
-                    targetItemId = newItem.id;
-
-                    // Move tags: delete from source lot + re-insert into target lot
-                    // lot_tags uses composite key (lot_item_id, tag), NOT an 'id' column
-                    if (sourceTags.length > 0) {
-                        // 1. Get the actual tag data for this source item
-                        const { data: existingTagRows } = await (supabase.from('lot_tags') as any)
-                            .select('tag, lot_item_id, lot_id')
-                            .eq('lot_id', sourceLot.id)
-                            .eq('lot_item_id', sourceItem.id);
-                        
-                        if (existingTagRows && existingTagRows.length > 0) {
-                            // 2. Delete old tag rows by composite key
-                            await (supabase.from('lot_tags') as any)
-                                .delete()
-                                .eq('lot_id', sourceLot.id)
-                                .eq('lot_item_id', sourceItem.id);
-                            
-                            // 3. Re-insert with new lot_id and lot_item_id
-                            const newTagRows = existingTagRows.map((r: any) => ({
-                                tag: r.tag,
-                                lot_id: targetLot.id,
-                                lot_item_id: newItem.id
-                            }));
-                            
-                            const { error: tagInsertError } = await (supabase.from('lot_tags') as any)
-                                .insert(newTagRows);
-                            
-                            if (tagInsertError) {
-                                console.error('Error moving tags:', tagInsertError);
-                            }
-                        }
+                        lot_item_id: newItem.id,
+                        added_at: new Date().toISOString()
+                    }));
+                    
+                    const { error: tagInsertError } = await (supabase.from('lot_tags') as any)
+                        .insert(newTagRows);
+                    
+                    if (tagInsertError) {
+                        console.error('Error inserting tags to target item:', tagInsertError);
                     }
+
+                    // Cập nhật local targetLot.lot_tags để đồng bộ hiển thị ngay lập tức
+                    if (!targetLot.lot_tags) targetLot.lot_tags = [];
+                    newTagRows.forEach(row => {
+                        targetLot.lot_tags!.push({
+                            tag: row.tag,
+                            lot_item_id: row.lot_item_id
+                        });
+                    });
                 }
 
                 // Save history in item-level metadata map
