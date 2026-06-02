@@ -121,21 +121,11 @@ export default function LotLabelBindingPage() {
                 return
             }
 
-            // Gán LOT tìm thấy (lấy LOT đầu tiên nếu có trùng lặp hy hữu)
-            const lotFound = lots[0]
-            setSelectedLot(lotFound)
-
-            // Tải danh sách các tem thùng box_labels đã được liên kết với LOT này trước đó (nếu có)
-            let linkedQuery = (supabase.from('box_labels') as any)
+            // Gán LOT tìm thấy (lấ            // Tải danh sách các tem thùng box_labels đã được liên kết với LOT này trước đó (nếu có)
+            const { data: linkedLabels, error: labelError } = await (supabase
+                .from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, product_id, products(name, sku)')
                 .eq('lot_id', lotFound.id)
-                .eq('system_code', currentSystem?.code || '')
-
-            if (profile?.company_id) {
-                linkedQuery = linkedQuery.eq('company_id', profile.company_id)
-            }
-
-            const { data: linkedLabels, error: labelError } = await linkedQuery
 
             if (labelError) throw labelError
             setScannedBoxLabels(linkedLabels || [])
@@ -174,145 +164,97 @@ export default function LotLabelBindingPage() {
                 return false
             }
 
-            // Truy vấn kiểm tra tem thùng trong DB
-            let labelQuery = (supabase.from('box_labels') as any)
+            // 1. Truy vấn kiểm tra tem thùng trong DB (Chỉ tìm chính xác theo mã code duy nhất để tránh bị lệch phân hệ kho hoặc RLS)
+            const { data: labelData, error } = await (supabase
+                .from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, lot_id, product_id, products(name, sku), lots(code)')
                 .eq('code', codeFormatted)
-                .eq('system_code', currentSystem?.code || '')
-
-            if (profile?.company_id) {
-                labelQuery = labelQuery.eq('company_id', profile.company_id)
-            }
-
-            const { data: labelData, error } = await labelQuery.maybeSingle()
+                .maybeSingle()
 
             if (error) throw error
 
-            if (!labelData) {
-                // CHẨN ĐOÁN THÔNG MINH: Tìm kiếm bỏ qua bộ lọc system_code và company_id để tìm nguyên nhân gốc
-                let diagQuery = (supabase.from('box_labels') as any)
-                    .select('id, code, system_code, company_id')
-                    .eq('code', codeFormatted)
+            if (labelData) {
+                // Nếu tìm thấy tem trong DB, tiến hành liên kết trực tiếp
+                setScannedBoxLabels(prev => [...prev, labelData])
+                showToast(`Đã thêm tem ${codeFormatted}`, 'success')
 
-                const { data: diagData } = await diagQuery.maybeSingle()
-
-                if (diagData) {
-                    if (diagData.system_code !== currentSystem?.code) {
-                        setScanError(`Tem thùng thuộc phân hệ kho "${diagData.system_code}", không khớp với phân hệ hiện tại "${currentSystem?.code || 'chưa rõ'}"!`)
-                    } else if (diagData.company_id !== profile?.company_id) {
-                        setScanError(`Tem thùng thuộc tổ chức/khách hàng khác, bạn không có quyền liên kết!`)
-                    } else {
-                        setScanError('Mã tem thùng tồn tại nhưng bị chặn bởi chính sách bảo mật RLS!')
-                    }
-                    return false
+                // Phản hồi rung nhẹ trên di động (nếu được hỗ trợ)
+                if (typeof navigator !== 'undefined' && navigator.vibrate) {
+                    navigator.vibrate(100)
+                }
+                return true
+            } else {
+                // 2. NẾU KHÔNG TÌM THẤY TRONG DB (TEM IN LỠ CŨ): TỰ ĐỘNG TẠO NHANH CỰC KỲ ĐƠN GIẢN
+                // Lấy thông tin sản phẩm trực tiếp từ Pallet hiện tại, không đối chiếu hay tìm kiếm SKU phức tạp
+                const parts = codeFormatted.split('-')
+                
+                // Mặc định bóc tách lô từ mã tem nếu có
+                // Cấu trúc chuẩn: BOX-FinishedLot-SemiLot-Sku-Index (length >= 5)
+                // Cấu trúc ngắn: BOX-FinishedLot-Index (length = 3)
+                let finishedLot = ''
+                let semiLot = ''
+                
+                if (parts.length >= 5) {
+                    finishedLot = parts[1]
+                    semiLot = parts[2]
+                } else if (parts.length >= 3) {
+                    finishedLot = parts[1]
+                    semiLot = ''
                 } else {
-                    // TÍNH NĂNG TỰ ĐỘNG KHỞI TẠO NHANH TEM THÙNG KHI QUÉT (GIẢI CỨU TEM ĐÃ IN LỠ)
-                    const parts = codeFormatted.split('-')
-                    if (parts.length >= 5 && parts[0] === 'BOX') {
-                        const finishedLot = parts[1]
-                        const semiLot = parts[2]
-                        const skuClean = parts[3]
-                        const indexStr = parts[parts.length - 1]
+                    finishedLot = selectedLot?.code || ''
+                    semiLot = ''
+                }
+                
+                let productId = null
+                let productData = null
+                
+                if (selectedLot?.lot_items && selectedLot.lot_items.length > 0) {
+                    productId = selectedLot.lot_items[0].product_id
+                    productData = selectedLot.lot_items[0].products
+                }
+                
+                if (!productId) {
+                    setScanError('Không thể tạo nhanh tem do Pallet hiện tại chưa khai báo sản phẩm!')
+                    return false
+                }
 
-                        const confirmed = window.confirm(`Cảnh báo: Tem thùng "${codeFormatted}" chưa được lưu trong hệ thống (có thể do lỗi mạng khi in). Bạn có muốn tự động tạo và liên kết tem này không?`)
-                        if (confirmed) {
-                            try {
-                                // 1. Tìm product_id từ SKU trong hệ thống (không lọc system_code để hỗ trợ cả sản phẩm toàn cục)
-                                let productId = null
-                                let productData: any = null
+                const confirmed = window.confirm(`Tem thùng "${codeFormatted}" chưa được lưu trong hệ thống (có thể do lỗi in ấn trước đây). Bạn có muốn tự động tạo tem này theo cấu hình Pallet hiện tại không?`)
+                if (confirmed) {
+                    const newLabel = {
+                        code: codeFormatted,
+                        product_id: productId,
+                        quantity: selectedLot.lot_items?.[0]?.quantity || 10,
+                        unit: selectedLot.lot_items?.[0]?.unit || 'Kg',
+                        semi_finished_lot_code: semiLot,
+                        finished_lot_code: finishedLot,
+                        system_code: selectedLot.system_code || currentSystem?.code || '',
+                        company_id: selectedLot.company_id || profile?.company_id || null,
+                        status: 'printed'
+                    }
 
-                                let productQuery = supabase
-                                    .from('products')
-                                    .select('id, name, sku, unit')
+                    const { data: insertedData, error: insertErr } = await (supabase
+                        .from('box_labels') as any)
+                        .insert([newLabel])
+                        .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, lot_id, product_id')
+                        .single()
 
-                                if (profile?.company_id) {
-                                    productQuery = productQuery.eq('company_id', profile.company_id)
-                                }
+                    if (insertErr) throw insertErr
 
-                                const { data: allProducts } = await productQuery
-
-                                if (allProducts) {
-                                    productData = allProducts.find(p => p.sku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === skuClean)
-                                    if (productData) {
-                                        productId = productData.id
-                                    }
-                                }
-
-                                if (!productId) {
-                                    if (selectedLot.lot_items && selectedLot.lot_items.length > 0) {
-                                        productId = selectedLot.lot_items[0].product_id
-                                        productData = selectedLot.lot_items[0].products
-                                    }
-                                }
-
-                                if (!productId) {
-                                    setScanError('Không thể tự động tạo tem do không tìm thấy sản phẩm tương ứng với SKU của tem!')
-                                    return false
-                                }
-
-                                // 2. Tạo bản ghi mới trong bảng box_labels
-                                const newLabel = {
-                                    code: codeFormatted,
-                                    product_id: productId,
-                                    quantity: selectedLot.lot_items?.[0]?.quantity || 10,
-                                    unit: selectedLot.lot_items?.[0]?.unit || 'Kg',
-                                    semi_finished_lot_code: semiLot,
-                                    finished_lot_code: finishedLot,
-                                    system_code: currentSystem?.code || '',
-                                    company_id: profile?.company_id || null,
-                                    status: 'printed'
-                                }
-
-                                const { data: insertedData, error: insertErr } = await (supabase
-                                    .from('box_labels') as any)
-                                    .insert([newLabel])
-                                    .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, lot_id, product_id')
-                                    .single()
-
-                                if (insertErr) throw insertErr
-
-                                if (insertedData) {
-                                    const labelWithProduct = {
-                                        ...insertedData,
-                                        products: {
-                                            name: productData?.name || 'Sản phẩm tự động tạo',
-                                            sku: productData?.sku || skuClean
-                                        }
-                                    }
-                                    setScannedBoxLabels(prev => [...prev, labelWithProduct])
-                                    showToast(`Đã tự động tạo và thêm tem ${codeFormatted}`, 'success')
-                                    return true
-                                }
-                            } catch (createErr: any) {
-                                console.error('Lỗi tự tạo tem nhanh:', createErr)
-                                setScanError('Không thể tự tạo nhanh tem: ' + createErr.message)
-                                return false
+                    if (insertedData) {
+                        const labelWithProduct = {
+                            ...insertedData,
+                            products: {
+                                name: productData?.name || 'Sản phẩm tự động tạo',
+                                sku: productData?.sku || 'SKU'
                             }
                         }
+                        setScannedBoxLabels(prev => [...prev, labelWithProduct])
+                        showToast(`Đã tự động tạo và thêm tem ${codeFormatted}`, 'success')
+                        return true
                     }
-
-                    setScanError('Không tìm thấy mã tem thùng này trong hệ thống! Vui lòng kiểm tra lại.')
-                    return false
                 }
+                return false
             }
-
-            // Kiểm tra xem tem đã thuộc pallet khác chưa
-            if (labelData.lot_id && labelData.lot_id !== selectedLot.id) {
-                const confirmed = window.confirm(`Cảnh báo: Tem thùng này đang được xếp ở Pallet "${labelData.lots?.code || 'chưa rõ mã'}". Bạn có chắc chắn muốn chuyển tem này sang Pallet hiện tại không?`)
-                if (!confirmed) {
-                    return false
-                }
-            }
-
-            // Thêm vào danh sách local
-            setScannedBoxLabels(prev => [...prev, labelData])
-            showToast(`Đã thêm tem ${codeFormatted}`, 'success')
-
-            // Phản hồi rung nhẹ trên di động (nếu được hỗ trợ)
-            if (typeof navigator !== 'undefined' && navigator.vibrate) {
-                navigator.vibrate(100)
-            }
-            return true
         } catch (err: any) {
             console.error('Lỗi kiểm tra tem quét:', err)
             setScanError('Lỗi kết nối hoặc truy vấn tem!')
@@ -367,15 +309,10 @@ export default function LotLabelBindingPage() {
             const lotId = selectedLot.id
 
             // 1. Tải danh sách tem đang liên kết hiện tại trên DB để đối chiếu
-            let linkedFetchQuery = (supabase.from('box_labels') as any)
+            const { data: currentLinked, error: fetchLinkedErr } = await (supabase
+                .from('box_labels') as any)
                 .select('id')
                 .eq('lot_id', lotId)
-
-            if (profile?.company_id) {
-                linkedFetchQuery = linkedFetchQuery.eq('company_id', profile.company_id)
-            }
-
-            const { data: currentLinked, error: fetchLinkedErr } = await linkedFetchQuery
 
             if (fetchLinkedErr) throw fetchLinkedErr
 
@@ -384,30 +321,20 @@ export default function LotLabelBindingPage() {
 
             // 2. Gỡ liên kết của các con tem cũ trước đây thuộc pallet này nhưng nay bị loại bỏ
             if (removedIds.length > 0) {
-                let unlinkQuery = (supabase.from('box_labels') as any)
+                const { error: unlinkError } = await (supabase
+                    .from('box_labels') as any)
                     .update({ lot_id: null, status: 'printed' })
                     .in('id', removedIds)
-
-                if (profile?.company_id) {
-                    unlinkQuery = unlinkQuery.eq('company_id', profile.company_id)
-                }
-
-                const { error: unlinkError } = await unlinkQuery
 
                 if (unlinkError) throw unlinkError
             }
 
             // 3. Thiết lập liên kết pallet mới cho các con tem quét được
             if (scannedIds.length > 0) {
-                let updateQuery = (supabase.from('box_labels') as any)
+                const { error: boxUpdateErr } = await (supabase
+                    .from('box_labels') as any)
                     .update({ lot_id: lotId, status: 'linked' })
                     .in('id', scannedIds)
-
-                if (profile?.company_id) {
-                    updateQuery = updateQuery.eq('company_id', profile.company_id)
-                }
-
-                const { error: boxUpdateErr } = await updateQuery
 
                 if (boxUpdateErr) throw boxUpdateErr
             }
@@ -415,16 +342,10 @@ export default function LotLabelBindingPage() {
             showToast(`Đồng bộ liên kết Pallet ${selectedLot.code} thành công!`, 'success')
             
             // Cập nhật lại danh sách tem từ DB để đồng bộ trạng thái
-            let updatedQuery = (supabase.from('box_labels') as any)
+            const { data: updatedLabels } = await (supabase
+                .from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, product_id, products(name, sku)')
                 .eq('lot_id', lotId)
-                .eq('system_code', currentSystem?.code || '')
-
-            if (profile?.company_id) {
-                updatedQuery = updatedQuery.eq('company_id', profile.company_id)
-            }
-
-            const { data: updatedLabels } = await updatedQuery
             
             if (updatedLabels) {
                 setScannedBoxLabels(updatedLabels)
