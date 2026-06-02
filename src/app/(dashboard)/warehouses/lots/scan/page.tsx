@@ -41,6 +41,17 @@ const extractBoxCode = (input: string): string => {
     return clean.toUpperCase()
 }
 
+// Helper function to extract sequence index from box label code (e.g. BOX-...-001 -> 001)
+const getBoxIndex = (code: string): string => {
+    if (!code) return '---'
+    const parts = code.trim().split('-')
+    const lastPart = parts[parts.length - 1]
+    if (lastPart && !isNaN(Number(lastPart))) {
+        return lastPart
+    }
+    return code
+}
+
 export default function LotLabelBindingPage() {
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
@@ -618,7 +629,7 @@ export default function LotLabelBindingPage() {
                                 <table className="w-full text-left border-collapse text-xs">
                                     <thead>
                                         <tr className="border-b border-stone-150 dark:border-zinc-800 bg-stone-100/50 dark:bg-zinc-800/30 text-[9px] font-black tracking-widest text-stone-400 dark:text-stone-500 uppercase">
-                                            <th className="px-4 py-3">Mã QR tem thùng</th>
+                                            <th className="px-4 py-3">STT Tem</th>
                                             <th className="px-4 py-3">Lô Bán Thành Phẩm</th>
                                             <th className="px-4 py-3">Lô Thành Phẩm</th>
                                             <th className="px-4 py-3">Sản phẩm</th>
@@ -635,8 +646,8 @@ export default function LotLabelBindingPage() {
 
                                             return (
                                                 <tr key={label.id || idx} className="hover:bg-stone-50/20 dark:hover:bg-zinc-800/10 transition-colors">
-                                                    <td className="px-4 py-3 font-mono font-bold text-stone-900 dark:text-zinc-100 uppercase">
-                                                        {label.code}
+                                                    <td className="px-4 py-3 font-mono font-bold text-stone-900 dark:text-zinc-100 uppercase" title={label.code}>
+                                                        #{getBoxIndex(label.code)}
                                                     </td>
                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400 uppercase">
                                                         {label.semi_finished_lot_code || '---'}
