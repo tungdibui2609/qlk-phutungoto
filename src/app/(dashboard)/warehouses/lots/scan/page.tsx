@@ -204,10 +204,91 @@ export default function LotLabelBindingPage() {
                     } else {
                         setScanError('Mã tem thùng tồn tại nhưng bị chặn bởi chính sách bảo mật RLS!')
                     }
+                    return false
                 } else {
+                    // TÍNH NĂNG TỰ ĐỘNG KHỞI TẠO NHANH TEM THÙNG KHI QUÉT (GIẢI CỨU TEM ĐÃ IN LỠ)
+                    const parts = codeFormatted.split('-')
+                    if (parts.length >= 5 && parts[0] === 'BOX') {
+                        const finishedLot = parts[1]
+                        const semiLot = parts[2]
+                        const skuClean = parts[3]
+                        const indexStr = parts[parts.length - 1]
+
+                        const confirmed = window.confirm(`Cảnh báo: Tem thùng "${codeFormatted}" chưa được lưu trong hệ thống (có thể do lỗi mạng khi in). Bạn có muốn tự động tạo và liên kết tem này không?`)
+                        if (confirmed) {
+                            try {
+                                // 1. Tìm product_id từ SKU trong hệ thống
+                                let productId = null
+                                let productData: any = null
+
+                                const { data: allProducts } = await supabase
+                                    .from('products')
+                                    .select('id, name, sku, unit')
+                                    .eq('system_code', currentSystem?.code || '')
+
+                                if (allProducts) {
+                                    productData = allProducts.find(p => p.sku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === skuClean)
+                                    if (productData) {
+                                        productId = productData.id
+                                    }
+                                }
+
+                                if (!productId) {
+                                    if (selectedLot.lot_items && selectedLot.lot_items.length > 0) {
+                                        productId = selectedLot.lot_items[0].product_id
+                                        productData = selectedLot.lot_items[0].products
+                                    }
+                                }
+
+                                if (!productId) {
+                                    setScanError('Không thể tự động tạo tem do không tìm thấy sản phẩm tương ứng với SKU của tem!')
+                                    return false
+                                }
+
+                                // 2. Tạo bản ghi mới trong bảng box_labels
+                                const newLabel = {
+                                    code: codeFormatted,
+                                    product_id: productId,
+                                    quantity: selectedLot.lot_items?.[0]?.quantity || 10,
+                                    unit: selectedLot.lot_items?.[0]?.unit || 'Kg',
+                                    semi_finished_lot_code: semiLot,
+                                    finished_lot_code: finishedLot,
+                                    system_code: currentSystem?.code || '',
+                                    company_id: profile?.company_id || null,
+                                    status: 'printed'
+                                }
+
+                                const { data: insertedData, error: insertErr } = await (supabase
+                                    .from('box_labels') as any)
+                                    .insert([newLabel])
+                                    .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, lot_id, product_id')
+                                    .single()
+
+                                if (insertErr) throw insertErr
+
+                                if (insertedData) {
+                                    const labelWithProduct = {
+                                        ...insertedData,
+                                        products: {
+                                            name: productData?.name || 'Sản phẩm tự động tạo',
+                                            sku: productData?.sku || skuClean
+                                        }
+                                    }
+                                    setScannedBoxLabels(prev => [...prev, labelWithProduct])
+                                    showToast(`Đã tự động tạo và thêm tem ${codeFormatted}`, 'success')
+                                    return true
+                                }
+                            } catch (createErr: any) {
+                                console.error('Lỗi tự tạo tem nhanh:', createErr)
+                                setScanError('Không thể tự tạo nhanh tem: ' + createErr.message)
+                                return false
+                            }
+                        }
+                    }
+
                     setScanError('Không tìm thấy mã tem thùng này trong hệ thống! Vui lòng kiểm tra lại.')
+                    return false
                 }
-                return false
             }
 
             // Kiểm tra xem tem đã thuộc pallet khác chưa

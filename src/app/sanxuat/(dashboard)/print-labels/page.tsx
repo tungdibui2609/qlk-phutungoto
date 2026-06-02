@@ -382,8 +382,32 @@ export default function PrintLabelsPage() {
         isProcessingPrintRef.current = true
         setIsPrinting(true)
         try {
-            // Chuẩn bị dữ liệu lưu vào DB bảng box_labels
-            const labelsToInsert = generatedLabels.map(lbl => ({
+            // TÍNH TOÁN TRỰC TIẾP DẢI TEM ĐỂ ĐẢM BẢO ĐỒNG BỘ 100% GIỮA GIẤY IN VÀ DATABASE (TRÁNH LỆCH RACE CONDITION)
+            const cleanFinished = finishedLotCode.replace(/\s+/g, '').toUpperCase()
+            const cleanSemi = semiLotCode.replace(/\s+/g, '').toUpperCase()
+            
+            const selectedProductInLot = availableProductionLots.find(pl => pl.product_id === selectedProductId)?.products
+            const selectedProduct = selectedProductInLot || products.find(p => p.id === selectedProductId)
+            const productSku = selectedProduct ? selectedProduct.sku : 'SKU'
+            const cleanSku = productSku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+
+            const partTP = cleanFinished || 'PENDINGTP'
+            const partBTP = cleanSemi || 'PENDINGBTP'
+
+            const finalLabels = Array.from({ length: printQty }).map((_, i) => {
+                const index = currentIndexStart + i
+                const indexStr = String(index).padStart(3, '0')
+                return {
+                    code: `BOX-${partTP}-${partBTP}-${cleanSku}-${indexStr}`,
+                    index
+                }
+            })
+
+            // Cập nhật ngay dải tem vào state để trình in hiển thị đúng dải này
+            setGeneratedLabels(finalLabels)
+
+            // Chuẩn bị dữ liệu lưu vào DB bảng box_labels từ dải tem vừa tính toán
+            const labelsToInsert = finalLabels.map(lbl => ({
                 code: lbl.code,
                 product_id: selectedProductId,
                 quantity: weight,
