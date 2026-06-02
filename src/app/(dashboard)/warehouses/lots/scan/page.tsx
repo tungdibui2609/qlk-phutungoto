@@ -189,7 +189,24 @@ export default function LotLabelBindingPage() {
             if (error) throw error
 
             if (!labelData) {
-                setScanError('Không tìm thấy mã tem thùng này trong hệ thống hoặc khác phân hệ kho!')
+                // CHẨN ĐOÁN THÔNG MINH: Tìm kiếm bỏ qua bộ lọc system_code và company_id để tìm nguyên nhân gốc
+                let diagQuery = (supabase.from('box_labels') as any)
+                    .select('id, code, system_code, company_id')
+                    .eq('code', codeFormatted)
+
+                const { data: diagData } = await diagQuery.maybeSingle()
+
+                if (diagData) {
+                    if (diagData.system_code !== currentSystem?.code) {
+                        setScanError(`Tem thùng thuộc phân hệ kho "${diagData.system_code}", không khớp với phân hệ hiện tại "${currentSystem?.code || 'chưa rõ'}"!`)
+                    } else if (diagData.company_id !== profile?.company_id) {
+                        setScanError(`Tem thùng thuộc tổ chức/khách hàng khác, bạn không có quyền liên kết!`)
+                    } else {
+                        setScanError('Mã tem thùng tồn tại nhưng bị chặn bởi chính sách bảo mật RLS!')
+                    }
+                } else {
+                    setScanError('Không tìm thấy mã tem thùng này trong hệ thống! Vui lòng kiểm tra lại.')
+                }
                 return false
             }
 
