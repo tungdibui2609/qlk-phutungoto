@@ -8,7 +8,7 @@ import { useUser } from '@/contexts/UserContext'
 import { 
     History, Search, Calendar, RefreshCw, FileText, ChevronLeft, ChevronRight, 
     Tag, Boxes, Package, User, QrCode, ScanLine, MapPin, ShieldCheck, Activity,
-    TrendingUp, ExternalLink, Box
+    TrendingUp, ExternalLink, Box, Eye, X
 } from 'lucide-react'
 
 interface PrintLog {
@@ -77,6 +77,12 @@ export default function PrintHistoryPage() {
     const [isTracingCode, setIsTracingCode] = useState(false)
     const [traceCodeError, setTraceCodeError] = useState('')
     const [hasTracedCode, setHasTracedCode] = useState(false)
+
+    // 3. States cho Modal xem chi tiết dải tem in nhãn
+    const [detailModalOpen, setDetailModalOpen] = useState(false)
+    const [selectedLogForDetail, setSelectedLogForDetail] = useState<PrintLog | null>(null)
+    const [detailLabels, setDetailLabels] = useState<any[]>([])
+    const [isLoadingDetail, setIsLoadingDetail] = useState(false)
 
     // Load danh sách sản phẩm để làm bộ lọc
     useEffect(() => {
@@ -290,6 +296,83 @@ export default function PrintHistoryPage() {
         }
     }
 
+    // ==========================================
+    // HÀM TRUY XUẤT CHI TIẾT DẢI TEM IN REAL-TIME
+    // ==========================================
+    const handleOpenLabelDetailModal = async (log: PrintLog) => {
+        setSelectedLogForDetail(log)
+        setDetailModalOpen(true)
+        setDetailLabels([])
+        setIsLoadingDetail(true)
+
+        try {
+            // 1. Sinh danh sách mã tem từ dải index
+            const cleanLotCode = log.finished_lot_code.replace(/\s+/g, '').toUpperCase()
+            const cleanSemiCode = log.semi_finished_lot_code.replace(/\s+/g, '').toUpperCase()
+            const productSku = log.products ? log.products.sku : '---'
+            const cleanSku = (productSku && productSku !== '---' ? productSku : 'SKU').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+
+            const generatedCodes: string[] = []
+            for (let i = log.start_index; i <= log.end_index; i++) {
+                const indexStr = String(i).padStart(3, '0')
+                generatedCodes.push(`BOX-${cleanLotCode}-${cleanSemiCode}-${cleanSku}-${indexStr}`)
+            }
+
+            if (generatedCodes.length === 0) {
+                setIsLoadingDetail(false)
+                return
+            }
+
+            // 2. Truy vấn Supabase tìm thông tin các con tem này trong bảng box_labels
+            const { data, error } = await supabase
+                .from('box_labels')
+                .select(`
+                    id,
+                    code,
+                    quantity,
+                    unit,
+                    lot_id,
+                    status,
+                    lots (
+                        id,
+                        code
+                    )
+                `)
+                .in('code', generatedCodes)
+
+            if (error) throw error
+
+            // Tạo map từ code sang dữ liệu tem DB để giữ đúng thứ tự dải tăng dần
+            const labelMap = new Map<string, any>()
+            data?.forEach(item => {
+                labelMap.set(item.code, item)
+            })
+
+            // Xây dựng danh sách tem hiển thị theo thứ tự index dải in
+            const orderedLabels = generatedCodes.map((code, index) => {
+                const seq = log.start_index + index
+                const labelInDb = labelMap.get(code)
+                return {
+                    seq,
+                    code,
+                    foundInDb: !!labelInDb,
+                    quantity: labelInDb?.quantity || 10,
+                    unit: labelInDb?.unit || 'Kg',
+                    lot_id: labelInDb?.lot_id || null,
+                    lots: labelInDb?.lots || null,
+                    status: labelInDb?.status || 'printed'
+                }
+            })
+
+            setDetailLabels(orderedLabels)
+        } catch (err: any) {
+            console.error('Lỗi khi tải chi tiết dải tem:', err)
+            showToast('Không thể tải chi tiết dải tem: ' + err.message, 'error')
+        } finally {
+            setIsLoadingDetail(false)
+        }
+    }
+
     // Tính toán phân trang cho Tab 1
     const totalItems = logs.length
     const totalPages = Math.ceil(totalItems / itemsPerPage)
@@ -494,9 +577,19 @@ export default function PrintHistoryPage() {
                                                         {log.print_qty}
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 dark:bg-emerald-400/5 px-2.5 py-1 rounded-lg border border-emerald-500/10">
-                                                            {labelRangeStr}
-                                                        </span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 dark:bg-emerald-400/5 px-2.5 py-1 rounded-lg border border-emerald-500/10 shrink-0">
+                                                                {labelRangeStr}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleOpenLabelDetailModal(log)}
+                                                                className="p-1.5 text-stone-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-zinc-850 rounded-lg transition-colors cursor-pointer"
+                                                                title="Xem danh sách tem chi tiết"
+                                                            >
+                                                                <Eye size={16} />
+                                                            </button>
+                                                        </div>
                                                     </td>
                                                     <td className="px-6 py-4 text-stone-500 dark:text-stone-400 truncate max-w-[120px]" title={log.created_by || ''}>
                                                         {log.created_by ? log.created_by.slice(0, 8) + '...' : 'Hệ thống'}
@@ -911,6 +1004,106 @@ export default function PrintHistoryPage() {
 
                     </div>
 
+                </div>
+            )}
+
+            {/* ============================================================== */}
+            {/* MODAL POPUP XEM CHI TIẾT DANH SÁCH TEM TRONG DẢI IN */}
+            {/* ============================================================== */}
+            {detailModalOpen && selectedLogForDetail && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-3xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-4 bg-stone-50 dark:bg-zinc-800/40 border-b border-stone-100 dark:border-zinc-800">
+                            <div>
+                                <h3 className="font-bold text-base text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                                    <QrCode className="text-emerald-600 animate-pulse" size={20} />
+                                    Danh Sách Chi Tiết Dải Tem
+                                </h3>
+                                <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 font-mono">
+                                    {selectedLogForDetail.products ? (selectedLogForDetail.products.internal_name || selectedLogForDetail.products.name) : 'Sản phẩm'} | Lô TP: {selectedLogForDetail.finished_lot_code}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setDetailModalOpen(false)
+                                    setSelectedLogForDetail(null)
+                                    setDetailLabels([])
+                                }}
+                                className="p-2 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+                            {isLoadingDetail ? (
+                                <div className="flex flex-col items-center justify-center py-20 space-y-3">
+                                    <RefreshCw className="text-emerald-500 animate-spin" size={28} />
+                                    <p className="text-xs font-semibold text-stone-500">Đang truy xuất thông tin chi tiết tem từ DB...</p>
+                                </div>
+                            ) : detailLabels.length > 0 ? (
+                                <div className="border border-stone-150 dark:border-zinc-800 rounded-2xl overflow-hidden bg-stone-50/10 dark:bg-zinc-900/20">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                        <thead>
+                                            <tr className="border-b border-stone-150 dark:border-zinc-800 bg-stone-100/50 dark:bg-zinc-800/30 text-[9px] font-black tracking-widest text-stone-400 dark:text-stone-500 uppercase">
+                                                <th className="px-4 py-3 text-center w-16">STT</th>
+                                                <th className="px-4 py-3">Mã tem thùng</th>
+                                                <th className="px-4 py-3 text-center">Trạng thái gắn Pallet</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-stone-150/40 dark:divide-zinc-800/50">
+                                            {detailLabels.map((label) => (
+                                                <tr key={label.code} className="hover:bg-stone-50/20 dark:hover:bg-zinc-800/10 transition-colors">
+                                                    <td className="px-4 py-3 text-center font-bold text-stone-400 tabular-nums">
+                                                        #{label.seq}
+                                                    </td>
+                                                    <td className="px-4 py-3 font-mono font-bold text-stone-850 dark:text-zinc-100 uppercase">
+                                                        {label.code}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center">
+                                                        {label.lot_id && label.lots ? (
+                                                            <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 rounded-full border border-emerald-500/10 text-[10px] font-bold">
+                                                                <Boxes size={12} />
+                                                                Đã xếp Pallet: <span className="font-mono uppercase">{label.lots.code}</span>
+                                                            </div>
+                                                        ) : label.foundInDb ? (
+                                                            <span className="inline-block px-2.5 py-1 bg-stone-100 dark:bg-zinc-800 text-stone-500 dark:text-stone-400 rounded-full border border-stone-200/40 dark:border-zinc-700/50 text-[10px] font-semibold">
+                                                                Chưa xếp Pallet
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-block px-2.5 py-1 bg-red-50 dark:bg-red-950/20 text-red-500 dark:text-red-450 rounded-full border border-red-500/10 text-[10px] font-semibold">
+                                                                Chưa đồng bộ DB
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            ) : (
+                                <div className="text-center py-8 text-stone-400 text-xs font-semibold">
+                                    Không thể tạo danh sách tem chi tiết.
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="px-6 py-4 bg-stone-50 dark:bg-zinc-800/40 border-t border-stone-100 dark:border-zinc-800 flex justify-end">
+                            <button
+                                onClick={() => {
+                                    setDetailModalOpen(false)
+                                    setSelectedLogForDetail(null)
+                                    setDetailLabels([])
+                                }}
+                                className="px-5 py-2 bg-stone-200 hover:bg-stone-300 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-300 font-bold text-xs rounded-xl transition-all cursor-pointer"
+                            >
+                                Đóng
+                            </button>
+                        </div>
+                    </div>
                 </div>
             )}
 
