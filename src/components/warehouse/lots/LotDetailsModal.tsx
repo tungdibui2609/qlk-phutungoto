@@ -200,6 +200,18 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             const hasProdInfo = prod?.name || prod?.code || lot.production_code;
                             if (!hasProdInfo) return null;
 
+                            const allProductionLots = prod && 'production_lots' in prod && Array.isArray((prod as any).production_lots)
+                                ? (prod as any).production_lots
+                                : [];
+
+                            const filteredProductionLots = allProductionLots.filter((pl: any) => {
+                                if ((lot as any).production_lot_id) {
+                                    return pl.id === (lot as any).production_lot_id;
+                                }
+                                const itemProductIds = lot.lot_items?.map((item: any) => item.product_id) || [];
+                                return itemProductIds.includes(pl.product_id);
+                            });
+
                             return (
                                 <div className="flex items-start gap-4 p-4 rounded-2xl border border-rose-100 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-900/10">
                                     <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
@@ -215,9 +227,9 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                 Mã LSX: {prod?.code || lot?.production_code}
                                             </p>
                                         )}
-                                        {lot.productions && 'production_lots' in lot.productions && Array.isArray((lot.productions as any).production_lots) && (lot.productions as any).production_lots.length > 0 && (
+                                        {filteredProductionLots.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-2">
-                                                {(lot.productions as any).production_lots.map((pl: any, idx: number) => (
+                                                {filteredProductionLots.map((pl: any, idx: number) => (
                                                     <span key={idx} className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-black border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tight shadow-sm">
                                                         Lot SX: {pl.lot_code}
                                                     </span>
