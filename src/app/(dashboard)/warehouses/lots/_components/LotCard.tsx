@@ -10,6 +10,7 @@ import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import React from 'react'
 import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
+import { LotBoxLabelsModal } from '@/components/warehouse/lots/LotBoxLabelsModal'
 
 interface LotCardProps {
     lot: Lot
@@ -36,6 +37,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
     const [historyData, setHistoryData] = useState<any>(null)
     const [showMergeHistory, setShowMergeHistory] = useState(false)
     const [openImageItemId, setOpenImageItemId] = useState<string | null>(null)
+    const [showBoxLabelsModal, setShowBoxLabelsModal] = useState(false)
     const [isHighlighting, setIsHighlighting] = useState(false)
     const showInternal = isModuleEnabled('internal_products')
     const isSanxuat = pathname.startsWith('/sanxuat')
@@ -511,6 +513,21 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     </div>
                 )}
 
+                {/* Xem tem thùng đã gắn */}
+                <div className="mt-2 flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-850 text-xs">
+                    <span className="font-semibold text-slate-700 dark:text-slate-350 flex items-center gap-1.5">
+                        <Layers size={14} className="text-emerald-500 shrink-0" />
+                        Xem tem thùng xếp Pallet
+                    </span>
+                    <button
+                        onClick={() => setShowBoxLabelsModal(true)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-zinc-800 text-emerald-655 dark:text-emerald-450 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-zinc-700 border border-emerald-500/10 shadow-sm transition-all active:scale-90 cursor-pointer shrink-0"
+                        title="Xem chi tiết các tem thùng đã gắn trên Pallet"
+                    >
+                        <Eye size={14} />
+                    </button>
+                </div>
+
                 {lot.notes && (
                     <div className="mt-2 bg-amber-50 dark:bg-amber-900/10 p-1.5 rounded-lg border border-amber-100 dark:border-amber-900/20">
                         <p className="text-xs text-amber-800 dark:text-amber-300 line-clamp-2">
@@ -611,6 +628,13 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                 <LotMergeHistoryModal
                     data={historyData}
                     onClose={() => setHistoryData(null)}
+                />
+            )}
+            {showBoxLabelsModal && (
+                <LotBoxLabelsModal
+                    lotId={lot.id}
+                    lotCode={lot.code}
+                    onClose={() => setShowBoxLabelsModal(false)}
                 />
             )}
         </div>
