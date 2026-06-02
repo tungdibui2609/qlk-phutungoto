@@ -378,6 +378,17 @@ export default function PrintHistoryPage() {
     const totalPages = Math.ceil(totalItems / itemsPerPage)
     const paginatedLogs = logs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
 
+    const getLabelRangeStr = (log: PrintLog) => {
+        const cleanLotCode = log.finished_lot_code.replace(/\s+/g, '').toUpperCase()
+        const cleanSemiCode = log.semi_finished_lot_code.replace(/\s+/g, '').toUpperCase()
+        const productSku = log.products ? log.products.sku : '---'
+        const cleanSku = (productSku && productSku !== '---' ? productSku : 'SKU').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+        
+        const startStr = String(log.start_index).padStart(3, '0')
+        const endStr = String(log.end_index).padStart(3, '0')
+        return `BOX-${cleanLotCode}-${cleanSemiCode}-${cleanSku}-${startStr} → BOX-${cleanLotCode}-${cleanSemiCode}-${cleanSku}-${endStr}`
+    }
+
     const formatDateTime = (dateStr: string) => {
         const d = new Date(dateStr)
         return d.toLocaleDateString('vi-VN', {
@@ -537,7 +548,7 @@ export default function PrintHistoryPage() {
                                             <th className="px-6 py-4">Lô Thành Phẩm (TP)</th>
                                             <th className="px-6 py-4">Sản Phẩm</th>
                                             <th className="px-6 py-4 text-center">Số lượng tem</th>
-                                            <th className="px-6 py-4">Dải số hiệu tem phát hành</th>
+                                            <th className="px-6 py-4 text-center">Dải tem phát hành</th>
                                             <th className="px-6 py-4"><span className="flex items-center gap-1"><User size={10} /> Người in</span></th>
                                         </tr>
                                     </thead>
@@ -576,20 +587,16 @@ export default function PrintHistoryPage() {
                                                     <td className="px-6 py-4 text-center font-bold text-stone-900 dark:text-white tabular-nums bg-stone-50/20 dark:bg-zinc-800/10">
                                                         {log.print_qty}
                                                     </td>
-                                                    <td className="px-6 py-4">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/5 dark:bg-emerald-400/5 px-2.5 py-1 rounded-lg border border-emerald-500/10 shrink-0">
-                                                                {labelRangeStr}
-                                                            </span>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleOpenLabelDetailModal(log)}
-                                                                className="p-1.5 text-stone-500 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-zinc-850 rounded-lg transition-colors cursor-pointer"
-                                                                title="Xem danh sách tem chi tiết"
-                                                            >
-                                                                <Eye size={16} />
-                                                            </button>
-                                                        </div>
+                                                    <td className="px-6 py-4 text-center">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleOpenLabelDetailModal(log)}
+                                                            className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-450 border border-emerald-500/10 hover:border-emerald-500/20 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shadow-sm mx-auto"
+                                                            title="Xem danh sách tem chi tiết"
+                                                        >
+                                                            <Eye size={14} />
+                                                            <span>Xem dải tem ({log.print_qty})</span>
+                                                        </button>
                                                     </td>
                                                     <td className="px-6 py-4 text-stone-500 dark:text-stone-400 truncate max-w-[120px]" title={log.created_by || ''}>
                                                         {log.created_by ? log.created_by.slice(0, 8) + '...' : 'Hệ thống'}
@@ -1023,6 +1030,9 @@ export default function PrintHistoryPage() {
                                 <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 font-mono">
                                     {selectedLogForDetail.products ? (selectedLogForDetail.products.internal_name || selectedLogForDetail.products.name) : 'Sản phẩm'} | Lô TP: {selectedLogForDetail.finished_lot_code}
                                 </p>
+                                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono font-bold bg-emerald-500/5 dark:bg-emerald-450/10 px-2 py-0.5 rounded border border-emerald-500/10 mt-1.5 inline-block">
+                                    Dải tem: {getLabelRangeStr(selectedLogForDetail)}
+                                </div>
                             </div>
                             <button
                                 onClick={() => {
