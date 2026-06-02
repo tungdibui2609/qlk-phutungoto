@@ -6,37 +6,49 @@ const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 async function main() {
-    console.log('--- TÌM KIẾM MÃ CHỨA SỐ 014 HOẶC THÙNG SỐ 14 ---');
+    console.log('--- TÌM KIẾM SẢN PHẨM THEO SKU ---');
     try {
+        const skuToSearch = 'TP112010902.001.02';
+        
+        console.log(`Tìm kiếm sản phẩm có SKU là "${skuToSearch}"...`);
         const { data, error } = await supabase
-            .from('box_labels')
-            .select('id, code, created_at')
-            .ilike('code', '%014%');
+            .from('products')
+            .select('id, name, sku, system_code, company_id')
+            .eq('sku', skuToSearch);
 
         if (error) {
             console.error('Lỗi truy vấn:', error);
             return;
         }
 
-        console.log(`Tìm thấy ${data.length} bản ghi chứa '014':`);
+        console.log(`Tìm thấy ${data.length} sản phẩm:`);
         data.forEach(row => {
-            console.log(`- Code: "${row.code}" | Tạo lúc: ${row.created_at}`);
+            console.log(`- ID:          "${row.id}"`);
+            console.log(`  Name:        "${row.name}"`);
+            console.log(`  SKU:         "${row.sku}"`);
+            console.log(`  System Code: "${row.system_code}"`);
+            console.log(`  Company ID:  "${row.company_id}"`);
         });
 
-        console.log('\n--- TÌM KIẾM MÃ CHỨA SỐ 14 Ở CUỐI ---');
-        const { data: data2, error: error2 } = await supabase
-            .from('box_labels')
-            .select('id, code, created_at')
-            .ilike('code', '%-014');
-
-        if (error2) {
-            console.error('Lỗi truy vấn 2:', error2);
+        console.log('\n--- TÌM KIẾM SẢN PHẨM KHÔNG PHÂN BIỆT SYSTEM_CODE BẰNG SKU CLEAN ---');
+        const { data: allProducts, error: errAll } = await supabase
+            .from('products')
+            .select('id, name, sku, system_code, company_id');
+            
+        if (errAll) {
+            console.error('Lỗi lấy tất cả sản phẩm:', errAll);
             return;
         }
-
-        console.log(`Tìm thấy ${data2.length} bản ghi kết thúc bằng '-014':`);
-        data2.forEach(row => {
-            console.log(`- Code: "${row.code}" | Tạo lúc: ${row.created_at}`);
+        
+        const skuClean = 'TP11201090200102';
+        const matches = allProducts.filter(p => p.sku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === skuClean);
+        console.log(`Tìm thấy ${matches.length} sản phẩm khớp SKU Clean "${skuClean}":`);
+        matches.forEach(row => {
+            console.log(`- ID:          "${row.id}"`);
+            console.log(`  Name:        "${row.name}"`);
+            console.log(`  SKU:         "${row.sku}"`);
+            console.log(`  System Code: "${row.system_code}"`);
+            console.log(`  Company ID:  "${row.company_id}"`);
         });
 
     } catch (e) {
