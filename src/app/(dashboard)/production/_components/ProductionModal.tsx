@@ -35,7 +35,6 @@ interface ProductionModalProps {
 }
 
 export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, readOnly = false }: ProductionModalProps) {
-    const isLocked = readOnly || editItem?.status === 'DONE';
     const { showToast, showConfirm } = useToast()
     const { profile } = useUser()
     const { systems, currentSystem } = useSystem()
@@ -105,6 +104,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [status, setStatus] = useState('IN_PROGRESS')
+    const isLocked = readOnly || status === 'DONE';
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const [productionType, setProductionType] = useState<'NEW' | 'RE_SORT'>('NEW')
@@ -1060,6 +1060,29 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         setActiveRowIdx(null)
     }
 
+    const handleReopen = async () => {
+        if (!editItem?.id) return
+        if (!await showConfirm('Bạn có chắc chắn muốn mở lại lệnh sản xuất này? Trạng thái sẽ chuyển về "Đang làm" và cho phép chỉnh sửa.')) return
+        
+        setIsSaving(true)
+        const { error } = await (supabase as any)
+            .from('productions')
+            .update({ status: 'IN_PROGRESS', updated_at: new Date().toISOString() })
+            .eq('id', editItem.id)
+            
+        setIsSaving(false)
+        if (error) {
+            showToast('Lỗi: ' + error.message, 'error')
+        } else {
+            showToast('Đã mở lại lệnh sản xuất thành công', 'success')
+            setStatus('IN_PROGRESS')
+            if (editItem) {
+                editItem.status = 'IN_PROGRESS'
+            }
+            onSuccess()
+        }
+    }
+
     if (!isOpen) return null
 
     const handleSubmit = async (e: React.FormEvent) => {
@@ -1221,9 +1244,19 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-8 bg-stone-50/30 dark:bg-zinc-900">
                     {isLocked && editItem?.status === 'DONE' && (
-                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl flex items-center gap-3 text-blue-700 dark:text-blue-400">
-                            <Lock size={18} />
-                            <span className="text-sm font-bold">Lệnh sản xuất này đã hoàn thành và đang được khóa. Muốn chỉnh sửa vui lòng chuyển trạng thái về Đang sản xuất.</span>
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-2xl flex items-center justify-between gap-3 text-blue-700 dark:text-blue-400">
+                            <div className="flex items-center gap-3">
+                                <Lock size={18} />
+                                <span className="text-sm font-bold">Lệnh sản xuất này đã hoàn thành và đang được khóa. Muốn chỉnh sửa vui lòng chuyển trạng thái về Đang sản xuất.</span>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleReopen}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shrink-0 flex items-center gap-1.5"
+                            >
+                                <Unlock size={14} />
+                                Mở lại lệnh
+                            </button>
                         </div>
                     )}
                     {/* Raw Material Info Summary Bar (If filled) */}

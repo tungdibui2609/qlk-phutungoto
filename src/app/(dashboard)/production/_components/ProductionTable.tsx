@@ -1,6 +1,6 @@
 'use client'
 
-import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp, Printer, FileText, QrCode, Lock } from 'lucide-react'
+import { Hash, Trash2, Edit3, Eye, Tag, Users, Calendar, Target, CheckCircle2, Scale, TrendingUp, Printer, FileText, QrCode, Lock, RotateCcw } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import { formatQuantityFull } from '@/lib/numberUtils'
 
@@ -174,6 +174,18 @@ export default function ProductionTable({ data, onEdit, onDelete, onStatusToggle
                                             <Eye size={16} />
                                         </button>
                                         <Protected permission="warehouse.manage">
+                                            {onStatusToggle && (
+                                                <button
+                                                    onClick={(e) => { 
+                                                        e.stopPropagation(); 
+                                                        onStatusToggle(item.id, item.status); 
+                                                    }}
+                                                    className={`p-1.5 transition-colors ${item.status === 'DONE' ? 'text-amber-500 hover:text-amber-600 animate-pulse' : 'text-stone-400 hover:text-emerald-600'}`}
+                                                    title={item.status === 'DONE' ? "Mở lại lệnh sản xuất" : "Hoàn thành lệnh sản xuất"}
+                                                >
+                                                    {item.status === 'DONE' ? <RotateCcw size={16} /> : <CheckCircle2 size={16} />}
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); onEdit(item); }}
                                                 className="p-1.5 text-stone-400 hover:text-emerald-600 transition-colors"
