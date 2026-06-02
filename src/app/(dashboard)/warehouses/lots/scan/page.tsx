@@ -121,7 +121,10 @@ export default function LotLabelBindingPage() {
                 return
             }
 
-            // Gán LOT tìm thấy (lấ            // Tải danh sách các tem thùng box_labels đã được liên kết với LOT này trước đó (nếu có)
+            const lotFound = lots[0]
+            setSelectedLot(lotFound)
+
+            // Tải danh sách các tem thùng box_labels đã được liên kết với LOT này trước đó (nếu có)
             const { data: linkedLabels, error: labelError } = await (supabase
                 .from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, product_id, products(name, sku)')
