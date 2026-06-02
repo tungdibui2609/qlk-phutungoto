@@ -591,11 +591,10 @@ export default function PrintHistoryPage() {
                                                         <button
                                                             type="button"
                                                             onClick={() => handleOpenLabelDetailModal(log)}
-                                                            className="inline-flex items-center justify-center gap-2 px-3.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-450 border border-emerald-500/10 hover:border-emerald-500/20 rounded-xl font-bold text-xs transition-all active:scale-95 cursor-pointer shadow-sm mx-auto"
-                                                            title="Xem danh sách tem chi tiết"
+                                                            className="w-8 h-8 rounded-full bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border border-emerald-500/10 hover:border-emerald-500/20 transition-all active:scale-95 cursor-pointer shadow-sm inline-flex items-center justify-center mx-auto"
+                                                            title={`Xem dải tem (${log.print_qty} tem):\n${labelRangeStr}`}
                                                         >
-                                                            <Eye size={14} />
-                                                            <span>Xem dải tem ({log.print_qty})</span>
+                                                            <Eye size={16} />
                                                         </button>
                                                     </td>
                                                     <td className="px-6 py-4 text-stone-500 dark:text-stone-400 truncate max-w-[120px]" title={log.created_by || ''}>

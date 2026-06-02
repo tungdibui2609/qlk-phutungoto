@@ -929,28 +929,38 @@ export default function PrintLabelsPage() {
 
                         {/* Bộ đếm và dải số tem in thông minh */}
                         {semiLotCode.trim() && finishedLotCode.trim() && selectedProductId && (
-                            <div className="bg-emerald-50/20 dark:bg-zinc-800/60 border border-emerald-100/50 dark:border-zinc-700/50 rounded-2xl p-4 text-xs space-y-2.5 transition-all">
+                            <div className="bg-emerald-50/20 dark:bg-zinc-800/60 border border-emerald-100/50 dark:border-zinc-700/50 rounded-2xl p-4 text-xs space-y-3 transition-all">
                                 <div className="flex justify-between items-center text-stone-600 dark:text-stone-400">
                                     <span className="font-medium flex items-center gap-1.5">
                                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                                         Đã in trước đó:
                                     </span>
-                                    <span className="font-bold text-stone-900 dark:text-white">
+                                    <span className="font-bold text-stone-900 dark:text-white bg-stone-100 dark:bg-zinc-800/60 px-2.5 py-0.5 rounded-lg border border-stone-200/20">
                                         {isCounting ? 'Đang tính toán...' : `${countLabels !== null ? countLabels : 0} tem`}
                                     </span>
                                 </div>
-                                <div className="flex justify-between items-center text-stone-600 dark:text-stone-400">
-                                    <span className="font-medium flex items-center gap-1.5">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
-                                        Số tem đợt này:
-                                    </span>
-                                    <span className="font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 dark:bg-emerald-400/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
-                                        #{currentIndexStart} → #{currentIndexStart + printQty - 1}
-                                    </span>
+                                
+                                <div className="space-y-1.5 pt-1 border-t border-stone-100 dark:border-zinc-800">
+                                    <div className="flex justify-between items-center text-stone-600 dark:text-stone-400 mb-1">
+                                        <span className="font-bold flex items-center gap-1.5 text-xs text-stone-700 dark:text-zinc-300">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse"></span>
+                                            Bắt đầu từ số thùng:
+                                        </span>
+                                        <span className="font-mono font-bold text-emerald-600 dark:text-emerald-450 bg-emerald-500/10 dark:bg-emerald-450/10 px-2.5 py-0.5 rounded-lg border border-emerald-500/20">
+                                            #{currentIndexStart} → #{currentIndexStart + printQty - 1}
+                                        </span>
+                                    </div>
+                                    <input
+                                        type="number"
+                                        value={currentIndexStart}
+                                        onChange={(e) => setCurrentIndexStart(Math.max(1, Number(e.target.value)))}
+                                        className="w-full px-3.5 py-2.5 text-xs font-bold rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-850 text-stone-850 dark:text-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all outline-none font-mono"
+                                        min={1}
+                                    />
+                                    <p className="text-[10px] text-stone-400 dark:text-zinc-500 italic mt-1 leading-normal">
+                                        Mặc định tự động đếm. Nhập số khác (ví dụ: 1) để in đè/in lại nếu tem trước đó bị lỗi.
+                                    </p>
                                 </div>
-                                <p className="text-[10px] text-stone-400 dark:text-zinc-500 text-center italic leading-relaxed pt-1 border-t border-stone-100 dark:border-zinc-800">
-                                    Hệ thống tự động cộng dồn. Đổi lô hoặc sản phẩm sẽ tạo bộ đếm mới.
-                                </p>
                             </div>
                         )}
 
