@@ -94,7 +94,7 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-3xl max-w-4xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-3xl max-w-6xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-6 py-4 bg-stone-50 dark:bg-zinc-800/40 border-b border-stone-100 dark:border-zinc-800">
                     <div>
@@ -164,10 +164,10 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
                                                     <td className="px-4 py-3 font-mono font-bold text-stone-850 dark:text-zinc-150 uppercase" title={label.code}>
                                                          #{getBoxIndex(label.code)}
                                                      </td>
-                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase truncate max-w-[150px]" title={label.semi_finished_lot_code || ''}>
+                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase whitespace-nowrap">
                                                          {label.semi_finished_lot_code || '---'}
                                                      </td>
-                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase truncate max-w-[150px]" title={label.finished_lot_code || ''}>
+                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase whitespace-nowrap">
                                                          {label.finished_lot_code || '---'}
                                                      </td>
                                                      <td className="px-4 py-3">
