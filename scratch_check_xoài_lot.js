@@ -15,23 +15,27 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log("=== IN TOÀN BỘ ZONES CỦA HỆ THỐNG KHO_DONG_LANH ===");
-  const { data: zones, error } = await supabase
-    .from('zones')
-    .select('*')
-    .eq('system_type', 'KHO_DONG_LANH')
-    .order('level')
-    .order('name');
+  console.log("=== KIỂM TRA PALLET DL-LOT-300526-079 ===");
+  const { data: lot, error } = await supabase
+    .from('lots')
+    .select('*, lot_items(*, products(name, sku))')
+    .eq('code', 'DL-LOT-300526-079')
+    .maybeSingle();
 
   if (error) {
     console.error("Lỗi:", error);
     return;
   }
 
-  console.log(`Tìm thấy ${zones.length} zones.`);
-  zones.forEach(z => {
-    console.log(`ID: ${z.id} | Parent: ${z.parent_id} | Level: ${z.level} | Code: ${z.code} | Name: ${z.name}`);
-  });
+  console.log("Dữ liệu Pallet:", JSON.stringify(lot, null, 2));
+
+  console.log("\n=== KIỂM TRA LÔ SẢN XUẤT LSX230526 ===");
+  const { data: pl } = await supabase
+    .from('production_lots')
+    .select('*, products(name, sku)')
+    .eq('lot_code', 'LSX230526');
+
+  console.log("Production Lot LSX230526:", JSON.stringify(pl, null, 2));
 }
 
 main();

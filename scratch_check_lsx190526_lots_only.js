@@ -15,23 +15,17 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log("=== IN TOÀN BỘ ZONES CỦA HỆ THỐNG KHO_DONG_LANH ===");
-  const { data: zones, error } = await supabase
-    .from('zones')
-    .select('*')
-    .eq('system_type', 'KHO_DONG_LANH')
-    .order('level')
-    .order('name');
+  console.log("=== CÁC DÒNG LÔ SẢN XUẤT (production_lots) CỦA LỆNH LSX190526 ===");
+  const { data: prod } = await supabase
+    .from('productions')
+    .select('id, code, name, production_lots(*, products(name))')
+    .eq('code', 'LSX190526');
 
-  if (error) {
-    console.error("Lỗi:", error);
-    return;
+  if (prod && prod.length > 0) {
+    console.log(JSON.stringify(prod[0].production_lots, null, 2));
+  } else {
+    console.log("Không tìm thấy lệnh LSX190526");
   }
-
-  console.log(`Tìm thấy ${zones.length} zones.`);
-  zones.forEach(z => {
-    console.log(`ID: ${z.id} | Parent: ${z.parent_id} | Level: ${z.level} | Code: ${z.code} | Name: ${z.name}`);
-  });
 }
 
 main();

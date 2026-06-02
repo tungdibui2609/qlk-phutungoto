@@ -76,8 +76,8 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         : `NHẬT KÝ BIẾN ĐỘNG KHO (HẠCH TOÁN)`;
     
     const totalCols = viewMode === 'summary'
-        ? 5 + inboundTypes.length + 1 + outboundTypes.length + 1 + 2 // STT, SKU, Name, Unit, Opening, InTypes, TotalIn, OutTypes, TotalOut, Closing, Vouchers
-        : 7; // STT, Ngày, SKU, Tên SP, ĐVT, Nhập, Xuất
+        ? 6 + inboundTypes.length + 1 + outboundTypes.length + 1 + 2 // STT, SKU, Name, Primary Category, Unit, Opening, InTypes, TotalIn, OutTypes, TotalOut, Closing, Vouchers
+        : 8; // STT, Ngày, SKU, Tên SP, Danh mục chính, ĐVT, Nhập, Xuất
         
     const lastColLetter = String.fromCharCode(65 + totalCols - 1);
 
@@ -118,14 +118,15 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         headerRow1.getCell(1).value = 'STT';
         headerRow1.getCell(2).value = 'MÃ SP';
         headerRow1.getCell(3).value = 'TÊN SẢN PHẨM';
-        headerRow1.getCell(4).value = 'ĐVT';
-        headerRow1.getCell(5).value = 'TỒN ĐẦU KỲ';
+        headerRow1.getCell(4).value = 'DANH MỤC CHÍNH';
+        headerRow1.getCell(5).value = 'ĐVT';
+        headerRow1.getCell(6).value = 'TỒN ĐẦU KỲ';
 
         // Merge Level 1 for static columns
-        [1, 2, 3, 4, 5].forEach(col => worksheet.mergeCells(headerRow1Idx, col, headerRow2Idx, col));
+        [1, 2, 3, 4, 5, 6].forEach(col => worksheet.mergeCells(headerRow1Idx, col, headerRow2Idx, col));
 
         // INBOUND SECTION
-        const inboundStartCol = 6;
+        const inboundStartCol = 7;
         const inboundCount = inboundTypes.length;
         const inboundTotalCol = inboundStartCol + inboundCount;
         
@@ -180,7 +181,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         });
 
         // Color sections
-        headerRow1.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EBF1DE' } };
+        headerRow1.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EBF1DE' } };
         headerRow1.getCell(inboundStartCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E2EFDA' } };
         headerRow1.getCell(outboundStartCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2CC' } };
         headerRow1.getCell(closingCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'E1E1E1' } };
@@ -189,8 +190,9 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         worksheet.getColumn(1).width = 5;
         worksheet.getColumn(2).width = 15;
         worksheet.getColumn(3).width = 35;
-        worksheet.getColumn(4).width = 10;
-        worksheet.getColumn(5).width = 15;
+        worksheet.getColumn(4).width = 20; // DANH MỤC CHÍNH
+        worksheet.getColumn(5).width = 10; // ĐVT
+        worksheet.getColumn(6).width = 15; // TỒN ĐẦU KỲ
         for (let i = inboundStartCol; i <= outboundTotalCol; i++) worksheet.getColumn(i).width = 12;
         worksheet.getColumn(closingCol).width = 15;
         worksheet.getColumn(voucherCol).width = 10;
@@ -203,6 +205,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
                 idx + 1,
                 mov.sku,
                 mov.name,
+                mov.primaryCategoryName || '-',
                 mov.unit,
                 cleanNum(mov.opening)
             ];
@@ -223,7 +226,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
             const row = worksheet.addRow(rowData);
             row.eachCell((cell, colNumber) => {
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                if (colNumber >= 5 && colNumber <= closingCol) {
+                if (colNumber >= 6 && colNumber <= closingCol) {
                     const val = Number(cell.value);
                     cell.numFmt = Number.isInteger(val) ? '#,##0' : '#,##0.###';
                     cell.alignment = { horizontal: 'right' };
@@ -232,7 +235,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
                 }
             });
 
-            row.getCell(5).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F9FBF2' } };
+            row.getCell(6).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F9FBF2' } };
             row.getCell(inboundTotalCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'EBF1DE' } };
             row.getCell(outboundTotalCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF9E5' } };
             row.getCell(closingCol).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'F2F2F2' } };
@@ -241,7 +244,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         // 6. Summary Row
         const summaryRowData = [
             'TỔNG CỘNG',
-            '', '', '',
+            '', '', '', '',
             cleanNum(summary.opening)
         ];
         inboundTypes.forEach(() => summaryRowData.push(''));
@@ -252,12 +255,12 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         summaryRowData.push('');
 
         const summaryRow = worksheet.addRow(summaryRowData);
-        worksheet.mergeCells(summaryRow.number, 1, summaryRow.number, 4);
+        worksheet.mergeCells(summaryRow.number, 1, summaryRow.number, 5);
         
         summaryRow.eachCell((cell, colNumber) => {
             cell.font = { bold: true };
             cell.border = { top: { style: 'medium' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-            if (colNumber >= 5 && colNumber <= closingCol) {
+            if (colNumber >= 6 && colNumber <= closingCol) {
                 const val = Number(cell.value);
                 cell.numFmt = Number.isInteger(val) ? '#,##0' : '#,##0.###';
                 cell.alignment = { horizontal: 'right' };
@@ -269,7 +272,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
     } else {
         // --- DAILY VIEW EXPORT LOGIC ---
         const headerRow = worksheet.getRow(currentRow);
-        const headers = ['STT', 'NGÀY', 'MÃ SP', 'TÊN SẢN PHẨM', 'ĐVT', 'NHẬP KHO', 'XUẤT KHO'];
+        const headers = ['STT', 'NGÀY', 'MÃ SP', 'TÊN SẢN PHẨM', 'DANH MỤC CHÍNH', 'ĐVT', 'NHẬP KHO', 'XUẤT KHO'];
         headers.forEach((h, i) => {
             const cell = headerRow.getCell(i + 1);
             cell.value = h;
@@ -284,9 +287,10 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         worksheet.getColumn(2).width = 12;
         worksheet.getColumn(3).width = 15;
         worksheet.getColumn(4).width = 40;
-        worksheet.getColumn(5).width = 10;
-        worksheet.getColumn(6).width = 15;
-        worksheet.getColumn(7).width = 15;
+        worksheet.getColumn(5).width = 20; // DANH MỤC CHÍNH
+        worksheet.getColumn(6).width = 10; // ĐVT
+        worksheet.getColumn(7).width = 15; // NHẬP KHO
+        worksheet.getColumn(8).width = 15; // XUẤT KHO
 
         currentRow++;
 
@@ -296,6 +300,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
                 format(parseISO(mov.date), 'dd/MM/yyyy'),
                 mov.sku,
                 mov.name,
+                mov.primaryCategoryName || '-',
                 mov.unit,
                 mov.totalIn ? cleanNum(mov.totalIn) : 0,
                 mov.totalOut ? cleanNum(mov.totalOut) : 0
@@ -304,7 +309,7 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
             const row = worksheet.addRow(rowData);
             row.eachCell((cell, colNumber) => {
                 cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                if (colNumber >= 6) {
+                if (colNumber >= 7) {
                     const val = Number(cell.value);
                     cell.numFmt = Number.isInteger(val) ? '#,##0' : '#,##0.###';
                     cell.alignment = { horizontal: 'right' };
@@ -317,12 +322,12 @@ export async function exportAccountingHistoryToExcel(data: AccountingHistoryExpo
         const totalIn = dailyMovements.reduce((sum, m) => sum + (m.totalIn || 0), 0);
         const totalOut = dailyMovements.reduce((sum, m) => sum + (m.totalOut || 0), 0);
         
-        const summaryRow = worksheet.addRow(['TỔNG CỘNG', '', '', '', '', cleanNum(totalIn), cleanNum(totalOut)]);
-        worksheet.mergeCells(summaryRow.number, 1, summaryRow.number, 5);
+        const summaryRow = worksheet.addRow(['TỔNG CỘNG', '', '', '', '', '', cleanNum(totalIn), cleanNum(totalOut)]);
+        worksheet.mergeCells(summaryRow.number, 1, summaryRow.number, 6);
         summaryRow.eachCell((cell, colNumber) => {
             cell.font = { bold: true };
             cell.border = { top: { style: 'medium' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-            if (colNumber >= 6) {
+            if (colNumber >= 7) {
                 const val = Number(cell.value);
                 cell.numFmt = Number.isInteger(val) ? '#,##0' : '#,##0.###';
                 cell.alignment = { horizontal: 'right' };

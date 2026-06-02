@@ -15,23 +15,14 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log("=== IN TOÀN BỘ ZONES CỦA HỆ THỐNG KHO_DONG_LANH ===");
-  const { data: zones, error } = await supabase
-    .from('zones')
-    .select('*')
-    .eq('system_type', 'KHO_DONG_LANH')
-    .order('level')
-    .order('name');
+  const plId = '8b5e4eb6-47da-4f95-8d8b-84b2ecd499b3';
+  console.log("=== KIỂM TRA BẢN GHI PRODUCTION_LOTS CỦA PALLET L015DD260-TN ===");
+  const { data: pl, error } = await supabase
+    .from('production_lots')
+    .select('*, products(name), productions(code, name)')
+    .eq('id', plId);
 
-  if (error) {
-    console.error("Lỗi:", error);
-    return;
-  }
-
-  console.log(`Tìm thấy ${zones.length} zones.`);
-  zones.forEach(z => {
-    console.log(`ID: ${z.id} | Parent: ${z.parent_id} | Level: ${z.level} | Code: ${z.code} | Name: ${z.name}`);
-  });
+  console.log("Production Lot trong DB:", JSON.stringify(pl, null, 2));
 }
 
 main();

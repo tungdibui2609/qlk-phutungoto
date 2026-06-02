@@ -22,6 +22,7 @@ type ProductMovement = {
     productId: string
     sku: string
     name: string
+    primaryCategoryName?: string
     unit: string
     opening: number
     inboundItems: Record<string, number> // orderTypeId -> quantity
@@ -37,6 +38,7 @@ type DailyMovement = {
     productId: string
     sku: string
     name: string
+    primaryCategoryName?: string
     unit: string
     totalIn: number
     totalOut: number
@@ -92,7 +94,7 @@ export default function AccountingHistoryPage() {
             // 1. Fetch Products for this system
             const { data: prodData } = await (supabase
                 .from('products') as any)
-                .select('id, sku, name, unit')
+                .select('id, sku, name, unit, product_category_rel(category_id, is_primary, categories(id, name))')
                 .eq('system_type', systemType)
 
             if (!prodData) return
@@ -161,10 +163,14 @@ export default function AccountingHistoryPage() {
                 const key = (targetUnit && canConvert) ? productId : `${productId}_${unit}`
 
                 if (!movementMap[key]) {
+                    const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
+                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+
                     movementMap[key] = {
                         productId,
                         sku: prod?.sku || 'N/A',
                         name: prod?.name || 'Unknown',
+                        primaryCategoryName,
                         unit: displayUnit,
                         opening: 0,
                         inboundItems: {},
@@ -252,11 +258,15 @@ export default function AccountingHistoryPage() {
                     : item.quantity
 
                 if (!dailyMap[key]) {
+                    const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
+                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+
                     dailyMap[key] = {
                         date: dateKey,
                         productId: item.product_id,
                         sku: prod?.sku || 'N/A',
                         name: prod?.name || 'Unknown',
+                        primaryCategoryName,
                         unit: displayUnit,
                         totalIn: 0,
                         totalOut: 0,
@@ -285,11 +295,15 @@ export default function AccountingHistoryPage() {
                     : item.quantity
 
                 if (!dailyMap[key]) {
+                    const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
+                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+
                     dailyMap[key] = {
                         date: dateKey,
                         productId: item.product_id,
                         sku: prod?.sku || 'N/A',
                         name: prod?.name || 'Unknown',
+                        primaryCategoryName,
                         unit: displayUnit,
                         totalIn: 0,
                         totalOut: 0,
@@ -566,6 +580,7 @@ export default function AccountingHistoryPage() {
                                     <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-28">Ngày</th>
                                     <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-24">Mã SP</th>
                                     <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider min-w-[200px]">Tên Sản Phẩm</th>
+                                    <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-36">Danh mục chính</th>
                                     <th className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-center font-bold uppercase text-stone-400 tracking-wider w-16">ĐVT</th>
                                     <th className="px-4 py-4 border-r border-b border-emerald-100 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/5 text-center font-black uppercase text-emerald-600 tracking-wider">Nhập kho</th>
                                     <th className="px-4 py-4 border-r border-b border-orange-100 dark:border-orange-900/50 bg-orange-50/30 dark:bg-orange-900/5 text-center font-black uppercase text-orange-600 tracking-wider">Xuất kho</th>
@@ -586,6 +601,9 @@ export default function AccountingHistoryPage() {
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 font-mono font-bold text-stone-400">{mov.sku}</td>
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800">
                                             <div className="font-bold text-stone-800 dark:text-stone-200">{mov.name}</div>
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 text-stone-600 dark:text-stone-400 font-medium">
+                                            {mov.primaryCategoryName || '-'}
                                         </td>
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 text-center text-stone-400 italic">{mov.unit}</td>
                                         <td className="px-4 py-3 border-r border-emerald-100 dark:border-emerald-900 text-center font-black text-emerald-600 tabular-nums bg-emerald-50/20 dark:bg-emerald-900/5">
@@ -619,6 +637,7 @@ export default function AccountingHistoryPage() {
                                 <tr className="bg-stone-50/80 dark:bg-slate-800/50">
                                     <th rowSpan={2} className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-24">Mã SP</th>
                                     <th rowSpan={2} className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider min-w-[200px]">Tên Sản Phẩm</th>
+                                    <th rowSpan={2} className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-left font-bold uppercase text-stone-400 tracking-wider w-36">Danh mục chính</th>
                                     <th rowSpan={2} className="px-4 py-4 border-r border-b border-stone-200 dark:border-slate-700 text-center font-bold uppercase text-blue-500 tracking-wider w-24">Tồn đầu kỳ</th>
 
                                     {/* Nhập Kho Header */}
@@ -649,6 +668,9 @@ export default function AccountingHistoryPage() {
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800">
                                             <div className="font-bold text-stone-800 dark:text-stone-200">{mov.name}</div>
                                             <div className="text-[10px] text-stone-400 italic">({mov.unit})</div>
+                                        </td>
+                                        <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 text-stone-600 dark:text-stone-400 font-medium">
+                                            {mov.primaryCategoryName || '-'}
                                         </td>
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 text-center font-bold text-blue-600 tabular-nums bg-blue-50/10">
                                             {formatQuantityFull(mov.opening)}
@@ -693,7 +715,7 @@ export default function AccountingHistoryPage() {
                             </tbody>
                             <tfoot className="bg-stone-50 dark:bg-slate-800/80 font-black text-stone-900 dark:text-white sticky bottom-0">
                                 <tr>
-                                    <td colSpan={2} className="px-4 py-4 text-right uppercase tracking-wider border-t-2 border-indigo-500">Tổng cộng kỳ này</td>
+                                    <td colSpan={3} className="px-4 py-4 text-right uppercase tracking-wider border-t-2 border-indigo-500">Tổng cộng kỳ này</td>
                                     <td className="px-4 py-4 text-center border-t-2 border-indigo-500 text-blue-600">{formatQuantityFull(summary.opening)}</td>
 
                                     {/* Inbound TFoot Spacer & Total */}

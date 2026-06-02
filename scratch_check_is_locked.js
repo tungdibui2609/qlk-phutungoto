@@ -1,54 +1,72 @@
+const fs = require('fs');
+const path = require('path');
 const { createClient } = require('@supabase/supabase-js');
 
-const SUPABASE_URL = 'https://viqeyhpnevxcowsffueb.supabase.co';
-const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZpcWV5aHBuZXZ4Y293c2ZmdWViIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2ODMxMjA3MiwiZXhwIjoyMDgzODg4MDcyfQ.Go_y0Zubw2-XUcGiwIOvbfEjVfeIvhLsnIBHKjqdp7U';
+const envPath = path.join(__dirname, '.env.local');
+const envContent = fs.readFileSync(envPath, 'utf-8');
+const envVars = {};
+envContent.split('\n').forEach(line => {
+  const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
+  if (match) {
+    envVars[match[1]] = (match[2] || '').trim().replace(/^['"]|['"]$/g, '');
+  }
+});
 
-const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
+const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-    try {
-        console.log('--- ĐANG KIỂM TRA DỮ LIỆU KHÓA MÃ LOT TRONG DATABASE ---');
-        
-        // Lấy danh sách các mã lot có is_locked = true
-        const { data: lockedLots, error } = await supabase
-            .from('production_lots')
-            .select('id, lot_code, is_locked, production_id, created_at')
-            .eq('is_locked', true)
-            .order('created_at', { ascending: false });
+  console.log("=== PHÂN TÍCH QUAN HỆ ZONE & POSITION ===");
 
-        if (error) {
-            console.error('Lỗi khi truy vấn production_lots:', error);
-            return;
-        }
+  // 1. Lấy thông tin các position
+  const { data: positions } = await supabase
+    .from('positions')
+    .select('*')
+    .in('code', ['K2D4A03T101', 'K2D4B03T101']);
 
-        console.log(`\n[KẾT QUẢ] Tìm thấy ${lockedLots.length} mã lot đã bị khóa (is_locked = true) trong database.`);
-        if (lockedLots.length > 0) {
-            console.log('\nDanh sách 10 mã lot đã khóa gần nhất:');
-            lockedLots.slice(0, 10).forEach(lot => {
-                console.log(`- ID: ${lot.id} | Mã Lot: ${lot.lot_code} | Trạng thái is_locked: ${lot.is_locked} | Ngày tạo: ${lot.created_at}`);
-            });
-        } else {
-            console.log('\nKhông tìm thấy mã lot nào đang bị khóa trong database bằng điều kiện eq(is_locked, true).');
-            
-            // Thử lấy ngẫu nhiên 5 lots bất kỳ để xem cấu trúc và giá trị của cột is_locked
-            console.log('\nKiểm tra cấu trúc 5 mã lot bất kỳ:');
-            const { data: anyLots, error: anyError } = await supabase
-                .from('production_lots')
-                .select('id, lot_code, is_locked')
-                .limit(5);
-                
-            if (anyError) {
-                console.error('Lỗi khi truy vấn 5 lots ngẫu nhiên:', anyError);
-            } else {
-                anyLots.forEach(lot => {
-                    console.log(`- Mã Lot: ${lot.lot_code} | Giá trị is_locked hiện tại: ${lot.is_locked}`);
-                });
-            }
-        }
-        
-    } catch (e) {
-        console.error('Exception:', e);
-    }
+  console.log("Positions:", positions);
+
+  if (!positions || positions.length === 0) {
+    console.log("Không tìm thấy các position");
+    return;
+  }
+
+  const posIds = positions.map(p => p.id);
+
+  // 2. Lấy thông tin từ zone_positions
+  const { data: zonePositions } = await supabase
+    .from('zone_positions')
+    .select('*')
+    .in('position_id', posIds);
+
+  console.log("\nZone Positions:", zonePositions);
+
+  const zoneIds = zonePositions.map(zp => zp.zone_id);
+
+  // 3. Lấy thông tin các zone thật này
+  const { data: zones } = await supabase
+    .from('zones')
+    .select('*')
+    .in('id', zoneIds);
+
+  console.log("\nReal Zones (Tầng 1 thật):", zones);
+
+  // 4. Lấy các zone cha (Ô) của các tầng này
+  const parentIds = zones.map(z => z.parent_id).filter(Boolean);
+  const { data: parentZones } = await supabase
+    .from('zones')
+    .select('*')
+    .in('id', parentIds);
+
+  console.log("\nParent Zones (Ô thật):", parentZones);
+
+  // 5. Lấy các zone ông nội (Dãy) của các tầng này
+  const grandParentIds = parentZones.map(z => z.parent_id).filter(Boolean);
+  const { data: grandParentZones } = await supabase
+    .from('zones')
+    .select('*')
+    .in('id', grandParentIds);
+
+  console.log("\nGrandParent Zones (Dãy thật):", grandParentZones);
 }
 
 main();

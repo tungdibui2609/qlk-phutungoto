@@ -15,23 +15,25 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log("=== IN TOÀN BỘ ZONES CỦA HỆ THỐNG KHO_DONG_LANH ===");
-  const { data: zones, error } = await supabase
-    .from('zones')
-    .select('*')
-    .eq('system_type', 'KHO_DONG_LANH')
-    .order('level')
-    .order('name');
+  console.log("------------------- TRUY VẤN LỊCH SỬ LOT NGUỒN DL-LOT-010626-002 -------------------");
+  
+  // Truy vấn lot nguồn
+  const { data: lot, error } = await supabase
+    .from('lots')
+    .select(`
+      *,
+      lot_items!lot_items_lot_id_fkey(*),
+      lot_tags(*)
+    `)
+    .eq('code', 'DL-LOT-010626-002')
+    .single();
 
   if (error) {
     console.error("Lỗi:", error);
     return;
   }
 
-  console.log(`Tìm thấy ${zones.length} zones.`);
-  zones.forEach(z => {
-    console.log(`ID: ${z.id} | Parent: ${z.parent_id} | Level: ${z.level} | Code: ${z.code} | Name: ${z.name}`);
-  });
+  console.log("Lot Nguồn:", JSON.stringify(lot, null, 2));
 }
 
 main();

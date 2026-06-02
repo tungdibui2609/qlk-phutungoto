@@ -15,23 +15,18 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log("=== IN TOÀN BỘ ZONES CỦA HỆ THỐNG KHO_DONG_LANH ===");
-  const { data: zones, error } = await supabase
-    .from('zones')
+  console.log("=== KIỂM TRA BẢN GHI MẪU TRONG production_lots ===");
+  const { data: sample, error } = await supabase
+    .from('production_lots')
     .select('*')
-    .eq('system_type', 'KHO_DONG_LANH')
-    .order('level')
-    .order('name');
+    .limit(1);
 
   if (error) {
     console.error("Lỗi:", error);
     return;
   }
 
-  console.log(`Tìm thấy ${zones.length} zones.`);
-  zones.forEach(z => {
-    console.log(`ID: ${z.id} | Parent: ${z.parent_id} | Level: ${z.level} | Code: ${z.code} | Name: ${z.name}`);
-  });
+  console.log("Cấu trúc cột hiện có:", sample && sample.length > 0 ? Object.keys(sample[0]) : "Bảng trống rỗng!");
 }
 
 main();

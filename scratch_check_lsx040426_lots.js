@@ -15,22 +15,23 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  console.log("=== IN TOÀN BỘ ZONES CỦA HỆ THỐNG KHO_DONG_LANH ===");
-  const { data: zones, error } = await supabase
-    .from('zones')
-    .select('*')
-    .eq('system_type', 'KHO_DONG_LANH')
-    .order('level')
-    .order('name');
+  const prodId = '4322e353-68e2-4a1a-95ba-772391e76d6b'; // LSX040426
+  
+  console.log("=== DANH SÁCH TẤT CẢ PALLET CỦA LỆNH LSX040426 ===");
+  const { data: lots, error } = await supabase
+    .from('lots')
+    .select('id, code, daily_seq, quantity, created_at, lot_items(*, products(name))')
+    .eq('production_id', prodId)
+    .order('created_at', { ascending: true });
 
   if (error) {
     console.error("Lỗi:", error);
     return;
   }
 
-  console.log(`Tìm thấy ${zones.length} zones.`);
-  zones.forEach(z => {
-    console.log(`ID: ${z.id} | Parent: ${z.parent_id} | Level: ${z.level} | Code: ${z.code} | Name: ${z.name}`);
+  console.log(`Tìm thấy ${lots.length} pallet:`);
+  lots.forEach((l, idx) => {
+    console.log(`${idx + 1}. Pallet: ${l.code} (STT: ${l.daily_seq}), SL: ${l.quantity}, Ngày tạo: ${l.created_at}`);
   });
 }
 
