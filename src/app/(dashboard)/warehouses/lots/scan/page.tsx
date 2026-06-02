@@ -217,14 +217,19 @@ export default function LotLabelBindingPage() {
                         const confirmed = window.confirm(`Cảnh báo: Tem thùng "${codeFormatted}" chưa được lưu trong hệ thống (có thể do lỗi mạng khi in). Bạn có muốn tự động tạo và liên kết tem này không?`)
                         if (confirmed) {
                             try {
-                                // 1. Tìm product_id từ SKU trong hệ thống
+                                // 1. Tìm product_id từ SKU trong hệ thống (không lọc system_code để hỗ trợ cả sản phẩm toàn cục)
                                 let productId = null
                                 let productData: any = null
 
-                                const { data: allProducts } = await supabase
+                                let productQuery = supabase
                                     .from('products')
                                     .select('id, name, sku, unit')
-                                    .eq('system_code', currentSystem?.code || '')
+
+                                if (profile?.company_id) {
+                                    productQuery = productQuery.eq('company_id', profile.company_id)
+                                }
+
+                                const { data: allProducts } = await productQuery
 
                                 if (allProducts) {
                                     productData = allProducts.find(p => p.sku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase() === skuClean)
