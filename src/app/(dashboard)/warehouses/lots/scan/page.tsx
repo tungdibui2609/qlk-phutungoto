@@ -58,7 +58,6 @@ export default function LotLabelBindingPage() {
     const [scanInput, setScanInput] = useState('')
     const [scanError, setScanError] = useState('')
     const [isCheckingScan, setIsCheckingScan] = useState(false)
-    const [isSyncing, setIsSyncing] = useState(false)
     const [useCamera, setUseCamera] = useState(false)
     const [cameraError, setCameraError] = useState<string | null>(null)
 
@@ -177,9 +176,30 @@ export default function LotLabelBindingPage() {
             if (error) throw error
 
             if (labelData) {
-                // Nếu tìm thấy tem trong DB, tiến hành liên kết trực tiếp
-                setScannedBoxLabels(prev => [...prev, labelData])
-                showToast(`Đã thêm tem ${codeFormatted}`, 'success')
+                // Kiểm tra xem tem đã thuộc pallet khác chưa để cảnh báo người dùng chuyển pallet
+                if (labelData.lot_id && labelData.lot_id !== selectedLot.id) {
+                    const confirmed = window.confirm(`Cảnh báo: Tem thùng này đang được xếp ở Pallet "${labelData.lots?.code || 'chưa rõ mã'}". Bạn có chắc chắn muốn chuyển tem này sang Pallet hiện tại không?`)
+                    if (!confirmed) {
+                        return false
+                    }
+                }
+
+                // CẬP NHẬT TRỰC TIẾP DB: Liên kết tem thùng với Pallet đang chọn ngay lập tức
+                const { error: updateErr } = await (supabase
+                    .from('box_labels') as any)
+                    .update({ lot_id: selectedLot.id, status: 'linked' })
+                    .eq('id', labelData.id)
+
+                if (updateErr) throw updateErr
+
+                // Thêm vào danh sách hiển thị trên UI
+                const updatedLabel = {
+                    ...labelData,
+                    lot_id: selectedLot.id,
+                    status: 'linked'
+                }
+                setScannedBoxLabels(prev => [...prev, updatedLabel])
+                showToast(`Đã liên kết tem ${codeFormatted} vào Pallet`, 'success')
 
                 // Phản hồi rung nhẹ trên di động (nếu được hỗ trợ)
                 if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -232,7 +252,8 @@ export default function LotLabelBindingPage() {
                         finished_lot_code: finishedLot,
                         system_code: selectedLot.system_code || currentSystem?.code || '',
                         company_id: selectedLot.company_id || profile?.company_id || null,
-                        status: 'printed'
+                        status: 'linked', // Gán trạng thái linked ngay lập tức
+                        lot_id: selectedLot.id // Gán lot_id của Pallet hiện tại ngay lập tức
                     }
 
                     const { data: insertedData, error: insertErr } = await (supabase
@@ -252,7 +273,7 @@ export default function LotLabelBindingPage() {
                             }
                         }
                         setScannedBoxLabels(prev => [...prev, labelWithProduct])
-                        showToast(`Đã tự động tạo và thêm tem ${codeFormatted}`, 'success')
+                        showToast(`Đã tự động tạo và liên kết tem ${codeFormatted}`, 'success')
                         return true
                     }
                 }
@@ -301,63 +322,29 @@ export default function LotLabelBindingPage() {
     }
 
     // ==========================================
-    // HÀM ĐỒNG BỘ LIÊN KẾT LÊN DATABASE (SYNC)
+    // HÀM GỠ LIÊN KẾT TEM KHỎI PALLET REAL-TIME
     // ==========================================
-    const handleSyncBinding = async () => {
-        if (!selectedLot || isSyncing) return
+    const handleUnlinkBoxLabel = async (labelId: string, labelCode: string) => {
+        if (!selectedLot) return
 
-        setIsSyncing(true)
+        const confirmed = window.confirm(`Bạn có chắc chắn muốn gỡ tem thùng "${labelCode}" ra khỏi Pallet này không?`)
+        if (!confirmed) return
+
         try {
-            const scannedIds = scannedBoxLabels.map(l => l.id)
-            const lotId = selectedLot.id
-
-            // 1. Tải danh sách tem đang liên kết hiện tại trên DB để đối chiếu
-            const { data: currentLinked, error: fetchLinkedErr } = await (supabase
+            // Cập nhật DB trực tiếp: gỡ bỏ lot_id và chuyển status về printed
+            const { error } = await (supabase
                 .from('box_labels') as any)
-                .select('id')
-                .eq('lot_id', lotId)
+                .update({ lot_id: null, status: 'printed' })
+                .eq('id', labelId)
 
-            if (fetchLinkedErr) throw fetchLinkedErr
+            if (error) throw error
 
-            const currentLinkedIds = currentLinked?.map((l: any) => l.id) || []
-            const removedIds = currentLinkedIds.filter((id: any) => !scannedIds.includes(id))
-
-            // 2. Gỡ liên kết của các con tem cũ trước đây thuộc pallet này nhưng nay bị loại bỏ
-            if (removedIds.length > 0) {
-                const { error: unlinkError } = await (supabase
-                    .from('box_labels') as any)
-                    .update({ lot_id: null, status: 'printed' })
-                    .in('id', removedIds)
-
-                if (unlinkError) throw unlinkError
-            }
-
-            // 3. Thiết lập liên kết pallet mới cho các con tem quét được
-            if (scannedIds.length > 0) {
-                const { error: boxUpdateErr } = await (supabase
-                    .from('box_labels') as any)
-                    .update({ lot_id: lotId, status: 'linked' })
-                    .in('id', scannedIds)
-
-                if (boxUpdateErr) throw boxUpdateErr
-            }
-
-            showToast(`Đồng bộ liên kết Pallet ${selectedLot.code} thành công!`, 'success')
-            
-            // Cập nhật lại danh sách tem từ DB để đồng bộ trạng thái
-            const { data: updatedLabels } = await (supabase
-                .from('box_labels') as any)
-                .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, product_id, products(name, sku)')
-                .eq('lot_id', lotId)
-            
-            if (updatedLabels) {
-                setScannedBoxLabels(updatedLabels)
-            }
+            // Cập nhật lại UI
+            setScannedBoxLabels(prev => prev.filter(item => item.id !== labelId))
+            showToast(`Đã gỡ liên kết tem ${labelCode}`, 'success')
         } catch (err: any) {
-            console.error('Lỗi khi đồng bộ liên kết tem thùng:', err)
-            showToast('Lỗi đồng bộ dữ liệu: ' + err.message, 'error')
-        } finally {
-            setIsSyncing(false)
+            console.error('Lỗi khi gỡ liên kết tem:', err)
+            showToast('Không thể gỡ liên kết: ' + err.message, 'error')
         }
     }
 
@@ -669,9 +656,7 @@ export default function LotLabelBindingPage() {
                                                     <td className="px-4 py-3 text-center">
                                                         <button
                                                             type="button"
-                                                            onClick={() => {
-                                                                setScannedBoxLabels(prev => prev.filter((_, i) => i !== idx))
-                                                            }}
+                                                            onClick={() => handleUnlinkBoxLabel(label.id, label.code)}
                                                             className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors cursor-pointer"
                                                             title="Gỡ khỏi Pallet"
                                                         >
@@ -696,28 +681,11 @@ export default function LotLabelBindingPage() {
                             </div>
                         )}
 
-                        {/* NÚT BẤM ĐỒNG BỘ LIÊN KẾT (SYNC BUTTON) */}
+                        {/* GHI CHÚ REAL-TIME */}
                         <div className="flex items-center justify-between gap-3 pt-6 border-t border-stone-100 dark:border-zinc-800 mt-4">
                             <span className="text-[10px] font-bold text-stone-450 dark:text-stone-500 italic">
-                                * Lưu ý: Nhấn nút Đồng bộ liên kết để lưu danh sách tem này vào Pallet DB.
+                                * Hệ thống tự động liên kết tem thùng vào Pallet ngay khi quét thành công (Lưu thời gian thực).
                             </span>
-                            <button
-                                onClick={handleSyncBinding}
-                                disabled={isSyncing}
-                                className="px-8 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-2xl font-bold text-xs shadow-lg shadow-emerald-500/10 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[150px] cursor-pointer"
-                            >
-                                {isSyncing ? (
-                                    <>
-                                        <Loader2 className="animate-spin" size={16} />
-                                        Đang đồng bộ...
-                                    </>
-                                ) : (
-                                    <>
-                                        <ClipboardCheck size={16} />
-                                        Đồng bộ liên kết
-                                    </>
-                                )}
-                            </button>
                         </div>
 
                     </div>
