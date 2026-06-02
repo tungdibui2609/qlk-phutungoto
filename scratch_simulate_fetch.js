@@ -6,34 +6,38 @@ const SERVICE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = createClient(SUPABASE_URL, SERVICE_KEY);
 
 async function main() {
-    console.log('--- THỐNG KÊ COMPANY_ID TRONG BẢNG box_labels ---');
+    console.log('--- TÌM KIẾM MÃ CHỨA SỐ 014 HOẶC THÙNG SỐ 14 ---');
     try {
         const { data, error } = await supabase
             .from('box_labels')
-            .select('company_id');
+            .select('id, code, created_at')
+            .ilike('code', '%014%');
 
         if (error) {
             console.error('Lỗi truy vấn:', error);
             return;
         }
 
-        let nullCount = 0;
-        let nonNullCount = 0;
-        const uniqueCompanyIds = new Set();
-
+        console.log(`Tìm thấy ${data.length} bản ghi chứa '014':`);
         data.forEach(row => {
-            if (row.company_id === null) {
-                nullCount++;
-            } else {
-                nonNullCount++;
-                uniqueCompanyIds.add(row.company_id);
-            }
+            console.log(`- Code: "${row.code}" | Tạo lúc: ${row.created_at}`);
         });
 
-        console.log(`Tổng số dòng box_labels: ${data.length}`);
-        console.log(`Số dòng có company_id IS NULL: ${nullCount}`);
-        console.log(`Số dòng có company_id NOT NULL: ${nonNullCount}`);
-        console.log(`Các company_id duy nhất tồn tại:`, Array.from(uniqueCompanyIds));
+        console.log('\n--- TÌM KIẾM MÃ CHỨA SỐ 14 Ở CUỐI ---');
+        const { data: data2, error: error2 } = await supabase
+            .from('box_labels')
+            .select('id, code, created_at')
+            .ilike('code', '%-014');
+
+        if (error2) {
+            console.error('Lỗi truy vấn 2:', error2);
+            return;
+        }
+
+        console.log(`Tìm thấy ${data2.length} bản ghi kết thúc bằng '-014':`);
+        data2.forEach(row => {
+            console.log(`- Code: "${row.code}" | Tạo lúc: ${row.created_at}`);
+        });
 
     } catch (e) {
         console.error(e);
