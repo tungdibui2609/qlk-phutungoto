@@ -609,9 +609,25 @@ export function useLotManagement() {
                                 if (sttLots) sttIds = sttLots.map((l: any) => l.id);
                             }
 
-                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds, ...sttIds]));
+                            // Tìm kiếm tem thùng (box_labels) trong chế độ 'all' (mã lô thành phẩm, mã lô bán thành phẩm, STT tem/mã tem)
+                            let boxLotIds: string[] = [];
+                            let boxLotsQuery = (supabase.from('box_labels') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .or(`semi_finished_lot_code.ilike.${partTerm},finished_lot_code.ilike.${partTerm},code.ilike.${partTerm}`)
+                                .not('lot_id', 'is', null)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            boxLotsQuery = applyDateFilterToSubQuery(boxLotsQuery, 'lots');
+                            const { data: boxLots } = await boxLotsQuery;
+                            if (boxLots) {
+                                boxLotIds = boxLots.map((b: any) => b.lot_id).filter(Boolean);
+                            }
+
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds, ...sttIds, ...boxLotIds]));
                         }
                         else if (searchMode === 'stt') {
+                            let matchIds: string[] = [];
                             const sttNum = encodeSTT(part);
                             if (sttNum !== null) {
                                 let sttLotsQuery = (supabase.from('lots') as any)
@@ -622,8 +638,24 @@ export function useLotManagement() {
                                     .neq('status', 'exported');
                                 sttLotsQuery = applyDateFilterToSubQuery(sttLotsQuery);
                                 const { data: sttLots } = await sttLotsQuery;
-                                if (sttLots) currentMatchIds = sttLots.map((l: any) => l.id);
+                                if (sttLots) matchIds.push(...sttLots.map((l: any) => l.id));
                             }
+
+                            // Tìm kiếm theo STT tem thùng (đuôi mã tem dạng -012 hoặc -12) trong chế độ 'stt'
+                            let boxLotsQuery = (supabase.from('box_labels') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .or(`code.ilike.%-${part},code.ilike.%-${sttNum}`)
+                                .not('lot_id', 'is', null)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            boxLotsQuery = applyDateFilterToSubQuery(boxLotsQuery, 'lots');
+                            const { data: boxLots } = await boxLotsQuery;
+                            if (boxLots) {
+                                matchIds.push(...boxLots.map((b: any) => b.lot_id).filter(Boolean));
+                            }
+
+                            currentMatchIds = Array.from(new Set(matchIds));
                         }
                         else if (searchMode === 'production') {
                             let prodMatchedQuery = (supabase.from('productions') as any).select('id').or(`code.ilike.${partTerm},name.ilike.${partTerm}`);
@@ -777,7 +809,23 @@ export function useLotManagement() {
                                 const { data: items } = await itemQuery;
                                 if (items) itemLotIds.push(...items.map((i: any) => i.lot_id));
                             }
-                            currentMatchIds = Array.from(new Set([...itemLotIds, ...directIds]));
+
+                            // Tìm kiếm theo mã lô thành phẩm, bán thành phẩm và mã tem thùng trong chế độ 'code'
+                            let boxLotIds: string[] = [];
+                            let boxLotsQuery = (supabase.from('box_labels') as any)
+                                .select('lot_id, lots!inner(id, system_code, status)')
+                                .or(`semi_finished_lot_code.ilike.${partTerm},finished_lot_code.ilike.${partTerm},code.ilike.${partTerm}`)
+                                .not('lot_id', 'is', null)
+                                .eq('lots.system_code', currentSystem.code)
+                                .neq('lots.status', 'hidden')
+                                .neq('lots.status', 'exported');
+                            boxLotsQuery = applyDateFilterToSubQuery(boxLotsQuery, 'lots');
+                            const { data: boxLots } = await boxLotsQuery;
+                            if (boxLots) {
+                                boxLotIds = boxLots.map((b: any) => b.lot_id).filter(Boolean);
+                            }
+
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...directIds, ...boxLotIds]));
                         }
                         else if (searchMode === 'tag') {
                             let tagQuery = (supabase.from('lot_tags') as any)
