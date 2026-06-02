@@ -14,6 +14,33 @@ import { Scanner } from '@yudiel/react-qr-scanner'
 import Link from 'next/link'
 import { parseQuantity, encodeSTT, decodeSTT } from '@/lib/numberUtils'
 
+// Helper function to extract and clean box label code from scan inputs
+const extractBoxCode = (input: string): string => {
+    let clean = input.trim()
+    
+    // 1. Nếu là URL, lấy phần path cuối cùng
+    if (clean.includes('/') && (clean.startsWith('http://') || clean.startsWith('https://') || clean.includes('/scan/'))) {
+        const parts = clean.split('/')
+        const lastPart = parts[parts.length - 1]
+        if (lastPart.toUpperCase().startsWith('BOX-')) {
+            clean = lastPart
+        }
+    }
+    
+    // 2. Loại bỏ các tiền tố đầu quét barcode tự động thêm vào (như ]C1, ]Q1, ]d1)
+    if (clean.startsWith(']C1') || clean.startsWith(']Q1') || clean.startsWith(']d1')) {
+        clean = clean.substring(3)
+    }
+    
+    // 3. Tìm chuỗi có dạng BOX-... trong chuỗi quét được
+    const boxMatch = clean.match(/BOX-[A-Z0-9_-]+/i)
+    if (boxMatch) {
+        return boxMatch[0].toUpperCase()
+    }
+    
+    return clean.toUpperCase()
+}
+
 export default function LotLabelBindingPage() {
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
@@ -99,11 +126,16 @@ export default function LotLabelBindingPage() {
             setSelectedLot(lotFound)
 
             // Tải danh sách các tem thùng box_labels đã được liên kết với LOT này trước đó (nếu có)
-            const { data: linkedLabels, error: labelError } = await (supabase
-                .from('box_labels') as any)
+            let linkedQuery = (supabase.from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, product_id, products(name, sku)')
                 .eq('lot_id', lotFound.id)
                 .eq('system_code', currentSystem?.code || '')
+
+            if (profile?.company_id) {
+                linkedQuery = linkedQuery.eq('company_id', profile.company_id)
+            }
+
+            const { data: linkedLabels, error: labelError } = await linkedQuery
 
             if (labelError) throw labelError
             setScannedBoxLabels(linkedLabels || [])
@@ -127,7 +159,14 @@ export default function LotLabelBindingPage() {
         setScanError('')
 
         try {
-            const codeFormatted = inputCode.trim().toUpperCase()
+            // Sử dụng hàm extractBoxCode thông minh để làm sạch và giải mã tem thùng
+            const codeFormatted = extractBoxCode(inputCode)
+
+            // Kiểm tra định dạng tránh quét nhầm QR Code của Pallet
+            if (!codeFormatted.startsWith('BOX-')) {
+                setScanError('Mã quét không đúng định dạng tem thùng (phải bắt đầu bằng BOX-). Vui lòng thử lại!')
+                return false
+            }
 
             // Tránh quét trùng tem đã có trong danh sách local
             if (scannedBoxLabels.some(item => item.code === codeFormatted)) {
@@ -136,12 +175,16 @@ export default function LotLabelBindingPage() {
             }
 
             // Truy vấn kiểm tra tem thùng trong DB
-            const { data: labelData, error } = await (supabase
-                .from('box_labels') as any)
+            let labelQuery = (supabase.from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, lot_id, product_id, products(name, sku), lots(code)')
                 .eq('code', codeFormatted)
                 .eq('system_code', currentSystem?.code || '')
-                .maybeSingle()
+
+            if (profile?.company_id) {
+                labelQuery = labelQuery.eq('company_id', profile.company_id)
+            }
+
+            const { data: labelData, error } = await labelQuery.maybeSingle()
 
             if (error) throw error
 
@@ -179,10 +222,16 @@ export default function LotLabelBindingPage() {
     // Xử lý khi nhấn nút Thêm hoặc nhấn Enter ở ô nhập
     const handleScanBoxLabel = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!scanInput.trim() || isCheckingScan || !selectedLot) return
+        
+        // Lấy giá trị trực tiếp từ DOM Ref để khắc phục triệt để lỗi trễ state của React khi đầu quét barcode nhập dữ liệu cực nhanh
+        const rawCode = scanInputRef.current?.value || scanInput
+        if (!rawCode.trim() || isCheckingScan || !selectedLot) return
 
-        const code = scanInput.trim()
+        const code = rawCode.trim()
         setScanInput('')
+        if (scanInputRef.current) {
+            scanInputRef.current.value = ''
+        }
         await processScannedBoxLabel(code)
 
         // Focus lại vào input để quét tiếp
@@ -215,10 +264,15 @@ export default function LotLabelBindingPage() {
             const lotId = selectedLot.id
 
             // 1. Tải danh sách tem đang liên kết hiện tại trên DB để đối chiếu
-            const { data: currentLinked, error: fetchLinkedErr } = await (supabase
-                .from('box_labels') as any)
+            let linkedFetchQuery = (supabase.from('box_labels') as any)
                 .select('id')
                 .eq('lot_id', lotId)
+
+            if (profile?.company_id) {
+                linkedFetchQuery = linkedFetchQuery.eq('company_id', profile.company_id)
+            }
+
+            const { data: currentLinked, error: fetchLinkedErr } = await linkedFetchQuery
 
             if (fetchLinkedErr) throw fetchLinkedErr
 
@@ -227,20 +281,30 @@ export default function LotLabelBindingPage() {
 
             // 2. Gỡ liên kết của các con tem cũ trước đây thuộc pallet này nhưng nay bị loại bỏ
             if (removedIds.length > 0) {
-                const { error: unlinkError } = await (supabase
-                    .from('box_labels') as any)
+                let unlinkQuery = (supabase.from('box_labels') as any)
                     .update({ lot_id: null, status: 'printed' })
                     .in('id', removedIds)
+
+                if (profile?.company_id) {
+                    unlinkQuery = unlinkQuery.eq('company_id', profile.company_id)
+                }
+
+                const { error: unlinkError } = await unlinkQuery
 
                 if (unlinkError) throw unlinkError
             }
 
-            // 2. Thiết lập liên kết pallet mới cho các con tem quét được
+            // 3. Thiết lập liên kết pallet mới cho các con tem quét được
             if (scannedIds.length > 0) {
-                const { error: boxUpdateErr } = await (supabase
-                    .from('box_labels') as any)
+                let updateQuery = (supabase.from('box_labels') as any)
                     .update({ lot_id: lotId, status: 'linked' })
                     .in('id', scannedIds)
+
+                if (profile?.company_id) {
+                    updateQuery = updateQuery.eq('company_id', profile.company_id)
+                }
+
+                const { error: boxUpdateErr } = await updateQuery
 
                 if (boxUpdateErr) throw boxUpdateErr
             }
@@ -248,11 +312,16 @@ export default function LotLabelBindingPage() {
             showToast(`Đồng bộ liên kết Pallet ${selectedLot.code} thành công!`, 'success')
             
             // Cập nhật lại danh sách tem từ DB để đồng bộ trạng thái
-            const { data: updatedLabels } = await (supabase
-                .from('box_labels') as any)
+            let updatedQuery = (supabase.from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, product_id, products(name, sku)')
                 .eq('lot_id', lotId)
                 .eq('system_code', currentSystem?.code || '')
+
+            if (profile?.company_id) {
+                updatedQuery = updatedQuery.eq('company_id', profile.company_id)
+            }
+
+            const { data: updatedLabels } = await updatedQuery
             
             if (updatedLabels) {
                 setScannedBoxLabels(updatedLabels)
