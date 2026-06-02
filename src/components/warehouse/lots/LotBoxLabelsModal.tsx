@@ -94,7 +94,7 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
 
     return (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-            <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-3xl max-w-2xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-3xl max-w-4xl w-full max-h-[80vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
                 {/* Modal Header */}
                 <div className="flex items-center justify-between px-6 py-4 bg-stone-50 dark:bg-zinc-800/40 border-b border-stone-100 dark:border-zinc-800">
                     <div>
@@ -142,6 +142,8 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
                                         <tr className="border-b border-stone-150 dark:border-zinc-800 bg-stone-100/50 dark:bg-zinc-800/30 text-[9px] font-black tracking-widest text-stone-400 dark:text-stone-500 uppercase">
                                             <th className="px-4 py-3 text-center w-16">STT</th>
                                             <th className="px-4 py-3">Mã tem thùng</th>
+                                            <th className="px-4 py-3">Lô bán thành phẩm</th>
+                                            <th className="px-4 py-3">Lô thành phẩm</th>
                                             <th className="px-4 py-3">Sản phẩm</th>
                                             <th className="px-4 py-3 text-right">Trọng lượng</th>
                                             <th className="px-4 py-3 text-center">Gỡ liên kết</th>
@@ -160,14 +162,20 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
                                                         #{idx + 1}
                                                     </td>
                                                     <td className="px-4 py-3 font-mono font-bold text-stone-850 dark:text-zinc-150 uppercase" title={label.code}>
-                                                        #{getBoxIndex(label.code)}
-                                                    </td>
-                                                    <td className="px-4 py-3">
-                                                        <div className="font-semibold text-stone-900 dark:text-white line-clamp-1 leading-normal uppercase">
-                                                            {prodName}
-                                                        </div>
-                                                        <div className="text-[9px] text-stone-450 font-mono leading-none mt-0.5">{prodSku}</div>
-                                                    </td>
+                                                         #{getBoxIndex(label.code)}
+                                                     </td>
+                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase truncate max-w-[150px]" title={label.semi_finished_lot_code || ''}>
+                                                         {label.semi_finished_lot_code || '---'}
+                                                     </td>
+                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase truncate max-w-[150px]" title={label.finished_lot_code || ''}>
+                                                         {label.finished_lot_code || '---'}
+                                                     </td>
+                                                     <td className="px-4 py-3">
+                                                         <div className="font-semibold text-stone-900 dark:text-white line-clamp-1 leading-normal uppercase">
+                                                             {prodName}
+                                                         </div>
+                                                         <div className="text-[9px] text-stone-450 font-mono leading-none mt-0.5">{prodSku}</div>
+                                                     </td>
                                                     <td className="px-4 py-3 text-right font-bold text-stone-900 dark:text-zinc-200 tabular-nums">
                                                         {label.quantity} {label.unit}
                                                     </td>
