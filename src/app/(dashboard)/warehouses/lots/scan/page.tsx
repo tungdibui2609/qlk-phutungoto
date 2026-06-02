@@ -102,7 +102,7 @@ export default function LotLabelBindingPage() {
                     status,
                     suppliers ( name ),
                     lot_items (
-                        id, quantity, unit,
+                        id, product_id, quantity, unit,
                         products ( name, sku )
                     )
                 `)
