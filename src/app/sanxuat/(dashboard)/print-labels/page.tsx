@@ -98,6 +98,8 @@ export default function PrintLabelsPage() {
 
     // Generated labels preview state
     const [generatedLabels, setGeneratedLabels] = useState<{ code: string; index: number }[]>([])
+    // State riêng biệt lưu dải tem in thực tế để tránh race condition khi index preview thay đổi
+    const [labelsToPrint, setLabelsToPrint] = useState<{ code: string; index: number }[]>([])
 
     // Hàm tải danh sách lô gợi ý
     const fetchLotsData = async (silent = false) => {
@@ -403,8 +405,8 @@ export default function PrintLabelsPage() {
                 }
             })
 
-            // Cập nhật ngay dải tem vào state để trình in hiển thị đúng dải này
-            setGeneratedLabels(finalLabels)
+            // Cập nhật ngay dải tem thực tế vào state in ấn để trình in hiển thị đúng dải này, tránh race condition
+            setLabelsToPrint(finalLabels)
 
             // Chuẩn bị dữ liệu lưu vào DB bảng box_labels từ dải tem vừa tính toán
             const labelsToInsert = finalLabels.map(lbl => ({
@@ -419,10 +421,10 @@ export default function PrintLabelsPage() {
                 status: 'printed'
             }))
 
-            // Thử lưu vào DB. Lập trình phòng vệ nếu bảng chưa tồn tại
+            // Thử lưu vào DB. Sử dụng upsert để cho phép ghi đè/in lại tem cũ bị hỏng mà không báo lỗi khóa chính
             const { error: dbErr } = await supabase
                 .from('box_labels')
-                .insert(labelsToInsert as any)
+                .upsert(labelsToInsert as any, { onConflict: 'code' })
 
             if (dbErr) {
                 console.warn('[DB WARNING] Không thể lưu tem vào bảng box_labels:', dbErr.message)
@@ -546,7 +548,7 @@ export default function PrintLabelsPage() {
             {/* Container In Ấn Thực Tế (Ẩn trên màn hình Web) */}
             {typeof document !== 'undefined' && createPortal(
                 <div id="print-labels-container" className="hidden print:block bg-white text-black">
-                    {generatedLabels.map((lbl) => (
+                    {labelsToPrint.map((lbl) => (
                         <div key={lbl.code} className="print-label-page border border-black">
                             {/* Header nhãn */}
                             <div className="flex justify-between items-center border-b border-dashed border-black pb-1 w-full">
