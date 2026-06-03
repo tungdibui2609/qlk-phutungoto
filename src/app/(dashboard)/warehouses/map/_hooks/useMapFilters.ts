@@ -13,7 +13,7 @@ interface UseMapFiltersProps {
     pendingExportPosIds?: Set<string>
 }
 
-export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production' | 'stt'
+export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production' | 'stt' | 'box_count'
 
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
@@ -120,6 +120,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
                         // Box Labels
                         if (lot.box_labels && lot.box_labels.length > 0) {
+                            if (mode === 'all' || mode === 'box_count') {
+                                res.push(String(lot.box_labels.length))
+                            }
                             lot.box_labels.forEach((label: any) => {
                                 if (mode === 'all' || mode === 'code' || mode === 'production') {
                                     if (label.semi_finished_lot_code) res.push(label.semi_finished_lot_code)
@@ -130,6 +133,8 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                                     if (label.code) res.push(label.code)
                                 }
                             })
+                        } else if (mode === 'all' || mode === 'box_count') {
+                            res.push('0')
                         }
 
                         if (mode === 'all') {

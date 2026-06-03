@@ -78,6 +78,7 @@ export function LotFilter({
                         {searchMode === 'category' && <LayoutGrid size={14} className="text-indigo-500 mr-1.5" />}
                         {searchMode === 'production' && <ClipboardList size={14} className="text-rose-500 mr-1.5" />}
                         {searchMode === 'stt' && <Hash size={14} className="text-orange-500 mr-1.5" />}
+                        {searchMode === 'box_count' && <Layers size={14} className="text-emerald-500 mr-1.5" />}
                         
                         <select
                             value={searchMode}
@@ -92,6 +93,7 @@ export function LotFilter({
                             <option value="category">Danh mục</option>
                             <option value="production">Lệnh sản xuất</option>
                             <option value="stt">Số thứ tự (STT)</option>
+                            <option value="box_count">Số lượng thùng</option>
                         </select>
                     </div>
 
@@ -107,6 +109,7 @@ export function LotFilter({
                                 searchMode === 'category' ? "Tên danh mục..." :
                                 searchMode === 'production' ? "Mã LSX hoặc mã lot sản xuất..." :
                                 searchMode === 'stt' ? "Số thứ tự pallet (STT)..." :
+                                searchMode === 'box_count' ? "Số lượng thùng (ví dụ: 12)..." :
                                 "Tìm kiếm..."
                             }
                             value={localSearchTerm}

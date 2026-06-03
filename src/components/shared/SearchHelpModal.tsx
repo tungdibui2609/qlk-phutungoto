@@ -93,6 +93,12 @@ export function SearchHelpModal({ isOpen, onOpenChange }: SearchHelpModalProps) 
                                 </div>
                                 <p className="text-sm text-muted-foreground italic">Tìm Pallet theo số thứ tự in trên nhãn. Ví dụ: "9", "120".</p>
                             </div>
+                            <div className="p-3 bg-muted/50 rounded-lg border border-border/50">
+                                <div className="flex items-center gap-2 mb-1 font-medium text-emerald-600 dark:text-emerald-400">
+                                    <Layers className="h-4 w-4" /> Số lượng thùng
+                                </div>
+                                <p className="text-sm text-muted-foreground italic">Tìm Pallet theo số lượng thùng dán nhãn hiện có. Ví dụ: "12", "15".</p>
+                            </div>
                         </div>
                     </div>
 
@@ -114,7 +120,7 @@ export function SearchHelpModal({ isOpen, onOpenChange }: SearchHelpModalProps) 
                                             </li>
                                             <li className="flex gap-2">
                                                 <span className="font-mono text-orange-600 font-bold">&</span>
-                                                <span>Dùng dấu và để tìm <b>VÀ</b> (Khớp cả hai). Hỗ trợ tìm <b>chéo trường</b> (ví dụ: vừa khớp Tên, vừa khớp Vị trí). <br/>Ví dụ: <code className="bg-muted px-1 rounded">Xoài & A01</code></span>
+                                                <span>Dùng dấu và để tìm <b>VÀ</b> (Khớp cả hai). Hỗ trợ tìm <b>chéo trường</b> (ví dụ: vừa khớp Tên/Mã sản phẩm, vừa khớp Số lượng thùng hoặc Vị trí). <br/>Ví dụ: <code className="bg-muted px-1 rounded">L015DD260-TN & 12</code> hoặc <code className="bg-muted px-1 rounded">Xoài & A01</code></span>
                                             </li>
                                             <li className="flex gap-2">
                                                 <span className="font-mono text-orange-600 font-bold">Dấu cách</span>

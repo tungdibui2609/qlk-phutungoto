@@ -634,7 +634,29 @@ export function useLotManagement() {
                                 boxLotIds = boxLots.map((b: any) => b.lot_id).filter(Boolean);
                             }
 
-                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds, ...sttIds, ...boxLotIds]));
+                            // Tìm kiếm theo số lượng thùng trong chế độ 'all'
+                            let boxCountIds: string[] = [];
+                            const boxCountNum = parseInt(part, 10);
+                            if (!isNaN(boxCountNum)) {
+                                let labelQuery = (supabase.from('box_labels') as any)
+                                    .select('lot_id, lots!inner(id, system_code, status)')
+                                    .not('lot_id', 'is', null)
+                                    .eq('lots.system_code', currentSystem.code)
+                                    .neq('lots.status', 'hidden')
+                                    .neq('lots.status', 'exported');
+                                labelQuery = applyDateFilterToSubQuery(labelQuery, 'lots');
+                                const { data: boxLabels } = await labelQuery;
+
+                                const counts: Record<string, number> = {};
+                                boxLabels?.forEach((b: any) => {
+                                    if (b.lot_id) {
+                                        counts[b.lot_id] = (counts[b.lot_id] || 0) + 1;
+                                    }
+                                });
+                                boxCountIds = Object.keys(counts).filter(lotId => counts[lotId] === boxCountNum);
+                            }
+
+                            currentMatchIds = Array.from(new Set([...itemLotIds, ...tagLotIds, ...posIds, ...directIds, ...prodLotIds, ...sttIds, ...boxLotIds, ...boxCountIds]));
                         }
                         else if (searchMode === 'stt') {
                             let matchIds: string[] = [];
@@ -888,6 +910,29 @@ export function useLotManagement() {
                                      if (directLots) currentMatchIds.push(...directLots.map((l: any) => l.id));
                                  }
                              }
+                        }
+                        else if (searchMode === 'box_count') {
+                            let matchIds: string[] = [];
+                            const boxCountNum = parseInt(part, 10);
+                            if (!isNaN(boxCountNum)) {
+                                let labelQuery = (supabase.from('box_labels') as any)
+                                    .select('lot_id, lots!inner(id, system_code, status)')
+                                    .not('lot_id', 'is', null)
+                                    .eq('lots.system_code', currentSystem.code)
+                                    .neq('lots.status', 'hidden')
+                                    .neq('lots.status', 'exported');
+                                labelQuery = applyDateFilterToSubQuery(labelQuery, 'lots');
+                                const { data: boxLabels } = await labelQuery;
+
+                                const counts: Record<string, number> = {};
+                                boxLabels?.forEach((b: any) => {
+                                    if (b.lot_id) {
+                                        counts[b.lot_id] = (counts[b.lot_id] || 0) + 1;
+                                    }
+                                });
+                                matchIds = Object.keys(counts).filter(lotId => counts[lotId] === boxCountNum);
+                            }
+                            currentMatchIds = matchIds;
                         }
 
                         // Intersect IDs for AND
