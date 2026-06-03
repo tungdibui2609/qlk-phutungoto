@@ -336,6 +336,7 @@ export function LotPageManager() {
                     onExport={handleExport}
                     onBulkClone={handleBulkClone}
                     onAssignLocation={setAssigningLot}
+                    searchTerm={searchTerm}
                 />
 
                 {/* Pagination Controls */}

@@ -11,6 +11,7 @@ import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import React from 'react'
 import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
 import { LotBoxLabelsModal } from '@/components/warehouse/lots/LotBoxLabelsModal'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 
 interface LotCardProps {
     lot: Lot
@@ -28,9 +29,10 @@ interface LotCardProps {
     onBulkClone?: (lot: Lot) => void
     onAssignLocation?: (lot: Lot) => void
     managePermission?: string
+    searchTerm?: string
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, managePermission }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, managePermission, searchTerm }: LotCardProps) {
     const router = useRouter()
     const pathname = usePathname()
     const [isExpanded, setIsExpanded] = useState(false)
@@ -164,10 +166,66 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
         );
     }
 
+    const searchStatus = React.useMemo(() => {
+        if (!searchTerm || !lot.box_labels || lot.box_labels.length === 0) {
+            return { isMatch: false, isExact: false, borderClass: '', topBarClass: '', badgeClass: '', badgeText: '' }
+        }
+
+        const labels = lot.box_labels
+        const matchedLabels = labels.filter(label => {
+            const vals = [
+                label.code,
+                label.semi_finished_lot_code || '',
+                label.finished_lot_code || '',
+                lot.products?.name || '',
+                lot.products?.sku || '',
+                lot.products?.internal_code || '',
+                lot.products?.internal_name || '',
+                ...(lot.lot_items?.map(i => i.products?.name || '') || []),
+                ...(lot.lot_items?.map(i => i.products?.sku || '') || []),
+                ...(lot.lot_items?.map(i => i.products?.internal_code || '') || []),
+                ...(lot.lot_items?.map(i => i.products?.internal_name || '') || [])
+            ]
+            return advancedMatchSearch(vals, searchTerm)
+        })
+
+        if (matchedLabels.length === 0) {
+            return { isMatch: false, isExact: false, borderClass: '', topBarClass: '', badgeClass: '', badgeText: '' }
+        }
+
+        if (matchedLabels.length === labels.length) {
+            // Chứa hoàn toàn tem khớp tìm kiếm -> Màu xanh emerald
+            return {
+                isMatch: true,
+                isExact: true,
+                badgeText: 'Khớp 100% tem',
+                badgeClass: 'bg-emerald-500 text-white dark:bg-emerald-600 border-emerald-600',
+                borderClass: 'border-emerald-500/80 shadow-[0_0_20px_rgba(16,185,129,0.18)] dark:border-emerald-600/80 bg-emerald-500/[0.01] dark:bg-emerald-500/[0.005]',
+                topBarClass: 'from-emerald-500 to-emerald-400'
+            }
+        } else {
+            // Chứa tem khớp nhưng có tem không khớp -> Màu vàng cam amber
+            return {
+                isMatch: true,
+                isExact: false,
+                badgeText: `Khớp ${matchedLabels.length}/${labels.length} tem`,
+                badgeClass: 'bg-amber-500 text-white dark:bg-amber-600 border-amber-600',
+                borderClass: 'border-amber-500/80 shadow-[0_0_20px_rgba(245,158,11,0.18)] dark:border-amber-600/80 bg-amber-500/[0.01] dark:bg-amber-500/[0.005]',
+                topBarClass: 'from-amber-500 to-amber-400'
+            }
+        }
+    }, [searchTerm, lot])
+
     return (
-        <div className="group bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-orange-500/30 transition-all duration-300 flex flex-col justify-between relative overflow-hidden">
+        <div className={`group rounded-3xl border transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${
+            searchStatus.isMatch
+                ? searchStatus.borderClass
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-orange-500/30'
+        }`}>
             {/* Decorative Top Bar */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-orange-500 to-orange-400 z-10 transition-opacity"></div>
+            <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r z-10 transition-opacity ${
+                searchStatus.isMatch ? searchStatus.topBarClass : 'from-orange-500 to-orange-400'
+            }`}></div>
 
             {/* Header - Colored */}
             <div className={`px-4 pt-5 pb-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100/50 dark:border-orange-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
@@ -179,6 +237,11 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
                             STT: {decodeSTT((lot as any).daily_seq) || '--'}
                         </span>
+                        {searchStatus.isMatch && (
+                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm border border-transparent ${searchStatus.badgeClass}`}>
+                                {searchStatus.badgeText}
+                            </span>
+                        )}
                         {(lot.productions?.code || lot.production_code) && (
                             <div className="flex flex-col gap-1">
                                 <span className="px-2 py-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold border border-orange-100 dark:border-orange-800/50 w-fit">

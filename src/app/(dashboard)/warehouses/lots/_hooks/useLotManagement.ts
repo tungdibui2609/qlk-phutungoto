@@ -39,6 +39,15 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     production_id?: string | null
     daily_seq?: number | null
     batch_code?: string | null
+    box_labels?: {
+        id: string
+        code: string
+        quantity: string
+        unit: string
+        semi_finished_lot_code: string | null
+        finished_lot_code: string | null
+        status: string
+    }[] | null
 }
 
 export type Product = Database['public']['Tables']['products']['Row']
@@ -244,7 +253,8 @@ export function useLotManagement() {
     suppliers(name),
     qc_info(name),
     lot_tags(tag, lot_item_id),
-    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, product_category_rel(categories(name)))
+    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, product_category_rel(categories(name))),
+    box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)
         `
 
             let query: any;
