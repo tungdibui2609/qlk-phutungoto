@@ -1,21 +1,38 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
-import { QrCode, X, RefreshCw, Trash2, Box, Layers } from 'lucide-react'
+import { QrCode, X, RefreshCw, Trash2, Box, Layers, Search } from 'lucide-react'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 
 interface LotBoxLabelsModalProps {
     lotId: string
     lotCode: string
+    searchTerm?: string
     onClose: () => void
 }
 
-export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModalProps) {
+export function LotBoxLabelsModal({ lotId, lotCode, searchTerm, onClose }: LotBoxLabelsModalProps) {
     const { showToast } = useToast()
     const [labels, setLabels] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [isUnlinking, setIsUnlinking] = useState<string | null>(null)
+
+    const matchedLabels = useMemo(() => {
+        if (!searchTerm || labels.length === 0) return []
+        return labels.filter(label => {
+            const vals = [
+                label.code,
+                label.semi_finished_lot_code || '',
+                label.finished_lot_code || '',
+                label.products?.name || '',
+                label.products?.sku || '',
+                label.products?.internal_name || ''
+            ]
+            return advancedMatchSearch(vals, searchTerm)
+        })
+    }, [labels, searchTerm])
 
     const fetchLinkedBoxLabels = async () => {
         setIsLoading(true)
@@ -135,6 +152,41 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
                                 </div>
                             </div>
 
+                            {/* Panel danh sách STT tem khớp */}
+                            {searchTerm && matchedLabels.length > 0 && (
+                                <div className="bg-amber-500/5 dark:bg-amber-500/5 border border-amber-500/20 rounded-2xl p-4 flex flex-col gap-2 animate-in fade-in duration-200">
+                                    <div className="font-bold text-[10px] uppercase tracking-wider text-amber-700 dark:text-amber-400 flex items-center gap-1.5">
+                                        <Search size={12} />
+                                        <span>Danh sách STT tem khớp từ khóa "{searchTerm}" ({matchedLabels.length} tem):</span>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {matchedLabels.map((label, idx) => {
+                                            const index = getBoxIndex(label.code);
+                                            return (
+                                                <button
+                                                    key={label.id || idx}
+                                                    onClick={() => {
+                                                        const element = document.getElementById(`label-row-${label.id}`);
+                                                        if (element) {
+                                                            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                            // Thêm hiệu ứng nhấp nháy/làm nổi bật dòng
+                                                            element.classList.add('bg-amber-500/20', 'dark:bg-amber-500/10', 'border-l-4', 'border-l-amber-500');
+                                                            setTimeout(() => {
+                                                                element.classList.remove('bg-amber-500/20', 'dark:bg-amber-500/10', 'border-l-4', 'border-l-amber-500');
+                                                            }, 2000);
+                                                        }
+                                                    }}
+                                                    className="px-2.5 py-1 rounded-lg bg-amber-500 text-white dark:bg-amber-600 font-mono font-bold text-xs hover:bg-amber-600 dark:hover:bg-amber-700 active:scale-95 transition-all shadow-sm cursor-pointer"
+                                                    title="Bấm để cuộn đến dòng tem này"
+                                                >
+                                                    #{index}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Bảng danh sách tem */}
                             <div className="border border-stone-150 dark:border-zinc-800 rounded-2xl overflow-hidden bg-stone-50/10 dark:bg-zinc-900/20">
                                 <table className="w-full text-left border-collapse text-xs">
@@ -155,15 +207,27 @@ export function LotBoxLabelsModal({ lotId, lotCode, onClose }: LotBoxLabelsModal
                                                 ? (label.products.internal_name || label.products.name)
                                                 : 'Sản phẩm không rõ'
                                             const prodSku = label.products ? label.products.sku : '---'
+                                            const isMatched = searchTerm ? matchedLabels.some(m => m.id === label.id) : false
 
                                             return (
-                                                <tr key={label.id || idx} className="hover:bg-stone-50/20 dark:hover:bg-zinc-800/10 transition-colors">
+                                                <tr 
+                                                    key={label.id || idx} 
+                                                    id={`label-row-${label.id}`}
+                                                    className={`transition-colors duration-500 ${
+                                                        isMatched 
+                                                            ? 'bg-amber-500/[0.04] dark:bg-amber-500/[0.02] border-l-2 border-l-amber-500/80 hover:bg-amber-500/[0.08] dark:hover:bg-amber-500/[0.04]' 
+                                                            : 'hover:bg-stone-50/20 dark:hover:bg-zinc-800/10'
+                                                    }`}
+                                                >
                                                     <td className="px-4 py-3 text-center font-bold text-stone-450 tabular-nums">
                                                         #{idx + 1}
                                                     </td>
                                                     <td className="px-4 py-3 font-mono font-bold text-stone-850 dark:text-zinc-150 uppercase" title={label.code}>
-                                                         #{getBoxIndex(label.code)}
-                                                     </td>
+                                                          #{getBoxIndex(label.code)}
+                                                          {isMatched && (
+                                                              <span className="ml-1.5 px-1 py-0.2 text-[8px] font-black uppercase tracking-wider bg-amber-500 text-white rounded shadow-sm">Khớp</span>
+                                                          )}
+                                                      </td>
                                                      <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-450 uppercase whitespace-nowrap">
                                                          {label.semi_finished_lot_code || '---'}
                                                      </td>

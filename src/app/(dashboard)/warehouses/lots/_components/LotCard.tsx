@@ -238,9 +238,13 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             STT: {decodeSTT((lot as any).daily_seq) || '--'}
                         </span>
                         {searchStatus.isMatch && (
-                            <span className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm border border-transparent ${searchStatus.badgeClass}`}>
+                            <button
+                                onClick={() => setShowBoxLabelsModal(true)}
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm border border-transparent cursor-pointer hover:opacity-90 active:scale-95 transition-all ${searchStatus.badgeClass}`}
+                                title="Bấm để xem danh sách tem khớp"
+                            >
                                 {searchStatus.badgeText}
-                            </span>
+                            </button>
                         )}
                         {(lot.productions?.code || lot.production_code) && (
                             <div className="flex flex-col gap-1">
@@ -697,6 +701,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                 <LotBoxLabelsModal
                     lotId={lot.id}
                     lotCode={lot.code}
+                    searchTerm={searchTerm}
                     onClose={() => setShowBoxLabelsModal(false)}
                 />
             )}
