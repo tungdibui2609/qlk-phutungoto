@@ -35,6 +35,7 @@ export default function LotReconciliationTable() {
     const [filterStatus, setFilterStatus] = useState<string>('all')
     const [searchQuery, setSearchQuery] = useState('')
     const [selectedLotsModal, setSelectedLotsModal] = useState<{ productName: string, lots: string[] } | null>(null)
+    const [orderStatuses, setOrderStatuses] = useState<Record<string, string>>({})
 
 
     const fetchData = async () => {
@@ -221,6 +222,27 @@ export default function LotReconciliationTable() {
                 return pData
             }).filter(p => p.actualQty > 0 || p.accountingQty > 0) // Lọc bỏ nếu cả 2 đều bằng 0
 
+            // Query statuses for all orderCodes in processed to disable reconciliation for Completed orders
+            const allOrderCodes = new Set<string>()
+            processed.forEach(p => {
+                p.orderCodes.forEach(code => allOrderCodes.add(code))
+            })
+            
+            if (allOrderCodes.size > 0) {
+                const { data: statusData } = await supabase
+                    .from('inbound_orders')
+                    .select('code, status')
+                    .in('code', Array.from(allOrderCodes))
+                
+                const statuses: Record<string, string> = {}
+                statusData?.forEach(o => {
+                    if (o.code) statuses[o.code] = o.status || ''
+                })
+                setOrderStatuses(statuses)
+            } else {
+                setOrderStatuses({})
+            }
+
             setData(processed)
         } catch (error: any) {
             console.error(error)
@@ -250,10 +272,9 @@ export default function LotReconciliationTable() {
             }
 
             if (order.status === 'Completed') {
-                if (!window.confirm(`Phiếu nhập "${orderCode}" đã HOÀN TẤT. Bạn có chắc chắn vẫn muốn chỉnh sửa số lượng không?`)) {
-                    setBalancingCode(null)
-                    return
-                }
+                showToast(`Phiếu nhập "${orderCode}" đã HOÀN TẤT. Vui lòng chuyển trạng thái phiếu về Chờ duyệt trước khi cân bằng số lượng.`, 'error')
+                setBalancingCode(null)
+                return
             }
 
             // 2. Fetch order items for this order and product
@@ -530,14 +551,22 @@ export default function LotReconciliationTable() {
                                                                 {row.status === 'mismatched' && (
                                                                     <button
                                                                         onClick={() => handleQuickBalance(row, code)}
-                                                                        disabled={balancingCode === code}
-                                                                        className="px-2 py-0.5 text-[10px] bg-amber-100 hover:bg-amber-200 text-amber-700 font-bold rounded border border-amber-200 transition-all flex items-center gap-1 disabled:opacity-50"
-                                                                        title="Tự động cân bằng số lượng trên phiếu nhập theo số lượng thực tế từ Lot"
+                                                                        disabled={balancingCode === code || orderStatuses[code] === 'Completed'}
+                                                                        className={`px-2 py-0.5 text-[10px] font-bold rounded border transition-all flex items-center gap-1 disabled:opacity-50 ${
+                                                                            orderStatuses[code] === 'Completed'
+                                                                                ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                                                                                : 'bg-amber-100 hover:bg-amber-200 text-amber-700 border-amber-200'
+                                                                        }`}
+                                                                        title={
+                                                                            orderStatuses[code] === 'Completed'
+                                                                                ? "Phiếu nhập đã hoàn tất, không thể cân bằng"
+                                                                                : "Tự động cân bằng số lượng trên phiếu nhập theo số lượng thực tế từ Lot"
+                                                                        }
                                                                     >
                                                                         {balancingCode === code ? (
                                                                             <RefreshCw className="w-2.5 h-2.5 animate-spin" />
                                                                         ) : null}
-                                                                        Cân bằng
+                                                                        {orderStatuses[code] === 'Completed' ? 'Đã khóa' : 'Cân bằng'}
                                                                     </button>
                                                                 )}
                                                             </div>
