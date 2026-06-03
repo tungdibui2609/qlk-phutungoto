@@ -3,7 +3,7 @@ import { saveAs } from 'file-saver';
 import { CompanyInfo } from '@/hooks/usePrintCompanyInfo';
 
 interface InventoryReportExportData {
-    type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags';
+    type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags' | 'labels';
     dateTitle: string;
     warehouse: string;
     items: any[];
@@ -62,6 +62,17 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
             { header: 'Số lượng', key: 'quantity', width: 15 },
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
         ];
+    } else if (data.type === 'labels') {
+        cols = [
+            { header: 'STT', key: 'stt', width: 6 },
+            { header: 'Mã SP', key: 'productCode', width: 20 },
+            { header: 'Tên sản phẩm', key: 'productName', width: 45 },
+            { header: 'Lô bán thành phẩm', key: 'semi_finished_lot_code', width: 22 },
+            { header: 'Lô thành phẩm', key: 'finished_lot_code', width: 22 },
+            { header: 'Số lượng tem', key: 'labelCount', width: 15 },
+            { header: 'Tồn kho tem', key: 'totalQuantity', width: 15 },
+            { header: 'ĐVT', key: 'unit', width: 10 },
+        ];
     } else {
         cols = [
             { header: 'Mã SP', key: 'productCode', width: 20 },
@@ -107,7 +118,9 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
             ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO LOT') 
             : data.type === 'category'
                 ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO DANH MỤC')
-                : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
+                : data.type === 'labels'
+                    ? 'BÁO CÁO TỒN KHO THEO TEM NHÃN'
+                    : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
     
     const lastCol = String.fromCharCode(65 + cols.length - 1);
     worksheet.mergeCells(`A${currentRow}:${lastCol}${currentRow}`);
@@ -440,6 +453,49 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
                             });
                         });
                 }
+            }
+        });
+    } else if (data.type === 'labels') {
+        let stt = 1;
+        data.items.forEach((item) => {
+            const row = worksheet.addRow([
+                stt++,
+                item.productCode,
+                item.productName,
+                item.semi_finished_lot_code,
+                item.finished_lot_code,
+                cleanNum(item.labelCount),
+                cleanNum(item.totalQuantity),
+                item.unit
+            ]);
+            row.eachCell(cell => {
+                cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            });
+            const cellCount = row.getCell(6);
+            cellCount.alignment = { horizontal: 'right' };
+            cellCount.numFmt = '#,##0';
+            
+            const cellQty = row.getCell(7);
+            cellQty.alignment = { horizontal: 'right' };
+            cellQty.numFmt = '#,##0.###';
+        });
+
+        // Add summary row
+        const summaryRow = worksheet.addRow([
+            'Tổng cộng tồn tem nhãn:',
+            '', '', '', '', // B, C, D, E
+            data.items.reduce((acc, x) => acc + (x.labelCount || 0), 0),
+            data.items.reduce((acc, x) => acc + (x.isUnconvertible ? 0 : (x.totalQuantity || 0)), 0),
+            data.items[0]?.unit || 'Kg'
+        ]);
+        worksheet.mergeCells(`A${summaryRow.number}:E${summaryRow.number}`);
+        summaryRow.font = { bold: true };
+        summaryRow.eachCell((cell, colIdx) => {
+            cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+            if (colIdx >= 6) {
+                cell.alignment = { horizontal: 'right' };
+                if (colIdx === 6) cell.numFmt = '#,##0';
+                if (colIdx === 7) cell.numFmt = '#,##0.###';
             }
         });
     } else {

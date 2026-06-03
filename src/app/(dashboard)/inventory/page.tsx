@@ -14,6 +14,7 @@ import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { useInventoryByLot } from '@/components/inventory/by-lot/useInventoryByLot'
 import { useUser } from '@/contexts/UserContext'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
+import InventoryByBoxLabel from '@/components/inventory/InventoryByBoxLabel'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
 
 // Types based on API response
@@ -45,7 +46,7 @@ export default function InventoryPage() {
         orderCompanyId: profile?.company_id
     })
 
-    const [activeTab, setActiveTab] = useState<'accounting' | 'category' | 'lot' | 'tags' | 'reconciliation'>('accounting')
+    const [activeTab, setActiveTab] = useState<'accounting' | 'category' | 'lot' | 'tags' | 'reconciliation' | 'labels'>('accounting')
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
@@ -221,6 +222,7 @@ export default function InventoryPage() {
                         { id: 'category', name: 'Tồn theo danh mục' },
                         { id: 'lot', name: 'Tồn kho theo LOT' },
                         { id: 'tags', name: 'Tồn theo Mã phụ' },
+                        { id: 'labels', name: 'Tồn theo Tem nhãn' },
                         { id: 'reconciliation', name: 'Đối chiếu' },
                     ].map((tab) => (
                         <button
@@ -241,7 +243,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Global Filters - Visible for Accounting, Category, Lot tabs */}
-            {(activeTab === 'accounting' || activeTab === 'category' || activeTab === 'lot') && (
+            {(activeTab === 'accounting' || activeTab === 'category' || activeTab === 'lot' || activeTab === 'labels') && (
                 <div className="flex flex-col gap-4 bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
                     {/* Row 1: Search - Full Width */}
                     <div className="w-full">
@@ -613,6 +615,18 @@ export default function InventoryPage() {
 
                 {activeTab === 'reconciliation' && (
                     <InventoryReconciliation units={units} />
+                )}
+
+                {activeTab === 'labels' && (
+                    <InventoryByBoxLabel
+                        units={units}
+                        systemType={systemType}
+                        selectedBranch={selectedBranch}
+                        targetUnitId={targetUnitId}
+                        searchTerm={q}
+                        searchMode={searchMode}
+                        selectedCategoryIds={selectedCategoryIds}
+                    />
                 )}
             </div>
 

@@ -121,6 +121,7 @@ export default function PrintInventoryPage() {
     const [allUnits, setAllUnits] = useState<any[]>([])
     const [categories, setCategories] = useState<any[]>([])
     const [accountingItems, setAccountingItems] = useState<InventoryItem[]>([])
+    const [boxLabelItems, setBoxLabelItems] = useState<any[]>([])
     const [lotItems, setLotItems] = useState<LotItem[]>([])
     const [groupedLots, setGroupedLots] = useState<GroupedLot[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
@@ -211,6 +212,7 @@ export default function PrintInventoryPage() {
         else if (reportType === 'lot') setEditReportTitle('BÁO CÁO TỒN KHO THEO LOT')
         else if (reportType === 'category') setEditReportTitle('BÁO CÁO TỒN KHO THEO DANH MỤC')
         else if (reportType === 'tags') setEditReportTitle('BÁO CÁO TỒN KHO THEO MÃ PHỤ')
+        else if (reportType === 'labels') setEditReportTitle('BÁO CÁO TỒN KHO THEO TEM NHÃN')
         else if (reportType === 'reconciliation') setEditReportTitle('BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN')
 
     }, [type, systemType, dateFrom, dateTo, warehouse, zoneId, categoryIdsParam, convertToKg, conversionMap, unitNameMap]) // Re-run when conversion data is ready
@@ -249,7 +251,10 @@ export default function PrintInventoryPage() {
                 try {
                     const data = JSON.parse(preFetchedDataStr)
                     if (data.ok) {
-                        if (data.items) setAccountingItems(data.items)
+                        if (data.items) {
+                            if (type === 'labels') setBoxLabelItems(data.items)
+                            else setAccountingItems(data.items)
+                        }
                         if (data.lotItems) setLotItems(data.lotItems)
                         if (data.reconcileItems) setReconcileItems(data.reconcileItems)
                         setLoading(false)
@@ -329,6 +334,29 @@ export default function PrintInventoryPage() {
                 }
                 const data = await res.json()
                 if (data.ok) setAccountingItems(data.items)
+                else throw new Error(data.error || 'Unknown error')
+            }
+            else if (type === 'labels') {
+                const params = new URLSearchParams()
+                if (systemType) params.set('systemType', systemType)
+                if (dateFrom) params.set('dateFrom', dateFrom)
+                if (dateTo) params.set('dateTo', dateTo)
+                if (warehouse) params.set('warehouse', warehouse)
+                if (searchTerm) params.set('q', searchTerm)
+                if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                if (categoryIdsParam) params.set('categoryIds', categoryIdsParam)
+                if (searchModeParam) params.set('searchMode', searchModeParam)
+
+                const headers: HeadersInit = {}
+                if (token) headers['Authorization'] = `Bearer ${token}`
+
+                const res = await fetch(`/api/inventory/by-label?${params.toString()}`, { headers })
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => '')
+                    throw new Error(`Fetch failed: ${res.status} ${errText}`)
+                }
+                const data = await res.json()
+                if (data.ok) setBoxLabelItems(data.items)
                 else throw new Error(data.error || 'Unknown error')
             }
             else if (type === 'lot' || type === 'category' || type === 'tags') {
@@ -697,7 +725,7 @@ export default function PrintInventoryPage() {
             type: type as any,
             dateTitle,
             warehouse: warehouse || 'Tất cả',
-            items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'accounting' ? accountingItems : reconcileItems),
+            items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems)),
             companyInfo
         })
     }
@@ -815,7 +843,7 @@ export default function PrintInventoryPage() {
                         Từ ngày {new Date(dateFrom || new Date()).toLocaleDateString('vi-VN')} đến ngày {new Date(dateTo).toLocaleDateString('vi-VN')}
                     </p>
                 )}
-                {(type === 'lot' || type === 'category' || type === 'tags' || type === 'reconciliation') && (
+                {(type === 'lot' || type === 'category' || type === 'tags' || type === 'labels' || type === 'reconciliation') && (
                     <p className="italic mt-1">
                         Tính đến ngày {new Date(dateTo).toLocaleDateString('vi-VN')}
                     </p>
@@ -1090,6 +1118,77 @@ export default function PrintInventoryPage() {
                                         </React.Fragment>
                                     )
                                 })
+                            )}
+                        </tbody>
+                    </table>
+                )}
+
+                {type === 'labels' && (
+                    <table className="w-full border-collapse border border-black text-sm">
+                        <thead>
+                            <tr className="bg-gray-200">
+                                <th className="border border-black p-1 w-10 text-center font-bold">STT</th>
+                                <th className="border border-black p-1 w-24 font-bold">Mã SP</th>
+                                <th className="border border-black p-1 font-bold">Tên Sản Phẩm</th>
+                                <th className="border border-black p-1 font-bold">Lô Bán Thành Phẩm</th>
+                                <th className="border border-black p-1 font-bold">Lô Thành Phẩm</th>
+                                <th className="border border-black p-1 text-right w-24 font-bold">Số Lượng Tem</th>
+                                <th className="border border-black p-1 text-right w-24 font-bold">Tồn Kho Tem</th>
+                                <th className="border border-black p-1 w-16 text-center font-bold">ĐVT</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {boxLabelItems.length === 0 ? (
+                                <tr><td colSpan={8} className="border border-black p-4 text-center text-stone-500">Không có dữ liệu</td></tr>
+                            ) : (
+                                <>
+                                    {boxLabelItems.map((item, idx) => {
+                                        const displayCode = isInternalCodeDisplay && item.internalCode ? item.internalCode : item.productCode || 'N/A'
+                                        const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
+                                        const stt = idx + 1
+                                        const breakKey = `label-${stt}`
+                                        const hasBreak = pageBreaks.has(breakKey)
+
+                                        return (
+                                            <React.Fragment key={`${item.product_id}-${idx}`}>
+                                                {stt > 1 && (
+                                                    <tr className={`print:hidden ${hasBreak ? '' : 'h-0'}`}>
+                                                        <td colSpan={8} className="p-0 border-0 relative">
+                                                            <button
+                                                                onClick={() => togglePageBreak(breakKey)}
+                                                                className={`w-full flex items-center justify-center gap-1 text-[10px] py-0.5 transition-all group hover:bg-blue-50 ${hasBreak ? 'bg-blue-100 border-y-2 border-dashed border-blue-500' : 'opacity-0 hover:opacity-100'}`}
+                                                            >
+                                                                <Scissors size={10} className={hasBreak ? 'text-blue-600' : 'text-stone-400'} />
+                                                                <span className={hasBreak ? 'text-blue-600 font-bold' : 'text-stone-400'}>{hasBreak ? '✂ Ngắt trang' : 'Ngắt trang'}</span>
+                                                            </button>
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                                {hasBreak && <tr className="hidden print:table-row" style={{ pageBreakBefore: 'always' }}><td colSpan={8} className="p-0 border-0 h-0"></td></tr>}
+                                                <tr className={item.isUnconvertible ? 'bg-orange-100 print:bg-transparent' : ''}>
+                                                    <td className="border border-black p-1 text-center">{stt}</td>
+                                                    <td className="border border-black p-1 font-mono">{displayCode}</td>
+                                                    <td className="border border-black p-1 font-bold uppercase">{displayName}</td>
+                                                    <td className="border border-black p-1 font-mono uppercase">{item.semi_finished_lot_code}</td>
+                                                    <td className="border border-black p-1 font-mono uppercase">{item.finished_lot_code}</td>
+                                                    <td className="border border-black p-1 text-right tabular-nums">{item.labelCount} tem</td>
+                                                    <td className="border border-black p-1 text-right font-bold tabular-nums">{formatQuantityFull(item.totalQuantity)}</td>
+                                                    <td className="border border-black p-1 text-center">{item.unit}</td>
+                                                </tr>
+                                            </React.Fragment>
+                                        )
+                                    })}
+                                    <tr className="bg-gray-100 font-bold">
+                                        <td colSpan={5} className="border border-black p-1 text-right">Tổng cộng tồn tem nhãn:</td>
+                                        <td className="border border-black p-1 text-right tabular-nums">
+                                            {boxLabelItems.reduce((acc, x) => acc + x.labelCount, 0)} tem
+                                        </td>
+                                        <td className="border border-black p-1 text-right tabular-nums">
+                                            {formatQuantityFull(boxLabelItems.reduce((acc, x) => acc + (x.isUnconvertible ? 0 : x.totalQuantity), 0))}
+                                        </td>
+                                        <td className="border border-black p-1 text-center">{boxLabelItems[0]?.unit || 'Kg'}</td>
+                                    </tr>
+                                </>
                             )}
                         </tbody>
                     </table>
