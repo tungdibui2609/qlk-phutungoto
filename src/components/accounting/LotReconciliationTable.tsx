@@ -13,12 +13,17 @@ import Link from 'next/link'
 type LotReconciliationData = {
     id: string
     product_name: string | null
+    unit: string
+    newInQty: number
+    mergedInQty: number
+    mergedOutQty: number
     actualQty: number
     accountingQty: number
     diff: number
     orderCodes: string[]
     relatedLots: string[]
     status: 'matched' | 'mismatched' | 'no_order' | 'draft'
+    productions: Record<string, number>
 }
 
 export default function LotReconciliationTable() {
@@ -66,6 +71,10 @@ export default function LotReconciliationTable() {
                     metadata,
                     product_id,
                     quantity,
+                    production_id,
+                    production_code,
+                    batch_code,
+                    productions(code, name),
                     products(name),
                     lot_items(id, quantity, product_id, unit, products(name, unit))
                 `)
@@ -108,6 +117,125 @@ export default function LotReconciliationTable() {
                 console.log(`[${summary.product_name}] newInQty=${summary.newInQty}, mergedIn=${summary.mergedInQty}, mergedOut=${summary.mergedOutQty}, total=${summary.totalQty}`)
             })
 
+            // Lấy tất cả production_id từ filteredLots để query production_lots
+            const allProdIds = Array.from(new Set(filteredLots.map(lot => lot.production_id).filter(id => !!id)))
+            const productionLotsMap: Record<string, string> = {}
+            if (allProdIds.length > 0) {
+                const { data: prodLots } = await supabase
+                    .from('production_lots')
+                    .select('production_id, product_id, lot_code')
+                    .in('production_id', allProdIds)
+
+                if (prodLots) {
+                    prodLots.forEach((pl: any) => {
+                        productionLotsMap[`${pl.production_id}_${pl.product_id}`] = pl.lot_code
+                    })
+                }
+            }
+
+            // Tính productions map cho từng sản phẩm
+            const productProductions = new Map<string, Record<string, number>>()
+
+            filteredLots.forEach(lot => {
+                const items = lot.lot_items || []
+                const mergedOut = lot.metadata?.system_history?.merged_out || []
+                const itemHistory = lot.metadata?.system_history?.item_history || {}
+                const processedPids = new Set<string>()
+
+                // Pre-process merged_out: tính tổng qty theo product_id
+                const mergedOutByPid: Record<string, number> = {}
+                if (Array.isArray(mergedOut)) {
+                    mergedOut.forEach((mo: any) => {
+                        const moPid = mo.product_id || lot.product_id
+                        if (moPid) {
+                            mergedOutByPid[moPid] = (mergedOutByPid[moPid] || 0) + (Number(mo.quantity) || 0)
+                        }
+                    })
+                }
+
+                const mergedOutAccountedPids = new Set<string>()
+
+                items.forEach((item: any) => {
+                    const pid = item.product_id
+                    if (!pid) return
+                    processedPids.add(pid)
+
+                    const currentQty = Number(item.quantity) || 0
+                    const hist = itemHistory[item.id]
+                    const isMergedIn = hist?.type === 'merge' || hist?.type === 'split'
+
+                    let itemMergedOutQty = 0
+                    if (!mergedOutAccountedPids.has(pid) && mergedOutByPid[pid]) {
+                        itemMergedOutQty = mergedOutByPid[pid]
+                        mergedOutAccountedPids.add(pid)
+                    }
+
+                    // Tích lũy vào productions - CHỈ tính hàng MỚI thực tế của ngày đó (không tính hàng gộp vào từ nơi khác)
+                    const actualNewQty = isMergedIn ? 0 : currentQty
+                    const qtyForProd = actualNewQty + itemMergedOutQty
+
+                    if (qtyForProd > 0) {
+                        const sxLotCode = productionLotsMap[`${lot.production_id}_${pid}`] || lot.batch_code || lot.production_code || lot.productions?.code || 'NO_CODE'
+                        const prodName = lot.productions?.name || ''
+                        const prodLabel = prodName ? `${sxLotCode} | ${prodName}` : sxLotCode
+
+                        if (!productProductions.has(pid)) {
+                            productProductions.set(pid, {})
+                        }
+                        const prodMap = productProductions.get(pid)!
+                        prodMap[prodLabel] = (prodMap[prodLabel] || 0) + qtyForProd
+                    }
+                })
+
+                // Xử lý hàng đã gộp hết đi (không còn item nào trong lot cho product_id đó)
+                if (Array.isArray(mergedOut)) {
+                    const allMergedPids: string[] = []
+                    mergedOut.forEach((mo: any) => {
+                        const moPid = mo.product_id || lot.product_id
+                        if (moPid && !allMergedPids.includes(moPid)) {
+                            allMergedPids.push(moPid)
+                        }
+                    })
+
+                    allMergedPids.forEach((pid: string) => {
+                        if (!processedPids.has(pid)) {
+                            const productMergedInfo = mergedOut.filter((mo: any) => (mo.product_id || lot.product_id) === pid)
+                            const totalMergedQty = productMergedInfo.reduce((acc: number, cur: any) => acc + (Number(cur.quantity) || 0), 0)
+
+                            if (totalMergedQty > 0) {
+                                const sxLotCode = productionLotsMap[`${lot.production_id}_${pid}`] || lot.batch_code || lot.production_code || lot.productions?.code || 'NO_CODE'
+                                const prodName = lot.productions?.name || ''
+                                const prodLabel = prodName ? `${sxLotCode} | ${prodName}` : sxLotCode
+
+                                if (!productProductions.has(pid)) {
+                                    productProductions.set(pid, {})
+                                }
+                                const prodMap = productProductions.get(pid)!
+                                prodMap[prodLabel] = (prodMap[prodLabel] || 0) + totalMergedQty
+                            }
+                            processedPids.add(pid)
+                        }
+                    })
+                }
+
+                // Fallback cho lot cũ
+                if (processedPids.size === 0 && lot.products) {
+                    const pid = lot.product_id
+                    const qty = Number((lot as any).quantity) || 0
+                    if (pid && qty > 0) {
+                        const sxLotCode = productionLotsMap[`${lot.production_id}_${pid}`] || lot.batch_code || lot.production_code || lot.productions?.code || 'NO_CODE'
+                        const prodName = lot.productions?.name || ''
+                        const prodLabel = prodName ? `${sxLotCode} | ${prodName}` : sxLotCode
+
+                        if (!productProductions.has(pid)) {
+                            productProductions.set(pid, {})
+                        }
+                        const prodMap = productProductions.get(pid)!
+                        prodMap[prodLabel] = (prodMap[prodLabel] || 0) + qty
+                    }
+                }
+            })
+
             // Chuyển kết quả sang productMap
             newInSummary.forEach((summary, pid) => {
                 // CHỈ lấy sản phẩm có newInQty > 0 (có chữ "Mới" trên Báo cáo Lot)
@@ -115,12 +243,17 @@ export default function LotReconciliationTable() {
                     productMap.set(pid, {
                         id: pid,
                         product_name: summary.product_name,
+                        unit: summary.unit,
+                        newInQty: summary.newInQty,
+                        mergedInQty: summary.mergedInQty,
+                        mergedOutQty: summary.mergedOutQty,
                         actualQty: summary.newInQty, // Dùng ĐÚNG con số "Mới" từ Báo cáo Lot
                         accountingQty: 0,
                         diff: 0,
                         orderCodes: [],
                         relatedLots: summary.lotCodes,
-                        status: 'matched'
+                        status: 'matched',
+                        productions: productProductions.get(pid) || {}
                     })
                 }
             })
@@ -184,12 +317,17 @@ export default function LotReconciliationTable() {
                             productMap.set(pId, {
                                 id: pId,
                                 product_name: item.products?.name || 'Sản phẩm',
+                                unit: item.unit || '-',
+                                newInQty: 0,
+                                mergedInQty: 0,
+                                mergedOutQty: 0,
                                 actualQty: 0,
                                 accountingQty: 0,
                                 diff: 0,
                                 orderCodes: [],
                                 relatedLots: [],
-                                status: 'matched'
+                                status: 'matched',
+                                productions: {}
                             })
                         }
                         
@@ -508,9 +646,50 @@ export default function LotReconciliationTable() {
                                     </tr>
                                 ) : (
                                     filteredData.map(row => (
-                                        <tr key={row.id} className="hover:bg-stone-50 transition-colors">
-                                            <td className="px-4 py-3 text-sm font-medium text-indigo-600 max-w-[250px] break-words">
-                                                {row.product_name}
+                                        <tr key={row.id} className="hover:bg-stone-50 transition-colors align-top">
+                                            <td className="px-4 py-3 text-sm font-medium text-stone-900 max-w-[320px] break-words">
+                                                <div className="text-indigo-600 font-bold">{row.product_name}</div>
+                                                <div className="mt-1 flex flex-wrap gap-1.5 items-center">
+                                                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-stone-100 text-stone-600 text-[10px] font-black uppercase border border-stone-200">
+                                                        ĐVT: {row.unit}
+                                                    </span>
+                                                    {row.newInQty > 0 && (
+                                                        <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">
+                                                            Mới: {row.newInQty.toLocaleString('vi-VN')}
+                                                        </span>
+                                                    )}
+                                                    {row.mergedInQty > 0 && (
+                                                        <span className="text-[9px] font-black text-blue-600 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">
+                                                            Gộp vào: {row.mergedInQty.toLocaleString('vi-VN')}
+                                                        </span>
+                                                    )}
+                                                    {row.mergedOutQty > 0 && (
+                                                        <span className="text-[9px] font-black text-amber-600 bg-amber-50 px-1 py-0.5 rounded border border-amber-100">
+                                                            Gộp đi: {row.mergedOutQty.toLocaleString('vi-VN')}
+                                                        </span>
+                                                    )}
+                                                </div>
+
+                                                {/* Chi tiết theo Lệnh sản xuất liên quan */}
+                                                {row.productions && Object.keys(row.productions).length > 0 && (
+                                                    <div className="mt-2 pl-2 border-l-2 border-indigo-100 flex flex-col gap-1 bg-stone-50/50 p-1.5 rounded-r-md">
+                                                        <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Lệnh sản xuất liên quan:</div>
+                                                        {Object.entries(row.productions).map(([pLabel, pQty]) => {
+                                                            const [pCode, pName] = pLabel.split(' | ');
+                                                            return (
+                                                                <div key={pLabel} className="text-[11px] leading-relaxed flex flex-col sm:flex-row sm:items-baseline justify-between gap-1 border-b border-stone-100 last:border-0 pb-1 last:pb-0">
+                                                                    <div className="flex flex-col">
+                                                                        <span className="font-bold text-stone-700">{pCode === 'NO_CODE' ? 'Không xác định' : pCode}</span>
+                                                                        {pName && <span className="text-stone-400 text-[10px]">{pName}</span>}
+                                                                    </div>
+                                                                    <span className="font-extrabold text-indigo-600 shrink-0">
+                                                                        {pQty.toLocaleString('vi-VN')} {row.unit}
+                                                                    </span>
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                )}
                                             </td>
                                             <td className="px-4 py-3 text-sm text-stone-500 max-w-[200px] truncate">
                                                 {row.relatedLots.length > 0 ? (
@@ -523,18 +702,18 @@ export default function LotReconciliationTable() {
                                                 ) : '---'}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm font-semibold text-stone-800 text-right">
-                                                {row.actualQty.toLocaleString('vi-VN')}
+                                                {row.actualQty.toLocaleString('vi-VN')} <span className="text-stone-400 font-normal text-xs">{row.unit}</span>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm text-stone-600 text-right">
-                                                {row.accountingQty.toLocaleString('vi-VN')}
+                                                {row.accountingQty.toLocaleString('vi-VN')} <span className="text-stone-400 font-normal text-xs">{row.unit}</span>
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap text-sm font-bold text-right">
                                                 {row.diff > 0 ? (
-                                                    <span className="text-emerald-600">+{row.diff.toLocaleString('vi-VN')}</span>
+                                                    <span className="text-emerald-600">+{row.diff.toLocaleString('vi-VN')} <span className="text-emerald-500/80 font-normal text-xs">{row.unit}</span></span>
                                                 ) : row.diff < 0 ? (
-                                                    <span className="text-red-600">{row.diff.toLocaleString('vi-VN')}</span>
+                                                    <span className="text-red-600">{row.diff.toLocaleString('vi-VN')} <span className="text-red-500/80 font-normal text-xs">{row.unit}</span></span>
                                                 ) : (
-                                                    <span className="text-stone-400">0</span>
+                                                    <span className="text-stone-400">0 <span className="text-stone-400 font-normal text-xs">{row.unit}</span></span>
                                                 )}
                                             </td>
                                             <td className="px-4 py-3 whitespace-nowrap">
