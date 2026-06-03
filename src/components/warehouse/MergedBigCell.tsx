@@ -1,6 +1,7 @@
 'use client'
 import React from 'react'
 import { Maximize2, Eye, Package, MoreHorizontal, Layers } from 'lucide-react'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 
 const MergedBigCell = React.memo<{
     pos: any,
@@ -22,15 +23,77 @@ const MergedBigCell = React.memo<{
     isGrouped?: boolean,
     isSanh?: boolean,
     isManualMerge?: boolean,
-    isEmptyMode?: boolean
-}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode }) => {
+    isEmptyMode?: boolean,
+    searchTerm?: string,
+    lots?: any[]
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
     const ids = pos.realIds || [pos.id]
     const mergedCount = pos.mergedCount || ids.length
     const originalCodes = pos.originalCodes || [pos.code]
 
+    const searchStatus = React.useMemo(() => {
+        if (!searchTerm || !lots || lots.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        const allLabels: any[] = []
+        lots.forEach((lot: any) => {
+            if (lot?.box_labels) {
+                allLabels.push(...lot.box_labels)
+            }
+        })
+
+        if (allLabels.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        const matchedLabels = allLabels.filter((label: any) => {
+            const lot = lots.find((l: any) => l.id === label.lot_id) || lots[0]
+            const vals = [
+                label.code,
+                label.semi_finished_lot_code || '',
+                label.finished_lot_code || '',
+                lot.products?.name || '',
+                lot.products?.sku || '',
+                lot.products?.internal_code || '',
+                lot.products?.internal_name || '',
+                ...(lot.items?.map((i: any) => i.product_name || '') || []),
+                ...(lot.items?.map((i: any) => i.sku || '') || []),
+                ...(lot.items?.map((i: any) => i.internal_code || '') || []),
+                ...(lot.items?.map((i: any) => i.internal_name || '') || [])
+            ]
+            return advancedMatchSearch(vals, searchTerm)
+        })
+
+        if (matchedLabels.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        if (matchedLabels.length === allLabels.length) {
+            return {
+                isMatch: true,
+                isExact: true,
+                bgClass: 'bg-gradient-to-br from-emerald-50 to-emerald-100/50 dark:from-emerald-950/20 dark:to-emerald-900/10',
+                borderClass: 'border-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.15)] dark:border-emerald-600/80',
+                badgeText: 'Khớp 100%',
+                badgeClass: 'bg-emerald-500 text-white dark:bg-emerald-600'
+            }
+        } else {
+            return {
+                isMatch: true,
+                isExact: false,
+                bgClass: 'bg-gradient-to-br from-amber-50 to-amber-100/50 dark:from-amber-950/20 dark:to-amber-900/10',
+                borderClass: 'border-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.15)] dark:border-amber-600/80',
+                badgeText: `Khớp ${matchedLabels.length}/${allLabels.length}`,
+                badgeClass: 'bg-amber-500 text-white dark:bg-amber-600'
+            }
+        }
+    }, [searchTerm, lots])
+
     let bgClass = 'bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-900/20 dark:to-purple-900/20'
     let borderClass = 'border-indigo-300 dark:border-indigo-700'
     let ringClass = ''
+    let opacityClass = ''
 
     if (isSelected) {
         bgClass = 'bg-gradient-to-br from-blue-100 to-indigo-100 dark:from-blue-900/30 dark:to-indigo-900/30'
@@ -40,9 +103,18 @@ const MergedBigCell = React.memo<{
         bgClass = 'bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/30 dark:to-pink-900/30'
         borderClass = 'border-purple-500'
         ringClass = 'ring-2 ring-purple-300'
+    } else if (searchTerm && searchStatus.isMatch) {
+        bgClass = searchStatus.bgClass
+        borderClass = searchStatus.borderClass
     } else if (isOccupied) {
         bgClass = 'bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/10 dark:to-orange-900/10'
         borderClass = 'border-amber-300 dark:border-amber-700'
+    }
+
+    if (searchTerm) {
+        if (!searchStatus.isMatch) {
+            opacityClass = 'opacity-30 dark:opacity-20 hover:opacity-80 transition-opacity'
+        }
     }
 
     return (
@@ -59,7 +131,7 @@ const MergedBigCell = React.memo<{
             className={`
                 relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 print:p-1.5 rounded-xl border-2 transition-all
                 flex flex-col flex-1 h-full min-h-0 overflow-hidden print:overflow-visible
-                ${bgClass} ${borderClass} ${ringClass}
+                ${bgClass} ${borderClass} ${ringClass} ${opacityClass}
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.01] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                 ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px]' : ''}
@@ -88,7 +160,7 @@ const MergedBigCell = React.memo<{
                             )}
                         </button>
                     )}
-
+ 
                     {/* Big Position Title */}
                     <div className={`flex items-center gap-1.5 min-w-0 ${isEmptyMode ? 'justify-center' : ''}`}>
                         <Maximize2 size={isEmptyMode ? 10 : 14} className="text-indigo-500 dark:text-indigo-400 shrink-0" />
@@ -106,9 +178,14 @@ const MergedBigCell = React.memo<{
                                 }
                             </span>
                         )}
+                        {searchStatus.isMatch && (
+                            <span className={`text-[8px] font-black px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap border border-transparent uppercase tracking-wider ${searchStatus.badgeClass}`}>
+                                {searchStatus.badgeText}
+                            </span>
+                        )}
                     </div>
                 </div>
-
+ 
                 {!isEmptyMode && (
                     <div className="flex items-center gap-1 shrink-0">
                         {!isAssignmentMode && isOccupied && aggregatedItems.length > 0 && !isPrintPage && (
@@ -135,7 +212,7 @@ const MergedBigCell = React.memo<{
                     </div>
                 )}
             </div>
-
+ 
             {/* Content: Aggregated product summary */}
             {!isEmptyMode && (aggregatedItems.length > 0 || (levelGroups && levelGroups.length > 0)) ? (
                 <div className={`flex flex-col gap-1.5 flex-1 ${isPrintPage ? 'overflow-visible' : 'overflow-y-auto'} custom-scrollbar pr-1`}>
@@ -197,7 +274,7 @@ const MergedBigCell = React.memo<{
                                     </React.Fragment>
                                 )
                             })}
-
+ 
                             {aggregatedItems.length > (isMobile ? 3 : 5) && (() => {
                                 const others = aggregatedItems.slice(isMobile ? 3 : 5);
                                 const unitSums = others.reduce((acc: any, curr: any) => {
@@ -205,11 +282,11 @@ const MergedBigCell = React.memo<{
                                     acc[unit] = (acc[unit] || 0) + curr.quantity;
                                     return acc;
                                 }, {} as Record<string, number>);
-
+ 
                                 const summaryText = Object.entries(unitSums)
                                     .map(([unit, qty]) => `${qty} ${unit}`)
                                     .join(' và ');
-
+ 
                                 return (
                                     <React.Fragment>
                                         <span className="text-[10px] text-gray-500 dark:text-gray-400 italic">Các mặt hàng khác</span>
@@ -231,7 +308,7 @@ const MergedBigCell = React.memo<{
                     </div>
                 )
             )}
-
+ 
             {/* Footer: original position codes - Hide in print view */}
             {!isPrintPage && (
                 <div className="flex items-center gap-1 mt-1 pt-1 border-t border-indigo-200/50 dark:border-indigo-700/30 overflow-hidden">
@@ -255,14 +332,16 @@ const MergedBigCell = React.memo<{
         prev.isSelected === next.isSelected &&
         prev.isTargetLot === next.isTargetLot &&
         prev.aggregatedItems === next.aggregatedItems &&
-        prev.isAssignmentMode === next.isHighlightBlinking &&
+        prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&
         prev.displayInternalCode === next.displayInternalCode &&
         prev.isPrintPage === next.isPrintPage &&
         prev.isGrouped === next.isGrouped &&
         prev.isSanh === next.isSanh &&
         prev.isManualMerge === next.isManualMerge &&
-        prev.isEmptyMode === next.isEmptyMode
+        prev.isEmptyMode === next.isEmptyMode &&
+        prev.searchTerm === next.searchTerm &&
+        prev.lots === next.lots
 });
 
 export default MergedBigCell;

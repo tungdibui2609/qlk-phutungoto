@@ -3,6 +3,7 @@ import React from 'react'
 import { Eye, MoreHorizontal, Package } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -28,16 +29,67 @@ const PositionCell = React.memo<{
     onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
     isPrintPage?: boolean,
     isSanh?: boolean,
-    isEmptyMode?: boolean
+    isEmptyMode?: boolean,
+    searchTerm?: string
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
     isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
-    onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh, isEmptyMode
+    onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
 }) => {
     const ids = (pos as any).realIds || [pos.id]
+
+    const searchStatus = React.useMemo(() => {
+        if (!searchTerm || !lotDetail || !lotDetail.box_labels || lotDetail.box_labels.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        const labels = lotDetail.box_labels
+        const matchedLabels = labels.filter((label: any) => {
+            const vals = [
+                label.code,
+                label.semi_finished_lot_code || '',
+                label.finished_lot_code || '',
+                lotDetail.products?.name || '',
+                lotDetail.products?.sku || '',
+                lotDetail.products?.internal_code || '',
+                lotDetail.products?.internal_name || '',
+                ...(lotDetail.items?.map((i: any) => i.product_name || '') || []),
+                ...(lotDetail.items?.map((i: any) => i.sku || '') || []),
+                ...(lotDetail.items?.map((i: any) => i.internal_code || '') || []),
+                ...(lotDetail.items?.map((i: any) => i.internal_name || '') || [])
+            ]
+            return advancedMatchSearch(vals, searchTerm)
+        })
+
+        if (matchedLabels.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        if (matchedLabels.length === labels.length) {
+            return {
+                isMatch: true,
+                isExact: true,
+                bgClass: 'bg-emerald-50 dark:bg-emerald-950/20',
+                borderClass: 'border-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.15)] dark:border-emerald-600/80',
+                badgeText: '100%',
+                badgeClass: 'bg-emerald-500 text-white dark:bg-emerald-600'
+            }
+        } else {
+            return {
+                isMatch: true,
+                isExact: false,
+                bgClass: 'bg-amber-50 dark:bg-amber-950/20',
+                borderClass: 'border-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.15)] dark:border-amber-600/80',
+                badgeText: `${matchedLabels.length}/${labels.length}`,
+                badgeClass: 'bg-amber-500 text-white dark:bg-amber-600'
+            }
+        }
+    }, [searchTerm, lotDetail])
+
     let bgClass = 'bg-white dark:bg-gray-700'
     let borderClass = 'border-gray-200 dark:border-gray-600'
     let ringClass = ''
+    let opacityClass = ''
 
     if (isSelected) {
         bgClass = 'bg-blue-50 dark:bg-blue-900/30'
@@ -47,9 +99,18 @@ const PositionCell = React.memo<{
         bgClass = 'bg-purple-100 dark:bg-purple-900/40'
         borderClass = 'border-purple-500'
         ringClass = 'ring-2 ring-purple-300'
+    } else if (searchTerm && searchStatus.isMatch) {
+        bgClass = searchStatus.bgClass
+        borderClass = searchStatus.borderClass
     } else if (isOccupied) {
         bgClass = 'bg-amber-50 dark:bg-amber-900/10'
         borderClass = 'border-amber-200 dark:border-amber-800'
+    }
+
+    if (searchTerm) {
+        if (!searchStatus.isMatch) {
+            opacityClass = 'opacity-30 dark:opacity-20 hover:opacity-80 transition-opacity'
+        }
     }
 
     return (
@@ -73,7 +134,7 @@ const PositionCell = React.memo<{
             className={`
                 relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
                 flex flex-col justify-between overflow-hidden
-                ${bgClass} ${borderClass} ${ringClass}
+                ${bgClass} ${borderClass} ${ringClass} ${opacityClass}
                 ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                 ${isPrintPage && !isEmptyMode ? `min-h-${isSanh ? '0' : '[125px]'} h-${isSanh ? 'auto' : '[125px]'} print:overflow-visible` : ''}
@@ -147,6 +208,13 @@ const PositionCell = React.memo<{
 
             {lotDetail && isOccupied && !isEmptyMode ? (
                 <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
+                    {searchStatus.isMatch && (
+                        <div className="mb-0.5 shrink-0">
+                            <div className={`text-[8px] font-black px-1 rounded leading-tight text-center w-fit mx-auto border border-transparent uppercase tracking-wider ${searchStatus.badgeClass}`}>
+                                Khớp {searchStatus.badgeText}
+                            </div>
+                        </div>
+                    )}
                     <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'line-clamp-1 text-ellipsis overflow-hidden'}`}>
                         {lotDetail.code}
                     </div>
@@ -253,7 +321,8 @@ const PositionCell = React.memo<{
         prev.isGrouped === next.isGrouped &&
         prev.isPrintPage === next.isPrintPage &&
         prev.isSanh === next.isSanh &&
-        prev.isEmptyMode === next.isEmptyMode
+        prev.isEmptyMode === next.isEmptyMode &&
+        prev.searchTerm === next.searchTerm
 });
 
 export default PositionCell;

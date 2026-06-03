@@ -118,6 +118,20 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (lot.daily_seq) res.push(String(lot.daily_seq))
                         }
 
+                        // Box Labels
+                        if (lot.box_labels && lot.box_labels.length > 0) {
+                            lot.box_labels.forEach((label: any) => {
+                                if (mode === 'all' || mode === 'code' || mode === 'production') {
+                                    if (label.semi_finished_lot_code) res.push(label.semi_finished_lot_code)
+                                    if (label.finished_lot_code) res.push(label.finished_lot_code)
+                                    if (label.code) res.push(label.code)
+                                }
+                                if (mode === 'all' || mode === 'stt') {
+                                    if (label.code) res.push(label.code)
+                                }
+                            })
+                        }
+
                         if (mode === 'all') {
                             if (lot.supplier_name) res.push(lot.supplier_name)
                             if (lot.qc_name) res.push(lot.qc_name)

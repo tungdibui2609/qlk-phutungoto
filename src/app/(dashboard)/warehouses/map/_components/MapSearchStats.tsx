@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type Position = Database['public']['Tables']['positions']['Row']
@@ -29,6 +30,7 @@ interface PositionCardProps {
     onPositionSelect?: (positionId: string) => void
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onViewDetails?: (lotId: string) => void
+    searchTerm?: string
 }
 
 const MemoizedPositionCard = React.memo(function PositionCard({
@@ -37,15 +39,70 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     isSelected,
     onPositionSelect,
     onPositionMenu,
-    onViewDetails
+    onViewDetails,
+    searchTerm
 }: PositionCardProps) {
     const hasLot = !!pos.lot_id
+
+    const searchStatus = React.useMemo(() => {
+        if (!searchTerm || !lot || !lot.box_labels || lot.box_labels.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        const labels = lot.box_labels
+        const matchedLabels = labels.filter((label: any) => {
+            const vals = [
+                label.code,
+                label.semi_finished_lot_code || '',
+                label.finished_lot_code || '',
+                lot.products?.name || '',
+                lot.products?.sku || '',
+                lot.products?.internal_code || '',
+                lot.products?.internal_name || '',
+                ...(lot.lot_items?.map((i: any) => i.products?.name || '') || []),
+                ...(lot.lot_items?.map((i: any) => i.products?.sku || '') || []),
+                ...(lot.lot_items?.map((i: any) => i.products?.internal_code || '') || []),
+                ...(lot.lot_items?.map((i: any) => i.products?.internal_name || '') || [])
+            ]
+            return advancedMatchSearch(vals, searchTerm)
+        })
+
+        if (matchedLabels.length === 0) {
+            return { isMatch: false, isExact: false, bgClass: '', borderClass: '', badgeText: '', badgeClass: '' }
+        }
+
+        if (matchedLabels.length === labels.length) {
+            // Khớp hoàn toàn -> Màu xanh emerald
+            return {
+                isMatch: true,
+                isExact: true,
+                bgClass: 'bg-emerald-50 dark:bg-emerald-950/20',
+                borderClass: 'border-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.15)] dark:border-emerald-600/80',
+                badgeText: 'Khớp 100%',
+                badgeClass: 'bg-emerald-500 text-white dark:bg-emerald-600'
+            }
+        } else {
+            // Khớp một phần -> Màu vàng cam amber
+            return {
+                isMatch: true,
+                isExact: false,
+                bgClass: 'bg-amber-50 dark:bg-amber-950/20',
+                borderClass: 'border-amber-500/80 shadow-[0_0_8px_rgba(245,158,11,0.15)] dark:border-amber-600/80',
+                badgeText: `Khớp ${matchedLabels.length}/${labels.length}`,
+                badgeClass: 'bg-amber-500 text-white dark:bg-amber-600'
+            }
+        }
+    }, [searchTerm, lot])
+
     let bgClass = "bg-white dark:bg-slate-800"
     let borderClass = "border-slate-200 dark:border-slate-700"
 
     if (isSelected) {
         bgClass = "bg-blue-50 dark:bg-blue-900/30"
         borderClass = "border-blue-500"
+    } else if (searchStatus.isMatch) {
+        bgClass = searchStatus.bgClass
+        borderClass = searchStatus.borderClass
     } else if (hasLot) {
         bgClass = "bg-amber-50 dark:bg-amber-900/10"
         borderClass = "border-amber-200 dark:border-amber-800"
@@ -114,6 +171,14 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                             </div>
                         </div>
                     ) : null}
+
+                    {searchStatus.isMatch && (
+                        <div className="mb-1 shrink-0">
+                            <div className={`text-[8px] font-black px-1 rounded leading-tight line-clamp-1 text-center w-fit mx-auto border border-transparent uppercase tracking-wider ${searchStatus.badgeClass}`}>
+                                {searchStatus.badgeText}
+                            </div>
+                        </div>
+                    )}
 
                     {lot.items && lot.items.length > 0 ? (
                         <div className="flex flex-col gap-1.5 overflow-y-auto max-h-full py-0.5">
@@ -191,6 +256,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     return prev.pos.id === next.pos.id &&
         prev.pos.lot_id === next.pos.lot_id &&
         prev.isSelected === next.isSelected &&
+        prev.searchTerm === next.searchTerm &&
         prev.lot === next.lot
 })
 
@@ -336,6 +402,7 @@ export function MapSearchStats({
                 onPositionSelect={onPositionSelect}
                 onPositionMenu={onPositionMenu}
                 onViewDetails={onViewDetails}
+                searchTerm={searchTerm}
             />
         )
     }

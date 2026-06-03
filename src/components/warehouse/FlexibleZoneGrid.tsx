@@ -56,6 +56,7 @@ interface FlexibleZoneGridProps {
     isEmptyMode?: boolean
     checkedZoneIds?: Set<string>
     onToggleCheckedZone?: (zoneId: string, isChecked: boolean) => void
+    searchTerm?: string
 }
 
 export default function FlexibleZoneGrid({
@@ -88,7 +89,8 @@ export default function FlexibleZoneGrid({
     isPrintPage = false,
     isEmptyMode = false,
     checkedZoneIds = new Set(),
-    onToggleCheckedZone
+    onToggleCheckedZone,
+    searchTerm = ''
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -173,6 +175,11 @@ export default function FlexibleZoneGrid({
 
         // Render merged big cell for virtual positions
         if (pos.isVirtual && pos.mergedCount > 1) {
+            const cellLots = realIds.map((id: string) => {
+                const p = positions.find(posItem => posItem.id === id)
+                return p?.lot_id ? lotInfo[p.lot_id] : null
+            }).filter(Boolean)
+
             return (
                 <MergedBigCell
                     key={pos.id}
@@ -192,6 +199,8 @@ export default function FlexibleZoneGrid({
                     isGrouped={isGrouped}
                     isSanh={isSanh}
                     isEmptyMode={isEmptyMode}
+                    searchTerm={searchTerm}
+                    lots={cellLots}
                 />
             )
         }
@@ -217,6 +226,7 @@ export default function FlexibleZoneGrid({
                 isGrouped={isGrouped}
                 isSanh={isSanh}
                 isEmptyMode={isEmptyMode}
+                searchTerm={searchTerm}
             />
         )
     }
@@ -352,6 +362,7 @@ export default function FlexibleZoneGrid({
                 }
             })
             const aggregatedItems = Array.from(itemMap.values())
+            const cellLots = targetPositions.map((p: any) => p.lot_id ? lotInfo[p.lot_id] : null).filter(Boolean)
 
             return (
                 <div className="flex flex-col flex-1 h-full min-h-0 gap-1.5 print:gap-1">
@@ -377,6 +388,8 @@ export default function FlexibleZoneGrid({
                         isSanh={isSanh}
                         isManualMerge={isManualMerge}
                         isEmptyMode={isEmptyMode}
+                        searchTerm={searchTerm}
+                        lots={cellLots}
                     />
                 </div>
             )

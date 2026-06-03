@@ -46,7 +46,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id)')
+            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)')
             .eq('id', lotId)
             .single() as any
 
@@ -180,7 +180,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(name, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id))') as Promise<any[]>,
+                fetchAll('lots', q => q.eq('system_code', systemType), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(name, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)') as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
