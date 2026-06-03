@@ -215,7 +215,10 @@ export default function AssignmentApprovalPage() {
             setApprovedList(enrichedAssignments.filter((a: any) => a.status.startsWith('approved')))
             setRejectedList(enrichedAssignments.filter((a: any) => a.status === 'rejected'))
 
-            const pendingStts = Array.from(new Set(assignments.map((a: any) => a.lot_stt)))
+            const pendingStts = Array.from(new Set([
+                ...assignments.map((a: any) => a.lot_stt),
+                ...Object.values(manualEdits).map((m: any) => m.lot_stt)
+            ]))
             
             // Tính toán ngày nhỏ nhất của các yêu cầu pending để lấy bổ sung lô hàng khớp STT
             const pendingDates = assignments.filter((a: any) => a.status === 'pending').map((a: any) => a.production_date).filter(Boolean)
@@ -596,13 +599,63 @@ export default function AssignmentApprovalPage() {
         })
     }
 
-    const handleSaveEdit = (ass: PendingAssignment) => {
+    const handleSaveEdit = async (ass: PendingAssignment) => {
         const encodedStt = encodeSTT(editValues.lot_stt)
         const newCode = editValues.position_code.trim()
         if (encodedStt === null || isNaN(encodedStt) || !newCode) {
             showToast('Vui lòng nhập đầy đủ STT và Mã vị trí', 'error')
             return
         }
+
+        // Tải lô hàng tương ứng với STT mới nếu chưa có trong lotsInDay
+        const isLotAlreadyLoaded = lotsInDay.some(l => l.daily_seq === encodedStt)
+        if (!isLotAlreadyLoaded && currentSystem?.code) {
+            try {
+                const pendingDates = pendingList.map((a: any) => a.production_date).filter(Boolean)
+                let minPendingDate = dateFrom
+                if (pendingDates.length > 0) {
+                    pendingDates.forEach((d: string) => {
+                        if (d < minPendingDate) minPendingDate = d
+                    })
+                }
+                const expandedLotDateFrom = format(subDays(new Date(minPendingDate), 45), 'yyyy-MM-dd')
+
+                const { data: newLots, error: fetchLotErr } = await supabase
+                    .from('lots')
+                    .select(`*, lot_items(products(name))`)
+                    .eq('system_code', currentSystem.code)
+                    .neq('status', 'hidden')
+                    .neq('status', 'exported')
+                    .eq('daily_seq', encodedStt)
+                    .gte('inbound_date', expandedLotDateFrom)
+                    .order('inbound_date', { ascending: false })
+                
+                if (fetchLotErr) {
+                    console.error('[EDIT SAVE] Fetch custom lot error:', fetchLotErr)
+                } else if (newLots && newLots.length > 0) {
+                    const lotIds = newLots.map((l: any) => l.id)
+                    const { data: posData } = await supabase
+                        .from('positions')
+                        .select('id, code, lot_id')
+                        .in('lot_id', lotIds)
+                    
+                    const formattedNewLots: Lot[] = newLots.map((l: any) => ({
+                        ...l,
+                        product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
+                        positions: posData?.filter((p: any) => p.lot_id === l.id) || []
+                    }))
+
+                    setLotsInDay(prev => {
+                        const existIds = new Set(prev.map(p => p.id))
+                        const filteredNew = formattedNewLots.filter(l => !existIds.has(l.id))
+                        return [...prev, ...filteredNew]
+                    })
+                }
+            } catch (e) {
+                console.error('[EDIT SAVE] Fetch custom lot exception:', e)
+            }
+        }
+
         setManualEdits(prev => ({ ...prev, [ass.id]: { lot_stt: encodedStt, position_code: newCode } }))
         setEditingId(null)
         showToast(`Đã ghi nhận thay đổi. Nhấn Duyệt để hoàn tất.`, 'success')
