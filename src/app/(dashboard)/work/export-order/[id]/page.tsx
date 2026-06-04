@@ -41,6 +41,7 @@ interface ExportOrderItem {
     is_hall?: boolean
     priority?: number | null
     zone_path?: string[]
+    current_zone_path?: string[]
     full_position_path?: string | null
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
     part_number?: string | null
@@ -299,6 +300,7 @@ function ExportOrderDetailContent() {
                     let currentPosCode = originalPosCode
                     let currentPosId = originalPosId
                     let isHall = false
+                    let currentZoneId = originalZoneId
 
                     if (item.lots?.positions && item.lots?.positions.length > 0) {
                         currentPosCode = item.lots.positions[0].code
@@ -310,6 +312,7 @@ function ExportOrderDetailContent() {
                             : zps?.zone_id
 
                         if (leafZoneId) {
+                            currentZoneId = leafZoneId
                             let currId = leafZoneId
                             while (currId) {
                                 const z = currentZones.find((x: any) => x.id === currId)
@@ -339,6 +342,7 @@ function ExportOrderDetailContent() {
                     }
 
                     const zonePath = getZonePath(originalZoneId)
+                    const currentZonePath = getZonePath(currentZoneId)
                     const fullPosPath = zonePath.length > 0 ? `${zonePath.join(' - ')} - ${originalPosCode.includes('-') ? originalPosCode.split('-').pop() : originalPosCode}` : null
 
                     // Determine display status
@@ -391,6 +395,7 @@ function ExportOrderDetailContent() {
                         display_status: displayStatus,
                         priority: item.priority || null,
                         zone_path: zonePath,
+                        current_zone_path: currentZonePath,
                         full_position_path: fullPosPath,
                         lot_tags: item.lots?.lot_tags,
                         part_number: item.products?.part_number,
@@ -1479,6 +1484,7 @@ function ExportOrderDetailContent() {
                                 sku: item.sku,
                                 part_number: item.part_number,
                                 zone_path: item.zone_path,
+                                current_zone_path: item.current_zone_path,
                                 lot_tags: item.lot_tags
                             }))}
                             onPositionSelect={handlePositionSelect}

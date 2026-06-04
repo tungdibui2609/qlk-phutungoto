@@ -14,6 +14,7 @@ interface ExportItemProps {
     display_status?: string
     current_position_name?: string
     zone_path?: string[]
+    current_zone_path?: string[]
     lot_tags?: { tag: string; lot_item_id: string | null }[] | null
 }
 
@@ -32,8 +33,8 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
         const data: any = {}
 
         items.forEach(item => {
-            const path = item.zone_path || []
-            const posCode = item.position_name || ""
+            const path = item.current_zone_path || item.zone_path || []
+            const posCode = item.current_position_name || item.position_name || ""
             
             const whName = path.length > 0 ? path[0] : "KHO KHÁC"
             const aisleName = path.length > 1 ? path[1] : (posCode.match(/D(\d+)/i)?.[0] || "DÃY KHÁC")
@@ -199,8 +200,9 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                         // Group items by position_name within each floor
                                                         const posGroups: Record<string, any[]> = {}
                                                         floor.items.forEach((item: any) => {
-                                                            if (!posGroups[item.position_name]) posGroups[item.position_name] = []
-                                                            posGroups[item.position_name].push(item)
+                                                            const actualPosName = item.current_position_name || item.position_name || ""
+                                                            if (!posGroups[actualPosName]) posGroups[actualPosName] = []
+                                                            posGroups[actualPosName].push(item)
                                                         })
 
                                                         // Sort positions: Suffix 01 first, then 02..., then alphabetical A, B, C...
