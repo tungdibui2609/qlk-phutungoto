@@ -170,7 +170,8 @@ export default function InboundPage() {
                         unit,
                         products(sku, internal_name)
                     ),
-                    order_types(name)
+                    order_types(name),
+                    supplier:suppliers(name)
                 `)
                 .eq('system_code', systemType)
                 .order('created_at', { ascending: false })
@@ -191,13 +192,32 @@ export default function InboundPage() {
     }
 
     const handleSearch = async () => {
-        if (!searchQuery.trim()) {
+        const cleanQuery = searchQuery.trim()
+        if (!cleanQuery) {
             setCurrentPage(0)
             fetchOrders(0)
             return
         }
         setLoading(true)
         try {
+            // 1. Query matching supplier IDs
+            let supplierIds: string[] = []
+            const { data: suppData } = await supabase
+                .from('suppliers')
+                .select('id')
+                .eq('system_code', systemType)
+                .ilike('name', `%${cleanQuery}%`)
+
+            if (suppData) {
+                supplierIds = suppData.map(s => s.id)
+            }
+
+            // 2. Build the search query
+            let orQuery = `code.ilike.%${cleanQuery}%`
+            if (supplierIds.length > 0) {
+                orQuery += `,supplier_id.in.(${supplierIds.map(id => `"${id}"`).join(',')})`
+            }
+
             const { data, error } = await supabase
                 .from('inbound_orders')
                 .select(`
@@ -209,10 +229,11 @@ export default function InboundPage() {
                         unit,
                         products(sku, internal_name)
                     ),
-                    order_types(name)
+                    order_types(name),
+                    supplier:suppliers(name)
                 `)
                 .eq('system_code', systemType)
-                .or(`code.ilike.%${searchQuery}%,supplier_name.ilike.%${searchQuery}%`)
+                .or(orQuery)
                 .order('created_at', { ascending: false })
                 .limit(100)
 
@@ -582,7 +603,7 @@ export default function InboundPage() {
                                                     </td>
                                                     <td className="px-3 py-3">
                                                         <div className="flex flex-col">
-                                                            <span className="text-sm font-medium text-gray-900">{order.supplier_name || 'Hệ thống'}</span>
+                                                            <span className="text-sm font-medium text-gray-900">{order.supplier?.name || 'Hệ thống'}</span>
                                                             <span className="text-xs text-gray-500">Kho: {order.warehouse_name || '---'}</span>
                                                         </div>
                                                     </td>

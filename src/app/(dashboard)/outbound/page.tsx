@@ -143,7 +143,8 @@ export default function OutboundPage() {
     }
 
     const handleSearch = async () => {
-        if (!searchQuery.trim()) {
+        const cleanQuery = searchQuery.trim()
+        if (!cleanQuery) {
             setCurrentPage(0)
             fetchOrders(0)
             return
@@ -164,7 +165,7 @@ export default function OutboundPage() {
                     order_types(name)
                 `)
                 .eq('system_code', systemType)
-                .or(`code.ilike.%${searchQuery}%,customer_name.ilike.%${searchQuery}%`)
+                .or(`code.ilike.%${cleanQuery}%,customer_name.ilike.%${cleanQuery}%`)
                 .order('created_at', { ascending: false })
                 .limit(100)
 
