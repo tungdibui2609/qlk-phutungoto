@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Leaf, Search, Plus, Wand2 } from 'lucide-react'
+import { Leaf, Search, Plus, Wand2, FileSpreadsheet } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { exportFreshBatchesToExcel } from '@/lib/freshMaterialExcelExport'
 import PageHeader from '@/components/ui/PageHeader'
 import EmptyState from '@/components/ui/EmptyState'
 import BatchTable from './_components/BatchTable'
@@ -40,6 +42,7 @@ export default function FreshMaterialsPage() {
     const { showToast, showConfirm } = useToast()
     const { systemType } = useSystem()
     const { profile, hasPermission } = useUser()
+    const { companyInfo } = usePrintCompanyInfo()
 
     const canManage = hasPermission('fresh_material.manage')
 
@@ -47,6 +50,7 @@ export default function FreshMaterialsPage() {
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     const [statusFilter, setStatusFilter] = useState<string>('all')
+    const [exporting, setExporting] = useState(false)
 
     const [isModalOpen, setIsModalOpen] = useState(false)
     const [editingBatch, setEditingBatch] = useState<FreshBatch | null>(null)
@@ -141,6 +145,23 @@ export default function FreshMaterialsPage() {
         setSelectedBatch(prev => prev?.id === batch.id ? null : batch)
     }
 
+    const handleExportExcel = async () => {
+        if (filteredBatches.length === 0) {
+            showToast('Không có dữ liệu lô nguyên liệu nào để xuất!', 'warning')
+            return
+        }
+        setExporting(true)
+        try {
+            await exportFreshBatchesToExcel(filteredBatches, companyInfo, systemType)
+            showToast('Xuất báo cáo Excel thành công', 'success')
+        } catch (err: any) {
+            console.error('Lỗi khi xuất excel:', err)
+            showToast('Lỗi xuất Excel: ' + err.message, 'error')
+        } finally {
+            setExporting(false)
+        }
+    }
+
     const statusOptions = [
         { value: 'all', label: 'Tất cả', color: 'stone' },
         { value: 'RECEIVING', label: 'Đang nhận', color: 'blue' },
@@ -208,6 +229,16 @@ export default function FreshMaterialsPage() {
                         </button>
                     ))}
                 </div>
+
+                <button
+                    onClick={handleExportExcel}
+                    disabled={exporting}
+                    className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/30 text-emerald-700 hover:text-emerald-800 dark:text-emerald-400 border border-emerald-100 dark:border-emerald-900/50 font-bold text-xs uppercase tracking-wider transition-all disabled:opacity-50 active:scale-95 cursor-pointer"
+                    title="Xuất danh sách ra Excel"
+                >
+                    <FileSpreadsheet size={16} />
+                    <span>{exporting ? 'Đang xuất...' : 'Xuất Excel'}</span>
+                </button>
 
                 <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-stone-100 dark:bg-zinc-800 rounded-2xl text-[10px] font-black uppercase tracking-widest text-stone-400">
                     {filteredBatches.length} / {batches.length} Lô

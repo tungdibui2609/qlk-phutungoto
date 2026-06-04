@@ -228,6 +228,7 @@ function ExportOrderPrintContent() {
                             daily_seq,
                             lot_tags (tag, lot_item_id),
                             positions!positions_lot_id_fkey (
+                                id,
                                 code,
                                 is_hall:zone_positions(zone_id)
                             )
@@ -279,7 +280,12 @@ function ExportOrderPrintContent() {
 
                     const { zones: groupedZones, positions: groupedPositions } = groupWarehouseData(zoneDataRaw as any, posWithZone)
 
-                    const exportedPosIds = new Set(initialItemsData.map((i: any) => i.position_id).filter(Boolean))
+                    const exportedPosIds = new Set(initialItemsData.map((item: any) => {
+                        if (item.lots?.positions && item.lots.positions.length > 0) {
+                            return item.lots.positions[0].id
+                        }
+                        return item.position_id
+                    }).filter(Boolean))
 
                     const parentMap = new Map<string, string>()
                     groupedZones.forEach(z => {
@@ -349,7 +355,12 @@ function ExportOrderPrintContent() {
                     const occupied = new Set<string>()
 
                     finalPositions.forEach(p => {
-                        const exportItem = initialItemsData.find((i: any) => i.position_id === p.id) as any
+                        const exportItem = initialItemsData.find((item: any) => {
+                            if (item.lots?.positions && item.lots.positions.length > 0) {
+                                return item.lots.positions[0].id === p.id
+                            }
+                            return item.position_id === p.id
+                        }) as any
                         if (exportItem && exportItem.lots) {
                             p.lot_id = exportItem.lots.id
                             occupied.add(p.id)
@@ -589,7 +600,7 @@ function ExportOrderPrintContent() {
                         return d;
                     }
                 })(),
-                position_code: item.positions?.code || '',
+                position_code: (item.current_position_code && item.current_position_code !== 'N/A') ? item.current_position_code : (item.positions?.code || ''),
                 notes: item.lots?.notes || '',
                 stt_lot: decodeSTT(item.lots?.daily_seq) || '',
                 convertedQty: convertedQty
@@ -954,7 +965,16 @@ function ExportOrderPrintContent() {
                                             </div>
                                         )}
                                     </td>
-                                    <td className="border border-black p-2 text-center">{item.positions?.code}</td>
+                                    <td className="border border-black p-2 text-center">
+                                        {item.current_position_code && item.current_position_code !== 'N/A' && item.positions?.code !== item.current_position_code ? (
+                                            <div className="flex flex-col items-center justify-center gap-0.5">
+                                                <span className="line-through text-stone-400 text-[10px]">{item.positions?.code}</span>
+                                                <span className="font-bold text-blue-600 text-xs">{item.current_position_code}</span>
+                                            </div>
+                                        ) : (
+                                            item.positions?.code || 'N/A'
+                                        )}
+                                    </td>
                                     <td className="border border-black p-2">
                                         <div className="font-bold">{item.products?.name}</div>
                                         <div className="text-[10px] text-stone-500">{item.products?.sku}</div>

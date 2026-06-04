@@ -104,7 +104,7 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     const [name, setName] = useState('')
     const [description, setDescription] = useState('')
     const [status, setStatus] = useState('IN_PROGRESS')
-    const isLocked = readOnly || status === 'DONE';
+    const isLocked = readOnly || editItem?.status === 'DONE';
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const [productionType, setProductionType] = useState<'NEW' | 'RE_SORT'>('NEW')
