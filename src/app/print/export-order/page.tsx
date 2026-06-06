@@ -243,9 +243,16 @@ function ExportOrderPrintContent() {
                 const initialItemsData: any[] = itemsDataRaw || []
                 
                 // Sắp xếp theo mã vị trí (A-Z) để gom nhóm các khu vực gần nhau
+                // Sắp xếp theo mã vị trí thực tế hiện tại để đồng bộ với sơ đồ in
                 initialItemsData.sort((a: any, b: any) => {
-                    const posA = a.positions?.code || ''
-                    const posB = b.positions?.code || ''
+                    const getActualCode = (item: any) => {
+                        if (item.lots?.positions && item.lots.positions.length > 0) {
+                            return item.lots.positions[0].code
+                        }
+                        return item.positions?.code || ''
+                    }
+                    const posA = getActualCode(a)
+                    const posB = getActualCode(b)
                     return posA.localeCompare(posB)
                 })
 

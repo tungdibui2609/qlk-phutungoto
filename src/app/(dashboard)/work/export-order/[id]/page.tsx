@@ -404,8 +404,8 @@ function ExportOrderDetailContent() {
                         stock_quantity: matchingLotItem ? Number(matchingLotItem.quantity) : 0
                     }
                 }).sort((a: any, b: any) => {
-                    const posA = a.position_name || ''
-                    const posB = b.position_name || ''
+                    const posA = a.current_position_name || a.position_name || ''
+                    const posB = b.current_position_name || b.position_name || ''
                     return posA.localeCompare(posB)
                 })
             }
