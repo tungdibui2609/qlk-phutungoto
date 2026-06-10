@@ -1,9 +1,11 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Package, Search, Edit, Trash2, Eye, Filter } from 'lucide-react'
+import { Package, Search, Edit, Trash2, Eye, Filter, FileSpreadsheet } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { exportProductsToExcel } from '@/lib/productExcelExport'
 import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ProductDetailModal from '@/components/inventory/ProductDetailModal'
@@ -22,6 +24,7 @@ type Product = Database['public']['Tables']['products']['Row']
 export default function InventoryPage() {
     const { showToast, showConfirm } = useToast()
     const { systemType } = useSystem()
+    const { companyInfo } = usePrintCompanyInfo()
     const [categories, setCategories] = useState<any[]>([])
     const [selectedCategory, setSelectedCategory] = useState<string>('all')
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
@@ -30,6 +33,25 @@ export default function InventoryPage() {
     const [isModalOpen, setIsModalOpen] = useState(false)
     const pathname = usePathname()
     const isSanxuat = pathname.startsWith('/sanxuat')
+    const [exporting, setExporting] = useState(false)
+
+    const handleExportExcel = async () => {
+        if (displayedProducts.length === 0) return
+        setExporting(true)
+        try {
+            await exportProductsToExcel({
+                products: displayedProducts,
+                unitsMap,
+                companyInfo,
+                systemType: 'dashboard'
+            })
+            showToast('Xuất Excel danh sách sản phẩm thành công', 'success')
+        } catch (error: any) {
+            showToast('Lỗi khi xuất Excel: ' + error.message, 'error')
+        } finally {
+            setExporting(false)
+        }
+    }
 
     // Load Units dictionary & Categories
     useEffect(() => {
@@ -139,6 +161,15 @@ export default function InventoryPage() {
                         </svg>
                     </div>
                 </div>
+
+                <button
+                    onClick={handleExportExcel}
+                    disabled={exporting || displayedProducts.length === 0}
+                    className="px-6 py-3 rounded-2xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 active:scale-95 transition-all font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm min-w-[140px]"
+                >
+                    <FileSpreadsheet size={20} className="text-green-600" />
+                    {exporting ? 'Đang xuất...' : 'Xuất Excel'}
+                </button>
             </div>
 
             {/* TABLE (Desktop) */}

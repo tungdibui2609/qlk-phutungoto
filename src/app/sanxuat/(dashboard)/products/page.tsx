@@ -1,8 +1,10 @@
 'use client'
 import React, { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Package, Search, Edit, Trash2, Eye, Filter } from 'lucide-react'
+import { Package, Search, Edit, Trash2, Eye, Filter, FileSpreadsheet } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { exportProductsToExcel } from '@/lib/productExcelExport'
 import Protected from '@/components/auth/Protected'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import ProductDetailModal from '@/components/inventory/ProductDetailModal'
@@ -19,12 +21,32 @@ type Product = Database['public']['Tables']['products']['Row']
 
 export default function SanxuatProductsPage() {
     const { showToast, showConfirm } = useToast()
+    const { companyInfo } = usePrintCompanyInfo()
     const [categories, setCategories] = useState<any[]>([])
     const [selectedCategory, setSelectedCategory] = useState<string>('all')
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
     const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
     const [selectedProduct, setSelectedProduct] = useState<Product | null>(null)
     const [isModalOpen, setIsModalOpen] = useState(false)
+    const [exporting, setExporting] = useState(false)
+
+    const handleExportExcel = async () => {
+        if (displayedProducts.length === 0) return
+        setExporting(true)
+        try {
+            await exportProductsToExcel({
+                products: displayedProducts,
+                unitsMap,
+                companyInfo,
+                systemType: 'sanxuat'
+            })
+            showToast('Xuất Excel danh sách sản phẩm thành công', 'success')
+        } catch (error: any) {
+            showToast('Lỗi khi xuất Excel: ' + error.message, 'error')
+        } finally {
+            setExporting(false)
+        }
+    }
 
     useEffect(() => {
         async function fetchCommonData() {
@@ -130,6 +152,15 @@ export default function SanxuatProductsPage() {
                         </svg>
                     </div>
                 </div>
+
+                <button
+                    onClick={handleExportExcel}
+                    disabled={exporting || displayedProducts.length === 0}
+                    className="px-6 py-3 rounded-2xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 active:scale-95 transition-all font-bold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm min-w-[140px]"
+                >
+                    <FileSpreadsheet size={20} className="text-green-600" />
+                    {exporting ? 'Đang xuất...' : 'Xuất Excel'}
+                </button>
             </div>
 
             <div className="hidden md:block bg-white rounded-[32px] overflow-hidden border border-stone-200 shadow-sm">

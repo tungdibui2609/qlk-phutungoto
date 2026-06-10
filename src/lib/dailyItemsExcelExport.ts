@@ -28,6 +28,7 @@ export async function exportDailyItemsToExcel(data: DailyItemExportData) {
         { header: 'Số lượng', key: 'quantity', width: 15 },
         { header: 'Quy đổi (Kg)', key: 'convertedQty', width: 15 },
         { header: data.type === 'inbound' ? 'Nhà cung cấp' : (data.type === 'outbound' ? 'Khách hàng' : 'Đối tác'), key: 'partner', width: 30 },
+        { header: 'Diễn giải', key: 'description', width: 30 },
         { header: 'Ghi chú', key: 'note', width: 30 },
     ];
 
@@ -48,9 +49,9 @@ export async function exportDailyItemsToExcel(data: DailyItemExportData) {
     worksheet.insertRow(4, []); // Spacer
 
     // Merge cells for title
-    worksheet.mergeCells('A1:K1');
-    worksheet.mergeCells('A2:K2');
-    worksheet.mergeCells('A3:K3');
+    worksheet.mergeCells('A1:L1');
+    worksheet.mergeCells('A2:L2');
+    worksheet.mergeCells('A3:L3');
 
     // Styling Header
     const titleCell = worksheet.getCell('A1');
@@ -127,6 +128,7 @@ export async function exportDailyItemsToExcel(data: DailyItemExportData) {
             quantity: item.quantity,
             convertedQty: item.convertedQty,
             partner: item.partner_name,
+            description: item.description || '',
             note: item.note || ''
         });
 
@@ -186,6 +188,8 @@ export async function exportDailyItemsToExcel(data: DailyItemExportData) {
             worksheet.mergeCells(range.start, 4, range.end, 4);
             // Đối tác (Col 10)
             worksheet.mergeCells(range.start, 10, range.end, 10);
+            // Diễn giải (Col 11)
+            worksheet.mergeCells(range.start, 11, range.end, 11);
         }
     });
 
@@ -206,6 +210,7 @@ export async function exportDailyItemsToExcel(data: DailyItemExportData) {
         }, 0),
         convertedQty: sortedItems.reduce((sum, item) => sum + (Number(item.convertedQty) || 0), 0),
         partner: '',
+        description: '',
         note: ''
     });
 

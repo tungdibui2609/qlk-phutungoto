@@ -50,6 +50,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                             code,
                             created_at,
                             system_code,
+                            description,
                             supplier:suppliers(name)
                         ),
                         products(sku, unit, internal_code, internal_name)
@@ -79,6 +80,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                         quantity: item.quantity,
                         convertedQty: convertedQty,
                         partner_name: item.order.supplier?.name || 'Hệ thống',
+                        description: item.order.description,
                         note: item.note
                     }
                 })
@@ -97,7 +99,8 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                             code,
                             customer_name,
                             created_at,
-                            system_code
+                            system_code,
+                            description
                         ),
                         products(sku, unit, internal_code, internal_name)
                     `)
@@ -126,6 +129,7 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
                         quantity: item.quantity,
                         convertedQty: convertedQty,
                         partner_name: item.order.customer_name || 'Khách lẻ',
+                        description: item.order.description,
                         note: item.note
                     }
                 })
