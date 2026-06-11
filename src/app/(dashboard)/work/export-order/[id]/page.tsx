@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo, useRef } from 'react'
-import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar, Undo2, LockOpen, PackageCheck, ShieldAlert, Edit2, Check, RefreshCw } from 'lucide-react'
+import { FileText, ArrowLeft, Loader2, Printer, Trash2, CheckCircle2, RotateCcw, X, ArrowDownToLine, PackageMinus, BarChart3, Calendar, Undo2, LockOpen, PackageCheck, ShieldAlert, Edit2, Check, RefreshCw, Plus } from 'lucide-react'
 import { useParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -16,6 +16,8 @@ import { ExportOrderStatsModal } from '@/components/export/ExportOrderStatsModal
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { logActivity } from '@/lib/audit'
 import { BulkEditLotDatesModal } from '@/components/export/BulkEditLotDatesModal'
+import { EditExportTaskModal } from '@/components/export/EditExportTaskModal'
+import { AddExportItemsModal } from '@/components/export/AddExportItemsModal'
 import { lotService } from '@/services/warehouse/lotService'
 import { decodeSTT } from '@/lib/numberUtils'
 
@@ -70,6 +72,8 @@ function ExportOrderDetailContent() {
     const { currentSystem } = useSystem()
     const [task, setTask] = useState<ExportTask | null>(null)
     const [loading, setLoading] = useState(true)
+    const [isEditTaskOpen, setIsEditTaskOpen] = useState(false)
+    const [isAddItemsOpen, setIsAddItemsOpen] = useState(false)
 
     // UI states for Map Interaction
     const [selectedPositionIds, setSelectedPositionIds] = useState<Set<string>>(new Set())
@@ -1019,6 +1023,53 @@ function ExportOrderDetailContent() {
         }
     }
 
+    async function handleDeleteItem(itemId: string, itemSku: string, e: React.MouseEvent) {
+        e.stopPropagation()
+        
+        if (task?.status === 'Completed' || task?.status === 'Cancelled') {
+            showToast('Không thể chỉnh sửa lệnh xuất đã hoàn thành hoặc đã hủy', 'error')
+            return
+        }
+
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn xóa mặt hàng ${itemSku} khỏi lệnh xuất kho này?`)
+        if (!confirmed) return
+
+        setLoading(true)
+        try {
+            // Fetch item to log
+            const { data: oldItem } = await supabase
+                .from('export_task_items')
+                .select('*')
+                .eq('id', itemId)
+                .single()
+
+            const { error } = await supabase
+                .from('export_task_items')
+                .delete()
+                .eq('id', itemId)
+
+            if (error) throw error
+
+            if (oldItem) {
+                await logActivity({
+                    supabase,
+                    tableName: 'export_task_items',
+                    recordId: itemId,
+                    action: 'DELETE',
+                    oldData: oldItem,
+                    systemCode: currentSystem?.code || null
+                })
+            }
+
+            showToast('Đã xóa mặt hàng khỏi lệnh xuất', 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            console.error('Error deleting export item:', error)
+            showToast('Lỗi khi xóa mặt hàng: ' + error.message, 'error')
+            setLoading(false)
+        }
+    }
+
     async function fetchFullLotDetails(lotCode: string) {
         try {
             const { data, error } = await supabase
@@ -1106,12 +1157,26 @@ function ExportOrderDetailContent() {
                         <h1 className="text-2xl font-black text-stone-900 dark:text-white flex items-center gap-3">
                             <FileText className="text-blue-600" size={28} />
                             {task.code}
+                            {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                                <button
+                                    onClick={() => setIsEditTaskOpen(true)}
+                                    className="p-1 text-stone-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded transition-colors"
+                                    title="Sửa thông tin lệnh"
+                                >
+                                    <Edit2 size={16} />
+                                </button>
+                            )}
                         </h1>
                         <div className="text-sm text-stone-500 dark:text-zinc-400 flex items-center gap-2 mt-1">
                             <span>Tạo bởi: <span className="font-bold text-stone-700 dark:text-zinc-300">{task.created_by_name}</span></span>
                             <span>•</span>
                             <span className="font-mono">{format(new Date(task.created_at), 'HH:mm:ss dd/MM/yyyy')}</span>
                         </div>
+                        {task.notes && (
+                            <p className="text-sm text-stone-600 dark:text-stone-300 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 px-3 py-2 rounded-xl mt-2 italic shadow-sm max-w-xl">
+                                Ghi chú: {task.notes}
+                            </p>
+                        )}
                     </div>
                 </div>
 
@@ -1183,6 +1248,20 @@ function ExportOrderDetailContent() {
 
             {/* Content */}
             <div className="bg-white dark:bg-zinc-800 rounded-3xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden">
+                {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                    <div className="px-6 py-4 border-b border-stone-100 dark:border-zinc-700 flex justify-between items-center bg-stone-50/50 dark:bg-zinc-850/50">
+                        <div className="text-sm font-bold text-stone-700 dark:text-stone-300">
+                            Danh sách vật tư xuất kho ({task.items?.length || 0} dòng)
+                        </div>
+                        <button
+                            onClick={() => setIsAddItemsOpen(true)}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm"
+                        >
+                            <Plus size={14} />
+                            Thêm hàng hóa
+                        </button>
+                    </div>
+                )}
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead>
@@ -1206,6 +1285,9 @@ function ExportOrderDetailContent() {
                                 <th className="px-6 py-4 text-right">SL</th>
                                 <th className="px-6 py-4 text-right">Đã xuất</th>
                                 <th className="px-6 py-4 text-right">Trạng thái</th>
+                                {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                                    <th className="px-6 py-4 w-16 text-center">Hành động</th>
+                                )}
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100 dark:divide-zinc-700">
@@ -1456,6 +1538,17 @@ function ExportOrderDetailContent() {
                                                         item.display_status === 'Changed Position' ? 'Đổi vị trí' : 'Chưa hạ'}
                                         </button>
                                     </td>
+                                    {task.status !== 'Completed' && task.status !== 'Cancelled' && (
+                                        <td className="px-6 py-4 text-center">
+                                            <button
+                                                onClick={(e) => handleDeleteItem(item.id!, item.sku, e)}
+                                                className="p-1.5 text-stone-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/20 rounded transition-colors"
+                                                title="Xóa dòng hàng này"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </td>
+                                    )}
                                 </tr>
                             ))}
                         </tbody>
@@ -1773,6 +1866,21 @@ function ExportOrderDetailContent() {
                     }}
                 />
             )}
+
+            <EditExportTaskModal
+                isOpen={isEditTaskOpen}
+                onClose={() => setIsEditTaskOpen(false)}
+                task={task}
+                onSuccess={() => fetchTaskDetails()}
+            />
+
+            <AddExportItemsModal
+                isOpen={isAddItemsOpen}
+                onClose={() => setIsAddItemsOpen(false)}
+                taskId={task.id}
+                existingItems={task.items || []}
+                onSuccess={() => fetchTaskDetails()}
+            />
         </div>
     )
 }
