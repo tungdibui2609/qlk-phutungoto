@@ -73,61 +73,87 @@ export function AddExportItemsModal({
         if (!currentSystem?.code) return
         setLoading(true)
         try {
-            // Fetch positions that have lots in the current system
-            const { data, error } = await supabase
-                .from('positions')
-                .select(`
-                    id,
-                    code,
-                    lot_id,
-                    lots!positions_lot_id_fkey (
+            // Fetch positions that have lots in the current system (with pagination to fetch all)
+            let allData: any[] = []
+            let from = 0
+            const pageSize = 1000
+            let hasMore = true
+
+            while (hasMore) {
+                const { data, error } = await supabase
+                    .from('positions')
+                    .select(`
                         id,
                         code,
-                        production_code,
-                        status,
-                        lot_items (
+                        lot_id,
+                        lots!positions_lot_id_fkey (
                             id,
-                            quantity,
-                            unit,
-                            product_id,
-                            products (
+                            code,
+                            production_code,
+                            status,
+                            lot_items (
                                 id,
-                                name,
-                                sku
+                                quantity,
+                                unit,
+                                product_id,
+                                products (
+                                    id,
+                                    name,
+                                    sku
+                                )
                             )
                         )
-                    )
-                `)
-                .eq('system_type', currentSystem.code)
-                .not('lot_id', 'is', null)
+                    `)
+                    .eq('system_type', currentSystem.code)
+                    .not('lot_id', 'is', null)
+                    .range(from, from + pageSize - 1)
 
-            if (error) throw error
+                if (error) throw error
 
-            // Flatten data into individual selectable items
-            const items: AvailableItem[] = []
-            data?.forEach((pos: any) => {
+                if (data && data.length > 0) {
+                    allData = [...allData, ...data]
+                    if (data.length < pageSize) {
+                        hasMore = false
+                    } else {
+                        from += pageSize
+                    }
+                } else {
+                    hasMore = false
+                }
+            }
+
+            // Flatten and aggregate data into individual selectable items (grouping duplicate products in the same lot & position)
+            const itemsMap: Record<string, AvailableItem> = {}
+            allData.forEach((pos: any) => {
                 const lot = pos.lots
                 if (lot && lot.status === 'active' && lot.lot_items) {
                     lot.lot_items.forEach((li: any) => {
                         const qty = Number(li.quantity || 0)
                         if (qty > 0.000001 && li.products) {
-                            items.push({
-                                key: `${pos.id}_${lot.id}_${li.products.id}`,
-                                position_id: pos.id,
-                                position_code: pos.code,
-                                lot_id: lot.id,
-                                lot_code: lot.code,
-                                production_code: lot.production_code || null,
-                                product_id: li.products.id,
-                                product_name: li.products.name,
-                                sku: li.products.sku,
-                                stock_quantity: qty,
-                                unit: li.unit
-                            })
+                            const key = `${pos.id}_${lot.id}_${li.products.id}`
+                            if (itemsMap[key]) {
+                                itemsMap[key].stock_quantity += qty
+                            } else {
+                                itemsMap[key] = {
+                                    key,
+                                    position_id: pos.id,
+                                    position_code: pos.code,
+                                    lot_id: lot.id,
+                                    lot_code: lot.code,
+                                    production_code: lot.production_code || null,
+                                    product_id: li.products.id,
+                                    product_name: li.products.name,
+                                    sku: li.products.sku,
+                                    stock_quantity: qty,
+                                    unit: li.unit
+                                }
+                            }
                         }
                     })
                 }
             })
+
+            const items = Object.values(itemsMap)
 
             // Sort by position code
             items.sort((a, b) => a.position_code.localeCompare(b.position_code))
