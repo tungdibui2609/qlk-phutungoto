@@ -518,7 +518,7 @@ export function LotForm({
                 nextDailySeq = Number(lastSeq) + 1
             }
         }
-        setDailySeq(nextDailySeq)
+        setDailySeq(decodeSTT(nextDailySeq))
     }
 
     async function handleSubmit() {
@@ -743,8 +743,7 @@ export function LotForm({
         // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRONG CÙNG NGÀY NHẬP KHO ---
         const dailySeqVal = encodeSTT(dailySeq)
         if (dailySeqVal !== null && !isNaN(dailySeqVal)) {
-            let checkSttQuery = supabase
-                .from('lots')
+            let checkSttQuery = (supabase.from('lots') as any)
                 .select('id, code, inbound_date')
                 .eq('system_code', currentSystem?.code || '')
                 .eq('daily_seq', dailySeqVal)
