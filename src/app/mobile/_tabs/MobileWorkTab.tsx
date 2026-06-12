@@ -272,16 +272,58 @@ export default function MobileWorkTab() {
                     if (posError && posError.code !== 'PGRST116') throw posError
                     
                     // 2. Tìm vị trí trống trong Sảnh
-                    const targetZoneIds = new Set<string>([hallId])
-                    let added = true
-                    while (added) { 
-                        added = false
-                        for (const z of zones) { 
-                            if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) { 
-                                targetZoneIds.add(z.id)
-                                added = true 
-                            } 
-                        } 
+                    const selectedZone = zones.find(z => z.id === hallId)
+                    const isSpecificHall = selectedZone && (selectedZone as any).is_hall
+
+                    const targetZoneIds = new Set<string>()
+
+                    if (isSpecificHall) {
+                        // Nếu chọn chính xác 1 sảnh, lấy sảnh đó và con của nó
+                        targetZoneIds.add(hallId)
+                        let added = true
+                        while (added) {
+                            added = false
+                            for (const z of zones) {
+                                if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                                    targetZoneIds.add(z.id)
+                                    added = true
+                                }
+                            }
+                        }
+                    } else {
+                        // Nếu chọn Kho (root), tìm tất cả các Sảnh trong kho đó
+                        const hallsInWarehouse = zones.filter(z => {
+                            if (!(z as any).is_hall) return false
+                            let curr = z
+                            const seen = new Set()
+                            while (curr.parent_id && !seen.has(curr.id)) {
+                                seen.add(curr.id)
+                                if (curr.parent_id === hallId) return true
+                                const parent = zones.find(p => p.id === curr.parent_id)
+                                if (!parent) break
+                                curr = parent
+                            }
+                            return false
+                        })
+
+                        hallsInWarehouse.forEach(h => {
+                            targetZoneIds.add(h.id)
+                        })
+
+                        let added = true
+                        while (added) {
+                            added = false
+                            for (const z of zones) {
+                                if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                                    targetZoneIds.add(z.id)
+                                    added = true
+                                }
+                            }
+                        }
+                    }
+
+                    if (targetZoneIds.size === 0) {
+                        throw new Error('Không tìm thấy sảnh nào trong khu vực đã chọn.')
                     }
 
                     const { data: availablePositions, error: availError } = await (supabase

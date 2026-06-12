@@ -476,22 +476,67 @@ function WarehouseMapContent() {
 
         if (lotIdsToMove.size === 0) return
 
-        // Find all descendant zones of the selected Hall (including the Hall itself)
-        const hallZoneIds = new Set<string>([hallId])
-        let added = true
-        while (added) {
-            added = false
-            for (const z of zones) {
-                if (z.parent_id && hallZoneIds.has(z.parent_id) && !hallZoneIds.has(z.id)) {
-                    hallZoneIds.add(z.id)
-                    added = true
+        // Xác định xem hallId là một Sảnh cụ thể hay là ID Kho (root)
+        const selectedZone = zones.find(z => z.id === hallId)
+        const isSpecificHall = selectedZone && (selectedZone as any).is_hall
+
+        const targetZoneIds = new Set<string>()
+
+        if (isSpecificHall) {
+            // Nếu chọn chính xác 1 sảnh, lấy sảnh đó và con của nó
+            targetZoneIds.add(hallId)
+            let added = true
+            while (added) {
+                added = false
+                for (const z of zones) {
+                    if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                        targetZoneIds.add(z.id)
+                        added = true
+                    }
+                }
+            }
+        } else {
+            // Nếu chọn Kho (root), tìm tất cả các Sảnh trong kho đó
+            // 1. Tìm tất cả các sảnh thuộc kho này
+            const hallsInWarehouse = zones.filter(z => {
+                if (!(z as any).is_hall) return false
+                // Kiểm tra xem sảnh này có thuộc kho root đang chọn không
+                let curr = z
+                const seen = new Set()
+                while (curr.parent_id && !seen.has(curr.id)) {
+                    seen.add(curr.id)
+                    if (curr.parent_id === hallId) return true
+                    const parent = zones.find(p => p.id === curr.parent_id)
+                    if (!parent) break
+                    curr = parent
+                }
+                return false
+            })
+
+            // 2. Với mỗi sảnh tìm được, lấy nó và tất cả các con của nó
+            hallsInWarehouse.forEach(h => {
+                targetZoneIds.add(h.id)
+            })
+
+            let added = true
+            while (added) {
+                added = false
+                for (const z of zones) {
+                    if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                        targetZoneIds.add(z.id)
+                        added = true
+                    }
                 }
             }
         }
 
-        // Find available positions in the Hall's zones
+        if (targetZoneIds.size === 0) {
+            showToast('Không tìm thấy sảnh nào trong khu vực đã chọn.', 'error')
+            return
+        }
+
         // Find available positions in the Hall's zones and sort by Bin-priority
-        const rawAvailable = positions.filter(p => p.zone_id && hallZoneIds.has(p.zone_id) && !p.lot_id)
+        const rawAvailable = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
         const availablePositions = sortPositionsByBinPriority(rawAvailable as any[])
 
         if (availablePositions.length < lotIdsToMove.size) {
