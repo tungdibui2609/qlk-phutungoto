@@ -24,6 +24,7 @@ interface LotSuggest {
     id: string
     code: string
     lot_type: string | null
+    custom_values?: Record<string, any> | null
     lot_items: {
         product_id: string
         quantity: number
@@ -58,6 +59,7 @@ export default function PrintLabelsPage() {
     const [currentIndexStart, setCurrentIndexStart] = useState(1)
     const [countLabels, setCountLabels] = useState<number | null>(null)
     const [isCounting, setIsCounting] = useState(false)
+    const [refreshTrigger, setRefreshTrigger] = useState(0)
 
     // Data states
     interface ProductionLotSys {
@@ -108,7 +110,7 @@ export default function PrintLabelsPage() {
         try {
             const { data: lotData, error: lotErr } = await supabase
                 .from('production_custom_lots')
-                .select('id, code, lot_type, status')
+                .select('id, code, lot_type, status, custom_values')
                 .eq('system_code', currentSystem.code)
                 .neq('status', 'hidden')
                 .order('created_at', { ascending: false })
@@ -165,7 +167,8 @@ export default function PrintLabelsPage() {
 
     // Load dữ liệu ban đầu từ Supabase
     useEffect(() => {
-        if (!currentSystem?.code) return
+        const systemCode = currentSystem?.code
+        if (!systemCode) return
 
         async function fetchData() {
             setIsLoading(true)
@@ -194,7 +197,7 @@ export default function PrintLabelsPage() {
                             )
                         )
                     `)
-                    .eq('target_system_code', currentSystem.code)
+                    .eq('target_system_code', systemCode)
                     .eq('status', 'IN_PROGRESS')
                     .order('created_at', { ascending: false })
 
@@ -205,7 +208,7 @@ export default function PrintLabelsPage() {
                 const { data: prodData, error: prodErr } = await supabase
                     .from('products')
                     .select('id, name, sku, unit, internal_name, internal_code')
-                    .eq('system_code', currentSystem.code)
+                    .eq('system_code', systemCode)
                     .order('name')
 
                 if (prodErr) throw prodErr
@@ -290,9 +293,102 @@ export default function PrintLabelsPage() {
         showToast(`Đã chọn Lô Thành phẩm: ${lot.code}`, 'success')
     }
 
+    // Hàm tự động tính toán số tham chiếu nhóm dựa trên Lô BTP, Lô TP, Lệnh sản xuất (MO) và Sản phẩm
+    const fetchAutoReference = async (semi: string, finished: string, prodId: string, moId: string) => {
+        const systemCode = currentSystem?.code
+        if (!semi || !finished || !prodId || !systemCode) return
+        
+        try {
+            // Tải danh sách tất cả các nhãn in để tìm các tổ hợp duy nhất đã in theo thời gian
+            const { data, error } = await supabase
+                .from('box_labels')
+                .select('semi_finished_lot_code, finished_lot_code, product_id, production_id, created_at')
+                .eq('system_code', systemCode)
+                .order('created_at', { ascending: true })
+
+            if (error) {
+                if (
+                    error.code === '42P01' || 
+                    error.code === '42703' || 
+                    error.message?.includes('relation "box_labels" does not exist') ||
+                    error.message?.includes('column')
+                ) {
+                    throw new Error('TABLE_NOT_EXIST')
+                }
+                throw error
+            }
+
+            // Phân tích danh sách ở client để tìm số thứ tự
+            const uniqueCombos: string[] = []
+            const currentKey = `${semi.trim().toUpperCase()}|${finished.trim().toUpperCase()}|${moId || ''}|${prodId}`
+
+            data?.forEach(row => {
+                if (!row.semi_finished_lot_code || !row.finished_lot_code || !row.product_id) return
+                const key = `${row.semi_finished_lot_code.trim().toUpperCase()}|${row.finished_lot_code.trim().toUpperCase()}|${row.production_id || ''}|${row.product_id}`
+                if (!uniqueCombos.includes(key)) {
+                    uniqueCombos.push(key)
+                }
+            })
+
+            const foundIdx = uniqueCombos.indexOf(currentKey)
+            let autoRef = ''
+            if (foundIdx !== -1) {
+                autoRef = String(foundIdx + 1)
+            } else {
+                autoRef = String(uniqueCombos.length + 1)
+            }
+            
+            setReference(autoRef)
+        } catch (err: any) {
+            if (err.message === 'TABLE_NOT_EXIST') {
+                // Fallback local storage
+                try {
+                    const localKey = `local_box_labels_${systemCode}`
+                    const localData = localStorage.getItem(localKey)
+                    const parsed = localData ? JSON.parse(localData) : []
+                    
+                    // Sắp xếp theo created_at
+                    parsed.sort((a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
+                    
+                    const uniqueCombos: string[] = []
+                    const currentKey = `${semi.trim().toUpperCase()}|${finished.trim().toUpperCase()}|${moId || ''}|${prodId}`
+                    
+                    parsed.forEach((row: any) => {
+                        if (!row.semi_finished_lot_code || !row.finished_lot_code || !row.product_id) return
+                        const key = `${row.semi_finished_lot_code.trim().toUpperCase()}|${row.finished_lot_code.trim().toUpperCase()}|${row.production_id || ''}|${row.product_id}`
+                        if (!uniqueCombos.includes(key)) {
+                            uniqueCombos.push(key)
+                        }
+                    })
+                    
+                    const foundIdx = uniqueCombos.indexOf(currentKey)
+                    const autoRef = foundIdx !== -1 ? String(foundIdx + 1) : String(uniqueCombos.length + 1)
+                    setReference(autoRef)
+                } catch (localEx) {
+                    console.error('Lỗi khi parse local storage box labels:', localEx)
+                }
+            } else {
+                console.error('Lỗi tính toán số tham chiếu tự động:', err)
+            }
+        }
+    }
+
+    // Tự động tính Số tham chiếu nhóm (Reference) khi Lô BTP, Lô TP, Lệnh sản xuất và Sản phẩm thay đổi
+    useEffect(() => {
+        const cleanSemi = semiLotCode.trim()
+        const cleanFinished = finishedLotCode.trim()
+        
+        if (!cleanSemi || !cleanFinished || !selectedProductId || !currentSystem?.code) {
+            return
+        }
+
+        fetchAutoReference(cleanSemi, cleanFinished, selectedProductId, selectedMoId)
+    }, [semiLotCode, finishedLotCode, selectedProductId, selectedMoId, currentSystem?.code, refreshTrigger])
+
     // Tự động đếm số lượng tem đã in để lấy index bắt đầu
     useEffect(() => {
-        if (!semiLotCode.trim() || !finishedLotCode.trim() || !selectedProductId || !currentSystem?.code) {
+        const systemCode = currentSystem?.code
+        if (!semiLotCode.trim() || !finishedLotCode.trim() || !selectedProductId || !systemCode) {
             setCurrentIndexStart(1)
             setCountLabels(null)
             return
@@ -302,26 +398,68 @@ export default function PrintLabelsPage() {
         async function fetchPrintedCount() {
             setIsCounting(true)
             try {
-                const { count, error } = await supabase
+                let query = supabase
                     .from('box_labels')
                     .select('*', { count: 'exact', head: true })
                     .eq('semi_finished_lot_code', semiLotCode.trim().toUpperCase())
                     .eq('finished_lot_code', finishedLotCode.trim().toUpperCase())
                     .eq('product_id', selectedProductId)
-                    .eq('system_code', currentSystem.code)
+                    .eq('system_code', systemCode)
 
-                if (error) throw error
+                if (selectedMoId) {
+                    query = query.eq('production_id', selectedMoId)
+                } else {
+                    query = query.is('production_id', null)
+                }
+
+                const { count, error } = await query
+
+                if (error) {
+                    if (
+                        error.code === '42P01' || 
+                        error.code === '42703' || 
+                        error.message?.includes('relation "box_labels" does not exist') ||
+                        error.message?.includes('column')
+                    ) {
+                        throw new Error('TABLE_NOT_EXIST')
+                    }
+                    throw error
+                }
 
                 if (isMounted) {
                     const currentCount = count || 0
                     setCountLabels(currentCount)
                     setCurrentIndexStart(currentCount + 1)
                 }
-            } catch (err) {
-                console.error('Lỗi khi đếm số lượng tem đã in:', err)
-                if (isMounted) {
-                    setCountLabels(0)
-                    setCurrentIndexStart(1)
+            } catch (err: any) {
+                if (err.message === 'TABLE_NOT_EXIST') {
+                    // Đếm từ localStorage
+                    try {
+                        const localKey = `local_box_labels_${systemCode}`
+                        const localData = localStorage.getItem(localKey)
+                        const parsed = localData ? JSON.parse(localData) : []
+                        
+                        const filtered = parsed.filter((row: any) => 
+                            row.semi_finished_lot_code?.trim().toUpperCase() === semiLotCode.trim().toUpperCase() &&
+                            row.finished_lot_code?.trim().toUpperCase() === finishedLotCode.trim().toUpperCase() &&
+                            row.product_id === selectedProductId &&
+                            (selectedMoId ? row.production_id === selectedMoId : !row.production_id)
+                        )
+                        
+                        if (isMounted) {
+                            const currentCount = filtered.length
+                            setCountLabels(currentCount)
+                            setCurrentIndexStart(currentCount + 1)
+                        }
+                    } catch (localEx) {
+                        console.error('Lỗi khi đếm localStorage:', localEx)
+                    }
+                } else {
+                    console.error('Lỗi khi đếm số lượng tem đã in:', err)
+                    if (isMounted) {
+                        setCountLabels(0)
+                        setCurrentIndexStart(1)
+                    }
                 }
             } finally {
                 if (isMounted) setIsCounting(false)
@@ -332,7 +470,33 @@ export default function PrintLabelsPage() {
         return () => {
             isMounted = false
         }
-    }, [semiLotCode, finishedLotCode, selectedProductId, currentSystem?.code])
+    }, [semiLotCode, finishedLotCode, selectedProductId, selectedMoId, currentSystem?.code, refreshTrigger])
+
+    // Lắng nghe sự kiện xóa lịch sử in từ tab khác để reload counters (reset về 1)
+    useEffect(() => {
+        if (!currentSystem?.code) return
+        
+        const handleStorage = (e: StorageEvent) => {
+            if (e.key === `clear_print_history_trigger_${currentSystem.code}`) {
+                setRefreshTrigger(prev => prev + 1)
+            }
+        }
+        
+        window.addEventListener('storage', handleStorage)
+        return () => window.removeEventListener('storage', handleStorage)
+    }, [currentSystem?.code])
+
+    // Cập nhật lại số liệu khi tab được active lại (focus) phòng trường hợp người dùng thao tác tab khác
+    useEffect(() => {
+        if (!currentSystem?.code) return
+        
+        const handleFocus = () => {
+            setRefreshTrigger(prev => prev + 1)
+        }
+        
+        window.addEventListener('focus', handleFocus)
+        return () => window.removeEventListener('focus', handleFocus)
+    }, [currentSystem?.code])
 
     // Tự động sinh danh sách tem preview khi thông tin thay đổi
     useEffect(() => {
@@ -368,6 +532,12 @@ export default function PrintLabelsPage() {
     const handlePrint = async () => {
         if (isProcessingPrintRef.current) return
         
+        const systemCode = currentSystem?.code
+        if (!systemCode) {
+            showToast('Không tìm thấy thông tin phân hệ kho hiện tại!', 'error')
+            return
+        }
+        
         if (!semiLotCode.trim()) {
             showToast('Vui lòng điền mã Lô Bán Thành Phẩm!', 'warning')
             return
@@ -384,18 +554,104 @@ export default function PrintLabelsPage() {
         isProcessingPrintRef.current = true
         setIsPrinting(true)
         try {
+            // 1. Tự động kiểm tra và lưu lô thành phẩm (finished) nếu nhập mới trực tiếp
+            const cleanFinished = finishedLotCode.trim().toUpperCase()
+            let isFinishedLotExist = false
+            
+            try {
+                const { data: existingLot, error: checkErr } = await supabase
+                    .from('production_custom_lots')
+                    .select('id')
+                    .eq('system_code', systemCode)
+                    .eq('lot_type', 'finished')
+                    .eq('code', cleanFinished)
+                    .maybeSingle()
+                
+                if (checkErr) {
+                    if (checkErr.code === '42P01' || checkErr.message?.includes('relation "production_custom_lots" does not exist')) {
+                        throw new Error('TABLE_NOT_EXIST')
+                    }
+                    throw checkErr
+                }
+                
+                if (existingLot) {
+                    isFinishedLotExist = true
+                }
+            } catch (checkEx: any) {
+                if (checkEx.message === 'TABLE_NOT_EXIST') {
+                    const localKey = `local_custom_finished_lots_${systemCode}`
+                    const localLots = localStorage.getItem(localKey)
+                    const parsedLocal = localLots ? JSON.parse(localLots) : []
+                    isFinishedLotExist = parsedLocal.some((l: any) => l.code.toUpperCase() === cleanFinished)
+                } else {
+                    console.error('Lỗi khi kiểm tra lô thành phẩm tồn tại:', checkEx)
+                }
+            }
+
+            if (!isFinishedLotExist) {
+                console.log('Phát hiện lô thành phẩm mới, tiến hành lưu tự động:', cleanFinished)
+                try {
+                    const { data: newLot, error: insertErr } = await supabase
+                        .from('production_custom_lots')
+                        .insert({
+                            code: cleanFinished,
+                            lot_type: 'finished',
+                            status: 'active',
+                            system_code: systemCode,
+                            company_id: profile?.company_id || null,
+                            custom_values: {}
+                        } as any) // Ép kiểu as any để bỏ qua kiểm tra type Supabase
+                        .select()
+
+                    if (insertErr) {
+                        if (insertErr.code === '42P01' || insertErr.message?.includes('relation "production_custom_lots" does not exist')) {
+                            throw new Error('TABLE_NOT_EXIST')
+                        }
+                        throw insertErr
+                    }
+                    
+                    showToast(`Đã tự động tạo lô thành phẩm mới: ${cleanFinished}`, 'success')
+                    if (newLot && newLot[0]) {
+                        setFinishedSuggestions(prev => [newLot[0], ...prev])
+                    }
+                } catch (insertEx: any) {
+                    if (insertEx.message === 'TABLE_NOT_EXIST') {
+                        const localKey = `local_custom_finished_lots_${systemCode}`
+                        const localLots = localStorage.getItem(localKey)
+                        const currentLocal = localLots ? JSON.parse(localLots) : []
+                        const newLocalItem = {
+                            id: 'local-' + Date.now(),
+                            code: cleanFinished,
+                            created_at: new Date().toISOString(),
+                            status: 'active',
+                            custom_values: {}
+                        }
+                        localStorage.setItem(localKey, JSON.stringify([newLocalItem, ...currentLocal]))
+                        showToast(`Đã lưu tạm thời lô thành phẩm mới: ${cleanFinished}`, 'success')
+                        
+                        setFinishedSuggestions(prev => [{
+                            id: newLocalItem.id,
+                            code: newLocalItem.code,
+                            lot_type: 'finished',
+                            lot_items: null
+                        } as any, ...prev])
+                    } else {
+                        console.error('Lỗi khi lưu tự động lô thành phẩm mới:', insertEx)
+                    }
+                }
+            }
+
             // TÍNH TOÁN TRỰC TIẾP DẢI TEM ĐỂ ĐẢM BẢO ĐỒNG BỘ 100% GIỮA GIẤY IN VÀ DATABASE (TRÁNH LỆCH RACE CONDITION)
-            const cleanFinished = finishedLotCode.replace(/\s+/g, '').toUpperCase()
             const cleanSemi = semiLotCode.replace(/\s+/g, '').toUpperCase()
             
             const selectedProductInLot = availableProductionLots.find(pl => pl.product_id === selectedProductId)?.products
             const selectedProduct = selectedProductInLot || products.find(p => p.id === selectedProductId)
             const productSku = selectedProduct ? selectedProduct.sku : 'SKU'
             const cleanSku = productSku.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
-
+ 
             const partTP = cleanFinished || 'PENDINGTP'
             const partBTP = cleanSemi || 'PENDINGBTP'
-
+ 
             const finalLabels = Array.from({ length: printQty }).map((_, i) => {
                 const index = currentIndexStart + i
                 const indexStr = String(index).padStart(3, '0')
@@ -404,10 +660,10 @@ export default function PrintLabelsPage() {
                     index
                 }
             })
-
+ 
             // Cập nhật ngay dải tem thực tế vào state in ấn để trình in hiển thị đúng dải này, tránh race condition
             setLabelsToPrint(finalLabels)
-
+ 
             // Chuẩn bị dữ liệu lưu vào DB bảng box_labels từ dải tem vừa tính toán
             const labelsToInsert = finalLabels.map(lbl => ({
                 code: lbl.code,
@@ -416,18 +672,43 @@ export default function PrintLabelsPage() {
                 unit: unit,
                 semi_finished_lot_code: semiLotCode.trim().toUpperCase(),
                 finished_lot_code: finishedLotCode.trim().toUpperCase(),
-                system_code: currentSystem.code,
+                production_id: selectedMoId || null,
+                system_code: systemCode,
                 company_id: profile?.company_id || null,
                 status: 'printed'
             }))
-
+ 
             // Thử lưu vào DB. Sử dụng upsert để cho phép ghi đè/in lại tem cũ bị hỏng mà không báo lỗi khóa chính
             const { error: dbErr } = await supabase
                 .from('box_labels')
                 .upsert(labelsToInsert as any, { onConflict: 'code' })
-
+ 
             if (dbErr) {
                 console.warn('[DB WARNING] Không thể lưu tem vào bảng box_labels:', dbErr.message)
+                
+                // Fallback lưu vào localStorage
+                try {
+                    const localKey = `local_box_labels_${systemCode}`
+                    const localData = localStorage.getItem(localKey)
+                    let parsedLocal = localData ? JSON.parse(localData) : []
+                    
+                    // Lọc bỏ các tem cũ trùng code để mô phỏng upsert
+                    const insertCodes = new Set(labelsToInsert.map(l => l.code))
+                    parsedLocal = parsedLocal.filter((l: any) => !insertCodes.has(l.code))
+                    
+                    // Thêm dữ liệu mới
+                    const newItems = labelsToInsert.map(l => ({
+                        ...l,
+                        id: 'local-' + Date.now() + '-' + Math.random(),
+                        created_at: new Date().toISOString()
+                    }))
+                    
+                    localStorage.setItem(localKey, JSON.stringify([...parsedLocal, ...newItems]))
+                    showToast('Đã lưu tem tạm thời (Local Storage)!', 'success')
+                } catch (localEx) {
+                    console.error('Lỗi khi lưu tem vào localStorage:', localEx)
+                }
+
                 showToast(`Chưa lưu vào DB: ${dbErr.message}. Vẫn mở trình in...`, 'warning')
             } else {
                 showToast('Đã lưu thông tin liên kết thùng hàng thành công!', 'success')
@@ -441,7 +722,7 @@ export default function PrintLabelsPage() {
                         print_qty: printQty,
                         start_index: currentIndexStart,
                         end_index: currentIndexStart + printQty - 1,
-                        system_code: currentSystem.code,
+                        system_code: systemCode,
                         company_id: profile?.company_id || null,
                         created_by: profile?.id || null
                     }
@@ -457,20 +738,20 @@ export default function PrintLabelsPage() {
                     console.error('Lỗi khi ghi lịch sử in:', logEx)
                 }
             }
-
+ 
             // Tự động tăng dải tem in đợt sau
             setCurrentIndexStart(prev => prev + printQty)
             if (countLabels !== null) {
                 setCountLabels(prev => (prev || 0) + printQty)
             }
-
+ 
             // Mở cửa sổ in của trình duyệt sau khi Toast đã kịp hiển thị
             setTimeout(() => {
                 window.print()
                 isProcessingPrintRef.current = false
                 setIsPrinting(false)
             }, 800)
-
+ 
         } catch (err: any) {
             console.error('Lỗi in ấn:', err)
             window.print()
@@ -684,17 +965,25 @@ export default function PrintLabelsPage() {
                                         <button onClick={() => setShowSemiSuggestions(false)} className="hover:text-stone-600 font-bold">Đóng</button>
                                     </div>
                                     {semiSuggestions
-                                        .filter(l => l.code.toLowerCase().includes(semiLotCode.toLowerCase()))
-                                        .map((lot) => (
-                                            <div
-                                                key={lot.id}
-                                                onClick={() => handleSelectSemiLot(lot)}
-                                                className="px-4 py-2 hover:bg-stone-50 dark:hover:bg-zinc-700/50 cursor-pointer flex items-center justify-between transition-colors text-xs"
-                                            >
-                                                <span className="font-mono font-bold text-stone-800 dark:text-white">{lot.code}</span>
-                                                <ChevronRight size={12} className="text-stone-400" />
-                                            </div>
-                                        ))
+                                        .filter(l => {
+                                            const originalCode = l.custom_values?.original_code || ''
+                                            const searchTerm = semiLotCode.toLowerCase()
+                                            return l.code.toLowerCase().includes(searchTerm) || originalCode.toLowerCase().includes(searchTerm)
+                                        })
+                                        .map((lot) => {
+                                            const originalCode = lot.custom_values?.original_code
+                                            const displayLabel = originalCode ? `${lot.code} (${originalCode})` : lot.code
+                                            return (
+                                                <div
+                                                    key={lot.id}
+                                                    onClick={() => handleSelectSemiLot(lot)}
+                                                    className="px-4 py-2 hover:bg-stone-50 dark:hover:bg-zinc-700/50 cursor-pointer flex items-center justify-between transition-colors text-xs"
+                                                >
+                                                    <span className="font-mono font-bold text-stone-800 dark:text-white">{displayLabel}</span>
+                                                    <ChevronRight size={12} className="text-stone-400" />
+                                                </div>
+                                            )
+                                        })
                                     }
                                 </div>
                             )}

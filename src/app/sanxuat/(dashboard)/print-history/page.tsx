@@ -8,7 +8,7 @@ import { useUser } from '@/contexts/UserContext'
 import { 
     History, Search, Calendar, RefreshCw, FileText, ChevronLeft, ChevronRight, 
     Tag, Boxes, Package, User, QrCode, ScanLine, MapPin, ShieldCheck, Activity,
-    TrendingUp, ExternalLink, Box, Eye, X
+    TrendingUp, ExternalLink, Box, Eye, X, Trash2, Lock
 } from 'lucide-react'
 
 interface PrintLog {
@@ -83,6 +83,12 @@ export default function PrintHistoryPage() {
     const [selectedLogForDetail, setSelectedLogForDetail] = useState<PrintLog | null>(null)
     const [detailLabels, setDetailLabels] = useState<any[]>([])
     const [isLoadingDetail, setIsLoadingDetail] = useState(false)
+
+    // States cho chức năng Xóa lịch sử
+    const [isDeleteHistoryOpen, setIsDeleteHistoryOpen] = useState(false)
+    const [deletePassword, setDeletePassword] = useState('')
+    const [deletePasswordError, setDeletePasswordError] = useState('')
+    const [isDeletingHistory, setIsDeletingHistory] = useState(false)
 
     // Load danh sách sản phẩm để làm bộ lọc
     useEffect(() => {
@@ -178,6 +184,55 @@ export default function PrintHistoryPage() {
         } finally {
             setIsLoading(false)
             setIsRefreshing(false)
+        }
+    }
+
+    // Hàm thực thi xóa lịch sử in ấn
+    const handleDeleteHistory = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setDeletePasswordError('')
+
+        if (deletePassword !== '210359') {
+            setDeletePasswordError('Mật khẩu xác nhận không chính xác!')
+            return
+        }
+
+        if (!currentSystem?.code) return
+
+        setIsDeletingHistory(true)
+        try {
+            // 1. Xóa lịch sử lượt in phát hành tem
+            const { error: errLogs } = await supabase
+                .from('box_label_print_logs')
+                .delete()
+                .eq('system_code', currentSystem.code)
+
+            if (errLogs) throw errLogs
+
+            // 2. Xóa các nhãn tem thùng hàng để giải phóng dữ liệu test & reset bộ đếm tham chiếu
+            const { error: errLabels } = await supabase
+                .from('box_labels')
+                .delete()
+                .eq('system_code', currentSystem.code)
+
+            if (errLabels) throw errLabels
+
+            // 3. Xóa các con tem thùng hàng và lịch sử trong localStorage cục bộ (nếu có)
+            localStorage.removeItem(`local_box_labels_${currentSystem.code}`)
+            localStorage.removeItem(`local_box_label_print_logs_${currentSystem.code}`)
+            
+            // Kích hoạt trigger thông báo cho trang in tem tự động reload counters (cross-tab & cùng tab)
+            localStorage.setItem(`clear_print_history_trigger_${currentSystem.code}`, Date.now().toString())
+
+            showToast('Đã xóa toàn bộ lịch sử in và dữ liệu tem thùng thành công!', 'success')
+            setIsDeleteHistoryOpen(false)
+            setDeletePassword('')
+            fetchPrintHistory()
+        } catch (err: any) {
+            console.error('Lỗi khi xóa lịch sử in:', err)
+            showToast('Không thể xóa lịch sử: ' + err.message, 'error')
+        } finally {
+            setIsDeletingHistory(false)
         }
     }
 
@@ -416,14 +471,30 @@ export default function PrintHistoryPage() {
                 </div>
                 
                 {activeTab === 'sao-ke' && (
-                    <button
-                        onClick={() => fetchPrintHistory(true)}
-                        disabled={isRefreshing || isLoading}
-                        className="self-start md:self-auto flex items-center gap-2 px-4 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-300 rounded-2xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
-                    >
-                        <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
-                        Làm mới sao kê
-                    </button>
+                    <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+                        <button
+                            onClick={() => fetchPrintHistory(true)}
+                            disabled={isRefreshing || isLoading}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-300 rounded-2xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm"
+                        >
+                            <RefreshCw size={16} className={isRefreshing ? "animate-spin" : ""} />
+                            Làm mới sao kê
+                        </button>
+                        
+                        <button
+                            onClick={() => {
+                                setIsDeleteHistoryOpen(true)
+                                setDeletePassword('')
+                                setDeletePasswordError('')
+                            }}
+                            disabled={isLoading || logs.length === 0}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/20 dark:hover:bg-red-900/30 text-red-605 dark:text-red-400 rounded-2xl font-bold text-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm border border-red-500/10"
+                            title="Xóa vĩnh viễn toàn bộ lịch sử phát hành tem"
+                        >
+                            <Trash2 size={16} />
+                            Xóa lịch sử in
+                        </button>
+                    </div>
                 )}
             </div>
 
@@ -1116,6 +1187,80 @@ export default function PrintHistoryPage() {
                 </div>
             )}
 
+            {/* Modal Nhập mật khẩu Xóa lịch sử */}
+            {isDeleteHistoryOpen && (
+                <div className="fixed inset-0 flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+                    {/* Backdrop */}
+                    <div 
+                        className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm transition-opacity duration-300"
+                        onClick={() => setIsDeleteHistoryOpen(false)}
+                    />
+                    
+                    {/* Modal Card */}
+                    <form 
+                        onSubmit={handleDeleteHistory}
+                        className="bg-white dark:bg-zinc-900 rounded-3xl border border-stone-200 dark:border-zinc-800 shadow-2xl max-w-sm w-full p-6 relative z-10 transform transition-all duration-300 scale-100 animate-in zoom-in-95 ease-out"
+                    >
+                        <div className="flex flex-col items-center text-center space-y-4">
+                            <div className="p-4 rounded-2xl bg-red-50 dark:bg-red-950/30 text-red-650 dark:text-red-400">
+                                <Trash2 size={32} className="stroke-[2.5]" />
+                            </div>
+                            <div className="space-y-2">
+                                <h3 className="text-lg font-extrabold text-stone-900 dark:text-white tracking-tight">
+                                    Xóa lịch sử in tem?
+                                </h3>
+                                <p className="text-xs text-stone-500 dark:text-stone-400 leading-relaxed px-2">
+                                    Hành động này sẽ xóa vĩnh viễn toàn bộ lịch sử in tem của phân hệ kho hiện hành khỏi hệ thống. Vui lòng nhập mật khẩu xác nhận.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="mt-4 space-y-2">
+                            <div className="relative">
+                                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
+                                <input
+                                    type="password"
+                                    value={deletePassword}
+                                    onChange={(e) => {
+                                        setDeletePassword(e.target.value)
+                                        setDeletePasswordError('')
+                                    }}
+                                    placeholder="Nhập mật khẩu..."
+                                    required
+                                    autoFocus
+                                    className="w-full pl-9 pr-4 py-2.5 bg-stone-50 dark:bg-zinc-800/40 border border-stone-200 dark:border-zinc-700 rounded-2xl text-sm transition-all focus:ring-2 focus:ring-red-500/20 focus:border-red-500 font-mono text-center"
+                                />
+                            </div>
+                            {deletePasswordError && (
+                                <p className="text-[11px] text-red-500 text-center font-semibold animate-pulse">
+                                    {deletePasswordError}
+                                </p>
+                            )}
+                        </div>
+
+                        <div className="mt-6 flex gap-3 text-sm">
+                            <button
+                                type="button"
+                                onClick={() => setIsDeleteHistoryOpen(false)}
+                                className="flex-1 px-4 py-3 border border-stone-200 dark:border-zinc-800 text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-zinc-800/80 rounded-2xl font-bold transition-all active:scale-95 cursor-pointer bg-white dark:bg-zinc-900"
+                            >
+                                Hủy bỏ
+                            </button>
+                            <button
+                                type="submit"
+                                disabled={isDeletingHistory}
+                                className="flex-1 flex items-center justify-center gap-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white rounded-2xl font-bold transition-all active:scale-95 cursor-pointer shadow-lg shadow-red-600/10 hover:shadow-red-600/20 disabled:opacity-50"
+                            >
+                                {isDeletingHistory ? (
+                                    <RefreshCw size={14} className="animate-spin" />
+                                ) : (
+                                    'Xác nhận'
+                                )}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            )}
         </section>
     )
 }
