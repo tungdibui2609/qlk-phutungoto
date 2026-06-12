@@ -810,6 +810,18 @@ function ExportOrderDetailContent() {
         const itemsToMove = task?.items?.filter(item => selectedPositionIds.has(item.id || '') && item.lot_id) || []
         if (itemsToMove.length === 0) return
 
+        // Gom nhóm theo lot_id để tìm các pallet (lot) duy nhất cần di chuyển
+        const uniqueLotsMap = new Map<string, { lot_id: string; current_position_id: string }>()
+        for (const item of itemsToMove) {
+            if (item.lot_id && !uniqueLotsMap.has(item.lot_id)) {
+                uniqueLotsMap.set(item.lot_id, {
+                    lot_id: item.lot_id,
+                    current_position_id: item.current_position_id || ''
+                })
+            }
+        }
+        const uniqueLotsToMove = Array.from(uniqueLotsMap.values())
+
         setLoading(true)
         try {
             // Xác định xem hallId là một Sảnh cụ thể hay là ID Kho (root)
@@ -889,16 +901,16 @@ function ExportOrderDetailContent() {
             // Loại bỏ các vị trí trùng lặp (trường hợp một vị trí thuộc nhiều zones con)
             const uniquePositions = Array.from(new Map(rawPositions.map((p: any) => [p.position_id, p])).values())
 
-            if (uniquePositions.length < itemsToMove.length) {
-                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${itemsToMove.length}, nhưng chỉ còn ${uniquePositions.length} vị trí duy nhất.`, 'error')
+            if (uniquePositions.length < uniqueLotsToMove.length) {
+                showToast(`Không đủ vị trí trống trong Sảnh này. Cần ${uniqueLotsToMove.length}, nhưng chỉ còn ${uniquePositions.length} vị trí duy nhất.`, 'error')
                 setLoading(false)
                 return
             }
 
-            const availablePositions = uniquePositions.slice(0, itemsToMove.length)
+            const availablePositions = uniquePositions.slice(0, uniqueLotsToMove.length)
 
             // 1. Clear current positions (Bulk)
-            const idsToClear = Array.from(new Set(itemsToMove.map(i => i.current_position_id).filter(Boolean) as string[]))
+            const idsToClear = Array.from(new Set(uniqueLotsToMove.map(i => i.current_position_id).filter(Boolean)))
             if (idsToClear.length > 0) {
                 const { error: clearError } = await (supabase.from('positions') as any)
                     .update({ lot_id: null })
@@ -908,13 +920,13 @@ function ExportOrderDetailContent() {
                 
                 // Log clear actions with ACTUAL lot_id
                 for (const posId of idsToClear) {
-                    const item = itemsToMove.find(i => i.current_position_id === posId)
+                    const lot = uniqueLotsToMove.find(i => i.current_position_id === posId)
                     await logActivity({
                         supabase,
                         tableName: 'positions',
                         recordId: posId,
                         action: 'UPDATE',
-                        oldData: { lot_id: item?.lot_id || null },
+                        oldData: { lot_id: lot?.lot_id || null },
                         newData: { lot_id: null },
                         systemCode: currentSystem?.code || ''
                     })
@@ -922,9 +934,9 @@ function ExportOrderDetailContent() {
             }
 
             // 2. Assign to new positions in hall (Bulk)
-            const assignUpdates = itemsToMove.map((item, i) => ({
+            const assignUpdates = uniqueLotsToMove.map((lot, i) => ({
                 id: (availablePositions[i] as any).position_id as string,
-                lot_id: item.lot_id
+                lot_id: lot.lot_id
             }))
 
             if (assignUpdates.length > 0) {

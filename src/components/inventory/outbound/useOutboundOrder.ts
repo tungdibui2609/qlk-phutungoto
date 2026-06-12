@@ -158,6 +158,19 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
     async function fetchData() {
         setLoadingData(true)
         try {
+            // Fetch original completed items if editing a completed order
+            let originalCompletedItems: any[] = []
+            if (editOrderId) {
+                const { data: editOrder } = await (supabase.from('outbound_orders') as any)
+                    .select('status, items:outbound_order_items(*)')
+                    .eq('id', editOrderId)
+                    .eq('system_code', systemCode)
+                    .maybeSingle()
+                if (editOrder && editOrder.status === 'Completed' && editOrder.items) {
+                    originalCompletedItems = editOrder.items
+                }
+            }
+
             const [prodRes, branchRes, custRes, invRes, unitRes, typeRes, catRes] = await Promise.all([
                 supabase.from('products').select('*, product_units(unit_id, conversion_rate)').eq('system_type', systemCode).order('name'),
                 supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
@@ -172,26 +185,63 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 let productsWithStock: Product[] = prodRes.data as Product[]
                 if (invRes.ok && Array.isArray(invRes.items)) {
                     const totalStockMap = new Map<string, number>()
-                    const detailedStockMap = new Map<string, string[]>()
                     const localUnitStockMap = new Map<string, number>()
+                    const productUnitBalances = new Map<string, Map<string, number>>()
 
                     // Optimization: Use a lookup map for products instead of repeating .find() inside the loop.
                     // This improves performance from O(N*M) to O(N+M).
                     const productLookup = new Map<string, any>()
                     ;(prodRes.data as any[]).forEach(p => productLookup.set(p.id, p))
 
+                    // A. Duyệt qua tồn kho hiện tại từ DB
                     invRes.items.forEach((item: any) => {
                         if (item.productId) {
                             const prod = productLookup.get(item.productId)
                             const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
                             totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
 
-                            // Aggregation by Unit (Case-insensitive)
-                            const uKey = `${item.productId}_${(item.unit || '').toLowerCase().trim()}`
+                            const normUnit = (item.unit || '').toLowerCase().trim()
+                            const uKey = `${item.productId}_${normUnit}`
                             localUnitStockMap.set(uKey, (localUnitStockMap.get(uKey) || 0) + item.balance)
 
-                            if (!detailedStockMap.has(item.productId)) detailedStockMap.set(item.productId, [])
-                            detailedStockMap.get(item.productId)!.push(`${formatQuantityFull(item.balance)} ${item.unit}`)
+                            if (!productUnitBalances.has(item.productId)) {
+                                productUnitBalances.set(item.productId, new Map())
+                            }
+                            const unitBalances = productUnitBalances.get(item.productId)!
+                            unitBalances.set(item.unit, (unitBalances.get(item.unit) || 0) + item.balance)
+                        }
+                    })
+
+                    // B. Cộng ngược lại số lượng từ phiếu xuất đang sửa (nếu có trạng thái Completed)
+                    originalCompletedItems.forEach((item: any) => {
+                        if (item.product_id) {
+                            const prod = productLookup.get(item.product_id)
+                            const baseQty = toBaseAmount(item.product_id, item.unit, item.quantity, prod?.unit || null)
+                            totalStockMap.set(item.product_id, (totalStockMap.get(item.product_id) || 0) + baseQty)
+
+                            const normUnit = (item.unit || '').toLowerCase().trim()
+                            const uKey = `${item.product_id}_${normUnit}`
+                            localUnitStockMap.set(uKey, (localUnitStockMap.get(uKey) || 0) + item.quantity)
+
+                            if (!productUnitBalances.has(item.product_id)) {
+                                productUnitBalances.set(item.product_id, new Map())
+                            }
+                            const unitBalances = productUnitBalances.get(item.product_id)!
+                            unitBalances.set(item.unit, (unitBalances.get(item.unit) || 0) + item.quantity)
+                        }
+                    })
+
+                    // C. Xây dựng detailedStockMap từ productUnitBalances
+                    const detailedStockMap = new Map<string, string[]>()
+                    productUnitBalances.forEach((unitBalances, productId) => {
+                        const details: string[] = []
+                        unitBalances.forEach((balance, unitName) => {
+                            if (balance > 0.000001) {
+                                details.push(`${formatQuantityFull(balance)} ${unitName}`)
+                            }
+                        })
+                        if (details.length > 0) {
+                            detailedStockMap.set(productId, details)
                         }
                     })
 
@@ -357,26 +407,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 created_at: createdAt
             }
 
-            if (editOrderId) {
-                const { error: updateError } = await (supabase.from('outbound_orders') as any).update(payload).eq('id', editOrderId)
-                if (updateError) throw updateError
-                await supabase.from('outbound_order_items').delete().eq('order_id', editOrderId)
-            } else {
-                const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
-                    ...payload,
-                    code,
-                    status: 'Pending',
-                    type: 'Sale',
-                    system_code: systemCode,
-                    system_type: systemCode,
-                }).select().single()
-                if (orderError) throw orderError
-                orderId = order.id
-            }
-
-            if (!orderId) throw new Error('No Order ID')
-
-            // Execute automatic unbundling for marked items
+            // Execute automatic unbundling for marked items FIRST (before modifying database)
             if (isUtilityEnabled('auto_unbundle_order')) {
                 const convType = orderTypes.find(t => t.name?.toLowerCase().includes('chuyển đổi') || t.scope === 'internal')
                 for (const item of processedItems as any[]) {
@@ -407,6 +438,26 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     }
                 }
             }
+
+            if (editOrderId) {
+                const { error: updateError } = await (supabase.from('outbound_orders') as any).update(payload).eq('id', editOrderId)
+                if (updateError) throw updateError
+                await supabase.from('outbound_order_items').delete().eq('order_id', editOrderId)
+            } else {
+                const { data: order, error: orderError } = await (supabase.from('outbound_orders') as any).insert({
+                    ...payload,
+                    code,
+                    status: 'Pending',
+                    type: 'Sale',
+                    system_code: systemCode,
+                    system_type: systemCode,
+                }).select().single()
+                if (orderError) throw orderError
+                orderId = order.id
+            }
+
+            if (!orderId) throw new Error('No Order ID')
+
             const orderItems = processedItems.map(item => ({
                 order_id: orderId,
                 product_id: item.productId,
