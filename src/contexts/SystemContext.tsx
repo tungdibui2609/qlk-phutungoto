@@ -198,7 +198,17 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
         }))
       }
 
-      setSystems(mergedSystems)
+      // [FIX] Dedup theo code để tránh lỗi React duplicate key
+      const seenCodes = new Set<string>()
+      const dedupedSystems = mergedSystems.filter((sys: any) => {
+        if (seenCodes.has(sys.code)) {
+          console.warn(`[SystemContext] Phát hiện system trùng code "${sys.code}", bỏ qua bản ghi trùng.`)
+          return false
+        }
+        seenCodes.add(sys.code)
+        return true
+      })
+      setSystems(dedupedSystems)
     }
   }
 
