@@ -543,7 +543,7 @@ export default function UserPermissionsPage() {
                                                             order: 'Phiếu nhập/xuất',
                                                             lotcode: 'Mã lô',
                                                             lot: 'LOT Sản Xuất',
-                                                             warehouse_lot: 'Quản lý LOT',
+                                                            warehouse_lot: 'Quản lý LOT',
                                                             report: 'Báo cáo',
                                                             customer: 'Khách hàng',
                                                             supplier: 'Nhà cung cấp',
@@ -552,6 +552,7 @@ export default function UserPermissionsPage() {
                                                             delivery_journal: 'Giao nhận',
                                                             inbound: 'Nhập kho (Kế toán)',
                                                             outbound: 'Xuất kho (Kế toán)',
+                                                            production: 'Lệnh Sản xuất',
                                                         }
 
                                                         return Object.entries(featureMap).map(([feature, { view, create, manage, approve, other }]) => {

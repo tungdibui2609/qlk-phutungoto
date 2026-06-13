@@ -161,7 +161,7 @@ export default function ProductionPage() {
                 icon={Factory}
                 actionText="Tạo lệnh mới"
                 onActionClick={handleAdd}
-                permission="warehouse.manage"
+                permission="production.create"
             />
 
             {/* FILTERS */}
