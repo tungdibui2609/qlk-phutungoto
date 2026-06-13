@@ -181,6 +181,7 @@ export default function LotLabelBindingPage() {
             const { data: labelData, error } = await (supabase
                 .from('box_labels') as any)
                 .select('id, code, semi_finished_lot_code, finished_lot_code, quantity, unit, status, lot_id, product_id, products(name, sku), lots(code)')
+                .eq('system_code', currentSystem?.code || '')
                 .eq('code', codeFormatted)
                 .maybeSingle()
 
