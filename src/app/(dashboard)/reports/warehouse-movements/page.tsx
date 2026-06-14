@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { encodeSTT, decodeSTT } from '@/lib/numberUtils'
 import { 
     Map as MapIcon, Search, RefreshCcw, Download, Calendar, 
     History, ArrowRight, Package, LogOut, PackagePlus,
@@ -34,6 +35,7 @@ interface MapMovement {
         productionOrderCode?: string | null;
         productionLotCode?: string | null;
         inboundDate?: string | null;
+        dailySeq?: number | null;
         products: Array<{
             name: string;
             sku: string;
@@ -48,6 +50,7 @@ interface MapMovement {
         productionOrderCode?: string | null;
         productionLotCode?: string | null;
         inboundDate?: string | null;
+        dailySeq?: number | null;
         products?: Array<{
             name: string;
             sku: string;
@@ -133,7 +136,7 @@ export default function WarehouseMovementsSnapshotPage() {
                 for (let i = 0; i < ids.length; i += 150) {
                     const chunk = ids.slice(i, i + 150)
                     const { data, error } = await supabase.from('lots').select(`
-                        id, code, production_code, production_lot_id, inbound_date, quantity,
+                        id, code, production_code, production_lot_id, inbound_date, quantity, daily_seq,
                         products(name, sku, unit, weight_kg),
                         productions(code, production_lots(lot_code)),
                         lot_items(quantity, unit, products(name, sku))
@@ -195,6 +198,7 @@ export default function WarehouseMovementsSnapshotPage() {
                     productionOrderCode: l.productions?.code || null,
                     productionLotCode: (Array.isArray(l.productions?.production_lots) ? l.productions.production_lots[0]?.lot_code : l.productions?.production_lots?.lot_code) || l.production_code || null,
                     inboundDate: l.inbound_date || null,
+                    dailySeq: l.daily_seq || null,
                     products,
                     totalWeightKg
                 })
@@ -205,7 +209,7 @@ export default function WarehouseMovementsSnapshotPage() {
                 if (!id) return null
                 const lot = lotMap.get(id)
                 if (lot) return lot
-                return { id, code: `LOT-ID:${id.slice(0,8)}...`, products: [], totalWeightKg: 0 }
+                return { id, code: `LOT-ID:${id.slice(0,8)}...`, products: [], totalWeightKg: 0, dailySeq: null }
             }
 
 
@@ -345,13 +349,31 @@ export default function WarehouseMovementsSnapshotPage() {
     }, [fetchMovements, currentSystem?.code])
 
     const filteredMovements = useMemo(() => {
+        // Helper so khớp theo block phân tách bằng dấu gạch ngang của mã kiện
+        const matchesBlock = (code: string | undefined | null, search: string): boolean => {
+            if (!code) return false
+            const codeUpper = code.toUpperCase()
+            const searchUpper = search.trim().toUpperCase()
+            if (!searchUpper) return true
+            if (codeUpper.startsWith(searchUpper)) return true
+            const parts = codeUpper.split('-')
+            return parts.includes(searchUpper)
+        }
+
+        const encodedSearchStt = encodeSTT(searchTerm)
+
         return movements.filter(m => {
             const matchesType = typeFilter === 'all' || m.type === typeFilter;
             const searchLower = searchTerm.toLowerCase();
+            
+            const matchesDailySeq = encodedSearchStt !== null && 
+                (m.lot?.dailySeq === encodedSearchStt || m.oldLot?.dailySeq === encodedSearchStt);
+
             const matchesSearch = !searchTerm || 
                 m.position?.code?.toLowerCase()?.includes(searchLower) ||
-                m.lot?.code?.toLowerCase()?.includes(searchLower) ||
-                m.oldLot?.code?.toLowerCase()?.includes(searchLower) ||
+                matchesBlock(m.lot?.code, searchTerm) ||
+                matchesBlock(m.oldLot?.code, searchTerm) ||
+                matchesDailySeq ||
                 m.sourcePositionCode?.toLowerCase()?.includes(searchLower) ||
                 m.lot?.products?.some(p => p.name?.toLowerCase()?.includes(searchLower) || p.sku?.toLowerCase()?.includes(searchLower)) ||
                 m.oldLot?.products?.some(p => p.name?.toLowerCase()?.includes(searchLower) || p.sku?.toLowerCase()?.includes(searchLower)) ||
@@ -424,7 +446,7 @@ export default function WarehouseMovementsSnapshotPage() {
                         <div className="relative group">
                             <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-orange-500 transition-colors" size={20} />
                             <input 
-                                placeholder="Mã LOT, Vị trí hoặc Người thực hiện..." 
+                                placeholder="Mã LOT, STT LOT, Vị trí hoặc Người thực hiện..." 
                                 value={searchTerm} 
                                 onChange={e => setSearchTerm(e.target.value)} 
                                 className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 rounded-[24px] py-4 pl-14 pr-6 text-sm font-bold outline-none focus:border-orange-500/50 focus:ring-8 focus:ring-orange-500/5 transition-all shadow-sm" 
@@ -524,9 +546,14 @@ export default function WarehouseMovementsSnapshotPage() {
                                     className="bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-100 dark:border-zinc-800 p-6 hover:shadow-xl transition-all group"
                                 >
                                     <div className="flex items-center justify-between mb-4">
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-2 flex-wrap">
                                             <div className="w-2 h-2 rounded-full bg-orange-500" />
                                             <span className="text-sm font-black font-mono tracking-tight">{m.lot?.code || m.oldLot?.code}</span>
+                                            {(m.lot?.dailySeq || m.oldLot?.dailySeq) && (
+                                                <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[9px] font-bold leading-none font-mono shrink-0" title="STT LOT trong ngày">
+                                                    STT: {decodeSTT(m.lot?.dailySeq || m.oldLot?.dailySeq)}
+                                                </span>
+                                            )}
                                         </div>
                                         <span className="text-[10px] font-black px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg text-zinc-500">
                                             {format(parseISO(m.createdAt), 'HH:mm dd/MM')}

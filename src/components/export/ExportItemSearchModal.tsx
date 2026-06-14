@@ -12,6 +12,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { format, startOfDay, endOfDay } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
+import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 
 interface ExportItemSearchModalProps {
     isOpen: boolean
@@ -31,6 +32,7 @@ interface SearchResult {
     sku: string
     production_code: string | null
     lot_code: string
+    daily_seq?: number | null
     position_code: string
 }
 
@@ -160,7 +162,7 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                             status,
                             export_tasks!inner(code, status, created_at, system_code),
                             products!inner(name, sku),
-                            lots(production_code, code),
+                            lots(production_code, code, daily_seq),
                             positions(code)
                         `)
                         .eq('export_tasks.system_code', currentSystem.code)
@@ -195,6 +197,7 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                             sku: item.products?.sku || 'N/A',
                             production_code: item.lots?.production_code || null,
                             lot_code: item.lots?.code || 'N/A',
+                            daily_seq: item.lots?.daily_seq || null,
                             position_code: item.positions?.code || 'N/A'
                         }))
                         allResults = [...allResults, ...formatted]
@@ -210,7 +213,9 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
             // 2. Trường hợp KHÔNG tích chọn sản phẩm nào (lấy tất cả hoặc theo từ khóa gõ)
             else {
                 if (searchQueryClean) {
-                    // Thử tìm các sản phẩm khớp với từ khóa
+                    // Chạy song song 2 luồng tìm kiếm: theo sản phẩm và theo lot
+                    
+                    // --- LUỒNG 1: TÌM THEO SẢN PHẨM (TÊN, SKU) ---
                     const { data: products } = await supabase
                         .from('products')
                         .select('id')
@@ -219,8 +224,8 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                         .limit(100)
                     const productIds = products?.map((p: any) => p.id) || []
 
+                    let productResults: SearchResult[] = []
                     if (productIds.length > 0) {
-                        let allResults: SearchResult[] = []
                         let currentFrom = 0
                         let hasMore = true
 
@@ -235,7 +240,7 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                     status,
                                     export_tasks!inner(code, status, created_at, system_code),
                                     products!inner(name, sku),
-                                    lots(production_code, code),
+                                    lots(production_code, code, daily_seq),
                                     positions(code)
                                 `)
                                 .eq('export_tasks.system_code', currentSystem.code)
@@ -270,9 +275,10 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                     sku: item.products?.sku || 'N/A',
                                     production_code: item.lots?.production_code || null,
                                     lot_code: item.lots?.code || 'N/A',
+                                    daily_seq: item.lots?.daily_seq || null,
                                     position_code: item.positions?.code || 'N/A'
                                 }))
-                                allResults = [...allResults, ...formatted]
+                                productResults = [...productResults, ...formatted]
                                 if (data.length < PAGE_SIZE) {
                                     hasMore = false
                                 } else {
@@ -280,71 +286,92 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                 }
                             }
                         }
-                        formattedResults = allResults
-                    } else {
-                        // Không tìm thấy sản phẩm nào -> Tìm theo Lệnh SX (lots.production_code)
-                        let lotResults: SearchResult[] = []
-                        let currentFromLot = 0
-                        let hasMoreLot = true
+                    }
 
-                        while (hasMoreLot) {
-                            let lotQuery = supabase
-                                .from('export_task_items')
-                                .select(`
-                                    id,
-                                    quantity,
-                                    exported_quantity,
-                                    unit,
-                                    status,
-                                    export_tasks!inner(code, status, created_at, system_code),
-                                    products!inner(name, sku),
-                                    lots!inner(production_code, code),
-                                    positions(code)
-                                `)
-                                .eq('export_tasks.system_code', currentSystem.code)
-                                .ilike('lots.production_code', `%${searchQueryClean}%`)
-                            
-                            if (startDate) {
-                                lotQuery = lotQuery.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
-                            }
-                            if (endDate) {
-                                lotQuery = lotQuery.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
-                            }
+                    // --- LUỒNG 2: TÌM THEO LOT (LỆNH SX, MÃ KIỆN, STT LOT) ---
+                    let lotResults: SearchResult[] = []
+                    let currentFromLot = 0
+                    let hasMoreLot = true
 
-                            const { data: lotData, error: lotError } = await lotQuery
-                                .order('created_at', { ascending: false })
-                                .range(currentFromLot, currentFromLot + PAGE_SIZE - 1)
+                    while (hasMoreLot) {
+                        let lotQuery = supabase
+                            .from('export_task_items')
+                            .select(`
+                                id,
+                                quantity,
+                                exported_quantity,
+                                unit,
+                                status,
+                                export_tasks!inner(code, status, created_at, system_code),
+                                products!inner(name, sku),
+                                lots!inner(production_code, code, daily_seq),
+                                positions(code)
+                            `)
+                            .eq('export_tasks.system_code', currentSystem.code)
 
-                            if (lotError) throw lotError
+                        const encodedStt = encodeSTT(searchQueryClean)
+                        const lotFilters = [
+                            `production_code.ilike.%${searchQueryClean}%`,
+                            `code.ilike.${searchQueryClean}%`,
+                            `code.ilike.%-${searchQueryClean}-%`,
+                            `code.ilike.%-${searchQueryClean}`
+                        ]
+                        if (encodedStt !== null) {
+                            lotFilters.push(`daily_seq.eq.${encodedStt}`)
+                        }
+                        lotQuery = lotQuery.or(lotFilters.join(','), { foreignTable: 'lots' })
+                        
+                        if (startDate) {
+                            lotQuery = lotQuery.gte('export_tasks.created_at', startOfDay(new Date(startDate)).toISOString())
+                        }
+                        if (endDate) {
+                            lotQuery = lotQuery.lte('export_tasks.created_at', endOfDay(new Date(endDate)).toISOString())
+                        }
 
-                            if (!lotData || lotData.length === 0) {
+                        const { data: lotData, error: lotError } = await lotQuery
+                            .order('created_at', { ascending: false })
+                            .range(currentFromLot, currentFromLot + PAGE_SIZE - 1)
+
+                        if (lotError) throw lotError
+
+                        if (!lotData || lotData.length === 0) {
+                            hasMoreLot = false
+                        } else {
+                            const formatted = lotData.map((item: any) => ({
+                                id: item.id,
+                                quantity: item.quantity,
+                                exported_quantity: item.exported_quantity,
+                                unit: item.unit,
+                                status: item.status,
+                                task_code: item.export_tasks?.code || 'N/A',
+                                task_status: item.export_tasks?.status || 'N/A',
+                                task_created_at: item.export_tasks?.created_at,
+                                product_name: item.products?.name || 'N/A',
+                                sku: item.products?.sku || 'N/A',
+                                production_code: item.lots?.production_code || null,
+                                lot_code: item.lots?.code || 'N/A',
+                                daily_seq: item.lots?.daily_seq || null,
+                                position_code: item.positions?.code || 'N/A'
+                            }))
+                            lotResults = [...lotResults, ...formatted]
+                            if (lotData.length < PAGE_SIZE) {
                                 hasMoreLot = false
                             } else {
-                                const formatted = lotData.map((item: any) => ({
-                                    id: item.id,
-                                    quantity: item.quantity,
-                                    exported_quantity: item.exported_quantity,
-                                    unit: item.unit,
-                                    status: item.status,
-                                    task_code: item.export_tasks?.code || 'N/A',
-                                    task_status: item.export_tasks?.status || 'N/A',
-                                    task_created_at: item.export_tasks?.created_at,
-                                    product_name: item.products?.name || 'N/A',
-                                    sku: item.products?.sku || 'N/A',
-                                    production_code: item.lots?.production_code || null,
-                                    lot_code: item.lots?.code || 'N/A',
-                                    position_code: item.positions?.code || 'N/A'
-                                }))
-                                lotResults = [...lotResults, ...formatted]
-                                if (lotData.length < PAGE_SIZE) {
-                                    hasMoreLot = false
-                                } else {
-                                    currentFromLot += PAGE_SIZE
-                                }
+                                currentFromLot += PAGE_SIZE
                             }
                         }
-                        formattedResults = lotResults
                     }
+
+                    // --- GỘP KẾT QUẢ VÀ SẮP XẾP ---
+                    const resultMap = new Map<string, SearchResult>()
+                    productResults.forEach(item => resultMap.set(item.id, item))
+                    lotResults.forEach(item => resultMap.set(item.id, item))
+
+                    formattedResults = Array.from(resultMap.values()).sort((a, b) => {
+                        const dateA = a.task_created_at ? new Date(a.task_created_at).getTime() : 0
+                        const dateB = b.task_created_at ? new Date(b.task_created_at).getTime() : 0
+                        return dateB - dateA
+                    })
                 } else {
                     // Rỗng -> Lấy tất cả danh sách lệnh xuất
                     let allResults: SearchResult[] = []
@@ -362,7 +389,7 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                 status,
                                 export_tasks!inner(code, status, created_at, system_code),
                                 products!inner(name, sku),
-                                lots(production_code, code),
+                                lots(production_code, code, daily_seq),
                                 positions(code)
                             `)
                             .eq('export_tasks.system_code', currentSystem.code)
@@ -396,6 +423,7 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                 sku: item.products?.sku || 'N/A',
                                 production_code: item.lots?.production_code || null,
                                 lot_code: item.lots?.code || 'N/A',
+                                daily_seq: item.lots?.daily_seq || null,
                                 position_code: item.positions?.code || 'N/A'
                             }))
                             allResults = [...allResults, ...formatted]
@@ -501,7 +529,7 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                 placeholder={
                                     selectedProductIds.length > 0
                                         ? `Đã chọn ${selectedProductIds.length} sản phẩm`
-                                        : "Tên hàng, SKU, hoặc Lệnh SX (bỏ trống để tìm tất cả)..."
+                                        : "Tên hàng, SKU, Lệnh SX, hoặc STT LOT (bỏ trống để tìm tất cả)..."
                                 }
                                 className={`w-full pl-10 ${selectedProductIds.length > 0 ? 'pr-10' : 'pr-4'} py-2.5 bg-white dark:bg-stone-950 border border-stone-200 dark:border-stone-800 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500`}
                                 value={searchQuery}
@@ -653,7 +681,23 @@ export function ExportItemSearchModal({ isOpen, onClose }: ExportItemSearchModal
                                                 </div>
                                                 <div>
                                                     <div className="font-bold text-stone-800 dark:text-stone-100">{item.product_name}</div>
-                                                    <div className="text-xs text-stone-500">SKU: {item.sku}</div>
+                                                    <div className="flex items-center gap-2 mt-0.5 text-xs text-stone-500 flex-wrap">
+                                                        <span>SKU: {item.sku}</span>
+                                                        {item.lot_code && item.lot_code !== 'N/A' && (
+                                                            <>
+                                                                <span className="text-stone-300 dark:text-stone-700">•</span>
+                                                                <span>Mã kiện: <span className="font-mono text-blue-600 dark:text-blue-400 font-bold">{item.lot_code}</span></span>
+                                                            </>
+                                                        )}
+                                                        {item.daily_seq && (
+                                                            <>
+                                                                <span className="text-stone-300 dark:text-stone-700">•</span>
+                                                                <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold leading-none" title="STT LOT trong ngày">
+                                                                    STT LOT: {decodeSTT(item.daily_seq)}
+                                                                </span>
+                                                            </>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </div>
                                             <div className="text-right">

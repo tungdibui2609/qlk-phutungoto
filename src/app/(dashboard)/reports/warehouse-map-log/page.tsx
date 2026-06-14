@@ -14,7 +14,7 @@ import { format, subDays, parseISO, startOfDay, endOfDay } from 'date-fns'
 import { vi } from 'date-fns/locale'
 import { exportWarehouseMovementsToExcel } from '@/lib/warehouseMovementExcelExport'
 import { extractWeightFromName } from '@/lib/unitConversion'
-import { decodeSTT } from '@/lib/numberUtils'
+import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 
 type MovementType = 'assigned' | 'moved' | 'exported' | 'replaced' | 'unknown';
 
@@ -345,14 +345,33 @@ export default function WarehouseMapLogPage() {
     }, [fetchMovements, currentSystem?.code])
 
     const filteredMovements = useMemo(() => {
+        // Helper so khớp theo block phân tách bằng dấu gạch ngang của mã kiện
+        const matchesBlock = (code: string | undefined | null, search: string): boolean => {
+            if (!code) return false
+            const codeUpper = code.toUpperCase()
+            const searchUpper = search.trim().toUpperCase()
+            if (!searchUpper) return true
+            if (codeUpper.startsWith(searchUpper)) return true
+            const parts = codeUpper.split('-')
+            return parts.includes(searchUpper)
+        }
+
+        const encodedSearchStt = encodeSTT(searchTerm)
+
         return movements.filter(m => {
             const matchesType = typeFilter === 'all' || m.type === typeFilter;
             
             const searchLower = searchTerm.toLowerCase();
+            
+            const matchesDailySeq = encodedSearchStt !== null && 
+                ((m.lot?.dailySeq !== undefined && m.lot?.dailySeq !== null && Number(m.lot.dailySeq) === encodedSearchStt) || 
+                 (m.oldLot?.dailySeq !== undefined && m.oldLot?.dailySeq !== null && Number(m.oldLot.dailySeq) === encodedSearchStt));
+
             const matchesSearch = !searchTerm || 
                 m.position?.code?.toLowerCase()?.includes(searchLower) ||
-                m.lot?.code?.toLowerCase()?.includes(searchLower) ||
-                m.oldLot?.code?.toLowerCase()?.includes(searchLower) ||
+                matchesBlock(m.lot?.code, searchTerm) ||
+                matchesBlock(m.oldLot?.code, searchTerm) ||
+                matchesDailySeq ||
                 m.sourcePositionCode?.toLowerCase()?.includes(searchLower) ||
                 m.lot?.products?.some(p => p.name?.toLowerCase()?.includes(searchLower) || p.sku?.toLowerCase()?.includes(searchLower)) ||
                 m.performedBy?.fullName?.toLowerCase()?.includes(searchLower);
@@ -461,7 +480,7 @@ export default function WarehouseMapLogPage() {
                             <div className="relative group">
                                 <Search className="absolute left-5 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-blue-500 transition-colors" size={20} />
                                 <input 
-                                    placeholder="Mã LOT, SKU, Vị trí hoặc Người thực hiện..." 
+                                    placeholder="Mã LOT, STT LOT, SKU, Vị trí hoặc Người thực hiện..." 
                                     value={searchTerm} 
                                     onChange={e => setSearchTerm(e.target.value)} 
                                     className="w-full bg-white dark:bg-zinc-950 border-2 border-zinc-100 dark:border-zinc-800 rounded-[24px] py-4 pl-14 pr-6 text-sm font-bold text-zinc-900 dark:text-white outline-none focus:border-blue-500/50 focus:ring-8 focus:ring-blue-500/5 transition-all shadow-sm" 

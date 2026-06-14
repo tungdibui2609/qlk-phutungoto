@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
+import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 import { History, Search, Download, Calendar, Boxes, ArrowRightLeft, Combine, Split, Package, Building2, Tag as TagIcon, Filter, Layers, ChevronDown, ArrowUpRight, MapPin } from 'lucide-react'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { useSystem } from '@/contexts/SystemContext'
@@ -12,6 +13,10 @@ type LotWithDetails = {
     inbound_date: string | null
     notes: string | null
     quantity: number | null
+    daily_seq?: number | null
+    product_id?: string | null
+    production_code?: string | null
+    batch_code?: string | null
     metadata: any
     suppliers: { name: string } | null
     products: { name: string; sku: string; unit: string } | null
@@ -28,6 +33,7 @@ type LotWithDetails = {
         lot_item_id: string | null
     }>
 }
+
 
 export default function LotHistoryPage() {
     const [lots, setLots] = useState<LotWithDetails[]>([])
@@ -131,9 +137,24 @@ export default function LotHistoryPage() {
     }
 
     const filteredLots = lots.filter(lot => {
+        const matchesBlock = (code: string | undefined | null, search: string): boolean => {
+            if (!code) return false
+            const codeUpper = code.toUpperCase()
+            const searchUpper = search.trim().toUpperCase()
+            if (!searchUpper) return true
+            if (codeUpper.startsWith(searchUpper)) return true
+            const parts = codeUpper.split('-')
+            return parts.includes(searchUpper)
+        }
+
+        const encodedSearchStt = encodeSTT(searchTerm)
         const searchLower = searchTerm.toLowerCase()
+        
+        const matchesDailySeq = encodedSearchStt !== null && lot.daily_seq === encodedSearchStt
+
         const matchesSearch =
-            lot.code?.toLowerCase()?.includes(searchLower) ||
+            matchesBlock(lot.code, searchTerm) ||
+            matchesDailySeq ||
             lot.products?.name?.toLowerCase()?.includes(searchLower) ||
             lot.products?.sku?.toLowerCase()?.includes(searchLower) ||
             lot.lot_items?.some(item =>
@@ -292,7 +313,7 @@ export default function LotHistoryPage() {
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-orange-500 transition-colors" size={18} />
                     <input
                         type="text"
-                        placeholder="Tìm LOT, SKU..."
+                        placeholder="Tìm LOT, STT LOT, SKU..."
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800 border border-stone-200 dark:border-slate-700 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 transition-all font-medium"
@@ -409,9 +430,16 @@ export default function LotHistoryPage() {
                                             })()}
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
-                                            <div className="inline-flex items-center gap-2 px-3 py-1 bg-stone-100 dark:bg-slate-800 rounded-lg border border-stone-200 dark:border-slate-700 font-mono text-xs font-bold text-stone-700 dark:text-stone-300 shadow-sm group-hover:border-orange-300 dark:group-hover:border-orange-800 transition-colors">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]"></div>
-                                                {lot.code}
+                                            <div className="flex items-center gap-2 flex-wrap">
+                                                <div className="inline-flex items-center gap-2 px-3 py-1 bg-stone-100 dark:bg-slate-800 rounded-lg border border-stone-200 dark:border-slate-700 font-mono text-xs font-bold text-stone-700 dark:text-stone-300 shadow-sm group-hover:border-orange-300 dark:group-hover:border-orange-800 transition-colors">
+                                                    <div className="w-1.5 h-1.5 rounded-full bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.5)]"></div>
+                                                    {lot.code}
+                                                </div>
+                                                {lot.daily_seq && (
+                                                    <span className="px-1.5 py-0.5 bg-orange-600 text-white rounded text-[9px] font-bold leading-none font-mono shrink-0" title="STT LOT trong ngày">
+                                                        STT: {decodeSTT(lot.daily_seq)}
+                                                    </span>
+                                                )}
                                             </div>
                                         </td>
                                         <td className="px-6 py-4 whitespace-nowrap">
