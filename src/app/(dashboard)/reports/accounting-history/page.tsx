@@ -61,6 +61,7 @@ export default function AccountingHistoryPage() {
     const [units, setUnits] = useState<any[]>([])
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
     const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
+    const [onlyWithMovements, setOnlyWithMovements] = useState(false)
 
     const { showToast } = useToast()
     const { companyInfo } = usePrintCompanyInfo()
@@ -338,7 +339,12 @@ export default function AccountingHistoryPage() {
             m.name.toLowerCase().includes(searchTerm.toLowerCase())
         const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
         return matchesSearch && matchesProducts
-    }).filter(m => m.opening !== 0 || m.totalIn !== 0 || m.totalOut !== 0)
+    }).filter(m => {
+        if (onlyWithMovements) {
+            return m.totalIn !== 0 || m.totalOut !== 0
+        }
+        return m.opening !== 0 || m.totalIn !== 0 || m.totalOut !== 0
+    })
 
     // Dynamic columns for Order Types
     const inboundTypes = orderTypes.filter(t => t.scope === 'inbound' || t.scope === 'both')
@@ -361,6 +367,11 @@ export default function AccountingHistoryPage() {
                 m.name.toLowerCase().includes(searchTerm.toLowerCase())
             const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
             return matchesSearch && matchesProducts
+        }).filter(m => {
+            if (onlyWithMovements) {
+                return m.totalIn !== 0 || m.totalOut !== 0
+            }
+            return true
         })
 
         if (currentData.length === 0) {
@@ -540,6 +551,19 @@ export default function AccountingHistoryPage() {
                         </div>
 
                         <button
+                            type="button"
+                            onClick={() => setOnlyWithMovements(!onlyWithMovements)}
+                            className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all flex items-center gap-2 ${
+                                onlyWithMovements 
+                                    ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 shadow-md shadow-amber-500/10' 
+                                    : 'bg-stone-50 dark:bg-slate-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-slate-700 hover:bg-stone-100 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            <TrendingUp size={14} className={onlyWithMovements ? 'animate-pulse' : ''} />
+                            Biến động trong kỳ
+                        </button>
+
+                        <button
                             onClick={() => fetchData()}
                             className="px-5 py-2 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-[11px] font-black text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-all uppercase tracking-widest border border-indigo-100 dark:border-indigo-900/50"
                         >
@@ -547,20 +571,37 @@ export default function AccountingHistoryPage() {
                         </button>
                     </div>
 
-                    {selectedProductIds.length > 0 && (
-                        <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-lg animate-in fade-in zoom-in-95">
-                            <Filter size={12} className="text-amber-500" />
-                            <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest">
-                                Đang lọc {selectedProductIds.length} sản phẩm
-                            </span>
-                            <button 
-                                onClick={() => setSelectedProductIds([])}
-                                className="ml-1 p-0.5 hover:bg-amber-200 dark:hover:bg-amber-900/50 rounded transition-colors text-amber-600"
-                            >
-                                <X size={12} />
-                            </button>
-                        </div>
-                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                        {onlyWithMovements && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-lg animate-in fade-in zoom-in-95">
+                                <TrendingUp size={12} className="text-indigo-500" />
+                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-500 uppercase tracking-widest">
+                                    Chỉ hiển thị biến động
+                                </span>
+                                <button 
+                                    onClick={() => setOnlyWithMovements(false)}
+                                    className="ml-1 p-0.5 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded transition-colors text-indigo-600"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        )}
+
+                        {selectedProductIds.length > 0 && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30 rounded-lg animate-in fade-in zoom-in-95">
+                                <Filter size={12} className="text-amber-500" />
+                                <span className="text-[10px] font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest">
+                                    Đang lọc {selectedProductIds.length} sản phẩm
+                                </span>
+                                <button 
+                                    onClick={() => setSelectedProductIds([])}
+                                    className="ml-1 p-0.5 hover:bg-amber-200 dark:hover:bg-amber-900/50 rounded transition-colors text-amber-600"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -593,6 +634,11 @@ export default function AccountingHistoryPage() {
                                         m.name.toLowerCase().includes(searchTerm.toLowerCase())
                                     const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
                                     return matchesSearch && matchesProducts
+                                }).filter(m => {
+                                    if (onlyWithMovements) {
+                                        return m.totalIn !== 0 || m.totalOut !== 0
+                                    }
+                                    return true
                                 }).map((mov, idx) => (
                                     <tr key={`${mov.date}-${mov.productId}-${idx}`} className="group hover:bg-indigo-50/20 dark:hover:bg-indigo-900/5 transition-colors">
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 font-bold text-stone-600 dark:text-stone-400">
