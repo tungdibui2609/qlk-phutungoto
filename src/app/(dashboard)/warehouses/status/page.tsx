@@ -3,7 +3,7 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye, PackageSearch, ChevronDown, Layers } from 'lucide-react'
+import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye, PackageSearch, ChevronDown, Layers, Filter, Check, X, SlidersHorizontal, FolderTree } from 'lucide-react'
 import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap'
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
 import { ProductColorConfigModal } from '@/components/warehouse/status/ProductColorConfigModal'
@@ -23,7 +23,7 @@ interface PositionWithZone extends Position {
 
 function WarehouseStatusContent() {
     const { showToast } = useToast()
-    const { systemType, currentSystem } = useSystem()
+    const { systemType, currentSystem, refreshSystems } = useSystem()
     const [positions, setPositions] = useState<PositionWithZone[]>([])
     const [zones, setZones] = useState<Zone[]>([])
     const [layouts, setLayouts] = useState<Record<string, any>>({})
@@ -55,6 +55,80 @@ function WarehouseStatusContent() {
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
     const [isColorModalOpen, setIsColorModalOpen] = useState(false)
+
+    // Thống kê theo danh mục sản phẩm (Category Stats)
+    const [categories, setCategories] = useState<any[]>([])
+    const [selectedStatsCategoryIds, setSelectedStatsCategoryIds] = useState<string[]>([])
+    const [selectedStatsWarehouseId, setSelectedStatsWarehouseId] = useState<string | null>(null)
+    const [showStatsConfig, setShowStatsConfig] = useState(false)
+    const [tempSelectedCategoryIds, setTempSelectedCategoryIds] = useState<string[]>([])
+    const [savingConfig, setSavingConfig] = useState(false)
+
+    // Đồng bộ cấu hình danh mục cần thống kê từ DB/localStorage
+    useEffect(() => {
+        if (currentSystem && categories.length > 0) {
+            const modules = currentSystem.modules as any
+            const dbIds = modules?.warehouse_status_config?.selected_category_ids
+            if (Array.isArray(dbIds)) {
+                setSelectedStatsCategoryIds(dbIds)
+            } else {
+                if (typeof window !== 'undefined') {
+                    const saved = localStorage.getItem('status_stats_selected_categories')
+                    if (saved) {
+                        try {
+                            setSelectedStatsCategoryIds(JSON.parse(saved))
+                        } catch (e) {
+                            console.error('Lỗi phân tích danh mục thống kê từ localStorage:', e)
+                        }
+                    } else {
+                        // Mặc định chọn tất cả
+                        setSelectedStatsCategoryIds(categories.map(c => c.id))
+                    }
+                }
+            }
+        }
+    }, [currentSystem, categories])
+
+    // Lưu cấu hình lên database của phân hệ
+    const saveConfigToDatabase = async (ids: string[]) => {
+        if (!currentSystem?.id) return
+        setSavingConfig(true)
+        try {
+            const systemsTable = supabase.from('systems' as any) as any
+            const { data: sysData } = await systemsTable
+                .select('modules')
+                .eq('id', currentSystem.id)
+                .single()
+            
+            const currentModules = (sysData?.modules as any) || {}
+            const updatedModules = {
+                ...currentModules,
+                warehouse_status_config: {
+                    ...currentModules.warehouse_status_config,
+                    selected_category_ids: ids
+                }
+            }
+
+            const { error } = await systemsTable
+                .update({ modules: updatedModules })
+                .eq('id', currentSystem.id)
+
+            if (error) throw error
+            
+            setSelectedStatsCategoryIds(ids)
+            if (typeof window !== 'undefined') {
+                localStorage.setItem('status_stats_selected_categories', JSON.stringify(ids))
+            }
+            refreshSystems()
+            showToast('Đã lưu cấu hình danh mục thống kê lên hệ thống!', 'success')
+            setShowStatsConfig(false)
+        } catch (error: any) {
+            console.error('Lỗi khi lưu cấu hình lên DB:', error)
+            showToast('Không thể lưu cấu hình: ' + error.message, 'error')
+        } finally {
+            setSavingConfig(false)
+        }
+    }
 
     useEffect(() => {
         supabase.auth.getSession().then(({ data: { session } }) => setSession(session))
@@ -117,11 +191,12 @@ function WarehouseStatusContent() {
         }
 
         try {
-            let [posData, zoneData, zpData, layoutData] = await Promise.all([
+            let [posData, zoneData, zpData, layoutData, catData] = await Promise.all([
                 fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
-                fetchAll('zone_status_layouts')
+                fetchAll('zone_status_layouts'),
+                fetchAll('categories', q => q.eq('system_type', systemType).order('name'))
             ])
 
             // Extract unique lot_ids currently in use on the map
@@ -142,7 +217,7 @@ function WarehouseStatusContent() {
                     // Attempt fetch with sort_order
                     const mainQuery = await supabase
                         .from('lots')
-                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, sort_order)), lot_tags(tag, lot_item_id)')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, sort_order, product_category_rel(category_id))), lot_tags(tag, lot_item_id)')
                         .in('id', chunk)
 
                     let data = mainQuery.data as any[] | null
@@ -153,7 +228,7 @@ function WarehouseStatusContent() {
                         console.warn("[FetchLots] sort_order column missing, falling back...");
                         const fallback = await supabase
                             .from('lots')
-                            .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name)), lot_tags(tag, lot_item_id)')
+                            .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, product_category_rel(category_id))), lot_tags(tag, lot_item_id)')
                             .in('id', chunk)
                         data = fallback.data as any[] | null
                         error = fallback.error
@@ -190,6 +265,7 @@ function WarehouseStatusContent() {
                     code: l.code,
                     items: l.lot_items?.map((it: any) => ({
                         id: it.id,
+                        product_id: it.product_id,
                         product_name: it.products?.name,
                         sku: it.products?.sku,
                         internal_code: it.products?.internal_code,
@@ -197,6 +273,7 @@ function WarehouseStatusContent() {
                         unit: it.unit || it.products?.unit,
                         product_color: it.products?.color,
                         sort_order: it.products?.sort_order ?? null,
+                        category_ids: it.products?.product_category_rel?.map((r: any) => r.category_id) || [],
                         quantity: it.quantity,
                         tags: l.lot_tags?.filter((t: any) => t.lot_item_id === it.id && !t.tag.startsWith('MERGED_')).map((t: any) => t.tag) || []
                     })) || []
@@ -210,6 +287,7 @@ function WarehouseStatusContent() {
             setZones(zoneData)
             setLayouts(layoutsMap)
             setLotInfo(lotInfoMap)
+            setCategories(catData || [])
 
         } catch (error: any) {
             console.error('Error fetching status data:', error)
@@ -315,6 +393,62 @@ function WarehouseStatusContent() {
             return allModules.has(moduleId)
         }
     }, [currentSystem, viewingLot])
+
+    // Lấy danh sách kho (zones level 0) để người dùng chọn lọc trong panel thống kê
+    const warehouses = useMemo(() => {
+        return zones.filter(z => z.level === 0 || !z.parent_id)
+    }, [zones])
+
+
+
+    // Tính toán thống kê theo danh mục sản phẩm
+    const categoryStats = useMemo(() => {
+        if (categories.length === 0 || positions.length === 0) return []
+
+        // 1. Lọc tập hợp các position thuộc kho được chọn
+        let targetPositions = positions
+        if (selectedStatsWarehouseId) {
+            const getDescendantIds = (parentId: string): string[] => {
+                const children = zones.filter(z => z.parent_id === parentId)
+                let ids = children.map(c => c.id)
+                children.forEach(c => ids = [...ids, ...getDescendantIds(c.id)])
+                return ids
+            }
+            const validIds = new Set([selectedStatsWarehouseId, ...getDescendantIds(selectedStatsWarehouseId)])
+            targetPositions = positions.filter(p => p.zone_id && validIds.has(p.zone_id))
+        }
+
+        const totalPos = targetPositions.length
+        const occupiedPositions = targetPositions.filter(p => p.lot_id)
+        const occupiedCount = occupiedPositions.length
+
+        // 2. Tính toán thống kê cho từng category
+        return categories.map(cat => {
+            let count = 0
+            targetPositions.forEach(p => {
+                if (p.lot_id && lotInfo[p.lot_id]) {
+                    const lot = lotInfo[p.lot_id]
+                    const hasProductOfCat = lot.items?.some((item: any) => item.category_ids?.includes(cat.id))
+                    if (hasProductOfCat) {
+                        count++
+                    }
+                }
+            })
+
+            const pctOfOccupied = occupiedCount > 0 ? (count / occupiedCount) * 100 : 0
+            const pctOfTotal = totalPos > 0 ? (count / totalPos) * 100 : 0
+
+            return {
+                id: cat.id,
+                name: cat.name,
+                count,
+                pctOfOccupied,
+                pctOfTotal,
+                totalPos,
+                occupiedCount
+            }
+        })
+    }, [categories, positions, lotInfo, selectedStatsWarehouseId, zones])
 
     async function fetchFullLotDetails(lotId: string) {
         try {
@@ -482,19 +616,187 @@ function WarehouseStatusContent() {
                 />
             </div>
 
-            {/* Stats Overview */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                {[
-                    { label: 'TỔNG VỊ TRÍ', val: filteredPositions.length, color: 'indigo' },
-                    { label: 'ĐÃ LẤP ĐẦY', val: occupiedIds.size, color: 'emerald' },
-                    { label: 'CÒN TRỐNG', val: filteredPositions.length - occupiedIds.size, color: 'slate' },
-                    { label: 'TỶ LỆ LẤP ĐẦY', val: `${((occupiedIds.size / (filteredPositions.length || 1)) * 100).toFixed(1)}%`, color: 'amber' },
-                ].map((stat, i) => (
-                    <div key={i} className="bg-white dark:bg-slate-900 p-4 border border-slate-100 dark:border-slate-800 shadow-sm">
-                        <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{stat.label}</div>
-                        <div className={`text-2xl font-black mt-1 text-${stat.color}-600 dark:text-${stat.color}-400`}>{stat.val}</div>
+            {/* Stats & Category Stats Container (Song song) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Cột trái: Stats Overview (4 ô thống kê chính) */}
+                <div className="lg:col-span-4 grid grid-cols-2 gap-4">
+                    {[
+                        { label: 'TỔNG VỊ TRÍ', val: filteredPositions.length, color: 'indigo' },
+                        { label: 'ĐÃ LẤP ĐẦY', val: occupiedIds.size, color: 'emerald' },
+                        { label: 'CÒN TRỐNG', val: filteredPositions.length - occupiedIds.size, color: 'slate' },
+                        { label: 'TỶ LỆ LẤP ĐẦY', val: `${((occupiedIds.size / (filteredPositions.length || 1)) * 100).toFixed(1)}%`, color: 'amber' },
+                    ].map((stat, i) => (
+                        <div key={i} className="bg-white dark:bg-slate-900 p-5 border border-slate-100 dark:border-slate-800 shadow-sm rounded-2xl flex flex-col justify-between h-28 transition-all hover:shadow-md group">
+                            <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">{stat.label}</div>
+                            <div className={`text-3xl font-black text-${stat.color}-600 dark:text-${stat.color}-400 group-hover:scale-105 transition-transform duration-200 origin-left`}>{stat.val}</div>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Cột phải: Category-based Stats Panel */}
+                <div className="lg:col-span-8 bg-white dark:bg-slate-900 p-5 border border-slate-100 dark:border-slate-800 shadow-sm rounded-2xl flex flex-col min-h-[240px]">
+                    {/* Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3 mb-4">
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                            <FolderTree size={16} className="text-indigo-600 dark:text-indigo-400" />
+                            THỐNG KÊ CHI TIẾT THEO DANH MỤC
+                        </span>
+
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                            {/* Bộ lọc kho mini */}
+                            <div className="relative">
+                                <select
+                                    value={selectedStatsWarehouseId || ''}
+                                    onChange={(e) => setSelectedStatsWarehouseId(e.target.value || null)}
+                                    className="appearance-none pl-3 pr-8 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-[10px] font-bold text-slate-600 dark:text-slate-300 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 hover:bg-slate-100 dark:hover:bg-slate-750 transition-all uppercase"
+                                >
+                                    <option value="">TẤT CẢ KHO</option>
+                                    {warehouses.map(wh => (
+                                        <option key={wh.id} value={wh.id}>{wh.name.toUpperCase()}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+                            </div>
+
+                            {/* Popover cấu hình danh mục */}
+                            <div className="relative">
+                                <button
+                                    onClick={() => {
+                                        setShowStatsConfig(!showStatsConfig)
+                                        if (!showStatsConfig) {
+                                            setTempSelectedCategoryIds(selectedStatsCategoryIds)
+                                        }
+                                    }}
+                                    className="flex items-center gap-1.5 px-3 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 active:scale-95 border border-slate-200 dark:border-slate-700"
+                                >
+                                    <SlidersHorizontal size={12} />
+                                    CẤU HÌNH
+                                </button>
+
+                                {showStatsConfig && (
+                                    <>
+                                        <div className="fixed inset-0 z-[60]" onClick={() => setShowStatsConfig(false)} />
+                                        <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xl p-4 z-[70] animate-in fade-in slide-in-from-top-2 duration-150">
+                                            <div className="flex items-center justify-between mb-3 border-b border-slate-50 dark:border-slate-800/50 pb-2">
+                                                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Chọn danh mục hiển thị</span>
+                                                <button onClick={() => setShowStatsConfig(false)} className="text-slate-400 hover:text-slate-600">
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="flex justify-between mb-3">
+                                                <button
+                                                    onClick={() => setTempSelectedCategoryIds(categories.map(c => c.id))}
+                                                    className="text-[9px] text-indigo-600 dark:text-indigo-400 font-black hover:underline uppercase"
+                                                >
+                                                    Chọn tất cả
+                                                </button>
+                                                <button
+                                                    onClick={() => setTempSelectedCategoryIds([])}
+                                                    className="text-[9px] text-red-600 dark:text-red-400 font-black hover:underline uppercase"
+                                                >
+                                                    Bỏ chọn tất cả
+                                                </button>
+                                            </div>
+
+                                            <div className="max-h-48 overflow-y-auto space-y-2 no-scrollbar pr-1">
+                                                {categories.map(cat => {
+                                                    const isChecked = tempSelectedCategoryIds.includes(cat.id);
+                                                    return (
+                                                        <label key={cat.id} className="flex items-center gap-2.5 p-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer transition-colors group">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isChecked}
+                                                                onChange={() => {
+                                                                    const next = isChecked
+                                                                        ? tempSelectedCategoryIds.filter(id => id !== cat.id)
+                                                                        : [...tempSelectedCategoryIds, cat.id];
+                                                                    setTempSelectedCategoryIds(next);
+                                                                }}
+                                                                className="rounded border-slate-300 dark:border-slate-700 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                                                            />
+                                                            <span className="text-xs font-bold text-slate-600 dark:text-slate-300 group-hover:text-slate-800 dark:group-hover:text-white transition-colors truncate">
+                                                                {cat.name}
+                                                            </span>
+                                                        </label>
+                                                    );
+                                                })}
+                                                {categories.length === 0 && (
+                                                    <div className="text-center py-4 text-slate-400 text-[10px] font-bold">Không có danh mục nào để chọn</div>
+                                                )}
+                                            </div>
+
+                                            <div className="mt-3 pt-2 border-t border-slate-50 dark:border-slate-800/50 flex justify-end">
+                                                <button
+                                                    onClick={() => saveConfigToDatabase(tempSelectedCategoryIds)}
+                                                    disabled={savingConfig}
+                                                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-[9px] rounded-lg tracking-wider uppercase transition-all shadow-sm active:scale-95"
+                                                >
+                                                    {savingConfig ? 'ĐANG LƯU...' : 'LƯU HỆ THỐNG'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                        </div>
                     </div>
-                ))}
+
+                    {/* Danh sách Thống kê */}
+                    {loading ? (
+                        <div className="text-center py-6 text-slate-400 text-xs font-bold bg-slate-50/30 dark:bg-slate-900/30 rounded-2xl border border-slate-100 dark:border-slate-800 flex-1 flex items-center justify-center">
+                            Đang tải thống kê danh mục...
+                        </div>
+                    ) : categoryStats.filter(stat => selectedStatsCategoryIds.includes(stat.id)).length === 0 ? (
+                        <div className="text-center py-8 text-slate-400 text-xs font-bold bg-slate-50/30 dark:bg-slate-900/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-800 flex-1 flex flex-col items-center justify-center gap-2">
+                            <FolderTree size={28} className="text-slate-300 dark:text-slate-700" />
+                            <span>Chưa cấu hình danh mục để theo dõi. Nhấp "Cấu hình" để thêm.</span>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3 overflow-y-auto max-h-[200px] lg:max-h-none no-scrollbar flex-1">
+                            {categoryStats
+                                .filter(stat => selectedStatsCategoryIds.includes(stat.id))
+                                .map(stat => (
+                                    <div key={stat.id} className="bg-slate-50/50 dark:bg-slate-900/30 p-3.5 rounded-2xl border border-slate-100 dark:border-slate-800/50 hover:border-indigo-200 dark:hover:border-indigo-900/50 hover:shadow-md transition-all duration-200 group relative overflow-hidden flex flex-col justify-between">
+                                        {/* Hiệu ứng background */}
+                                        <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 rounded-full -mr-6 -mt-6 group-hover:scale-125 transition-transform duration-300" />
+                                        
+                                        <div className="flex items-start justify-between mb-2.5 relative z-10 gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <FolderTree size={14} className="text-indigo-500 dark:text-indigo-400 flex-shrink-0" />
+                                                <span className="text-xs font-black text-slate-700 dark:text-slate-200 truncate uppercase tracking-tight" title={stat.name}>
+                                                    {stat.name}
+                                                </span>
+                                            </div>
+                                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[9px] font-black uppercase tracking-wider flex-shrink-0">
+                                                {stat.count} vị trí
+                                            </span>
+                                        </div>
+
+                                        {/* Progress bar */}
+                                        <div className="space-y-2 relative z-10">
+                                            <div className="w-full bg-slate-200/80 dark:bg-slate-800 h-1.5 rounded-full overflow-hidden shadow-inner">
+                                                <div
+                                                    className="bg-gradient-to-r from-indigo-500 to-violet-600 h-full rounded-full transition-all duration-500"
+                                                    style={{ width: `${Math.min(stat.pctOfOccupied, 100)}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 text-[9px] font-bold text-slate-400 dark:text-slate-500 tracking-wider">
+                                                <div className="flex justify-between items-center">
+                                                    <span>TỈ LỆ HÀNG HOÁ:</span>
+                                                    <span className="text-slate-700 dark:text-slate-300 font-black">{stat.pctOfOccupied.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span>TỈ LỆ CÔNG SUẤT:</span>
+                                                    <span className="text-slate-700 dark:text-slate-300 font-black">{stat.pctOfTotal.toFixed(1)}%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                        </div>
+                    )}
+                </div>
             </div>
 
             {/* Main Status Diagram - Legend */}
