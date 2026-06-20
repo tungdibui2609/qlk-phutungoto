@@ -62,6 +62,7 @@ function ProductionLotPrintContent() {
         net_weight: '',
         production_date: new Date().toISOString().split('T')[0],
         packing_date: new Date().toISOString().split('T')[0],
+        created_date: new Date().toISOString().split('T')[0],
         label_count: 1,
         start_index: 1,
         show_production_date: true,
@@ -117,7 +118,8 @@ function ProductionLotPrintContent() {
                         : (lotData.last_printed_index || 0) + 1,
                     specification: mergedConfig.specification || lotData.products?.name?.match(/\((.*?)\)/)?.[1] || '',
                     net_weight: mergedConfig.net_weight || (lotData.weight_per_unit ? `${lotData.weight_per_unit} kg` : ''),
-                    production_date: lotData.production_date ? new Date(lotData.production_date).toISOString().split('T')[0] : (mergedConfig.production_date || new Date().toISOString().split('T')[0])
+                    production_date: lotData.production_date ? new Date(lotData.production_date).toISOString().split('T')[0] : (mergedConfig.production_date || new Date().toISOString().split('T')[0]),
+                    created_date: mergedConfig.created_date || (lotData.created_at ? new Date(lotData.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
                 }))
             }
             setLoading(false)
@@ -808,7 +810,7 @@ function ProductionLotPrintContent() {
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">Quy cách</label>
                         <input
@@ -847,9 +849,18 @@ function ProductionLotPrintContent() {
                             className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all font-bold text-sm text-zinc-800"
                         />
                     </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">Ngày tạo</label>
+                        <input
+                            type="date"
+                            value={printConfig.created_date}
+                            onChange={e => setPrintConfig(prev => ({ ...prev, created_date: e.target.value }))}
+                            className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all font-bold text-sm text-zinc-800"
+                        />
+                    </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6">
                     <div className="space-y-2">
                         <label className="text-[10px] font-black uppercase tracking-widest text-orange-500 px-1">Số lượng phiếu cần in</label>
                         <input
@@ -857,6 +868,15 @@ function ProductionLotPrintContent() {
                             value={printConfig.label_count}
                             onChange={e => setPrintConfig(prev => ({ ...prev, label_count: parseInt(e.target.value) || 1 }))}
                             className="w-full px-4 py-3 rounded-2xl bg-orange-50 border border-orange-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-black text-lg text-orange-600"
+                        />
+                    </div>
+                    <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">STT Bắt đầu</label>
+                        <input
+                            type="number" min={1}
+                            value={printConfig.start_index}
+                            onChange={e => setPrintConfig(prev => ({ ...prev, start_index: parseInt(e.target.value) || 1 }))}
+                            className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-blue-100 transition-all font-bold text-sm text-zinc-800"
                         />
                     </div>
                     <div className="space-y-2">
@@ -1188,7 +1208,9 @@ function ProductionLotPrintContent() {
                                             <div className="space-y-4">
                                                 <div className="flex justify-between items-end border-b border-dashed border-zinc-200 pb-1">
                                                     <span className="text-[11px] font-bold text-zinc-400 uppercase">Ngày tạo:</span> 
-                                                    <span className="font-black text-zinc-900 text-lg uppercase">{new Date(data.created_at).toLocaleDateString('vi-VN')}</span>
+                                                    <span className="font-black text-zinc-900 text-lg uppercase">
+                                                        {printConfig.created_date ? new Date(printConfig.created_date).toLocaleDateString('vi-VN') : (data.created_at ? new Date(data.created_at).toLocaleDateString('vi-VN') : '')}
+                                                    </span>
                                                 </div>
                                                 <div className="flex justify-between items-end border-b border-dashed border-zinc-200 pb-1">
                                                     <span className="text-[11px] font-bold text-zinc-400 uppercase">Số lượng:</span> 
