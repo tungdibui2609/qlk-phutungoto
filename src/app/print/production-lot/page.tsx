@@ -1164,10 +1164,10 @@ function ProductionLotPrintContent() {
                             </div>
 
                             {/* Content */}
-                            <div className="flex-1">
-                                <div className="grid grid-cols-2 gap-6">
+                            <div className="flex-1 flex flex-col justify-center">
+                                <div className="grid grid-cols-12 gap-6 items-center">
                                     {/* Col 1: Lệnh SX + Sản phẩm */}
-                                    <div className="space-y-8">
+                                    <div className="col-span-4 space-y-8">
                                         <section>
                                             <h3 className="text-[11px] font-black uppercase tracking-[0.25em] text-zinc-400 mb-4 border-b-2 border-zinc-100 pb-2">Lệnh sản xuất</h3>
                                             <div className="space-y-4">
@@ -1198,7 +1198,7 @@ function ProductionLotPrintContent() {
                                     </div>
 
                                     {/* Col 2: Lot + Chi tiết */}
-                                    <div className="space-y-8">
+                                    <div className="col-span-4 space-y-8">
                                         <section>
                                             <h3 className="text-[11px] font-black uppercase tracking-[0.25em] text-zinc-400 mb-4 border-b-2 border-zinc-100 pb-2">Thông tin Lot</h3>
                                             <div className="p-5 bg-zinc-50 rounded-3xl border-2 border-zinc-100 mb-5 text-center">
@@ -1227,6 +1227,14 @@ function ProductionLotPrintContent() {
                                                 <div className="flex flex-col"><span className="text-[10px] font-bold text-zinc-400 uppercase">Ngày ĐG:</span> <span className="font-black text-zinc-900 text-sm leading-none">{printConfig.packing_date ? new Date(printConfig.packing_date).toLocaleDateString('vi-VN') : ''}</span></div>
                                             </div>
                                         </section>
+                                    </div>
+
+                                    {/* Col 3: STT / INDEX Box */}
+                                    <div className="col-span-4 flex items-center justify-center pl-8">
+                                        <div className="border-[5px] border-black rounded-[4rem] w-full py-20 px-10 flex flex-col items-center justify-center text-center">
+                                            <span className="text-base font-black uppercase tracking-[0.25em] text-black mb-5">STT / INDEX</span>
+                                            <span className="text-[7.5rem] font-black text-black leading-none tracking-tighter">{label.index}</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
