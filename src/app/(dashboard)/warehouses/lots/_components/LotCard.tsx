@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal } from 'lucide-react'
 import { useState } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -48,6 +48,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
         action()
     }
     const [isExpanded, setIsExpanded] = useState(false)
+    const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
     const [showMergeHistory, setShowMergeHistory] = useState(false)
     const [openImageItemId, setOpenImageItemId] = useState<string | null>(null)
@@ -664,38 +665,6 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         >
                             <Tag size={16} />
                         </button>
-                        {!isSanxuat && (
-                            <>
-                                <button
-                                    onClick={(e) => handleActionClick(e, () => onMerge?.(lot))}
-                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    title="Gộp Lot"
-                                >
-                                    <Combine size={16} />
-                                </button>
-                                <button
-                                    onClick={(e) => handleActionClick(e, () => onSplit?.(lot))}
-                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    title="Tách Lot"
-                                >
-                                    <Split size={16} />
-                                </button>
-                                <button
-                                    onClick={(e) => handleActionClick(e, () => onExport?.(lot))}
-                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    title="Xuất Lot"
-                                >
-                                    <ArrowUpRight size={16} />
-                                </button>
-                                <button
-                                    onClick={(e) => handleActionClick(e, () => onBulkClone?.(lot))}
-                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
-                                    title="Nhân bản Lot"
-                                >
-                                    <Copy size={16} />
-                                </button>
-                            </>
-                        )}
                     </Protected>
                 </div>
 
@@ -727,6 +696,71 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                             </button>
                         )}
                     </Protected>
+                    {!isSanxuat && (
+                        <div className="relative flex items-center">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }}
+                                className={`w-9 h-9 flex items-center justify-center rounded-full transition-all border border-transparent ${isMenuOpen
+                                    ? 'text-zinc-800 bg-zinc-200 dark:bg-zinc-700 dark:text-zinc-200'
+                                    : 'text-zinc-400 hover:text-zinc-800 hover:bg-white dark:hover:bg-zinc-800 shadow-sm'
+                                    }`}
+                                title="Thao tác khác"
+                            >
+                                <MoreHorizontal size={16} />
+                            </button>
+
+                            {isMenuOpen && (
+                                <>
+                                    <div 
+                                        className="fixed inset-0 z-30" 
+                                        onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); }} 
+                                    />
+                                    <div className="absolute bottom-11 right-0 z-45 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl py-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                                        <button
+                                            onClick={(e) => {
+                                                setIsMenuOpen(false);
+                                                handleActionClick(e, () => onMerge?.(lot));
+                                            }}
+                                            className={`w-full px-3.5 py-2 flex items-center gap-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <Combine size={14} className="text-indigo-500 shrink-0" />
+                                            Gộp Lot
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                setIsMenuOpen(false);
+                                                handleActionClick(e, () => onSplit?.(lot));
+                                            }}
+                                            className={`w-full px-3.5 py-2 flex items-center gap-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <Split size={14} className="text-blue-500 shrink-0" />
+                                            Tách Lot
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                setIsMenuOpen(false);
+                                                handleActionClick(e, () => onExport?.(lot));
+                                            }}
+                                            className={`w-full px-3.5 py-2 flex items-center gap-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <ArrowUpRight size={14} className="text-emerald-500 shrink-0" />
+                                            Xuất Lot
+                                        </button>
+                                        <button
+                                            onClick={(e) => {
+                                                setIsMenuOpen(false);
+                                                handleActionClick(e, () => onBulkClone?.(lot));
+                                            }}
+                                            className={`w-full px-3.5 py-2 flex items-center gap-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                        >
+                                            <Copy size={14} className="text-amber-500 shrink-0" />
+                                            Nhân bản Lot
+                                        </button>
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
             {historyData && (
