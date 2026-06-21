@@ -12,6 +12,8 @@ interface LotFilterProps {
     onSearchModeChange: (mode: SearchMode) => void
     positionFilter: 'all' | 'assigned' | 'unassigned'
     onPositionFilterChange: (value: 'all' | 'assigned' | 'unassigned') => void
+    lockFilter: 'all' | 'unlocked' | 'locked'
+    onLockFilterChange: (value: 'all' | 'unlocked' | 'locked') => void
     selectedZoneId: string | null
     onZoneSelect: (zoneId: string | null) => void
     dateFilterField: DateFilterField
@@ -32,6 +34,8 @@ export function LotFilter({
     onSearchModeChange,
     positionFilter,
     onPositionFilterChange,
+    lockFilter,
+    onLockFilterChange,
     selectedZoneId,
     onZoneSelect,
     dateFilterField,
@@ -168,13 +172,17 @@ export function LotFilter({
                         </select>
                     </div>
 
-                    {/* Lot Status - Smaller */}
-                    <div className="flex items-center gap-1.5 bg-emerald-50/50 dark:bg-emerald-900/20 px-2 py-1.5 rounded-xl border border-emerald-100 dark:border-emerald-800/50 min-w-[105px]">
-                        <Filter size={12} className="text-emerald-500 shrink-0" />
-                        <select className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full">
-                            <option value="all">Tất cả TT</option>
-                            <option value="active">Hoạt động</option>
-                            <option value="closed">Đã đóng</option>
+                    {/* Lock Status Filter */}
+                    <div className="flex items-center gap-1.5 bg-rose-50/50 dark:bg-rose-900/20 px-2 py-1.5 rounded-xl border border-rose-100 dark:border-rose-800/50 min-w-[110px]">
+                        <Filter size={12} className="text-rose-500 shrink-0" />
+                        <select
+                            value={lockFilter}
+                            onChange={(e) => onLockFilterChange(e.target.value as any)}
+                            className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full"
+                        >
+                            <option value="all">Khóa: Tất cả</option>
+                            <option value="unlocked">Chưa khóa</option>
+                            <option value="locked">Đã khóa</option>
                         </select>
                     </div>
 

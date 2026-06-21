@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock } from 'lucide-react'
 import { useState } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -12,6 +12,7 @@ import React from 'react'
 import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
 import { LotBoxLabelsModal } from '@/components/warehouse/lots/LotBoxLabelsModal'
 import { advancedMatchSearch } from '@/lib/searchUtils'
+import { useToast } from '@/components/ui/ToastProvider'
 
 interface LotCardProps {
     lot: Lot
@@ -28,13 +29,24 @@ interface LotCardProps {
     onExport?: (lot: Lot) => void
     onBulkClone?: (lot: Lot) => void
     onAssignLocation?: (lot: Lot) => void
+    onToggleLock?: (id: string, currentLocked: boolean) => Promise<boolean>
     managePermission?: string
     searchTerm?: string
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, managePermission, searchTerm }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, managePermission, searchTerm }: LotCardProps) {
     const router = useRouter()
     const pathname = usePathname()
+    const { showToast } = useToast()
+    
+    const handleActionClick = (e: React.MouseEvent, action: () => void) => {
+        e.stopPropagation()
+        if (lot.is_locked) {
+            showToast('Lô hàng đã bị khóa. Vui lòng mở khóa để thực hiện thao tác này.', 'warning')
+            return
+        }
+        action()
+    }
     const [isExpanded, setIsExpanded] = useState(false)
     const [historyData, setHistoryData] = useState<any>(null)
     const [showMergeHistory, setShowMergeHistory] = useState(false)
@@ -234,6 +246,12 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         <span className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
                             {lot.code}
                         </span>
+                        {lot.is_locked && (
+                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200 dark:border-red-800 flex items-center gap-1">
+                                <Lock size={10} />
+                                ĐÃ KHÓA
+                            </span>
+                        )}
                         <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
                             STT: {decodeSTT((lot as any).daily_seq) || '--'}
                         </span>
@@ -276,11 +294,15 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
                             onClick={() => {
+                                if (lot.is_locked) {
+                                    showToast('Lô hàng đã bị khóa, không thể thay đổi vị trí.', 'warning')
+                                    return
+                                }
                                 if (!isSanxuat) {
                                     onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
                                 }
                             }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 ${!isSanxuat ? 'hover:bg-orange-200 dark:hover:bg-orange-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 ${!isSanxuat && !lot.is_locked ? 'hover:bg-orange-200 dark:hover:bg-orange-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
                         >
                             <MapPin size={12} />
                             {lot.positions[0].code}
@@ -289,11 +311,15 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     ) : (
                         <button
                             onClick={() => {
+                                if (lot.is_locked) {
+                                    showToast('Lô hàng đã bị khóa, không thể gán vị trí.', 'warning')
+                                    return
+                                }
                                 if (!isSanxuat) {
                                     onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
                                 }
                             }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 ${!isSanxuat ? 'hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors`}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 ${!isSanxuat && !lot.is_locked ? 'hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors`}
                         >
                             <MapPin size={12} />
                             Chưa gán
@@ -618,10 +644,22 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     >
                         <Star size={16} fill={lot.metadata?.is_starred ? "currentColor" : "none"} />
                     </button>
+                    {onToggleLock && (
+                        <button
+                            onClick={() => onToggleLock(lot.id, !!lot.is_locked)}
+                            className={`w-9 h-9 flex items-center justify-center rounded-full transition-all border border-transparent ${lot.is_locked
+                                ? 'text-red-500 bg-red-50 dark:bg-red-900/20 border-red-100 dark:border-red-900/30 font-bold shadow-sm'
+                                : 'text-zinc-400 hover:text-red-650 hover:bg-red-50 dark:hover:bg-zinc-800 shadow-sm hover:border-zinc-200'
+                                }`}
+                            title={lot.is_locked ? "Mở khóa LOT" : "Khóa LOT"}
+                        >
+                            {lot.is_locked ? <Lock size={16} /> : <Unlock size={16} />}
+                        </button>
+                    )}
                     <Protected permission={managePermission || "lot.manage"}>
                         <button
-                            onClick={() => onAssignTag?.(lot)}
-                            className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent"
+                            onClick={(e) => handleActionClick(e, () => onAssignTag?.(lot))}
+                            className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                             title="Gắn mã phụ"
                         >
                             <Tag size={16} />
@@ -629,29 +667,29 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         {!isSanxuat && (
                             <>
                                 <button
-                                    onClick={() => onMerge?.(lot)}
-                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent"
+                                    onClick={(e) => handleActionClick(e, () => onMerge?.(lot))}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     title="Gộp Lot"
                                 >
                                     <Combine size={16} />
                                 </button>
                                 <button
-                                    onClick={() => onSplit?.(lot)}
-                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent"
+                                    onClick={(e) => handleActionClick(e, () => onSplit?.(lot))}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     title="Tách Lot"
                                 >
                                     <Split size={16} />
                                 </button>
                                 <button
-                                    onClick={() => onExport?.(lot)}
-                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent"
+                                    onClick={(e) => handleActionClick(e, () => onExport?.(lot))}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     title="Xuất Lot"
                                 >
                                     <ArrowUpRight size={16} />
                                 </button>
                                 <button
-                                    onClick={() => onBulkClone?.(lot)}
-                                    className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all border border-transparent"
+                                    onClick={(e) => handleActionClick(e, () => onBulkClone?.(lot))}
+                                    className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                     title="Nhân bản Lot"
                                 >
                                     <Copy size={16} />
@@ -672,8 +710,8 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     <Protected permission={managePermission || "lot.manage"}>
                         {!isSanxuat && (
                             <button
-                                onClick={() => onEdit(lot)}
-                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                                onClick={(e) => handleActionClick(e, () => onEdit(lot))}
+                                className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 title="Sửa"
                             >
                                 <Edit size={16} />
@@ -681,8 +719,8 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         )}
                         {!isSanxuat && (
                             <button
-                                onClick={() => onDelete(lot.id)}
-                                className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                onClick={(e) => handleActionClick(e, () => onDelete(lot.id))}
+                                className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 title="Xóa"
                             >
                                 <Trash2 size={16} />

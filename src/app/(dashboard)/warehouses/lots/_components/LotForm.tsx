@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2 } from 'lucide-react'
+import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
@@ -999,6 +999,18 @@ export function LotForm({
                     </button>
                 </div>
 
+                {editingLot?.is_locked && (
+                    <div className="mb-6 p-4 bg-red-50 dark:bg-red-950/20 border border-red-100 dark:border-red-900/50 rounded-2xl flex items-start gap-3">
+                        <div className="p-1 bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 rounded-lg shrink-0 mt-0.5 animate-pulse">
+                            <Boxes size={16} />
+                        </div>
+                        <div>
+                            <h4 className="text-sm font-bold text-red-800 dark:text-red-400">Lô hàng đang bị khóa</h4>
+                            <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">Không thể chỉnh sửa danh sách sản phẩm hoặc số lượng tồn kho của lô hàng này.</p>
+                        </div>
+                    </div>
+                )}
+
                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[1500px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                         {/* Hàng 1: Định danh & Phân loại chính */}
@@ -1306,13 +1318,15 @@ export function LotForm({
             <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">
                         <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
                             <span>Danh sách sản phẩm ({lotItems.length})</span>
-                            <button
-                                onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '', tag: '' }])}
-                                className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
-                            >
-                                <Plus size={14} />
-                                Thêm dòng
-                            </button>
+                            {!editingLot?.is_locked && (
+                                <button
+                                    onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '', tag: '' }])}
+                                    className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                                >
+                                    <Plus size={14} />
+                                    Thêm dòng
+                                </button>
+                            )}
                         </label>
 
                         <div className="space-y-3">
@@ -1321,6 +1335,7 @@ export function LotForm({
                                     <div className="flex-1 w-full space-y-1">
                                         <div className="relative">
                                             <Combobox
+                                                disabled={!!editingLot?.is_locked}
                                                 isLoading={isFetchingProduction}
                                                 options={selectedProductionId && selectedProduction?.production_lots?.length > 0 
                                                     ? selectedProduction.production_lots
@@ -1441,6 +1456,7 @@ export function LotForm({
                                     <div className="flex flex-row gap-3 w-full md:w-auto">
                                         <div className="flex-1 md:w-32 space-y-1">
                                             <QuantityInput
+                                                disabled={!!editingLot?.is_locked}
                                                 placeholder="SL"
                                                 value={item.quantity}
                                                 onChange={(val) => {
@@ -1456,6 +1472,7 @@ export function LotForm({
                                         {/* Unit Selection */}
                                         <div className="flex-1 md:w-28 space-y-1">
                                             <select
+                                                disabled={!!editingLot?.is_locked}
                                                 value={item.unit}
                                                 onChange={(e) => {
                                                     const newVal = e.target.value
@@ -1542,6 +1559,7 @@ export function LotForm({
                                     <div className="w-full md:w-48 space-y-1">
                                         <div className="relative group">
                                             <input
+                                                disabled={!!editingLot?.is_locked}
                                                 type="text"
                                                 list={`tags-list-${index}`}
                                                 placeholder="Mã phụ..."
@@ -1556,21 +1574,23 @@ export function LotForm({
                                                 }}
                                                 className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all pr-8"
                                             />
-                                            <button
-                                                onClick={() => {
-                                                    const currentVal = item.tag || '';
-                                                    const newVal = currentVal + (currentVal.endsWith('>') || currentVal === '' ? '@' : '>@');
-                                                    setLotItems(prev => {
-                                                        const newItems = [...prev]
-                                                        newItems[index] = { ...newItems[index], tag: newVal }
-                                                        return newItems
-                                                    })
-                                                }}
-                                                className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-md text-[10px] font-bold hover:bg-orange-200"
-                                                title="Chèn placeholder @ (mã SKU)"
-                                            >
-                                                @
-                                            </button>
+                                            {!editingLot?.is_locked && (
+                                                <button
+                                                    onClick={() => {
+                                                        const currentVal = item.tag || '';
+                                                        const newVal = currentVal + (currentVal.endsWith('>') || currentVal === '' ? '@' : '>@');
+                                                        setLotItems(prev => {
+                                                            const newItems = [...prev]
+                                                            newItems[index] = { ...newItems[index], tag: newVal }
+                                                            return newItems
+                                                        })
+                                                    }}
+                                                    className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-md text-[10px] font-bold hover:bg-orange-200"
+                                                    title="Chèn placeholder @ (mã SKU)"
+                                                >
+                                                    @
+                                                </button>
+                                            )}
                                         </div>
                                         <datalist id={`tags-list-${index}`}>
                                             {existingTags.map(tag => (
@@ -1582,7 +1602,7 @@ export function LotForm({
                                         </p>
                                     </div>
 
-                                    {lotItems.length > 1 && (
+                                    {lotItems.length > 1 && !editingLot?.is_locked && (
                                         <button
                                             onClick={() => {
                                                 const newItems = lotItems.filter((_, i) => i !== index)
@@ -1596,6 +1616,13 @@ export function LotForm({
                                     )}
                                 </div>
                             ))}
+                            
+                            {editingLot?.is_locked && (
+                                <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs font-medium">
+                                    <Lock size={14} />
+                                    <span>Lô hàng đã bị khóa, không thể chỉnh sửa chi tiết sản phẩm.</span>
+                                </div>
+                            )}
                         </div>
                     </div>
 

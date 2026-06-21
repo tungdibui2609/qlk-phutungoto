@@ -40,6 +40,8 @@ export function LotPageManager() {
         setSearchMode,
         positionFilter,
         setPositionFilter,
+        lockFilter,
+        setLockFilter,
         dateFilterField,
         setDateFilterField,
         startDate,
@@ -52,6 +54,7 @@ export function LotPageManager() {
         fetchUnassignedLotsForBulkAssign,
         fetchUntaggedLotsForBulkAssign,
         handleDeleteLot,
+        handleToggleLock,
         handleToggleStar,
         isModuleEnabled,
         isUtilityEnabled,
@@ -269,6 +272,8 @@ export function LotPageManager() {
                 onSearchModeChange={setSearchMode}
                 positionFilter={positionFilter}
                 onPositionFilterChange={setPositionFilter}
+                lockFilter={lockFilter}
+                onLockFilterChange={setLockFilter}
                 selectedZoneId={selectedZoneId}
                 onZoneSelect={setSelectedZoneId}
                 dateFilterField={dateFilterField}
@@ -329,6 +334,7 @@ export function LotPageManager() {
                     onDelete={handleDelete}
                     onView={setViewingLot}
                     onToggleStar={handleToggleStar}
+                    onToggleLock={handleToggleLock}
                     onQr={setQrLot}
                     onAssignTag={setTaggingLot}
                     onMerge={handleMerge}

@@ -38,6 +38,7 @@ export interface Lot {
     production_code?: string | null
     batch_code?: string | null
     productions?: { code: string } | null
+    is_locked?: boolean | null
 }
 
 export interface GroupedProduct {
@@ -61,6 +62,7 @@ export function useInventoryByLot(
         selectedCategoryIds?: string[]
         targetUnitId?: string | null
         selectedZoneId?: string | null
+        lockFilter?: 'all' | 'unlocked' | 'locked'
     }
 ) {
     const [lots, setLots] = useState<Lot[]>([])
@@ -69,6 +71,7 @@ export function useInventoryByLot(
     const [internalBranch, setInternalBranch] = useState('Tất cả')
     const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
     const [internalTargetUnitId, setInternalTargetUnitId] = useState<string | null>(null)
+    const [internalLockFilter, setInternalLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
     
     // Sync with external filters if provided
     const searchTerm = externalFilters?.searchTerm !== undefined ? externalFilters.searchTerm : internalSearchTerm
@@ -83,6 +86,9 @@ export function useInventoryByLot(
 
     const selectedZoneId = externalFilters?.selectedZoneId !== undefined ? externalFilters.selectedZoneId : internalSelectedZoneId
     const setSelectedZoneId = externalFilters?.selectedZoneId !== undefined ? (() => {}) : setInternalSelectedZoneId
+
+    const lockFilter = externalFilters?.lockFilter !== undefined ? externalFilters.lockFilter : internalLockFilter
+    const setLockFilter = externalFilters?.lockFilter !== undefined ? (() => {}) : setInternalLockFilter
 
     const selectedCategoryIds = externalFilters?.selectedCategoryIds || []
     const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
@@ -382,6 +388,12 @@ export function useInventoryByLot(
         }
 
         const filteredLots = lots.filter(lot => {
+            if (lockFilter === 'locked') {
+                if (!lot.is_locked) return false
+            } else if (lockFilter === 'unlocked') {
+                if (lot.is_locked) return false
+            }
+
             if (selectedZoneId) {
                 const matchesZone = lot.positions?.some((p: any) => {
                     const zId = posToZoneMap[p.id]
@@ -546,7 +558,7 @@ export function useInventoryByLot(
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions])
+    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)
@@ -565,6 +577,8 @@ export function useInventoryByLot(
         setSelectedBranch,
         selectedZoneId,
         setSelectedZoneId,
+        lockFilter,
+        setLockFilter,
         allZones,
         targetUnitId,
         setTargetUnitId,

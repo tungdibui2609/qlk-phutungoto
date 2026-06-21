@@ -78,6 +78,8 @@ export default function InventoryPage() {
 
     const currentMode = searchModes.find(m => m.id === searchMode) || searchModes[0]
 
+    const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
+
     // LOT Hook for LOT and Category tabs
     const lotHookData = useInventoryByLot(units || [], {
         searchTerm: q,
@@ -85,7 +87,8 @@ export default function InventoryPage() {
         selectedBranch: selectedBranch,
         selectedCategoryIds: selectedCategoryIds,
         targetUnitId: targetUnitId,
-        selectedZoneId: selectedZoneId
+        selectedZoneId: selectedZoneId,
+        lockFilter: lockFilter
     })
 
     // Load Branches
@@ -307,6 +310,25 @@ export default function InventoryPage() {
                                 <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
                             </div>
                         </div>
+
+                        {/* Lock Filter */}
+                        {(activeTab === 'lot' || activeTab === 'category') && (
+                            <div className="w-full sm:w-auto lg:w-48">
+                                <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Trạng thái khóa</label>
+                                <div className="relative">
+                                    <select
+                                        value={lockFilter}
+                                        onChange={e => setLockFilter(e.target.value as any)}
+                                        className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                    >
+                                        <option value="all">Tất cả LOT</option>
+                                        <option value="unlocked">Chưa khóa (Hoạt động)</option>
+                                        <option value="locked">Đã khóa</option>
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                                </div>
+                            </div>
+                        )}
 
                         {/* Dates */}
                         <div className="flex flex-row gap-4 w-full sm:w-auto">

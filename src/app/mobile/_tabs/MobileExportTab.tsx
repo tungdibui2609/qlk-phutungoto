@@ -68,6 +68,7 @@ export default function MobileExportTab() {
 
             if (error || !data) { showToast(`Không tìm thấy LOT "${code}"`, 'error'); setPaused(false); return }
             if (data.company_id && data.company_id !== profile.company_id) { showToast(`LOT thuộc công ty khác!`, 'error'); setPaused(false); return }
+            if (data.is_locked) { showToast(`LOT "${code}" đã bị khóa! Không thể xuất kho.`, 'error'); setPaused(false); return }
             if (data.status === 'exported' || ((data.quantity ?? 0) <= 0.000001)) { showToast(`LOT "${code}" đã xuất hết`, 'warning'); setPaused(false); return }
 
             setLotData(data as any); setStep(1); setIsExportingModalOpen(true)

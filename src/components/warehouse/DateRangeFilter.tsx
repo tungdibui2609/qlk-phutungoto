@@ -1,6 +1,6 @@
 import { Calendar } from 'lucide-react'
 
-export type DateFilterField = 'created_at' | 'inbound_date' | 'peeling_date' | 'packaging_date';
+export type DateFilterField = 'created_at' | 'inbound_date' | 'peeling_date' | 'packaging_date' | 'raw_material_date';
 
 interface DateRangeFilterProps {
     dateFilterField: DateFilterField
@@ -33,6 +33,7 @@ export function DateRangeFilter({
                 <option value="inbound_date" className="bg-white dark:bg-slate-900">Ngày nhập</option>
                 <option value="peeling_date" className="bg-white dark:bg-slate-900">Ngày bóc</option>
                 <option value="packaging_date" className="bg-white dark:bg-slate-900">Ngày đóng</option>
+                <option value="raw_material_date" className="bg-white dark:bg-slate-900">Ngày nguyên liệu</option>
             </select>
             <div className="h-4 w-px bg-orange-200 dark:bg-orange-800 shrink-0"></div>
             <div className="flex items-center gap-1 px-1 flex-1 min-w-0">

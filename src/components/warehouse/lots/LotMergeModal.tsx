@@ -258,7 +258,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
     const sourceLots = useMemo(() => {
         // Deduplicate first to avoid React key collisions
         const uniqueLots = deduplicateLots(modalLots)
-        let filtered = uniqueLots.filter(l => l.id !== targetLot.id)
+        let filtered = uniqueLots.filter(l => l.id !== targetLot.id && !l.is_locked)
 
         // Tab Filter
         if (filterTab === 'suggested') {
@@ -543,6 +543,13 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                         <p className="text-xs text-slate-500 font-medium ml-7">Chọn LOT nguồn (hoặc dòng sản phẩm) để gộp</p>
                     </div>
 
+                    {targetLot.is_locked && (
+                        <div className="p-3 bg-red-50 dark:bg-red-950/20 border-b border-red-100 dark:border-red-900/30 flex items-center gap-2 text-red-700 dark:text-red-400 text-xs font-semibold px-6">
+                            <AlertCircle size={14} className="shrink-0" />
+                            <span>Lô hàng đích này đang bị khóa. Không thể thực hiện gộp sản phẩm vào lô này.</span>
+                        </div>
+                    )}
+
                     {/* Search & Tabs */}
                     <div className="p-4 border-b border-slate-100 dark:border-slate-800 space-y-4">
                         <div className="relative group">
@@ -729,7 +736,7 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                             <button onClick={onClose} className="px-5 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors">Hủy</button>
                             <button
                                 onClick={handlePreSubmit}
-                                disabled={loading || Object.keys(selectedItems).length === 0}
+                                disabled={loading || Object.keys(selectedItems).length === 0 || targetLot.is_locked === true}
                                 className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-bold hover:bg-emerald-700 shadow-lg shadow-emerald-500/20 disabled:opacity-50 disabled:shadow-none flex items-center gap-2 transition-all active:scale-95"
                             >
                                 {loading ? 'Đang gộp...' : (

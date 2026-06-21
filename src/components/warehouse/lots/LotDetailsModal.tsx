@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash } from 'lucide-react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash, Lock } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -106,8 +106,14 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             <Boxes size={20} />
                         </div>
                         <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                                 <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 leading-none">Chi tiết Lô hàng</h3>
+                                {lot.is_locked && (
+                                    <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200 dark:border-red-800 flex items-center gap-1">
+                                        <Lock size={10} />
+                                        ĐÃ KHÓA
+                                    </span>
+                                )}
                                 <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
                                     STT: {decodeSTT((lot as any).daily_seq) || '--'}
                                 </span>
@@ -495,7 +501,9 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             <Protected permission={managePermission || "lot.manage"}>
                                 <button
                                     onClick={() => lot?.id && onDelete(lot.id)}
-                                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                    disabled={!!lot.is_locked}
+                                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    title={lot.is_locked ? "Không thể xóa LOT đang bị khóa" : "Xóa LOT"}
                                 >
                                     <Trash2 size={18} />
                                     <span>Xóa LOT</span>

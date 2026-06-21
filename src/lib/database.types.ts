@@ -25,6 +25,7 @@ export interface Database {
           daily_seq: number | null
           system_code: string | null
           production_code: string | null
+          is_locked: boolean | null
         }
         Insert: {
           id?: string
@@ -41,6 +42,7 @@ export interface Database {
           daily_seq?: number | null
           system_code?: string | null
           production_code?: string | null
+          is_locked?: boolean | null
         }
         Update: {
           id?: string
@@ -57,6 +59,7 @@ export interface Database {
           daily_seq?: number | null
           system_code?: string | null
           production_code?: string | null
+          is_locked?: boolean | null
         }
       }
       positions: {
@@ -320,6 +323,49 @@ export interface Database {
         Row: { id: string; content: string; user_id: string; parent_id?: string | null; images?: string[]; system_code?: string | null; created_at?: string; updated_at?: string }
         Insert: { id?: string; content: string; user_id: string; parent_id?: string | null; images?: string[]; system_code?: string | null; created_at?: string; updated_at?: string }
         Update: { id?: string; content?: string; user_id?: string; parent_id?: string | null; images?: string[]; system_code?: string | null; created_at?: string; updated_at?: string }
+      }
+      lot_tags: {
+        Row: {
+          id: string
+          lot_id: string
+          tag: string
+          added_at: string
+          added_by: string | null
+          lot_item_id: string | null
+        }
+        Insert: {
+          id?: string
+          lot_id: string
+          tag: string
+          added_at?: string
+          added_by?: string | null
+          lot_item_id?: string | null
+        }
+        Update: {
+          id?: string
+          lot_id?: string
+          tag?: string
+          added_at?: string
+          added_by?: string | null
+          lot_item_id?: string | null
+        }
+      }
+      master_tags: {
+        Row: {
+          name: string
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          name: string
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          name?: string
+          created_at?: string
+          created_by?: string | null
+        }
       }
     }
     Views: {

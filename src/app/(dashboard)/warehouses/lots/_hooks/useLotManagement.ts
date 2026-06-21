@@ -71,6 +71,7 @@ export function useLotManagement() {
     const [searchTerm, setSearchTerm] = useState('')
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
+    const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('all')
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState<string>('')
@@ -145,7 +146,7 @@ export function useLotManagement() {
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive])
+    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter])
 
     // Effect for page change ONLY
     useEffect(() => {
@@ -314,6 +315,11 @@ export function useLotManagement() {
                 query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code }, { count: 'exact' })
                     .select(selectQuery)
                 // RPC handles system_code and status check internally
+                if (lockFilter === 'locked') {
+                    query = query.eq('is_locked', true)
+                } else if (lockFilter === 'unlocked') {
+                    query = query.or('is_locked.eq.false,is_locked.is.null')
+                }
             } else {
                 // Standard Logic — use left join for positions
                 if (positionFilter === 'assigned') {
@@ -329,6 +335,12 @@ export function useLotManagement() {
                     query = query.eq('system_code', currentSystem.code)
                 }
                 query = query.neq('status', 'hidden').neq('status', 'exported')
+
+                if (lockFilter === 'locked') {
+                    query = query.eq('is_locked', true)
+                } else if (lockFilter === 'unlocked') {
+                    query = query.or('is_locked.eq.false,is_locked.is.null')
+                }
 
                 // Apply zone lot filter if we resolved lot IDs
                 if (zoneLotIds !== null) {
@@ -1045,7 +1057,8 @@ export function useLotManagement() {
         `;
 
             let query = (supabase.rpc as any)('get_unassigned_lots', { p_system_code: currentSystem.code })
-                .select(selectQuery);
+                .select(selectQuery)
+                .or('is_locked.eq.false,is_locked.is.null');
 
             if (searchTerm) {
                 // Escape special LIKE characters (% and _) to prevent SQL parsing issues
@@ -1234,7 +1247,8 @@ export function useLotManagement() {
                 .from('lots')
                 .select(selectQuery)
                 .eq('system_code', currentSystem.code)
-                .neq('status', 'hidden');
+                .neq('status', 'hidden')
+                .or('is_locked.eq.false,is_locked.is.null');
 
             if (searchTerm) {
                 // Escape special LIKE characters (% and _) to prevent SQL parsing issues
@@ -1396,6 +1410,41 @@ export function useLotManagement() {
         }
     }
 
+    async function handleToggleLock(id: string, currentLocked: boolean): Promise<boolean> {
+        const nextLocked = !currentLocked
+        const actionText = nextLocked ? 'Khóa' : 'Mở khóa'
+        
+        if (!await showConfirm(`Bạn có chắc chắn muốn ${actionText.toLowerCase()} LOT này?`)) return false
+
+        // Update lot lock status in DB
+        const { error: lotError } = await (supabase
+            .from('lots') as any)
+            .update({ is_locked: nextLocked })
+            .eq('id', id)
+
+        if (lotError) {
+            showToast(`Lỗi ${actionText.toLowerCase()} LOT: ` + lotError.message, 'error')
+            return false
+        }
+
+        // Nếu chuyển sang khóa, bắt buộc phải giải phóng vị trí (gỡ lot_id ra khỏi positions)
+        if (nextLocked) {
+            const { error: posError } = await (supabase
+                .from('positions') as any)
+                .update({ lot_id: null })
+                .eq('lot_id', id)
+
+            if (posError) {
+                console.error('Lỗi khi giải phóng vị trí của LOT:', posError)
+                showToast('LOT đã khóa, nhưng gặp lỗi khi giải phóng vị trí: ' + posError.message, 'warning')
+            }
+        }
+
+        showToast(`Đã ${actionText.toLowerCase()} LOT thành công`, 'success')
+        fetchLots(false)
+        return true
+    }
+
     const handleToggleStar = async (lot: Lot) => {
         const metadata = lot.metadata ? { ...lot.metadata } : {};
         metadata.is_starred = !metadata.is_starred;
@@ -1426,6 +1475,8 @@ export function useLotManagement() {
         setSearchMode,
         positionFilter,
         setPositionFilter,
+        lockFilter,
+        setLockFilter,
         setSelectedZoneId, // Zone filter effectively disabled for now or needs updates
         dateFilterField,
         setDateFilterField,
@@ -1459,6 +1510,7 @@ export function useLotManagement() {
         fetchUnassignedLotsForBulkAssign,
         fetchUntaggedLotsForBulkAssign,
         handleDeleteLot,
+        handleToggleLock,
         handleToggleStar,
         isModuleEnabled: hasModule,
         isUtilityEnabled: hasModule,
