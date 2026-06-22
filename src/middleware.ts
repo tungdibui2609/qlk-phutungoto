@@ -135,7 +135,232 @@ export async function middleware(request: NextRequest) {
             // Domain points here but not configured in DB -> 404
             // Only if it's NOT a static asset/api (already filtered above partially)
             if (!path.startsWith('/api')) {
-                return new NextResponse(`Domain ${hostname} is not configured in the system.`, { status: 404 })
+                const html = `<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Liên kết chưa được kích hoạt | Modular WMS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+            --panel-bg: rgba(30, 27, 75, 0.4);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-color: #a855f7;
+            --accent-gradient: linear-gradient(135deg, #818cf8 0%, #c084fc 100%);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: var(--bg-gradient);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        body::before, body::after {
+            content: '';
+            position: absolute;
+            width: 300px;
+            height: 300px;
+            border-radius: 50%;
+            filter: blur(120px);
+            z-index: 0;
+            opacity: 0.4;
+        }
+        body::before {
+            background: #818cf8;
+            top: 20%;
+            left: 20%;
+            animation: float-slow 10s ease-in-out infinite alternate;
+        }
+        body::after {
+            background: #c084fc;
+            bottom: 20%;
+            right: 20%;
+            animation: float-slow 12s ease-in-out infinite alternate-reverse;
+        }
+
+        @keyframes float-slow {
+            0% { transform: translate(0, 0) scale(1); }
+            100% { transform: translate(40px, 20px) scale(1.2); }
+        }
+
+        .container {
+            position: relative;
+            z-index: 10;
+            width: 100%;
+            max-width: 500px;
+            background: var(--panel-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid var(--border-color);
+            border-radius: 24px;
+            padding: 40px 32px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            animation: fade-in 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        @keyframes fade-in {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .icon-container {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(168, 85, 247, 0.1);
+            border: 1px solid rgba(168, 85, 247, 0.2);
+            margin-bottom: 24px;
+            color: #c084fc;
+            animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0%, 100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.4);
+            }
+            50% {
+                transform: scale(1.05);
+                box-shadow: 0 0 0 12px rgba(168, 85, 247, 0);
+            }
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 800;
+            line-height: 1.3;
+            margin-bottom: 12px;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            letter-spacing: -0.5px;
+        }
+
+        .domain-tag {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 99px;
+            padding: 6px 16px;
+            font-size: 14px;
+            color: #818cf8;
+            font-family: monospace;
+            margin-bottom: 20px;
+            letter-spacing: 0.5px;
+        }
+
+        p {
+            font-size: 15px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            margin-bottom: 28px;
+        }
+
+        .support-info {
+            border-top: 1px solid rgba(255, 255, 255, 0.06);
+            padding-top: 20px;
+            margin-top: 8px;
+        }
+
+        .support-title {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-bottom: 12px;
+        }
+
+        .contact-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #fff;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 14px;
+            background: var(--accent-gradient);
+            padding: 10px 24px;
+            border-radius: 99px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(168, 85, 247, 0.3);
+        }
+
+        .contact-link:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(168, 85, 247, 0.5);
+            opacity: 0.95;
+        }
+
+        .footer {
+            margin-top: 24px;
+            font-size: 11px;
+            color: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="icon-container">
+            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/>
+                <line x1="12" y1="9" x2="12" y2="13"/>
+                <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+        </div>
+        <h1>Liên kết chưa kích hoạt</h1>
+        <div class="domain-tag">${hostname}</div>
+        <p>
+            Xin lỗi quý khách, liên kết truy cập hiện tại chưa được kích hoạt hoặc không tồn tại trên hệ thống. Vui lòng kiểm tra lại đường dẫn hoặc liên hệ với Quản trị viên để được hỗ trợ.
+        </p>
+        <div class="support-info">
+            <div class="support-title">Hỗ trợ kỹ thuật</div>
+            <a href="mailto:tungdibui2609@gmail.com" class="contact-link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="20" height="16" x="2" y="4" rx="2"/>
+                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+                </svg>
+                Liên hệ Quản trị viên
+            </a>
+        </div>
+        <div class="footer">
+            &copy; 2026 Modular WMS. Bảo lưu mọi quyền.
+        </div>
+    </div>
+</body>
+</html>`
+                return new NextResponse(html, {
+                    status: 404,
+                    headers: { 'content-type': 'text/html; charset=utf-8' },
+                })
             }
         }
     }
