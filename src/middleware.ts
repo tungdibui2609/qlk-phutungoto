@@ -140,10 +140,10 @@ export async function middleware(request: NextRequest) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Liên kết chưa được kích hoạt | Modular WMS</title>
+    <title>Liên kết chưa được kích hoạt | AnyWarehouse</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
             --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
@@ -162,7 +162,7 @@ export async function middleware(request: NextRequest) {
         }
 
         body {
-            font-family: 'Outfit', sans-serif;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background: var(--bg-gradient);
             color: var(--text-primary);
             min-height: 100vh;
@@ -352,7 +352,7 @@ export async function middleware(request: NextRequest) {
             </a>
         </div>
         <div class="footer">
-            &copy; 2026 Modular WMS. Bảo lưu mọi quyền.
+            &copy; 2026 AnyWarehouse. Bảo lưu mọi quyền.
         </div>
     </div>
 </body>
