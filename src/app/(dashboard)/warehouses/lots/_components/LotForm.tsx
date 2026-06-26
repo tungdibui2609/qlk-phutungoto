@@ -11,6 +11,7 @@ import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/use
 import { useUser } from '@/contexts/UserContext'
 import Protected from '@/components/auth/Protected'
 import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, formatUnitWeight, convertUnit } from '@/lib/unitConversion'
+import { useToast } from '@/components/ui/ToastProvider'
 
 interface LotItemInput {
     id?: string
@@ -62,6 +63,7 @@ export function LotForm({
 }: LotFormProps) {
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
+    const { showToast } = useToast()
 
     const isUtilityEnabled = (utilityId: string) => {
         if (!currentSystem?.modules) return false
@@ -287,6 +289,7 @@ export function LotForm({
                 setExtraInfo(meta.extra_info || '')
 
             } else {
+                let initialDate = new Date().toISOString().split('T')[0]
                 // Create Mode - Load sticky values from localStorage
                 const stickyData = localStorage.getItem('LOT_FORM_STICKY_DATA')
                 if (stickyData) {
@@ -333,14 +336,19 @@ export function LotForm({
                             }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
-                            if (parsed.inboundDate) setInboundDate(parsed.inboundDate)
+                            if (parsed.inboundDate) {
+                                setInboundDate(parsed.inboundDate)
+                                initialDate = parsed.inboundDate
+                            } else {
+                                setInboundDate(initialDate)
+                            }
                             if (parsed.lotItems) setLotItems(parsed.lotItems)
                             if (parsed.dailySeq) setDailySeq(parsed.dailySeq)
                         } else {
                             resetForm()
-                            setInboundDate(new Date().toISOString().split('T')[0])
-                            setPeelingDate(new Date().toISOString().split('T')[0])
-                            setPackagingDate(new Date().toISOString().split('T')[0])
+                            setInboundDate(initialDate)
+                            setPeelingDate(initialDate)
+                            setPackagingDate(initialDate)
 
                             if (branches && branches.length > 0) {
                                 const defaultBranch = branches.find(b => b.is_default)
@@ -349,13 +357,14 @@ export function LotForm({
                         }
                     } catch (e) {
                         console.error('Failed to parse sticky data', e)
+                        setInboundDate(initialDate)
                     }
                 } else {
                     // Defaults if no sticky data
                     resetForm()
-                    setInboundDate(new Date().toISOString().split('T')[0])
-                    setPeelingDate(new Date().toISOString().split('T')[0])
-                    setPackagingDate(new Date().toISOString().split('T')[0])
+                    setInboundDate(initialDate)
+                    setPeelingDate(initialDate)
+                    setPackagingDate(initialDate)
 
                     if (branches && branches.length > 0) {
                         const defaultBranch = branches.find(b => b.is_default)
@@ -374,7 +383,7 @@ export function LotForm({
                     setIsInfoExpanded(false)
                 }
 
-                generateLotCode()
+                generateLotCode(initialDate)
             }
 
             setIsInitialized(true)
@@ -435,6 +444,13 @@ export function LotForm({
 
     // ĐÃ TÁCH BIỆT STT VÀ MÃ LOT: useEffect đồng bộ STT sang Code đã được gỡ bỏ.
 
+    // Tự động cập nhật mã LOT và STT dán thùng khi ngày nhập kho thay đổi ở chế độ tạo mới
+    useEffect(() => {
+        if (isVisible && !editingLot && isInitialized && inboundDate) {
+            generateLotCode(inboundDate)
+        }
+    }, [inboundDate, isVisible, editingLot, isInitialized])
+
     function resetForm() {
         setNewLotCode('')
         setNewLotNotes('')
@@ -453,14 +469,29 @@ export function LotForm({
         setDailySeq('')
     }
 
-    async function generateLotCode() {
+    async function generateLotCode(targetInboundDate?: string) {
         if (!currentSystem?.name) return;
 
-        const today = new Date()
-        const day = String(today.getDate()).padStart(2, '0')
-        const month = String(today.getMonth() + 1).padStart(2, '0')
-        const year = String(today.getFullYear()).slice(-2)
-        const dateStr = `${day}${month}${year}`
+        const dateVal = targetInboundDate || inboundDate || new Date().toISOString().split('T')[0]
+        
+        let dateStr = ''
+        try {
+            const parts = dateVal.split('-')
+            if (parts.length === 3) {
+                const year = parts[0].slice(-2)
+                const month = parts[1]
+                const day = parts[2]
+                dateStr = `${day}${month}${year}`
+            } else {
+                throw new Error('Invalid format')
+            }
+        } catch (e) {
+            const today = new Date()
+            const day = String(today.getDate()).padStart(2, '0')
+            const month = String(today.getMonth() + 1).padStart(2, '0')
+            const year = String(today.getFullYear()).slice(-2)
+            dateStr = `${day}${month}${year}`
+        }
 
         let warehousePrefix = ''
         // Remove "Kho" prefix if present
@@ -499,16 +530,14 @@ export function LotForm({
         }
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
 
-        // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG NHẢY THEO NGÀY) --
-        const startOfDay = new Date()
-        startOfDay.setHours(0, 0, 0, 0)
-        
+        // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG TĂNG LIÊN TỤC TRÊN TOÀN PHÂN HỆ, KHÔNG TRÙNG LẶP) --
         const { data: lastSttData } = await supabase
             .from('lots')
             .select('daily_seq')
             .eq('system_code', currentSystem.code)
-            .gte('created_at', startOfDay.toISOString())
-            .order('created_at', { ascending: false })
+            .neq('status', 'hidden')
+            .lt('daily_seq', 2700000) // Loại bỏ các giá trị rác cực lớn (như 9999999 hay 10000000)
+            .order('daily_seq', { ascending: false })
             .limit(1)
 
         let nextDailySeq = 1
@@ -740,19 +769,19 @@ export function LotForm({
             }
         }
 
-        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRONG CÙNG NGÀY NHẬP KHO ---
+        // --- CƠ CHẾ CHỐNG TRÙNG SỐ THỨ TỰ (STT) TRÊN TOÀN PHÂN HỆ KHO ---
         const dailySeqVal = encodeSTT(dailySeq)
-        if (dailySeqVal !== null && !isNaN(dailySeqVal)) {
+        // Chỉ kiểm tra trùng STT khi:
+        // 1. Tạo mới (!editingLot)
+        // 2. Chỉnh sửa (editingLot) nhưng người dùng đã thay đổi STT so với STT gốc (editingLot.daily_seq !== dailySeqVal)
+        const shouldCheckStt = !editingLot || (editingLot && editingLot.daily_seq !== dailySeqVal)
+
+        if (shouldCheckStt && dailySeqVal !== null && !isNaN(dailySeqVal)) {
             let checkSttQuery = (supabase.from('lots') as any)
                 .select('id, code, inbound_date')
                 .eq('system_code', currentSystem?.code || '')
                 .eq('daily_seq', dailySeqVal)
                 .neq('status', 'hidden')
-                .neq('status', 'exported')
-                
-            if (inboundDate) {
-                checkSttQuery = checkSttQuery.eq('inbound_date', inboundDate)
-            }
                 
             if (editingLot?.id) {
                 checkSttQuery = checkSttQuery.neq('id', editingLot.id)
@@ -767,7 +796,7 @@ export function LotForm({
                 const formattedDate = existingLot.inbound_date 
                     ? existingLot.inbound_date.split('-').reverse().join('/') 
                     : 'không rõ ngày'
-                alert(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đang được sử dụng bởi lô hàng "${existingLot.code}" (nhập ngày ${formattedDate}) trong cùng ngày nhập kho này. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`)
+                showToast(`Số Thứ Tự (STT) "${decodeSTT(dailySeqVal)}" đang được sử dụng bởi lô hàng "${existingLot.code}" (nhập ngày ${formattedDate}) trong hệ thống. Vui lòng chọn Số Thứ Tự khác để tránh trùng lặp.`, 'warning')
                 setIsSubmitting(false)
                 return
             }
@@ -796,8 +825,8 @@ export function LotForm({
             if (checkError) throw checkError
             
             if (count && count > 0) {
-                alert(`Mã định danh ${newLotCode} vừa được ai đó tạo mới hoặc lưu trước bạn. Hệ thống sẽ tự cấp STT mới, vui lòng bấm lưu thêm 1 lần nữa!`)
-                await generateLotCode()
+                showToast(`Mã định danh ${newLotCode} vừa được ai đó tạo mới hoặc lưu trước bạn. Hệ thống sẽ tự cấp STT mới, vui lòng bấm lưu thêm 1 lần nữa!`, 'warning')
+                await generateLotCode(inboundDate)
                 setIsSubmitting(false)
                 return
             }
@@ -814,7 +843,7 @@ export function LotForm({
         }
 
         if (error) {
-            alert(`Lỗi ${editingLot ? 'cập nhật' : 'tạo'} LOT: ` + error.message)
+            showToast(`Lỗi ${editingLot ? 'cập nhật' : 'tạo'} LOT: ` + error.message, 'error')
             return
         }
 
@@ -861,7 +890,7 @@ export function LotForm({
             const updateResults = await Promise.all(updatePromises)
             if (updateResults.some(r => r.error)) {
                 console.error('Items Update Error', updateResults.find(r => r.error))
-                alert('Có lỗi xảy ra khi cập nhật danh sách sản phẩm.')
+                showToast('Có lỗi xảy ra khi cập nhật danh sách sản phẩm.', 'error')
             }
 
             // Insert new items and get IDs
@@ -870,7 +899,7 @@ export function LotForm({
                 const insertRes = await supabase.from('lot_items').insert(itemsToInsert as any).select('id, product_id, quantity, unit')
                 if (insertRes.error) {
                     console.error('Items Insert Error', insertRes.error)
-                    alert('Có lỗi xảy ra khi thêm mới sản phẩm.')
+                    showToast('Có lỗi xảy ra khi thêm mới sản phẩm.', 'error')
                 } else if (insertRes.data) {
                     newInsertedItems = insertRes.data
                 }
@@ -927,7 +956,7 @@ export function LotForm({
                 const { error: tagInsertError } = await (supabase.from('lot_tags') as any).insert(tagsToInsert)
                 if (tagInsertError) {
                     console.error('Tags Insert Error Details:', JSON.stringify(tagInsertError, null, 2))
-                    alert('Lỗi khi lưu mã phụ: ' + (tagInsertError.message || 'Lỗi không xác định'))
+                    showToast('Lỗi khi lưu mã phụ: ' + (tagInsertError.message || 'Lỗi không xác định'), 'error')
                 }
             }
         }
@@ -952,7 +981,7 @@ export function LotForm({
         await onSuccess(lotId ? { id: lotId, ...lotData } : undefined)
         } catch (error: any) {
             console.error('Submit Error:', error)
-            alert(`Lỗi ${editingLot ? 'cập nhật' : 'tạo'} LOT: ` + error.message)
+            showToast(`Lỗi ${editingLot ? 'cập nhật' : 'tạo'} LOT: ` + error.message, 'error')
         } finally {
             setIsSubmitting(false)
         }
