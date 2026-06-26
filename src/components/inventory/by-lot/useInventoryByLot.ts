@@ -39,6 +39,9 @@ export interface Lot {
     batch_code?: string | null
     productions?: { code: string } | null
     is_locked?: boolean | null
+    inbound_date?: string | null
+    production_date?: string | null
+    packaging_date?: string | null
 }
 
 export interface GroupedProduct {
@@ -536,7 +539,7 @@ export function useInventoryByLot(
                 }
                 tags = tags.sort()
 
-                const rawDate = lot.production_date || lot.packaging_date || lot.inbound_date || lot.created_at;
+                const rawDate = lot.inbound_date || lot.production_date || lot.packaging_date || lot.created_at;
                 let monthStr = 'Không xác định';
                 if (rawDate) {
                     try {

@@ -723,7 +723,7 @@ export default function PrintInventoryPage() {
         const cleanTags = finalTags.map(t => t.replace(/@/g, '').replace(/>+/g, '; ').trim()).filter(Boolean);
         const compositeTag = cleanTags.length > 0 ? cleanTags.join('; ') : 'Không có mã phụ'
 
-        const rawDate = item.productionDate || item.packagingDate || item.inboundDate || item.createdAt;
+        const rawDate = item.inboundDate || item.productionDate || item.packagingDate || item.createdAt;
         let monthStr = 'Không xác định';
         if (rawDate) {
             try {
