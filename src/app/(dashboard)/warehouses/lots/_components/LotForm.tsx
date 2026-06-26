@@ -531,22 +531,42 @@ export function LotForm({
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
 
         // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG TĂNG LIÊN TỤC TRÊN TOÀN PHÂN HỆ, KHÔNG TRÙNG LẶP) --
-        // Không tính các lot đã bị ẩn (hidden) hoặc đã xuất (exported) vào số thứ tự lớn nhất để có thể tái sử dụng STT
-        const { data: lastSttData } = await supabase
+        // Để tránh STT bị nhảy vọt theo tem in của sản xuất (thành phẩm tự động nhập kho có đuôi mã dài 6 ký tự như 101904),
+        // hệ thống sẽ chỉ lấy STT từ các lô tạo bằng tay có phần đuôi mã lô chỉ dài tối đa 3 ký tự (dưới 1000).
+        const { data: recentLots } = await supabase
             .from('lots')
-            .select('daily_seq')
+            .select('daily_seq, code')
             .eq('system_code', currentSystem.code)
             .neq('status', 'hidden')
             .neq('status', 'exported')
-            .lt('daily_seq', 2700000) // Loại bỏ các giá trị rác cực lớn (như 9999999 hay 10000000)
-            .order('daily_seq', { ascending: false })
-            .limit(1)
+            .not('daily_seq', 'is', null)
+            .order('created_at', { ascending: false })
+            .limit(300)
 
         let nextDailySeq = 1
-        if (lastSttData && lastSttData.length > 0) {
-            const lastSeq = (lastSttData as any)[0].daily_seq
-            if (lastSeq !== null && !isNaN(Number(lastSeq))) {
-                nextDailySeq = Number(lastSeq) + 1
+        if (recentLots && recentLots.length > 0) {
+            // Lọc các lô tạo bằng tay: phần số sau dấu gạch ngang cuối cùng có độ dài <= 3 ký tự
+            const manualLots = recentLots.filter((l: any) => {
+                if (!l.code) return false
+                const parts = l.code.split('-')
+                const lastPart = parts[parts.length - 1]
+                return lastPart && !isNaN(Number(lastPart)) && lastPart.length <= 3
+            })
+
+            if (manualLots.length > 0) {
+                const seqs = manualLots.map((l: any) => Number(l.daily_seq)).filter(s => !isNaN(s))
+                if (seqs.length > 0) {
+                    const maxSeq = Math.max(...seqs)
+                    nextDailySeq = maxSeq + 1
+                }
+            } else {
+                // Fallback nếu không lọc được lô tạo tay nào, lấy lô có daily_seq nhỏ hơn 2700000 (ngưỡng Z99999) gần nhất
+                const validSeqs = recentLots
+                    .map((l: any) => Number(l.daily_seq))
+                    .filter(s => !isNaN(s) && s < 2700000)
+                if (validSeqs.length > 0) {
+                    nextDailySeq = Math.max(...validSeqs) + 1
+                }
             }
         }
         setDailySeq(decodeSTT(nextDailySeq))
