@@ -53,6 +53,9 @@ interface LotItem {
     productId: string; // New: Precise product lookup
     categoryIds: string[]; // Added: Category IDs for the product
     baseUnit: string;  // New: Precise base unit
+    productionDate?: string | null;
+    packagingDate?: string | null;
+    createdAt?: string | null;
 }
 
 interface ReconciliationItem {
@@ -98,6 +101,7 @@ export default function PrintInventoryPage() {
     const categoryIdsParam = searchParams.get('categoryIds') || ''
     const searchModeParam = searchParams.get('searchMode') || 'all'
     const token = searchParams.get('token')
+    const viewMode = searchParams.get('viewMode') || 'lot'
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -384,6 +388,27 @@ export default function PrintInventoryPage() {
                     lotsFrom += PAGE_SIZE_FIXED
                 }
 
+                // Fetch production_lots
+                let allProductionLots: any[] = []
+                let prodLotsFrom = 0
+                while (true) {
+                    const { data: prodLotsPage, error: prodLotsError } = await supabase
+                        .from('production_lots')
+                        .select('id, lot_code, production_date')
+                        .range(prodLotsFrom, prodLotsFrom + PAGE_SIZE_FIXED - 1)
+                    if (prodLotsError) throw prodLotsError
+                    if (!prodLotsPage || prodLotsPage.length === 0) break
+                    allProductionLots = [...allProductionLots, ...prodLotsPage]
+                    if (prodLotsPage.length < PAGE_SIZE_FIXED) break
+                    prodLotsFrom += PAGE_SIZE_FIXED
+                }
+                const productionLotDateMap = new Map<string, string>()
+                allProductionLots.forEach((pl: any) => {
+                    if (pl.production_date) {
+                        productionLotDateMap.set(pl.id, pl.production_date)
+                    }
+                })
+
                 if (allLots.length > 0) {
                     let mapped: LotItem[] = allLots.flatMap((lot: any) => {
                         let systemTypeMatch = true
@@ -413,7 +438,10 @@ export default function PrintInventoryPage() {
                             inboundDate: lot.inbound_date || null,
                             positions: lot.positions,
                             supplierName: lot.suppliers?.name || '-',
-                            tags: lotTags
+                            tags: lotTags,
+                            productionDate: lot.production_lot_id ? productionLotDateMap.get(lot.production_lot_id) : null,
+                            packagingDate: lot.packaging_date || null,
+                            createdAt: lot.created_at || null
                         }
 
                         if (lot.lot_items && lot.lot_items.length > 0) {
@@ -694,8 +722,23 @@ export default function PrintInventoryPage() {
         
         const cleanTags = finalTags.map(t => t.replace(/@/g, '').replace(/>+/g, '; ').trim()).filter(Boolean);
         const compositeTag = cleanTags.length > 0 ? cleanTags.join('; ') : 'Không có mã phụ'
-        const currentV = g.variants.get(compositeTag) || { totalQuantity: 0, totalKg: 0, items: [] }
-        g.variants.set(compositeTag, {
+
+        const rawDate = item.productionDate || item.packagingDate || item.inboundDate || item.createdAt;
+        let monthStr = 'Không xác định';
+        if (rawDate) {
+            try {
+                const dateObj = new Date(rawDate);
+                if (!isNaN(dateObj.getTime())) {
+                    monthStr = `Tháng ${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
+                }
+            } catch (e) {
+                console.error('Error parsing date in print page:', e);
+            }
+        }
+
+        const finalCompositeTag = viewMode === 'month' ? `${monthStr}__${compositeTag}` : compositeTag
+        const currentV = g.variants.get(finalCompositeTag) || { totalQuantity: 0, totalKg: 0, items: [] }
+        g.variants.set(finalCompositeTag, {
             totalQuantity: currentV.totalQuantity + (displayQty || 0),
             totalKg: currentV.totalKg + (item.kg || 0),
             items: [...currentV.items, item]
@@ -723,6 +766,7 @@ export default function PrintInventoryPage() {
 
         await exportInventoryReportToExcel({
             type: type as any,
+            viewMode: viewMode as any,
             dateTitle,
             warehouse: warehouse || 'Tất cả',
             items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems)),
@@ -1035,6 +1079,134 @@ export default function PrintInventoryPage() {
 
                                             {/* 2. Detail Rows (Variants/Lots) with LSX Support */}
                                             {type !== 'category' && hasRealVariants && (() => {
+                                                if (viewMode === 'month') {
+                                                    const monthGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>()
+                                                    
+                                                    variantEntries.forEach(([variantKey, vData]: [string, any]) => {
+                                                        const qty = vData.totalQuantity || 0
+                                                        const kg = vData.totalKg || 0
+                                                        const parts = variantKey.split('__')
+                                                        const monthName = parts[0] || 'Không xác định'
+                                                        const compositeTag = parts[1] || 'Không có mã phụ'
+                                                        
+                                                        if (!monthGroups.has(monthName)) {
+                                                            monthGroups.set(monthName, { totalQty: 0, totalKg: 0, items: [] })
+                                                        }
+                                                        const group = monthGroups.get(monthName)!
+                                                        group.totalQty += qty
+                                                        group.totalKg += kg
+                                                        group.items.push({ tag: compositeTag, qty, kg })
+                                                    })
+
+                                                    const sortedMonths = Array.from(monthGroups.keys()).sort((a, b) => {
+                                                        if (a === 'Không xác định') return 1
+                                                        if (b === 'Không xác định') return -1
+                                                        const getYearMonth = (s: string) => {
+                                                            const m = s.match(/Tháng (\d+)\/(\d+)/)
+                                                            if (m) return Number(m[2]) * 100 + Number(m[1])
+                                                            return 0
+                                                        }
+                                                        return getYearMonth(b) - getYearMonth(a)
+                                                    })
+
+                                                    const rows: React.ReactNode[] = []
+
+                                                    sortedMonths.forEach((monthName, mIdx) => {
+                                                        const monthData = monthGroups.get(monthName)!
+                                                        
+                                                        rows.push(
+                                                            <tr key={`month-${mIdx}`} className="bg-emerald-50/50 font-bold border-l-4 border-emerald-400 h-9">
+                                                                <td className="border border-black p-1 text-center bg-emerald-100/50"></td>
+                                                                <td className="border border-black p-1 pl-4 text-emerald-800" colSpan={3}>
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span>📅 {monthName}</span>
+                                                                    </div>
+                                                                </td>
+                                                                <td className="border border-black p-1 text-center italic text-stone-500">{group.productUnit}</td>
+                                                                <td className="border border-black p-1 text-right text-emerald-700">{formatQuantityFull(monthData.totalQty)}</td>
+                                                                <td className="border border-black p-1 text-right text-emerald-700 font-bold">{formatQuantityFull(monthData.totalKg)}</td>
+                                                            </tr>
+                                                        )
+
+                                                        const lsxGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>()
+                                                        const nonLsxItems: { tag: string, qty: number, kg: number }[] = []
+
+                                                        monthData.items.forEach(subItem => {
+                                                            const tagStr = subItem.tag
+                                                            const qty = subItem.qty
+                                                            const kg = subItem.kg
+                                                            
+                                                            if (tagStr.includes('LSX: ')) {
+                                                                const parts = tagStr.split('; ').map((p: string) => p.trim())
+                                                                const lsxPart = parts.find((p: string) => p.startsWith('LSX: '))
+                                                                if (lsxPart) {
+                                                                    const otherParts = parts.filter((p: string) => !p.startsWith('LSX: '))
+                                                                    const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ'
+                                                                    if (!lsxGroups.has(lsxPart)) {
+                                                                        lsxGroups.set(lsxPart, { totalQty: 0, totalKg: 0, items: [] })
+                                                                    }
+                                                                    const vGroup = lsxGroups.get(lsxPart)!
+                                                                    vGroup.totalQty += qty
+                                                                    vGroup.totalKg += kg
+                                                                    vGroup.items.push({ tag: subTags, qty, kg })
+                                                                    return
+                                                                }
+                                                            }
+                                                            nonLsxItems.push({ tag: tagStr, qty, kg })
+                                                        })
+
+                                                        Array.from(lsxGroups.entries()).sort((a, b) => b[1].totalQty - a[1].totalQty).forEach(([lsxName, vGroup], idx) => {
+                                                            rows.push(
+                                                                <tr key={`month-${mIdx}-lsx-${idx}`} className="bg-orange-50 font-bold border-l-4 border-orange-400 h-9">
+                                                                    <td className="border border-black p-1"></td>
+                                                                    <td className="border border-black p-1 pl-8 text-orange-800" colSpan={3}>
+                                                                        <div className="flex items-center gap-1">
+                                                                            <span>◆ {lsxName}</span>
+                                                                        </div>
+                                                                    </td>
+                                                                    <td className="border border-black p-1 text-center italic text-stone-500">{group.productUnit}</td>
+                                                                    <td className="border border-black p-1 text-right text-orange-700">{formatQuantityFull(vGroup.totalQty)}</td>
+                                                                    <td className="border border-black p-1 text-right text-orange-700 font-bold">{formatQuantityFull(vGroup.totalKg)}</td>
+                                                                </tr>
+                                                            )
+
+                                                            vGroup.items.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).forEach((sub, sIdx) => {
+                                                                const isNoTag = sub.tag === 'Không có mã phụ'
+                                                                rows.push(
+                                                                    <tr key={`month-${mIdx}-lsx-${idx}-sub-${sIdx}`} className="bg-white border-l-4 border-orange-200 h-8">
+                                                                        <td className="border border-black p-1"></td>
+                                                                        <td className="border border-black p-1 pl-12 italic text-stone-500" colSpan={3}>
+                                                                            <span>↳ {isNoTag ? '(Gốc / Không mã phụ)' : sub.tag}</span>
+                                                                        </td>
+                                                                        <td className="border border-black p-1 text-center text-stone-400">{group.productUnit}</td>
+                                                                        <td className="border border-black p-1 text-right text-stone-600">{formatQuantityFull(sub.qty)}</td>
+                                                                        <td className="border border-black p-1 text-right text-stone-600 font-medium">{formatQuantityFull(sub.kg)}</td>
+                                                                    </tr>
+                                                                )
+                                                            })
+                                                        })
+
+                                                        nonLsxItems.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).forEach((sub, sIdx) => {
+                                                            const isNoTag = sub.tag === 'Không có mã phụ'
+                                                            rows.push(
+                                                                <tr key={`month-${mIdx}-nonlsx-${sIdx}`} className={isNoTag ? "bg-amber-50 font-semibold border-l-4 border-amber-300 h-8" : "bg-white h-8"}>
+                                                                    <td className="border border-black p-1"></td>
+                                                                    <td className="border border-black p-1 pl-8" colSpan={3}>
+                                                                        <span className={isNoTag ? "italic text-amber-700" : "text-stone-600"}>
+                                                                            {isNoTag ? 'Gốc ( còn lại )' : `▪ ${sub.tag}`}
+                                                                        </span>
+                                                                    </td>
+                                                                    <td className="border border-black p-1 text-center text-stone-400">{group.productUnit}</td>
+                                                                    <td className="border border-black p-1 text-right font-medium text-stone-800">{formatQuantityFull(sub.qty)}</td>
+                                                                    <td className="border border-black p-1 text-right font-medium text-stone-800">{formatQuantityFull(sub.kg)}</td>
+                                                                </tr>
+                                                            )
+                                                        })
+                                                    })
+
+                                                    return <>{rows}</>
+                                                }
+
                                                 const lsxGroups = new Map<string, { totalQty: number, totalKg: number, items: { tag: string, qty: number, kg: number }[] }>()
                                                 const nonLsxItems: { tag: string, qty: number, kg: number }[] = []
 

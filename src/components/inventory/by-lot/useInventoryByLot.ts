@@ -63,6 +63,7 @@ export function useInventoryByLot(
         targetUnitId?: string | null
         selectedZoneId?: string | null
         lockFilter?: 'all' | 'unlocked' | 'locked'
+        viewMode?: 'lot' | 'month'
     }
 ) {
     const [lots, setLots] = useState<Lot[]>([])
@@ -72,6 +73,7 @@ export function useInventoryByLot(
     const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
     const [internalTargetUnitId, setInternalTargetUnitId] = useState<string | null>(null)
     const [internalLockFilter, setInternalLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
+    const [internalViewMode, setInternalViewMode] = useState<'lot' | 'month'>('lot')
     
     // Sync with external filters if provided
     const searchTerm = externalFilters?.searchTerm !== undefined ? externalFilters.searchTerm : internalSearchTerm
@@ -89,6 +91,9 @@ export function useInventoryByLot(
 
     const lockFilter = externalFilters?.lockFilter !== undefined ? externalFilters.lockFilter : internalLockFilter
     const setLockFilter = externalFilters?.lockFilter !== undefined ? (() => {}) : setInternalLockFilter
+
+    const viewMode = externalFilters?.viewMode !== undefined ? externalFilters.viewMode : internalViewMode
+    const setViewMode = externalFilters?.viewMode !== undefined ? (() => {}) : setInternalViewMode
 
     const selectedCategoryIds = externalFilters?.selectedCategoryIds || []
     const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
@@ -193,7 +198,8 @@ export function useInventoryByLot(
                 allZonePositions,
                 allCatRels,
                 allZonesData,
-                allCategories
+                allCategories,
+                allProductionLots
             ] = await Promise.all([
                 fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode)),
                 fetchAll('lot_items', '*'),
@@ -204,8 +210,18 @@ export function useInventoryByLot(
                 fetchAll('zone_positions', 'position_id, zone_id'),
                 fetchAll('product_category_rel', 'product_id, category_id'),
                 fetchAll('zones', '*', (q: any) => q.eq('system_type', sysCode)),
-                fetchAll('categories', 'id, name')
+                fetchAll('categories', 'id, name'),
+                fetchAll('production_lots', 'id, lot_code, production_date')
             ])
+
+            const productionLotDateMap = new Map<string, string>()
+            if (allProductionLots) {
+                allProductionLots.forEach((pl: any) => {
+                    if (pl.production_date) {
+                        productionLotDateMap.set(pl.id, pl.production_date)
+                    }
+                })
+            }
 
             const cMap: Record<string, string> = {}
             allCategories.forEach((c: any) => cMap[c.id] = c.name)
@@ -285,7 +301,8 @@ export function useInventoryByLot(
                         suppliers: supplierMap.get(lot.supplier_id) || null,
                         lot_items: lotItemsMap.get(lot.id) || [],
                         lot_tags: lotTagsMap.get(lot.id) || [],
-                        positions: lotPositionsMap.get(lot.id) || []
+                        positions: lotPositionsMap.get(lot.id) || [],
+                        production_date: lot.production_lot_id ? productionLotDateMap.get(lot.production_lot_id) : null
                     }
                 })
 
@@ -517,12 +534,25 @@ export function useInventoryByLot(
                 if (sxCode) {
                     tags.push(`LSX: ${sxCode}`)
                 }
-                
                 tags = tags.sort()
 
+                const rawDate = lot.production_date || lot.packaging_date || lot.inbound_date || lot.created_at;
+                let monthStr = 'Không xác định';
+                if (rawDate) {
+                    try {
+                        const dateObj = new Date(rawDate);
+                        if (!isNaN(dateObj.getTime())) {
+                            monthStr = `Tháng ${String(dateObj.getMonth() + 1).padStart(2, '0')}/${dateObj.getFullYear()}`;
+                        }
+                    } catch (e) {
+                        console.error('Error parsing date:', e);
+                    }
+                }
+
                 const compositeTag = tags.length > 0 ? tags.join('; ') : 'Không có mã phụ'
-                const currentVariantQty = group.variants.get(compositeTag) || 0
-                group.variants.set(compositeTag, currentVariantQty + displayQty)
+                const finalTag = viewMode === 'month' ? `${monthStr}__${compositeTag}` : compositeTag
+                const currentVariantQty = group.variants.get(finalTag) || 0
+                group.variants.set(finalTag, currentVariantQty + displayQty)
             }
 
             if (lot.lot_items && lot.lot_items.length > 0) {
@@ -558,7 +588,7 @@ export function useInventoryByLot(
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter])
+    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter, viewMode])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)
@@ -579,6 +609,8 @@ export function useInventoryByLot(
         setSelectedZoneId,
         lockFilter,
         setLockFilter,
+        viewMode,
+        setViewMode,
         allZones,
         targetUnitId,
         setTargetUnitId,

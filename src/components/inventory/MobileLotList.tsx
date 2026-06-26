@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ChevronDown, ChevronRight, Tags } from 'lucide-react'
+import { ChevronDown, ChevronRight, Tags, Calendar } from 'lucide-react'
 import { TagDisplay } from '../lots/TagDisplay'
 import { formatQuantityFull } from '@/lib/numberUtils'
 
@@ -18,16 +18,27 @@ interface MobileLotListProps {
     items: GroupedProduct[]
     expandedProducts: Set<string>
     toggleExpand: (key: string) => void
+    viewMode?: 'lot' | 'month'
 }
 
-export default function MobileLotList({ items, expandedProducts, toggleExpand }: MobileLotListProps) {
+export default function MobileLotList({ items, expandedProducts, toggleExpand, viewMode = 'lot' }: MobileLotListProps) {
     const [expandedLsx, setExpandedLsx] = useState<Set<string>>(new Set())
+    const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
 
     const toggleLsxExpand = (lsxKey: string) => {
         setExpandedLsx(prev => {
             const next = new Set(prev)
             if (next.has(lsxKey)) next.delete(lsxKey)
             else next.add(lsxKey)
+            return next
+        })
+    }
+
+    const toggleMonthExpand = (monthKey: string) => {
+        setExpandedMonths(prev => {
+            const next = new Set(prev)
+            if (next.has(monthKey)) next.delete(monthKey)
+            else next.add(monthKey)
             return next
         })
     }
@@ -81,8 +92,166 @@ export default function MobileLotList({ items, expandedProducts, toggleExpand }:
                             </div>
                         </div>
 
-                        {/* Variants Expansion */}
                         {isExpanded && hasVariants && (() => {
+                            if (viewMode === 'month') {
+                                const monthGroups = new Map<string, { totalQty: number, items: { tag: string, qty: number }[] }>()
+                                
+                                Array.from(item.variants.entries()).forEach(([variantKey, qty]) => {
+                                    const parts = variantKey.split('__')
+                                    const monthName = parts[0] || 'Không xác định'
+                                    const compositeTag = parts[1] || 'Không có mã phụ'
+                                    
+                                    if (!monthGroups.has(monthName)) {
+                                        monthGroups.set(monthName, { totalQty: 0, items: [] })
+                                    }
+                                    const group = monthGroups.get(monthName)!
+                                    group.totalQty += qty
+                                    group.items.push({ tag: compositeTag, qty })
+                                })
+
+                                const sortedMonths = Array.from(monthGroups.keys()).sort((a, b) => {
+                                    if (a === 'Không xác định') return 1
+                                    if (b === 'Không xác định') return -1
+                                    const getYearMonth = (s: string) => {
+                                        const m = s.match(/Tháng (\d+)\/(\d+)/)
+                                        if (m) return Number(m[2]) * 100 + Number(m[1])
+                                        return 0
+                                    }
+                                    return getYearMonth(b) - getYearMonth(a)
+                                })
+
+                                const rows: React.ReactNode[] = []
+
+                                sortedMonths.forEach((monthName) => {
+                                    const group = monthGroups.get(monthName)!
+                                    const monthKey = `${item.key}-${monthName}`
+                                    const isMonthExpanded = expandedMonths.has(monthKey)
+
+                                    rows.push(
+                                        <div key={monthKey} 
+                                            className="bg-emerald-50/10 hover:bg-emerald-100/20 border-l-[3px] border-emerald-400 cursor-pointer overflow-hidden"
+                                            onClick={(e) => { e.stopPropagation(); toggleMonthExpand(monthKey); }}
+                                        >
+                                            <div className="px-3 py-2.5 flex items-center justify-between text-sm">
+                                                <div className="flex items-center gap-2 font-bold text-emerald-800 flex-1 min-w-0 pr-2">
+                                                    {isMonthExpanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
+                                                    <Calendar size={14} className="text-emerald-600 shrink-0" />
+                                                    <span>{monthName}</span>
+                                                </div>
+                                                <div className="font-bold text-emerald-700 whitespace-nowrap">
+                                                    {formatQuantityFull(group.totalQty)} <span className="text-xs text-emerald-400 font-normal">{item.unit}</span>
+                                                </div>
+                                            </div>
+                                            {isMonthExpanded && (
+                                                <div className="bg-stone-50 border-t border-emerald-100/30">
+                                                    {(() => {
+                                                        const lsxGroups = new Map<string, { totalQty: number, items: { tag: string, qty: number }[] }>()
+                                                        const nonLsxItems: { tag: string, qty: number }[] = []
+
+                                                        group.items.forEach(subItem => {
+                                                            const tagStr = subItem.tag
+                                                            const qty = subItem.qty
+                                                            
+                                                            if (tagStr.includes('LSX: ')) {
+                                                                const parts = tagStr.split('; ').map(p => p.trim())
+                                                                const lsxPart = parts.find(p => p.startsWith('LSX: '))
+                                                                if (lsxPart) {
+                                                                    const otherParts = parts.filter(p => !p.startsWith('LSX: '))
+                                                                    const subTags = otherParts.length > 0 ? otherParts.join('; ') : 'Không có mã phụ'
+                                                                    if (!lsxGroups.has(lsxPart)) {
+                                                                        lsxGroups.set(lsxPart, { totalQty: 0, items: [] })
+                                                                    }
+                                                                    const lsxGrp = lsxGroups.get(lsxPart)!
+                                                                    lsxGrp.totalQty += qty
+                                                                    lsxGrp.items.push({ tag: subTags, qty })
+                                                                    return
+                                                                }
+                                                            }
+                                                            nonLsxItems.push({ tag: tagStr, qty })
+                                                        })
+
+                                                        const subRows: React.ReactNode[] = []
+
+                                                        Array.from(lsxGroups.entries()).sort((a, b) => b[1].totalQty - a[1].totalQty).forEach(([lsxName, lsxGrp]) => {
+                                                            const lsxKey = `${monthKey}-${lsxName}`
+                                                            const isLsxExpanded = expandedLsx.has(lsxKey)
+
+                                                            subRows.push(
+                                                                <div key={lsxKey} 
+                                                                    className="bg-orange-50/30 hover:bg-orange-100/30 border-l-[3px] border-orange-300 cursor-pointer overflow-hidden border-t border-stone-100"
+                                                                    onClick={(e) => { e.stopPropagation(); toggleLsxExpand(lsxKey); }}
+                                                                >
+                                                                    <div className="px-3 py-2 flex items-center justify-between text-xs">
+                                                                        <div className="flex items-center gap-1.5 font-bold text-orange-700 flex-1 min-w-0 pr-2">
+                                                                            {isLsxExpanded ? <ChevronDown size={12} className="shrink-0" /> : <ChevronRight size={12} className="shrink-0" />}
+                                                                            <TagDisplay tags={[lsxName]} />
+                                                                        </div>
+                                                                        <div className="font-bold text-orange-600 whitespace-nowrap">
+                                                                            {formatQuantityFull(lsxGrp.totalQty)} <span className="text-[10px] text-orange-400 font-normal">{item.unit}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {isLsxExpanded && (
+                                                                        <div className="bg-stone-50/50 border-t border-orange-100/30 divide-y divide-stone-100">
+                                                                            {lsxGrp.items.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).map((subItem, sIdx) => {
+                                                                                const isNoTag = subItem.tag === 'Không có mã phụ'
+                                                                                return (
+                                                                                    <div key={`${lsxKey}-sub-${sIdx}`} className="p-2 pl-9 flex items-center justify-between text-[11px] bg-white/50">
+                                                                                        <div className="flex-1 min-w-0 pr-3 flex items-center gap-1">
+                                                                                            <ChevronRight size={10} className="text-stone-300 shrink-0" />
+                                                                                            {isNoTag ? (
+                                                                                                <span className="italic text-stone-400">Không có mã phụ</span>
+                                                                                            ) : (
+                                                                                                <TagDisplay tags={[subItem.tag]} placeholderMap={{ '@': item.productSku }} />
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div className="font-medium text-stone-600 whitespace-nowrap">
+                                                                                            {formatQuantityFull(subItem.qty)} <span className="text-[9px] text-stone-400 font-normal">{item.unit}</span>
+                                                                                        </div>
+                                                                                    </div>
+                                                                                )
+                                                                            })}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })
+
+                                                        if (nonLsxItems.length > 0) {
+                                                            subRows.push(
+                                                                <div key={`${monthKey}-nonlsx`} className="divide-y divide-stone-100 border-t border-stone-100">
+                                                                    {nonLsxItems.sort((a, b) => (a.tag === 'Không có mã phụ' ? 1 : b.tag === 'Không có mã phụ' ? -1 : b.qty - a.qty)).map((subItem, sIdx) => {
+                                                                        const isNoTag = subItem.tag === 'Không có mã phụ'
+                                                                        return (
+                                                                            <div key={`${monthKey}-nonlsx-${sIdx}`} className={`p-2.5 pl-6 flex items-center justify-between text-xs ${isNoTag ? 'bg-amber-50/30 border-l-2 border-amber-300' : ''}`}>
+                                                                                <div className="flex-1 min-w-0 pr-3 flex items-center gap-1.5">
+                                                                                    <ChevronRight size={12} className="text-stone-300 shrink-0" />
+                                                                                    {isNoTag ? (
+                                                                                        <span className="italic text-stone-400 text-xs text-amber-700/70">Gốc (còn lại)</span>
+                                                                                    ) : (
+                                                                                        <TagDisplay tags={[subItem.tag]} placeholderMap={{ '@': item.productSku }} />
+                                                                                    )}
+                                                                                </div>
+                                                                                <div className="font-medium text-stone-600 whitespace-nowrap">
+                                                                                    {formatQuantityFull(subItem.qty)} <span className="text-[10px] text-stone-400 font-normal">{item.unit}</span>
+                                                                                </div>
+                                                                            </div>
+                                                                        )
+                                                                    })}
+                                                                </div>
+                                                            )
+                                                        }
+
+                                                        return <>{subRows}</>
+                                                    })()}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })
+
+                                return <div className="bg-stone-50 border-t border-stone-200">{rows}</div>
+                            }
+
                             const lsxGroups = new Map<string, { totalQty: number, items: { tag: string, qty: number }[] }>()
                             const nonLsxItems: { tag: string, qty: number }[] = []
 

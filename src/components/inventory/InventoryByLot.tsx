@@ -8,8 +8,8 @@ import { useInventoryByLot } from './by-lot/useInventoryByLot'
 import { InventoryFilters } from './by-lot/InventoryFilters'
 import { InventoryTable } from './by-lot/InventoryTable'
 
-export default function InventoryByLot({ units, hookData, hideFilters }: { units: any[], hookData?: any, hideFilters?: boolean }) {
-    const internalHookData = useInventoryByLot(units)
+export default function InventoryByLot({ units, hookData, hideFilters, viewMode = 'lot' }: { units: any[], hookData?: any, hideFilters?: boolean, viewMode?: 'lot' | 'month' }) {
+    const internalHookData = useInventoryByLot(units, { viewMode })
     const activeHookData = hookData || internalHookData
 
     const {
@@ -64,6 +64,7 @@ export default function InventoryByLot({ units, hookData, hideFilters }: { units
                     items={groupedInventory}
                     expandedProducts={expandedProducts}
                     toggleExpand={toggleExpand}
+                    viewMode={viewMode}
                 />
             </div>
 
@@ -74,6 +75,7 @@ export default function InventoryByLot({ units, hookData, hideFilters }: { units
                     expandedProducts={expandedProducts}
                     toggleExpand={toggleExpand}
                     loading={loading}
+                    viewMode={viewMode}
                 />
             </div>
         </div>
