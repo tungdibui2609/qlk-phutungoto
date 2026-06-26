@@ -531,11 +531,13 @@ export function LotForm({
         setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
 
         // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG TĂNG LIÊN TỤC TRÊN TOÀN PHÂN HỆ, KHÔNG TRÙNG LẶP) --
+        // Không tính các lot đã bị ẩn (hidden) hoặc đã xuất (exported) vào số thứ tự lớn nhất để có thể tái sử dụng STT
         const { data: lastSttData } = await supabase
             .from('lots')
             .select('daily_seq')
             .eq('system_code', currentSystem.code)
             .neq('status', 'hidden')
+            .neq('status', 'exported')
             .lt('daily_seq', 2700000) // Loại bỏ các giá trị rác cực lớn (như 9999999 hay 10000000)
             .order('daily_seq', { ascending: false })
             .limit(1)
@@ -782,6 +784,7 @@ export function LotForm({
                 .eq('system_code', currentSystem?.code || '')
                 .eq('daily_seq', dailySeqVal)
                 .neq('status', 'hidden')
+                .neq('status', 'exported')
                 
             if (editingLot?.id) {
                 checkSttQuery = checkSttQuery.neq('id', editingLot.id)
