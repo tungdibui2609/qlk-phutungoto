@@ -15,6 +15,7 @@ import { LotAssignPositionModal } from '@/components/warehouse/lots/LotAssignPos
 import { LotBulkAssignModal } from '@/components/warehouse/lots/LotBulkAssignModal'
 import { LotBulkAssignTagModal } from '@/components/warehouse/lots/LotBulkAssignTagModal'
 import { LotReportModal } from '@/components/warehouse/lots/LotReportModal'
+import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -88,6 +89,7 @@ export function LotPageManager() {
     const [showCreateForm, setShowCreateForm] = useState(false)
     const [showBulkAssign, setShowBulkAssign] = useState(false)
     const [showBulkAssignTag, setShowBulkAssignTag] = useState(false)
+    const [showBulkChangeProduct, setShowBulkChangeProduct] = useState(false)
     const [showMobileFilters, setShowMobileFilters] = useState(false)
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
     const [qrLot, setQrLot] = useState<Lot | null>(null)
@@ -230,6 +232,15 @@ export function LotPageManager() {
                                         Mã phụ hàng loạt
                                     </button>
                                 </>
+                             )}
+                            {hasPermission('warehouse_lot.manage') && (
+                                <button
+                                    onClick={() => setShowBulkChangeProduct(true)}
+                                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-teal-50 hover:bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 dark:text-teal-300 border border-teal-200 dark:border-teal-800"
+                                >
+                                    <Layers size={18} />
+                                    Đổi mã hàng loạt
+                                </button>
                             )}
                             <button
                                 onClick={toggleCreateForm}
@@ -510,6 +521,14 @@ export function LotPageManager() {
             {showReportModal && (
                 <LotReportModal
                     onClose={() => setShowReportModal(false)}
+                />
+            )}
+
+            {showBulkChangeProduct && (
+                <LotBulkChangeProductModal
+                    onClose={() => setShowBulkChangeProduct(false)}
+                    onSuccess={fetchLots}
+                    products={products}
                 />
             )}
 
