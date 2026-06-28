@@ -343,8 +343,8 @@ export function AddExportItemsModal({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-0 overflow-hidden">
-                <DialogHeader className="px-6 py-4 border-b border-stone-100 dark:border-stone-800">
+            <DialogContent className="max-w-4xl max-h-[85vh] min-h-[500px] flex flex-col p-0 overflow-hidden">
+                <DialogHeader className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 shrink-0">
                     <DialogTitle className="text-lg font-bold flex items-center gap-2">
                         <Plus className="text-blue-500" size={20} />
                         Thêm Vị Trí / Hàng Hóa Xuất Kho
@@ -352,7 +352,7 @@ export function AddExportItemsModal({
                 </DialogHeader>
 
                 {/* Filter and Search */}
-                <div className="px-6 py-4 bg-stone-50 dark:bg-stone-900 border-b border-stone-100 dark:border-stone-800 flex items-center gap-3">
+                <div className="px-6 py-4 bg-stone-50 dark:bg-stone-900 border-b border-stone-100 dark:border-stone-800 flex items-center gap-3 shrink-0">
                     <div className="relative flex-1">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={16} />
                         <input
@@ -366,7 +366,7 @@ export function AddExportItemsModal({
                 </div>
 
                 {/* Content List */}
-                <div className="flex-1 overflow-y-auto px-6 py-4 min-h-[300px]">
+                <div className="flex-1 overflow-y-auto px-6 py-4">
                     {loading ? (
                         <div className="flex flex-col items-center justify-center py-20 text-stone-400">
                             <Loader2 className="animate-spin text-blue-500 mb-2" size={32} />
@@ -452,7 +452,7 @@ export function AddExportItemsModal({
                     )}
                 </div>
 
-                <DialogFooter className="px-6 py-4 bg-stone-50 dark:bg-stone-900 border-t border-stone-100 dark:border-stone-800 gap-2 sm:gap-0">
+                <DialogFooter className="px-6 py-4 bg-stone-50 dark:bg-stone-900 border-t border-stone-100 dark:border-stone-800 gap-2 sm:gap-0 shrink-0">
                     <button
                         onClick={onClose}
                         className="inline-flex items-center justify-center rounded-md text-sm font-medium border border-stone-200 bg-white hover:bg-stone-100 h-10 px-4 py-2 dark:border-stone-800 dark:bg-stone-950 dark:hover:bg-stone-800 dark:text-stone-100"
