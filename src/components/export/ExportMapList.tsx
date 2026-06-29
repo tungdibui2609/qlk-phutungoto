@@ -23,7 +23,7 @@ interface ExportMapListProps {
     onPositionSelect?: (id: string) => void
     selectedIds?: Set<string>
     onBulkSelect?: (ids: string[], shouldSelect: boolean) => void
-    onViewLotDetails?: (lotCode: string) => void
+    onViewLotDetails?: (lotId: string) => void
     readOnly?: boolean
 }
 
@@ -36,8 +36,25 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
             const path = item.current_zone_path || item.zone_path || []
             const posCode = item.current_position_name || item.position_name || ""
             
-            const whName = path.length > 0 ? path[0] : "KHO KHÁC"
-            const aisleName = path.length > 1 ? path[1] : (posCode.match(/D(\d+)/i)?.[0] || "DÃY KHÁC")
+            let whName = "KHO KHÁC"
+            if (path.length > 0) {
+                whName = path[0]
+            } else {
+                const whMatch = posCode.match(/^K(\d+)/i)
+                if (whMatch) {
+                    whName = `Kho ${whMatch[1]}`
+                }
+            }
+            
+            let aisleName = "DÃY KHÁC"
+            if (path.length > 1) {
+                aisleName = path[1]
+            } else {
+                const aisleMatch = posCode.match(/D(\d+)/i)
+                if (aisleMatch) {
+                    aisleName = `Dãy ${aisleMatch[1]}`
+                }
+            }
             
             let binName = "Ô KHÁC"
             const complexMatch = posCode.match(/(?:K\d+)?D(\d+)([A-Z]+)(\d+)T(\d+)/i)
@@ -267,11 +284,11 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                                             {posName}
                                                                                         </span>
                                                                                     </div>
-                                                                                    {onViewLotDetails && firstItem.lot_code && (
+                                                                                    {onViewLotDetails && firstItem.lot_id && (
                                                                                         <button
                                                                                             onClick={(e) => {
                                                                                                 e.stopPropagation()
-                                                                                                onViewLotDetails(firstItem.lot_code)
+                                                                                                onViewLotDetails(firstItem.lot_id!)
                                                                                             }}
                                                                                             className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-slate-50 dark:hover:bg-zinc-800"
                                                                                             title="Xem chi tiết LOT"

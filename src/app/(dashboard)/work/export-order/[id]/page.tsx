@@ -296,8 +296,11 @@ function ExportOrderDetailContent() {
                     const originalPosId = item.position_id
 
                     let originalZoneId = null
-                    if (item.positions?.zone_positions && item.positions.zone_positions.length > 0) {
-                        originalZoneId = item.positions.zone_positions[0].zone_id
+                    if (item.positions?.zone_positions) {
+                        const zps = item.positions.zone_positions
+                        originalZoneId = Array.isArray(zps)
+                            ? zps[0]?.zone_id
+                            : (zps as any)?.zone_id
                     }
 
                     // Current position of the lot
@@ -1082,12 +1085,12 @@ function ExportOrderDetailContent() {
         }
     }
 
-    async function fetchFullLotDetails(lotCode: string) {
+    async function fetchFullLotDetails(lotId: string) {
         try {
             const { data, error } = await supabase
                 .from('lots')
                 .select(`*, created_at, suppliers(name), qc_info(name), lot_items(id, quantity, unit, products(name, sku, unit)), positions!positions_lot_id_fkey(code), lot_tags(tag, lot_item_id)`)
-                .eq('code', lotCode)
+                .eq('id', lotId)
                 .single()
             if (error) throw error
             setViewingLot(data)
