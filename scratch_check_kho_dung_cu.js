@@ -15,20 +15,25 @@ envContent.split('\n').forEach(line => {
 const supabase = createClient(envVars.NEXT_PUBLIC_SUPABASE_URL, envVars.SUPABASE_SERVICE_ROLE_KEY);
 
 async function main() {
-  const posId = '84d65377-5b8f-4080-9a75-6eabd99fd990';
-  console.log(`=== KIỂM TRA VỊ TRÍ ID: ${posId} ===`);
+  console.log("=== CHECKING KHO_DUNG_CU ===");
 
-  // 1. Kiểm tra zone_positions
-  const { data: zp, error: zpErr } = await supabase
-    .from('zone_positions')
-    .select('*, zones(*)')
-    .eq('position_id', posId);
+  // Check lots in KHO_DUNG_CU
+  const { data: lots } = await supabase
+    .from('lots')
+    .select('company_id, system_code')
+    .eq('system_code', 'KHO_DUNG_CU')
+    .limit(10);
+  
+  console.log("Lots in KHO_DUNG_CU:", lots);
 
-  if (zpErr) {
-    console.error("Lỗi select zone_positions:", zpErr);
-  } else {
-    console.log("Liên kết zone_positions:", JSON.stringify(zp, null, 2));
-  }
+  // Check zones in KHO_DUNG_CU
+  const { data: zones } = await supabase
+    .from('zones')
+    .select('company_id, system_type')
+    .eq('system_type', 'KHO_DUNG_CU')
+    .limit(10);
+  
+  console.log("Zones in KHO_DUNG_CU:", zones);
 }
 
 main();

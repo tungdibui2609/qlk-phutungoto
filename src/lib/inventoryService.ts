@@ -70,6 +70,7 @@ export async function getLotInventoryForReconciliation(
                 product_id,
                 quantity,
                 warehouse_name,
+                is_locked,
                 lot_items (
                     product_id,
                     quantity,

@@ -420,6 +420,9 @@ export default function InventoryPage() {
                                         if (selectedCategoryIds.length > 0) params.set('categoryIds', selectedCategoryIds.join(','))
                                         if (displayInternalCode) params.set('internalCode', 'true')
                                         if (activeTab === 'lot' && viewMode) params.set('viewMode', viewMode)
+                                        if ((activeTab === 'lot' || activeTab === 'category') && lockFilter) {
+                                            params.set('lockFilter', lockFilter)
+                                        }
                                         const { data: { session } } = await supabase.auth.getSession()
                                         if (session?.access_token) params.set('token', session.access_token)
                                         if (companyInfo) {
@@ -454,6 +457,9 @@ export default function InventoryPage() {
                                         if (selectedCategoryIds.length > 0) params.set('categoryIds', selectedCategoryIds.join(','))
                                         if (displayInternalCode) params.set('internalCode', 'true')
                                         if (activeTab === 'lot' && viewMode) params.set('viewMode', viewMode)
+                                        if ((activeTab === 'lot' || activeTab === 'category') && lockFilter) {
+                                            params.set('lockFilter', lockFilter)
+                                        }
                                         const { data: { session } } = await supabase.auth.getSession()
                                         if (session?.access_token) params.set('token', session.access_token)
                                         if (companyInfo) {

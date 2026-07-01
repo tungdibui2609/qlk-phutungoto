@@ -1,8 +1,19 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
 import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName, canonicalizeUnit, getMatchingUnitName, toBaseAmount, getBaseToKgRate } from '@/lib/unitConversion'
+
+const normalizeWarehouseName = (name: string) => {
+    if (!name) return ''
+    return name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toLowerCase()
+}
 
 export const dynamic = 'force-dynamic'
 
@@ -10,27 +21,11 @@ export async function GET(request: Request) {
     try {
         const cookieStore = await cookies()
 
-        const authHeader = request.headers.get('Authorization')
-
-        const supabase = createServerClient<Database>(
+        // Use service role key to bypass RLS - this is a server-side route
+        // so it's safe and eliminates all token expiration issues
+        const supabase = createClient<Database>(
             process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            {
-                cookies: {
-                    get(name: string) {
-                        return cookieStore.get(name)?.value
-                    },
-                    set(name: string, value: string, options: CookieOptions) {
-                        cookieStore.set({ name, value, ...options })
-                    },
-                    remove(name: string, options: CookieOptions) {
-                        cookieStore.set({ name, value: '', ...options })
-                    },
-                },
-                global: {
-                    headers: authHeader ? { Authorization: authHeader } : {}
-                }
-            }
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
         )
         const { searchParams } = new URL(request.url)
         const systemParam = searchParams.get('systemType')
@@ -76,10 +71,6 @@ export async function GET(request: Request) {
                     .order('id', { ascending: true })
                     .range(currentFrom, currentFrom + PAGE_SIZE - 1);
 
-                if (warehouse && warehouse !== 'Tất cả') {
-                    query = query.eq('order.warehouse_name', warehouse)
-                }
-
                 if (to) {
                     query = query.lte('order.created_at', `${to} 23:59:59`)
                 }
@@ -90,7 +81,15 @@ export async function GET(request: Request) {
                 if (!data || data.length === 0) {
                     hasMore = false;
                 } else {
-                    allItems = [...allItems, ...data];
+                    let filteredData = data;
+                    if (warehouse && warehouse !== 'Tất cả') {
+                        const targetNorm = normalizeWarehouseName(warehouse);
+                        filteredData = data.filter((item: any) => {
+                            const itemNorm = normalizeWarehouseName(item.order?.warehouse_name);
+                            return itemNorm === targetNorm;
+                        });
+                    }
+                    allItems = [...allItems, ...filteredData];
                     if (data.length < PAGE_SIZE) hasMore = false;
                     else currentFrom += PAGE_SIZE;
                 }

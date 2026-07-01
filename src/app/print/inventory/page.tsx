@@ -15,6 +15,35 @@ import { exportInventoryReportToExcel } from '@/lib/inventoryReportExcelExport'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { canonicalizeUnit } from '@/lib/unitConversion'
 
+const normalizeWarehouseName = (name: string) => {
+    if (!name) return ''
+    return name
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D')
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .toLowerCase()
+}
+
+const isTokenExpired = (token: string) => {
+    try {
+        const base64Url = token.split('.')[1]
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/')
+        const jsonPayload = decodeURIComponent(
+            atob(base64)
+                .split('')
+                .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+                .join('')
+        )
+        const payload = JSON.parse(jsonPayload)
+        const now = Math.floor(Date.now() / 1000)
+        return payload.exp < now
+    } catch (e) {
+        return true
+    }
+}
+
 // Types
 interface InventoryItem {
     id: string
@@ -102,6 +131,7 @@ export default function PrintInventoryPage() {
     const searchModeParam = searchParams.get('searchMode') || 'all'
     const token = searchParams.get('token')
     const viewMode = searchParams.get('viewMode') || 'lot'
+    const lockFilter = searchParams.get('lockFilter') || 'unlocked'
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -129,6 +159,7 @@ export default function PrintInventoryPage() {
     const [lotItems, setLotItems] = useState<LotItem[]>([])
     const [groupedLots, setGroupedLots] = useState<GroupedLot[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
+    const dataLoadedFromSessionRef = React.useRef(false)
 
     // Unit Conversion Support
     const { convertUnit, getBaseAmount: toBaseAmount, getBaseToKgRate, conversionMap, unitNameMap } = useUnitConversion()
@@ -222,6 +253,9 @@ export default function PrintInventoryPage() {
     }, [type, systemType, dateFrom, dateTo, warehouse, zoneId, categoryIdsParam, convertToKg, conversionMap, unitNameMap]) // Re-run when conversion data is ready
 
     async function fetchData() {
+        // Skip re-fetch if data was already loaded from sessionStorage
+        if (dataLoadedFromSessionRef.current) return
+
         setLoading(true)
         setError(null)
         try {
@@ -269,8 +303,47 @@ export default function PrintInventoryPage() {
                 }
             }
 
-            if (token) {
-                await supabase.auth.setSession({ access_token: token, refresh_token: '' })
+            // Check sessionStorage for pre-saved data (used by reconciliation to avoid auth issues)
+            if (typeof window !== 'undefined') {
+                const sessionKey = `print_inventory_data_${type}`
+                const savedDataStr = sessionStorage.getItem(sessionKey)
+                if (savedDataStr) {
+                    try {
+                        const savedData = JSON.parse(savedDataStr)
+                        // Clear immediately after reading to prevent stale data on refresh
+                        sessionStorage.removeItem(sessionKey)
+                        if (savedData.ok) {
+                            if (savedData.reconcileItems) setReconcileItems(savedData.reconcileItems)
+                            if (savedData.items) {
+                                if (type === 'labels') setBoxLabelItems(savedData.items)
+                                else setAccountingItems(savedData.items)
+                            }
+                            if (savedData.lotItems) setLotItems(savedData.lotItems)
+                            dataLoadedFromSessionRef.current = true
+                            setLoading(false)
+                            return
+                        }
+                    } catch (e) {
+                        console.error('Failed to parse sessionStorage data', e)
+                    }
+                }
+            }
+
+            // Ensure auth session is hydrated on client side
+            const { data: { session } } = await supabase.auth.getSession()
+
+            if (token && !isTokenExpired(token)) {
+                try {
+                    await supabase.auth.setSession({ access_token: token, refresh_token: '' })
+                } catch (e) {
+                    console.error('Failed to set session from token', e)
+                }
+            }
+
+            const headers: HeadersInit = {}
+            const activeToken = (token && !isTokenExpired(token)) ? token : session?.access_token
+            if (activeToken && !isTokenExpired(activeToken)) {
+                headers['Authorization'] = `Bearer ${activeToken}`
             }
 
             const activeHierarchy: Record<string, string | null> = {}
@@ -328,8 +401,7 @@ export default function PrintInventoryPage() {
                 if (targetUnitId) params.set('targetUnitId', targetUnitId)
                 if (categoryIdsParam) params.set('categoryIds', categoryIdsParam)
 
-                const headers: HeadersInit = {}
-                if (token) headers['Authorization'] = `Bearer ${token}`
+                // Using global headers with valid token authentication
 
                 const res = await fetch(`/api/inventory?${params.toString()}`, { headers })
                 if (!res.ok) {
@@ -351,8 +423,7 @@ export default function PrintInventoryPage() {
                 if (categoryIdsParam) params.set('categoryIds', categoryIdsParam)
                 if (searchModeParam) params.set('searchMode', searchModeParam)
 
-                const headers: HeadersInit = {}
-                if (token) headers['Authorization'] = `Bearer ${token}`
+                // Using global headers with valid token authentication
 
                 const res = await fetch(`/api/inventory/by-label?${params.toString()}`, { headers })
                 if (!res.ok) {
@@ -424,7 +495,13 @@ export default function PrintInventoryPage() {
                         if (warehouse && warehouse !== 'Tất cả') {
                             const lotWarehouse = (lot.warehouse_name || '').trim()
                             const targetBranch = warehouse.trim()
-                            if (lotWarehouse !== targetBranch) return []
+                            if (normalizeWarehouseName(lotWarehouse) !== normalizeWarehouseName(targetBranch)) return []
+                        }
+
+                        if (lockFilter === 'locked') {
+                            if (lot.is_locked !== true) return []
+                        } else if (lockFilter === 'unlocked') {
+                            if (lot.is_locked === true) return []
                         }
 
                         const lotTags = (lot.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
@@ -592,8 +669,7 @@ export default function PrintInventoryPage() {
                 params.set('systemType', systemType)
                 if (warehouse) params.set('warehouse', warehouse)
 
-                const headers: HeadersInit = {}
-                if (token) headers['Authorization'] = `Bearer ${token}`
+                // Using global headers with valid token authentication
 
                 const accRes = await fetch(`/api/inventory?${params.toString()}`, { headers })
                 if (!accRes.ok) throw new Error(`Acc Fetch failed: ${accRes.status}`)
@@ -606,7 +682,7 @@ export default function PrintInventoryPage() {
                     const { data: pageData, error: pageError } = await supabase
                         .from('lots')
                         .select(`
-                            id, product_id, quantity, warehouse_name,
+                            id, product_id, quantity, warehouse_name, is_locked,
                             products(name, sku, unit, system_type, internal_code, internal_name),
                             positions!positions_lot_id_fkey(id, code)
                         `)
@@ -621,7 +697,27 @@ export default function PrintInventoryPage() {
                 }
 
                 const lots = allReconcileLots.filter((lot: any) => {
-                    if (systemType && lot.products?.system_type !== systemType) return false
+                    if (systemType) {
+                        const sysCode = systemType.trim().toUpperCase()
+                        const lotSys = (lot.products?.system_type || '').trim().toUpperCase()
+                        let mappedSysCode = sysCode
+                        if (sysCode === 'FROZEN') mappedSysCode = 'KHO_DONG_LANH'
+                        else if (sysCode === 'DRY') mappedSysCode = 'KHO_VAT_TU_BAO_BI'
+                        
+                        if (mappedSysCode && lotSys && lotSys !== mappedSysCode) {
+                            return false
+                        }
+                    }
+                    if (warehouse && warehouse !== 'Tất cả') {
+                        const lotWarehouse = (lot.warehouse_name || '').trim()
+                        const targetBranch = warehouse.trim()
+                        if (normalizeWarehouseName(lotWarehouse) !== normalizeWarehouseName(targetBranch)) return false
+                    }
+                    if (lockFilter === 'locked') {
+                        if (lot.is_locked !== true) return false
+                    } else if (lockFilter === 'unlocked') {
+                        if (lot.is_locked === true) return false
+                    }
                     if (zoneId) {
                          return lot.positions?.some((p: any) => isDescendantOrSelf(activePosMap[p.id], zoneId, activeHierarchy))
                     }
@@ -1388,7 +1484,7 @@ export default function PrintInventoryPage() {
                                     const displayName = isInternalCodeDisplay && item.internalName ? item.internalName : item.productName
 
                                     return (
-                                        <tr key={item.productId} className={item.diff !== 0 ? 'bg-orange-50 print:bg-transparent' : ''}>
+                                        <tr key={`${item.productId}_${item.unit}`} className={item.diff !== 0 ? 'bg-orange-50 print:bg-transparent' : ''}>
                                             <td className="border border-black p-1">{displayCode}</td>
                                             <td className="border border-black p-1">{displayName}</td>
                                             <td className="border border-black p-2 text-center text-stone-600 font-bold">{item.unit}</td>

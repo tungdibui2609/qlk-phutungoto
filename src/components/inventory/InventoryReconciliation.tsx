@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, AlertTriangle, CheckCircle, Printer, ChevronDown, Warehouse } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle, Printer, ChevronDown, Warehouse, FileSpreadsheet } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
@@ -113,11 +113,13 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
 
             // 2. Fetch LOT Inventory (Active lots with their items) using shared service
             const lots = await getLotInventoryForReconciliation(supabase, systemType, selectedBranch || undefined)
+            // Filter out locked lots as they are not counted towards inventory balance by design
+            const activeLots = lots?.filter((lot: any) => lot.is_locked !== true)
 
             // 3. Aggregate Lot Data by Product + Unit
             const lotQtyMap = new Map<string, { qty: number, code: string, name: string, unit: string, productId: string }>()
 
-            lots?.forEach((lot: any) => {
+            activeLots?.forEach((lot: any) => {
                 const processItem = (pid: string, qty: number, unit: string, sku: string, name: string, baseUnit: string) => {
                     let displayQty = qty
                     let displayUnit = unit
@@ -312,7 +314,72 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                     </label>
                 </div>
 
-                <div className="ml-auto pb-1">
+                <div className="ml-auto pb-1 flex gap-2">
+                    <button
+                        onClick={async () => {
+                            const params = new URLSearchParams()
+                            params.set('type', 'reconciliation')
+                            params.set('export', 'excel')
+                            if (systemType) params.set('systemType', systemType)
+                            if (dateTo) params.set('to', dateTo)
+                            if (targetUnitId) params.set('targetUnitId', targetUnitId)
+                            if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
+
+                            // Pass auth token
+                            let accessToken = ''
+                            try {
+                                const { data: { session } } = await supabase.auth.getSession()
+                                accessToken = session?.access_token || ''
+                            } catch (e) {}
+
+                            if (!accessToken && typeof window !== 'undefined') {
+                                for (let i = 0; i < localStorage.length; i++) {
+                                    const key = localStorage.key(i)
+                                    if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                                        const val = localStorage.getItem(key)
+                                        if (val) {
+                                            try {
+                                                const parsed = JSON.parse(val)
+                                                accessToken = parsed.access_token || ''
+                                            } catch (e) {}
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (accessToken) {
+                                params.set('token', accessToken)
+                            }
+
+                            // Save reconciliation data to sessionStorage for print page
+                            try {
+                                sessionStorage.setItem('print_inventory_data_reconciliation', JSON.stringify({
+                                    ok: true,
+                                    reconcileItems: displayedItems
+                                }))
+                            } catch (e) {
+                                console.error('Failed to save reconciliation data to sessionStorage', e)
+                            }
+
+                            // Pass company info directly
+                            if (companyInfo) {
+                                if (companyInfo.name) params.set('cmp_name', companyInfo.name)
+                                if (companyInfo.address) params.set('cmp_address', companyInfo.address)
+                                if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
+                                if (companyInfo.email) params.set('cmp_email', companyInfo.email)
+                                if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
+                                // Handle potential undefined types safely
+                                if ((companyInfo as any).short_name) params.set('cmp_short', (companyInfo as any).short_name)
+                            }
+
+                            window.open(`/print/inventory?${params.toString()}`, '_blank')
+                        }}
+                        disabled={loadingCompany}
+                        className={`p-2 mt-6 border border-stone-300 dark:border-stone-700 rounded-md transition-all ${loadingCompany ? 'opacity-50 cursor-wait bg-stone-100' : 'text-orange-600 hover:text-orange-700 dark:text-orange-400 dark:hover:text-orange-300 active:scale-95'}`}
+                        title={loadingCompany ? "Đang tải thông tin..." : "Xuất Excel"}
+                    >
+                        <FileSpreadsheet className="w-5 h-5" />
+                    </button>
                     <button
                         onClick={async () => {
                             const params = new URLSearchParams()
@@ -323,9 +390,39 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                             if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
 
                             // Pass auth token
-                            const { data: { session } } = await supabase.auth.getSession()
-                            if (session?.access_token) {
-                                params.set('token', session.access_token)
+                            let accessToken = ''
+                            try {
+                                const { data: { session } } = await supabase.auth.getSession()
+                                accessToken = session?.access_token || ''
+                            } catch (e) {}
+
+                            if (!accessToken && typeof window !== 'undefined') {
+                                for (let i = 0; i < localStorage.length; i++) {
+                                    const key = localStorage.key(i)
+                                    if (key && key.startsWith('sb-') && key.endsWith('-auth-token')) {
+                                        const val = localStorage.getItem(key)
+                                        if (val) {
+                                            try {
+                                                const parsed = JSON.parse(val)
+                                                accessToken = parsed.access_token || ''
+                                            } catch (e) {}
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (accessToken) {
+                                params.set('token', accessToken)
+                            }
+
+                            // Save reconciliation data to sessionStorage for print page
+                            try {
+                                sessionStorage.setItem('print_inventory_data_reconciliation', JSON.stringify({
+                                    ok: true,
+                                    reconcileItems: displayedItems
+                                }))
+                            } catch (e) {
+                                console.error('Failed to save reconciliation data to sessionStorage', e)
                             }
 
                             // Pass company info directly
@@ -335,7 +432,8 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                                 if (companyInfo.phone) params.set('cmp_phone', companyInfo.phone)
                                 if (companyInfo.email) params.set('cmp_email', companyInfo.email)
                                 if (companyInfo.logo_url) params.set('cmp_logo', companyInfo.logo_url)
-                                if (companyInfo.short_name) params.set('cmp_short', companyInfo.short_name)
+                                // Handle potential undefined types safely
+                                if ((companyInfo as any).short_name) params.set('cmp_short', (companyInfo as any).short_name)
                             }
 
                             window.open(`/print/inventory?${params.toString()}`, '_blank')
