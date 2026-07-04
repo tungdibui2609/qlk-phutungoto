@@ -62,6 +62,7 @@ export default function AccountingHistoryPage() {
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
     const [selectedProductIds, setSelectedProductIds] = useState<string[]>([])
     const [onlyWithMovements, setOnlyWithMovements] = useState(false)
+    const [showAllProducts, setShowAllProducts] = useState(false)
 
     const { showToast } = useToast()
     const { companyInfo } = usePrintCompanyInfo()
@@ -233,6 +234,33 @@ export default function AccountingHistoryPage() {
                 }
             })
 
+            // Pre-populate all products into movementMap (even those without any activity)
+            prodData.forEach((prod: any) => {
+                const canConvert = isConvertible(prod.id)
+                const displayUnit = (targetUnit && canConvert) ? targetUnit.name : (prod.unit || '-')
+                const key = (targetUnit && canConvert) ? prod.id : `${prod.id}_${displayUnit}`
+
+                if (!movementMap[key]) {
+                    const primaryRel = prod.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
+                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+
+                    movementMap[key] = {
+                        productId: prod.id,
+                        sku: prod.sku || 'N/A',
+                        name: prod.name || 'Unknown',
+                        primaryCategoryName,
+                        unit: displayUnit,
+                        opening: 0,
+                        inboundItems: {},
+                        outboundItems: {},
+                        totalIn: 0,
+                        totalOut: 0,
+                        closing: 0,
+                        vouchers: new Set()
+                    }
+                }
+            })
+
             // Finalize calculation
             Object.values(movementMap).forEach(mov => {
                 mov.closing = mov.opening + mov.totalIn - mov.totalOut
@@ -340,6 +368,7 @@ export default function AccountingHistoryPage() {
         const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
         return matchesSearch && matchesProducts
     }).filter(m => {
+        if (showAllProducts) return true
         if (onlyWithMovements) {
             return m.totalIn !== 0 || m.totalOut !== 0
         }
@@ -552,7 +581,28 @@ export default function AccountingHistoryPage() {
 
                         <button
                             type="button"
-                            onClick={() => setOnlyWithMovements(!onlyWithMovements)}
+                            onClick={() => {
+                                const next = !showAllProducts
+                                setShowAllProducts(next)
+                                if (next) setOnlyWithMovements(false)
+                            }}
+                            className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all flex items-center gap-2 ${
+                                showAllProducts 
+                                    ? 'bg-indigo-500 text-white border-indigo-500 hover:bg-indigo-600 shadow-md shadow-indigo-500/10' 
+                                    : 'bg-stone-50 dark:bg-slate-800 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-slate-700 hover:bg-stone-100 dark:hover:bg-slate-700'
+                            }`}
+                        >
+                            <Boxes size={14} />
+                            Tất cả SP
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = !onlyWithMovements
+                                setOnlyWithMovements(next)
+                                if (next) setShowAllProducts(false)
+                            }}
                             className={`px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-widest border transition-all flex items-center gap-2 ${
                                 onlyWithMovements 
                                     ? 'bg-amber-500 text-white border-amber-500 hover:bg-amber-600 shadow-md shadow-amber-500/10' 
@@ -572,6 +622,21 @@ export default function AccountingHistoryPage() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        {showAllProducts && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-900/30 rounded-lg animate-in fade-in zoom-in-95">
+                                <Boxes size={12} className="text-cyan-500" />
+                                <span className="text-[10px] font-black text-cyan-600 dark:text-cyan-500 uppercase tracking-widest">
+                                    Hiển thị tất cả SP
+                                </span>
+                                <button 
+                                    onClick={() => setShowAllProducts(false)}
+                                    className="ml-1 p-0.5 hover:bg-cyan-200 dark:hover:bg-cyan-900/50 rounded transition-colors text-cyan-600"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        )}
+
                         {onlyWithMovements && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-lg animate-in fade-in zoom-in-95">
                                 <TrendingUp size={12} className="text-indigo-500" />
