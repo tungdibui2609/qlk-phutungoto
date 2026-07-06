@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy } from 'lucide-react'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
@@ -36,6 +36,7 @@ export default function InboundPage() {
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set())
     const [isBatchDownloading, setIsBatchDownloading] = useState(false)
     const [activeTooltipOrderId, setActiveTooltipOrderId] = useState<string | null>(null)
+    const [duplicateOrderId, setDuplicateOrderId] = useState<string | null>(null)
 
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
@@ -656,6 +657,13 @@ export default function InboundPage() {
                                                                     <RotateCcw className="w-4 h-4" />
                                                                 </button>
                                                             )}
+                                                            <button 
+                                                                className="p-1.5 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 rounded transition-colors"
+                                                                onClick={() => { setDuplicateOrderId(order.id); setSelectedOrderId(null); setIsCreateModalOpen(true); }}
+                                                                title="Nhân bản phiếu"
+                                                            >
+                                                                <Copy className="w-4 h-4" />
+                                                            </button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -760,13 +768,15 @@ export default function InboundPage() {
             {isCreateModalOpen && (
                 <InboundOrderModal
                     isOpen={isCreateModalOpen}
-                    onClose={() => { setIsCreateModalOpen(false); setSelectedOrderId(null); }}
+                    onClose={() => { setIsCreateModalOpen(false); setSelectedOrderId(null); setDuplicateOrderId(null); }}
                     onSuccess={() => {
                         fetchOrders();
                         showToast(`Phiếu nhập ${selectedOrderId ? 'đã cập nhật' : 'đã tạo'} thành công!`, 'success');
                         setSelectedOrderId(null);
+                        setDuplicateOrderId(null);
                     }}
                     editOrderId={selectedOrderId || undefined}
+                    duplicateOrderId={duplicateOrderId || undefined}
                     systemCode={systemType}
                 />
             )}

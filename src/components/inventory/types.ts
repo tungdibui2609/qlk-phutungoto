@@ -34,6 +34,7 @@ export interface OrderFormProps<T> {
     onClose: () => void
     onSuccess: (id?: string) => void
     editOrderId?: string | null
+    duplicateOrderId?: string | null
     initialData?: any
     systemCode: string
 }

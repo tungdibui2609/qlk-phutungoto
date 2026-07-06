@@ -10,7 +10,7 @@ import { calculateNewInQtyByProduct } from '@/lib/lotSummaryUtils'
 import { format } from 'date-fns'
 
 
-export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, onSuccess, onClose }: any) {
+export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initialData, systemCode, onSuccess, onClose }: any) {
     const { showToast } = useToast()
     const { hasModule } = useSystem()
     const { profile } = useUser()
@@ -54,7 +54,7 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
         } else {
             resetForm()
         }
-    }, [isOpen, editOrderId, systemCode])
+    }, [isOpen, editOrderId, duplicateOrderId, systemCode])
 
     function resetForm() {
         setItems([])
@@ -139,6 +139,48 @@ export function useInboundOrder({ isOpen, editOrderId, initialData, systemCode, 
                         categoryId: i.category_id || null
                     })))
                 }
+            } else if (duplicateOrderId) {
+                // Nhân bản phiếu: fetch dữ liệu gốc nhưng tạo mã mới
+                const { data: srcOrder, error: srcError } = await (supabase.from('inbound_orders') as any).select('*').eq('id', duplicateOrderId).single()
+                if (srcError) throw srcError
+                if (srcOrder) {
+                    setSupplierId(srcOrder.supplier_id || '')
+                    setSupplierAddress(srcOrder.supplier_address || '')
+                    setSupplierPhone(srcOrder.supplier_phone || '')
+                    const storedWarehouseName = srcOrder.warehouse_name || ''
+                    const isWarehouseValid = branchesData.some((b: any) => b.name === storedWarehouseName)
+                    if (isWarehouseValid) {
+                        setWarehouseName(storedWarehouseName)
+                    } else if (branchesData.length > 0) {
+                        setWarehouseName(branchesData.find((b: any) => b.is_default)?.name || branchesData[0].name)
+                    }
+                    setOrderTypeId(srcOrder.order_type_id || '')
+                    setDescription(srcOrder.description || '')
+                    if (Array.isArray(srcOrder.images)) setImages(srcOrder.images)
+                    const meta = srcOrder.metadata || {}
+                    setVehicleNumber(meta.vehicleNumber || '')
+                    setDriverName(meta.driverName || '')
+                    setContainerNumber(meta.containerNumber || '')
+                    setSealNumber(meta.sealNumber || '')
+                    if (meta.targetUnit) setTargetUnit(meta.targetUnit)
+                    // Giữ ngày tạo hiện tại cho phiếu mới
+                    setCreatedAt(new Date().toISOString())
+
+                    const { data: itemsData } = await supabase.from('inbound_order_items').select('*').eq('order_id', duplicateOrderId)
+                    if (itemsData) setItems(itemsData.map((i: any) => ({
+                        id: crypto.randomUUID(),
+                        productId: i.product_id || '',
+                        productName: i.product_name || '',
+                        unit: i.unit || '',
+                        quantity: i.quantity,
+                        document_quantity: i.document_quantity || i.quantity,
+                        price: i.price || 0,
+                        note: i.note || '',
+                        categoryId: i.category_id || null
+                    })))
+                }
+                // Sinh mã phiếu mới
+                generateOrderCode('PNK', systemCode).then(setCode)
             } else if (initialData) {
                 if (initialData.items) setItems(initialData.items)
 

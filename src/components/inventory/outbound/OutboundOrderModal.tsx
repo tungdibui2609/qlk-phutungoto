@@ -14,6 +14,7 @@ import { OrderFormProps } from '@/components/inventory/types'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 export default function OutboundOrderModal(props: OrderFormProps<any> & { editOrderId?: string | null }) {
+    const isDuplicate = !!props.duplicateOrderId
     const {
         code, setCode,
         customerName, setCustomerName,
@@ -32,9 +33,9 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         createdAt, setCreatedAt,
         products, customers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
-        hasModule, isUtilityEnabled, confirmDialog, setConfirmDialog, handleCustomerSelect,
+        hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect,
         convertUnit
-    } = useOutboundOrder({ ...props, editOrderId: props.editOrderId })
+    } = useOutboundOrder({ ...props, editOrderId: props.editOrderId, duplicateOrderId: props.duplicateOrderId })
 
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
 
@@ -67,7 +68,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                 title={
                     <>
                         <ShoppingCart className="text-orange-600" />
-                        {props.editOrderId ? 'Chỉnh Sửa Phiếu Xuất' : 'Tạo Phiếu Xuất Mới'}
+                        {props.editOrderId ? 'Chỉnh Sửa Phiếu Xuất' : isDuplicate ? 'Nhân Bản Phiếu Xuất' : 'Tạo Phiếu Xuất Mới'}
                     </>
                 }
                 subtitle="Xuất hàng, bán hàng, chuyển kho"

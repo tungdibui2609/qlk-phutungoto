@@ -8,8 +8,9 @@ import {
     ScanLine, Loader2, Trash2, X, CheckCircle2,
     ArrowLeft, RefreshCw, QrCode, Tag, Package,
     Layers, Link2, Link2Off, AlertCircle, ChevronRight,
-    Calendar, Hash, Search
+    Calendar, Hash, Search, Camera, Keyboard
 } from 'lucide-react'
+import { Scanner } from '@yudiel/react-qr-scanner'
 import { encodeSTT, decodeSTT } from '@/lib/numberUtils'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -42,6 +43,22 @@ function getBoxIndex(code: string): string {
     const parts = code.trim().split('-')
     const last = parts[parts.length - 1]
     return !isNaN(Number(last)) ? last : code
+}
+
+// Extract and clean box label code from camera/scanner input
+const extractBoxCode = (input: string): string => {
+    let clean = input.trim()
+    if (clean.includes('/') && (clean.startsWith('http://') || clean.startsWith('https://') || clean.includes('/scan/'))) {
+        const parts = clean.split('/')
+        const lastPart = parts[parts.length - 1]
+        if (lastPart.toUpperCase().startsWith('BOX-')) clean = lastPart
+    }
+    if (clean.startsWith(']C1') || clean.startsWith(']Q1') || clean.startsWith(']d1')) {
+        clean = clean.substring(3)
+    }
+    const boxMatch = clean.match(/BOX-[A-Z0-9_-]+/i)
+    if (boxMatch) return boxMatch[0].toUpperCase()
+    return clean.toUpperCase()
 }
 
 // ─── Scan Input Component ─────────────────────────────────────────────────────
@@ -219,6 +236,9 @@ export default function MobileLotLabelsTab() {
     const [foundLots, setFoundLots] = useState<any[]>([])
     const [isSearchingLots, setIsSearchingLots] = useState(false)
     const [searchError, setSearchError] = useState('')
+    const [useCamera, setUseCamera] = useState(false)
+    const [cameraError, setCameraError] = useState<string | null>(null)
+    const lastCameraCodeRef = useRef('')
 
     // ── Quét Pallet trực tiếp qua QR code ────────────────────────────────────────
     const handleScanPallet = useCallback(async (rawCode: string) => {
@@ -263,6 +283,17 @@ export default function MobileLotLabelsTab() {
             setIsLoadingPallet(false)
         }
     }, [currentSystem?.code])
+
+    // ── Camera scan handlers ────────────────────────────────────────────────────
+    const handleCameraScanPallet = useCallback((rawValue: string) => {
+        if (!rawValue || isLoadingPallet) return
+        const code = rawValue.trim().toUpperCase()
+        if (code === lastCameraCodeRef.current) return
+        lastCameraCodeRef.current = code
+        setUseCamera(false)
+        handleScanPallet(code)
+        setTimeout(() => { lastCameraCodeRef.current = '' }, 3000)
+    }, [isLoadingPallet, handleScanPallet])
 
     // ── Tìm kiếm Lots theo STT và Ngày ──────────────────────────────────────────
     const handleSearchLots = async (e?: React.FormEvent) => {
@@ -328,6 +359,8 @@ export default function MobileLotLabelsTab() {
     const handleSelectLot = (lot: any) => {
         setCurrentLot(lot as LotInfo)
         setJustLinkedIds(new Set())
+        setUseCamera(false)
+        setCameraError(null)
         setStep('scan_label')
         setLabelScanKey(k => k + 1)
         showToast(`Đã chọn pallet: ${lot.code}`, 'success')
@@ -404,6 +437,17 @@ export default function MobileLotLabelsTab() {
         }
     }, [currentLot, currentSystem?.code])
 
+    // ── Camera scan handler cho Tem Thùng (phải đặt sau handleScanLabel) ─────
+    const handleCameraScanLabel = useCallback((rawValue: string) => {
+        if (!rawValue || isLinkingLabel || !currentLot) return
+        const cleaned = extractBoxCode(rawValue)
+        if (cleaned === lastCameraCodeRef.current) return
+        if (currentLot.box_labels.some(l => l.code === cleaned)) return
+        lastCameraCodeRef.current = cleaned
+        handleScanLabel(cleaned)
+        setTimeout(() => { lastCameraCodeRef.current = '' }, 3000)
+    }, [isLinkingLabel, currentLot, handleScanLabel])
+
     // ── Gỡ liên kết ────────────────────────────────────────────────────────────
     const handleUnlink = async (label: BoxLabel) => {
         const ok = window.confirm(`Gỡ tem "${label.code}" khỏi pallet này?`)
@@ -430,6 +474,8 @@ export default function MobileLotLabelsTab() {
         setStep('scan_pallet')
         setCurrentLot(null)
         setJustLinkedIds(new Set())
+        setUseCamera(false)
+        setCameraError(null)
         setPalletScanKey(k => k + 1)
     }
 
@@ -608,9 +654,94 @@ export default function MobileLotLabelsTab() {
 
                     {/* Hoặc quét mã QR trực tiếp */}
                     <div style={{ background: '#fff', borderRadius: 20, padding: 16, border: '1.5px solid #f4f4f5' }}>
-                        <div style={{ fontSize: 10, fontWeight: 900, color: '#71717a', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 12 }}>
-                            Hoặc quét mã QR Pallet trực tiếp
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                            <div style={{ fontSize: 10, fontWeight: 900, color: '#71717a', textTransform: 'uppercase', letterSpacing: 1.5 }}>
+                                {useCamera ? 'Quét QR Pallet bằng Camera' : 'Hoặc quét mã QR Pallet trực tiếp'}
+                            </div>
+                            <button
+                                onClick={() => { setUseCamera(!useCamera); setCameraError(null) }}
+                                style={{
+                                    width: 36, height: 36, borderRadius: 10, border: 'none',
+                                    background: useCamera ? '#0891b2' : '#f0f9ff',
+                                    color: useCamera ? '#fff' : '#0891b2',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    cursor: 'pointer', transition: 'all 0.2s ease',
+                                }}
+                                title={useCamera ? 'Chuyển sang nhập tay' : 'Mở camera quét QR'}
+                            >
+                                {useCamera ? <Keyboard size={16} /> : <Camera size={16} />}
+                            </button>
                         </div>
+
+                        {/* Camera Scanner */}
+                        {useCamera && (
+                            <div style={{ marginBottom: 12 }}>
+                                <div style={{
+                                    width: '100%', aspectRatio: '1', position: 'relative',
+                                    background: '#000', borderRadius: 16, overflow: 'hidden',
+                                    border: '2px solid #0891b220',
+                                }}>
+                                    {cameraError ? (
+                                        <div style={{
+                                            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                                            alignItems: 'center', justifyContent: 'center', padding: 16,
+                                            background: '#f9fafb', textAlign: 'center',
+                                        }}>
+                                            <AlertCircle size={24} color="#ef4444" style={{ marginBottom: 8 }} />
+                                            <p style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>Không thể mở camera</p>
+                                            <p style={{ fontSize: 9, color: '#a1a1aa', marginBottom: 12, lineHeight: 1.5 }}>
+                                                Hãy cấp quyền Camera cho trình duyệt trong cài đặt.
+                                            </p>
+                                            <button
+                                                onClick={() => { setCameraError(null); setUseCamera(false); setTimeout(() => setUseCamera(true), 100) }}
+                                                style={{
+                                                    padding: '6px 14px', background: '#fff', border: '1.5px solid #e4e4e7',
+                                                    borderRadius: 10, fontSize: 10, fontWeight: 800, cursor: 'pointer',
+                                                }}
+                                            >
+                                                Thử lại
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <Scanner
+                                            onScan={(result) => {
+                                                if (result && result.length > 0) {
+                                                    handleCameraScanPallet(result[0].rawValue)
+                                                }
+                                            }}
+                                            onError={(error: any) => {
+                                                console.error('Camera Error:', error)
+                                                setCameraError(error?.message || 'Lỗi camera')
+                                            }}
+                                            styles={{ container: { width: '100%', height: '100%' } }}
+                                            components={{ finder: false }}
+                                            constraints={{ facingMode: 'environment' }}
+                                        />
+                                    )}
+                                    {isLoadingPallet && (
+                                        <div style={{
+                                            position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            borderRadius: 14, backdropFilter: 'blur(2px)',
+                                        }}>
+                                            <Loader2 size={24} color="#0891b2" className="animate-spin" />
+                                        </div>
+                                    )}
+                                    <div style={{
+                                        position: 'absolute', inset: 0, border: '2px solid rgba(8,145,178,0.3)',
+                                        borderRadius: 14, pointerEvents: 'none',
+                                    }} />
+                                </div>
+                                <p style={{
+                                    textAlign: 'center', fontSize: 10, fontWeight: 800,
+                                    color: '#0891b2', marginTop: 8, letterSpacing: 1,
+                                    textTransform: 'uppercase',
+                                }}>
+                                    Đưa mã QR Pallet vào khung hình
+                                </p>
+                            </div>
+                        )}
+
                         <ScanInput
                             placeholder="Quét mã DL-LOT-XXXXXX-XXX..."
                             onScan={handleScanPallet}
@@ -665,9 +796,94 @@ export default function MobileLotLabelsTab() {
 
                 {/* Scan label input */}
                 <div style={{ marginTop: 14 }}>
-                    <div style={{ fontSize: 10, fontWeight: 900, color: '#059669', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 8 }}>
-                        ▶ Quét mã Tem thùng để liên kết
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 900, color: '#059669', textTransform: 'uppercase', letterSpacing: 2 }}>
+                            {useCamera ? '📷 Camera đang quét Tem Thùng' : '▶ Quét mã Tem thùng để liên kết'}
+                        </div>
+                        <button
+                            onClick={() => { setUseCamera(!useCamera); setCameraError(null) }}
+                            style={{
+                                width: 36, height: 36, borderRadius: 10, border: 'none',
+                                background: useCamera ? '#059669' : '#f0fdf4',
+                                color: useCamera ? '#fff' : '#059669',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                cursor: 'pointer', transition: 'all 0.2s ease',
+                            }}
+                            title={useCamera ? 'Chuyển sang nhập tay' : 'Mở camera quét QR'}
+                        >
+                            {useCamera ? <Keyboard size={16} /> : <Camera size={16} />}
+                        </button>
                     </div>
+
+                    {/* Camera Scanner */}
+                    {useCamera && (
+                        <div style={{ marginBottom: 12 }}>
+                            <div style={{
+                                width: '100%', aspectRatio: '1', position: 'relative',
+                                background: '#000', borderRadius: 16, overflow: 'hidden',
+                                border: '2px solid #05966920',
+                            }}>
+                                {cameraError ? (
+                                    <div style={{
+                                        position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
+                                        alignItems: 'center', justifyContent: 'center', padding: 16,
+                                        background: '#f9fafb', textAlign: 'center',
+                                    }}>
+                                        <AlertCircle size={24} color="#ef4444" style={{ marginBottom: 8 }} />
+                                        <p style={{ fontSize: 11, fontWeight: 700, color: '#ef4444', marginBottom: 4 }}>Không thể mở camera</p>
+                                        <p style={{ fontSize: 9, color: '#a1a1aa', marginBottom: 12, lineHeight: 1.5 }}>
+                                            Hãy cấp quyền Camera cho trình duyệt trong cài đặt.
+                                        </p>
+                                        <button
+                                            onClick={() => { setCameraError(null); setUseCamera(false); setTimeout(() => setUseCamera(true), 100) }}
+                                            style={{
+                                                padding: '6px 14px', background: '#fff', border: '1.5px solid #e4e4e7',
+                                                borderRadius: 10, fontSize: 10, fontWeight: 800, cursor: 'pointer',
+                                            }}
+                                        >
+                                            Thử lại
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <Scanner
+                                        onScan={(result) => {
+                                            if (result && result.length > 0) {
+                                                handleCameraScanLabel(result[0].rawValue)
+                                            }
+                                        }}
+                                        onError={(error: any) => {
+                                            console.error('Camera Error:', error)
+                                            setCameraError(error?.message || 'Lỗi camera')
+                                        }}
+                                        styles={{ container: { width: '100%', height: '100%' } }}
+                                        components={{ finder: false }}
+                                        constraints={{ facingMode: 'environment' }}
+                                    />
+                                )}
+                                {isLinkingLabel && (
+                                    <div style={{
+                                        position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        borderRadius: 14, backdropFilter: 'blur(2px)',
+                                    }}>
+                                        <Loader2 size={24} color="#059669" className="animate-spin" />
+                                    </div>
+                                )}
+                                <div style={{
+                                    position: 'absolute', inset: 0, border: '2px solid rgba(5,150,105,0.3)',
+                                    borderRadius: 14, pointerEvents: 'none',
+                                }} />
+                            </div>
+                            <p style={{
+                                textAlign: 'center', fontSize: 10, fontWeight: 800,
+                                color: '#059669', marginTop: 8, letterSpacing: 1,
+                                textTransform: 'uppercase',
+                            }}>
+                                Đưa mã QR Tem Thùng vào khung hình
+                            </p>
+                        </div>
+                    )}
+
                     <ScanInput
                         placeholder="BOX-LXXXXXX-XXX..."
                         onScan={handleScanLabel}

@@ -13,6 +13,7 @@ import { useInboundOrder } from './useInboundOrder'
 import { OrderFormProps } from '@/components/inventory/types'
 
 export default function InboundOrderModal(props: OrderFormProps<any>) {
+    const isDuplicate = !!props.duplicateOrderId
     const {
         code, setCode,
         supplierId, handleSupplierChange,
@@ -65,10 +66,10 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
             title={
                 <>
                     <FileText className="text-orange-600" />
-                    {props.editOrderId ? 'Chỉnh Sửa Phiếu Nhập' : 'Tạo Phiếu Nhập Mới'}
+                    {props.editOrderId ? 'Chỉnh Sửa Phiếu Nhập' : isDuplicate ? 'Nhân Bản Phiếu Nhập' : 'Tạo Phiếu Nhập Mới'}
                 </>
             }
-            subtitle={props.editOrderId ? 'Cập nhật phiếu' : 'Tạo phiếu mới'}
+            subtitle={props.editOrderId ? 'Cập nhật phiếu' : isDuplicate ? 'Tạo phiếu mới từ phiếu gốc' : 'Tạo phiếu mới'}
             onClose={props.onClose}
             maxWidth={hasModule('inbound_ui_compact') ? 'max-w-5xl' : 'max-w-7xl'}
             headerActions={

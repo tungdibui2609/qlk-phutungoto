@@ -10,7 +10,7 @@ import { Product, Customer, Unit, OrderItem } from '../types'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
 import { lotService } from '@/services/warehouse/lotService'
 
-export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId }: any) {
+export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId, duplicateOrderId }: any) {
     const { showToast } = useToast()
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
@@ -70,13 +70,15 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             fetchData()
             if (editOrderId) {
                 fetchOrderDetails(editOrderId)
+            } else if (duplicateOrderId) {
+                fetchOrderDetails(duplicateOrderId, true)
             }
         } else {
             resetForm()
         }
-    }, [isOpen, systemCode, editOrderId])
+    }, [isOpen, systemCode, editOrderId, duplicateOrderId])
 
-    async function fetchOrderDetails(id: string) {
+    async function fetchOrderDetails(id: string, isDuplicate: boolean = false) {
         try {
             const { data: order, error } = await supabase
                 .from('outbound_orders')
@@ -87,7 +89,12 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             if (error) throw error
             if (!order) return
 
-            setCode(order.code)
+            if (!isDuplicate) {
+                setCode(order.code)
+            }
+            // Khi nhân bản, giữ ngày tạo hiện tại
+            if (!isDuplicate && order.created_at) setCreatedAt(order.created_at)
+
             setCustomerName(order.customer_name || '')
             setCustomerAddress(order.customer_address || '')
             setCustomerPhone(order.customer_phone || '')
@@ -104,7 +111,6 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 setContainerNumber(meta.containerNumber || '')
                 if (meta.targetUnit) setTargetUnit(meta.targetUnit)
             }
-            if (order.created_at) setCreatedAt(order.created_at)
 
             if (order.items) {
                 const formattedItems = order.items.map((i: any) => {
