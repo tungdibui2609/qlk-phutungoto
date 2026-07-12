@@ -22,6 +22,8 @@ export default function OutboundPage() {
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
+    const [startDate, setStartDate] = useState('')
+    const [endDate, setEndDate] = useState('')
     const [currentPage, setCurrentPage] = useState(0)
     const [totalCount, setTotalCount] = useState(0)
     const PAGE_SIZE = 20
@@ -83,8 +85,12 @@ export default function OutboundPage() {
         setBufferCount(count)
     }
 
-    async function fetchOrders(page?: number) {
+    async function fetchOrders(page?: number, overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string) {
         let activePage = page ?? currentPage
+        const _startDate = overrideStartDate !== undefined ? overrideStartDate : startDate;
+        const _endDate = overrideEndDate !== undefined ? overrideEndDate : endDate;
+        const _statusFilter = overrideStatus !== undefined ? overrideStatus : statusFilter;
+        
         setLoading(true)
         try {
             // Đếm tổng số phiếu
@@ -93,8 +99,14 @@ export default function OutboundPage() {
                 .select('*', { count: 'exact', head: true })
                 .eq('system_code', systemType)
 
-            if (statusFilter !== 'all') {
-                countQuery = countQuery.eq('status', statusFilter)
+            if (_statusFilter !== 'all') {
+                countQuery = countQuery.eq('status', _statusFilter)
+            }
+            if (_startDate) {
+                countQuery = countQuery.gte('created_at', `${_startDate}T00:00:00.000Z`)
+            }
+            if (_endDate) {
+                countQuery = countQuery.lte('created_at', `${_endDate}T23:59:59.999Z`)
             }
 
             const { count } = await countQuery
@@ -129,8 +141,14 @@ export default function OutboundPage() {
                 .order('created_at', { ascending: false })
                 .range(from, to);
 
-            if (statusFilter !== 'all') {
-                query = query.eq('status', statusFilter)
+            if (_statusFilter !== 'all') {
+                query = query.eq('status', _statusFilter)
+            }
+            if (_startDate) {
+                query = query.gte('created_at', `${_startDate}T00:00:00.000Z`)
+            }
+            if (_endDate) {
+                query = query.lte('created_at', `${_endDate}T23:59:59.999Z`)
             }
 
             const { data, error } = await query
@@ -143,16 +161,20 @@ export default function OutboundPage() {
         }
     }
 
-    const handleSearch = async () => {
+    const handleSearch = async (overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string) => {
         const cleanQuery = searchQuery.trim()
+        const _startDate = overrideStartDate !== undefined ? overrideStartDate : startDate;
+        const _endDate = overrideEndDate !== undefined ? overrideEndDate : endDate;
+        const _statusFilter = overrideStatus !== undefined ? overrideStatus : statusFilter;
+
         if (!cleanQuery) {
             setCurrentPage(0)
-            fetchOrders(0)
+            fetchOrders(0, _startDate, _endDate, _statusFilter)
             return
         }
         setLoading(true)
         try {
-            const { data, error } = await supabase
+            let query = supabase
                 .from('outbound_orders')
                 .select(`
                     *,
@@ -167,6 +189,18 @@ export default function OutboundPage() {
                 `)
                 .eq('system_code', systemType)
                 .or(`code.ilike.%${cleanQuery}%,customer_name.ilike.%${cleanQuery}%`)
+
+            if (_statusFilter !== 'all') {
+                query = query.eq('status', _statusFilter)
+            }
+            if (_startDate) {
+                query = query.gte('created_at', `${_startDate}T00:00:00.000Z`)
+            }
+            if (_endDate) {
+                query = query.lte('created_at', `${_endDate}T23:59:59.999Z`)
+            }
+
+            const { data, error } = await query
                 .order('created_at', { ascending: false })
                 .limit(100)
 
@@ -443,21 +477,62 @@ export default function OutboundPage() {
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                 />
                             </div>
-                            <select 
-                                className="w-full md:w-[180px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center]"
-                                value={statusFilter} 
-                                onChange={(e) => {
-                                    setStatusFilter(e.target.value);
-                                    setCurrentPage(0);
-                                    setTimeout(() => fetchOrders(0), 0);
-                                }}
-                            >
-                                <option value="all">Tất cả trạng thái</option>
-                                <option value="Pending">Chờ duyệt</option>
-                                <option value="Processing">Đang xử lý</option>
-                                <option value="Completed">Đã hoàn tất</option>
-                                <option value="Cancelled">Đã hủy</option>
-                            </select>
+                            <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
+                                <div className="flex items-center gap-2 w-full md:w-auto">
+                                    <input
+                                        type="date"
+                                        className="h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 w-full md:w-[130px] text-sm text-gray-600"
+                                        value={startDate}
+                                        onChange={(e) => {
+                                            const newVal = e.target.value;
+                                            setStartDate(newVal);
+                                            setCurrentPage(0);
+                                            if (searchQuery.trim()) handleSearch(newVal, endDate, statusFilter);
+                                            else fetchOrders(0, newVal, endDate, statusFilter);
+                                        }}
+                                        title="Từ ngày"
+                                    />
+                                    <span className="text-gray-400">-</span>
+                                    <input
+                                        type="date"
+                                        className="h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 w-full md:w-[130px] text-sm text-gray-600"
+                                        value={endDate}
+                                        onChange={(e) => {
+                                            const newVal = e.target.value;
+                                            setEndDate(newVal);
+                                            setCurrentPage(0);
+                                            if (searchQuery.trim()) handleSearch(startDate, newVal, statusFilter);
+                                            else fetchOrders(0, startDate, newVal, statusFilter);
+                                        }}
+                                        title="Đến ngày"
+                                    />
+                                </div>
+                                <select 
+                                    className="w-full md:w-[160px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center]"
+                                    value={statusFilter} 
+                                    onChange={(e) => {
+                                        const newVal = e.target.value;
+                                        setStatusFilter(newVal);
+                                        setCurrentPage(0);
+                                        if (searchQuery.trim()) handleSearch(startDate, endDate, newVal);
+                                        else fetchOrders(0, startDate, endDate, newVal);
+                                    }}
+                                >
+                                    <option value="all">Tất cả trạng thái</option>
+                                    <option value="Pending">Chờ duyệt</option>
+                                    <option value="Processing">Đang xử lý</option>
+                                    <option value="Completed">Đã hoàn tất</option>
+                                    <option value="Cancelled">Đã hủy</option>
+                                </select>
+                                <button 
+                                    id="search-trigger-outbound"
+                                    className="hidden" 
+                                    onClick={() => {
+                                        if (searchQuery.trim()) handleSearch();
+                                        else fetchOrders(0);
+                                    }}
+                                />
+                            </div>
                         </div>
                     </div>
                     
