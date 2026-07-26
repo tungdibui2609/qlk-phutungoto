@@ -67,6 +67,8 @@ export function useInventoryByLot(
         selectedZoneId?: string | null
         lockFilter?: 'all' | 'unlocked' | 'locked'
         viewMode?: 'lot' | 'month'
+        dateFrom?: string
+        dateTo?: string
     }
 ) {
     const [lots, setLots] = useState<Lot[]>([])
@@ -97,6 +99,9 @@ export function useInventoryByLot(
 
     const viewMode = externalFilters?.viewMode !== undefined ? externalFilters.viewMode : internalViewMode
     const setViewMode = externalFilters?.viewMode !== undefined ? (() => {}) : setInternalViewMode
+
+    const dateFrom = externalFilters?.dateFrom !== undefined ? externalFilters.dateFrom : ''
+    const dateTo = externalFilters?.dateTo !== undefined ? externalFilters.dateTo : ''
 
     const selectedCategoryIds = externalFilters?.selectedCategoryIds || []
     const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
@@ -407,11 +412,34 @@ export function useInventoryByLot(
             })
         }
 
+        const fromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null
+        const toTime = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null
+
         const filteredLots = lots.filter(lot => {
             if (lockFilter === 'locked') {
                 if (!lot.is_locked) return false
             } else if (lockFilter === 'unlocked') {
                 if (lot.is_locked) return false
+            }
+
+            if (fromTime || toTime) {
+                const lotDateRaw = lot.inbound_date || lot.created_at || lot.production_date || lot.packaging_date
+                if (!lotDateRaw) return false
+
+                let lotTime: number | null = null
+                let str = String(lotDateRaw).trim()
+                if (str.length === 10 && str.includes('-')) {
+                    str += 'T00:00:00'
+                }
+                const d = new Date(str)
+                if (!isNaN(d.getTime())) {
+                    lotTime = d.getTime()
+                }
+
+                if (lotTime !== null) {
+                    if (fromTime && lotTime < fromTime) return false
+                    if (toTime && lotTime > toTime) return false
+                }
             }
 
             if (selectedZoneId) {
@@ -591,7 +619,7 @@ export function useInventoryByLot(
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter, viewMode])
+    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter, viewMode, dateFrom, dateTo])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)

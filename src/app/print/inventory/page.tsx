@@ -583,6 +583,28 @@ export default function PrintInventoryPage() {
                         })
                     }
 
+                    if (dateFrom || dateTo) {
+                        const fromTime = dateFrom ? new Date(`${dateFrom}T00:00:00`).getTime() : null
+                        const toTime = dateTo ? new Date(`${dateTo}T23:59:59.999`).getTime() : null
+
+                        mapped = mapped.filter((item: any) => {
+                            const itemDateRaw = item.inboundDate || item.createdAt || item.productionDate || item.packagingDate
+                            if (!itemDateRaw) return false
+
+                            let itemTime: number | null = null
+                            let str = String(itemDateRaw).trim()
+                            if (str.length === 10 && str.includes('-')) str += 'T00:00:00'
+                            const d = new Date(str)
+                            if (!isNaN(d.getTime())) itemTime = d.getTime()
+
+                            if (itemTime !== null) {
+                                if (fromTime && itemTime < fromTime) return false
+                                if (toTime && itemTime > toTime) return false
+                            }
+                            return true
+                        })
+                    }
+
                     const filtered = mapped.filter((item: any) => {
                         if (!searchTerm) return true
 
@@ -850,15 +872,34 @@ export default function PrintInventoryPage() {
         handleCapture(false, `ton-kho-${reportDate}.jpg`)
     }
 
-    const handleExportExcel = async () => {
-        let dateTitle = ''
-        if (type === 'accounting') {
-            dateTitle = `Từ ngày: ${dateFrom ? new Date(dateFrom).toLocaleDateString('vi-VN') : '...'} đến ngày: ${new Date(dateTo).toLocaleDateString('vi-VN')}`
-        } else if (type === 'lot') {
-            dateTitle = `Ngày báo cáo: ${new Date(dateTo).toLocaleDateString('vi-VN')}`
-        } else {
-            dateTitle = `Ngày báo cáo: ${new Date().toLocaleDateString('vi-VN')}`
+    const formatDateStr = (dStr?: string) => {
+        if (!dStr) return ''
+        try {
+            const parts = dStr.split('T')[0].split('-')
+            if (parts.length === 3) {
+                return `${parts[2]}/${parts[1]}/${parts[0]}`
+            }
+            return new Date(dStr).toLocaleDateString('vi-VN')
+        } catch {
+            return dStr
         }
+    }
+
+    const getDateTitle = () => {
+        const fStr = formatDateStr(dateFrom)
+        const tStr = formatDateStr(dateTo)
+        if (fStr && tStr) {
+            return `Từ ngày: ${fStr} đến ngày: ${tStr}`
+        } else if (fStr) {
+            return `Từ ngày: ${fStr}`
+        } else if (tStr) {
+            return `Tính đến ngày: ${tStr}`
+        }
+        return `Tính đến ngày: ${new Date().toLocaleDateString('vi-VN')}`
+    }
+
+    const handleExportExcel = async () => {
+        const dateTitle = getDateTitle()
 
         await exportInventoryReportToExcel({
             type: type as any,
@@ -978,16 +1019,9 @@ export default function PrintInventoryPage() {
                 </div>
 
                 {/* Date Range info */}
-                {type === 'accounting' && (
-                    <p className="italic mt-1">
-                        Từ ngày {new Date(dateFrom || new Date()).toLocaleDateString('vi-VN')} đến ngày {new Date(dateTo).toLocaleDateString('vi-VN')}
-                    </p>
-                )}
-                {(type === 'lot' || type === 'category' || type === 'tags' || type === 'labels' || type === 'reconciliation') && (
-                    <p className="italic mt-1">
-                        Tính đến ngày {new Date(dateTo).toLocaleDateString('vi-VN')}
-                    </p>
-                )}
+                <p className="italic mt-1">
+                    {getDateTitle()}
+                </p>
             </div>
 
             {/* Content Table */}

@@ -90,7 +90,9 @@ export default function InventoryPage() {
         targetUnitId: targetUnitId,
         selectedZoneId: selectedZoneId,
         lockFilter: lockFilter,
-        viewMode: viewMode
+        viewMode: viewMode,
+        dateFrom: dateFrom,
+        dateTo: dateTo
     })
 
     // Load Branches
@@ -141,22 +143,7 @@ export default function InventoryPage() {
         setSelectedCategoryIds([]) // Reset selected categories when system changes
     }, [systemType])
 
-    // Date defaults
-    useEffect(() => {
-        const formatDate = (date: Date) => {
-            const year = date.getFullYear()
-            const month = String(date.getMonth() + 1).padStart(2, '0')
-            const day = String(date.getDate()).padStart(2, '0')
-            return `${year}-${month}-${day}`
-        }
 
-        const now = new Date()
-        const sevenDaysAgo = new Date(now)
-        sevenDaysAgo.setDate(now.getDate() - 7)
-
-        setDateFrom(formatDate(sevenDaysAgo))
-        setDateTo(formatDate(now))
-    }, [])
 
     // Load Inventory Data
     const loadInventory = async () => {
@@ -293,16 +280,16 @@ export default function InventoryPage() {
                     </div>
 
                     {/* Row 2: Warehouse, Dates, Units & Actions */}
-                    <div className="flex flex-col lg:flex-row gap-4 items-start lg:items-end">
+                    <div className="flex flex-wrap gap-4 items-end">
                         {/* Branch */}
-                        <div className="w-full sm:w-auto lg:w-64">
+                        <div className="flex-1 min-w-[180px] max-w-xs">
                             <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Chi nhánh / Kho</label>
                             <div className="relative">
                                 <Warehouse className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
                                 <select
                                     value={selectedBranch}
                                     onChange={e => setSelectedBranch(e.target.value)}
-                                    className="w-full pl-9 pr-10 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                    className="w-full pl-9 pr-10 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                                 >
                                     <option value="Tất cả">Tất cả chi nhánh</option>
                                     {branches.map(b => (
@@ -315,13 +302,13 @@ export default function InventoryPage() {
 
                         {/* Lock Filter */}
                         {(activeTab === 'lot' || activeTab === 'category') && (
-                            <div className="w-full sm:w-auto lg:w-48">
+                            <div className="flex-1 min-w-[160px] max-w-xs">
                                 <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Trạng thái khóa</label>
                                 <div className="relative">
                                     <select
                                         value={lockFilter}
                                         onChange={e => setLockFilter(e.target.value as any)}
-                                        className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                        className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                                     >
                                         <option value="all">Tất cả LOT</option>
                                         <option value="unlocked">Chưa khóa (Hoạt động)</option>
@@ -334,13 +321,13 @@ export default function InventoryPage() {
 
                         {/* View Mode Filter */}
                         {activeTab === 'lot' && (
-                            <div className="w-full sm:w-auto lg:w-48">
+                            <div className="flex-1 min-w-[170px] max-w-xs">
                                 <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Kiểu hiển thị</label>
                                 <div className="relative">
                                     <select
                                         value={viewMode}
                                         onChange={e => setViewMode(e.target.value as any)}
-                                        className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                        className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                                     >
                                         <option value="lot">Mặc định (Theo Lot)</option>
                                         <option value="month">Theo Tháng sản xuất</option>
@@ -351,40 +338,40 @@ export default function InventoryPage() {
                         )}
 
                         {/* Dates */}
-                        <div className="flex flex-row gap-4 w-full sm:w-auto">
-                            {activeTab === 'accounting' && (
-                                <div className="flex-1 sm:w-40">
-                                    <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Từ ngày</label>
-                                    <input
-                                        type="date"
-                                        value={dateFrom}
-                                        onChange={e => setDateFrom(e.target.value)}
-                                        className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                    />
-                                </div>
-                            )}
-                            <div className="flex-1 sm:w-40">
+                        <div className="flex flex-wrap gap-2 flex-1 min-w-[280px] max-w-md">
+                            <div className="flex-1 min-w-[130px]">
                                 <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">
-                                    {activeTab === 'accounting' ? 'Đến ngày' : 'Ngày báo cáo'}
+                                    {activeTab !== 'accounting' ? 'Từ ngày nhập' : 'Từ ngày'}
+                                </label>
+                                <input
+                                    type="date"
+                                    value={dateFrom}
+                                    onChange={e => setDateFrom(e.target.value)}
+                                    className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                />
+                            </div>
+                            <div className="flex-1 min-w-[130px]">
+                                <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">
+                                    {activeTab !== 'accounting' ? 'Đến ngày nhập' : 'Đến ngày'}
                                 </label>
                                 <input
                                     type="date"
                                     value={dateTo}
                                     onChange={e => setDateTo(e.target.value)}
-                                    className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    className="w-full px-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500"
                                 />
                             </div>
                         </div>
 
                         {/* Unit & Actions */}
-                        <div className="flex items-end gap-4 w-full sm:w-auto">
-                            <div className="flex-1 min-w-[140px]">
+                        <div className="flex items-end gap-3 flex-wrap">
+                            <div className="min-w-[140px]">
                                 <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Quy đổi</label>
                                 <div className="relative">
                                     <select
                                         value={targetUnitId || ''}
                                         onChange={e => setTargetUnitId(e.target.value || null)}
-                                        className="w-full pr-8 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                                        className="w-full pr-8 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                                     >
                                         <option value="">Đơn vị gốc</option>
                                         {units.map(u => (
