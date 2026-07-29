@@ -151,10 +151,10 @@ export default function InboundPage() {
                 countQuery = countQuery.eq('status', _statusFilter)
             }
             if (_startDate) {
-                countQuery = countQuery.gte('created_at', `${_startDate}T00:00:00.000Z`)
+                countQuery = countQuery.gte('created_at', new Date(`${_startDate}T00:00:00`).toISOString())
             }
             if (_endDate) {
-                countQuery = countQuery.lte('created_at', `${_endDate}T23:59:59.999Z`)
+                countQuery = countQuery.lte('created_at', new Date(`${_endDate}T23:59:59.999`).toISOString())
             }
 
             const { count } = await countQuery
@@ -194,10 +194,10 @@ export default function InboundPage() {
                 query = query.eq('status', _statusFilter)
             }
             if (_startDate) {
-                query = query.gte('created_at', `${_startDate}T00:00:00.000Z`)
+                query = query.gte('created_at', new Date(`${_startDate}T00:00:00`).toISOString())
             }
             if (_endDate) {
-                query = query.lte('created_at', `${_endDate}T23:59:59.999Z`)
+                query = query.lte('created_at', new Date(`${_endDate}T23:59:59.999`).toISOString())
             }
 
             const { data, error } = await query
@@ -262,10 +262,10 @@ export default function InboundPage() {
                 query = query.eq('status', _statusFilter)
             }
             if (_startDate) {
-                query = query.gte('created_at', `${_startDate}T00:00:00.000Z`)
+                query = query.gte('created_at', new Date(`${_startDate}T00:00:00`).toISOString())
             }
             if (_endDate) {
-                query = query.lte('created_at', `${_endDate}T23:59:59.999Z`)
+                query = query.lte('created_at', new Date(`${_endDate}T23:59:59.999`).toISOString())
             }
 
             const { data, error } = await query

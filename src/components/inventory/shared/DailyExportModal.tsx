@@ -32,8 +32,8 @@ export default function DailyExportModal({ isOpen, onClose, type }: DailyExportM
 
         setLoading(true)
         try {
-            const start = `${startDate}T00:00:00Z`
-            const end = `${endDate}T23:59:59Z`
+            const start = new Date(`${startDate}T00:00:00`).toISOString()
+            const end = new Date(`${endDate}T23:59:59.999`).toISOString()
 
             let items: any[] = []
 
