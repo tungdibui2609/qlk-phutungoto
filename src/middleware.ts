@@ -62,15 +62,19 @@ export async function middleware(request: NextRequest) {
     const path = url.pathname
 
     // CUSTOM DOMAIN LOGIC
-    let hostname = request.headers.get('host')!
+    let hostname = request.headers.get('host') || ''
 
     // Normalize hostname by removing www. prefix if present
     if (hostname.startsWith('www.')) {
         hostname = hostname.replace('www.', '')
     }
 
-    // Simple check: assume 'localhost' and 'vercel.app' are NOT custom domains
-    const isCustomDomain = !hostname.includes('localhost') && !hostname.includes('vercel.app') && !hostname.includes('toanthang.vn') && !hostname.includes('ngrok-free.dev') && !hostname.includes('ngrok.io')
+    // Check if hostname is an IP address (e.g. 10.0.1.9, 192.168.x.x, 127.0.0.1)
+    const hostWithoutPort = hostname.split(':')[0]
+    const isIpAddress = /^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$/.test(hostWithoutPort)
+
+    // Simple check: assume 'localhost', IP addresses, and default domains are NOT custom domains
+    const isCustomDomain = !isIpAddress && !hostname.includes('localhost') && !hostname.includes('vercel.app') && !hostname.includes('toanthang.vn') && !hostname.includes('ngrok-free.dev') && !hostname.includes('ngrok.io')
 
     if (isCustomDomain && !path.startsWith('/_next') && !path.startsWith('/static')) {
         // Use Service Role for Lookup to bypass RLS issues
