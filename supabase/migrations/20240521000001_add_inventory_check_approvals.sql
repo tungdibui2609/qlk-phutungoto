@@ -4,6 +4,9 @@ alter table public.inventory_checks
     add column if not exists rejection_reason text,
     add column if not exists approval_status text check (approval_status in ('PENDING', 'APPROVED', 'REJECTED')) default 'PENDING';
 
+alter table public.inventory_check_items
+    add column if not exists reviewer_note text;
+
 -- Update check constraint for status
 alter table public.inventory_checks
     drop constraint if exists inventory_checks_status_check;

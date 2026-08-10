@@ -1,4 +1,4 @@
--- Migration to add get_unassigned_lots RPC function
+ALTER TABLE lots ADD COLUMN IF NOT EXISTS system_code text;
 
 CREATE OR REPLACE FUNCTION get_unassigned_lots(p_system_code TEXT)
 RETURNS SETOF lots

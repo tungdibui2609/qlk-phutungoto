@@ -1,9 +1,12 @@
 -- SQL GIẢI PHÁP CHẮC CHẮN: Phục hồi sản lượng từ lịch sử Metadata và dữ liệu hiện tại
 -- Lệnh này khắc phục lỗi "column quantity does not exist" do bảng production_lots không lưu trữ số lượng
 
--- 1. Đảm bảo bảng lot_items có cột initial_quantity
+-- 1. Đảm bảo bảng lot_items có cột initial_quantity và lots có cột metadata
 ALTER TABLE public.lot_items 
 ADD COLUMN IF NOT EXISTS initial_quantity numeric DEFAULT 0;
+
+ALTER TABLE public.lots
+ADD COLUMN IF NOT EXISTS metadata jsonb DEFAULT '{}'::jsonb;
 
 -- 2. PHỤC HỒI DỮ LIỆU THÔNG QUA METADATA (DÀNH CHO DỮ LIỆU ĐÃ XUẤT KHO)
 -- Chúng ta bóc tách lịch sử xuất từ lots.metadata và bảng loans để tìm lại các pallet đã biến mất

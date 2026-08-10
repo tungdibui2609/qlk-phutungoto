@@ -8,7 +8,7 @@ ADD COLUMN IF NOT EXISTS planned_quantity DECIMAL DEFAULT NULL;
 COMMENT ON COLUMN public.production_lots.planned_quantity IS 'Số lượng sản xuất dự kiến cho sản phẩm này trong lệnh';
 
 -- 2. Tạo View thống kê sản lượng thực tế
--- View này sẽ join từ production_lots đến lots và lot_items để tính tổng quantity đã nhập kho
+DROP VIEW IF EXISTS public.production_item_statistics CASCADE;
 CREATE OR REPLACE VIEW public.production_item_statistics AS
 SELECT 
     pl.id as production_lot_id,

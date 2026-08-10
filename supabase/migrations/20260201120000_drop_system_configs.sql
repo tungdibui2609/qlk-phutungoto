@@ -9,6 +9,10 @@ BEGIN
     ALTER TABLE systems ADD COLUMN IF NOT EXISTS dashboard_modules text[] DEFAULT ARRAY[]::text[];
     ALTER TABLE systems ADD COLUMN IF NOT EXISTS lot_modules text[] DEFAULT ARRAY[]::text[];
 
+    -- 1b. Ensure system_configs has the columns if not present
+    ALTER TABLE system_configs ADD COLUMN IF NOT EXISTS dashboard_modules jsonb DEFAULT '[]'::jsonb;
+    ALTER TABLE system_configs ADD COLUMN IF NOT EXISTS lot_modules jsonb DEFAULT '[]'::jsonb;
+
     -- 2. Migrate using a type-agnostic approach:
     -- We convert everything to JSONB first using (to_jsonb), then extract text elements into an array.
     -- This works whether the source column is JSONB or TEXT[].

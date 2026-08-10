@@ -41,9 +41,9 @@ BEGIN
     -- However, to allow "Cafe" tag in Company A and "Cafe" tag in Company B, we need company_id in PK.
     -- If company_id is NULLable, standard SQL unique index allows multiple NULLs in strict sense but PK doesn't allow NULLs.
     -- So we should probably make it NOT NULL if we want it in PK.
-    
     IF default_company_id IS NOT NULL THEN
-        ALTER TABLE public.master_tags ALTER COLUMN company_id SET DEFAULT default_company_id;
+        EXECUTE format('ALTER TABLE public.master_tags ALTER COLUMN company_id SET DEFAULT %L', default_company_id);
+
         ALTER TABLE public.master_tags ALTER COLUMN company_id SET NOT NULL;
         
         ALTER TABLE public.master_tags ADD PRIMARY KEY (name, system_code, company_id);

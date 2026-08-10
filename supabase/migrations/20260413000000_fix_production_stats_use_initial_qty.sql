@@ -12,6 +12,17 @@
 ALTER TABLE public.lot_items 
 ADD COLUMN IF NOT EXISTS initial_quantity numeric DEFAULT 0;
 
+CREATE TABLE IF NOT EXISTS public.export_task_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    task_id UUID,
+    lot_id UUID,
+    product_id UUID,
+    quantity NUMERIC DEFAULT 0,
+    unit TEXT,
+    metadata JSONB DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- Cập nhật initial_quantity cho lot_items hiện có (chưa có giá trị)
 UPDATE public.lot_items 
 SET initial_quantity = quantity 

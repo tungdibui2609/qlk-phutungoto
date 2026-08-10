@@ -1,4 +1,17 @@
-project_id = "toanthang"
+project_id = "anywarehouse"
+
+[api]
+port = 64321
 
 [db]
-port = 54323
+port = 64322
+
+[studio]
+port = 64323
+
+[local_smtp]
+port = 64324
+
+[analytics]
+enabled = false
+

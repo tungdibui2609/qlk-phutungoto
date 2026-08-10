@@ -1,3 +1,2 @@
-Lỗi
-
-Lỗi xóa công ty: Failed to delete company record: update or delete on table "systems"
+-- Fix user profile references migration placeholder
+-- (Original file contained non-SQL error log)

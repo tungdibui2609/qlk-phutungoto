@@ -1,5 +1,6 @@
 -- Migration: Backfill Basic Modules
 -- Description: Adds 'is_basic' modules to all companies unlocked_modules array if missing.
+ALTER TABLE companies ADD COLUMN IF NOT EXISTS unlocked_modules text[] DEFAULT ARRAY[]::text[];
 
 UPDATE companies
 SET unlocked_modules = (
