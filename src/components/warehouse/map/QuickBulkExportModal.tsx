@@ -382,8 +382,8 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                 <div className="px-6 py-2 border-t border-slate-100 dark:border-slate-800 flex-1 overflow-y-auto custom-scrollbar">
                     {/* Auto Allocation Summary */}
                     {aggregatedDisplayItems.length > 0 && (
-                        <div className="mt-4 bg-orange-50 dark:bg-orange-950/30 rounded-2xl p-4 border border-orange-200 dark:border-orange-900/50">
-                            <h4 className="text-xs font-bold text-orange-600 dark:text-orange-400 uppercase mb-3 flex items-center gap-2">
+                        <div className="mt-4 bg-emerald-50 dark:bg-emerald-950/30 rounded-2xl p-4 border border-emerald-200 dark:border-emerald-900/50">
+                            <h4 className="text-xs font-bold text-emerald-800 dark:text-emerald-300 uppercase mb-3 flex items-center gap-2">
                                 Nhập Tự Động Phân Bổ Số Lượng
                             </h4>
                             <div className="space-y-2">
@@ -393,16 +393,16 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                                         .reduce((sum, i) => sum + (exportQuantities[i.uid] || 0), 0)
 
                                     return (
-                                        <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-sm py-2 border-b border-orange-100 dark:border-orange-900/30 last:border-0 gap-3">
+                                        <div key={idx} className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-sm py-2 border-b border-emerald-100 dark:border-emerald-900/30 last:border-0 gap-3">
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <span className="px-1.5 py-0.5 bg-orange-200 dark:bg-orange-900 text-orange-800 dark:text-orange-200 rounded text-[10px] font-bold font-mono shrink-0">
+                                                <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900 text-emerald-800 dark:text-emerald-200 rounded text-[10px] font-bold font-mono shrink-0">
                                                     {group.sku}
                                                 </span>
                                                 <span className="font-bold text-slate-800 dark:text-slate-200 truncate">
                                                     {group.name}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center gap-2 shrink-0 bg-white dark:bg-slate-900 border border-orange-300 dark:border-orange-700/50 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-orange-500 focus-within:border-orange-500 transition-all shadow-sm">
+                                            <div className="flex items-center gap-2 shrink-0 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700/50 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500 focus-within:border-emerald-500 transition-all shadow-sm">
                                                 <input 
                                                     type="number" 
                                                     min={0}
@@ -416,7 +416,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                                                             handleAutoAllocate(group.sku, group.unit, 0)
                                                         }
                                                     }}
-                                                    className="w-24 px-3 py-2 text-right font-bold text-orange-600 bg-transparent focus:outline-none appearance-none"
+                                                    className="w-24 px-3 py-2 text-right font-bold text-emerald-700 bg-transparent focus:outline-none appearance-none"
                                                     placeholder="Gõ số tổng..."
                                                 />
                                                 <span className="text-slate-400 font-bold whitespace-nowrap pr-3 text-[10px] uppercase">
@@ -477,7 +477,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-1.5 text-left">
                                 <label className="text-xs font-bold text-slate-400 uppercase ml-1 flex items-center gap-1.5">
-                                    <FileText size={12} className="text-orange-500" />
+                                    <FileText size={12} className="text-emerald-600" />
                                     Lệnh sản xuất liên kết
                                 </label>
                                 <div className="relative">
@@ -491,7 +491,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                                         }}
                                         onFocus={() => setShowProductionSuggestions(true)}
                                         onBlur={() => setTimeout(() => setShowProductionSuggestions(false), 200)}
-                                        className="w-full p-3 rounded-2xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-200/50 dark:border-orange-800/30 focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all font-medium text-sm placeholder:text-orange-900/30 dark:placeholder:text-orange-400/30"
+                                        className="w-full p-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-200/50 dark:border-emerald-800/30 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all font-medium text-sm placeholder:text-emerald-900/30 dark:placeholder:text-emerald-400/30"
                                         placeholder="Chọn lệnh sản xuất (nếu có)..."
                                     />
                                     {showProductionSuggestions && (
@@ -510,14 +510,14 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                                                             setShowProductionSuggestions(false)
                                                             if (!description || description === 'Xuất kho nhanh (Sơ đồ)') setDescription('Xuất sản xuất')
                                                         }}
-                                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors group ${selectedProductionId === p.id ? 'bg-orange-500 text-white' : 'hover:bg-orange-50 dark:hover:bg-orange-900/20'}`}
+                                                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-colors group ${selectedProductionId === p.id ? 'bg-emerald-600 text-white' : 'hover:bg-emerald-50 dark:hover:bg-emerald-900/20'}`}
                                                     >
-                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${selectedProductionId === p.id ? 'bg-white/20' : 'bg-orange-100 dark:bg-orange-900/30 text-orange-600'}`}>
+                                                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors ${selectedProductionId === p.id ? 'bg-white/20' : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600'}`}>
                                                             <FileText size={16} />
                                                         </div>
                                                         <div className="flex-1 min-w-0">
                                                             <div className={`font-bold truncate ${selectedProductionId === p.id ? 'text-white' : 'text-slate-900 dark:text-slate-100'}`}>{p.code}</div>
-                                                            <div className={`text-[10px] truncate ${selectedProductionId === p.id ? 'text-orange-100' : 'text-slate-500'}`}>{p.name}</div>
+                                                            <div className={`text-[10px] truncate ${selectedProductionId === p.id ? 'text-emerald-100' : 'text-slate-500'}`}>{p.name}</div>
                                                         </div>
                                                     </button>
                                                 ))}

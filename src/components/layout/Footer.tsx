@@ -6,8 +6,8 @@ export default function Footer() {
                     © {new Date().getFullYear()} <span className="font-semibold text-stone-700">AnyWarehouse</span>. All rights reserved.
                 </p>
                 <div className="flex items-center gap-4 md:gap-6 text-sm text-stone-500">
-                    <a href="#" className="hover:text-orange-600 transition-colors">Hỗ trợ</a>
-                    <a href="#" className="hover:text-orange-600 transition-colors">Điều khoản</a>
+                    <a href="#" className="hover:text-emerald-600 transition-colors">Hỗ trợ</a>
+                    <a href="#" className="hover:text-emerald-600 transition-colors">Điều khoản</a>
                     <span className="text-stone-300">|</span>
                     <span>Version 1.0.0</span>
                 </div>

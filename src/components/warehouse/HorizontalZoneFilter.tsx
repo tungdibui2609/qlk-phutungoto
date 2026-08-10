@@ -228,7 +228,7 @@ export default function HorizontalZoneFilter({
                     className={`
                         ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-lg text-sm font-bold uppercase transition-all
                         ${!activeLevel0
-                            ? 'bg-blue-600 text-white shadow-md'
+                            ? 'bg-emerald-600 text-white shadow-md'
                             : 'bg-white dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
                         }
                     `}
@@ -244,7 +244,7 @@ export default function HorizontalZoneFilter({
                             className={`
                                 ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-lg text-sm font-bold uppercase transition-all
                                 ${isActive
-                                    ? 'bg-blue-600 text-white shadow-md'
+                                    ? 'bg-emerald-600 text-white shadow-md'
                                     : 'bg-white dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
                                 }
                             `}
@@ -268,7 +268,7 @@ export default function HorizontalZoneFilter({
                                 className={`
                                     whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors
                                     ${!activeLevel1
-                                        ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+                                        ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 font-bold'
                                         : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800'
                                     }
                                 `}
@@ -285,7 +285,7 @@ export default function HorizontalZoneFilter({
                                         className={`
                                             whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors
                                             ${isActive
-                                                ? 'bg-white shadow-sm text-blue-700 font-bold ring-1 ring-blue-200 dark:bg-gray-800 dark:text-blue-300 dark:ring-blue-900'
+                                                ? 'bg-white shadow-sm text-emerald-800 font-bold ring-1 ring-emerald-300 dark:bg-gray-800 dark:text-emerald-300 dark:ring-emerald-800'
                                                 : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800'
                                             }
                                         `}
@@ -308,7 +308,7 @@ export default function HorizontalZoneFilter({
                                     <select
                                         value={lvl.activeId}
                                         onChange={(e) => handleDropdownSelect(e.target.value, lvl.parentId)}
-                                        className={`appearance-none pl-3 pr-8 ${compact ? 'py-1' : 'py-1.5'} bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[140px] focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer hover:border-blue-400 transition-colors shadow-sm`}
+                                        className={`appearance-none pl-3 pr-8 ${compact ? 'py-1' : 'py-1.5'} bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-md text-sm min-w-[140px] focus:ring-2 focus:ring-emerald-500 outline-none cursor-pointer hover:border-emerald-400 transition-colors shadow-sm`}
                                     >
                                         <option value="">Tất cả {lvl.level === 2 ? 'Ô' : lvl.level === 3 ? 'Tầng' : lvl.level === 4 ? 'Dãy' : 'Zone'}</option>
                                         {lvl.children.map(c => (
@@ -335,7 +335,7 @@ export default function HorizontalZoneFilter({
                                 value={searchTerm}
                                 onChange={(e) => onSearchChange(e.target.value)}
                                 placeholder="Tìm kiếm mã LOT, SP, ghi chú, vị trí, tag..."
-                                className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white dark:bg-gray-800"
+                                className="w-full pl-9 pr-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-md text-sm focus:ring-2 focus:ring-emerald-500 outline-none bg-white dark:bg-gray-800"
                             />
                             {searchTerm && (
                                 <button
@@ -347,7 +347,7 @@ export default function HorizontalZoneFilter({
                             )}
                         </div>
 
-                        <button className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
+                        <button className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-md shadow-sm transition-colors">
                             Tìm
                         </button>
                     </div>

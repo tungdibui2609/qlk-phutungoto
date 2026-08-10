@@ -2,6 +2,7 @@ project_id = "anywarehouse"
 
 [api]
 port = 64321
+max_rows = 10000
 
 [db]
 port = 64322

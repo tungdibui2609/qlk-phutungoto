@@ -72,17 +72,17 @@ export function LotFilter({
             {/* Row 1: Search, Status & Date Filters (Consolidated for space) */}
             <div className="flex flex-wrap items-center gap-2 w-full">
                 {/* Search - Flexible & Primary */}
-                <div className="relative flex-[3.5] min-w-[280px] flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-500 transition-all">
+                <div className="relative flex-[3.5] min-w-[280px] flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
                     <div className="flex items-center border-r border-slate-200 dark:border-slate-700 px-2 lg:px-3">
                         {searchMode === 'all' && <Layers size={14} className="text-slate-400 mr-1.5" />}
-                        {searchMode === 'name' && <Package size={14} className="text-blue-500 mr-1.5" />}
+                        {searchMode === 'name' && <Package size={14} className="text-emerald-600 mr-1.5" />}
                         {searchMode === 'code' && <Hash size={14} className="text-purple-500 mr-1.5" />}
-                        {searchMode === 'tag' && <Tag size={14} className="text-emerald-500 mr-1.5" />}
-                        {searchMode === 'position' && <MapPin size={14} className="text-orange-500 mr-1.5" />}
+                        {searchMode === 'tag' && <Tag size={14} className="text-amber-500 mr-1.5" />}
+                        {searchMode === 'position' && <MapPin size={14} className="text-emerald-600 mr-1.5" />}
                         {searchMode === 'category' && <LayoutGrid size={14} className="text-indigo-500 mr-1.5" />}
                         {searchMode === 'production' && <ClipboardList size={14} className="text-rose-500 mr-1.5" />}
-                        {searchMode === 'stt' && <Hash size={14} className="text-orange-500 mr-1.5" />}
-                        {searchMode === 'box_count' && <Layers size={14} className="text-emerald-500 mr-1.5" />}
+                        {searchMode === 'stt' && <Hash size={14} className="text-emerald-600 mr-1.5" />}
+                        {searchMode === 'box_count' && <Layers size={14} className="text-teal-500 mr-1.5" />}
                         
                         <select
                             value={searchMode}
@@ -138,7 +138,7 @@ export function LotFilter({
                             <button
                                 type="button"
                                 onClick={() => setIsHelpOpen(true)}
-                                className="text-slate-400 hover:text-orange-500 transition-colors rounded-full p-1"
+                                className="text-slate-400 hover:text-emerald-600 transition-colors rounded-full p-1"
                                 title="Hướng dẫn tìm kiếm"
                             >
                                 <HelpCircle size={14} />
@@ -146,7 +146,7 @@ export function LotFilter({
                             <button
                                 type="button"
                                 onClick={handleSearch}
-                                className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
                             >
                                 <Search size={12} />
                                 Tìm
@@ -159,8 +159,8 @@ export function LotFilter({
                 {/* Extra Filters Wrapper - Groups them to wrap together and fills space */}
                 <div className={`${showMobileFilters ? 'flex' : 'hidden lg:flex'} flex-wrap items-center gap-2 flex-[4]`}>
                     {/* Position Assignment Status - Smaller */}
-                    <div className="flex items-center gap-1.5 bg-blue-50/50 dark:bg-blue-900/20 px-2 py-1.5 rounded-xl border border-blue-100 dark:border-blue-800/50 min-w-[120px]">
-                        <Warehouse size={12} className="text-blue-500 shrink-0" />
+                    <div className="flex items-center gap-1.5 bg-emerald-50/50 dark:bg-emerald-950/20 px-2 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800/50 min-w-[120px]">
+                        <Warehouse size={12} className="text-emerald-600 shrink-0" />
                         <select
                             value={positionFilter}
                             onChange={(e) => onPositionFilterChange(e.target.value as any)}
@@ -173,8 +173,8 @@ export function LotFilter({
                     </div>
 
                     {/* Lock Status Filter */}
-                    <div className="flex items-center gap-1.5 bg-rose-50/50 dark:bg-rose-900/20 px-2 py-1.5 rounded-xl border border-rose-100 dark:border-rose-800/50 min-w-[110px]">
-                        <Filter size={12} className="text-rose-500 shrink-0" />
+                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 min-w-[110px]">
+                        <Filter size={12} className="text-slate-500 shrink-0" />
                         <select
                             value={lockFilter}
                             onChange={(e) => onLockFilterChange(e.target.value as any)}
@@ -210,7 +210,7 @@ export function LotFilter({
             {/* Cascading Zone Filter */}
             <div className="space-y-1.5 pt-1">
                 <div className="flex items-center gap-2 px-1">
-                    <div className="w-1 h-4 bg-orange-500 rounded-full" />
+                    <div className="w-1 h-4 bg-emerald-500 rounded-full" />
                     <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Khu vực / Dãy hàng</span>
                 </div>
                 <HorizontalZoneFilter

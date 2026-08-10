@@ -765,8 +765,8 @@ function WarehouseMapContent() {
 
     if (!systemType) return <div>Vui lòng chọn kho hàng.</div>
     if (loading && positions.length === 0) return (
-        <div className="flex items-center justify-center min-h-100">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+        <div className="flex items-center justify-center min-h-screen">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
         </div>
     )
     if (errorMsg) return (
@@ -940,7 +940,7 @@ function WarehouseMapContent() {
                                     // Mở Cấp 2: Show hết sạch
                                     setCollapsedZones(new Set())
                                 }}
-                                className="px-3 py-2 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800"
+                                className="px-3 py-2 rounded-full text-xs hover:bg-slate-100 dark:hover:bg-slate-800 transition ml-1 flex items-center gap-1 font-medium bg-emerald-50 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
                                 title="Mở bung toàn bộ mọi Vị trí"
                             >
                                 <ChevronDown size={14} />
@@ -1154,7 +1154,7 @@ function WarehouseMapContent() {
 
 export default function WarehouseMapPage() {
     return (
-        <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div></div>}>
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div></div>}>
             <WarehouseMapContent />
         </Suspense>
     )

@@ -71,13 +71,13 @@ export function MapFilterBar({
             {/* Row 1: Search & Date Filters */}
             <div className="flex items-center gap-2 w-full">
                 {/* Search */}
-                <div className="relative flex-1 min-w-0 flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-orange-500/20 focus-within:border-orange-500 transition-all">
+                <div className="relative flex-1 min-w-0 flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all">
                     <div className="flex items-center border-r border-slate-200 dark:border-slate-700 px-2 lg:px-3">
                         {searchMode === 'all' && <Layers size={14} className="text-slate-400 mr-1.5" />}
-                        {searchMode === 'name' && <Package size={14} className="text-blue-500 mr-1.5" />}
+                        {searchMode === 'name' && <Package size={14} className="text-emerald-600 mr-1.5" />}
                         {searchMode === 'code' && <Hash size={14} className="text-purple-500 mr-1.5" />}
-                        {searchMode === 'tag' && <Tag size={14} className="text-emerald-500 mr-1.5" />}
-                        {searchMode === 'position' && <MapPin size={14} className="text-orange-500 mr-1.5" />}
+                        {searchMode === 'tag' && <Tag size={14} className="text-amber-500 mr-1.5" />}
+                        {searchMode === 'position' && <MapPin size={14} className="text-emerald-600 mr-1.5" />}
                         {searchMode === 'category' && <LayoutGrid size={14} className="text-indigo-500 mr-1.5" />}
                         {searchMode === 'production' && <ClipboardList size={14} className="text-rose-500 mr-1.5" />}
                         
@@ -131,7 +131,7 @@ export function MapFilterBar({
                             <button
                                 type="button"
                                 onClick={() => setIsHelpOpen(true)}
-                                className="text-slate-400 hover:text-orange-500 transition-colors rounded-full p-1"
+                                className="text-slate-400 hover:text-emerald-600 transition-colors rounded-full p-1"
                                 title="Hướng dẫn tìm kiếm"
                             >
                                 <HelpCircle size={14} />
@@ -139,7 +139,7 @@ export function MapFilterBar({
                             <button
                                 type="button"
                                 onClick={handleSearch}
-                                className="bg-orange-500 hover:bg-orange-600 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
                             >
                                 <Search size={12} />
                                 Tìm
@@ -151,7 +151,7 @@ export function MapFilterBar({
 
                 {/* Mobile Filter Toggle */}
                 <button
-                    className="lg:hidden p-2 rounded-xl bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400 shadow-sm border border-orange-200 dark:border-orange-800 shrink-0"
+                    className="lg:hidden p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 shadow-sm border border-emerald-200 dark:border-emerald-800 shrink-0"
                     onClick={toggleMobileFilters}
                 >
                     <Filter size={18} />

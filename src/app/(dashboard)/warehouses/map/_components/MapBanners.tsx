@@ -17,7 +17,7 @@ export function MapBanners({ isDesignMode, assignLot }: MapBannersProps) {
         <>
             {/* Design mode hint */}
             {isDesignMode && (
-                <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-sm text-blue-700 dark:text-blue-300 animate-in fade-in slide-in-from-top-2">
+                <div className="bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-200 dark:border-emerald-800 rounded-lg p-3 text-sm text-emerald-800 dark:text-emerald-300 animate-in fade-in slide-in-from-top-2">
                     💡 Bấm nút <strong>"Cấu hình"</strong> trên mỗi zone để điều chỉnh số cột và cách bố trí.
                 </div>
             )}

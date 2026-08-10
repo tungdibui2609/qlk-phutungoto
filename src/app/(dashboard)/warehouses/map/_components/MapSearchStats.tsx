@@ -98,8 +98,8 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     let borderClass = "border-slate-200 dark:border-slate-700"
 
     if (isSelected) {
-        bgClass = "bg-blue-50 dark:bg-blue-900/30"
-        borderClass = "border-blue-500"
+        bgClass = "bg-emerald-50 dark:bg-emerald-900/30"
+        borderClass = "border-emerald-500"
     } else if (searchStatus.isMatch) {
         bgClass = searchStatus.bgClass
         borderClass = searchStatus.borderClass
@@ -110,7 +110,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
 
     return (
         <div
-            className={`relative group flex flex-col p-1.5 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md ${hasLot ? 'hover:border-blue-300' : ''} w-full`}
+            className={`relative group flex flex-col p-1.5 rounded border ${bgClass} ${borderClass} aspect-square text-[10px] transition-all hover:shadow-md ${hasLot ? 'hover:border-emerald-300' : ''} w-full`}
         >
             {onPositionSelect && (
                 <button
@@ -118,7 +118,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                         e.stopPropagation()
                         onPositionSelect(pos.id)
                     }}
-                    className={`absolute bottom-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 hover:bg-blue-50 dark:hover:bg-blue-900/50 transition-colors ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}
+                    className={`absolute bottom-1 left-1 z-10 p-0.5 rounded bg-white/80 dark:bg-gray-800/80 hover:bg-emerald-50 dark:hover:bg-emerald-900/50 transition-colors ${isSelected ? 'text-emerald-600' : 'text-gray-400'}`}
                     title={isSelected ? "Bỏ chọn" : "Chọn vị trí"}
                 >
                     {isSelected ? <CheckSquare size={14} /> : <Square size={14} />}
@@ -245,7 +245,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                 }
                 if (dates.length === 0) return null
                 return (
-                    <div className="text-[8px] text-orange-600 dark:text-orange-400 font-bold text-center border-t border-slate-100 dark:border-slate-700/50 pt-0.5 mt-auto leading-tight">
+                    <div className="text-[8px] text-emerald-700 dark:text-emerald-300 font-bold text-center border-t border-slate-100 dark:border-slate-700/50 pt-0.5 mt-auto leading-tight">
                         {dates.join(' | ')}
                     </div>
                 )
@@ -413,7 +413,7 @@ export function MapSearchStats({
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
                 <span>Kết quả tìm kiếm:</span>
-                <span className="text-orange-600 dark:text-orange-400">"{searchTerm}"</span>
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">"{searchTerm}"</span>
                 {isFifoAvailable && (
                     <label className="inline-flex items-center gap-2 cursor-pointer select-none ml-auto">
                         <button
@@ -421,7 +421,7 @@ export function MapSearchStats({
                             aria-checked={isFifoEnabled}
                             onClick={onToggleFifo}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoEnabled
-                                ? 'bg-orange-500'
+                                ? 'bg-emerald-600'
                                 : 'bg-slate-300 dark:bg-slate-600'
                                 }`}
                         >
@@ -457,11 +457,11 @@ export function MapSearchStats({
 
             {/* FIFO Date Range Info */}
             {isFifoEnabled && (stats.oldestDate || stats.newestDate) && (
-                <div className="mb-4 px-3 py-2 bg-orange-50 dark:bg-orange-900/10 rounded-lg border border-orange-100 dark:border-orange-900/20">
-                    <div className="text-xs font-bold text-orange-700 dark:text-orange-400">
+                <div className="mb-4 px-3 py-2 bg-emerald-50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
+                    <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
                         Ngày cũ nhất: {stats.oldestDate ? new Date(stats.oldestDate).toLocaleDateString('vi-VN') : '--'}
                     </div>
-                    <div className="text-xs font-bold text-orange-700 dark:text-orange-400">
+                    <div className="text-xs font-bold text-emerald-800 dark:text-emerald-300">
                         Ngày mới nhất: {stats.newestDate ? new Date(stats.newestDate).toLocaleDateString('vi-VN') : '--'}
                     </div>
                 </div>
@@ -477,8 +477,8 @@ export function MapSearchStats({
                             onBulkSelect(allFilteredIds, !isAllSelected)
                         }}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${filteredPositions.every(p => selectedPositionIds.has(p.id))
-                            ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-800'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-blue-300 hover:text-blue-600 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800 dark:hover:border-blue-700'
+                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300 hover:text-emerald-700 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800 dark:hover:border-emerald-700'
                             }`}
                     >
                         {filteredPositions.every(p => selectedPositionIds.has(p.id)) ? (
@@ -518,7 +518,7 @@ export function MapSearchStats({
                                                 !allSelected
                                             )
                                         }}
-                                        className={`p-0.5 rounded hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors ${allSelected ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+                                        className={`p-0.5 rounded hover:bg-emerald-100 dark:hover:bg-emerald-900/30 transition-colors ${allSelected ? 'text-emerald-700' : 'text-slate-400 hover:text-slate-600'}`}
                                         title={allSelected ? "Bỏ chọn tất cả" : "Chọn tất cả"}
                                     >
                                         {allSelected ? <CheckSquare size={16} /> : <Square size={16} />}
@@ -536,7 +536,7 @@ export function MapSearchStats({
                                             </span>
                                         )}
                                         {group.newestDate && (
-                                            <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-1.5 py-0.5 rounded border border-blue-100 dark:border-blue-900/30">
+                                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-900/30">
                                                 Mới nhất: {new Date(group.newestDate).toLocaleDateString('vi-VN')}
                                             </span>
                                         )}
@@ -544,11 +544,11 @@ export function MapSearchStats({
                                 )}
                             </div>
                             <div className="flex items-center gap-3 text-xs shrink-0 ml-2">
-                                <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-1.5 py-0.5 rounded">
+                                <span className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-400 px-1.5 py-0.5 rounded font-medium">
                                     {group.count} vt
                                 </span>
                                 {group.quantity > 0 && (
-                                    <span className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded">
+                                    <span className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-400 px-1.5 py-0.5 rounded font-bold">
                                         {group.quantity.toLocaleString()}
                                     </span>
                                 )}

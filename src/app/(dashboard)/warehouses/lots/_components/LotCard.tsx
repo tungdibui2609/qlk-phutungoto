@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle } from 'lucide-react'
 import { useState } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -233,15 +233,15 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
         <div className={`group rounded-3xl border transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${
             searchStatus.isMatch
                 ? searchStatus.borderClass
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-orange-500/30'
+                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-emerald-500/30'
         }`}>
             {/* Decorative Top Bar */}
             <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r z-10 transition-opacity ${
-                searchStatus.isMatch ? searchStatus.topBarClass : 'from-orange-500 to-orange-400'
+                searchStatus.isMatch ? searchStatus.topBarClass : 'from-emerald-500 to-teal-400'
             }`}></div>
 
             {/* Header - Colored */}
-            <div className={`px-4 pt-5 pb-4 bg-orange-50/50 dark:bg-orange-900/10 border-b border-orange-100/50 dark:border-orange-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
+            <div className={`px-4 pt-5 pb-4 bg-emerald-50/40 dark:bg-emerald-950/20 border-b border-emerald-100/50 dark:border-emerald-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
                 <div className="flex items-center justify-between">
                     <div className="flex flex-wrap items-center gap-2">
                         <span className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
@@ -253,7 +253,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                 ĐÃ KHÓA
                             </span>
                         )}
-                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                        <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
                             STT: {decodeSTT((lot as any).daily_seq) || '--'}
                         </span>
                         {searchStatus.isMatch && (
@@ -267,7 +267,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         )}
                         {(lot.productions?.code || lot.production_code) && (
                             <div className="flex flex-col gap-1">
-                                <span className="px-2 py-0.5 rounded-lg bg-orange-50 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 text-[10px] font-bold border border-orange-100 dark:border-orange-800/50 w-fit">
+                                <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200/60 dark:border-emerald-800/50 w-fit">
                                     LSX: {lot.productions?.code || lot.production_code}
                                 </span>
                                 {lot.productions && (lot.productions as any).production_lots && (lot.productions as any).production_lots.length > 0 && (
@@ -303,7 +303,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                     onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
                                 }
                             }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold border border-orange-200 dark:border-orange-800 ${!isSanxuat && !lot.is_locked ? 'hover:bg-orange-200 dark:hover:bg-orange-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
+                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 ${!isSanxuat && !lot.is_locked ? 'hover:bg-emerald-200 dark:hover:bg-emerald-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
                         >
                             <MapPin size={12} />
                             {lot.positions[0].code}
@@ -320,9 +320,9 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                     onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
                                 }
                             }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white dark:bg-zinc-800 text-zinc-400 text-[10px] font-bold border border-zinc-200 dark:border-zinc-700 ${!isSanxuat && !lot.is_locked ? 'hover:bg-zinc-50 dark:hover:bg-zinc-700 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors`}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold border border-amber-200 dark:border-amber-800/50 ${!isSanxuat && !lot.is_locked ? 'hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
                         >
-                            <MapPin size={12} />
+                            <AlertCircle size={12} />
                             Chưa gán
                         </button>
                     )}
@@ -383,13 +383,13 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
 
                 {renderInfoItems()}
 
-                {/* Production Info (LSX/MSX) - Moved here from header */}
+                {/* Production Info (LSX/MSX) */}
                 {(lot.productions?.code || lot.production_code) && (
-                    <div className="mt-2 flex items-center gap-2 p-2 rounded-xl bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100/50 dark:border-orange-900/20">
-                        <span className="p-1.5 rounded-lg bg-orange-100 dark:bg-orange-900/40 text-orange-600 dark:text-orange-400">
+                    <div className="mt-2 flex items-center gap-2 p-2 rounded-xl bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-900/30">
+                        <span className="p-1.5 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
                             <Factory size={14} />
                         </span>
-                        <span className="text-[10px] font-bold uppercase text-orange-700 dark:text-orange-300 tracking-wider truncate">
+                        <span className="text-[10px] font-black uppercase text-emerald-900 dark:text-emerald-200 tracking-wider truncate">
                             {lot.productions?.code 
                                 ? `LSX: ${lot.productions.name} - ${lot.productions.code}` 
                                 : `MSX: ${lot.production_code}`}
@@ -410,8 +410,8 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                         return acc;
                                     }, {})
                                 ).map(([unit, total]: [string, any]) => (
-                                    <span key={unit} className="text-orange-600 font-bold text-sm bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/30">
-                                        {formatQuantityFull(total)} <span className="text-[10px] font-medium text-orange-500/70">{unit}</span>
+                                    <span key={unit} className="text-emerald-900 dark:text-emerald-200 font-black text-sm bg-emerald-100/70 dark:bg-emerald-950/40 px-2 py-0.5 rounded-lg border border-emerald-300/80 dark:border-emerald-800/60 shadow-xs">
+                                        {formatQuantityFull(total)} <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">{unit}</span>
                                     </span>
                                 ))
                             ) : (
@@ -480,13 +480,13 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                                                                 <div className={`px-2 py-0.5 rounded border font-mono font-bold text-xs shrink-0 ${showInternal && item.products?.internal_code ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-100 dark:border-violet-800' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-800'}`}>
                                                                     {showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                                                 </div>
-                                                                <div className="flex items-center gap-1 font-mono text-xs bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded border border-orange-100 dark:border-orange-900/30 shrink-0">
-                                                                    <span className="font-bold">{formatQuantityFull(item.quantity)}</span>
-                                                                    <span className="opacity-80">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
+                                                                <div className="flex items-center gap-1 font-mono text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 shrink-0 font-bold">
+                                                                    <span className="font-extrabold">{formatQuantityFull(item.quantity)}</span>
+                                                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
                                                                 </div>
                                                                 {(parsedHistory || originTag) && (
                                                                     <div
-                                                                        className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${isSplit ? 'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-800' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}`}
+                                                                        className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${isSplit ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}`}
                                                                         title={parsedHistory ? 'Bấm để xem lịch sử' : (originTag?.tag.startsWith('MERGED_FROM:') ? originTag.tag.replace('MERGED_FROM:', 'Gộp từ Lot: ') : originTag?.tag.replace('SPLIT_FROM:', 'Tách từ Lot: '))}
                                                                     >
                                                                         <History size={10} />
@@ -660,7 +660,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                     <Protected permission={managePermission || "lot.manage"}>
                         <button
                             onClick={(e) => handleActionClick(e, () => onAssignTag?.(lot))}
-                            className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-700 hover:bg-orange-50 dark:hover:bg-zinc-800 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-zinc-800 transition-all border border-transparent ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                             title="Gắn mã phụ"
                         >
                             <Tag size={16} />
@@ -680,7 +680,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
                         {!isSanxuat && (
                             <button
                                 onClick={(e) => handleActionClick(e, () => onEdit(lot))}
-                                className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                className={`w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 transition-colors ${lot.is_locked ? 'opacity-50 cursor-not-allowed' : ''}`}
                                 title="Sửa"
                             >
                                 <Edit size={16} />

@@ -1,8 +1,8 @@
 'use client'
 
-import { useSystem, SystemType } from "@/contexts/SystemContext"
+import { useSystem } from "@/contexts/SystemContext"
 import { useRouter } from "next/navigation"
-import { Truck, Package, Factory, BarChart3 } from "lucide-react"
+import { Truck, Package, Factory, BarChart3, Warehouse, Sparkles, ShieldCheck, ArrowRight, Loader2 } from "lucide-react"
 import { useEffect, useState } from "react"
 import { supabase } from "@/lib/supabaseClient"
 
@@ -11,14 +11,12 @@ export default function SelectSystemPage() {
     const router = useRouter()
     const [loading, setLoading] = useState(true)
     const [allowedSystems, setAllowedSystems] = useState<string[]>([])
-    const [companyName, setCompanyName] = useState<string>('Toàn Thắng')
+    const [companyName, setCompanyName] = useState<string>('Chánh Thu')
 
     useEffect(() => {
         checkUserPermissions()
         fetchCompanyInfo()
     }, [])
-
-    // ... (keep helper functions)
 
     async function checkUserPermissions() {
         const { data: { user } } = await supabase.auth.getUser()
@@ -28,7 +26,7 @@ export default function SelectSystemPage() {
         }
         const { data: profile } = await (supabase
             .from('user_profiles') as any)
-            .select('allowed_systems, permissions, department') // Added department
+            .select('allowed_systems, permissions, department')
             .eq('id', user.id)
             .maybeSingle()
 
@@ -37,30 +35,27 @@ export default function SelectSystemPage() {
             return
         }
 
-        // Check for full access permission or department bypass
-        let systems = profile.allowed_systems || []
-
+        let sysList = profile.allowed_systems || []
         const isSuperUser = user.email === 'tungdibui2609@gmail.com'
         const hasFullAccess = profile.permissions && profile.permissions.includes('system.full_access')
         const isSystemDept = profile.department === 'Hệ thống'
 
         if (isSuperUser || hasFullAccess || isSystemDept) {
-            systems = ['ALL']
+            sysList = ['ALL']
         }
 
-        // Fallback to a broader set of defaults if empty to avoid accidental lockout
-        setAllowedSystems(systems.length > 0 ? systems : ['DEFAULT', 'KHO_DONG_LANH', 'OFFICE', 'DRY'])
+        setAllowedSystems(sysList.length > 0 ? sysList : ['DEFAULT', 'KHO_DONG_LANH', 'OFFICE', 'DRY'])
         setLoading(false)
     }
 
     async function fetchCompanyInfo() {
         const { data } = await (supabase
             .from('company_settings') as any)
-            .select('short_name')
+            .select('short_name, name')
             .single()
 
-        if (data && data.short_name) {
-            setCompanyName(data.short_name)
+        if (data) {
+            setCompanyName(data.short_name || data.name || 'Chánh Thu')
         }
     }
 
@@ -69,71 +64,88 @@ export default function SelectSystemPage() {
         router.push('/')
     }
 
-    // Helper for icons
     const ICON_MAP: any = {
         'FROZEN': Truck,
         'KHO_DONG_LANH': Truck,
         'PACKAGING': Package,
         'MATERIAL': Factory,
-        'GENERAL': BarChart3
-    }
-
-    // Helper to get color theme based on bg_color_class from DB
-    // Expected DB: bg-blue-600 -> blue
-    function getThemeColor(bgClass: string = 'bg-gray-600') {
-        const safeClass = bgClass || 'bg-gray-600'
-        if (safeClass.includes('blue')) return 'blue'
-        if (safeClass.includes('amber') || safeClass.includes('yellow')) return 'amber'
-        if (safeClass.includes('green') || safeClass.includes('emerald')) return 'emerald'
-        if (safeClass.includes('purple')) return 'purple'
-        return 'stone'
+        'GENERAL': BarChart3,
+        'DEFAULT': Warehouse
     }
 
     const availableSystems = systems.filter(sys =>
         allowedSystems.includes('ALL') || allowedSystems.includes(sys.code)
-    ).map(sys => {
-        const theme = getThemeColor(sys.bg_color_class)
-        const Icon = ICON_MAP[sys.code] || Package // Default icon
-        return {
-            ...sys,
-            iconComponent: <Icon className={`h-12 w-12 text-${theme}-500 mb-4`} />,
-            colorClass: `hover:border-${theme}-500 hover:bg-${theme}-50 border-transparent`
-        }
-    })
-
-
+    )
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-stone-100 flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-orange-500"></div>
+            <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center gap-3 text-emerald-200">
+                <Loader2 className="animate-spin text-emerald-400" size={36} />
+                <p className="text-sm font-medium">Đang tải danh sách phân hệ kho...</p>
             </div>
         )
     }
 
     return (
-        <div className="min-h-screen bg-stone-100 flex items-center justify-center p-4">
-            <div className="max-w-5xl w-full">
-                <h1 className="text-3xl font-bold text-center mb-2 text-stone-800">Hệ Thống Quản Lý Kho</h1>
-                <p className="text-center text-stone-500 mb-10">Vui lòng chọn phân hệ làm việc</p>
+        <div className="min-h-screen bg-emerald-950 flex flex-col items-center justify-center p-4 sm:p-8 relative overflow-hidden font-sans selection:bg-emerald-500 selection:text-white">
+            {/* Ambient Background Glows */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                <div className="absolute -top-[20%] -left-[10%] w-[50vw] h-[50vw] rounded-full bg-emerald-600/20 blur-3xl" />
+                <div className="absolute -bottom-[20%] -right-[10%] w-[50vw] h-[50vw] rounded-full bg-amber-500/15 blur-3xl" />
+            </div>
+
+            <div className="max-w-5xl w-full relative z-10">
+                {/* Header */}
+                <div className="text-center mb-10 space-y-3">
+                    <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-semibold tracking-wide uppercase shadow-inner">
+                        <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                        {companyName} • WMS Smart Hub
+                    </div>
+                    <h1 className="text-3xl sm:text-4xl font-black text-white tracking-tight">
+                        Chọn Phân Hệ Kho Làm Việc
+                    </h1>
+                    <p className="text-emerald-100/70 text-sm max-w-md mx-auto">
+                        Vui lòng lựa chọn phân hệ kho trực thuộc để tiến hành quản lý nhập xuất tồn và vận hành
+                    </p>
+                </div>
 
                 {availableSystems.length === 0 ? (
-                    <div className="text-center text-red-500 bg-white p-8 rounded-xl shadow">
-                        Bạn chưa được cấp quyền truy cập vào bất kỳ kho nào. Link hệ Admin.
+                    <div className="text-center text-rose-300 bg-rose-950/40 border border-rose-500/30 p-8 rounded-3xl backdrop-blur-xl shadow-xl max-w-md mx-auto">
+                        <ShieldCheck className="w-12 h-12 text-rose-400 mx-auto mb-3" />
+                        <h3 className="font-bold text-lg text-white mb-1">Chưa được cấp quyền</h3>
+                        <p className="text-xs text-rose-200/80">
+                            Tài khoản của bạn chưa được gán quyền truy cập vào phân hệ kho nào. Vui lòng liên hệ Admin để được cấp quyền.
+                        </p>
                     </div>
                 ) : (
-                    <div className={`grid grid-cols-1 ${availableSystems.length === 1 ? 'md:grid-cols-1 max-w-md mx-auto' : 'md:grid-cols-2'} gap-6`}>
-                        {availableSystems.map((sys) => (
-                            <div
-                                key={sys.code}
-                                className={`bg-white rounded-xl p-8 cursor-pointer transition-all duration-200 border-2 shadow-sm hover:shadow-md flex flex-col items-center text-center ${sys.colorClass}`}
-                                onClick={() => handleSelect(sys.code)}
-                            >
-                                <div className="mb-4">{sys.iconComponent}</div>
-                                <h3 className="text-xl font-bold text-stone-800 mb-2">{sys.name}</h3>
-                                <p className="text-stone-500">{sys.description}</p>
-                            </div>
-                        ))}
+                    <div className={`grid grid-cols-1 ${availableSystems.length === 1 ? 'md:grid-cols-1 max-w-md mx-auto' : availableSystems.length === 2 ? 'md:grid-cols-2 max-w-3xl mx-auto' : 'md:grid-cols-3'} gap-6`}>
+                        {availableSystems.map((sys) => {
+                            const Icon = ICON_MAP[sys.code] || Warehouse
+                            return (
+                                <div
+                                    key={sys.code}
+                                    className="group relative bg-white/95 hover:bg-white rounded-3xl p-8 cursor-pointer transition-all duration-300 border-2 border-emerald-500/20 hover:border-emerald-500 shadow-xl hover:shadow-2xl hover:shadow-emerald-900/40 hover:-translate-y-1 flex flex-col justify-between"
+                                    onClick={() => handleSelect(sys.code)}
+                                >
+                                    <div>
+                                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-700 border border-emerald-500/30 flex items-center justify-center mb-6 group-hover:scale-110 group-hover:bg-emerald-600 group-hover:text-white transition-all duration-300 shadow-md">
+                                            <Icon size={32} strokeWidth={2.2} />
+                                        </div>
+                                        <h3 className="text-xl font-extrabold text-slate-900 mb-2 group-hover:text-emerald-700 transition-colors">
+                                            {sys.name}
+                                        </h3>
+                                        <p className="text-slate-500 text-xs leading-relaxed line-clamp-2">
+                                            {sys.description || 'Hệ thống quản trị kho sầu riêng và bảo quản chuỗi cung ứng'}
+                                        </p>
+                                    </div>
+
+                                    <div className="mt-8 pt-4 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-emerald-700 group-hover:text-emerald-800">
+                                        <span>Truy cập phân hệ</span>
+                                        <ArrowRight size={16} className="transition-transform group-hover:translate-x-1" />
+                                    </div>
+                                </div>
+                            )
+                        })}
                     </div>
                 )}
             </div>

@@ -491,7 +491,7 @@ export default function Sidebar() {
                 <div
                     className="h-14 flex items-center justify-between px-3 border-b border-stone-100 cursor-pointer"
                     style={{
-                        background: 'linear-gradient(180deg, rgba(249, 115, 22, 0.03) 0%, transparent 100%)',
+                        background: 'linear-gradient(180deg, rgba(16, 185, 129, 0.05) 0%, transparent 100%)',
                     }}
                     onClick={handleMenuClick}
                 >
@@ -499,8 +499,8 @@ export default function Sidebar() {
                         <div
                             className="relative w-9 h-9 rounded-lg overflow-hidden flex-shrink-0"
                             style={{
-                                background: companyInfo.logo_url ? 'transparent' : 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                                boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
+                                background: companyInfo.logo_url ? 'transparent' : 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                                boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)',
                             }}
                         >
                             <Image
@@ -514,7 +514,7 @@ export default function Sidebar() {
                         {isReady && (!isCollapsed || isMobileMenuOpen) && (
                             <div>
                                 <h1 className="font-bold text-sm text-stone-800 tracking-tight truncate max-w-[150px]">{companyInfo.name}</h1>
-                                <p className="text-[10px] font-semibold text-orange-600">{currentSystem?.name || '...'}</p>
+                                <p className="text-[10px] font-semibold text-emerald-600">{currentSystem?.name || '...'}</p>
                             </div>
                         )}
                     </div>
@@ -526,7 +526,7 @@ export default function Sidebar() {
                     {favoriteItems.length > 0 && (
                         <div className="mb-4">
                             <div className={`px-3 mb-1 flex items-center gap-2 ${showCollapsed ? 'hidden' : ''}`}>
-                                <Star size={12} className="text-orange-500 fill-orange-500" />
+                                <Star size={12} className="text-amber-500 fill-amber-500" />
                                 <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Quick Access</span>
                             </div>
                             <div className="space-y-0.5">
@@ -543,17 +543,17 @@ export default function Sidebar() {
                                             onClick={handleLinkClick}
                                             className={`group relative flex items-center gap-2 px-2.5 py-1.5 rounded-lg transition-all duration-200 ${isActive
                                                 ? 'text-white'
-                                                : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
+                                                : 'text-stone-600 hover:text-emerald-600 hover:bg-emerald-50'
                                                 } ${showCollapsed ? 'justify-center px-2' : ''}`}
                                             style={isActive ? {
-                                                background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                                                boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
+                                                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                                                boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)',
                                             } : {}}
                                             title={showCollapsed ? item.name : undefined}
                                         >
                                             <div className={`p-1 rounded transition-all duration-200 ${isActive
                                                 ? 'bg-white/20'
-                                                : 'bg-stone-100 group-hover:bg-orange-100'
+                                                : 'bg-stone-100 group-hover:bg-emerald-100'
                                                 }`}>
                                                 <Icon size={14} strokeWidth={isActive ? 2.5 : 2} />
                                             </div>
@@ -582,14 +582,14 @@ export default function Sidebar() {
                                             if (showExpanded) toggleMenu(item.name)
                                         }}
                                         className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 w-full ${isActive
-                                            ? 'text-orange-600 bg-orange-50'
-                                            : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
+                                            ? 'text-emerald-700 bg-emerald-50'
+                                            : 'text-stone-600 hover:text-emerald-600 hover:bg-emerald-50'
                                             } ${showCollapsed ? 'justify-center px-2' : ''}`}
                                         title={showCollapsed ? item.name : undefined}
                                     >
                                         <div className={`p-1.5 rounded-md transition-all duration-200 ${isActive
-                                            ? 'bg-orange-100'
-                                            : 'bg-stone-100 group-hover:bg-orange-100'
+                                            ? 'bg-emerald-100'
+                                            : 'bg-stone-100 group-hover:bg-emerald-100'
                                             }`}>
                                             <Icon size={16} strokeWidth={isActive ? 2.5 : 2} />
                                         </div>
@@ -623,16 +623,16 @@ export default function Sidebar() {
                                                         onClick={handleLinkClick}
                                                         className={`group flex items-center gap-2 px-2.5 py-1.5 rounded-md transition-all duration-200 ${isChildActive
                                                             ? 'text-white'
-                                                            : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
+                                                            : 'text-stone-600 hover:text-emerald-600 hover:bg-emerald-50'
                                                             }`}
                                                         style={isChildActive ? {
-                                                            background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                                                            boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
+                                                            background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                                                            boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)',
                                                         } : {}}
                                                     >
                                                         <div className={`p-1 rounded transition-all duration-200 ${isChildActive
                                                             ? 'bg-white/20'
-                                                            : 'bg-stone-100 group-hover:bg-orange-100'
+                                                            : 'bg-stone-100 group-hover:bg-emerald-100'
                                                             }`}>
                                                             <ChildIcon size={14} strokeWidth={isChildActive ? 2.5 : 2} />
                                                         </div>
@@ -644,8 +644,8 @@ export default function Sidebar() {
                                                                 toggleFavorite(child.href!)
                                                             }}
                                                             className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(child.href)
-                                                                ? 'text-yellow-500 opacity-100'
-                                                                : 'text-stone-300 hover:text-orange-400'
+                                                                ? 'text-amber-500 opacity-100'
+                                                                : 'text-stone-300 hover:text-emerald-500'
                                                                 }`}
                                                         >
                                                             <Star size={12} fill={profile?.favorite_menus?.includes(child.href) ? "currentColor" : "none"} />
@@ -671,27 +671,27 @@ export default function Sidebar() {
                                 onClick={handleLinkClick}
                                 className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 ${isItemActive
                                     ? 'text-white'
-                                    : 'text-stone-600 hover:text-orange-600 hover:bg-orange-50'
+                                    : 'text-stone-600 hover:text-emerald-600 hover:bg-emerald-50'
                                     } ${showCollapsed ? 'justify-center px-2' : ''}`}
                                 style={isItemActive ? {
-                                    background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                                    boxShadow: '0 2px 8px rgba(249, 115, 22, 0.3)',
+                                    background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                                    boxShadow: '0 2px 8px rgba(5, 150, 105, 0.3)',
                                 } : {}}
                                 title={showCollapsed ? item.name : undefined}
                             >
                                 {/* Active indicator bar */}
                                 {isItemActive && showExpanded && (
                                     <div
-                                        className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-r-full bg-orange-400"
+                                        className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 rounded-r-full bg-emerald-400"
                                         style={{
-                                            boxShadow: '0 0 6px rgba(249, 115, 22, 0.5)',
+                                            boxShadow: '0 0 6px rgba(16, 185, 129, 0.6)',
                                         }}
                                     />
                                 )}
 
                                 <div className={`p-1.5 rounded-md transition-all duration-200 ${isItemActive
                                     ? 'bg-white/20'
-                                    : 'bg-stone-100 group-hover:bg-orange-100'
+                                    : 'bg-stone-100 group-hover:bg-emerald-100'
                                     }`}>
                                     <Icon size={16} strokeWidth={isItemActive ? 2.5 : 2} />
                                 </div>
@@ -707,8 +707,8 @@ export default function Sidebar() {
                                                     toggleFavorite(item.href!)
                                                 }}
                                                 className={`p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity ${profile?.favorite_menus?.includes(item.href)
-                                                    ? 'text-yellow-500 opacity-100'
-                                                    : 'text-stone-300 hover:text-orange-400'
+                                                    ? 'text-amber-500 opacity-100'
+                                                    : 'text-stone-300 hover:text-emerald-500'
                                                     }`}
                                             >
                                                 <Star size={12} fill={profile?.favorite_menus?.includes(item.href) ? "currentColor" : "none"} />
@@ -732,13 +732,13 @@ export default function Sidebar() {
                             <Link
                                 href="/admin/companies"
                                 onClick={handleLinkClick}
-                                className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 text-stone-600 hover:text-orange-600 hover:bg-orange-50 ${showCollapsed ? 'justify-center px-2' : ''}`}
+                                className={`group relative flex items-center gap-2 px-2.5 py-2 rounded-lg transition-all duration-200 text-stone-600 hover:text-emerald-600 hover:bg-emerald-50 ${showCollapsed ? 'justify-center px-2' : ''}`}
                                 title={showCollapsed ? 'Super Admin' : undefined}
                             >
-                                <div className="p-1.5 rounded-md bg-stone-100 group-hover:bg-orange-100 transition-colors">
+                                <div className="p-1.5 rounded-md bg-stone-100 group-hover:bg-emerald-100 transition-colors">
                                     <ShieldAlert size={16} />
                                 </div>
-                                {showExpanded && <span className="text-xs font-bold text-orange-600 flex-1">Super Admin</span>}
+                                {showExpanded && <span className="text-xs font-bold text-emerald-600 flex-1">Super Admin</span>}
                             </Link>
                         </div>
                     )}

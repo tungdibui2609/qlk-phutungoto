@@ -43,7 +43,7 @@ export function MapHeader({
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
                 <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                    <Map className="text-blue-600" size={isMobile ? 24 : 28} />
+                    <Map className="text-emerald-600" size={isMobile ? 24 : 28} />
                     Sơ đồ Kho
                 </h1>
                 <p className="text-gray-500 dark:text-gray-400 mt-1 text-xs sm:text-sm">
@@ -85,7 +85,7 @@ export function MapHeader({
                     <button
                         onClick={() => setIsDesignMode(!isDesignMode)}
                         className={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg font-medium flex items-center gap-2 transition-colors text-sm ${isDesignMode
-                            ? 'bg-blue-500 text-white'
+                            ? 'bg-emerald-600 text-white'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
                             }`}
                     >

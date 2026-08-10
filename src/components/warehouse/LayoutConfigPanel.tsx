@@ -553,16 +553,16 @@ export default function LayoutConfigPanel({
                 <div className="text-xs font-semibold text-gray-500 mb-2">MÀU NỀN TIÊU ĐỀ</div>
                 <div className="flex flex-wrap gap-2 items-center">
                     {[
+                        { color: '#047857', label: 'Xanh ngọc sầu riêng' },
+                        { color: '#059669', label: 'Xanh Emerald' },
+                        { color: '#10b981', label: 'Xanh ngọc sáng' },
+                        { color: '#0d9488', label: 'Xanh Teal' },
+                        { color: '#d97706', label: 'Vàng sầu riêng (Amber)' },
+                        { color: '#eab308', label: 'Vàng tươi' },
+                        { color: '#2563eb', label: 'Xanh dương' },
+                        { color: '#7c3aed', label: 'Tím hoa cà' },
+                        { color: '#4b5563', label: 'Xám than' },
                         { color: '#ef4444', label: 'Đỏ' },
-                        { color: '#f97316', label: 'Cam' },
-                        { color: '#eab308', label: 'Vàng' },
-                        { color: '#22c55e', label: 'Xanh lá' },
-                        { color: '#14b8a6', label: 'Ngọc' },
-                        { color: '#3b82f6', label: 'Xanh dương' },
-                        { color: '#6366f1', label: 'Tím lam' },
-                        { color: '#a855f7', label: 'Tím' },
-                        { color: '#ec4899', label: 'Hồng' },
-                        { color: '#6b7280', label: 'Xám' },
                     ].map(({ color, label }) => (
                         <button
                             key={color}
@@ -589,14 +589,11 @@ export default function LayoutConfigPanel({
                 <div className="flex flex-wrap gap-2 items-center">
                     {[
                         { color: '#ffffff', label: 'Trắng' },
-                        { color: '#1f2937', label: 'Đen' },
-                        { color: '#ef4444', label: 'Đỏ' },
-                        { color: '#f97316', label: 'Cam' },
-                        { color: '#eab308', label: 'Vàng' },
-                        { color: '#22c55e', label: 'Xanh lá' },
-                        { color: '#14b8a6', label: 'Ngọc' },
-                        { color: '#3b82f6', label: 'Xanh dương' },
-                        { color: '#a855f7', label: 'Tím' },
+                        { color: '#fef08a', label: 'Vàng kem' },
+                        { color: '#d1fae5', label: 'Xanh ngọc nhạt' },
+                        { color: '#1f2937', label: 'Đen than' },
+                        { color: '#064e3b', label: 'Xanh đậm' },
+                        { color: '#2563eb', label: 'Xanh dương' },
                         { color: '#6b7280', label: 'Xám' },
                     ].map(({ color, label }) => (
                         <button

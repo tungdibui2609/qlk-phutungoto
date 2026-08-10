@@ -25,7 +25,7 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 <div className={`fixed top-0 right-0 left-0 h-6 z-40 flex justify-center pointer-events-none transition-all duration-300 ${marginLeft}`}>
                     <button
                         onClick={() => setIsHeaderVisible(true)}
-                        className="pointer-events-auto bg-white border border-t-0 border-orange-200 rounded-b-lg px-6 py-1 shadow-md text-stone-500 hover:text-orange-600 hover:bg-orange-50 transition-all flex items-center gap-2 text-xs font-medium"
+                        className="pointer-events-auto bg-white border border-t-0 border-emerald-200 rounded-b-lg px-6 py-1 shadow-md text-stone-500 hover:text-emerald-600 hover:bg-emerald-50 transition-all flex items-center gap-2 text-xs font-medium"
                         title="Hiện thanh công cụ"
                     >
                         <ChevronDown size={14} />

@@ -461,6 +461,49 @@ export default function FlexibleZoneGrid({
         const alternatingRows = layout?.alternating_rows ?? false
         const headerColor = layout?.header_color ?? null
         const headerTextColor = layout?.header_text_color ?? null
+
+        // Tự động chuyển đổi các màu đỏ/cam cũ hoặc áp dụng phong cách Xanh sầu riêng Emerald Green
+        const isRedOrOrange = headerColor && ['#ef4444', '#dc2626', '#b91c1c', '#f87171', '#f97316', '#ea580c', '#c2410c', '#e11d48'].includes(headerColor.toLowerCase());
+        
+        let headerBgStyle: React.CSSProperties | undefined = undefined;
+        let effectiveHeaderTextColor = headerTextColor;
+        let isDarkHeader = false;
+        let statHighlightColor = 'text-emerald-700 dark:text-emerald-400 font-bold';
+        let accentColor = '#10b981';
+
+        if (depth === 0) {
+            // Kho cấp cao nhất (KHO 1, KHO 2, KHO 3, KHO 4, KHO TẠM...): Nền Emerald Green đậm chất sầu riêng
+            headerBgStyle = {
+                background: 'linear-gradient(135deg, #064e3b 0%, #047857 50%, #059669 100%)',
+                borderColor: '#065f46'
+            };
+            effectiveHeaderTextColor = '#ffffff';
+            isDarkHeader = true;
+            statHighlightColor = 'text-amber-300 font-black drop-shadow-sm';
+            accentColor = '#34d399';
+        } else if (isRedOrOrange) {
+            // Zone con trước đây lưu màu đỏ/cam: Chuyển sang xanh ngọc dịu
+            headerBgStyle = {
+                background: 'linear-gradient(to right, rgb(236 253 245), rgb(240 253 244))',
+                borderColor: '#a7f3d0'
+            };
+            effectiveHeaderTextColor = '#065f46';
+            isDarkHeader = false;
+            statHighlightColor = 'text-emerald-700 font-bold';
+            accentColor = '#10b981';
+        } else if (headerColor) {
+            headerBgStyle = { backgroundColor: headerColor, borderColor: headerColor };
+            effectiveHeaderTextColor = headerTextColor || '#ffffff';
+            isDarkHeader = true;
+            statHighlightColor = 'text-amber-300 font-bold';
+            accentColor = '#ffffff';
+        } else {
+            headerBgStyle = { background: 'linear-gradient(to right, rgb(236 253 245), white)' };
+            effectiveHeaderTextColor = headerTextColor || undefined;
+            statHighlightColor = 'text-emerald-700 dark:text-emerald-400 font-semibold';
+            accentColor = '#10b981';
+        }
+
         let effectiveChildCols = childColumns > 0 ? childColumns : 3
         if (isEmptyMode && depth <= 1) {
             effectiveChildCols = 4
@@ -588,11 +631,8 @@ export default function FlexibleZoneGrid({
                             </div>
                         )}
                         <div
-                            className={`flex items-center justify-between px-4 border-b print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'} ${collapsible ? 'cursor-pointer hover:bg-emerald-50/50' : ''}`}
-                            style={headerColor
-                                ? { backgroundColor: headerColor, borderColor: headerColor }
-                                : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
-                            }
+                            className={`flex items-center justify-between px-4 border-b print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'} ${collapsible ? 'cursor-pointer hover:opacity-95' : ''}`}
+                            style={headerBgStyle}
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
@@ -600,7 +640,7 @@ export default function FlexibleZoneGrid({
                                     <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
-                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            className="w-5 h-5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer shadow-sm transition-all"
                                             checked={checkedZoneIds.has(zone.id)}
                                             onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
                                             title="Chọn vùng này để in"
@@ -609,14 +649,14 @@ export default function FlexibleZoneGrid({
                                 )}
                                 {collapsible && (
                                     isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
-                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined) }} className={`print:hidden ${effectiveHeaderTextColor || isDarkHeader ? '' : 'text-emerald-500'}`} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined) }} className={`print:hidden ${effectiveHeaderTextColor || isDarkHeader ? '' : 'text-emerald-500'}`} />
                                 )}
                                 {!isAssignmentMode && !isEmptyMode && totalSelectableCount > 0 && onBulkSelect && (
                                     <div className="flex items-center justify-center shrink-0 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                             checked={isAllSelected}
                                             ref={el => {
                                                 if (el) el.indeterminate = isIndeterminate
@@ -628,13 +668,13 @@ export default function FlexibleZoneGrid({
                                 )}
                                 <div
                                     className={`rounded-full shrink-0 print:hidden ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
-                                    style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
+                                    style={{ backgroundColor: accentColor }}
                                 />
                                 <div>
                                     <div className="flex items-center gap-2 print-break-after-avoid">
                                         <h2
                                             className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'} ${isEmptyMode ? 'print:text-[10px] print:font-medium print:text-gray-500' : ''}`}
-                                            style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (headerTextColor || (headerColor ? 'white' : undefined)) }}
+                                            style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined)) }}
                                         >
                                             {isLevelUnderBin || isPrintPage
                                                 ? (isGrouped ? (zone.name.includes('|') ? zone.name.split('|')[0].trim() : currentBreadcrumb.join(' - ')) : currentBreadcrumb.join(' - '))
@@ -647,7 +687,7 @@ export default function FlexibleZoneGrid({
                                                     value={localNotes[zone.id] || ''}
                                                     onChange={(val: string) => setLocalNotes(prev => ({ ...prev, [zone.id]: val }))}
                                                     placeholder=""
-className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-stone-300!"
+                                                    className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-stone-300!"
                                                     isSnapshot={isCapturing}
                                                 />
                                             </div>
@@ -656,9 +696,9 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
                                             className="text-xs whitespace-nowrap shrink-0 print:hidden"
-                                            style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
+                                            style={{ color: effectiveHeaderTextColor ? `${effectiveHeaderTextColor}cc` : (isDarkHeader ? 'rgba(255,255,255,0.85)' : undefined) }}
                                         >
-                                            {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
+                                            {totalPositions} ô / <span className={statHighlightColor}>{totalSelectableCount} có hàng</span>
                                         </p>
                                     )}
                                 </div>
@@ -831,20 +871,16 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                             </div>
                         )}
                         <div
-                            className={`flex items-center justify-between px-4 border-b cursor-pointer print-break-after-avoid print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'}`}
-                            style={headerColor
-                                ? { backgroundColor: headerColor, borderColor: headerColor }
-                                : { background: 'linear-gradient(to right, rgb(236 253 245), white)' }
-                            }
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer print-break-after-avoid print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? 'py-1.5' : 'py-3'} ${collapsible ? 'hover:opacity-95' : ''}`}
+                            style={headerBgStyle}
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-3">
-
                                 {isEmptyMode && onToggleCheckedZone && (
                                     <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
-                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            className="w-5 h-5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer shadow-sm transition-all"
                                             checked={checkedZoneIds.has(zone.id)}
                                             onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
                                             title="Chọn vùng này để in"
@@ -853,12 +889,12 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                 )}
                                 {collapsible && (
                                     isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
-                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-emerald-500'}`} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined) }} className={`print:hidden ${effectiveHeaderTextColor || isDarkHeader ? '' : 'text-emerald-500'}`} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined) }} className={`print:hidden ${effectiveHeaderTextColor || isDarkHeader ? '' : 'text-emerald-500'}`} />
                                 )}
                                 <div
                                     className={`rounded-full shrink-0 print:hidden ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
-                                    style={{ backgroundColor: headerTextColor || (headerColor ? 'rgba(255,255,255,0.8)' : '#22c55e') }}
+                                    style={{ backgroundColor: accentColor }}
                                 />
                                 <div>
                                     <div className="flex items-center gap-2">
@@ -866,7 +902,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                             <div className="flex items-center justify-center shrink-0 print:hidden" onClick={e => e.stopPropagation()}>
                                                 <input
                                                     type="checkbox"
-                                                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                                    className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                                     checked={isAllSelected}
                                                     ref={el => {
                                                         if (el) el.indeterminate = isIndeterminate
@@ -878,7 +914,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                         )}
                                         <h2
                                             className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-sm' : 'text-lg'} ${isEmptyMode ? 'print:text-[10px] print:font-medium print:text-gray-500' : ''}`}
-                                            style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (headerTextColor || (headerColor ? 'white' : undefined)) }}
+                                            style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined)) }}
                                         >
                                             {isLevelUnderBin || isPrintPage
                                                 ? currentBreadcrumb.join(' - ')
@@ -900,9 +936,9 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                     {!isLevelUnderBin && totalPositions > 0 && (
                                         <p
                                             className="text-xs whitespace-nowrap shrink-0 print:hidden"
-                                            style={{ color: headerTextColor ? `${headerTextColor}cc` : (headerColor ? 'rgba(255,255,255,0.8)' : undefined) }}
+                                            style={{ color: effectiveHeaderTextColor ? `${effectiveHeaderTextColor}cc` : (isDarkHeader ? 'rgba(255,255,255,0.85)' : undefined) }}
                                         >
-                                            {totalPositions} ô / <span className="font-semibold text-blue-600 dark:text-blue-400">{totalSelectableCount} có hàng</span>
+                                            {totalPositions} ô / <span className={statHighlightColor}>{totalSelectableCount} có hàng</span>
                                         </p>
                                     )}
                                 </div>
@@ -917,8 +953,8 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                         }}
                                         className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
                                             mergedZones.has(zone.id)
-                                                ? (headerColor ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-sm')
-                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50')
+                                                ? (headerColor ? 'bg-white text-black' : 'bg-emerald-600 text-white shadow-sm')
+                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-emerald-700 border border-emerald-200 hover:bg-emerald-50')
                                         }`}
                                         title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
                                     >
@@ -927,7 +963,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                     </button>
                                 )}
                                 {depth === 0 && onUpdateCollapsedZones && (
-                                    <div className="flex items-center gap-1 mr-2 bg-black/10 rounded overflow-hidden">
+                                    <div className="flex items-center gap-1 mr-2 bg-emerald-950/40 border border-emerald-400/25 rounded-lg overflow-hidden shadow-inner">
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation()
@@ -939,7 +975,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                                     return next
                                                 })
                                             }}
-                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-white/10 text-white transition-colors"
                                             title="Bung Dãy/Sảnh (Giấu Vị trí)"
                                         >
                                             Mở Dãy
@@ -956,7 +992,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                                     return next
                                                 })
                                             }}
-                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-white/10 text-white transition-colors"
                                             title="Mở bung toàn bộ lưới Vị trí"
                                         >
                                             Mở Hết
@@ -971,33 +1007,12 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                                     return next
                                                 })
                                             }}
-                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-black/20 text-white transition-colors"
+                                            className="px-2 py-1 text-[10px] font-bold sm:text-xs bg-transparent hover:bg-white/10 text-white transition-colors"
                                             title="Gập gọn Kho này lại"
                                         >
                                             Thu Gọn
                                         </button>
                                     </div>
-                                )}
-                                {false && isPrintPage && onTogglePageBreak && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            onTogglePageBreak?.(zone.id)
-                                        }}
-                                        className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors ${pageBreakIds.has(zone.id)
-                                            ? 'bg-orange-500 text-white hover:bg-orange-600'
-                                            : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200')
-                                            }`}
-                                        title={pageBreakIds.has(zone.id) ? "Bỏ ngắt trang" : "Ngắt trang tại đây"}
-                                    >
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                            <path d="M3 14h18" />
-                                            <path d="M3 10h18" />
-                                            <path d="M12 3v4" />
-                                            <path d="M12 17v4" />
-                                        </svg>
-                                        {pageBreakIds.has(zone.id) ? 'Đã ngắt trang' : 'Ngắt trang'}
-                                    </button>
                                 )}
                                 {!isPrintPage && onPrintZone && depth <= 1 && (
                                     <button
@@ -1005,10 +1020,14 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                             e.stopPropagation()
                                             onPrintZone(zone.id)
                                         }}
-                                        className="flex items-center gap-1 px-2 py-1 bg-white text-gray-600 border border-gray-200 hover:bg-gray-50 rounded text-xs font-medium transition-colors"
+                                        className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-sm ${
+                                            isDarkHeader
+                                                ? 'bg-white hover:bg-emerald-50 text-emerald-900 border border-emerald-100'
+                                                : 'bg-white text-gray-700 border border-gray-200 hover:bg-gray-50'
+                                        }`}
                                         title="In sơ đồ zone này"
                                     >
-                                        <Printer size={12} />
+                                        <Printer size={12} className="text-emerald-700" />
                                         In sơ đồ
                                     </button>
                                 )}
@@ -1018,7 +1037,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                             e.stopPropagation()
                                             onConfigureZone?.(zone)
                                         }}
-                                        className="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white rounded text-xs font-medium transition-colors"
+                                        className="flex items-center gap-1 px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-medium transition-colors"
                                     >
                                         <Settings size={12} />
                                         Cấu hình
@@ -1117,11 +1136,8 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                         style={overrideBgStyle}
                     >
                         <div
-                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? (isEmptyMode ? 'py-0.5 px-2' : 'py-1.5') : 'py-2'} ${headerColor ? '' : `border-gray-100 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/50 ${depth === 0 ? 'bg-gray-50 dark:bg-gray-900/50' : ''}`}`}
-                            style={headerColor
-                                ? { backgroundColor: headerColor, borderColor: headerColor }
-                                : undefined
-                            }
+                            className={`flex items-center justify-between px-4 border-b cursor-pointer transition-colors print:py-1 ${isLevelUnderBin ? 'py-1' : isBigBin ? (isEmptyMode ? 'py-0.5 px-2' : 'py-1.5') : 'py-2'} ${collapsible ? 'hover:opacity-95' : ''}`}
+                            style={headerBgStyle}
                             onClick={() => collapsible && onToggleCollapse(zone.id)}
                         >
                             <div className="flex items-center gap-2">
@@ -1129,7 +1145,7 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                     <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
-                                            className="w-5 h-5 rounded border-blue-400 text-blue-600 focus:ring-blue-500 cursor-pointer shadow-sm transition-all"
+                                            className="w-5 h-5 rounded border-emerald-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer shadow-sm transition-all"
                                             checked={checkedZoneIds.has(zone.id)}
                                             onChange={(e) => onToggleCheckedZone(zone.id, e.target.checked)}
                                             title="Chọn vùng này để in"
@@ -1138,14 +1154,14 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                 )}
                                 {collapsible && (hasChildren || hasPositions) && (
                                     isCollapsed
-                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-gray-400'}`} />
-                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: headerTextColor || (headerColor ? 'white' : undefined) }} className={`print:hidden ${headerColor || headerTextColor ? '' : 'text-gray-400'}`} />
+                                        ? <ChevronRight size={isLevelUnderBin ? 12 : 16} style={{ color: effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined) }} className={`print:hidden ${effectiveHeaderTextColor || isDarkHeader ? '' : 'text-emerald-500'}`} />
+                                        : <ChevronDown size={isLevelUnderBin ? 12 : 16} style={{ color: effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined) }} className={`print:hidden ${effectiveHeaderTextColor || isDarkHeader ? '' : 'text-emerald-500'}`} />
                                 )}
                                 {!isAssignmentMode && !isEmptyMode && totalSelectableCount > 0 && onBulkSelect && (
                                     <div className="flex items-center justify-center shrink-0 mr-1 print:hidden" onClick={e => e.stopPropagation()}>
                                         <input
                                             type="checkbox"
-                                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                            className="w-4 h-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                             checked={isAllSelected}
                                             ref={el => {
                                                 if (el) el.indeterminate = isIndeterminate
@@ -1155,9 +1171,13 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                         />
                                     </div>
                                 )}
+                                <div
+                                    className={`rounded-full shrink-0 print:hidden ${isLevelUnderBin ? 'w-0.5 h-3' : isBigBin ? 'w-1 h-5' : 'w-1 h-8'}`}
+                                    style={{ backgroundColor: accentColor }}
+                                />
                                 <span
                                     className={`font-bold tracking-tight whitespace-nowrap shrink-0 ${isBigBin ? 'text-base' : isLevelUnderBin ? 'text-[11px] uppercase opacity-80' : isMobile ? 'text-base' : depth === 0 ? 'text-base' : 'text-sm'} ${isEmptyMode ? 'print:text-[10px] print:font-medium print:text-gray-500' : ''}`}
-                                    style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (headerTextColor || (headerColor ? 'white' : undefined)) }}
+                                    style={{ color: (isEmptyMode && isPrintPage) ? 'inherit' : (effectiveHeaderTextColor || (isDarkHeader ? 'white' : undefined)) }}
                                 >
                                     {isLevelUnderBin || isPrintPage
                                         ? (isGrouped ? (zone.name.includes('|') ? zone.name.split('|')[0].trim() : currentBreadcrumb.join(' - ')) : currentBreadcrumb.join(' - '))
@@ -1177,10 +1197,10 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                 )}
                                 {!isLevelUnderBin && totalPositions > 0 && (
                                     <span
-                                        className={`px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 print:hidden ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'} ${headerColor || headerTextColor ? '' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300'}`}
+                                        className={`px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 print:hidden ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'}`}
                                         style={{
-                                            backgroundColor: headerTextColor ? `${headerTextColor}33` : (headerColor ? 'rgba(255,255,255,0.2)' : undefined),
-                                            color: headerTextColor || (headerColor ? 'white' : undefined)
+                                            backgroundColor: isDarkHeader ? 'rgba(255,255,255,0.2)' : '#d1fae5',
+                                            color: isDarkHeader ? '#ffffff' : '#047857'
                                         }}
                                     >
                                         {totalPositions} vị trí
@@ -1198,8 +1218,8 @@ className="text-red-600! font-bold italic text-sm print:text-red-600 border-b-st
                                         }}
                                         className={`flex items-center gap-1 px-2 py-1 rounded text-[10px] font-bold transition-all ${
                                             (mergedZones.has(zone.id) || (isGrouped && isSanh))
-                                                ? (headerColor ? 'bg-white text-black' : 'bg-indigo-600 text-white shadow-sm')
-                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-indigo-600 border border-indigo-200 hover:bg-indigo-50')
+                                                ? (headerColor ? 'bg-white text-black' : 'bg-emerald-600 text-white shadow-sm')
+                                                : (headerColor ? 'bg-black/20 text-white border border-white/30' : 'bg-white/80 text-emerald-700 border border-emerald-200 hover:bg-emerald-50')
                                         }`}
                                         title={mergedZones.has(zone.id) ? "Tắt gộp ô lớn" : "Gộp thành ô lớn (hàng cồng kềnh)"}
                                     >

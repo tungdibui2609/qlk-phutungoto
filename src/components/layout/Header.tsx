@@ -49,12 +49,11 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                     <Menu size={24} />
                 </button>
 
-                {/* HEADER COLLAPSE BUTTON (Replaces Sidebar Toggle Logic or sits nearby? User asked for close button) */}
-                {/* Actually user asked to close the HEADER so we add a ChevronUp here */}
+                {/* HEADER COLLAPSE BUTTON */}
                 {onCollapse && (
                     <button
                         onClick={onCollapse}
-                        className="p-2 rounded-lg text-stone-400 hover:text-orange-600 hover:bg-orange-50 transition-colors"
+                        className="p-2 rounded-lg text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
                         title="Thu gọn Header"
                     >
                         <ChevronUp size={20} />
@@ -83,16 +82,16 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                                         }
                                     }}
                                     className={`
-                                        flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-all duration-200 whitespace-nowrap
+                                        flex items-center gap-2 px-3.5 py-2 rounded-xl border text-sm font-semibold transition-all duration-200 whitespace-nowrap
                                         ${isActive
-                                            ? `bg-orange-50 border-orange-200 text-orange-700 shadow-sm ring-1 ring-orange-100`
+                                            ? `bg-emerald-50 border-emerald-300 text-emerald-800 shadow-sm ring-2 ring-emerald-500/10`
                                             : isAllowed
-                                                ? 'bg-transparent border-transparent text-stone-500 hover:bg-stone-50 hover:text-stone-700'
+                                                ? 'bg-transparent border-transparent text-stone-600 hover:bg-emerald-50/60 hover:text-emerald-700'
                                                 : 'bg-stone-50 border-transparent text-stone-300 cursor-not-allowed opacity-60'
                                         }
                                     `}
                                 >
-                                    <span className={`w-2 h-2 rounded-full ${isActive ? `bg-orange-500` : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                                    <span className={`w-2 h-2 rounded-full ${isActive ? `bg-emerald-500` : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
                                     {sys.name}
                                 </button>
                             )
@@ -103,9 +102,9 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                     <div className="md:hidden relative">
                         <button
                             onClick={() => setIsSystemMenuOpen(!isSystemMenuOpen)}
-                            className="flex items-center gap-2 px-3 py-2 rounded-lg border border-orange-200 bg-orange-50 text-orange-700 text-sm font-semibold shadow-sm w-full max-w-[200px]"
+                            className="flex items-center gap-2 px-3 py-2 rounded-xl border border-emerald-200 bg-emerald-50 text-emerald-800 text-sm font-semibold shadow-sm w-full max-w-[200px]"
                         >
-                            <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                             <span className="truncate flex-1 text-left">{currentSystem?.name || 'Chọn hệ thống'}</span>
                             <ChevronDown size={14} className={`transition-transform duration-200 ${isSystemMenuOpen ? 'rotate-180' : ''}`} />
                         </button>
@@ -142,17 +141,17 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                                                 className={`
                                                     w-full px-4 py-3 text-left text-sm flex items-center gap-3 transition-colors
                                                     ${isActive
-                                                        ? 'bg-orange-50 text-orange-700 font-bold'
+                                                        ? 'bg-emerald-50 text-emerald-800 font-bold'
                                                         : isAllowed
-                                                            ? 'text-stone-600 hover:bg-stone-50'
+                                                            ? 'text-stone-600 hover:bg-emerald-50/50 hover:text-emerald-700'
                                                             : 'text-stone-300 cursor-not-allowed italic'
                                                     }
                                                 `}
                                             >
-                                                <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-orange-500' : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
+                                                <span className={`w-2 h-2 rounded-full shrink-0 ${isActive ? 'bg-emerald-500' : isAllowed ? 'bg-stone-300' : 'bg-stone-200'}`} />
                                                 <span className="truncate">{sys.name}</span>
                                                 {isActive && (
-                                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-orange-500" />
+                                                    <div className="ml-auto w-1.5 h-1.5 rounded-full bg-emerald-500" />
                                                 )}
                                             </button>
                                         )
@@ -168,7 +167,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
             <div className="flex items-center gap-2 md:gap-4 shrink-0">
                 {/* Notification Button */}
                 <button
-                    className="relative p-2 md:p-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-500 hover:border-orange-300 hover:bg-orange-50 hover:text-orange-600 transition-all duration-200"
+                    className="relative p-2 md:p-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-500 hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-600 transition-all duration-200"
                 >
                     <Bell size={20} />
                     <span
@@ -205,8 +204,8 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                         <div
                             className="relative h-11 w-11 rounded-xl flex items-center justify-center text-white font-bold text-lg overflow-hidden"
                             style={{
-                                background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)',
-                                boxShadow: '0 4px 15px rgba(249, 115, 22, 0.3)',
+                                background: 'linear-gradient(135deg, #059669 0%, #047857 100%)',
+                                boxShadow: '0 4px 15px rgba(5, 150, 105, 0.3)',
                             }}
                         >
                             {user?.user_metadata?.avatar_url ? (
@@ -221,9 +220,9 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
 
                             {/* Online indicator */}
                             <span
-                                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-green-500"
+                                className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2 border-white bg-emerald-500"
                                 style={{
-                                    boxShadow: '0 0 6px rgba(34, 197, 94, 0.5)',
+                                    boxShadow: '0 0 6px rgba(16, 185, 129, 0.5)',
                                 }}
                             />
                         </div>
@@ -243,7 +242,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                                         setShowAvatarModal(true)
                                         setIsMenuOpen(false)
                                     }}
-                                    className="w-full px-4 py-2.5 text-left text-sm text-stone-600 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-2 transition-colors"
+                                    className="w-full px-4 py-2.5 text-left text-sm text-stone-600 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2 transition-colors"
                                 >
                                     <Camera size={16} />
                                     Đổi ảnh đại diện
@@ -253,7 +252,7 @@ export default function Header({ onCollapse }: { onCollapse?: () => void }) {
                                         setShowPasswordModal(true)
                                         setIsMenuOpen(false)
                                     }}
-                                    className="w-full px-4 py-2.5 text-left text-sm text-stone-600 hover:bg-orange-50 hover:text-orange-600 flex items-center gap-2 transition-colors"
+                                    className="w-full px-4 py-2.5 text-left text-sm text-stone-600 hover:bg-emerald-50 hover:text-emerald-700 flex items-center gap-2 transition-colors"
                                 >
                                     <Key size={16} />
                                     Đổi mật khẩu

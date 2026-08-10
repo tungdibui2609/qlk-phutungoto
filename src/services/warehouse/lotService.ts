@@ -1,5 +1,6 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import { formatUnitWeight, extractWeightFromName } from '@/lib/unitConversion'
+import { formatQuantityFull } from '@/lib/numberUtils'
 
 export interface LotServiceParams {
     supabase: SupabaseClient
@@ -127,38 +128,42 @@ export const lotService = {
 
         if (remainingQty <= 0.000001) return null
 
+        const getRate = (uName: string) => {
+            if (!uName) return 1
+            // PRIORITY 1: Name parsing (e.g. "Thùng (15kg)" -> 15)
+            const pRate = this.parseRateFromName(uName)
+            if (pRate !== null) return pRate
+
+            // PRIORITY 2: Map to ID
+            let uid = unitNameMap.get(uName.toLowerCase())
+            if (!uid) {
+                const normalized = uName.toLowerCase()
+                for (const [name, id] of unitNameMap.entries()) {
+                    if (name.startsWith(normalized) || normalized.startsWith(name)) {
+                        uid = id
+                        break
+                    }
+                }
+            }
+
+            const rates = conversionMap.get(item.product_id || '')
+            return uid ? (rates?.get(uid) || 1) : 1
+        }
+
+        const currentRate = getRate(originalUnit)
+        const isOriginalBaseUnit = !originalUnit || !baseUnit || originalUnit.trim().normalize('NFC').toLowerCase() === baseUnit.trim().normalize('NFC').toLowerCase() || currentRate === 1
+
         const floorRemaining = Math.floor(remainingQty + 0.000001)
         const fractionalRemaining = remainingQty - floorRemaining
 
-        if (fractionalRemaining > 0.000001) {
+        // Only split if there is a fractional remaining AND the original unit is NOT a base unit (e.g. "Thùng (15kg)" with rate > 1)
+        if (fractionalRemaining > 0.000001 && !isOriginalBaseUnit) {
             let targetUnit = baseUnit
             let targetQty = 0
 
-            const getRate = (uName: string) => {
-                // PRIORITY 1: Name parsing (e.g. "Thùng (15kg)" -> 15)
-                const pRate = this.parseRateFromName(uName)
-                if (pRate !== null) return pRate
-
-                // PRIORITY 2: Map to ID
-                let uid = unitNameMap.get(uName.toLowerCase())
-                if (!uid) {
-                    const normalized = uName.toLowerCase()
-                    for (const [name, id] of unitNameMap.entries()) {
-                        if (name.startsWith(normalized) || normalized.startsWith(name)) {
-                            uid = id
-                            break
-                        }
-                    }
-                }
-
-                const rates = conversionMap.get(item.product_id || '')
-                return uid ? (rates?.get(uid) || 1) : 1
-            }
-
-            const currentRate = getRate(originalUnit)
             const fractionalBase = fractionalRemaining * currentRate
 
-            if (preferredUnit && preferredUnit.toLowerCase() !== baseUnit.toLowerCase()) {
+            if (preferredUnit && preferredUnit.trim().normalize('NFC').toLowerCase() !== baseUnit.trim().normalize('NFC').toLowerCase()) {
                 const preferredRate = getRate(preferredUnit)
                 if (preferredRate > 0) {
                     targetUnit = preferredUnit
@@ -170,11 +175,21 @@ export const lotService = {
                 targetQty = fractionalBase
             }
 
+            if (targetUnit.trim().normalize('NFC').toLowerCase() === originalUnit.trim().normalize('NFC').toLowerCase()) {
+                return {
+                    remainingQtyInteger: Number(remainingQty.toFixed(6)),
+                    remainingUnitInteger: originalUnit,
+                    remainingQtyFractional: 0,
+                    remainingUnitFractional: originalUnit,
+                    displayLabel: `${formatQuantityFull(remainingQty)} ${originalUnit}`
+                }
+            }
+
             let displayLabel = ""
             if (floorRemaining > 0) {
-                displayLabel = `${floorRemaining} ${originalUnit} và ${Number(targetQty.toFixed(6))} ${targetUnit}`
+                displayLabel = `${formatQuantityFull(floorRemaining)} ${originalUnit} và ${formatQuantityFull(targetQty)} ${targetUnit}`
             } else {
-                displayLabel = `${Number(targetQty.toFixed(6))} ${targetUnit}`
+                displayLabel = `${formatQuantityFull(targetQty)} ${targetUnit}`
             }
 
             return {
@@ -186,11 +201,11 @@ export const lotService = {
             }
         } else {
             return {
-                remainingQtyInteger: Number(floorRemaining.toFixed(6)),
+                remainingQtyInteger: Number(remainingQty.toFixed(6)),
                 remainingUnitInteger: originalUnit,
                 remainingQtyFractional: 0,
                 remainingUnitFractional: originalUnit,
-                displayLabel: `${Number(floorRemaining.toFixed(6))} ${originalUnit}`
+                displayLabel: `${formatQuantityFull(remainingQty)} ${originalUnit}`
             }
         }
     },

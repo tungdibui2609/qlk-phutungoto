@@ -137,6 +137,16 @@ class ServerManagerGUI:
         style.map("Success.TButton", background=[("active", "#047857")])
 
         style.configure(
+            "Backup.TButton",
+            background="#0284c7",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("Backup.TButton", background=[("active", "#0369a1"), ("disabled", "#475569")])
+
+        style.configure(
             "Link.TButton",
             background="#334155",
             foreground="#38bdf8",
@@ -204,6 +214,15 @@ class ServerManagerGUI:
 
         self.btn_build = ttk.Button(btn_sub_row, text="🔨 Build Lại Web", style="Success.TButton", command=self.build_production)
         self.btn_build.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
+
+        btn_backup_row = tk.Frame(btn_box, bg="#1e293b")
+        btn_backup_row.pack(fill=tk.X, pady=(6, 0))
+
+        self.btn_backup = ttk.Button(btn_backup_row, text="💾 SAO LƯU DỮ LIỆU", style="Backup.TButton", command=self.backup_database)
+        self.btn_backup.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+
+        self.btn_open_backup = ttk.Button(btn_backup_row, text="📂 Xem Thư Mục Backup", style="Link.TButton", command=self.open_backup_folder)
+        self.btn_open_backup.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
 
         # Cột phải: Bảng trạng thái dịch vụ (Status Dashboard)
         status_card = tk.Frame(top_grid, bg="#1e293b", padx=14, pady=12, highlightthickness=1, highlightbackground="#334155")
@@ -327,6 +346,62 @@ class ServerManagerGUI:
         finally:
             self.is_building = False
             self.root.after(0, lambda: self.btn_build.configure(state="normal"))
+
+    def open_backup_folder(self):
+        """Mở thư mục chứa file backup trên Windows Explorer"""
+        backup_dir = Path(r"D:\chanh thu\backups")
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(str(backup_dir))
+        self.log(f"📂 Đã mở thư mục sao lưu: {backup_dir}")
+
+    def backup_database(self):
+        """Sao lưu nhanh toàn bộ dữ liệu Supabase Database Local ra file .sql"""
+        if getattr(self, "is_backing_up", False):
+            return
+        self.is_backing_up = True
+        self.btn_backup.configure(state="disabled")
+        threading.Thread(target=self._backup_database_worker, daemon=True).start()
+
+    def _backup_database_worker(self):
+        self.log("💾 ================= BẮT ĐẦU SAO LƯU DỮ LIỆU CSDL =================")
+        try:
+            backup_dir = Path(r"D:\chanh thu\backups")
+            backup_dir.mkdir(parents=True, exist_ok=True)
+
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            backup_file = backup_dir / f"backup_supabase_{timestamp}.sql"
+
+            self.log(f"📦 Đang xuất dữ liệu từ Supabase Local ra: {backup_file.name}...")
+
+            cmd = f'cmd.exe /c npx.cmd supabase db dump --local --data-only -f "{str(backup_file)}"'
+            res = subprocess.run(
+                cmd,
+                cwd=str(PROJECT_DIR),
+                shell=True,
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+
+            if res.returncode == 0 and backup_file.exists() and backup_file.stat().st_size > 0:
+                file_size_kb = round(backup_file.stat().st_size / 1024, 2)
+                self.log(f"✅ Sao lưu CSDL THÀNH CÔNG! Dung lượng: {file_size_kb} KB")
+                self.log(f"📁 File đã lưu tại: {str(backup_file)}")
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Sao Lưu Thành Công",
+                    f"Đã sao lưu toàn bộ dữ liệu CSDL thành công!\n\nFile: {backup_file.name} ({file_size_kb} KB)\nThư mục: {str(backup_dir)}"
+                ))
+            else:
+                err_msg = res.stderr or res.stdout or "Không xuất được file"
+                self.log(f"❌ Lỗi khi sao lưu: {err_msg}")
+                self.root.after(0, lambda: messagebox.showerror("Lỗi Sao Lưu", f"Không thể sao lưu dữ liệu:\n{err_msg}"))
+        except Exception as e:
+            self.log(f"❌ Ngoại lệ khi sao lưu: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Lỗi Ngoại Lệ", f"Lỗi: {e}"))
+        finally:
+            self.is_backing_up = False
+            self.root.after(0, lambda: self.btn_backup.configure(state="normal"))
 
     def start_all_services(self):
         if self.is_starting_all:

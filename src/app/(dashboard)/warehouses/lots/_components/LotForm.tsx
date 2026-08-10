@@ -1015,7 +1015,7 @@ export function LotForm({
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 md:p-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-orange-100 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 rounded-2xl shadow-sm border border-orange-200 dark:border-orange-800/30">
+                        <div className="p-2.5 bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 rounded-2xl shadow-sm border border-emerald-200 dark:border-emerald-800/30">
                             <Boxes size={24} />
                         </div>
                         <div>
@@ -1028,7 +1028,7 @@ export function LotForm({
                         </div>
 
                         {/* STT Badge/Input in Header */}
-                        <div className="ml-4 flex items-center gap-2 px-3 py-1.5 bg-orange-600 text-white rounded-xl shadow-lg shadow-orange-500/20 border border-orange-700">
+                        <div className="ml-4 flex items-center gap-2 px-3 py-1.5 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-500/20 border border-emerald-700">
                             <Hash size={14} className="opacity-70" />
                             <span className="text-[10px] font-black uppercase tracking-wider">STT:</span>
                             <input
@@ -1702,9 +1702,9 @@ export function LotForm({
                                         onChange={(e) => setIsPersistent(e.target.checked)}
                                         className="sr-only peer"
                                     />
-                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 dark:peer-focus:ring-orange-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-orange-600"></div>
+                                    <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-emerald-300 dark:peer-focus:ring-emerald-800 rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-emerald-600"></div>
                                 </div>
-                                <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-orange-600 transition-colors">
+                                <span className="text-sm font-medium text-slate-600 dark:text-slate-400 group-hover:text-emerald-600 transition-colors">
                                     Ghi nhớ thông tin cho lô tiếp theo
                                 </span>
                             </label>
@@ -1720,7 +1720,7 @@ export function LotForm({
                         <button
                             onClick={handleSubmit}
                             disabled={!newLotCode.trim() || isSubmitting}
-                            className="px-6 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-medium shadow-lg shadow-orange-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
+                            className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-medium shadow-lg shadow-emerald-500/20 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 min-w-[120px]"
                         >
                             {isSubmitting ? (
                                 <>

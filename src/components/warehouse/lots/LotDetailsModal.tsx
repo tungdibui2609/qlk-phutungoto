@@ -102,7 +102,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                 {/* Header */}
                 <div className="p-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800/50">
                     <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 flex items-center justify-center">
+                        <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center">
                             <Boxes size={20} />
                         </div>
                         <div>
@@ -114,11 +114,11 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         ĐÃ KHÓA
                                     </span>
                                 )}
-                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-orange-600 text-white border-orange-700' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
+                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
                                     STT: {decodeSTT((lot as any).daily_seq) || '--'}
                                 </span>
                             </div>
-                            <p className="text-xs text-orange-600 dark:text-orange-400 font-mono mt-1 font-bold">{lot.code}</p>
+                            <p className="text-xs text-emerald-700 dark:text-emerald-400 font-mono mt-1 font-bold">{lot.code}</p>
                         </div>
                     </div>
                     <button
@@ -189,7 +189,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                 <div className="flex flex-wrap gap-1">
                                     {lot.positions && lot.positions.length > 0 ? (
                                         lot.positions.map((p: any) => (
-                                            <span key={p.code} className="text-sm font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
+                                            <span key={p.code} className="text-sm font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
                                                 {p.code}
                                             </span>
                                         ))
@@ -219,24 +219,24 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             });
 
                             return (
-                                <div className="flex items-start gap-4 p-4 rounded-2xl border border-rose-100 dark:border-rose-800 bg-rose-50/30 dark:bg-rose-900/10">
-                                    <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0">
+                                <div className="flex items-start gap-4 p-4 rounded-2xl border border-emerald-200/80 dark:border-emerald-800/60 bg-emerald-50/40 dark:bg-emerald-950/20">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0">
                                         <Factory size={22} />
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                        <p className="text-[10px] font-bold text-rose-500 dark:text-rose-400 uppercase tracking-wider mb-1">Lệnh sản xuất</p>
-                                        <p className="text-base font-bold text-rose-900 dark:text-rose-100 truncate leading-tight">
+                                        <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider mb-1">Lệnh sản xuất</p>
+                                        <p className="text-base font-bold text-emerald-950 dark:text-emerald-100 truncate leading-tight">
                                             {prod?.name || lot.production_code || 'Chưa có tên'}
                                         </p>
                                         {(prod?.code || (lot?.production_code && !prod?.name)) && (
-                                            <p className="text-[11px] font-mono text-rose-500/80 dark:text-rose-400/60 truncate mt-0.5 mt-1">
+                                            <p className="text-[11px] font-mono text-emerald-700/80 dark:text-emerald-400/80 truncate mt-0.5 mt-1">
                                                 Mã LSX: {prod?.code || lot?.production_code}
                                             </p>
                                         )}
                                         {filteredProductionLots.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-2">
                                                 {filteredProductionLots.map((pl: any, idx: number) => (
-                                                    <span key={idx} className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-xs font-black border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tight shadow-sm">
+                                                    <span key={idx} className="px-2 py-1 rounded-lg bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:indigo-400 text-xs font-black border border-indigo-100 dark:border-indigo-800/50 uppercase tracking-tight shadow-sm">
                                                         Lot SX: {pl.lot_code}
                                                     </span>
                                                 ))}
@@ -273,7 +273,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             )}
                             {isModuleEnabled('raw_material_date') && (
                                 <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                    <div className="w-10 h-10 rounded-xl bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
                                         <Calendar size={20} />
                                     </div>
                                     <div className="min-w-0">
@@ -373,7 +373,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                             return acc;
                                         }, {});
                                         return Object.entries(summary).map(([unit, total]) => (
-                                            <span key={unit} className="text-[10px] font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
+                                            <span key={unit} className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
                                                 {formatQuantityFull(total as number)} {unit}
                                             </span>
                                         ));
@@ -411,7 +411,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                                                 </div>
                                                             )}
                                                         </div>
-                                                        <div className="flex items-center gap-1 px-2 py-1 bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 rounded-lg border border-orange-100 dark:border-orange-900/30 shrink-0 self-start">
+                                                        <div className="flex items-center gap-1 px-2 py-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 rounded-lg border border-emerald-200 dark:border-emerald-800/40 shrink-0 self-start font-bold">
                                                             <span className="text-xs font-bold">{formatQuantityFull(item.quantity)}</span>
                                                             <span className="text-[10px] font-medium opacity-80">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
                                                         </div>

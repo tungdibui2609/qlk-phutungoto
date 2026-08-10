@@ -23,8 +23,8 @@ export function TagDisplay({ tags, className = "", placeholderMap = {}, variant 
                         <span
                             key={`${tag}-${idx}`}
                             className={`inline-flex items-center rounded font-mono border ${isCompact
-                                ? 'px-1 py-[1px] text-[7px] bg-orange-50 text-orange-700 dark:bg-orange-950/20 dark:text-orange-400 border-orange-200/50'
-                                : 'px-2 py-1 bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400 text-xs font-medium border border-orange-200 dark:border-orange-800'
+                                ? 'px-1 py-[1px] text-[7px] bg-emerald-50 text-emerald-800 dark:bg-emerald-950/20 dark:text-emerald-400 border-emerald-200/50'
+                                : 'px-2 py-1 bg-emerald-50 text-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 text-xs font-semibold border border-emerald-200 dark:border-emerald-800'
                                 }`}
                         >
                             {tag}
@@ -37,8 +37,8 @@ export function TagDisplay({ tags, className = "", placeholderMap = {}, variant 
                     <span
                         key={`${tag}-${idx}`}
                         className={`inline-flex items-center rounded font-mono border ${isCompact
-                            ? 'px-1 py-[1px] text-[7px] bg-orange-50/50 text-orange-900 dark:bg-orange-950/10 dark:text-orange-300 border-orange-100/50'
-                            : 'px-1.5 py-0.5 bg-orange-50 text-orange-900 dark:bg-orange-900/20 dark:text-orange-300 text-xs border border-orange-200 dark:border-orange-800'
+                            ? 'px-1 py-[1px] text-[7px] bg-emerald-50/50 text-emerald-900 dark:bg-emerald-950/10 dark:text-emerald-300 border-emerald-100/50'
+                            : 'px-1.5 py-0.5 bg-emerald-50 text-emerald-900 dark:bg-emerald-950/20 dark:text-emerald-300 text-xs font-semibold border border-emerald-200 dark:border-emerald-800'
                             }`}
                     >
                         {parts.map((rawPart, pIdx) => {

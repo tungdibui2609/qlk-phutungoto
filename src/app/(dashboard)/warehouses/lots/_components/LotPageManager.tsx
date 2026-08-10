@@ -191,9 +191,9 @@ export function LotPageManager() {
 
                     <Link
                         href="/warehouses/lots/scan"
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-emerald-50 dark:hover:bg-slate-800 hover:text-emerald-700 transition-all shadow-sm flex items-center gap-2"
                     >
-                        <QrCode size={18} className="text-orange-500" />
+                        <QrCode size={18} className="text-emerald-600" />
                         Liên kết Tem
                     </Link>
 
@@ -207,9 +207,9 @@ export function LotPageManager() {
 
                     <button
                         onClick={() => setShowReportModal(true)}
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-emerald-50 dark:hover:bg-slate-800 hover:text-emerald-700 transition-all shadow-sm flex items-center gap-2"
                     >
-                        <FileText size={18} className="text-orange-500" />
+                        <FileText size={18} className="text-emerald-600" />
                         Báo cáo
                     </button>
 
@@ -226,7 +226,7 @@ export function LotPageManager() {
                                     </button>
                                     <button
                                         onClick={() => setShowBulkAssignTag(true)}
-                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-orange-50 hover:bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:hover:bg-orange-900/50 dark:text-orange-300 border border-orange-200 dark:border-orange-800"
+                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
                                     >
                                         <Tag size={18} />
                                         Mã phụ hàng loạt
@@ -244,9 +244,9 @@ export function LotPageManager() {
                             )}
                             <button
                                 onClick={toggleCreateForm}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 ${showCreateForm
+                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 cursor-pointer ${showCreateForm
                                     ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
-                                    : 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-500/20'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
                                     }`}
                             >
                                 {showCreateForm ? <X size={18} /> : <Plus size={18} />}
@@ -318,7 +318,7 @@ export function LotPageManager() {
                             aria-checked={isFifoActive}
                             onClick={toggleFifo}
                             className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoActive
-                                ? 'bg-orange-500'
+                                ? 'bg-emerald-600'
                                 : 'bg-slate-300 dark:bg-slate-600'
                                 }`}
                         >
