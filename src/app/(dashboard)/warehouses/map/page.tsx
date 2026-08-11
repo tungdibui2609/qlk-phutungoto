@@ -413,9 +413,27 @@ function WarehouseMapContent() {
 
             showToast(`Đã xóa ${lotIds.length} LOT thành công`, 'success')
 
-            // Refresh map data
-            fetchData()
+            // Optimistic UI update
+            const lotIdSet = new Set(lotIds)
+            setPositions(prev => prev.map(p => {
+                if (p.lot_id && lotIdSet.has(p.lot_id)) {
+                    return { ...p, lot_id: null }
+                }
+                return p
+            }))
+            setOccupiedIds(prev => {
+                const next = new Set(prev)
+                positions.forEach(p => {
+                    if (p.lot_id && lotIdSet.has(p.lot_id)) {
+                        next.delete(p.id)
+                    }
+                })
+                return next
+            })
             setSelectedPositionIds(new Set())
+
+            // Sync fresh data in background without collapsing zones
+            fetchData()
         } catch (error: any) {
             console.error('Bulk delete error:', error)
             showToast(error.message || "Lỗi khi xóa LOT (có thể do ràng buộc dữ liệu khác)", 'error')

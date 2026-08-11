@@ -129,9 +129,17 @@ export function useWarehouseData() {
         }))
     }, [accessToken])
 
+    const hasInitializedCollapsedRef = useRef(false)
+
+    useEffect(() => {
+        hasInitializedCollapsedRef.current = false
+    }, [systemType])
+
     const fetchData = useCallback(async () => {
         if (!accessToken || !systemType) return
-        setLoading(true)
+        if (!hasInitializedCollapsedRef.current) {
+            setLoading(true)
+        }
         setErrorMsg(null)
 
         async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 1000) {
@@ -285,14 +293,17 @@ export function useWarehouseData() {
             setLotInfo(lotInfoMap)
 
             // Auto collapse ONLY Root Zones (Warehouses) on initial load
-            // This prevents massive DOM rendering while solving the "double click to expand" issue
-            const parentZoneIds = new Set<string>()
-            zoneData.forEach((z: any) => {
-                if (!z.parent_id) {
-                    parentZoneIds.add(z.id)
-                }
-            })
-            setCollapsedZones(parentZoneIds)
+            // This prevents massive DOM rendering while preserving user's expanded zones on subsequent data refreshes
+            if (!hasInitializedCollapsedRef.current) {
+                const parentZoneIds = new Set<string>()
+                zoneData.forEach((z: any) => {
+                    if (!z.parent_id) {
+                        parentZoneIds.add(z.id)
+                    }
+                })
+                setCollapsedZones(parentZoneIds)
+                hasInitializedCollapsedRef.current = true
+            }
 
             const occupied = new Set<string>()
             posWithZone.forEach(pos => {

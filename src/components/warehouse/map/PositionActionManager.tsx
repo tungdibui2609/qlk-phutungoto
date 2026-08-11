@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -19,6 +20,7 @@ interface UsePositionActionManagerProps {
 }
 
 export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot }: UsePositionActionManagerProps) {
+    const router = useRouter()
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
         x: number
@@ -158,7 +160,7 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
         if (action === 'export') {
             const lotId = pos.lot_id
             const realIds = (pos as any).realIds || [pos.id]
-            window.location.href = `/work/export-order?posIds=${realIds.join(',')}&lotIds=${lotId || ''}`
+            router.push(`/work/export-order?posIds=${realIds.join(',')}&lotIds=${lotId || ''}`)
             return
         }
 
@@ -170,7 +172,7 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
         if (action === 'move') {
             const lotId = pos.lot_id
             if (lotId) {
-                window.location.href = `/warehouses/map?assignLotId=${lotId}&mode=move`
+                router.push(`/warehouses/map?assignLotId=${lotId}&mode=move`)
             }
             return
         }

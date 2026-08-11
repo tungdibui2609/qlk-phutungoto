@@ -1,6 +1,6 @@
 'use client'
 import React, { useMemo } from 'react'
-import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings, Layout, Monitor, Layers, Maximize2, MoreHorizontal, Eye, Package, Scissors } from 'lucide-react'
+import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings, Layout, Monitor, Layers, Maximize2, MoreHorizontal, Eye, Package, Scissors, Copy } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { InView } from 'react-intersection-observer'
@@ -94,6 +94,114 @@ export default function FlexibleZoneGrid({
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
+    const [copiedZoneId, setCopiedZoneId] = React.useState<string | null>(null)
+
+    const getZonePositionCodes = React.useCallback((node: ZoneTreeNode): string[] => {
+        const codes: string[] = []
+        if (node.positions && node.positions.length > 0) {
+            node.positions.forEach(p => {
+                const code = p.code || (p as any).name
+                if (code && typeof code === 'string' && code.trim() !== '') {
+                    codes.push(code.trim())
+                }
+            })
+        }
+        if (node.children && node.children.length > 0) {
+            node.children.forEach(child => {
+                codes.push(...getZonePositionCodes(child))
+            })
+        }
+        return codes
+    }, [])
+
+    const handleCopyPositions = React.useCallback((e: React.MouseEvent, zone: ZoneTreeNode) => {
+        e.stopPropagation()
+        const codes = getZonePositionCodes(zone)
+        if (codes.length === 0) return
+
+        const textToCopy = codes.join('\n')
+
+        const onSuccess = () => {
+            setCopiedZoneId(zone.id)
+            setTimeout(() => {
+                setCopiedZoneId(curr => (curr === zone.id ? null : curr))
+            }, 2000)
+        }
+
+        if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(textToCopy)
+                .then(onSuccess)
+                .catch(err => {
+                    console.error('Clipboard writeText failed, trying fallback:', err)
+                    try {
+                        const textarea = document.createElement('textarea')
+                        textarea.value = textToCopy
+                        textarea.style.position = 'fixed'
+                        textarea.style.left = '-9999px'
+                        textarea.style.top = '-9999px'
+                        textarea.style.opacity = '0'
+                        document.body.appendChild(textarea)
+                        textarea.focus()
+                        textarea.select()
+                        const success = document.execCommand('copy')
+                        document.body.removeChild(textarea)
+                        if (success) onSuccess()
+                    } catch (fbErr) {
+                        console.error('Fallback copy failed:', fbErr)
+                    }
+                })
+        } else {
+            try {
+                const textarea = document.createElement('textarea')
+                textarea.value = textToCopy
+                textarea.style.position = 'fixed'
+                textarea.style.left = '-9999px'
+                textarea.style.top = '-9999px'
+                textarea.style.opacity = '0'
+                document.body.appendChild(textarea)
+                textarea.focus()
+                textarea.select()
+                const success = document.execCommand('copy')
+                document.body.removeChild(textarea)
+                if (success) onSuccess()
+            } catch (fbErr) {
+                console.error('Fallback copy failed:', fbErr)
+            }
+        }
+    }, [getZonePositionCodes])
+
+    const renderCopyButton = React.useCallback((zone: ZoneTreeNode, isLevelUnderBin: boolean, isDarkHeader: boolean) => {
+        const count = zone.totalPositions
+        if (count === 0) return null
+
+        const isCopied = copiedZoneId === zone.id
+
+        return (
+            <button
+                type="button"
+                onClick={(e) => handleCopyPositions(e, zone)}
+                className={`flex items-center justify-center transition-all cursor-pointer shadow-xs rounded-md ${
+                    isLevelUnderBin
+                        ? 'w-5 h-5 p-0.5'
+                        : 'w-6 h-6 p-1'
+                } ${
+                    isCopied
+                        ? 'bg-emerald-600 text-white font-bold animate-pulse ring-1 ring-emerald-400'
+                        : isDarkHeader
+                            ? 'bg-white/15 hover:bg-white/30 text-white border border-white/20 hover:border-white/40'
+                            : 'bg-white/90 hover:bg-emerald-50 text-emerald-700 border border-emerald-300 hover:border-emerald-400 dark:bg-gray-800 dark:text-emerald-300 dark:border-emerald-700'
+                }`}
+                title={isCopied ? `Đã sao chép ${count} mã vị trí!` : `Sao chép ${count} mã vị trí (${zone.name || 'khu vực này'})`}
+                aria-label="Copy mã vị trí"
+            >
+                {isCopied ? (
+                    <Check size={isLevelUnderBin ? 11 : 13} className="text-white shrink-0" />
+                ) : (
+                    <Copy size={isLevelUnderBin ? 11 : 13} className={`${isDarkHeader ? 'text-white' : 'text-emerald-700 dark:text-emerald-400'} shrink-0`} />
+                )}
+            </button>
+        )
+    }, [copiedZoneId, handleCopyPositions])
 
     React.useEffect(() => {
         const checkMobile = () => setIsMobile(window.innerWidth < 768)
@@ -704,6 +812,7 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className={`flex items-center gap-2 print:hidden ${isCapturing ? "hidden" : ""}`}>
+                                {renderCopyButton(zone, isLevelUnderBin, isDarkHeader)}
                                 {/* Hide manual merge button in print view */}
                                 {false && isPrintPage && isGrouped && (isLevelUnderBin || isBigBin) && (zone.positions.length > 1 || zone.totalPositions > 1) && (
                                     <button
@@ -944,6 +1053,7 @@ export default function FlexibleZoneGrid({
                                 </div>
                             </div>
                             <div className={`flex items-center gap-2 print:hidden ${isCapturing ? "hidden" : ""}`}>
+                                {renderCopyButton(zone, isLevelUnderBin, isDarkHeader)}
                                 {/* Hide manual merge button in print view */}
                                 {false && isPrintPage && isGrouped && (isLevelUnderBin || isBigBin) && (zone.positions.length > 1 || zone.totalPositions > 1) && (
                                     <button
@@ -1209,6 +1319,7 @@ export default function FlexibleZoneGrid({
                             </div>
 
                             <div className={`flex items-center gap-2 print:hidden ${isCapturing ? 'hidden' : ''}`}>
+                                {renderCopyButton(zone, isLevelUnderBin, isDarkHeader)}
                                 {/* Hide manual merge button in print view */}
                                 {false && isPrintPage && isGrouped && (isLevelUnderBin || isBigBin) && (zone.positions.length > 1 || zone.totalPositions > 1) && (
                                     <button
