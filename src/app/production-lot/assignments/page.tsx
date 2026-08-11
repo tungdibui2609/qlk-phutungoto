@@ -106,6 +106,27 @@ export default function AssignmentApprovalPage() {
     const [editValues, setEditValues] = useState<{ lot_stt: string, position_id: string, position_code: string }>({ lot_stt: '', position_id: '', position_code: '' })
     const [manualEdits, setManualEdits] = useState<Record<string, { lot_stt: number, position_code: string }>>({})
 
+    // Bulk selection state
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+
+    // Danh sách các yêu cầu không tìm thấy lô hàng tương ứng (mục lỗi/rác)
+    const unmatchedPendingList = useMemo(() => {
+        return pendingList.filter(ass => {
+            const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
+            const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
+            const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+            const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+            const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+            const hiddenByFilter = allMatchedLotsRaw.length > 0 && allMatchedLots.length === 0
+            const unassignedInRaw = allMatchedLotsRaw.filter(l => !l.positions?.[0])
+            const effectiveHiddenByFilter = hiddenByFilter && unassignedInRaw.length === 0
+            const effectiveMatchedLots = hiddenByFilter && unassignedInRaw.length > 0 ? unassignedInRaw : allMatchedLots
+            const effectiveHasMatches = effectiveMatchedLots.length > 0
+
+            return !perfectMatch && !effectiveHasMatches && !effectiveHiddenByFilter
+        })
+    }, [pendingList, lotsInDay, manualEdits, showOnlyUnassigned])
+
     const filteredHistory = useMemo(() => {
         return historyList.filter(h => {
             const matchesGeneral = !historySearchTerm || 
@@ -211,7 +232,16 @@ export default function AssignmentApprovalPage() {
                 }
             }))
 
-            setPendingList(enrichedAssignments.filter((a: any) => a.status === 'pending'))
+            const currentPending = enrichedAssignments.filter((a: any) => a.status === 'pending')
+            setPendingList(currentPending)
+            setSelectedIds(prev => {
+                const currentIds = new Set(currentPending.map((a: any) => a.id))
+                const next = new Set<string>()
+                prev.forEach(id => {
+                    if (currentIds.has(id)) next.add(id)
+                })
+                return next
+            })
             setApprovedList(enrichedAssignments.filter((a: any) => a.status.startsWith('approved')))
             setRejectedList(enrichedAssignments.filter((a: any) => a.status === 'rejected'))
 
@@ -809,10 +839,137 @@ export default function AssignmentApprovalPage() {
         try {
             const { error } = await (supabase.from('pending_assignments') as any).delete().eq('id', assId)
             if (error) throw error
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                next.delete(assId)
+                return next
+            })
             showToast('Đã xóa vĩnh viễn yêu cầu gán vị trí', 'success')
             fetchData()
         } catch (e: any) {
             showToast('Lỗi khi xóa: ' + e.message, 'error')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
+    // Toggle multi-select for individual item
+    const toggleSelect = (id: string, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation()
+        setSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
+    }
+
+    // Select or deselect all items in pending list
+    const handleSelectAll = () => {
+        if (selectedIds.size === pendingList.length && pendingList.length > 0) {
+            setSelectedIds(new Set())
+        } else {
+            setSelectedIds(new Set(pendingList.map(a => a.id)))
+        }
+    }
+
+    // Select only unmatched / error items
+    const handleSelectUnmatchedOnly = () => {
+        if (unmatchedPendingList.length === 0) {
+            showToast('Không có yêu cầu nào bị lỗi / thiếu lô hàng', 'info')
+            return
+        }
+        setSelectedIds(new Set(unmatchedPendingList.map(a => a.id)))
+        showToast(`Đã chọn ${unmatchedPendingList.length} yêu cầu không tìm thấy lô hàng`, 'info')
+    }
+
+    // Clear all selection
+    const handleClearSelection = () => {
+        setSelectedIds(new Set())
+    }
+
+    // Bulk Delete selected items or custom specified IDs
+    const handleBulkDelete = async (customIds?: string[]) => {
+        if (!currentSystem?.code) return
+        const targetIds = customIds || Array.from(selectedIds)
+        if (targetIds.length === 0) {
+            showToast('Chưa chọn yêu cầu nào để xóa', 'error')
+            return
+        }
+
+        const isAllUnmatched = customIds && customIds.length === unmatchedPendingList.length
+        const message = isAllUnmatched
+            ? `Bạn có chắc chắn muốn XÓA VĨNH VIỄN toàn bộ ${targetIds.length} yêu cầu không tìm thấy lô hàng khỏi hệ thống không? Dữ liệu đã xóa không thể khôi phục.`
+            : `Bạn có chắc chắn muốn XÓA VĨNH VIỄN ${targetIds.length} yêu cầu gán vị trí đã chọn khỏi hệ thống không? Dữ liệu đã xóa không thể khôi phục.`
+
+        const confirmed = await showConfirm(message)
+        if (!confirmed) return
+
+        setActionLoading('bulk-delete')
+        try {
+            // Chia chunk 100 để tránh giới hạn kích thước URL PostgREST
+            for (let i = 0; i < targetIds.length; i += 100) {
+                const chunk = targetIds.slice(i, i + 100)
+                const { error } = await (supabase.from('pending_assignments') as any)
+                    .delete()
+                    .eq('system_code', currentSystem.code)
+                    .in('id', chunk)
+                if (error) throw error
+            }
+
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                targetIds.forEach(id => next.delete(id))
+                return next
+            })
+
+            showToast(`Đã xóa vĩnh viễn ${targetIds.length} yêu cầu thành công!`, 'success')
+            fetchData()
+        } catch (e: any) {
+            console.error('[BULK DELETE] Error:', e)
+            showToast('Lỗi khi xóa hàng loạt: ' + (e.message || 'Không xác định'), 'error')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
+    // Bulk Reject selected items
+    const handleBulkReject = async (customIds?: string[]) => {
+        if (!currentSystem?.code) return
+        const targetIds = customIds || Array.from(selectedIds)
+        if (targetIds.length === 0) {
+            showToast('Chưa chọn yêu cầu nào để hủy', 'error')
+            return
+        }
+
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn TỪ CHỐI / HỦY ${targetIds.length} yêu cầu đã chọn không?`)
+        if (!confirmed) return
+
+        setActionLoading('bulk-reject')
+        try {
+            for (let i = 0; i < targetIds.length; i += 100) {
+                const chunk = targetIds.slice(i, i + 100)
+                const { error } = await (supabase.from('pending_assignments') as any)
+                    .update({ status: 'rejected' })
+                    .eq('system_code', currentSystem.code)
+                    .in('id', chunk)
+                if (error) throw error
+            }
+
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                targetIds.forEach(id => next.delete(id))
+                return next
+            })
+
+            showToast(`Đã hủy ${targetIds.length} yêu cầu thành công!`, 'success')
+            fetchData()
+        } catch (e: any) {
+            console.error('[BULK REJECT] Error:', e)
+            showToast('Lỗi khi hủy hàng loạt: ' + (e.message || 'Không xác định'), 'error')
         } finally {
             setActionLoading(null)
         }
@@ -1064,7 +1221,7 @@ export default function AssignmentApprovalPage() {
                     </h1>
                     <p className="text-zinc-500 dark:text-zinc-400 mt-1 font-medium">Kết nối dữ liệu thực tế với báo cáo từ Mobile.</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                     <button 
                         onClick={() => setShowOnlyUnassigned(!showOnlyUnassigned)}
                         className={`px-4 py-2.5 rounded-[12px] text-xs font-black uppercase flex items-center gap-2 border transition-all ${showOnlyUnassigned ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800' : 'bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:bg-zinc-50 dark:hover:bg-zinc-800'}`}
@@ -1076,6 +1233,17 @@ export default function AssignmentApprovalPage() {
                         <button onClick={handleApproveAll} disabled={!!actionLoading} className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-blue-600/20 active:scale-95 transition-all">
                             {actionLoading === 'bulk' ? <Loader2 size={16} className="animate-spin" /> : <Check size={16}/>}
                             Duyệt Nhanh ({validBulkCount})
+                        </button>
+                    )}
+                    {unmatchedPendingList.length > 0 && (
+                        <button 
+                            onClick={() => handleBulkDelete(unmatchedPendingList.map(a => a.id))} 
+                            disabled={!!actionLoading} 
+                            title="Xóa vĩnh viễn tất cả các yêu cầu không tìm thấy lô hàng"
+                            className="px-4 py-2.5 bg-red-50 hover:bg-red-100 dark:bg-red-950/40 dark:hover:bg-red-900/40 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-sm active:scale-95 transition-all"
+                        >
+                            {actionLoading === 'bulk-delete' ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                            Xóa mục lỗi ({unmatchedPendingList.length})
                         </button>
                     )}
                     <div className="bg-white dark:bg-zinc-900 p-2 rounded-xl border border-zinc-200 dark:border-zinc-800 shadow-sm flex items-center gap-2">
@@ -1129,7 +1297,98 @@ export default function AssignmentApprovalPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-4">
-                    <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest mb-2 px-2">Yêu cầu từ Mobile ({pendingList.length})</h2>
+                    {/* Header danh sách & Công cụ chọn hàng loạt */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-2">
+                        <div className="flex items-center gap-3">
+                            <button 
+                                onClick={handleSelectAll}
+                                disabled={pendingList.length === 0}
+                                className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
+                                    selectedIds.size > 0 && selectedIds.size === pendingList.length
+                                        ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                        : selectedIds.size > 0
+                                        ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-600'
+                                        : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-zinc-400 text-transparent'
+                                }`}
+                                title={selectedIds.size === pendingList.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                            >
+                                {selectedIds.size > 0 && selectedIds.size === pendingList.length ? (
+                                    <Check size={14} strokeWidth={3} />
+                                ) : selectedIds.size > 0 ? (
+                                    <div className="w-2.5 h-1 bg-blue-600 rounded-full" />
+                                ) : null}
+                            </button>
+                            <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
+                                Yêu cầu từ Mobile ({pendingList.length})
+                                {selectedIds.size > 0 && (
+                                    <span className="text-blue-600 dark:text-blue-400 font-bold normal-case text-xs">
+                                        • Đã chọn {selectedIds.size}
+                                    </span>
+                                )}
+                            </h2>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-wrap">
+                            {unmatchedPendingList.length > 0 && (
+                                <button
+                                    onClick={handleSelectUnmatchedOnly}
+                                    className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-all flex items-center gap-1.5"
+                                >
+                                    <AlertCircle size={12} />
+                                    Chọn mục lỗi ({unmatchedPendingList.length})
+                                </button>
+                            )}
+                            {selectedIds.size > 0 && (
+                                <button
+                                    onClick={handleClearSelection}
+                                    className="px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-all"
+                                >
+                                    Bỏ chọn
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Bulk Action Bar khi có chọn items */}
+                    {selectedIds.size > 0 && (
+                        <div className="sticky top-2 z-20 bg-zinc-900/95 dark:bg-zinc-800/95 backdrop-blur-md text-white px-5 py-3.5 rounded-2xl shadow-xl border border-zinc-700 flex flex-wrap items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-200">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-blue-600/30 border border-blue-500/50 flex items-center justify-center font-black text-xs text-blue-400">
+                                    {selectedIds.size}
+                                </div>
+                                <div>
+                                    <div className="text-xs font-black">Đã chọn {selectedIds.size} / {pendingList.length} yêu cầu</div>
+                                    <div className="text-[10px] text-zinc-400">Thao tác hàng loạt cho các mục đã chọn:</div>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleBulkDelete()}
+                                    disabled={!!actionLoading}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-red-600/20 active:scale-95 transition-all"
+                                >
+                                    {actionLoading === 'bulk-delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                    Xóa vĩnh viễn ({selectedIds.size})
+                                </button>
+                                <button
+                                    onClick={() => handleBulkReject()}
+                                    disabled={!!actionLoading}
+                                    className="px-4 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 font-black text-xs uppercase rounded-xl flex items-center gap-2 active:scale-95 transition-all"
+                                >
+                                    {actionLoading === 'bulk-reject' ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
+                                    Từ chối ({selectedIds.size})
+                                </button>
+                                <button
+                                    onClick={handleClearSelection}
+                                    className="p-2 text-zinc-400 hover:text-white transition-colors"
+                                    title="Bỏ chọn tất cả"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     
                     {loading ? (
                         <div className="py-24 flex flex-col items-center justify-center bg-white dark:bg-zinc-900 rounded-[32px] border border-zinc-100 dark:border-zinc-800 shadow-sm">
@@ -1142,8 +1401,9 @@ export default function AssignmentApprovalPage() {
                             <p className="text-zinc-400 font-bold text-[10px] uppercase tracking-widest">Không có yêu cầu chờ duyệt</p>
                         </div>
                     ) : (
-                        <div className="space-y-4">
+                        <div className="space-y-2">
                             {pendingList.map((ass) => {
+                                const isSelected = selectedIds.has(ass.id)
                                 const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
                                 const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
                                 const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
@@ -1162,23 +1422,54 @@ export default function AssignmentApprovalPage() {
                                 const effectiveHasMatches = effectiveMatchedLots.length > 0
 
                                 return (
-                                    <div key={ass.id} className="bg-white dark:bg-zinc-900 border-2 border-zinc-100 dark:border-zinc-800 rounded-[28px] p-6 shadow-sm hover:shadow-md transition-all group">
-                                        <div className="flex flex-col md:flex-row items-center justify-between gap-6">
-                                            <div className="flex items-center gap-5">
-                                                <div className="w-16 h-16 rounded-2xl bg-blue-50 dark:bg-blue-900/10 text-blue-600 border border-blue-100 dark:border-blue-900/20 flex flex-col items-center justify-center font-black">
-                                                    <span className="text-[10px] opacity-50 uppercase text-zinc-500">STT</span>
-                                                    <span className="text-2xl">#{decodeSTT(manualEdits[ass.id]?.lot_stt || ass.lot_stt)}</span>
+                                    <div 
+                                        key={ass.id} 
+                                        className={`bg-white dark:bg-zinc-900 border rounded-2xl p-3 sm:p-3.5 shadow-sm hover:shadow transition-all group relative ${
+                                            isSelected 
+                                                ? 'border-blue-500 bg-blue-50/15 dark:bg-blue-950/20 dark:border-blue-500 ring-2 ring-blue-500/20' 
+                                                : 'border-zinc-200/80 dark:border-zinc-800'
+                                        }`}
+                                    >
+                                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                                            {/* Cột trái: Checkbox + STT + Vị trí */}
+                                            <div className="flex items-center gap-3 shrink-0">
+                                                {/* Checkbox chọn từng item */}
+                                                <button
+                                                    onClick={(e) => toggleSelect(ass.id, e)}
+                                                    className={`w-5 h-5 rounded-md border flex items-center justify-center transition-all shrink-0 ${
+                                                        isSelected
+                                                            ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
+                                                            : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-950 hover:border-blue-400 text-transparent'
+                                                    }`}
+                                                    title={isSelected ? "Bỏ chọn" : "Chọn yêu cầu này"}
+                                                >
+                                                    <Check size={12} strokeWidth={3} className={isSelected ? "opacity-100" : "opacity-0"} />
+                                                </button>
+
+                                                {/* Hộp STT */}
+                                                <div className="w-12 h-12 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 border border-blue-100 dark:border-blue-900/30 flex flex-col items-center justify-center font-black shrink-0">
+                                                    <span className="text-[8px] opacity-60 uppercase text-zinc-500">STT</span>
+                                                    <span className="text-base sm:text-lg leading-tight">#{decodeSTT(manualEdits[ass.id]?.lot_stt || ass.lot_stt)}</span>
                                                 </div>
-                                                <ArrowRight className="text-zinc-300 dark:text-zinc-700" />
-                                                <div className="flex flex-col gap-2">
-                                                    <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-950 border border-zinc-100 dark:border-zinc-800 rounded-2xl cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-all" onClick={() => startEdit(ass)}>
-                                                        <div className="flex items-center gap-2">
-                                                            <MapPin size={16} className="text-red-500" />
-                                                            <span className="text-xl font-black uppercase text-zinc-900 dark:text-white">
+
+                                                <ArrowRight size={14} className="text-zinc-300 dark:text-zinc-700 shrink-0" />
+
+                                                {/* Khối Vị trí */}
+                                                <div className="flex flex-col gap-1 shrink-0">
+                                                    <div 
+                                                        className="px-3 py-1.5 bg-zinc-50 dark:bg-zinc-950 border border-zinc-150 dark:border-zinc-800 rounded-xl cursor-pointer hover:border-blue-300 dark:hover:border-blue-700 transition-all flex items-center gap-2" 
+                                                        onClick={() => startEdit(ass)}
+                                                        title="Bấm để chỉnh sửa STT hoặc Vị trí"
+                                                    >
+                                                        <MapPin size={13} className="text-red-500 shrink-0" />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-black uppercase text-zinc-900 dark:text-white leading-tight">
                                                                 {manualEdits[ass.id]?.position_code || ass.position?.code || '---'}
                                                             </span>
+                                                            <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">
+                                                                SX: {format(new Date(ass.production_date), 'dd/MM/yyyy')}
+                                                            </span>
                                                         </div>
-                                                        <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase mt-1 tracking-wider">SX: {format(new Date(ass.production_date), 'dd/MM/yyyy')}</div>
                                                     </div>
                                                     
                                                     {(() => {
@@ -1187,10 +1478,8 @@ export default function AssignmentApprovalPage() {
                                                         if (pos?.lot_id) {
                                                             const occupant = lotsInDay.find(l => l.id === pos.lot_id)
                                                             return (
-                                                                <div className="px-3 py-2 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-xl animate-in fade-in slide-in-from-top-1 duration-300">
-                                                                    <div className="text-[8px] font-black text-red-600 dark:text-red-400 uppercase flex items-center gap-1.5"><AlertTriangle size={10} /> Vị trí này đang chứa:</div>
-                                                                    <div className="text-[10px] font-black text-red-700 dark:text-red-300 mt-0.5">#{decodeSTT(occupant?.daily_seq)} | {occupant?.code}</div>
-                                                                    <div className="text-[8px] text-red-500 font-bold leading-tight mt-1">{occupant?.product_names?.join(', ')}</div>
+                                                                <div className="px-2 py-0.5 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg text-[8px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
+                                                                    <AlertTriangle size={9} className="shrink-0" /> Đang chứa: #{decodeSTT(occupant?.daily_seq)} {occupant?.code}
                                                                 </div>
                                                             )
                                                         }
@@ -1199,110 +1488,111 @@ export default function AssignmentApprovalPage() {
                                                 </div>
                                             </div>
 
+                                            {/* Cột phải: Trạng thái & Khớp thông tin (Gọn gàng) */}
                                             <div className="flex-1 w-full min-w-0">
                                                 {perfectMatch ? (
-                                                    <div className="p-5 bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800 rounded-[24px] flex flex-col justify-center gap-3">
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="text-[10px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-widest flex items-center gap-2">
-                                                                <CheckCircle2 size={14} /> KHỚP STT & NGÀY SẢN XUẤT
+                                                    <div className="p-2.5 sm:p-3 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                                        <div className="min-w-0 flex-1">
+                                                            <div className="flex items-center gap-2 mb-0.5">
+                                                                <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                                                                    <CheckCircle2 size={12} /> Khớp STT & Ngày SX
+                                                                </span>
+                                                                {perfectMatch.positions?.[0] ? (
+                                                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[8px] font-black rounded border border-amber-200">
+                                                                        Đã gán: {perfectMatch.positions[0].code}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[8px] font-black rounded border border-emerald-200">
+                                                                        Chưa có vị trí
+                                                                    </span>
+                                                                )}
                                                             </div>
-                                                            {perfectMatch.positions?.[0] ? (
-                                                                <div className="px-2 py-1 bg-amber-100 text-amber-700 text-[10px] font-black rounded-lg flex items-center gap-1 border border-amber-200">
-                                                                    <AlertTriangle size={12}/> ĐÃ GÁN VỊ TRÍ: {perfectMatch.positions[0].code}
-                                                                </div>
-                                                            ) : (
-                                                                <div className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[10px] font-black rounded-lg flex items-center gap-1 border border-emerald-200">
-                                                                    <CheckCircle2 size={12}/> CHƯA CÓ VỊ TRÍ
-                                                                </div>
-                                                            )}
+                                                            <div className="text-xs font-black text-zinc-900 dark:text-white truncate">{perfectMatch.code}</div>
+                                                            <div className="text-[9px] text-zinc-600 dark:text-zinc-400 font-medium truncate">{perfectMatch.product_names?.join(', ') || '---'}</div>
                                                         </div>
-                                                        <div className="flex items-center justify-between">
-                                                            <div className="min-w-0 pr-4">
-                                                                <div className="text-sm font-black text-zinc-900 dark:text-white mb-0.5">{perfectMatch.code}</div>
-                                                                <div className="text-[10px] text-zinc-600 dark:text-zinc-400 font-bold leading-relaxed">{perfectMatch.product_names?.join(', ')}</div>
-                                                            </div>
-                                                            <div className="flex gap-2 shrink-0">
-                                                                <button onClick={() => handleApprove(ass, perfectMatch.id)} disabled={!!actionLoading} className="px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white rounded-2xl text-xs font-black uppercase shadow-lg shadow-emerald-500/20 active:scale-95 transition-all">DUYỆT NGAY</button>
-                                                                <button onClick={() => handleReject(ass)} className="p-3 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={20} /></button>
-                                                            </div>
+                                                        <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                                            <button 
+                                                                onClick={() => handleApprove(ass, perfectMatch.id)} 
+                                                                disabled={!!actionLoading} 
+                                                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase shadow-sm active:scale-95 transition-all"
+                                                            >
+                                                                Duyệt ngay
+                                                            </button>
+                                                            <button onClick={() => handleReject(ass)} title="Từ chối yêu cầu" className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors">
+                                                                <Trash2 size={15} />
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 ) : effectiveHasMatches ? (
-                                                    <div className="space-y-3">
-                                                        <div className="flex items-center justify-between px-2">
-                                                            <div className="text-[10px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-widest flex items-center gap-2"><Info size={14} />PHÁT HIỆN {effectiveMatchedLots.length} LÔ HÀNG TRÙNG STT</div>
-                                                            <div className="flex gap-2">
-                                                                <button onClick={() => startEdit(ass)} className="p-1 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={14} /></button>
-                                                                <button onClick={() => handleReject(ass)} className="p-1 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                                                    <div className="p-2.5 bg-blue-50/50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900/30 rounded-xl space-y-1.5">
+                                                        <div className="flex items-center justify-between px-1">
+                                                            <span className="text-[9px] font-black text-blue-600 dark:text-blue-400 uppercase tracking-wider flex items-center gap-1">
+                                                                <Info size={11} /> {effectiveMatchedLots.length} Lô trùng STT:
+                                                            </span>
+                                                            <div className="flex items-center gap-1">
+                                                                <button onClick={() => startEdit(ass)} title="Sửa STT/Vị trí" className="p-1 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={12} /></button>
+                                                                <button onClick={() => handleReject(ass)} title="Từ chối" className="p-1 text-zinc-400 hover:text-red-500 transition-colors"><Trash2 size={12} /></button>
                                                             </div>
                                                         </div>
-                                                        <div className="grid grid-cols-1 gap-2 max-h-[300px] overflow-y-auto scrollbar-thin pr-1">
-                                                            {effectiveMatchedLots.sort((a,b)=>{
-                                                                const aHasPos = a.positions?.[0] ? 1 : 0;
-                                                                const bHasPos = b.positions?.[0] ? 1 : 0;
-                                                                if (aHasPos !== bHasPos) return aHasPos - bHasPos;
-                                                                return new Date(b.inbound_date||'').getTime()-new Date(a.inbound_date||'').getTime();
-                                                            }).map(l=>(
-                                                                <button key={l.id} onClick={() => handleApprove(ass, l.id)} className="w-full text-left p-4 bg-white dark:bg-zinc-800 border-2 border-zinc-100 dark:border-zinc-700 hover:border-blue-500 dark:hover:border-blue-600 rounded-2xl transition-all group relative overflow-hidden">
-                                                                    <div className="flex justify-between items-start mb-2">
-                                                                        <div className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 text-[9px] font-black rounded-lg border border-blue-100 dark:border-blue-900/30">SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</div>
-                                                                        {l.positions?.[0] ? (
-                                                                            <div className="text-[10px] font-black text-amber-700 flex items-center gap-1 bg-amber-100 border border-amber-200 px-2 py-1 rounded-lg"><MapPin size={12} className="text-amber-500" /> ĐÃ GÁN: {l.positions[0].code}</div>
-                                                                        ) : (
-                                                                            <div className="text-[10px] font-black text-emerald-700 flex items-center gap-1 bg-emerald-100 border border-emerald-200 px-2 py-1 rounded-lg"><CheckCircle2 size={12} className="text-emerald-500" /> CHƯA CÓ VỊ TRÍ</div>
-                                                                        )}
+                                                        <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
+                                                            {effectiveMatchedLots.map(l => (
+                                                                <button 
+                                                                    key={l.id} 
+                                                                    onClick={() => handleApprove(ass, l.id)} 
+                                                                    className="w-full text-left p-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-blue-500 rounded-lg transition-all flex items-center justify-between gap-2"
+                                                                >
+                                                                    <div className="min-w-0 flex-1">
+                                                                        <div className="flex items-center gap-2">
+                                                                            <span className="text-[8px] font-bold px-1 py-0.5 bg-blue-50 text-blue-600 rounded">SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</span>
+                                                                            <span className="text-[10px] font-black text-zinc-900 dark:text-white truncate">{l.code}</span>
+                                                                        </div>
+                                                                        <div className="text-[8px] text-zinc-500 truncate mt-0.5">{l.product_names?.join(', ')}</div>
                                                                     </div>
-                                                                    <div className="text-xs font-black text-zinc-900 dark:text-white mb-1">{l.code}</div>
-                                                                    <div className="text-[10px] text-zinc-500 dark:text-zinc-400 font-bold leading-normal">{l.product_names?.join(', ')}</div>
-                                                                    <div className="absolute top-0 right-0 h-full w-12 bg-gradient-to-l from-blue-500/10 to-transparent flex items-center justify-center translate-x-12 group-hover:translate-x-0 transition-transform">
-                                                                        <CheckCircle2 size={24} className="text-blue-600" />
-                                                                    </div>
+                                                                    <span className="px-2.5 py-1 bg-blue-600 text-white rounded-md text-[9px] font-black uppercase shrink-0">Duyệt</span>
                                                                 </button>
                                                             ))}
                                                         </div>
                                                     </div>
                                                 ) : effectiveHiddenByFilter ? (
-                                                    <div className="space-y-3">
-                                                        <div className="flex items-center justify-between px-2">
-                                                            <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
-                                                                <Filter size={14} /> LÔ HÀNG ĐANG BỊ ẨN
-                                                            </div>
-                                                            <div className="flex gap-2">
-                                                                <button onClick={() => setShowOnlyUnassigned(false)} className="px-3 py-1 bg-amber-100 text-amber-700 hover:bg-amber-200 rounded-lg text-[10px] font-black transition-colors">TẮT BỘ LỌC</button>
-                                                                <button onClick={() => startEdit(ass)} className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
-                                                                <button onClick={() => handleReject(ass)} className="p-1.5 text-zinc-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                                                    <div className="p-2.5 bg-amber-50/70 dark:bg-amber-950/20 border border-amber-200/70 dark:border-amber-900/30 rounded-xl flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <Filter size={14} className="text-amber-600 shrink-0" />
+                                                            <div className="min-w-0">
+                                                                <div className="text-xs font-black text-amber-900 dark:text-amber-200 truncate">STT #{decodeSTT(targetStt)} đã có vị trí</div>
+                                                                <div className="text-[9px] text-amber-700 dark:text-amber-400 truncate">Tìm thấy {allMatchedLotsRaw.length} lô đã gán. Tắt lọc để chuyển vị trí.</div>
                                                             </div>
                                                         </div>
-                                                        <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
-                                                            <MapPin size={32} className="mx-auto text-amber-400 mb-3 opacity-50" />
-                                                            <p className="text-sm font-black text-zinc-900 dark:text-white mb-1">
-                                                                STT #{decodeSTT(targetStt)} đã được gán vị trí
-                                                            </p>
-                                                            <p className="text-[10px] text-zinc-500 font-bold max-w-[250px] mx-auto">
-                                                                Hệ thống tìm thấy {allMatchedLotsRaw.length} lô hàng mang STT này, nhưng chúng đều đã có vị trí. Vui lòng tắt bộ lọc "Lô Chưa Gán" để duyệt di chuyển.
-                                                            </p>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button onClick={() => setShowOnlyUnassigned(false)} className="px-2 py-1 bg-amber-200/80 hover:bg-amber-300/80 text-amber-900 text-[9px] font-black rounded-lg transition-colors">TẮT LỌC</button>
+                                                            <button onClick={() => startEdit(ass)} className="p-1 text-zinc-400 hover:text-blue-500"><Edit2 size={13} /></button>
+                                                            <button onClick={() => handleReject(ass)} className="p-1 text-zinc-400 hover:text-red-500"><Trash2 size={13} /></button>
                                                         </div>
                                                     </div>
                                                 ) : (
-                                                    <div className="space-y-3">
-                                                        <div className="flex items-center justify-between px-2">
-                                                            <div className="text-[10px] font-black text-amber-600 dark:text-amber-400 uppercase tracking-widest flex items-center gap-2">
-                                                                <AlertCircle size={14} /> KHÔNG TÌM THẤY LÔ HÀNG
+                                                    <div className="p-2.5 sm:p-3 bg-amber-50/60 dark:bg-amber-950/15 border border-amber-200/70 dark:border-amber-900/30 rounded-xl flex items-center justify-between gap-3">
+                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                            <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-900/30 text-amber-600 flex items-center justify-center shrink-0">
+                                                                <AlertCircle size={16} />
                                                             </div>
-                                                            <div className="flex gap-2 items-center">
-                                                                <button onClick={() => startEdit(ass)} title="Sửa STT/vị trí" className="p-1.5 text-zinc-400 hover:text-blue-500 transition-colors"><Edit2 size={16} /></button>
-                                                                <button onClick={() => handleReject(ass)} title="Từ chối yêu cầu" className="p-1.5 text-zinc-300 hover:text-amber-600 transition-colors"><XCircle size={16} /></button>
-                                                                <button onClick={() => handleDeleteAssignment(ass.id)} title="Xóa vĩnh viễn yêu cầu" className="p-1.5 text-red-300 hover:text-red-500 transition-colors"><Trash2 size={16} /></button>
+                                                            <div className="min-w-0">
+                                                                <div className="text-xs font-black text-amber-900 dark:text-amber-200 flex items-center gap-1.5 truncate">
+                                                                    <span>Không có lô hàng mang STT #{decodeSTT(targetStt)}</span>
+                                                                </div>
+                                                                <div className="text-[9px] text-amber-700/80 dark:text-amber-400 font-medium truncate">
+                                                                    Chưa tạo Lô hoặc sai STT. Bấm sửa STT hoặc bấm xóa để dọn dẹp.
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                        <div className="bg-amber-50 dark:bg-amber-900/5 border border-amber-100 dark:border-amber-900/20 rounded-3xl p-6 text-center">
-                                                            <XCircle size={32} className="mx-auto text-amber-400 mb-3 opacity-50" />
-                                                            <p className="text-sm font-black text-zinc-900 dark:text-white mb-1">
-                                                                Không có lô hàng mang STT #{decodeSTT(targetStt)}
-                                                            </p>
-                                                            <p className="text-[10px] text-zinc-500 font-bold max-w-[250px] mx-auto">
-                                                                Vui lòng dùng công cụ chỉnh sửa để đổi số STT cho khớp, hoặc tạo Lô hàng tương ứng bên mục "Tạo Lô Hàng".
-                                                            </p>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button onClick={() => startEdit(ass)} title="Chỉnh sửa STT / Vị trí" className="p-1.5 text-zinc-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-all">
+                                                                <Edit2 size={14} />
+                                                            </button>
+                                                            <button onClick={() => handleReject(ass)} title="Từ chối yêu cầu" className="p-1.5 text-zinc-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/30 rounded-lg transition-all">
+                                                                <XCircle size={14} />
+                                                            </button>
+                                                            <button onClick={() => handleDeleteAssignment(ass.id)} title="Xóa vĩnh viễn yêu cầu này" className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-all">
+                                                                <Trash2 size={14} />
+                                                            </button>
                                                         </div>
                                                     </div>
                                                 )}

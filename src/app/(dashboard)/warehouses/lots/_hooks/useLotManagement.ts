@@ -1391,8 +1391,77 @@ export function useLotManagement() {
         }
     }
 
+    async function cleanupLotRelations(ids: string[]) {
+        if (!ids || ids.length === 0) return
+
+        // 1. Gỡ liên kết tem thùng (box_labels)
+        try {
+            await (supabase.from('box_labels') as any)
+                .update({ lot_id: null, status: 'printed' })
+                .in('lot_id', ids)
+        } catch (e) {
+            console.warn('[cleanupLotRelations] box_labels unlink warning:', e)
+        }
+
+        // 2. Giải phóng vị trí kho (positions)
+        try {
+            await (supabase.from('positions') as any)
+                .update({ lot_id: null })
+                .in('lot_id', ids)
+        } catch (e) {
+            console.warn('[cleanupLotRelations] positions unlink warning:', e)
+        }
+
+        // 3. Gỡ liên kết sản xuất / xuất kho / in ấn nếu có
+        try {
+            await (supabase.from('production_inputs') as any)
+                .update({ lot_id: null })
+                .in('lot_id', ids)
+        } catch (e) {}
+
+        try {
+            await (supabase.from('material_requisition_lines') as any)
+                .update({ lot_id: null })
+                .in('lot_id', ids)
+        } catch (e) {}
+
+        try {
+            await (supabase.from('production_records') as any)
+                .update({ lot_id: null })
+                .in('lot_id', ids)
+        } catch (e) {}
+
+        try {
+            await (supabase.from('export_task_items') as any)
+                .update({ lot_id: null })
+                .in('lot_id', ids)
+        } catch (e) {}
+
+        try {
+            await (supabase.from('print_queue') as any)
+                .delete()
+                .in('lot_id', ids)
+        } catch (e) {}
+
+        // 4. Xóa tags và items con của LOT
+        try {
+            await (supabase.from('lot_tags') as any)
+                .delete()
+                .in('lot_id', ids)
+        } catch (e) {}
+
+        try {
+            await (supabase.from('lot_items') as any)
+                .delete()
+                .in('lot_id', ids)
+        } catch (e) {}
+    }
+
     async function handleDeleteLot(id: string): Promise<boolean> {
-        if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return false
+        if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này? Thao tác này sẽ giải phóng vị trí kho và tem thùng liên quan.')) return false
+
+        // Dọn dẹp quan hệ khóa ngoại trước khi xóa
+        await cleanupLotRelations([id])
 
         const { error } = await (supabase
             .from('lots') as any)
@@ -1441,6 +1510,59 @@ export function useLotManagement() {
         }
 
         showToast(`Đã ${actionText.toLowerCase()} LOT thành công`, 'success')
+        fetchLots(false)
+        return true
+    }
+
+    async function handleBulkDeleteLots(ids: string[]): Promise<boolean> {
+        if (!ids || ids.length === 0) return false
+        if (!await showConfirm(`Bạn có chắc chắn muốn xóa ${ids.length} LOT đã chọn? Thao tác này sẽ giải phóng vị trí kho, tem thùng liên quan và không thể hoàn tác.`)) return false
+
+        // Dọn dẹp quan hệ khóa ngoại trước khi xóa
+        await cleanupLotRelations(ids)
+
+        // 2. Xóa các lot trong bảng lots
+        const { error } = await (supabase
+            .from('lots') as any)
+            .delete()
+            .in('id', ids)
+
+        if (error) {
+            showToast('Lỗi xóa hàng loạt LOT: ' + error.message, 'error')
+            return false
+        } else {
+            showToast(`Đã xóa thành công ${ids.length} LOT`, 'success')
+            fetchLots(false)
+            return true
+        }
+    }
+
+    async function handleBulkToggleLock(ids: string[], nextLocked: boolean): Promise<boolean> {
+        if (!ids || ids.length === 0) return false
+        const actionText = nextLocked ? 'Khóa' : 'Mở khóa'
+        if (!await showConfirm(`Bạn có chắc chắn muốn ${actionText.toLowerCase()} ${ids.length} LOT đã chọn?`)) return false
+
+        const { error } = await (supabase
+            .from('lots') as any)
+            .update({ is_locked: nextLocked })
+            .in('id', ids)
+
+        if (error) {
+            showToast(`Lỗi ${actionText.toLowerCase()} LOT: ` + error.message, 'error')
+            return false
+        }
+
+        if (nextLocked) {
+            try {
+                await (supabase.from('positions') as any)
+                    .update({ lot_id: null })
+                    .in('lot_id', ids)
+            } catch (e) {
+                console.error('Lỗi khi giải phóng vị trí:', e)
+            }
+        }
+
+        showToast(`Đã ${actionText.toLowerCase()} thành công ${ids.length} LOT`, 'success')
         fetchLots(false)
         return true
     }
@@ -1510,7 +1632,9 @@ export function useLotManagement() {
         fetchUnassignedLotsForBulkAssign,
         fetchUntaggedLotsForBulkAssign,
         handleDeleteLot,
+        handleBulkDeleteLots,
         handleToggleLock,
+        handleBulkToggleLock,
         handleToggleStar,
         isModuleEnabled: hasModule,
         isUtilityEnabled: hasModule,

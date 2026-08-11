@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
@@ -55,7 +55,9 @@ export function LotPageManager() {
         fetchUnassignedLotsForBulkAssign,
         fetchUntaggedLotsForBulkAssign,
         handleDeleteLot,
+        handleBulkDeleteLots,
         handleToggleLock,
+        handleBulkToggleLock,
         handleToggleStar,
         isModuleEnabled,
         isUtilityEnabled,
@@ -104,6 +106,77 @@ export function LotPageManager() {
     const [assigningLot, setAssigningLot] = useState<Lot | null>(null)
     const [showReportModal, setShowReportModal] = useState(false)
     const [showOddLotSuggestions, setShowOddLotSuggestions] = useState(false)
+    const [showUtilityMenu, setShowUtilityMenu] = useState(false)
+    const [showBulkMenu, setShowBulkMenu] = useState(false)
+    const utilityMenuRef = useRef<HTMLDivElement>(null)
+    const bulkMenuRef = useRef<HTMLDivElement>(null)
+
+    // Selection States
+    const [selectedLotIds, setSelectedLotIds] = useState<Set<string>>(new Set())
+    const [bulkTagLotIds, setBulkTagLotIds] = useState<string[] | null>(null)
+
+    // Selection Handlers
+    const handleToggleSelect = (id: string) => {
+        setSelectedLotIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) {
+                next.delete(id)
+            } else {
+                next.add(id)
+            }
+            return next
+        })
+    }
+
+    const handleSelectAll = () => {
+        setSelectedLotIds(new Set(lots.map(l => l.id)))
+    }
+
+    const handleClearSelection = () => {
+        setSelectedLotIds(new Set())
+    }
+
+    const handleBulkDeleteSelected = async () => {
+        const ids = Array.from(selectedLotIds)
+        if (ids.length === 0) return
+        const success = await handleBulkDeleteLots(ids)
+        if (success) {
+            setSelectedLotIds(new Set())
+        }
+    }
+
+    const handleBulkLockSelected = async (lock: boolean) => {
+        const ids = Array.from(selectedLotIds)
+        if (ids.length === 0) return
+        const success = await handleBulkToggleLock(ids, lock)
+        if (success) {
+            setSelectedLotIds(new Set())
+        }
+    }
+
+    const handleBulkTagSelected = () => {
+        const ids = Array.from(selectedLotIds)
+        if (ids.length === 0) return
+        setBulkTagLotIds(ids)
+    }
+
+    // Handle click outside for dropdown menus
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (utilityMenuRef.current && !utilityMenuRef.current.contains(event.target as Node)) {
+                setShowUtilityMenu(false)
+            }
+            if (bulkMenuRef.current && !bulkMenuRef.current.contains(event.target as Node)) {
+                setShowBulkMenu(false)
+            }
+        }
+        if (showUtilityMenu || showBulkMenu) {
+            document.addEventListener('mousedown', handleClickOutside)
+        }
+        return () => {
+            document.removeEventListener('mousedown', handleClickOutside)
+        }
+    }, [showUtilityMenu, showBulkMenu])
 
     useEffect(() => {
         if (currentSystem?.code) {
@@ -166,93 +239,212 @@ export function LotPageManager() {
     return (
         <section className="space-y-6 pb-12">
             {/* Header Section */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100 tracking-tight flex items-center gap-2">
                         Quản lý LOT
                     </h1>
-                    <p className="text-slate-500 dark:text-slate-400 mt-1">
+                    <p className="text-slate-500 dark:text-slate-400 mt-1 text-sm">
                         Quản lý, theo dõi và xử lý các lô hàng trong kho.
                     </p>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3">
-                    <button
-                        onClick={() => setShowOddLotSuggestions(!showOddLotSuggestions)}
-                        className={`px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2 cursor-pointer ${
-                            showOddLotSuggestions 
-                                ? 'ring-2 ring-indigo-500 border-indigo-300 text-indigo-600 bg-indigo-50/50 dark:bg-indigo-950/20' 
-                                : 'text-slate-700 dark:text-slate-300'
-                        }`}
-                    >
-                        <Combine size={18} className="text-indigo-500 shrink-0" />
-                        Lot lẻ
-                    </button>
-
-                    <Link
-                        href="/warehouses/lots/scan"
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-emerald-50 dark:hover:bg-slate-800 hover:text-emerald-700 transition-all shadow-sm flex items-center gap-2"
-                    >
-                        <QrCode size={18} className="text-emerald-600" />
-                        Liên kết Tem
-                    </Link>
-
-                    <Link
-                        href="/warehouses/lots/export"
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-slate-50 dark:hover:bg-slate-800 transition-all shadow-sm flex items-center gap-2"
-                    >
-                        <ArrowUpDown size={18} className="text-blue-500" />
-                        Xuất kho
-                    </Link>
-
-                    <button
-                        onClick={() => setShowReportModal(true)}
-                        className="px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium hover:bg-emerald-50 dark:hover:bg-slate-800 hover:text-emerald-700 transition-all shadow-sm flex items-center gap-2"
-                    >
-                        <FileText size={18} className="text-emerald-600" />
-                        Báo cáo
-                    </button>
-
-                    {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
-                        <div className="flex items-center gap-2">
-                            {positionFilter === 'unassigned' && (
-                                <>
-                                    <button
-                                        onClick={() => setShowBulkAssign(true)}
-                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800"
-                                    >
-                                        <Layers size={18} />
-                                        Vị trí hàng loạt
-                                    </button>
-                                    <button
-                                        onClick={() => setShowBulkAssignTag(true)}
-                                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:hover:bg-amber-900/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800"
-                                    >
-                                        <Tag size={18} />
-                                        Mã phụ hàng loạt
-                                    </button>
-                                </>
-                             )}
-                            {hasPermission('warehouse_lot.manage') && (
-                                <button
-                                    onClick={() => setShowBulkChangeProduct(true)}
-                                    className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-sm transition-all transform active:scale-95 bg-teal-50 hover:bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:hover:bg-teal-900/50 dark:text-teal-300 border border-teal-200 dark:border-teal-800"
-                                >
-                                    <Layers size={18} />
-                                    Đổi mã hàng loạt
-                                </button>
+                <div className="flex flex-wrap items-center gap-2.5">
+                    {/* Menu Tiện ích (Dropdown) */}
+                    <div className="relative" ref={utilityMenuRef}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setShowUtilityMenu(!showUtilityMenu)
+                                setShowBulkMenu(false)
+                            }}
+                            className={`px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
+                                showUtilityMenu
+                                    ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 shadow-md'
+                                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                            }`}
+                        >
+                            <Sparkles size={16} className={showUtilityMenu ? 'text-amber-300 dark:text-amber-600' : 'text-amber-500'} />
+                            <span>Tiện ích</span>
+                            {showOddLotSuggestions && (
+                                <span className="w-2 h-2 rounded-full bg-indigo-500" title="Gợi ý lot lẻ đang bật" />
                             )}
+                            <ChevronDown size={14} className={`transition-transform duration-200 ${showUtilityMenu ? 'rotate-180' : ''}`} />
+                        </button>
+
+                        {showUtilityMenu && (
+                            <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowOddLotSuggestions(!showOddLotSuggestions)
+                                        setShowUtilityMenu(false)
+                                    }}
+                                    className={`w-full flex items-center justify-between px-2.5 py-2 text-xs sm:text-sm rounded-xl transition-colors text-left cursor-pointer ${
+                                        showOddLotSuggestions
+                                            ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300'
+                                            : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                    }`}
+                                >
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 shrink-0">
+                                            <Combine size={15} />
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-slate-900 dark:text-slate-100">Gợi ý Lot lẻ</div>
+                                            <div className="text-[11px] text-slate-400">Xem gợi ý ghép các lot lẻ</div>
+                                        </div>
+                                    </div>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
+                                        showOddLotSuggestions
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-400'
+                                    }`}>
+                                        {showOddLotSuggestions ? 'BẬT' : 'TẮT'}
+                                    </span>
+                                </button>
+
+                                <Link
+                                    href="/warehouses/lots/scan"
+                                    onClick={() => setShowUtilityMenu(false)}
+                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group"
+                                >
+                                    <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 group-hover:bg-emerald-100 transition-colors shrink-0">
+                                        <QrCode size={15} />
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold text-slate-900 dark:text-slate-100">Liên kết Tem</div>
+                                        <div className="text-[11px] text-slate-400">Quét mã QR liên kết tem thùng</div>
+                                    </div>
+                                </Link>
+
+                                <Link
+                                    href="/warehouses/lots/export"
+                                    onClick={() => setShowUtilityMenu(false)}
+                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group"
+                                >
+                                    <div className="p-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-600 group-hover:bg-blue-100 transition-colors shrink-0">
+                                        <ArrowUpDown size={15} />
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold text-slate-900 dark:text-slate-100">Xuất kho LOT</div>
+                                        <div className="text-[11px] text-slate-400">Màn hình xuất kho nhanh</div>
+                                    </div>
+                                </Link>
+
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setShowUtilityMenu(false)
+                                        setShowReportModal(true)
+                                    }}
+                                    className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group cursor-pointer"
+                                >
+                                    <div className="p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 group-hover:bg-emerald-100 transition-colors shrink-0">
+                                        <FileText size={15} />
+                                    </div>
+                                    <div>
+                                        <div className="font-semibold text-slate-900 dark:text-slate-100">Báo cáo LOT</div>
+                                        <div className="text-[11px] text-slate-400">Xem và xuất báo cáo tồn kho LOT</div>
+                                    </div>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Menu Thao tác hàng loạt (Dropdown) */}
+                    {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
+                        <div className="relative" ref={bulkMenuRef}>
                             <button
-                                onClick={toggleCreateForm}
-                                className={`flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-bold shadow-lg transition-all transform active:scale-95 cursor-pointer ${showCreateForm
+                                type="button"
+                                onClick={() => {
+                                    setShowBulkMenu(!showBulkMenu)
+                                    setShowUtilityMenu(false)
+                                }}
+                                className={`px-3.5 py-2.5 rounded-xl border text-xs sm:text-sm font-semibold transition-all shadow-xs flex items-center gap-2 cursor-pointer ${
+                                    showBulkMenu
+                                        ? 'bg-slate-900 text-white border-slate-900 dark:bg-slate-100 dark:text-slate-900 shadow-md'
+                                        : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                }`}
+                            >
+                                <Layers size={16} className={showBulkMenu ? 'text-white dark:text-slate-900' : 'text-teal-600'} />
+                                <span>Thao tác hàng loạt</span>
+                                <ChevronDown size={14} className={`transition-transform duration-200 ${showBulkMenu ? 'rotate-180' : ''}`} />
+                            </button>
+
+                            {showBulkMenu && (
+                                <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-100 dark:border-slate-800 p-2 z-50 animate-in fade-in zoom-in-95 duration-150 space-y-1">
+                                    {hasPermission('warehouse_lot.manage') && (
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setShowBulkMenu(false)
+                                                setShowBulkChangeProduct(true)
+                                            }}
+                                            className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-teal-50/60 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group cursor-pointer"
+                                        >
+                                            <div className="p-1.5 rounded-lg bg-teal-50 dark:bg-teal-950/50 text-teal-600 group-hover:bg-teal-100 transition-colors shrink-0">
+                                                <Layers size={15} />
+                                            </div>
+                                            <div>
+                                                <div className="font-semibold text-slate-900 dark:text-slate-100">Đổi mã hàng loạt</div>
+                                                <div className="text-[11px] text-slate-400">Đổi mã sản phẩm cho nhiều LOT</div>
+                                            </div>
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowBulkMenu(false)
+                                            setShowBulkAssign(true)
+                                        }}
+                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-indigo-50/60 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group cursor-pointer"
+                                    >
+                                        <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 group-hover:bg-indigo-100 transition-colors shrink-0">
+                                            <MapPin size={15} />
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-slate-900 dark:text-slate-100">Vị trí hàng loạt</div>
+                                            <div className="text-[11px] text-slate-400">Gán vị trí kho cho các LOT</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setShowBulkMenu(false)
+                                            setShowBulkAssignTag(true)
+                                        }}
+                                        className="w-full flex items-center gap-2.5 px-2.5 py-2 text-xs sm:text-sm text-slate-700 dark:text-slate-200 hover:bg-amber-50/60 dark:hover:bg-slate-800 rounded-xl transition-colors text-left group cursor-pointer"
+                                    >
+                                        <div className="p-1.5 rounded-lg bg-amber-50 dark:bg-amber-950/50 text-amber-600 group-hover:bg-amber-100 transition-colors shrink-0">
+                                            <Tag size={15} />
+                                        </div>
+                                        <div>
+                                            <div className="font-semibold text-slate-900 dark:text-slate-100">Mã phụ hàng loạt</div>
+                                            <div className="text-[11px] text-slate-400">Gán tag & mã phụ hàng loạt</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Nút Tạo LOT mới */}
+                    {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
+                        <button
+                            type="button"
+                            onClick={toggleCreateForm}
+                            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold shadow-md transition-all transform active:scale-95 cursor-pointer ${
+                                showCreateForm
                                     ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200'
                                     : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                                    }`}
-                            >
-                                {showCreateForm ? <X size={18} /> : <Plus size={18} />}
-                                {showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}
-                            </button>
-                        </div>
+                            }`}
+                        >
+                            {showCreateForm ? <X size={16} /> : <Plus size={16} className="stroke-[2.5]" />}
+                            <span>{showCreateForm ? 'Đóng form' : 'Tạo LOT mới'}</span>
+                        </button>
                     )}
                 </div>
             </div>
@@ -340,6 +532,10 @@ export function LotPageManager() {
                     lots={lots}
                     isModuleEnabled={isModuleEnabled}
                     isUtilityEnabled={isUtilityEnabled}
+                    selectedLotIds={selectedLotIds}
+                    onToggleSelect={handleToggleSelect}
+                    onSelectAll={handleSelectAll}
+                    onClearSelection={handleClearSelection}
                     managePermission="warehouse_lot.manage"
                     onEdit={handleEdit}
                     onDelete={handleDelete}
@@ -532,6 +728,90 @@ export function LotPageManager() {
                 />
             )}
 
+            {/* Bulk Tag Modal for Multi-Selected LOTs */}
+            {bulkTagLotIds && (
+                <LotTagModal
+                    lotIds={bulkTagLotIds}
+                    lotCodeDisplay={`Đã chọn ${bulkTagLotIds.length} LOT`}
+                    onClose={() => setBulkTagLotIds(null)}
+                    onSuccess={() => {
+                        setBulkTagLotIds(null)
+                        setSelectedLotIds(new Set())
+                        fetchLots()
+                    }}
+                />
+            )}
+
+            {/* Floating Multi-Select Action Bar */}
+            {selectedLotIds.size > 0 && (
+                <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-200">
+                    <div className="bg-slate-900/95 dark:bg-slate-800/95 text-white rounded-2xl shadow-2xl border border-slate-700/80 px-4 py-2.5 flex items-center gap-3 backdrop-blur-md">
+                        <div className="flex items-center gap-2 pr-3 border-r border-slate-700">
+                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="text-xs sm:text-sm font-bold text-white whitespace-nowrap">
+                                Đã chọn {selectedLotIds.size} LOT
+                            </span>
+                        </div>
+
+                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                            {(hasPermission('warehouse_lot.manage') || hasPermission('warehouse_lot.create')) && (
+                                <>
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkDeleteSelected}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
+                                        title="Xóa tất cả LOT đã chọn"
+                                    >
+                                        <Trash2 size={15} />
+                                        <span>Xóa ({selectedLotIds.size})</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkTagSelected}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
+                                        title="Gán mã phụ cho các LOT đã chọn"
+                                    >
+                                        <Tag size={15} />
+                                        <span>Gán mã phụ</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleBulkLockSelected(true)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-95 cursor-pointer"
+                                        title="Khóa các LOT đã chọn"
+                                    >
+                                        <Lock size={14} />
+                                        <span>Khóa</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => handleBulkLockSelected(false)}
+                                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs sm:text-sm font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl transition-all active:scale-95 cursor-pointer"
+                                        title="Mở khóa các LOT đã chọn"
+                                    >
+                                        <Unlock size={14} />
+                                        <span>Mở khóa</span>
+                                    </button>
+                                </>
+                            )}
+                        </div>
+
+                        <div className="pl-2 border-l border-slate-700">
+                            <button
+                                type="button"
+                                onClick={handleClearSelection}
+                                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                                title="Bỏ chọn tất cả"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
         </section>
     )

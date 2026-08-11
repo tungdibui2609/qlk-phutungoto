@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check } from 'lucide-react'
 import { useState } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -18,6 +18,8 @@ interface LotCardProps {
     lot: Lot
     isModuleEnabled: (moduleId: string) => boolean
     isUtilityEnabled: (utilityId: string) => boolean
+    isSelected?: boolean
+    onToggleSelect?: (id: string) => void
     onEdit: (lot: Lot) => void
     onDelete: (id: string) => void
     onView: (lot: Lot) => void
@@ -34,7 +36,7 @@ interface LotCardProps {
     searchTerm?: string
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, managePermission, searchTerm }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, onToggleSelect, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, managePermission, searchTerm }: LotCardProps) {
     const router = useRouter()
     const pathname = usePathname()
     const { showToast } = useToast()
@@ -231,19 +233,40 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, onEdit, onDele
 
     return (
         <div className={`group rounded-3xl border transition-all duration-300 flex flex-col justify-between relative overflow-hidden ${
-            searchStatus.isMatch
-                ? searchStatus.borderClass
-                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-emerald-500/30'
+            isSelected
+                ? 'ring-2 ring-emerald-500 border-emerald-500 dark:border-emerald-500 shadow-lg bg-emerald-50/15 dark:bg-emerald-950/20'
+                : searchStatus.isMatch
+                    ? searchStatus.borderClass
+                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 shadow-sm hover:shadow-xl hover:border-emerald-500/30'
         }`}>
             {/* Decorative Top Bar */}
             <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r z-10 transition-opacity ${
-                searchStatus.isMatch ? searchStatus.topBarClass : 'from-emerald-500 to-teal-400'
+                isSelected
+                    ? 'from-emerald-600 to-teal-500'
+                    : searchStatus.isMatch ? searchStatus.topBarClass : 'from-emerald-500 to-teal-400'
             }`}></div>
 
             {/* Header - Colored */}
             <div className={`px-4 pt-5 pb-4 bg-emerald-50/40 dark:bg-emerald-950/20 border-b border-emerald-100/50 dark:border-emerald-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
                 <div className="flex items-center justify-between">
                     <div className="flex flex-wrap items-center gap-2">
+                        {onToggleSelect && (
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    onToggleSelect(lot.id)
+                                }}
+                                className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer ${
+                                    isSelected
+                                        ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/30 scale-105'
+                                        : 'border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-emerald-500'
+                                }`}
+                                title={isSelected ? 'Bỏ chọn LOT' : 'Chọn LOT'}
+                            >
+                                {isSelected && <Check size={13} className="stroke-[3]" />}
+                            </button>
+                        )}
                         <span className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
                             {lot.code}
                         </span>
