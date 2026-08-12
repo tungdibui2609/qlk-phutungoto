@@ -52,12 +52,157 @@ export const formatUnitWeight = (unitName: string | null | undefined, weight: nu
 
 export const extractWeightFromName = (name: string | null | undefined): number | null => {
     if (!name) return null;
-    const match = name.toLowerCase().match(/\(\s*(\d+(\.\d+)?)\s*(k?g|kilogram|ki-lo-gam|kilo|kgs|kg\.)\s*\)/i);
-    if (match) {
-        const weight = parseFloat(match[1]);
-        return isNaN(weight) ? null : weight;
+    const s = name.trim();
+    // Pattern 1: In parentheses, with or without unit e.g. "Thùng (13kg)", "Thùng (12.5 kg)", "Thùng (13)", "Thùng (12,5kg)"
+    const matchParen = s.match(/\(\s*(\d+(?:[.,]\d+)?)\s*(k?g|kilogram|ki-lo-gam|kilo|kgs|kg\.)?\s*\)/i);
+    if (matchParen) {
+        const val = parseFloat(matchParen[1].replace(',', '.'));
+        return isNaN(val) ? null : val;
+    }
+    // Pattern 2: Without parentheses, with weight unit e.g. "Thùng 12kg", "Thùng 12 kg", "Thùng/12kg"
+    const matchNoParen = s.match(/(?:^|\s|\/)(\d+(?:[.,]\d+)?)\s*(k?g|kilogram|ki-lo-gam|kilo|kgs|kg\.)(?:\s|$)/i);
+    if (matchNoParen) {
+        const val = parseFloat(matchNoParen[1].replace(',', '.'));
+        return isNaN(val) ? null : val;
     }
     return null;
+};
+
+export interface SpecificationResult {
+    quyCach: string;
+    conversionRate: number;
+    convertedQty: number;
+    cleanUnitName: string;
+}
+
+/**
+ * Calculates accurate item specification (Quy cách) and converted quantity based on the chosen unit.
+ * Automatically handles weight suffixes (e.g. "Thùng (13kg)", "Thùng (12kg)", "Thùng 12kg")
+ * and maps to product units configuration when needed.
+ */
+export const calculateItemSpecification = (
+    itemUnit: string | null | undefined,
+    itemQuantity: number | string | null | undefined,
+    product: {
+        unit?: string | null;
+        product_units?: Array<{
+            unit_id?: string;
+            unit_name?: string;
+            conversion_rate: number;
+        }>;
+    } | null | undefined,
+    unitsMap?: Record<string, string> | Map<string, string>
+): SpecificationResult => {
+    const rawUnit = (itemUnit || '').trim();
+    const qty = typeof itemQuantity === 'string' ? parseFloat(itemQuantity.replace(/,/g, '')) || 0 : Number(itemQuantity) || 0;
+    const baseUnit = (product?.unit || 'Kg').trim();
+    const formattedBaseUnit = isKg(baseUnit) ? 'Kg' : (baseUnit || 'Kg');
+
+    if (!rawUnit) {
+        return {
+            quyCach: '',
+            conversionRate: 1,
+            convertedQty: qty,
+            cleanUnitName: baseUnit
+        };
+    }
+
+    const normRaw = normalizeUnit(rawUnit);
+    const normBase = normalizeUnit(baseUnit);
+
+    // 1. Check if unit has weight/rate in name (e.g. "Thùng (13kg)", "Thùng (12kg)", "Thùng 12kg")
+    const extractedRate = extractWeightFromName(rawUnit);
+    if (extractedRate !== null && extractedRate > 0) {
+        // Strip the weight part to get clean unit name, e.g. "Thùng (13kg)" -> "Thùng"
+        const cleanName = rawUnit
+            .replace(/\s*\([^)]*\)/g, '')
+            .replace(/(?:\s+|\/)\d+(?:[.,]\d+)?\s*(k?g|kilogram|ki-lo-gam|kilo|kgs|kg\.)?/gi, '')
+            .trim() || rawUnit;
+        
+        // If clean name is same as base unit (e.g. "Kg (1kg)"), no specification string needed
+        const normClean = normalizeUnit(cleanName);
+        if (normClean === normBase || (isKg(normClean) && isKg(normBase))) {
+            return {
+                quyCach: '',
+                conversionRate: extractedRate,
+                convertedQty: qty * extractedRate,
+                cleanUnitName: cleanName
+            };
+        }
+
+        return {
+            quyCach: `${cleanName}/${extractedRate}${formattedBaseUnit}`,
+            conversionRate: extractedRate,
+            convertedQty: qty * extractedRate,
+            cleanUnitName: cleanName
+        };
+    }
+
+    // 2. If unit matches base unit directly
+    if (normRaw === normBase || (isKg(normRaw) && isKg(normBase))) {
+        return {
+            quyCach: '',
+            conversionRate: 1,
+            convertedQty: qty,
+            cleanUnitName: rawUnit
+        };
+    }
+
+    // 3. Search in product_units
+    if (product?.product_units && product.product_units.length > 0) {
+        const getUnitNameById = (id?: string): string => {
+            if (!id) return '';
+            if (unitsMap instanceof Map) return unitsMap.get(id) || '';
+            if (unitsMap && typeof unitsMap === 'object') return unitsMap[id] || '';
+            return '';
+        };
+
+        const getCleanDisplayName = (pu: any): string => {
+            const raw = pu.unit_name || getUnitNameById(pu.unit_id) || '';
+            return raw.split('(')[0].trim() || raw;
+        };
+
+        // Try exact match
+        const uConfig = product.product_units.find((pu: any) => {
+            const uName = pu.unit_name || getUnitNameById(pu.unit_id);
+            return normalizeUnit(uName) === normRaw;
+        });
+
+        if (uConfig && uConfig.conversion_rate) {
+            const cleanName = getCleanDisplayName(uConfig) || rawUnit;
+            return {
+                quyCach: `${cleanName}/${uConfig.conversion_rate}${formattedBaseUnit}`,
+                conversionRate: uConfig.conversion_rate,
+                convertedQty: qty * uConfig.conversion_rate,
+                cleanUnitName: cleanName
+            };
+        }
+
+        // Try stripped match (e.g. "Thùng" vs "Thùng (20kg)")
+        const strippedRaw = normRaw.replace(/\s*\([^)]*\)/g, '').trim();
+        const uConfigStripped = product.product_units.find((pu: any) => {
+            const uName = normalizeUnit(pu.unit_name || getUnitNameById(pu.unit_id)).replace(/\s*\([^)]*\)/g, '').trim();
+            return uName === strippedRaw;
+        });
+
+        if (uConfigStripped && uConfigStripped.conversion_rate) {
+            const cleanName = getCleanDisplayName(uConfigStripped) || rawUnit;
+            return {
+                quyCach: `${cleanName}/${uConfigStripped.conversion_rate}${formattedBaseUnit}`,
+                conversionRate: uConfigStripped.conversion_rate,
+                convertedQty: qty * uConfigStripped.conversion_rate,
+                cleanUnitName: cleanName
+            };
+        }
+    }
+
+    // 4. Default fallback: unit differs from base unit
+    return {
+        quyCach: `${rawUnit}/1${formattedBaseUnit}`,
+        conversionRate: 1,
+        convertedQty: qty,
+        cleanUnitName: rawUnit
+    };
 };
 
 // Common units that usually represent the main package of a product

@@ -5,6 +5,7 @@ import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import fs from 'fs'
 import path from 'path'
+import { calculateItemSpecification } from '@/lib/unitConversion'
 
 export const dynamic = 'force-dynamic'
 
@@ -178,55 +179,20 @@ export async function POST(request: NextRequest) {
             const exportItems = items.map((item: any) => {
                 const productSource = item.products as any || {}
 
-                // Calculate quy cách
-                let quyCach = ''
-                if (productSource.product_units && productSource.product_units.length > 0) {
-                    const itemUnitStr = normalizeStr(item.unit)
-                    const uConfig = productSource.product_units.find((pu: any) => {
-                        if (!pu.unit_id) return false
-                        return normalizeStr(unitsMap[pu.unit_id]) === itemUnitStr
-                    })
-                    if (uConfig) {
-                        quyCach = `${item.unit}/${uConfig.conversion_rate}${productSource.unit || ''}`
-                    } else {
-                        const firstConfig = productSource.product_units[0]
-                        const mappedUnitName = firstConfig.unit_id ? unitsMap[firstConfig.unit_id] : ''
-                        quyCach = `${mappedUnitName}/${firstConfig.conversion_rate}${productSource.unit || ''}`
-                    }
-                } else if (item.unit && productSource.unit && normalizeStr(item.unit) !== normalizeStr(productSource.unit)) {
-                    quyCach = `${item.unit}/1${productSource.unit}`
-                }
-
-                // Calculate converted Qty
-                let convertedQty: any = item.quantity || 0
-                if (productSource.id) {
-                    const itemUnitStr = normalizeStr(item.unit)
-                    const baseUnitStr = normalizeStr(productSource.unit)
-                    
-                    if (itemUnitStr && baseUnitStr && itemUnitStr === baseUnitStr) {
-                        convertedQty = item.quantity || 0
-                    } else if (productSource.product_units && productSource.product_units.length > 0) {
-                        const uConfig = productSource.product_units.find((pu: any) => {
-                            const unitName = pu.unit_id ? unitsMap[pu.unit_id] : ''
-                            return unitName && normalizeStr(unitName) === itemUnitStr
-                        })
-                        if (uConfig) {
-                            convertedQty = (item.quantity || 0) * (uConfig.conversion_rate || 1)
-                        } else {
-                            const firstConfig = productSource.product_units[0]
-                            convertedQty = (item.quantity || 0) * (firstConfig.conversion_rate || 1)
-                        }
-                    } else if (item.unit && productSource.unit && itemUnitStr !== baseUnitStr) {
-                        convertedQty = (item.quantity || 0) * 1
-                    }
-                }
+                // Calculate accurate quy cách & converted Qty based on selected unit
+                const spec = calculateItemSpecification(
+                    item.unit,
+                    item.quantity,
+                    productSource,
+                    unitsMap
+                )
 
                 return {
                     ...item,
                     product_name: productSource.internal_name || productSource.name || item.product_name || 'N/A',
-                    quyCach,
+                    quyCach: spec.quyCach,
                     unit: item.unit || productSource.unit || '',
-                    convertedQty,
+                    convertedQty: spec.convertedQty,
                     document_quantity: item.document_quantity || item.quantity,
                     price: item.price || 0
                 }

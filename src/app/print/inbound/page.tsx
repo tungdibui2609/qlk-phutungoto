@@ -13,6 +13,7 @@ import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
 import { EditableText, AutoResizeInput, numberToVietnameseText } from '@/components/print/PrintHelpers'
 import { PrintActionMenu } from '@/components/print/PrintActionMenu'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { calculateItemSpecification } from '@/lib/unitConversion'
 
 interface OrderItem {
     id: string
@@ -366,24 +367,13 @@ function InboundPrintContent() {
         // Map items with quy cach and converted qty
         const exportItems = items.map(item => {
             const productSource = item.products as any || {}
-            let quyCachStr = ""
-            const normalizeQuyCachLocal = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-
-            if (productSource.product_units && productSource.product_units.length > 0) {
-                const itemUnitStr = normalizeQuyCachLocal(item.unit)
-                const uConfig = productSource.product_units.find((pu: any) => {
-                    if (!pu.unit_id) return false
-                    return normalizeQuyCachLocal(unitsMap[pu.unit_id]) === itemUnitStr
-                })
-                if (uConfig) quyCachStr = `${item.unit}/${uConfig.conversion_rate}${productSource.unit || ''}`
-                else {
-                    const firstConfig = productSource.product_units[0]
-                    const mappedUnitName = firstConfig.unit_id ? unitsMap[firstConfig.unit_id] : ''
-                    quyCachStr = `${mappedUnitName}/${firstConfig.conversion_rate}${productSource.unit || ''}`
-                }
-            } else if (item.unit && productSource.unit && normalizeQuyCachLocal(item.unit) !== normalizeQuyCachLocal(productSource.unit)) {
-                quyCachStr = `${item.unit}/1${productSource.unit}`
-            }
+            const spec = calculateItemSpecification(
+                item.unit,
+                item.quantity,
+                productSource,
+                unitsMap
+            )
+            let quyCachStr = spec.quyCach
 
             // Converted Qty calculation
             let convertedQtyValue: any = '-'
@@ -396,7 +386,11 @@ function InboundPrintContent() {
                     item.quantity,
                     product.unit || null
                 )
-                if (result !== null) convertedQtyValue = result
+                if (result !== null) {
+                    convertedQtyValue = result
+                } else {
+                    convertedQtyValue = spec.convertedQty
+                }
             }
 
             return {
@@ -815,27 +809,13 @@ function InboundPrintContent() {
                             // Calculate names and skus based on toggle
                             const productSource = item.products as any || {}
                             // Fetch conversion rate for "quy cách"
-                            let quyCach = ""
-                            const normalizeQuyCach = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                            if (productSource.product_units && productSource.product_units.length > 0) {
-                                // Find the unit mapping for the current item's unit
-                                const itemUnitStr = normalizeQuyCach(item.unit)
-                                const uConfig = productSource.product_units.find((pu: any) => {
-                                    if (!pu.unit_id) return false
-                                    return normalizeQuyCach(unitsMap[pu.unit_id]) === itemUnitStr
-                                })
-
-                                if (uConfig) {
-                                    quyCach = `${item.unit}/${uConfig.conversion_rate}${productSource.unit || ''}`
-                                } else {
-                                    // Fallback to the first mapping if we can't match the specific one
-                                    const firstConfig = productSource.product_units[0]
-                                    const mappedUnitName = firstConfig.unit_id ? unitsMap[firstConfig.unit_id] : ''
-                                    quyCach = `${mappedUnitName}/${firstConfig.conversion_rate}${productSource.unit || ''}`
-                                }
-                            } else if (item.unit && productSource.unit && normalizeQuyCach(item.unit) !== normalizeQuyCach(productSource.unit)) {
-                                quyCach = `${item.unit}/1${productSource.unit}`
-                            }
+                            const spec = calculateItemSpecification(
+                                item.unit,
+                                item.quantity,
+                                productSource,
+                                unitsMap
+                            )
+                            const quyCach = spec.quyCach
 
                             const displayName = displayInternalCode && (item.products as any)?.internal_name
                                 ? (item.products as any).internal_name
