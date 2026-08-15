@@ -79,8 +79,20 @@ export function OutboundItemsTable({
                             const product = products.find(p => p.id === item.productId)
                             // Basic stock validation display
                             const stockAvailable = product?.stock_quantity ?? 0
-                            const isOverStock = product && item.quantity > stockAvailable
-                            const isStockZero = product && stockAvailable <= 0
+                            
+                            // Convert item quantity to base unit to compare with stockAvailable
+                            const totalProductBaseQty = items
+                                .filter(i => i.productId === item.productId)
+                                .reduce((sum, i) => {
+                                    const rowProd = products.find(p => p.id === i.productId)
+                                    const rowBaseQty = (rowProd && i.unit && i.quantity)
+                                        ? convertUnit(i.productId, i.unit, rowProd.unit || null, Number(i.quantity) || 0, rowProd.unit || null)
+                                        : (Number(i.quantity) || 0)
+                                    return sum + rowBaseQty
+                                }, 0)
+
+                            const isOverStock = Boolean(product && (totalProductBaseQty > stockAvailable + 0.0001))
+                            const isStockZero = Boolean(product && stockAvailable <= 0)
 
                             return (
                                 <tr key={item.id} className="group hover:bg-stone-50 dark:hover:bg-zinc-800/30">
@@ -256,7 +268,19 @@ export function OutboundItemsTable({
                     const product = products.find(p => p.id === item.productId)
                     // Basic stock validation display
                     const stockAvailable = product?.stock_quantity ?? 0
-                    const isOverStock = product && item.quantity > stockAvailable
+
+                    // Convert item quantity to base unit to compare with stockAvailable
+                    const totalProductBaseQty = items
+                        .filter(i => i.productId === item.productId)
+                        .reduce((sum, i) => {
+                            const rowProd = products.find(p => p.id === i.productId)
+                            const rowBaseQty = (rowProd && i.unit && i.quantity)
+                                ? convertUnit(i.productId, i.unit, rowProd.unit || null, Number(i.quantity) || 0, rowProd.unit || null)
+                                : (Number(i.quantity) || 0)
+                            return sum + rowBaseQty
+                        }, 0)
+
+                    const isOverStock = Boolean(product && (totalProductBaseQty > stockAvailable + 0.0001))
 
                     return (
                         <div key={item.id} className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg p-4 shadow-sm space-y-3">
