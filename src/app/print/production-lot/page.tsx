@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Hash, BarChart3, RotateCcw, Package, Building2, Calendar, ShieldAlert, AlertTriangle, CheckCircle2, X } from 'lucide-react'
+import { Printer, Loader2, Hash, BarChart3, RotateCcw, Package, Building2, Calendar, ShieldAlert, AlertTriangle, CheckCircle2, X, Shuffle, Sparkles } from 'lucide-react'
 import { LotLabel } from '@/components/warehouse/lots/LotLabel'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
@@ -41,6 +41,8 @@ function ProductionLotPrintContent() {
     const type = searchParams.get('type') || 'label' // 'label' or 'sheet'
     const token = searchParams.get('token')
 
+    const templateFromUrl = searchParams.get('template') || searchParams.get('mau')
+
     const [loading, setLoading] = useState(true)
     const [isSaving, setIsSaving] = useState(false)
     const [data, setData] = useState<any | null>(null)
@@ -57,14 +59,45 @@ function ProductionLotPrintContent() {
     const [resetStep, setResetStep] = useState<'password' | 'confirm'>('password')
     const [toast, setToast] = useState<{ show: boolean; message: string; type: 'success' | 'error' }>({ show: false, message: '', type: 'success' })
 
+    const [randomIndices, setRandomIndices] = useState<number[]>([])
+
+    const generateRandomIndices = (fromVal: number, toVal: number, countVal: number) => {
+        const fromIdx = Math.max(1, Number(fromVal) || 1)
+        const toIdx = Math.max(fromIdx, Number(toVal) || 99)
+        const countNeeded = Math.min(toIdx - fromIdx + 1, Math.max(1, Number(countVal) || 5))
+
+        const pool: number[] = []
+        for (let i = fromIdx; i <= toIdx; i++) {
+            pool.push(i)
+        }
+
+        const shuffled = [...pool]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1))
+            ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+
+        const result = shuffled.slice(0, countNeeded).sort((a, b) => a - b)
+        setRandomIndices(result)
+        return result
+    }
+
     const [printConfig, setPrintConfig] = useState({
+        template: 'template1', // 'template1' (Mẫu 1) or 'template2' (Mẫu 2)
+        custom_lot_code: '',
         specification: '',
         net_weight: '',
+        team_group: 'Nguyên',
+        material_region: 'Miền Tây',
         production_date: new Date().toISOString().split('T')[0],
         packing_date: new Date().toISOString().split('T')[0],
         created_date: new Date().toISOString().split('T')[0],
         label_count: 1,
         start_index: 1,
+        is_random_index: false,
+        random_from_index: 1,
+        random_to_index: 99,
+        random_count: 5,
         show_production_date: true,
         show_packing_date: true
     })
@@ -109,15 +142,23 @@ function ProductionLotPrintContent() {
                     ...dbConfig
                 }
 
+                const initialTemplate = templateFromUrl 
+                    ? (['2', 'template2', 'sanxuat'].includes(templateFromUrl) ? 'template2' : 'template1')
+                    : (mergedConfig.template || 'template1')
+
                 setPrintConfig(prev => ({
                     ...prev,
                     ...mergedConfig,
+                    template: initialTemplate,
+                    custom_lot_code: mergedConfig.custom_lot_code !== undefined ? mergedConfig.custom_lot_code : (lotData.lot_code || ''),
+                    team_group: mergedConfig.team_group || 'Nguyên',
+                    material_region: mergedConfig.material_region || 'Miền Tây',
                     // Default index logic: Shared sheet index if 'sheet', per-lot printed index if 'label'
                     start_index: type === 'sheet'
                         ? (lotData.productions?.last_sheet_index || 0) + 1
                         : (lotData.last_printed_index || 0) + 1,
-                    specification: mergedConfig.specification || lotData.products?.name?.match(/\((.*?)\)/)?.[1] || '',
-                    net_weight: mergedConfig.net_weight || (lotData.weight_per_unit ? `${lotData.weight_per_unit} kg` : ''),
+                    specification: mergedConfig.specification || (initialTemplate === 'template2' ? (lotData.weight_per_unit ? `Thùng/túi: ${lotData.weight_per_unit}kg` : 'Thùng/túi: 20kg') : (lotData.products?.name?.match(/\((.*?)\)/)?.[1] || '')),
+                    net_weight: mergedConfig.net_weight || (lotData.weight_per_unit ? `${lotData.weight_per_unit}kg` : (initialTemplate === 'template2' ? '20kg' : '')),
                     production_date: lotData.production_date ? new Date(lotData.production_date).toISOString().split('T')[0] : (mergedConfig.production_date || new Date().toISOString().split('T')[0]),
                     created_date: mergedConfig.created_date || (lotData.created_at ? new Date(lotData.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
                 }))
@@ -144,6 +185,13 @@ function ProductionLotPrintContent() {
 
         return () => clearTimeout(timer)
     }, [printConfig, lotId, data, loading])
+
+    // Auto regenerate random indices if in random mode
+    useEffect(() => {
+        if (printConfig.is_random_index) {
+            generateRandomIndices(printConfig.random_from_index, printConfig.random_to_index, printConfig.random_count)
+        }
+    }, [printConfig.is_random_index, printConfig.random_from_index, printConfig.random_to_index, printConfig.random_count])
 
     const showToast = (message: string, type: 'success' | 'error' = 'success') => {
         setToast({ show: true, message, type })
@@ -294,36 +342,157 @@ function ProductionLotPrintContent() {
 
     if (type === 'label') {
         const todayStr = new Date().toLocaleDateString('vi-VN')
+        const formatDateVi = (dateStr?: string) => {
+            if (!dateStr) return '---'
+            try {
+                const parts = dateStr.split('-')
+                if (parts.length === 3) {
+                    const d = parts[2].padStart(2, '0')
+                    const m = parts[1].padStart(2, '0')
+                    const y = parts[0]
+                    return `${d}/${m}/${y}`
+                }
+                const d = new Date(dateStr)
+                if (isNaN(d.getTime())) return dateStr
+                const day = d.getDate().toString().padStart(2, '0')
+                const month = (d.getMonth() + 1).toString().padStart(2, '0')
+                const year = d.getFullYear()
+                return `${day}/${month}/${year}`
+            } catch {
+                return dateStr
+            }
+        }
+
         // Generate labels array
-        const labels = Array.from({ length: Number(printConfig.label_count) || 0 }).map((_, i) => ({
-            index: (Number(printConfig.start_index) || 1) + i
-        }))
+        const labels = printConfig.is_random_index
+            ? (randomIndices.length > 0 ? randomIndices : generateRandomIndices(printConfig.random_from_index, printConfig.random_to_index, printConfig.random_count)).map(idx => ({ index: idx }))
+            : Array.from({ length: Number(printConfig.label_count) || 0 }).map((_, i) => ({
+                index: (Number(printConfig.start_index) || 1) + i
+            }))
 
         return (
             <div className="min-h-screen bg-zinc-100 p-8 flex flex-col items-center gap-6 print:bg-white print:p-0">
                 {/* Print Config Form */}
                 <div className="print:hidden bg-white p-8 rounded-[2.5rem] border border-zinc-200 shadow-2xl w-full max-w-4xl animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="flex items-center gap-4 mb-8">
-                        <div className="p-4 bg-orange-500 rounded-2xl text-white shadow-lg shadow-orange-500/20">
-                            <Printer size={24} />
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
+                        <div className="flex items-center gap-4">
+                            <div className="p-4 bg-orange-500 rounded-2xl text-white shadow-lg shadow-orange-500/20">
+                                <Printer size={24} />
+                            </div>
+                            <div>
+                                <h2 className="text-xl font-black text-zinc-900 uppercase tracking-tight">Cấu hình In Tem Sản Xuất</h2>
+                                <p className="text-zinc-500 text-sm font-medium italic">Vui lòng kiểm tra thông tin trước khi in hàng loạt</p>
+                            </div>
                         </div>
-                        <div>
-                            <h2 className="text-xl font-black text-zinc-900 uppercase tracking-tight">Cấu hình In Tem Sản Xuất</h2>
-                            <p className="text-zinc-500 text-sm font-medium italic">Vui lòng kiểm tra thông tin trước khi in hàng loạt</p>
+
+                        {/* Switcher Mẫu Tem */}
+                        <div className="bg-zinc-100 p-1.5 rounded-2xl border border-zinc-200 flex items-center gap-1.5 w-full sm:w-auto">
+                            <button
+                                type="button"
+                                onClick={() => setPrintConfig(prev => ({ ...prev, template: 'template1' }))}
+                                className={`px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                    printConfig.template !== 'template2'
+                                        ? 'bg-zinc-900 text-white shadow-md'
+                                        : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60'
+                                }`}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-orange-400" />
+                                Mẫu 1: Tem Chuẩn
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setPrintConfig(prev => ({
+                                    ...prev,
+                                    template: 'template2',
+                                    team_group: prev.team_group || 'Nguyên',
+                                    material_region: prev.material_region || 'Miền Tây',
+                                    specification: prev.specification || (data?.weight_per_unit ? `Thùng/túi: ${data.weight_per_unit}kg` : 'Thùng/túi: 20kg'),
+                                    net_weight: prev.net_weight || (data?.weight_per_unit ? `${data.weight_per_unit}kg` : '20kg')
+                                }))}
+                                className={`px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-wider transition-all flex items-center gap-2 ${
+                                    printConfig.template === 'template2'
+                                        ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20'
+                                        : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60'
+                                }`}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                Mẫu 2: Tem Sản Xuất Mới
+                            </button>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">Quy cách</label>
+                        {/* Số Lot sản xuất & Nút Random mã chuẩn */}
+                        <div className="space-y-2 col-span-1 md:col-span-2">
+                            <div className="flex items-center justify-between px-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 flex items-center gap-1">
+                                    <span>Mã Lot sản xuất</span>
+                                    <span className="text-[9px] font-normal text-zinc-400 font-sans">(Hiển thị trên tem)</span>
+                                </label>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const randomNum = String(Math.floor(Math.random() * 900 + 10)).padStart(3, '0')
+                                        const today = new Date()
+                                        const yy = String(today.getFullYear()).slice(-2)
+                                        const mm = String(today.getMonth() + 1).padStart(2, '0')
+                                        const dd = String(today.getDate()).padStart(2, '0')
+                                        let regCode = 'MT'
+                                        const reg = (printConfig.material_region || '').toLowerCase()
+                                        if (reg.includes('tây nguyên') || reg.includes('tn')) regCode = 'TN'
+                                        else if (reg.includes('đông nam bộ') || reg.includes('dn')) regCode = 'DN'
+                                        
+                                        const newLot = `D${randomNum}${regCode}${yy}${mm}${dd}`
+                                        setPrintConfig(prev => ({ ...prev, custom_lot_code: newLot }))
+                                    }}
+                                    className="text-[11px] font-black text-orange-600 hover:text-orange-700 flex items-center gap-1.5 bg-orange-50 px-3 py-1.5 rounded-xl border border-orange-200/80 hover:bg-orange-100 transition-all shadow-sm active:scale-95"
+                                >
+                                    <Shuffle size={13} className="text-orange-500" />
+                                    <span>Random Mã Lot Chuẩn (D009MT...)</span>
+                                </button>
+                            </div>
+                            <div className="relative flex items-center">
+                                <input
+                                    type="text"
+                                    value={printConfig.custom_lot_code !== undefined ? printConfig.custom_lot_code : (data?.lot_code || '')}
+                                    onChange={e => setPrintConfig(prev => ({ ...prev, custom_lot_code: e.target.value }))}
+                                    className="w-full px-4 py-3 rounded-2xl bg-orange-50/50 border border-orange-200/80 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-900 tracking-wide"
+                                    placeholder="VD: D009MT24086"
+                                />
+                                {printConfig.custom_lot_code && printConfig.custom_lot_code !== data?.lot_code && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPrintConfig(prev => ({ ...prev, custom_lot_code: data?.lot_code || '' }))}
+                                        className="absolute right-3 text-[11px] text-zinc-400 hover:text-zinc-700 font-bold bg-white px-2.5 py-1 rounded-lg border border-zinc-200 shadow-sm"
+                                        title="Khôi phục mã Lot gốc từ hệ thống"
+                                    >
+                                        Mã gốc
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Quy cách */}
+                        <div className="space-y-2 col-span-1 md:col-span-2">
+                            <div className="flex items-center justify-between px-1">
+                                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Quy cách sản phẩm</label>
+                                <button
+                                    type="button"
+                                    onClick={() => setPrintConfig(prev => ({ ...prev, specification: 'Thùng/túi: 20kg' }))}
+                                    className="text-[10px] font-bold text-orange-600 hover:text-orange-700 bg-orange-50 px-2 py-0.5 rounded border border-orange-200/60"
+                                >
+                                    Mẫu 2 chuẩn: Thùng/túi: 20kg
+                                </button>
+                            </div>
                             <input
                                 type="text"
                                 value={printConfig.specification}
                                 onChange={e => setPrintConfig(prev => ({ ...prev, specification: e.target.value }))}
                                 className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
-                                placeholder="VD: Thùng 12 túi"
+                                placeholder={printConfig.template === 'template2' ? "VD: Thùng/túi: 20kg" : "VD: Thùng 12 túi"}
                             />
                         </div>
+
                         <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">Khối lượng tịnh</label>
                             <input
@@ -331,16 +500,40 @@ function ProductionLotPrintContent() {
                                 value={printConfig.net_weight}
                                 onChange={e => setPrintConfig(prev => ({ ...prev, net_weight: e.target.value }))}
                                 className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
-                                placeholder="VD: 10 kg"
+                                placeholder="VD: 20 kg"
                             />
                         </div>
+                        {printConfig.template === 'template2' && (
+                            <>
+                                <div className="space-y-2 animate-in fade-in duration-300">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 px-1">Tổ / Nhóm</label>
+                                    <input
+                                        type="text"
+                                        value={printConfig.team_group}
+                                        onChange={e => setPrintConfig(prev => ({ ...prev, team_group: e.target.value }))}
+                                        className="w-full px-4 py-3 rounded-2xl bg-orange-50/50 border border-orange-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
+                                        placeholder="VD: Nguyên"
+                                    />
+                                </div>
+                                <div className="space-y-2 animate-in fade-in duration-300">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 px-1">Vùng nguyên liệu</label>
+                                    <input
+                                        type="text"
+                                        value={printConfig.material_region}
+                                        onChange={e => setPrintConfig(prev => ({ ...prev, material_region: e.target.value }))}
+                                        className="w-full px-4 py-3 rounded-2xl bg-orange-50/50 border border-orange-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
+                                        placeholder="VD: Miền Tây"
+                                    />
+                                </div>
+                            </>
+                        )}
                         <div className="space-y-2">
                             <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">Ngày Sản Xuất</label>
                             <input
                                 type="date"
                                 value={printConfig.production_date}
-                                disabled
-                                className="w-full px-4 py-3 rounded-2xl bg-zinc-100 border border-zinc-200 cursor-not-allowed focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-500"
+                                onChange={e => setPrintConfig(prev => ({ ...prev, production_date: e.target.value }))}
+                                className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
                             />
                         </div>
                         <div className="space-y-2">
@@ -352,25 +545,129 @@ function ProductionLotPrintContent() {
                                 className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
                             />
                         </div>
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-orange-500 px-1">Số lượng Tem cần in</label>
-                            <input
-                                type="number"
-                                min={1}
-                                value={printConfig.label_count}
-                                onChange={e => setPrintConfig(prev => ({ ...prev, label_count: parseInt(e.target.value) || 1 }))}
-                                className="w-full px-4 py-3 rounded-2xl bg-orange-50 border border-orange-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-black text-sm text-orange-600"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-400 px-1">STT Bắt đầu</label>
-                            <input
-                                type="number"
-                                min={1}
-                                value={printConfig.start_index}
-                                onChange={e => setPrintConfig(prev => ({ ...prev, start_index: parseInt(e.target.value) || 1 }))}
-                                className="w-full px-4 py-3 rounded-2xl bg-zinc-50 border border-zinc-100 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
-                            />
+                        {/* Mode Switcher: In Tuần Tự vs In Random STT */}
+                        <div className="col-span-1 md:col-span-2 lg:col-span-4 bg-zinc-50 p-5 rounded-3xl border border-zinc-200/80 shadow-xs space-y-4">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-2 border-b border-zinc-200/60">
+                                <div className="flex items-center gap-2">
+                                    <Sparkles size={16} className="text-orange-500" />
+                                    <span className="text-xs font-black uppercase tracking-wider text-zinc-800">Chế độ tạo STT/Index cho Tem</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-white p-1 rounded-2xl border border-zinc-200 shadow-xs">
+                                    <button
+                                        type="button"
+                                        onClick={() => setPrintConfig(prev => ({ ...prev, is_random_index: false }))}
+                                        className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-tight transition-all ${
+                                            !printConfig.is_random_index
+                                                ? 'bg-zinc-900 text-white shadow-md'
+                                                : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                                        }`}
+                                    >
+                                        In Tuần Tự (STT Liên tục)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setPrintConfig(prev => ({ ...prev, is_random_index: true }))
+                                            generateRandomIndices(printConfig.random_from_index, printConfig.random_to_index, printConfig.random_count)
+                                        }}
+                                        className={`px-3.5 py-2 rounded-xl text-xs font-black uppercase tracking-tight transition-all flex items-center gap-1.5 ${
+                                            printConfig.is_random_index
+                                                ? 'bg-orange-500 text-white shadow-md shadow-orange-500/20'
+                                                : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-100'
+                                        }`}
+                                    >
+                                        <Shuffle size={13} />
+                                        <span>In Random STT Ngẫu Nhiên</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            {!printConfig.is_random_index ? (
+                                /* Chế độ In Tuần Tự */
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500 px-1">STT Bắt đầu</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={printConfig.start_index}
+                                            onChange={e => setPrintConfig(prev => ({ ...prev, start_index: parseInt(e.target.value) || 1 }))}
+                                            className="w-full px-4 py-3 rounded-2xl bg-white border border-zinc-200 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-800"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 px-1">Số lượng Tem cần in</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={printConfig.label_count}
+                                            onChange={e => setPrintConfig(prev => ({ ...prev, label_count: parseInt(e.target.value) || 1 }))}
+                                            className="w-full px-4 py-3 rounded-2xl bg-white border border-orange-200 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-black text-sm text-orange-600"
+                                        />
+                                    </div>
+                                </div>
+                            ) : (
+                                /* Chế độ In Random STT Ngẫu Nhiên */
+                                <div className="space-y-4 animate-in fade-in duration-300">
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 px-1">Từ STT (Dải bắt đầu)</label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={printConfig.random_from_index}
+                                                onChange={e => setPrintConfig(prev => ({ ...prev, random_from_index: parseInt(e.target.value) || 1 }))}
+                                                className="w-full px-4 py-3 rounded-2xl bg-white border border-orange-200 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-900"
+                                                placeholder="VD: 1"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 px-1">Đến STT (Dải kết thúc)</label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={printConfig.random_to_index}
+                                                onChange={e => setPrintConfig(prev => ({ ...prev, random_to_index: parseInt(e.target.value) || 99 }))}
+                                                className="w-full px-4 py-3 rounded-2xl bg-white border border-orange-200 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-bold text-sm text-zinc-900"
+                                                placeholder="VD: 99"
+                                            />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-orange-600 px-1">Bao nhiêu con tem (Số lượng)</label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                value={printConfig.random_count}
+                                                onChange={e => setPrintConfig(prev => ({ ...prev, random_count: parseInt(e.target.value) || 1 }))}
+                                                className="w-full px-4 py-3 rounded-2xl bg-white border border-orange-200 focus:outline-none focus:ring-4 focus:ring-orange-100 transition-all font-black text-sm text-orange-600"
+                                                placeholder="VD: 5"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Danh sách các số STT đã random được */}
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 bg-orange-100/70 p-3.5 rounded-2xl border border-orange-200">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-black text-orange-900 flex-shrink-0">Danh sách STT ngẫu nhiên ({randomIndices.length} tem):</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {randomIndices.map((sttNum, i) => (
+                                                    <span key={i} className="px-2.5 py-1 bg-white text-orange-800 font-black text-xs rounded-lg shadow-xs border border-orange-200">
+                                                        #{sttNum}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => generateRandomIndices(printConfig.random_from_index, printConfig.random_to_index, printConfig.random_count)}
+                                            className="text-xs font-black text-orange-700 hover:text-orange-800 bg-white px-3.5 py-2 rounded-xl border border-orange-300 shadow-xs flex items-center gap-1.5 hover:bg-orange-50 transition-all flex-shrink-0 active:scale-95"
+                                        >
+                                            <Shuffle size={13} className="text-orange-500" />
+                                            <span>🎲 Random Lại STT</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                         
                         <div className="flex flex-col justify-center px-4">
@@ -506,7 +803,7 @@ function ProductionLotPrintContent() {
                     <div className="mt-8 pt-8 border-t border-zinc-50 flex items-center justify-between">
                         <div className="flex flex-col">
                             <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Xem trước</span>
-                            <span className="text-zinc-600 font-bold text-sm italic">Sẵn sàng in {printConfig.label_count} tem từ {printConfig.start_index.toString().padStart(2, '0')}</span>
+                            <span className="text-zinc-600 font-bold text-sm italic">Sẵn sàng in {printConfig.label_count} tem từ {printConfig.start_index.toString().padStart(2, '0')} ({printConfig.template === 'template2' ? 'Mẫu 2: Tem sản xuất mới' : 'Mẫu 1: Tem chuẩn'})</span>
                         </div>
                         <div className="flex gap-3">
                             <button
@@ -514,7 +811,7 @@ function ProductionLotPrintContent() {
                                 className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-900 text-white px-6 py-4 rounded-2xl font-black text-xs uppercase tracking-[0.1em] transition-all active:scale-95 shadow-xl shadow-zinc-900/10"
                             >
                                 <Printer size={18} />
-                                In Tem Chuẩn
+                                In Tem ({printConfig.template === 'template2' ? 'Mẫu 2' : 'Mẫu 1'})
                             </button>
                             <button
                                 onClick={navigateToCustomPrint}
@@ -713,78 +1010,161 @@ function ProductionLotPrintContent() {
                     ` }} />
                     
                     {labels.map((label, idx) => (
-                        <div key={idx} className="relative w-[90mm] h-[60mm] bg-white border border-zinc-200 print:border-none overflow-hidden px-4 py-2 flex flex-col justify-between shadow-lg print:shadow-none">
-                            {/* Header: LSX Code */}
-                            <div className="border-b-2 border-black pb-2">
-                                <span className="text-[8px] font-black uppercase text-zinc-500 leading-none">Lệnh sản xuất / Prod. Order</span>
-                                <div className="text-2xl font-black text-black leading-none tracking-tighter mt-1">{(data as any).productions?.code}</div>
-                            </div>
-
-                            {/* Body: Product Name & SKU */}
-                            <div className="flex-1 flex flex-col justify-center min-h-0">
-                                <div className="space-y-1">
-                                    <div className="text-[10px] font-black text-zinc-500 uppercase tracking-tight leading-none bg-zinc-100 py-1 px-2 rounded-sm inline-block">
-                                        SKU: {(data as any).products?.sku} <span className="mx-1 text-zinc-300">|</span> LOT: {(data as any).lot_code}
+                        printConfig.template === 'template2' ? (
+                            /* MẪU 2: TEM SẢN XUẤT MỚI (ẢNH 2) - BẢN TĂNG CỠ CHỮ CÂN BẰNG */
+                            <div key={idx} className="relative w-[90mm] h-[60mm] bg-white border-[1.5px] border-black print:border-[1.5px] print:border-black overflow-hidden px-3.5 py-2.5 flex flex-col justify-between shadow-lg print:shadow-none font-sans text-black select-none" style={{ fontFamily: "Arial, 'Helvetica Neue', Helvetica, Segoe UI, sans-serif" }}>
+                                {/* Header: SKU & LOT */}
+                                <div className="flex justify-between items-center text-[12px] font-bold text-black leading-none">
+                                    <div>
+                                        Mã SKU: <span className="font-bold">{(data as any).products?.sku || '---'}</span>
                                     </div>
+                                    <div>
+                                        Lot: <span className="font-bold">{printConfig.custom_lot_code || (data as any).lot_code || '---'}</span>
+                                    </div>
+                                </div>
+
+                                {/* Product Name */}
+                                <div className="my-auto py-1">
                                     <h1 
-                                        className="font-black text-black leading-[1.1] uppercase transition-all duration-300 overflow-hidden"
+                                        className="font-bold text-black text-center leading-[1.2] tracking-tight"
                                         style={{
-                                            fontSize: (data as any).products?.name?.length > 40 ? '13px' : 
-                                                     (data as any).products?.name?.length > 30 ? '16px' :
-                                                     (data as any).products?.name?.length > 20 ? '19px' : '22px',
+                                            fontWeight: 800,
+                                            fontSize: ((data as any).products?.name || '').length > 45 ? '17px' : 
+                                                     ((data as any).products?.name || '').length > 30 ? '19.5px' : '22px',
                                             display: '-webkit-box',
                                             WebkitLineClamp: 2,
                                             WebkitBoxOrient: 'vertical',
-                                            maxHeight: '48px' // Cố định chiều cao tối đa 2 dòng
+                                            overflow: 'hidden',
+                                            maxHeight: '52px'
                                         }}
                                     >
                                         {(data as any).products?.name}
                                     </h1>
                                 </div>
+
+                                {/* Divider Line */}
+                                <div className="w-full border-b-[1.5px] border-black mb-1" />
+
+                                {/* 2-Column Grid */}
+                                <div className="grid grid-cols-2 gap-x-2 text-black leading-tight flex-1">
+                                    {/* Left Column */}
+                                    <div className="flex flex-col justify-between">
+                                        <div>
+                                            <div className="text-[10.5px] font-bold text-black leading-none">Quy Cách /SPEC</div>
+                                            <div className="text-[12.5px] font-bold text-black leading-tight mt-0.5">{printConfig.specification || '---'}</div>
+                                        </div>
+                                        
+                                        <div className="mt-0.5">
+                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">TỔ/NHÓM</div>
+                                            <div className="text-[12.5px] font-bold text-black leading-tight mt-0.5">{printConfig.team_group || 'Nguyên'}</div>
+                                        </div>
+
+                                        <div className="mt-0.5">
+                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">VÙNG NGUYÊN LIỆU</div>
+                                            <div className="text-[12.5px] font-bold text-black leading-tight mt-0.5">{printConfig.material_region || 'Miền Tây'}</div>
+                                        </div>
+
+                                        <div className="text-[11.5px] font-bold text-black leading-none mt-1">
+                                            Ngày SX: {formatDateVi(printConfig.production_date)}
+                                        </div>
+                                    </div>
+
+                                    {/* Right Column */}
+                                    <div className="flex flex-col justify-between text-right">
+                                        <div>
+                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">KHỐI LƯỢNG /WEIGHT</div>
+                                            <div className="text-[13.5px] font-bold text-black leading-tight mt-0.5">{printConfig.net_weight || '---'}</div>
+                                        </div>
+
+                                        <div className="my-auto">
+                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">STT/INDEX</div>
+                                            <div className="text-3xl font-bold text-black leading-none mt-0.5">{label.index}</div>
+                                        </div>
+
+                                        <div className="text-[11.5px] font-bold text-black leading-none mt-1">
+                                            Ngày ĐG: {formatDateVi(printConfig.packing_date)}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Print Break */}
+                                <div className="print-page-break" />
                             </div>
+                        ) : (
+                            /* MẪU 1: TEM CHUẨN HIỆN TẠI (ẢNH 1) */
+                            <div key={idx} className="relative w-[90mm] h-[60mm] bg-white border border-zinc-200 print:border-none overflow-hidden px-4 py-2 flex flex-col justify-between shadow-lg print:shadow-none">
+                                {/* Header: LSX Code */}
+                                <div className="border-b-2 border-black pb-2">
+                                    <span className="text-[8px] font-black uppercase text-zinc-500 leading-none">Lệnh sản xuất / Prod. Order</span>
+                                    <div className="text-2xl font-black text-black leading-none tracking-tighter mt-1">{(data as any).productions?.code}</div>
+                                </div>
 
-                            {/* Details Grid & Dates - Grouped at the bottom */}
-                            <div className="flex flex-col border-t border-black pt-1">
-                                {/* Row 1: Spec & Weight */}
-                                <div className="flex justify-between items-end mb-1">
-                                    <div className="flex flex-col">
-                                        <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">Quy cách / Spec</span>
-                                        <span className="text-[11px] font-black text-black leading-tight">{printConfig.specification || '---'}</span>
-                                    </div>
-                                    <div className="flex flex-col text-right">
-                                        <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">Khối lượng / Weight</span>
-                                        <span className="text-[11px] font-black text-black leading-tight">{printConfig.net_weight || '---'}</span>
+                                {/* Body: Product Name & SKU */}
+                                <div className="flex-1 flex flex-col justify-center min-h-0">
+                                    <div className="space-y-1">
+                                        <div className="text-[10px] font-black text-zinc-500 uppercase tracking-tight leading-none bg-zinc-100 py-1 px-2 rounded-sm inline-block">
+                                            SKU: {(data as any).products?.sku} <span className="mx-1 text-zinc-300">|</span> LOT: {printConfig.custom_lot_code || (data as any).lot_code}
+                                        </div>
+                                        <h1 
+                                            className="font-black text-black leading-[1.1] uppercase transition-all duration-300 overflow-hidden"
+                                            style={{
+                                                fontSize: (data as any).products?.name?.length > 40 ? '13px' : 
+                                                         (data as any).products?.name?.length > 30 ? '16px' :
+                                                         (data as any).products?.name?.length > 20 ? '19px' : '22px',
+                                                display: '-webkit-box',
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: 'vertical',
+                                                maxHeight: '48px' // Cố định chiều cao tối đa 2 dòng
+                                            }}
+                                        >
+                                            {(data as any).products?.name}
+                                        </h1>
                                     </div>
                                 </div>
 
-                                {/* Row 2: Customer & STT */}
-                                <div className="flex justify-between items-end border-t border-zinc-100 pt-1 mb-1">
-                                    <div className="flex flex-col">
-                                        <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">Khách hàng / Customer</span>
-                                        <span className="text-[10px] font-bold text-black leading-tight truncate max-w-[180px]">{(data as any).productions?.customers?.name || 'CHANH THU GROUP'}</span>
+                                {/* Details Grid & Dates - Grouped at the bottom */}
+                                <div className="flex flex-col border-t border-black pt-1">
+                                    {/* Row 1: Spec & Weight */}
+                                    <div className="flex justify-between items-end mb-1">
+                                        <div className="flex flex-col">
+                                            <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">Quy cách / Spec</span>
+                                            <span className="text-[11px] font-black text-black leading-tight">{printConfig.specification || '---'}</span>
+                                        </div>
+                                        <div className="flex flex-col text-right">
+                                            <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">Khối lượng / Weight</span>
+                                            <span className="text-[11px] font-black text-black leading-tight">{printConfig.net_weight || '---'}</span>
+                                        </div>
                                     </div>
-                                    <div className="flex flex-col text-right">
-                                        <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">STT / Index</span>
-                                        <span className="text-xl font-black text-black leading-none">{label.index.toString().padStart(2, '0')}</span>
+
+                                    {/* Row 2: Customer & STT */}
+                                    <div className="flex justify-between items-end border-t border-zinc-100 pt-1 mb-1">
+                                        <div className="flex flex-col">
+                                            <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">Khách hàng / Customer</span>
+                                            <span className="text-[10px] font-bold text-black leading-tight truncate max-w-[180px]">{(data as any).productions?.customers?.name || 'CHANH THU GROUP'}</span>
+                                        </div>
+                                        <div className="flex flex-col text-right">
+                                            <span className="text-[7px] font-black uppercase text-zinc-400 leading-none">STT / Index</span>
+                                            <span className="text-xl font-black text-black leading-none">{label.index.toString().padStart(2, '0')}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Row 3: Dates */}
+                                    <div className="flex justify-between items-center border-t-2 border-dashed border-zinc-200 pt-1">
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[7px] font-black uppercase text-zinc-400">Ngày SX:</span>
+                                            <span className="text-[10px] font-black text-zinc-900">{formatDateVi(printConfig.production_date)}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <span className="text-[7px] font-black uppercase text-zinc-400">Ngày ĐG:</span>
+                                            <span className="text-[10px] font-black text-zinc-900">{printConfig.packing_date ? formatDateVi(printConfig.packing_date) : ''}</span>
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Row 3: Dates */}
-                                <div className="flex justify-between items-center border-t-2 border-dashed border-zinc-200 pt-1">
-                                    <div className="flex items-center gap-1">
-                                        <span className="text-[7px] font-black uppercase text-zinc-400">Ngày SX:</span>
-                                        <span className="text-[10px] font-black text-zinc-900">{new Date(printConfig.production_date).toLocaleDateString('vi-VN')}</span>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        <span className="text-[7px] font-black uppercase text-zinc-400">Ngày ĐG:</span>
-                                        <span className="text-[10px] font-black text-zinc-900">{printConfig.packing_date ? new Date(printConfig.packing_date).toLocaleDateString('vi-VN') : ''}</span>
-                                    </div>
-                                </div>
+                                {/* Print Break */}
+                                <div className="print-page-break" />
                             </div>
-
-                            {/* Print Break */}
-                            <div className="print-page-break" />
-                        </div>
+                        )
                     ))}
                 </div>
             </div>
