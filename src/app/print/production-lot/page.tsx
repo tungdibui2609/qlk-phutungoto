@@ -1050,21 +1050,21 @@ function ProductionLotPrintContent() {
                                     {/* Left Column */}
                                     <div className="flex flex-col justify-between">
                                         <div>
-                                            <div className="text-[10.5px] font-bold text-black leading-none">Quy Cách /SPEC</div>
-                                            <div className="text-[12.5px] font-bold text-black leading-tight mt-0.5">{printConfig.specification || '---'}</div>
+                                            <div className="text-[11px] font-black text-black leading-none" style={{ fontWeight: 900 }}>Quy Cách /SPEC</div>
+                                            <div className="text-[13px] font-black text-black leading-tight mt-0.5" style={{ fontWeight: 900 }}>{printConfig.specification || '---'}</div>
                                         </div>
                                         
                                         <div className="mt-0.5">
-                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">TỔ/NHÓM</div>
-                                            <div className="text-[12.5px] font-bold text-black leading-tight mt-0.5">{printConfig.team_group || 'Nguyên'}</div>
+                                            <div className="text-[11px] font-black uppercase text-black leading-none" style={{ fontWeight: 900 }}>TỔ/NHÓM</div>
+                                            <div className="text-[13px] font-black text-black leading-tight mt-0.5" style={{ fontWeight: 900 }}>{printConfig.team_group || 'Nguyên'}</div>
                                         </div>
 
                                         <div className="mt-0.5">
-                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">VÙNG NGUYÊN LIỆU</div>
-                                            <div className="text-[12.5px] font-bold text-black leading-tight mt-0.5">{printConfig.material_region || 'Miền Tây'}</div>
+                                            <div className="text-[11px] font-black uppercase text-black leading-none" style={{ fontWeight: 900 }}>VÙNG NGUYÊN LIỆU</div>
+                                            <div className="text-[13px] font-black text-black leading-tight mt-0.5" style={{ fontWeight: 900 }}>{printConfig.material_region || 'Miền Tây'}</div>
                                         </div>
 
-                                        <div className="text-[11.5px] font-bold text-black leading-none mt-1">
+                                        <div className="text-[12.5px] font-black text-black leading-none mt-1 whitespace-nowrap" style={{ fontWeight: 900 }}>
                                             Ngày SX: {formatDateVi(printConfig.production_date)}
                                         </div>
                                     </div>
@@ -1072,16 +1072,16 @@ function ProductionLotPrintContent() {
                                     {/* Right Column */}
                                     <div className="flex flex-col justify-between text-right">
                                         <div>
-                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">KHỐI LƯỢNG /WEIGHT</div>
-                                            <div className="text-[13.5px] font-bold text-black leading-tight mt-0.5">{printConfig.net_weight || '---'}</div>
+                                            <div className="text-[11px] font-black uppercase text-black leading-none" style={{ fontWeight: 900 }}>KHỐI LƯỢNG /WEIGHT</div>
+                                            <div className="text-[14px] font-black text-black leading-tight mt-0.5" style={{ fontWeight: 900 }}>{printConfig.net_weight || '---'}</div>
                                         </div>
 
                                         <div className="my-auto">
-                                            <div className="text-[10.5px] font-bold uppercase text-black leading-none">STT/INDEX</div>
-                                            <div className="text-3xl font-bold text-black leading-none mt-0.5">{label.index}</div>
+                                            <div className="text-[11px] font-black uppercase text-black leading-none" style={{ fontWeight: 900 }}>STT/INDEX</div>
+                                            <div className="text-3xl font-black text-black leading-none mt-0.5" style={{ fontWeight: 900 }}>{label.index}</div>
                                         </div>
 
-                                        <div className="text-[11.5px] font-bold text-black leading-none mt-1">
+                                        <div className="text-[12.5px] font-black text-black leading-none mt-1 whitespace-nowrap" style={{ fontWeight: 900 }}>
                                             Ngày ĐG: {formatDateVi(printConfig.packing_date)}
                                         </div>
                                     </div>
