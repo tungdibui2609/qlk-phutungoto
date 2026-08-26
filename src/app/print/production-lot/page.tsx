@@ -1078,7 +1078,7 @@ function ProductionLotPrintContent() {
 
                                         <div className="my-auto">
                                             <div className="text-[11px] font-black uppercase text-black leading-none" style={{ fontWeight: 900 }}>STT/INDEX</div>
-                                            <div className="text-3xl font-black text-black leading-none mt-0.5" style={{ fontWeight: 900 }}>{label.index}</div>
+                                            <div className="text-xl font-black text-black leading-none mt-0.5" style={{ fontWeight: 900 }}>{label.index}</div>
                                         </div>
 
                                         <div className="text-[12.5px] font-black text-black leading-none mt-1 whitespace-nowrap" style={{ fontWeight: 900 }}>
