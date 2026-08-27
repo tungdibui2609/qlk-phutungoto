@@ -24,6 +24,9 @@ interface MapFilterBarProps {
     grouped?: boolean
     hidePendingExport?: boolean
     onHidePendingExportChange?: (val: boolean) => void
+    categories?: any[]
+    selectedCategoryId?: string | null
+    onCategorySelect?: (catId: string | null) => void
 }
 
 export function MapFilterBar({
@@ -44,7 +47,10 @@ export function MapFilterBar({
     zones,
     grouped,
     hidePendingExport,
-    onHidePendingExportChange
+    onHidePendingExportChange,
+    categories,
+    selectedCategoryId,
+    onCategorySelect
 }: MapFilterBarProps) {
     // Local state for debounce
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
@@ -159,6 +165,22 @@ export function MapFilterBar({
 
                 {/* Desktop Extra Filters Wrapper */}
                 <div className="hidden lg:flex items-center gap-2">
+                    {categories && categories.length > 0 && onCategorySelect && (
+                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 shrink-0">
+                            <LayoutGrid size={14} className="text-indigo-500 shrink-0" />
+                            <select
+                                value={selectedCategoryId || 'all'}
+                                onChange={(e) => onCategorySelect(e.target.value === 'all' ? null : e.target.value)}
+                                className="bg-transparent border-none text-xs font-medium text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[150px] truncate"
+                            >
+                                <option value="all">Tất cả danh mục</option>
+                                {categories.map((cat: any) => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
                     {onHidePendingExportChange && (
                         <button
                             type="button"
@@ -190,6 +212,22 @@ export function MapFilterBar({
             {/* Mobile Expanded Filters */}
             {showMobileFilters && (
                 <div className="lg:hidden flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2">
+                    {categories && categories.length > 0 && onCategorySelect && (
+                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
+                            <LayoutGrid size={14} className="text-indigo-500 shrink-0" />
+                            <span className="text-xs text-slate-500 font-medium whitespace-nowrap">Danh mục:</span>
+                            <select
+                                value={selectedCategoryId || 'all'}
+                                onChange={(e) => onCategorySelect(e.target.value === 'all' ? null : e.target.value)}
+                                className="bg-transparent border-none text-xs font-medium text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none w-full"
+                            >
+                                <option value="all">Tất cả danh mục</option>
+                                {categories.map((cat: any) => (
+                                    <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
                     {onHidePendingExportChange && (
                         <button
                             type="button"

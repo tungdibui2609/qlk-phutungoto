@@ -17,6 +17,7 @@ export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'categor
 
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
 
@@ -35,6 +36,19 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
     // Filter positions by all filters
     const filteredPositions = useMemo(() => {
         let result = positions
+
+        // Filter by category
+        if (selectedCategoryId && selectedCategoryId !== 'all') {
+            result = result.filter(p => {
+                if (!p.lot_id) return false
+                const lot = lotInfo[p.lot_id]
+                if (!lot || !lot.items) return false
+                return lot.items.some((it: any) =>
+                    it.primary_category_id === selectedCategoryId ||
+                    (it.category_ids && it.category_ids.includes(selectedCategoryId))
+                )
+            })
+        }
 
         // Filter by search term
         // Supports:
@@ -218,7 +232,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         }
 
         return result
-    }, [positions, selectedZoneId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds])
+    }, [positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds])
 
     const filteredZones = useMemo(() => {
         if (!selectedZoneId) return zones
@@ -269,6 +283,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
     return {
         selectedZoneId, setSelectedZoneId,
+        selectedCategoryId, setSelectedCategoryId,
         searchTerm, setSearchTerm,
         searchMode, setSearchMode,
         dateFilterField, setDateFilterField,

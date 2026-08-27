@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers, Maximize2, Plus, Trash2, RefreshCw, Filter } from 'lucide-react'
+import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers, Maximize2, Plus, Trash2, RefreshCw, Filter, LayoutGrid } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -24,6 +24,51 @@ interface PositionWithZone extends Position {
     zone_id?: string | null
 }
 
+function extractProductCategories(prod: any) {
+    const categoryNames: string[] = []
+    const categoryIds: string[] = []
+    let primary_category_id: string | null = null
+    let primary_category_name: string | null = null
+
+    if (!prod) return { categoryNames, categoryIds, primary_category_id, primary_category_name }
+
+    if (prod.product_category_rel && prod.product_category_rel.length > 0) {
+        prod.product_category_rel.forEach((rel: any) => {
+            const catId = rel.category_id || rel.categories?.id
+            const catName = rel.categories?.name
+            if (catId && !categoryIds.includes(catId)) categoryIds.push(catId)
+            if (catName && !categoryNames.includes(catName)) categoryNames.push(catName)
+            if (rel.is_primary) {
+                primary_category_id = catId || null
+                primary_category_name = catName || null
+            }
+        })
+        if (!primary_category_id && prod.product_category_rel[0]) {
+            const first = prod.product_category_rel[0]
+            primary_category_id = first.category_id || first.categories?.id || null
+            primary_category_name = first.categories?.name || null
+        }
+    }
+
+    if (prod.categories) {
+        const catId = prod.category_id || prod.categories.id
+        const catName = prod.categories.name
+        if (catId && !categoryIds.includes(catId)) categoryIds.push(catId)
+        if (catName && !categoryNames.includes(catName)) categoryNames.push(catName)
+        if (!primary_category_id) {
+            primary_category_id = catId || null
+            primary_category_name = catName || null
+        }
+    } else if (prod.category_id) {
+        if (!categoryIds.includes(prod.category_id)) categoryIds.push(prod.category_id)
+        if (!primary_category_id) {
+            primary_category_id = prod.category_id
+        }
+    }
+
+    return { categoryNames, categoryIds, primary_category_id, primary_category_name }
+}
+
 export default function WarehouseMapPrintPage() {
     const searchParams = useSearchParams()
     const router = useRouter()
@@ -32,6 +77,7 @@ export default function WarehouseMapPrintPage() {
     // --- Search Params ---
     const systemType = searchParams.get('systemType') || ''
     const selectedZoneId = searchParams.get('zoneId') || ''
+    const categoryIdParam = searchParams.get('categoryId') || ''
     const searchTerm = searchParams.get('search') || ''
     const token = searchParams.get('token')
     const isSnapshot = searchParams.get('snapshot') === '1'
@@ -43,6 +89,8 @@ export default function WarehouseMapPrintPage() {
     const [error, setError] = useState<string | null>(null)
     const [showTable, setShowTable] = useState(false)
     const [occupancyFilter, setOccupancyFilter] = useState<'all' | 'occupied' | 'empty'>('all')
+    const [selectedCategoryId, setSelectedCategoryId] = useState<string>(categoryIdParam)
+    const [categories, setCategories] = useState<any[]>([])
     const [orientation, setOrientation] = useState<'portrait' | 'landscape'>(orientationParam || 'landscape')
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     const [isZonePickerOpen, setIsZonePickerOpen] = useState(false)
@@ -52,6 +100,21 @@ export default function WarehouseMapPrintPage() {
     const [isEmptyMap, setIsEmptyMap] = useState(false)
     const [onlyShowChecked, setOnlyShowChecked] = useState(false)
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
+
+    useEffect(() => {
+        if (!systemType) return
+        supabase.from('categories')
+            .select('id, name')
+            .eq('system_type', systemType)
+            .order('name')
+            .then(({ data }) => {
+                if (data) setCategories(data)
+            })
+    }, [systemType])
+
+    useEffect(() => {
+        setSelectedCategoryId(categoryIdParam)
+    }, [categoryIdParam])
 
     useEffect(() => {
         setLocalSearchTerm(searchTerm)
@@ -248,6 +311,18 @@ export default function WarehouseMapPrintPage() {
             }
         }
 
+        // --- Category Filter ---
+        if (selectedCategoryId && selectedCategoryId !== 'all') {
+            result = result.filter(p => {
+                const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : {})
+                if (!pLot || !pLot.items) return false
+                return pLot.items.some((item: any) =>
+                    item.primary_category_id === selectedCategoryId ||
+                    (item.category_ids && item.category_ids.includes(selectedCategoryId))
+                )
+            })
+        }
+
         // --- Hierarchical Sorting for Table View ---
         const zoneOrderMap = new Map<string, number>()
         const parentToChildren = new Map<string, any[]>()
@@ -301,7 +376,7 @@ export default function WarehouseMapPrintPage() {
             const sorted = sortPositionsByBinPriority([a, b])
             return sorted[0] === a ? -1 : 1
         })
-    }, [displayPositions, descendantIdSet, occupancyFilter, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows])
+    }, [displayPositions, descendantIdSet, occupancyFilter, selectedCategoryId, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows])
 
     const filteredZones = useMemo(() => {
         let result = displayZones
@@ -369,8 +444,9 @@ export default function WarehouseMapPrintPage() {
 
                 let curr = displayZones.find(z => z.id === checkedId)
                 while (curr && curr.parent_id) {
-                    visibleZones.add(curr.parent_id)
-                    curr = displayZones.find(z => z.id === curr.parent_id)
+                    const pId: string = curr.parent_id
+                    visibleZones.add(pId)
+                    curr = displayZones.find(z => z.id === pId)
                 }
             })
             result = result.filter(z => visibleZones.has(z.id))
@@ -424,7 +500,7 @@ export default function WarehouseMapPrintPage() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('display_order').order('code').order('id')),
                 fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, weight_kg), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, weight_kg, product_units(unit_id, conversion_rate))), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)), product_units(unit_id, conversion_rate))), lot_tags(tag, lot_item_id)')
             ])
 
             const zpLookup: Record<string, string> = {}
@@ -450,6 +526,8 @@ export default function WarehouseMapPrintPage() {
                             .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
                             .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
+                        const catInfo = extractProductCategories(item.products)
+
                         return {
                             id: item.id,
                             product_id: item.product_id,
@@ -460,7 +538,11 @@ export default function WarehouseMapPrintPage() {
                             unit: item.unit || item.products?.unit,
                             base_unit: item.products?.unit,
                             quantity: item.quantity,
-                            tags: itemTags
+                            tags: itemTags,
+                            categoryNames: catInfo.categoryNames,
+                            category_ids: catInfo.categoryIds,
+                            primary_category_id: catInfo.primary_category_id,
+                            primary_category_name: catInfo.primary_category_name
                         }
                     })
                 } else if (l.products) {
@@ -468,6 +550,8 @@ export default function WarehouseMapPrintPage() {
                         .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
                         .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                     accumulatedTags.push(...itemTags)
+                    const catInfo = extractProductCategories(l.products)
+
                     items = [{
                         product_id: l.product_id,
                         product_name: l.products.name,
@@ -477,7 +561,11 @@ export default function WarehouseMapPrintPage() {
                         unit: l.products.unit,
                         base_unit: l.products.unit,
                         quantity: l.quantity,
-                        tags: itemTags
+                        tags: itemTags,
+                        categoryNames: catInfo.categoryNames,
+                        category_ids: catInfo.categoryIds,
+                        primary_category_id: catInfo.primary_category_id,
+                        primary_category_name: catInfo.primary_category_name
                     }]
                 }
                 lotInfoMap[l.id] = { ...l, items, tags: accumulatedTags, qc_name: l.qc_info?.name, supplier_name: l.suppliers?.name }
@@ -842,6 +930,33 @@ export default function WarehouseMapPrintPage() {
                                 </div>
                             </div>
 
+                            {/* 1.5 Category Selection */}
+                            {categories && categories.length > 0 && (
+                                <div className="flex flex-col gap-2">
+                                    <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2">
+                                        <LayoutGrid size={12} /> Danh mục chính
+                                    </label>
+                                    <select
+                                        value={selectedCategoryId || 'all'}
+                                        onChange={(e) => {
+                                            const catId = e.target.value
+                                            const newCatId = catId === 'all' ? '' : catId
+                                            setSelectedCategoryId(newCatId)
+                                            const params = new URLSearchParams(searchParams.toString())
+                                            if (newCatId) params.set('categoryId', newCatId)
+                                            else params.delete('categoryId')
+                                            router.replace(`${pathname}?${params.toString()}`)
+                                        }}
+                                        className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium text-gray-700 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                                    >
+                                        <option value="all">Tất cả danh mục</option>
+                                        {categories.map((cat: any) => (
+                                            <option key={cat.id} value={cat.id}>{cat.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            )}
+
                             {/* 2. Occupancy Filter */}
                             <div className="flex flex-col gap-2">
                                 <label className="text-[11px] font-bold uppercase text-gray-400 flex items-center gap-2"><Layers size={12} /> Lọc trạng thái</label>
@@ -1125,6 +1240,9 @@ export default function WarehouseMapPrintPage() {
                         {selectedZoneId && (
                             <p className="font-medium mt-1">Vùng kho: {displayZones.find(z => z.id === selectedZoneId)?.name}</p>
                         )}
+                        {selectedCategoryId && selectedCategoryId !== 'all' && (
+                            <p className="font-medium mt-1">Danh mục chính: {categories.find(c => c.id === selectedCategoryId)?.name || selectedCategoryId}</p>
+                        )}
                         {searchTerm && (
                             <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
                         )}
@@ -1140,6 +1258,7 @@ export default function WarehouseMapPrintPage() {
                                     layouts={layouts}
                                     occupiedIds={occupiedIds}
                                     lotInfo={lotInfo}
+                                    selectedCategoryId={selectedCategoryId}
                                     collapsedZones={new Set()} // Expand all for printing
                                     selectedPositionIds={new Set()}
                                     onToggleCollapse={() => { }}

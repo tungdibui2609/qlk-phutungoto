@@ -12,6 +12,7 @@ interface MapSearchStatsProps {
     zones: Zone[]
     lotInfo: Record<string, any>
     searchTerm: string
+    categoryName?: string
     onPositionSelect?: (positionId: string) => void
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onViewDetails?: (lotId: string) => void
@@ -265,6 +266,7 @@ export function MapSearchStats({
     zones,
     lotInfo,
     searchTerm,
+    categoryName,
     onPositionSelect,
     onPositionMenu,
     onViewDetails,
@@ -377,7 +379,7 @@ export function MapSearchStats({
             oldestDate: globalOldest,
             newestDate: globalNewest
         }
-    }, [filteredPositions, zones, lotInfo, searchTerm, isFifoEnabled, isGrouped])
+    }, [filteredPositions, zones, lotInfo, searchTerm, categoryName, isFifoEnabled, isGrouped])
 
     // State for expanded zones
     const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
@@ -407,13 +409,16 @@ export function MapSearchStats({
         )
     }
 
-    if (!stats || !searchTerm) return null
+    if (!stats || (!searchTerm && !categoryName)) return null
+
+    const displayTitle = searchTerm ? "Kết quả tìm kiếm:" : "Kết quả danh mục:"
+    const displayLabel = searchTerm || categoryName
 
     return (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
             <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                <span>Kết quả tìm kiếm:</span>
-                <span className="text-emerald-700 dark:text-emerald-400 font-bold">"{searchTerm}"</span>
+                <span>{displayTitle}</span>
+                <span className="text-emerald-700 dark:text-emerald-400 font-bold">"{displayLabel}"</span>
                 {isFifoAvailable && (
                     <label className="inline-flex items-center gap-2 cursor-pointer select-none ml-auto">
                         <button

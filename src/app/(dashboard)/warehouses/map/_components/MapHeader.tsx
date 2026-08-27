@@ -8,6 +8,7 @@ interface MapHeaderProps {
     totalZones: number
     systemType: string | null
     selectedZoneId: string | null
+    selectedCategoryId?: string | null
     searchTerm: string
     isDesignMode: boolean
     setIsDesignMode: (val: boolean) => void
@@ -22,6 +23,7 @@ export function MapHeader({
     totalZones,
     systemType,
     selectedZoneId,
+    selectedCategoryId,
     searchTerm,
     isDesignMode,
     setIsDesignMode,
@@ -34,6 +36,7 @@ export function MapHeader({
         const params = new URLSearchParams()
         if (systemType) params.set('systemType', systemType)
         if (selectedZoneId) params.set('zoneId', selectedZoneId)
+        if (selectedCategoryId) params.set('categoryId', selectedCategoryId)
         if (searchTerm) params.set('search', searchTerm)
         if (displayInternalCode) params.set('internalCode', 'true')
         window.open(`/print/warehouse-map?${params.toString()}`, '_blank')

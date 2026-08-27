@@ -12,6 +12,51 @@ export interface PositionWithZone extends Position {
     zone_id?: string | null
 }
 
+export function extractProductCategories(prod: any) {
+    const categoryNames: string[] = []
+    const categoryIds: string[] = []
+    let primary_category_id: string | null = null
+    let primary_category_name: string | null = null
+
+    if (!prod) return { categoryNames, categoryIds, primary_category_id, primary_category_name }
+
+    if (prod.product_category_rel && prod.product_category_rel.length > 0) {
+        prod.product_category_rel.forEach((rel: any) => {
+            const catId = rel.category_id || rel.categories?.id
+            const catName = rel.categories?.name
+            if (catId && !categoryIds.includes(catId)) categoryIds.push(catId)
+            if (catName && !categoryNames.includes(catName)) categoryNames.push(catName)
+            if (rel.is_primary) {
+                primary_category_id = catId || null
+                primary_category_name = catName || null
+            }
+        })
+        if (!primary_category_id && prod.product_category_rel[0]) {
+            const first = prod.product_category_rel[0]
+            primary_category_id = first.category_id || first.categories?.id || null
+            primary_category_name = first.categories?.name || null
+        }
+    }
+
+    if (prod.categories) {
+        const catId = prod.category_id || prod.categories.id
+        const catName = prod.categories.name
+        if (catId && !categoryIds.includes(catId)) categoryIds.push(catId)
+        if (catName && !categoryNames.includes(catName)) categoryNames.push(catName)
+        if (!primary_category_id) {
+            primary_category_id = catId || null
+            primary_category_name = catName || null
+        }
+    } else if (prod.category_id) {
+        if (!categoryIds.includes(prod.category_id)) categoryIds.push(prod.category_id)
+        if (!primary_category_id) {
+            primary_category_id = prod.category_id
+        }
+    }
+
+    return { categoryNames, categoryIds, primary_category_id, primary_category_name }
+}
+
 export function useWarehouseData() {
     const { systemType } = useSystem()
     const { showToast } = useToast()
@@ -46,7 +91,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name))), lot_items(id, product_id, quantity, unit, products(name, unit, sku, internal_code, internal_name, product_category_rel(categories(name)))), lot_tags(tag, lot_item_id), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)')
+            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, unit, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)')
             .eq('id', lotId)
             .single() as any
 
@@ -57,7 +102,7 @@ export function useWarehouseData() {
 
         const lotItems = l.lot_items || []
         const allTags = l.lot_tags || []
-        let items: Array<{ product_name: string, sku: string, internal_code?: string, internal_name?: string, unit: string, quantity: number, tags: string[] }> = []
+        let items: any[] = []
         let accumulatedTags: string[] = []
 
         if (lotItems.length > 0) {
@@ -67,6 +112,8 @@ export function useWarehouseData() {
                     .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
                     .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                 accumulatedTags.push(...itemTags)
+                const catInfo = extractProductCategories(item.products)
+
                 return {
                     product_name: item.products?.name || '',
                     sku: item.products?.sku || '',
@@ -74,7 +121,11 @@ export function useWarehouseData() {
                     internal_name: item.products?.internal_name || '',
                     unit: item.unit || item.products?.unit || '',
                     quantity: item.quantity || 0,
-                    tags: itemTags
+                    tags: itemTags,
+                    categoryNames: catInfo.categoryNames,
+                    category_ids: catInfo.categoryIds,
+                    primary_category_id: catInfo.primary_category_id,
+                    primary_category_name: catInfo.primary_category_name
                 }
             })
         } else if (l.products) {
@@ -82,6 +133,8 @@ export function useWarehouseData() {
                 .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
                 .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
             accumulatedTags.push(...itemTags)
+            const catInfo = extractProductCategories(l.products)
+
             items = [{
                 product_name: l.products.name || '',
                 sku: l.products.sku || '',
@@ -89,7 +142,11 @@ export function useWarehouseData() {
                 internal_name: l.products.internal_name || '',
                 unit: l.products.unit || '',
                 quantity: l.quantity || 0,
-                tags: itemTags
+                tags: itemTags,
+                categoryNames: catInfo.categoryNames,
+                category_ids: catInfo.categoryIds,
+                primary_category_id: catInfo.primary_category_id,
+                primary_category_name: catInfo.primary_category_name
             }]
         }
 
@@ -188,7 +245,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
                 fetchAllZonesPos(),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(name, sku, internal_code, internal_name), lot_items(id, product_id, quantity, unit, products(name, sku, internal_code, internal_name)), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)') as Promise<any[]>,
+                fetchAll('lots', q => q.eq('system_code', systemType), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)') as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
@@ -207,7 +264,7 @@ export function useWarehouseData() {
             (lotsData as any[]).forEach((l: any) => {
                 const lotItems = l.lot_items || []
                 const allTags = l.lot_tags || []
-                let items: Array<{ product_name: string, sku: string, internal_code?: string, internal_name?: string, unit: string, quantity: number, tags: string[] }> = []
+                let items: any[] = []
                 let accumulatedTags: string[] = []
 
                 if (lotItems.length > 0) {
@@ -217,7 +274,7 @@ export function useWarehouseData() {
                             .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
                             .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
-                        const categoryNames: string[] = []
+                        const catInfo = extractProductCategories(item.products)
 
                         return {
                             product_name: item.products?.name,
@@ -227,7 +284,10 @@ export function useWarehouseData() {
                             unit: item.unit || item.products?.unit,
                             quantity: item.quantity,
                             tags: itemTags,
-                            categoryNames: categoryNames
+                            categoryNames: catInfo.categoryNames,
+                            category_ids: catInfo.categoryIds,
+                            primary_category_id: catInfo.primary_category_id,
+                            primary_category_name: catInfo.primary_category_name
                         } as any
                     })
                 } else if (l.products) {
@@ -235,7 +295,7 @@ export function useWarehouseData() {
                         .map((t: any) => t.tag.replace(/@/g, l.products?.sku || ''))
                         .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                     accumulatedTags.push(...itemTags)
-                    const categoryNames: string[] = []
+                    const catInfo = extractProductCategories(l.products)
 
                     items = [{
                         product_name: l.products.name,
@@ -245,7 +305,10 @@ export function useWarehouseData() {
                         unit: l.products.unit,
                         quantity: l.quantity,
                         tags: itemTags,
-                        categoryNames: categoryNames
+                        categoryNames: catInfo.categoryNames,
+                        category_ids: catInfo.categoryIds,
+                        primary_category_id: catInfo.primary_category_id,
+                        primary_category_name: catInfo.primary_category_name
                     } as any]
                 }
 

@@ -68,6 +68,7 @@ function WarehouseMapContent() {
     // 2. Filter Hook
     const {
         selectedZoneId, setSelectedZoneId,
+        selectedCategoryId, setSelectedCategoryId,
         searchTerm, setSearchTerm,
         searchMode, setSearchMode,
         dateFilterField, setDateFilterField,
@@ -81,6 +82,26 @@ function WarehouseMapContent() {
         hidePendingExport,
         setHidePendingExport
     } = useMapFilters({ positions, zones, lotInfo, isFifoEnabled: hasModule('fifo_priority'), pendingExportPosIds })
+
+    // Categories list for filter
+    const [categories, setCategories] = useState<any[]>([])
+    useEffect(() => {
+        if (!systemType) return
+        supabase.from('categories')
+            .select('id, name')
+            .eq('system_type', systemType)
+            .order('name')
+            .then(({ data }) => {
+                if (data) setCategories(data)
+            })
+    }, [systemType])
+
+    // Auto expand root zones when a filter (category or search) is selected
+    useEffect(() => {
+        if (selectedCategoryId || searchTerm) {
+            setCollapsedZones(new Set())
+        }
+    }, [selectedCategoryId, searchTerm, setCollapsedZones])
 
     // 3. UI State
     const [isMobile, setIsMobile] = useState(false)
@@ -800,6 +821,7 @@ function WarehouseMapContent() {
                 totalZones={totalZones}
                 systemType={systemType}
                 selectedZoneId={selectedZoneId}
+                selectedCategoryId={selectedCategoryId}
                 searchTerm={searchTerm}
                 isDesignMode={isDesignMode}
                 setIsDesignMode={setIsDesignMode}
@@ -841,6 +863,9 @@ function WarehouseMapContent() {
                         grouped={isGrouped}
                         hidePendingExport={hidePendingExport}
                         onHidePendingExportChange={setHidePendingExport}
+                        categories={categories}
+                        selectedCategoryId={selectedCategoryId}
+                        onCategorySelect={setSelectedCategoryId}
                     />
                 );
             })()}
@@ -850,12 +875,15 @@ function WarehouseMapContent() {
                     ? groupWarehouseData(filteredZones, filteredPositions)
                     : { zones: filteredZones, positions: filteredPositions }
 
+                const selectedCatName = categories.find(c => c.id === selectedCategoryId)?.name
+
                 return (
                     <MapSearchStats
                         filteredPositions={displayPositions}
                         zones={displayZones}
                         lotInfo={lotInfo}
                         searchTerm={searchTerm}
+                        categoryName={selectedCatName}
                         onPositionSelect={handlePositionSelect}
                         onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
                         onViewDetails={fetchFullLotDetails}
@@ -894,6 +922,7 @@ function WarehouseMapContent() {
                                     layouts={layoutRecord}
                                     lotInfo={lotInfo}
                                     searchTerm={searchTerm}
+                                    selectedCategoryId={selectedCategoryId}
                                     occupiedIds={occupiedIds}
                                     selectedPositionIds={selectedPositionIds}
                                     collapsedZones={collapsedZones}

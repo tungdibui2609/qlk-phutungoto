@@ -57,6 +57,7 @@ interface FlexibleZoneGridProps {
     checkedZoneIds?: Set<string>
     onToggleCheckedZone?: (zoneId: string, isChecked: boolean) => void
     searchTerm?: string
+    selectedCategoryId?: string | null
 }
 
 export default function FlexibleZoneGrid({
@@ -90,7 +91,8 @@ export default function FlexibleZoneGrid({
     isEmptyMode = false,
     checkedZoneIds = new Set(),
     onToggleCheckedZone,
-    searchTerm = ''
+    searchTerm = '',
+    selectedCategoryId = null
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -722,6 +724,9 @@ export default function FlexibleZoneGrid({
         if (!hasChildren && !hasPositions) return null
 
         const totalPositions = zone.totalPositions;
+        const isFiltering = (searchTerm && searchTerm.trim() !== '') || (selectedCategoryId && selectedCategoryId !== 'all')
+        if (isFiltering && totalPositions === 0) return null
+
         const effectiveDisplayType = displayType === 'auto'
             ? (hasPositions && !hasChildren ? 'grid' : 'header')
             : displayType
