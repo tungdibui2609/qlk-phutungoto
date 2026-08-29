@@ -45,21 +45,21 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
     const cellValLast = `px-1.5 flex items-center justify-center text-[10px] font-black text-black`
 
     return (
-        <div className="bg-white overflow-hidden flex flex-col shadow-lg print:shadow-none p-[1px] box-border select-none" style={{ width: '90mm', height: '60mm', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
-            <div className="flex-1 flex flex-col border-[2px] border-zinc-800 print:border-black overflow-hidden h-full">
+        <div className="bg-white overflow-hidden flex flex-col shadow-lg print:shadow-none p-[1px] box-border select-none" style={{ width: '88.5mm', height: '58mm', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
+            <div className="flex-1 flex flex-col border-[1.5px] border-zinc-800 print:border-black overflow-hidden h-full">
                 {/* ── Header: Tên sản phẩm ── */}
-                <div className={`bg-white px-2 py-0.5 flex-shrink-0 ${borderB} h-[12mm] flex items-center justify-center overflow-hidden`}>
+                <div className={`bg-white px-2 py-0.5 flex-shrink-0 ${borderB} h-[11.5mm] flex items-center justify-center overflow-hidden`}>
                     <h1
                         className="font-black text-black leading-[1.15] uppercase text-center tracking-tight"
                         style={{
-                            fontSize: productName.length > 80 ? '9.5px' :
-                                     productName.length > 60 ? '10.5px' :
-                                     productName.length > 40 ? '12px' : '14px',
+                            fontSize: productName.length > 80 ? '9px' :
+                                     productName.length > 60 ? '10px' :
+                                     productName.length > 40 ? '11.5px' : '13.5px',
                             display: '-webkit-box',
                             WebkitLineClamp: 3,
                             WebkitBoxOrient: 'vertical' as const,
                             overflow: 'hidden',
-                            maxHeight: '38px'
+                            maxHeight: '36px'
                         }}
                     >
                         {productName}
@@ -106,12 +106,12 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
                     </div>
 
                     {/* Barcode sọc ── */}
-                    <div className="h-[12mm] shrink-0 flex text-zinc-800">
-                        <div className={`w-[58%] ${borderR} flex items-center justify-center px-1 text-[10px] font-black tracking-tight text-center break-all leading-tight`}>
+                    <div className="h-[11.5mm] shrink-0 flex text-zinc-800">
+                        <div className={`w-[58%] ${borderR} flex items-center justify-center px-1 text-[9.5px] font-black tracking-tight text-center break-all leading-tight`}>
                             {config.barcode || '---'}
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center overflow-hidden px-2">
-                            <div className="barcode-font leading-none select-none text-[28px] whitespace-nowrap">
+                            <div className="barcode-font leading-none select-none text-[24px] whitespace-nowrap">
                                 *{index.toString().padStart(2, '0')}*
                             </div>
                         </div>
@@ -379,7 +379,7 @@ function CustomLabelContent() {
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 print:bg-white print:p-0">
             <style dangerouslySetInnerHTML={{ __html: `
                 @import url('https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap');
-                .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 35px; }
+                .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 24px; }
             `}} />
 
             {/* ── Thanh điều hướng ── */}
@@ -695,12 +695,12 @@ function CustomLabelContent() {
                             padding: 0 !important;
                         }
                         .cpl-label-page {
-                            width: 90mm !important;
-                            height: 60mm !important;
-                            max-height: 60mm !important;
+                            width: 88.5mm !important;
+                            height: 58mm !important;
+                            max-height: 58mm !important;
                             overflow: hidden !important;
                             box-sizing: border-box !important;
-                            margin: 0 !important;
+                            margin: 0 auto !important;
                             padding: 0 !important;
                             page-break-after: always !important;
                             break-after: page !important;
@@ -720,10 +720,10 @@ function CustomLabelContent() {
                             print-color-adjust: exact !important;
                         }
                     }
-                    .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 28px; }
+                    .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 24px; }
                 `}} />
                 {labels.map((lbl, i) => (
-                    <div key={i} className="cpl-label-page">
+                    <div key={i} className="cpl-label-page flex items-center justify-center">
                         <CustomLabel data={data} config={config} index={lbl.index} />
                     </div>
                 ))}
