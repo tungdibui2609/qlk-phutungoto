@@ -36,91 +36,89 @@ function CustomLabel({ data, config, index }: { data: any; config: any; index: n
     const productName = config.product_name_custom || data?.products?.name || ''
     const nsxDisplay = config.production_date ? new Date(config.production_date).toLocaleDateString('vi-VN') : '---'
     const hsdDisplay = config.expiry_date ? new Date(config.expiry_date).toLocaleDateString('vi-VN') : '---'
-    const barcode = config.barcode || data?.lot_code || ''
-    // Cột cố định thẳng hàng: C1=25% | C2=25% | C3=25% | C4=25%
-    const cell = 'border-b-[1.5px] border-r-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center'
-    const cellLast = 'border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center'
-    const lbl = 'text-[9px] font-black text-black uppercase tracking-tighter'
-    const val = 'text-[10px] font-black text-black'
-    const valLg = 'text-[12px] font-black text-black'
+
+    const borderB = 'border-b-[1.5px] border-zinc-800 print:border-black'
+    const borderR = 'border-r-[1.5px] border-zinc-800 print:border-black'
+    const cellLbl = `px-1.5 flex items-center justify-center text-[9px] font-black text-black uppercase tracking-tighter ${borderR}`
+    const cellVal = `px-1.5 flex items-center justify-center text-[10px] font-black text-black ${borderR}`
+    const cellValLg = `px-1.5 flex items-center justify-center text-[12px] font-black text-black tracking-tight ${borderR}`
+    const cellValLast = `px-1.5 flex items-center justify-center text-[10px] font-black text-black`
 
     return (
-        <div className="bg-white overflow-hidden flex flex-col shadow-lg print:shadow-none px-[2px]" style={{ width: '90mm', height: '60mm', boxSizing: 'border-box', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
-            <div className="flex-1 flex flex-col border-[2px] border-zinc-800 print:border-black overflow-hidden">
-                {/* ── Header: Tên sản phẩm (Cân đối lại) ── */}
-                <div className="bg-white px-2 py-1 flex-shrink-0 border-b-[1.5px] border-zinc-800 print:border-black min-h-[12mm] flex items-center justify-center overflow-hidden">
-                <h1
-                    className="font-black text-black leading-[1.1] uppercase text-center tracking-tight"
-                    style={{
-                        fontSize: productName.length > 80 ? '10px' :
-                                 productName.length > 60 ? '11px' :
-                                 productName.length > 40 ? '13px' : '15px',
-                        display: '-webkit-box',
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: 'vertical' as const,
-                        overflow: 'hidden',
-                        maxHeight: '48px'
-                    }}
-                >
-                    {productName}
-                </h1>
-            </div>
-
-            {/* ── Bảng thông tin (Chiếm không gian trung tâm) ── */}
-            <div className="flex-1 flex flex-col text-[9px]" style={{ fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
-                {/* NCC | value */}
-                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
-                    <div className={`w-[18%] ${cell} ${lbl}`}>NCC</div>
-                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center justify-center ${val} text-center`}>{config.customer_name || 'CT'}</div>
+        <div className="bg-white overflow-hidden flex flex-col shadow-lg print:shadow-none p-[1px] box-border select-none" style={{ width: '90mm', height: '60mm', fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
+            <div className="flex-1 flex flex-col border-[2px] border-zinc-800 print:border-black overflow-hidden h-full">
+                {/* ── Header: Tên sản phẩm ── */}
+                <div className={`bg-white px-2 py-0.5 flex-shrink-0 ${borderB} h-[12mm] flex items-center justify-center overflow-hidden`}>
+                    <h1
+                        className="font-black text-black leading-[1.15] uppercase text-center tracking-tight"
+                        style={{
+                            fontSize: productName.length > 80 ? '9.5px' :
+                                     productName.length > 60 ? '10.5px' :
+                                     productName.length > 40 ? '12px' : '14px',
+                            display: '-webkit-box',
+                            WebkitLineClamp: 3,
+                            WebkitBoxOrient: 'vertical' as const,
+                            overflow: 'hidden',
+                            maxHeight: '38px'
+                        }}
+                    >
+                        {productName}
+                    </h1>
                 </div>
 
-                {/* Số Lot | value | TL | value */}
-                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
-                    <div className={`w-[18%] ${cell} ${lbl}`}>Số Lot</div>
-                    <div className={`w-[40%] ${cell} justify-center ${valLg} tracking-tight text-center`}>
-                        {lotCode}
+                {/* ── Bảng thông tin ── */}
+                <div className="flex-1 flex flex-col justify-between overflow-hidden text-[9px]" style={{ fontFamily: "'Inter', 'Segoe UI', Roboto, system-ui, sans-serif" }}>
+                    {/* NCC | value */}
+                    <div className={`flex-1 min-h-0 flex ${borderB}`}>
+                        <div className={`w-[18%] ${cellLbl}`}>NCC</div>
+                        <div className={`flex-1 ${cellValLast}`}>{config.customer_name || 'CT'}</div>
                     </div>
-                    <div className={`w-[12%] ${cell} justify-center ${lbl}`}>TL</div>
-                    <div className={`w-[30%] ${cellLast} justify-center ${val} text-center`}>{config.net_weight || '10'}</div>
-                </div>
 
-                {/* Kiện số | value | NSX | value */}
-                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
-                    <div className={`w-[18%] ${cell} ${lbl}`}>Kiện số</div>
-                    <div className={`w-[40%] ${cell} justify-center ${valLg} text-center`}>{index.toString().padStart(2, '0')}</div>
-                    <div className={`w-[12%] ${cell} justify-center ${lbl}`}>NSX</div>
-                    <div className={`w-[30%] ${cellLast} justify-center ${val} text-center`}>{nsxDisplay}</div>
-                </div>
-
-                {/* ĐVT | value | HSD | value */}
-                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
-                    <div className={`w-[18%] ${cell} ${lbl}`}>ĐVT</div>
-                    <div className={`w-[40%] ${cell} justify-center ${val} text-center`}>{config.unit || 'Kg'}</div>
-                    <div className={`w-[12%] ${cell} justify-center ${lbl}`}>HSD</div>
-                    <div className={`w-[30%] ${cellLast} justify-center ${val} text-center`}>{hsdDisplay}</div>
-                </div>
-
-                {/* Đơn hàng | value | Tham chiếu */}
-                <div className="flex border-b-[1.5px] border-zinc-800 print:border-black">
-                    <div className={`w-[18%] ${cell} ${lbl}`}>Đơn hàng</div>
-                    <div className={`w-[40%] ${cell} justify-center ${val} text-center font-black`}>{config.order_code || 'NF-CT'}</div>
-                    <div className={`flex-1 border-b-[1.5px] border-zinc-800 print:border-black px-1.5 py-[2px] flex items-center justify-center text-center ${lbl}`}>BARCODE</div>
-                </div>
-
-                {/* Tham chiếu text | Barcode sọc (Mã Lot) ── */}
-                <div className="flex text-zinc-800" style={{ height: '12mm' }}>
-                    <div className="w-[58%] border-r-[1.5px] border-zinc-800 print:border-black flex items-center justify-center px-1 text-[10px] font-black tracking-tight text-center break-all leading-tight">
-                        {config.barcode || '---'}
+                    {/* Số Lot | value | TL | value */}
+                    <div className={`flex-1 min-h-0 flex ${borderB}`}>
+                        <div className={`w-[18%] ${cellLbl}`}>Số Lot</div>
+                        <div className={`w-[40%] ${cellValLg}`}>{lotCode}</div>
+                        <div className={`w-[12%] ${cellLbl}`}>TL</div>
+                        <div className={`w-[30%] ${cellValLast}`}>{config.net_weight || '10'}</div>
                     </div>
-                    <div className="flex-1 flex flex-col items-center justify-center py-1 overflow-hidden px-4">
-                        <div className="barcode-font leading-none select-none text-[20px] whitespace-nowrap">
-                            *{index.toString().padStart(2, '0')}*
+
+                    {/* Kiện số | value | NSX | value */}
+                    <div className={`flex-1 min-h-0 flex ${borderB}`}>
+                        <div className={`w-[18%] ${cellLbl}`}>Kiện số</div>
+                        <div className={`w-[40%] ${cellValLg}`}>{index.toString().padStart(2, '0')}</div>
+                        <div className={`w-[12%] ${cellLbl}`}>NSX</div>
+                        <div className={`w-[30%] ${cellValLast}`}>{nsxDisplay}</div>
+                    </div>
+
+                    {/* ĐVT | value | HSD | value */}
+                    <div className={`flex-1 min-h-0 flex ${borderB}`}>
+                        <div className={`w-[18%] ${cellLbl}`}>ĐVT</div>
+                        <div className={`w-[40%] ${cellVal}`}>{config.unit || 'Kg'}</div>
+                        <div className={`w-[12%] ${cellLbl}`}>HSD</div>
+                        <div className={`w-[30%] ${cellValLast}`}>{hsdDisplay}</div>
+                    </div>
+
+                    {/* Đơn hàng | value | BARCODE */}
+                    <div className={`flex-1 min-h-0 flex ${borderB}`}>
+                        <div className={`w-[18%] ${cellLbl}`}>Đơn hàng</div>
+                        <div className={`w-[40%] ${cellVal}`}>{config.order_code || 'NF-CT'}</div>
+                        <div className={`flex-1 px-1.5 flex items-center justify-center text-[9px] font-black text-black uppercase tracking-tighter`}>BARCODE</div>
+                    </div>
+
+                    {/* Barcode sọc ── */}
+                    <div className="h-[12mm] shrink-0 flex text-zinc-800">
+                        <div className={`w-[58%] ${borderR} flex items-center justify-center px-1 text-[10px] font-black tracking-tight text-center break-all leading-tight`}>
+                            {config.barcode || '---'}
+                        </div>
+                        <div className="flex-1 flex flex-col items-center justify-center overflow-hidden px-2">
+                            <div className="barcode-font leading-none select-none text-[28px] whitespace-nowrap">
+                                *{index.toString().padStart(2, '0')}*
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
-    </div>
     )
 }
 
@@ -678,23 +676,56 @@ function CustomLabelContent() {
                 <style dangerouslySetInnerHTML={{ __html: `
                     @import url('https://fonts.googleapis.com/css2?family=Libre+Barcode+39&display=swap');
                     @media print {
+                        html, body {
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            width: 90mm !important;
+                            height: 60mm !important;
+                            background: #fff !important;
+                            overflow: hidden !important;
+                        }
                         body * { visibility: hidden !important; }
                         #custom-print-area, #custom-print-area * { visibility: visible !important; }
-                        #custom-print-area { position: absolute !important; left: 0 !important; top: 0 !important; }
-                        .cpl-break { page-break-after: always; break-after: page; display: block; height: 0; }
-                        @page { margin: 0; size: 90mm 60mm; }
+                        #custom-print-area {
+                            position: absolute !important;
+                            left: 0 !important;
+                            top: 0 !important;
+                            width: 90mm !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                        }
+                        .cpl-label-page {
+                            width: 90mm !important;
+                            height: 60mm !important;
+                            max-height: 60mm !important;
+                            overflow: hidden !important;
+                            box-sizing: border-box !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            page-break-after: always !important;
+                            break-after: page !important;
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                        }
+                        .cpl-label-page:last-child {
+                            page-break-after: auto !important;
+                            break-after: auto !important;
+                        }
+                        @page {
+                            margin: 0;
+                            size: 90mm 60mm;
+                        }
                         * {
                             -webkit-print-color-adjust: exact !important;
                             print-color-adjust: exact !important;
                         }
                     }
-                    .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 32px; }
+                    .barcode-font { font-family: 'Libre Barcode 39', cursive; font-size: 28px; }
                 `}} />
                 {labels.map((lbl, i) => (
-                    <React.Fragment key={i}>
+                    <div key={i} className="cpl-label-page">
                         <CustomLabel data={data} config={config} index={lbl.index} />
-                        <div className="cpl-break" />
-                    </React.Fragment>
+                    </div>
                 ))}
             </div>
 
