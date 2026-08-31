@@ -1692,33 +1692,31 @@ function ProductionLotPrintContent() {
                                     }`}
                                     style={{ fontFamily: "Arial, 'Helvetica Neue', Helvetica, sans-serif" }}
                                 >
-                                    <div className={`w-full h-full border-[4px] border-black flex flex-col justify-between items-center relative overflow-hidden ${
-                                        isA5 ? 'rounded-[1.2rem] p-2' : 'rounded-[1.8rem] p-4'
-                                    }`}>
-                                        {/* Top: Date section with Month - MASSIVE GIANT SCALE */}
-                                        <div className={`w-full flex items-center justify-center pt-2 ${isA5 ? 'gap-3' : 'gap-6'}`}>
-                                            <span className={isA5 ? "text-6xl font-black text-zinc-400 tracking-wider" : "text-8xl font-black text-zinc-400 tracking-wider"}>........ /</span>
-                                            <span className={isA5 ? "text-[130pt] font-black text-black leading-none tracking-tight px-3" : "text-[180pt] font-black text-black leading-none tracking-tight px-6"} style={{ fontWeight: 900 }}>
+                                    <div className="w-full h-full flex flex-col justify-between items-center relative overflow-visible p-1 pb-4 print:pb-4">
+                                        {/* Top: Date section with Month - CLEAN SLASHES WITHOUT DOTS */}
+                                        <div className={`w-full flex items-center justify-center pt-1 pb-1 mb-1 ${isA5 ? 'gap-4' : 'gap-8'}`}>
+                                            <span className={isA5 ? "text-7xl font-black text-zinc-400 tracking-wider" : "text-9xl font-black text-zinc-400 tracking-wider"}>/</span>
+                                            <span className={isA5 ? "text-[155pt] font-black text-black leading-none tracking-tight px-3" : "text-[210pt] font-black text-black leading-none tracking-tight px-6"} style={{ fontWeight: 900 }}>
                                                 {printConfig.month_val || (new Date().getMonth() + 1)}
                                             </span>
-                                            <span className={isA5 ? "text-6xl font-black text-zinc-400 tracking-wider" : "text-8xl font-black text-zinc-400 tracking-wider"}>/ ........</span>
+                                            <span className={isA5 ? "text-7xl font-black text-zinc-400 tracking-wider" : "text-9xl font-black text-zinc-400 tracking-wider"}>/</span>
                                         </div>
 
-                                        {/* Center: Giant Code (e.g. F1, F2001) - STRETCHED BOTH HORIZONTALLY & VERTICALLY */}
-                                        <div className="flex-1 w-full flex items-center justify-center text-center overflow-hidden my-auto py-1 px-1">
+                                        {/* Center: Giant Code (e.g. F1, F2697) - PUSHED DOWN FOR BALANCED VERTICAL FLOW */}
+                                        <div className="flex-1 w-full flex items-center justify-center text-center overflow-visible mt-12 mb-2 py-1 px-1">
                                             <h1 
                                                 className="font-black text-black tracking-normal leading-none uppercase select-none w-full text-center inline-block"
                                                 style={{ 
                                                     fontWeight: 900,
                                                     transform: fullCode.length <= 3 
-                                                        ? 'scale(1.3, 1.48)' 
+                                                        ? 'scale(1.22, 1.28)' 
                                                         : fullCode.length <= 5 
-                                                            ? 'scale(1.22, 1.4)' 
-                                                            : 'scale(1.1, 1.3)',
+                                                            ? 'scale(1.15, 1.22)' 
+                                                            : 'scale(1.05, 1.15)',
                                                     transformOrigin: 'center center',
                                                     fontSize: isA5
-                                                        ? (fullCode.length <= 2 ? '195pt' : fullCode.length <= 4 ? '155pt' : fullCode.length <= 6 ? '135pt' : '100pt')
-                                                        : (fullCode.length <= 2 ? '280pt' : fullCode.length <= 4 ? '225pt' : fullCode.length <= 6 ? '190pt' : '140pt')
+                                                        ? (fullCode.length <= 2 ? '180pt' : fullCode.length <= 4 ? '145pt' : fullCode.length <= 6 ? '125pt' : '95pt')
+                                                        : (fullCode.length <= 2 ? '260pt' : fullCode.length <= 4 ? '210pt' : fullCode.length <= 6 ? '175pt' : '130pt')
                                                 }}
                                             >
                                                 {fullCode}
