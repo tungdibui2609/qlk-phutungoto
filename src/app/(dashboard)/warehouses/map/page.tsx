@@ -657,9 +657,15 @@ function WarehouseMapContent() {
         }
     }
 
-    async function handleMoveItems(targetZoneId: string) {
+    async function handleMoveItems(targetPositionId: string) {
         setIsMoveModalOpen(false)
         if (selectedPositionIds.size === 0) return
+
+        const targetPos = positions.find(p => p.id === targetPositionId)
+        if (!targetPos) {
+            showToast('Không tìm thấy vị trí đích đã chọn.', 'error')
+            return
+        }
 
         // Get lot IDs to move
         const lotIdsToMove = new Set<string>()
@@ -668,37 +674,43 @@ function WarehouseMapContent() {
         })
 
         if (lotIdsToMove.size === 0) return
+        const lotsArr = Array.from(lotIdsToMove)
 
-        // Find all descendant zones of the selected target Zone (including the target itself)
-        const targetZoneIds = new Set<string>([targetZoneId])
-        let added = true
-        while (added) {
-            added = false
-            for (const z of zones) {
-                if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
-                    targetZoneIds.add(z.id)
-                    added = true
+        const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
+        const clearUpdates: any[] = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
+        let assignUpdates: any[] = []
+
+        if (lotsArr.length === 1) {
+            assignUpdates = [{ id: targetPos.id, lot_id: lotsArr[0] }]
+        } else {
+            // Find positions in targetPos's zone
+            const targetZoneId = targetPos.zone_id
+            const targetZoneIds = new Set<string>(targetZoneId ? [targetZoneId] : [])
+            if (targetZoneId) {
+                let added = true
+                while (added) {
+                    added = false
+                    for (const z of zones) {
+                        if (z.parent_id && targetZoneIds.has(z.parent_id) && !targetZoneIds.has(z.id)) {
+                            targetZoneIds.add(z.id)
+                            added = true
+                        }
+                    }
                 }
             }
+
+            // Positions in the zone: targetPos first, then empty positions sorted by Bin-priority
+            const otherAvailable = positions.filter(p => p.id !== targetPos.id && p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
+            const sortedOther = sortPositionsByBinPriority(otherAvailable as any[])
+            const candidatePositions = [targetPos, ...sortedOther]
+
+            if (candidatePositions.length < lotsArr.length) {
+                showToast(`Không đủ vị trí khả dụng trong khu vực. Cần ${lotsArr.length}, nhưng chỉ tìm thấy ${candidatePositions.length} vị trí.`, 'error')
+                return
+            }
+
+            assignUpdates = lotsArr.map((lotId, i) => ({ id: candidatePositions[i].id, lot_id: lotId }))
         }
-
-        // Find available positions in the target Zone's descendant zones
-        // Find available positions in the target Zone's descendant zones and sort by Bin-priority
-        const rawAvailable = positions.filter(p => p.zone_id && targetZoneIds.has(p.zone_id) && !p.lot_id)
-        const availablePositions = sortPositionsByBinPriority(rawAvailable as any[])
-
-        console.log(`Moving items: targetZoneId=${targetZoneId}, descendantZones=${targetZoneIds.size}, available=${availablePositions.length}, toMove=${lotIdsToMove.size}`)
-
-        if (availablePositions.length < lotIdsToMove.size) {
-            showToast(`Không đủ vị trí trống trong Khu vực này. Cần ${lotIdsToMove.size}, nhưng chỉ còn ${availablePositions.length} vị trí.`, 'error')
-            return
-        }
-
-        const lotsArr = Array.from(lotIdsToMove)
-        const oldPosIdsToClear = selectedPositions.filter(p => p.lot_id).map(p => p.id)
-
-        const clearUpdates: any[] = oldPosIdsToClear.map(id => ({ id, lot_id: null }))
-        const assignUpdates: any[] = lotsArr.map((lotId, i) => ({ id: availablePositions[i].id, lot_id: lotId }))
 
         // Optimistic UI update
         setPositions(prev => prev.map(p => {
@@ -714,7 +726,7 @@ function WarehouseMapContent() {
             await updatePositionsWithLog(clearUpdates)
             await updatePositionsWithLog(assignUpdates)
 
-            showToast('Đã di chuyển hàng thành công!', 'success')
+            showToast(`Đã di chuyển sang vị trí ${targetPos.code} thành công!`, 'success')
             setSelectedPositionIds(new Set())
             fetchData()
         } catch (error: any) {
@@ -1159,6 +1171,8 @@ function WarehouseMapContent() {
                 onClose={() => setIsMoveModalOpen(false)}
                 onConfirm={handleMoveItems}
                 zones={zones}
+                positions={positions}
+                selectedPositions={selectedPositions}
             />
 
             {bulkPrintLotIds && (
