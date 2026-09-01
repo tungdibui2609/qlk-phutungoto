@@ -156,6 +156,16 @@ class ServerManagerGUI:
         )
         style.map("Link.TButton", background=[("active", "#475569")])
 
+        style.configure(
+            "Switch.TButton",
+            background="#8b5cf6",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=4,
+            borderwidth=0
+        )
+        style.map("Switch.TButton", background=[("active", "#7c3aed"), ("disabled", "#475569")])
+
     def _build_ui(self):
         # 1. HEADER
         header_frame = tk.Frame(self.root, bg="#1e293b", height=70, padx=20, pady=12)
@@ -198,7 +208,10 @@ class ServerManagerGUI:
         mode_box.pack(fill=tk.X, pady=(0, 6))
         tk.Label(mode_box, text="Chế độ:", font=("Segoe UI", 9), fg="#94a3b8", bg="#1e293b").pack(side=tk.LEFT, padx=(0, 6))
         ttk.Radiobutton(mode_box, text="⚡ Production (Siêu mượt)", variable=self.run_mode, value="prod").pack(side=tk.LEFT, padx=(0, 8))
-        ttk.Radiobutton(mode_box, text="🛠️ Dev", variable=self.run_mode, value="dev").pack(side=tk.LEFT)
+        ttk.Radiobutton(mode_box, text="🛠️ Dev", variable=self.run_mode, value="dev").pack(side=tk.LEFT, padx=(0, 4))
+
+        self.btn_switch_mode = ttk.Button(mode_box, text="🔄 Chuyển Chế Độ Fast", style="Switch.TButton", command=self.switch_mode_fast)
+        self.btn_switch_mode.pack(side=tk.RIGHT)
 
         btn_box = tk.Frame(actions_card, bg="#1e293b")
         btn_box.pack(fill=tk.X, pady=2)
@@ -327,7 +340,17 @@ class ServerManagerGUI:
         threading.Thread(target=self._build_production_worker, daemon=True).start()
 
     def _build_production_worker(self):
-        self.log("🔨 Đang tiến hành Build Production (npm run build)... Vui lòng chờ!")
+        self.log("🔨 ================= BẮT ĐẦU BUILD PRODUCTION (npm run build) =================")
+        # 1. Giải phóng tiến trình Node cũ để tránh lỗi file lock trên Windows
+        if is_port_open(PORTS["nextjs"]):
+            self.log("ℹ️ Đang tạm dừng Web App cũ để tránh xung đột file lock...")
+            try:
+                subprocess.run("taskkill /F /IM node.exe /T", shell=True, capture_output=True)
+                time.sleep(1.5)
+            except Exception:
+                pass
+
+        self.log("🔨 Đang biên dịch Production... Vui lòng chờ 1 - 2 phút!")
         try:
             res = subprocess.run(
                 "cmd.exe /c npm.cmd run build",
@@ -335,14 +358,18 @@ class ServerManagerGUI:
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=180
+                timeout=300
             )
             if res.returncode == 0:
-                self.log("✅ Build Production thành công 100%! Các trang đã được tối ưu hóa.")
+                self.log("✅ Build Production THÀNH CÔNG 100%! Bản build mới đã sẵn sàng.")
+                # Tự động khởi chạy lại Web App với bản Build mới
+                self.log("🚀 Đang tự động chạy lại Web App với phiên bản vừa Build...")
+                self.root.after(0, self.start_all_services)
             else:
-                self.log(f"⚠️ Kết quả Build: {res.stdout or res.stderr}")
+                err_text = res.stderr or res.stdout or "Lỗi build"
+                self.log(f"❌ Kết quả Build thất bại:\n{err_text}")
         except Exception as e:
-            self.log(f"❌ Lỗi khi Build: {e}")
+            self.log(f"❌ Ngoại lệ khi Build: {e}")
         finally:
             self.is_building = False
             self.root.after(0, lambda: self.btn_build.configure(state="normal"))
@@ -403,11 +430,27 @@ class ServerManagerGUI:
             self.is_backing_up = False
             self.root.after(0, lambda: self.btn_backup.configure(state="normal"))
 
+    def switch_mode_fast(self):
+        """Chuyển nhanh chế độ giữa Production và Dev (chỉ restart lại Web App Next.js)"""
+        if self.is_starting_all or self.is_stopping_all:
+            return
+        
+        # Tự động đảo chế độ (Dev <-> Prod)
+        current = self.run_mode.get()
+        new_mode = "dev" if current == "prod" else "prod"
+        self.run_mode.set(new_mode)
+        
+        mode_text = "🛠️ DEVELOPMENT" if new_mode == "dev" else "⚡ PRODUCTION"
+        self.log(f"🔄 Đang chuyển nhanh sang chế độ [{mode_text}]...")
+        self.start_all_services()
+
     def start_all_services(self):
         if self.is_starting_all:
             return
         self.is_starting_all = True
         self.btn_start_all.configure(state="disabled")
+        if hasattr(self, "btn_switch_mode"):
+            self.btn_switch_mode.configure(state="disabled")
         threading.Thread(target=self._start_all_worker, daemon=True).start()
 
     def _start_all_worker(self):
@@ -543,6 +586,8 @@ class ServerManagerGUI:
     def _finish_start_all(self):
         self.is_starting_all = False
         self.root.after(0, lambda: self.btn_start_all.configure(state="normal"))
+        if hasattr(self, "btn_switch_mode"):
+            self.root.after(0, lambda: self.btn_switch_mode.configure(state="normal"))
 
     def _stream_proc_logs(self, process: subprocess.Popen, prefix: str):
         try:
