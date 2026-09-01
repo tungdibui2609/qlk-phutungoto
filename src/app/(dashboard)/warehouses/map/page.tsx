@@ -388,6 +388,50 @@ function WarehouseMapContent() {
         })
     }
 
+    const handleBulkUnassignPosition = async (positionIds: string[]) => {
+        if (!positionIds.length) return
+
+        const occupiedPositionsToUnassign = positions.filter(p => positionIds.includes(p.id) && p.lot_id)
+
+        if (occupiedPositionsToUnassign.length === 0) {
+            showToast('Các vị trí được chọn đều đang trống.', 'warning')
+            return
+        }
+
+        const count = occupiedPositionsToUnassign.length
+        if (!await showConfirm(`Bạn có chắc chắn muốn gỡ vị trí của ${count} ô đã chọn?\nLúc này LOT sẽ được chuyển sang trạng thái chưa gán và sơ đồ kho vị trí đó sẽ trống.`)) return
+
+        const updates = occupiedPositionsToUnassign.map(p => ({
+            id: p.id,
+            lot_id: null
+        }))
+
+        // Optimistic UI update
+        const positionIdSet = new Set(occupiedPositionsToUnassign.map(p => p.id))
+        setPositions(prev => prev.map(p => {
+            if (positionIdSet.has(p.id)) {
+                return { ...p, lot_id: null }
+            }
+            return p
+        }))
+        setOccupiedIds(prev => {
+            const next = new Set(prev)
+            occupiedPositionsToUnassign.forEach(p => next.delete(p.id))
+            return next
+        })
+
+        try {
+            await updatePositionsWithLog(updates)
+            showToast(`Đã gỡ vị trí của ${count} ô thành công! LOT đã chuyển sang trạng thái chưa gán.`, 'success')
+            setSelectedPositionIds(new Set())
+            fetchData()
+        } catch (error: any) {
+            console.error('Unassign positions error:', error)
+            showToast('Lỗi khi gỡ vị trí: ' + (error.message || 'Không xác định'), 'error')
+            fetchData()
+        }
+    }
+
     const handleBulkDeleteLot = async (lotIds: string[]) => {
         if (!lotIds.length) return
         if (!await showConfirm(`Bạn có chắc chắn muốn xóa ${lotIds.length} LOT đã chọn?`)) return
@@ -1090,6 +1134,7 @@ function WarehouseMapContent() {
                 onTag={(lotIds) => setTaggingLotIds(lotIds)}
                 onDeleteTags={handleBulkDeleteTags}
                 onDeleteLot={handleBulkDeleteLot}
+                onUnassignPosition={handleBulkUnassignPosition}
                 onOpenSelectHall={() => setIsSelectHallOpen(true)}
                 onOpenMove={() => setIsMoveModalOpen(true)}
                 onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}

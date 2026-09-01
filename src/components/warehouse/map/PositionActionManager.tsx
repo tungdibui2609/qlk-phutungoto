@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2 } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 import { logActivity } from '@/lib/audit'
@@ -85,10 +85,48 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
         })
     }
 
-    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export' | 'delete') => {
+    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export' | 'delete' | 'unassign') => {
         if (!contextMenu?.position) return
         const pos = contextMenu.position
         setContextMenu(null)
+
+        if (action === 'unassign') {
+            const lotId = pos.lot_id
+            if (!lotId) return
+
+            if (!await showConfirm('Bạn có chắc chắn muốn gỡ vị trí của ô này? LOT sẽ được chuyển sang trạng thái chưa gán.')) return
+
+            try {
+                const realIds = (pos as any).realIds || [pos.id]
+                // 1. Clear lot_id in positions (Reference)
+                const { error: posError } = await (supabase
+                    .from('positions') as any)
+                    .update({ lot_id: null })
+                    .in('id', realIds)
+
+                if (posError) throw posError
+
+                // Audit Log for clearing position
+                for (const id of realIds) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: lotId },
+                        newData: { lot_id: null },
+                        systemCode: currentSystemCode || ''
+                    })
+                }
+
+                showToast('Đã gỡ vị trí thành công', 'success')
+                onRefreshMap()
+            } catch (error: any) {
+                console.error('Unassign position error:', error)
+                showToast(error?.message || "Lỗi khi gỡ vị trí", 'error')
+            }
+            return
+        }
 
         if (action === 'delete') {
             const lotId = pos.lot_id
@@ -274,6 +312,13 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                                 >
                                     <ArrowRightLeft size={16} className="text-orange-500" />
                                     <span>Di chuyển sang vị trí khác</span>
+                                </button>
+                                <button
+                                    onClick={() => handleMenuAction('unassign')}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors text-left font-medium"
+                                >
+                                    <MapPinOff size={16} className="text-amber-500" />
+                                    <span>Gỡ vị trí</span>
                                 </button>
                                 <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
                                 <button
