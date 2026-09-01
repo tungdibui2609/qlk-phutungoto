@@ -28,6 +28,7 @@ import { WarehouseHistoryModal } from './_components/WarehouseHistoryModal'
 import { SelectWarehouseModal } from '@/components/warehouse/map/SelectWarehouseModal'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
+import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
 import { logActivity } from '@/lib/audit'
@@ -309,10 +310,18 @@ function WarehouseMapContent() {
         }
     }, [currentSystem, viewingLot, hasModule])
 
+    const [bulkCloningLot, setBulkCloningLot] = useState<any | null>(null)
+
+    const handleCloneLot = (lotId: string) => {
+        const lotObj = lotInfo[lotId] || { id: lotId }
+        setBulkCloningLot(lotObj)
+    }
+
     const { handlePositionMenu, PositionActionUI } = usePositionActionManager({
         currentSystemCode: currentSystem?.code,
         onRefreshMap: fetchData,
-        onRefreshLot: refreshLotInfo
+        onRefreshLot: refreshLotInfo,
+        onCloneLot: handleCloneLot
     })
 
     async function fetchFullLotDetails(lotId: string) {
@@ -1150,6 +1159,7 @@ function WarehouseMapContent() {
                 onOpenSelectHall={() => setIsSelectHallOpen(true)}
                 onOpenMove={() => setIsMoveModalOpen(true)}
                 onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}
+                onCloneLot={handleCloneLot}
             />
 
             <SelectWarehouseModal
@@ -1179,6 +1189,17 @@ function WarehouseMapContent() {
                 <LotBulkPrintModal
                     lotIds={bulkPrintLotIds}
                     onClose={() => setBulkPrintLotIds(null)}
+                />
+            )}
+
+            {bulkCloningLot && (
+                <LotBulkCloneModal
+                    lot={bulkCloningLot}
+                    onClose={() => setBulkCloningLot(null)}
+                    onSuccess={() => {
+                        setBulkCloningLot(null)
+                        fetchData()
+                    }}
                 />
             )}
 

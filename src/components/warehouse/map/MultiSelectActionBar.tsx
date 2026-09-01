@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -28,6 +28,7 @@ interface MultiSelectActionBarProps {
     onOpenSelectHall?: () => void
     onOpenMove?: () => void
     onOpenAutoAssignWarehouse?: () => void
+    onCloneLot?: (lotId: string) => void
 }
 
 export default function MultiSelectActionBar({
@@ -44,7 +45,8 @@ export default function MultiSelectActionBar({
     onExportOrder,
     onOpenSelectHall,
     onOpenMove,
-    onOpenAutoAssignWarehouse
+    onOpenAutoAssignWarehouse,
+    onCloneLot
 }: MultiSelectActionBarProps) {
     const [isTagMenuOpen, setIsTagMenuOpen] = useState(false)
     const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false)
@@ -191,6 +193,22 @@ export default function MultiSelectActionBar({
                             >
                                 <FileOutput size={15} className="text-blue-600 dark:text-blue-400" />
                                 <span>Lệnh xuất kho</span>
+                            </button>
+
+                            {/* Nút: Nhân bản LOT */}
+                            <button
+                                onClick={() => {
+                                    if (selectedLotIds.size > 0 && onCloneLot) {
+                                        const firstLotId = Array.from(selectedLotIds)[0]
+                                        onCloneLot(firstLotId)
+                                    }
+                                }}
+                                disabled={selectedLotIds.size === 0}
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 rounded-xl transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0 shadow-sm"
+                                title="Nhân bản LOT đã chọn"
+                            >
+                                <Copy size={15} className="text-purple-600 dark:text-purple-400" />
+                                <span>Nhân bản LOT</span>
                             </button>
 
                             {/* SUB MENU: VỊ TRÍ & SẢNH (Gồm: Di chuyển, Hạ sảnh, Gán sảnh tự động, Gỡ vị trí) */}

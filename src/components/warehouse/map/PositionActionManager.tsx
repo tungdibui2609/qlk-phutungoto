@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 import { logActivity } from '@/lib/audit'
@@ -17,9 +17,10 @@ interface UsePositionActionManagerProps {
     currentSystemCode?: string
     onRefreshMap: () => void
     onRefreshLot: (lotId: string) => void
+    onCloneLot?: (lotId: string) => void
 }
 
-export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot }: UsePositionActionManagerProps) {
+export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot, onCloneLot }: UsePositionActionManagerProps) {
     const router = useRouter()
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
@@ -85,10 +86,18 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
         })
     }
 
-    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export' | 'delete' | 'unassign') => {
+    const handleMenuAction = async (action: 'create' | 'edit' | 'assign' | 'move' | 'export' | 'delete' | 'unassign' | 'clone') => {
         if (!contextMenu?.position) return
         const pos = contextMenu.position
         setContextMenu(null)
+
+        if (action === 'clone') {
+            const lotId = pos.lot_id
+            if (lotId && onCloneLot) {
+                onCloneLot(lotId)
+            }
+            return
+        }
 
         if (action === 'unassign') {
             const lotId = pos.lot_id
@@ -298,6 +307,13 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                                 >
                                     <Edit size={16} className="text-blue-500" />
                                     <span>Sửa thông tin LOT</span>
+                                </button>
+                                <button
+                                    onClick={() => handleMenuAction('clone')}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md transition-colors text-left"
+                                >
+                                    <Copy size={16} className="text-purple-500" />
+                                    <span>Nhân bản LOT</span>
                                 </button>
                                 <button
                                     onClick={() => handleMenuAction('export')}
