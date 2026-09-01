@@ -3,6 +3,7 @@ import { X, Copy, AlertCircle, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { useSystem } from '@/contexts/SystemContext'
+import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 
 interface LotBulkCloneModalProps {
     lot: Lot
@@ -60,25 +61,6 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
                 lastSequence = (lastLots[0] as any).daily_seq || 0
             }
 
-            // Generate metadata and codes based on sequence
-            const today = new Date()
-            const day = String(today.getDate()).padStart(2, '0')
-            const month = String(today.getMonth() + 1).padStart(2, '0')
-            const year = String(today.getFullYear()).slice(-2)
-            const dateStr = `${day}${month}${year}`
-
-            let warehousePrefix = ''
-            const cleanName = (currentSystem.name || '').replace(/^Kho\s+/i, '').trim()
-            const initials = cleanName.split(/\s+/).map((word: string) => word[0]).join('')
-            const normalized = initials
-                .normalize("NFD")
-                .replace(/[\u0300-\u036f]/g, "")
-                .replace(/đ/g, "d")
-                .replace(/Đ/g, "D")
-            warehousePrefix = normalized.toUpperCase().replace(/[^A-Z0-9]/g, '')
-
-            const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
-
             const commonMetadata = {
                 ...(typeof lotDataWithoutIds.metadata === 'object' && lotDataWithoutIds.metadata !== null ? lotDataWithoutIds.metadata : {}),
                 system_history: {
@@ -88,19 +70,21 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
                 }
             };
 
-            const newLots = Array.from({ length: cloneCount }).map((_, i) => {
-                const currentSeq = lastSequence + (i + 1)
-                const newCode = `${prefix}${String(currentSeq).padStart(3, '0')}`;
+            const newLots = await Promise.all(
+                Array.from({ length: cloneCount }).map(async (_, i) => {
+                    const currentSeq = lastSequence + (i + 1)
+                    const newCode = await generateUniqueLotCode(supabase, currentSystem.name)
 
-                return {
-                    ...lotDataWithoutIds,
-                    code: newCode,
-                    daily_seq: currentSeq,
-                    metadata: commonMetadata,
-                    quantity: lotDataWithoutIds.quantity || 0,
-                    system_code: currentSystem.code,
-                }
-            })
+                    return {
+                        ...lotDataWithoutIds,
+                        code: newCode,
+                        daily_seq: currentSeq,
+                        metadata: commonMetadata,
+                        quantity: lotDataWithoutIds.quantity || 0,
+                        system_code: currentSystem.code,
+                    }
+                })
+            )
 
             // 1. Insert New Lots
             const { data: insertedLots, error: insertLotsError } = await (supabase

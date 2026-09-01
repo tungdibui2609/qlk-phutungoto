@@ -5,6 +5,7 @@ import { X, Check, AlertCircle, Loader2 } from 'lucide-react'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { lotService } from '@/services/warehouse/lotService'
@@ -63,44 +64,8 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
 
     async function generateNewLotCode() {
         if (!currentSystem?.name) return;
-
-        const today = new Date()
-        const day = String(today.getDate()).padStart(2, '0')
-        const month = String(today.getMonth() + 1).padStart(2, '0')
-        const year = String(today.getFullYear()).slice(-2)
-        const dateStr = `${day}${month}${year}`
-
-        let warehousePrefix = ''
-        const cleanName = currentSystem.name.replace(/^Kho\s+/i, '').trim()
-        const initials = cleanName.split(/\s+/).map(word => word[0]).join('')
-        const normalized = initials
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/đ/g, "d")
-            .replace(/Đ/g, "D")
-
-        warehousePrefix = normalized.toUpperCase().replace(/[^A-Z0-9]/g, '')
-        const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
-
-        const { data: allLots } = await supabase
-            .from('lots')
-            .select('code')
-            .ilike('code', `${prefix}%`)
-
-        let sequence = 1
-        if (allLots && allLots.length > 0) {
-            const sequences = allLots.map((l: any) => {
-                const parts = l.code.split('-')
-                const lastPart = parts[parts.length - 1]
-                return parseInt(lastPart || '0')
-            }).filter(s => !isNaN(s))
-            
-            if (sequences.length > 0) {
-                sequence = Math.max(...sequences) + 1
-            }
-        }
-
-        setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
+        const code = await generateUniqueLotCode(supabase, currentSystem.name)
+        setNewLotCode(code)
     }
 
     const getConsumedOriginalQty = (itemId: string, selectedQty: number, selectedUnit: string) => {

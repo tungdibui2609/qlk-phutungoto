@@ -12,6 +12,7 @@ import { useUser } from '@/contexts/UserContext'
 import Protected from '@/components/auth/Protected'
 import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, formatUnitWeight, convertUnit } from '@/lib/unitConversion'
 import { useToast } from '@/components/ui/ToastProvider'
+import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 
 interface LotItemInput {
     id?: string
@@ -472,63 +473,8 @@ export function LotForm({
     async function generateLotCode(targetInboundDate?: string) {
         if (!currentSystem?.name) return;
 
-        const dateVal = targetInboundDate || inboundDate || new Date().toISOString().split('T')[0]
-        
-        let dateStr = ''
-        try {
-            const parts = dateVal.split('-')
-            if (parts.length === 3) {
-                const year = parts[0].slice(-2)
-                const month = parts[1]
-                const day = parts[2]
-                dateStr = `${day}${month}${year}`
-            } else {
-                throw new Error('Invalid format')
-            }
-        } catch (e) {
-            const today = new Date()
-            const day = String(today.getDate()).padStart(2, '0')
-            const month = String(today.getMonth() + 1).padStart(2, '0')
-            const year = String(today.getFullYear()).slice(-2)
-            dateStr = `${day}${month}${year}`
-        }
-
-        let warehousePrefix = ''
-        // Remove "Kho" prefix if present
-        const cleanName = currentSystem.name.replace(/^Kho\s+/i, '').trim()
-
-        // Get acronym
-        const initials = cleanName.split(/\s+/).map(word => word[0]).join('')
-
-        // Normalize Vietnamese
-        const normalized = initials
-            .normalize("NFD")
-            .replace(/[\u0300-\u036f]/g, "")
-            .replace(/đ/g, "d")
-            .replace(/Đ/g, "D")
-
-        warehousePrefix = normalized.toUpperCase().replace(/[^A-Z0-9]/g, '')
-
-        const prefix = warehousePrefix ? `${warehousePrefix}-LOT-${dateStr}-` : `LOT-${dateStr}-`
-
-        const { data: allLots } = await supabase
-            .from('lots')
-            .select('code')
-            .ilike('code', `${prefix}%`)
-
-        let sequence = 1
-        if (allLots && allLots.length > 0) {
-            const sequences = allLots.map((l: any) => {
-                const parts = l.code.split('-')
-                const lastPart = parts[parts.length - 1]
-                return parseInt(lastPart || '0')
-            }).filter(s => !isNaN(s))
-            
-            if (sequences.length > 0) {
-                sequence = Math.max(...sequences) + 1
-            }
-        }
-        setNewLotCode(`${prefix}${String(sequence).padStart(3, '0')}`)
+        const uniqueCode = await generateUniqueLotCode(supabase, currentSystem.name)
+        setNewLotCode(uniqueCode)
 
         // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG TĂNG LIÊN TỤC TRÊN TOÀN PHÂN HỆ, KHÔNG TRÙNG LẶP) --
         // Để tránh STT bị nhảy vọt theo tem in của sản xuất (thành phẩm tự động nhập kho có đuôi mã dài 6 ký tự như 101904),
