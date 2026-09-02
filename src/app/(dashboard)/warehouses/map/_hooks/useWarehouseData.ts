@@ -199,7 +199,7 @@ export function useWarehouseData() {
         }
         setErrorMsg(null)
 
-        async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 1000) {
+        async function fetchAll(table: string, filter?: (query: any) => any, customSelect = '*', limit = 5000) {
             let allRecs: any[] = []
             let from = 0
             while (true) {
@@ -217,7 +217,7 @@ export function useWarehouseData() {
             return allRecs
         }
 
-        async function fetchAllZonesPos(limit = 1000) {
+        async function fetchAllZonesPos(limit = 5000) {
             let allRecs: any[] = []
             let from = 0
             while (true) {
@@ -241,11 +241,11 @@ export function useWarehouseData() {
 
         try {
             const [posData, zoneData, zpData, layoutData, lotsData, pendingExportData] = await Promise.all([
-                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
-                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
-                fetchAllZonesPos(),
-                fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.eq('system_code', systemType), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)') as Promise<any[]>,
+                fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id'), '*', 5000),
+                fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id'), '*', 5000),
+                fetchAllZonesPos(5000),
+                fetchAll('zone_layouts', q => q.order('id'), '*', 5000),
+                fetchAll('lots', q => q.eq('system_code', systemType).neq('status', 'Archived'), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(code, semi_finished_lot_code, finished_lot_code)', 5000) as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
@@ -417,6 +417,42 @@ export function useWarehouseData() {
         }
     }, [accessToken, systemType])
 
+    const positionsRef = useRef<PositionWithZone[]>([])
+    positionsRef.current = positions
+
+    const lotInfoRef = useRef<Record<string, any>>({})
+    lotInfoRef.current = lotInfo
+
+    const refreshPendingExports = useCallback(async () => {
+        if (!systemType || !accessToken) return
+        try {
+            const { data } = await supabase
+                .from('export_task_items')
+                .select('position_id, lot_id, export_tasks!inner(status, system_code)')
+                .eq('export_tasks.system_code', systemType)
+                .in('export_tasks.status', ['Pending', 'Processing'])
+
+            const currentPos = positionsRef.current
+            const pendingPos = new Set<string>()
+            if (data) {
+                data.forEach((item: any) => {
+                    if (item.position_id) {
+                        pendingPos.add(item.position_id)
+                    } else if (item.lot_id) {
+                        currentPos.forEach(p => {
+                            if (p.lot_id === item.lot_id) {
+                                pendingPos.add(p.id)
+                            }
+                        })
+                    }
+                })
+            }
+            setPendingExportPosIds(pendingPos)
+        } catch (err) {
+            console.error('Error refreshing pending export positions:', err)
+        }
+    }, [systemType, accessToken])
+
     // Load Data Effect
     const hasFetchedRef = useRef(false)
     useEffect(() => {
@@ -433,89 +469,196 @@ export function useWarehouseData() {
         }
     }, [systemType, session?.user?.id, accessToken, fetchData, positions.length, loading])
 
-    // Realtime Subscription
+    // Realtime Subscriptions for positions, lots, lot_items, export_tasks, export_task_items
     useEffect(() => {
-        if (systemType && accessToken) {
-            let updateBatch: Position[] = []
-            let batchTimeout: NodeJS.Timeout | null = null
+        if (!systemType || !accessToken) return
 
-            const applyBatch = () => {
-                if (updateBatch.length === 0) return
+        let posUpdateBatch: Position[] = []
+        let posBatchTimeout: NodeJS.Timeout | null = null
+        let exportBatchTimeout: NodeJS.Timeout | null = null
+        let lotBatchTimeout: NodeJS.Timeout | null = null
+        let updatedLotIds = new Set<string>()
 
-                const batchIds = new Set(updateBatch.map(p => p.id))
-                const updatedLots = new Map(updateBatch.map(p => [p.id, p]))
+        const applyPosBatch = () => {
+            if (posUpdateBatch.length === 0) return
 
-                // Batch positions state update
-                setPositions(prev => prev.map(p => {
-                    const latest = updatedLots.get(p.id)
-                    return latest ? { ...p, lot_id: latest.lot_id } : p
-                }))
+            const batch = [...posUpdateBatch]
+            posUpdateBatch = []
+            posBatchTimeout = null
 
-                // Batch occupied logic
-                setOccupiedIds(prev => {
-                    const next = new Set(prev)
-                    updateBatch.forEach(pos => {
-                        if (pos.lot_id) next.add(pos.id)
-                        else next.delete(pos.id)
-                    })
-                    return next
+            const batchIds = new Set(batch.map(p => p.id))
+            const updatedPositionsMap = new Map(batch.map(p => [p.id, p]))
+
+            // Batch positions state update
+            setPositions(prev => prev.map(p => {
+                const latest = updatedPositionsMap.get(p.id)
+                return latest ? { ...p, lot_id: latest.lot_id } : p
+            }))
+
+            // Batch occupied logic
+            setOccupiedIds(prev => {
+                const next = new Set(prev)
+                batch.forEach(pos => {
+                    if (pos.lot_id) {
+                        const lot = lotInfoRef.current[pos.lot_id]
+                        if (lot && lot.items) {
+                            const totalQty = lot.items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                            if (totalQty > 0) next.add(pos.id)
+                            else next.delete(pos.id)
+                        } else {
+                            next.add(pos.id)
+                        }
+                    } else {
+                        next.delete(pos.id)
+                    }
                 })
+                return next
+            })
 
-                // Batch recent updates UI effect
+            // Batch recent updates UI effect
+            setRecentlyUpdatedPositionIds(prev => {
+                const next = new Set(prev)
+                batchIds.forEach(id => next.add(id))
+                return next
+            })
+
+            // Fetch info for new lots concurrently
+            const newLotIds = new Set(batch.map(p => p.lot_id).filter(Boolean))
+            newLotIds.forEach(lotId => {
+                if (lotId) refreshLotInfo(lotId)
+            })
+
+            setTimeout(() => {
                 setRecentlyUpdatedPositionIds(prev => {
                     const next = new Set(prev)
-                    batchIds.forEach(id => next.add(id))
+                    batchIds.forEach(id => next.delete(id))
                     return next
                 })
+            }, 1500)
+        }
 
-                // Fetch info for new lots concurrently
-                const newLotIds = new Set(updateBatch.map(p => p.lot_id).filter(Boolean))
-                newLotIds.forEach(lotId => {
-                    if (lotId) refreshLotInfo(lotId)
-                })
+        const applyLotBatch = () => {
+            if (updatedLotIds.size === 0) return
+            const idsToRefresh = Array.from(updatedLotIds)
+            updatedLotIds.clear()
+            lotBatchTimeout = null
 
-                setTimeout(() => {
-                    setRecentlyUpdatedPositionIds(prev => {
-                        const next = new Set(prev)
-                        batchIds.forEach(id => next.delete(id))
-                        return next
-                    })
-                }, 1500)
+            idsToRefresh.forEach(lotId => {
+                refreshLotInfo(lotId)
+            })
+        }
 
-                updateBatch = []
-                batchTimeout = null
-            }
+        const triggerExportRefresh = () => {
+            if (exportBatchTimeout) clearTimeout(exportBatchTimeout)
+            exportBatchTimeout = setTimeout(() => {
+                refreshPendingExports()
+            }, 300)
+        }
 
-            const channel = supabase
-                .channel(`warehouse-map-${systemType}`)
-                .on(
-                    'postgres_changes',
-                    {
-                        event: '*',
-                        schema: 'public',
-                        table: 'positions',
-                        filter: `system_type=eq.${systemType}`
-                    },
-                    (payload) => {
-                        const updatedPos = payload.new as Position
-                        if (!updatedPos || !updatedPos.id) return
+        const channel = supabase
+            .channel(`warehouse-map-${systemType}-${Date.now()}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'positions',
+                    filter: `system_type=eq.${systemType}`
+                },
+                (payload) => {
+                    const updatedPos = payload.new as Position
+                    if (!updatedPos || !updatedPos.id) return
 
-                        updateBatch.push(updatedPos)
-
-                        // Buffer updates within a 200ms window to batch them
-                        if (!batchTimeout) {
-                            batchTimeout = setTimeout(applyBatch, 300)
+                    posUpdateBatch.push(updatedPos)
+                    if (!posBatchTimeout) {
+                        posBatchTimeout = setTimeout(applyPosBatch, 200)
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'lots',
+                    filter: `system_code=eq.${systemType}`
+                },
+                (payload) => {
+                    const eventType = payload.eventType
+                    if (eventType === 'DELETE') {
+                        const oldLot = payload.old as any
+                        if (oldLot?.id) {
+                            setLotInfo(prev => {
+                                const next = { ...prev }
+                                delete next[oldLot.id]
+                                return next
+                            })
+                        }
+                    } else {
+                        const newLot = payload.new as any
+                        if (newLot?.id) {
+                            updatedLotIds.add(newLot.id)
+                            if (!lotBatchTimeout) {
+                                lotBatchTimeout = setTimeout(applyLotBatch, 200)
+                            }
                         }
                     }
-                )
-                .subscribe()
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'lot_items'
+                },
+                (payload) => {
+                    const lotId = (payload.new as any)?.lot_id || (payload.old as any)?.lot_id
+                    if (lotId) {
+                        updatedLotIds.add(lotId)
+                        if (!lotBatchTimeout) {
+                            lotBatchTimeout = setTimeout(applyLotBatch, 200)
+                        }
+                    }
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'export_tasks'
+                },
+                () => {
+                    triggerExportRefresh()
+                }
+            )
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'export_task_items'
+                },
+                () => {
+                    triggerExportRefresh()
+                }
+            )
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    // Realtime connected
+                } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.warn(`[Warehouse Realtime] Channel status: ${status}`)
+                }
+            })
 
-            return () => {
-                if (batchTimeout) clearTimeout(batchTimeout)
-                supabase.removeChannel(channel)
-            }
+        return () => {
+            if (posBatchTimeout) clearTimeout(posBatchTimeout)
+            if (lotBatchTimeout) clearTimeout(lotBatchTimeout)
+            if (exportBatchTimeout) clearTimeout(exportBatchTimeout)
+            supabase.removeChannel(channel)
         }
-    }, [systemType, accessToken, refreshLotInfo])
+    }, [systemType, accessToken, refreshLotInfo, refreshPendingExports])
 
     return {
         positions,
@@ -533,6 +676,7 @@ export function useWarehouseData() {
         recentlyUpdatedPositionIds,
         fetchData,
         refreshLotInfo,
+        refreshPendingExports,
         // Helper derived
         totalPositions: positions.length,
         totalZones: zones.length,
@@ -541,3 +685,4 @@ export function useWarehouseData() {
         pendingExportPosIds // export pending state
     }
 }
+
