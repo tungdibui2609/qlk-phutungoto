@@ -29,6 +29,7 @@ import { SelectWarehouseModal } from '@/components/warehouse/map/SelectWarehouse
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
+import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
 import { logActivity } from '@/lib/audit'
@@ -118,6 +119,10 @@ function WarehouseMapContent() {
     const [isSelectHallOpen, setIsSelectHallOpen] = useState(false)
     const [isAutoAssignModalOpen, setIsAutoAssignModalOpen] = useState(false)
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
+    const [isBulkChangeProductOpen, setIsBulkChangeProductOpen] = useState(false)
+    const [bulkChangeLotIds, setBulkChangeLotIds] = useState<string[] | null>(null)
+    const [preselectedProductId, setPreselectedProductId] = useState<string | undefined>(undefined)
+    const [products, setProducts] = useState<any[]>([])
     const [taggingLotIds, setTaggingLotIds] = useState<string[] | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
@@ -127,6 +132,61 @@ function WarehouseMapContent() {
     const [pageBreakZoneIds, setPageBreakZoneIds] = useState<Set<string>>(new Set())
     const [isGrouped, setIsGrouped] = useState(true)
     const [mergedZones, setMergedZones] = useState<Set<string>>(new Set())
+
+    useEffect(() => {
+        const systemCode = currentSystem?.code
+        if (!systemCode) return
+        let isMounted = true
+        async function loadProducts(code: string) {
+            let allProducts: any[] = []
+            let page = 0
+            const pageSize = 1000
+            while (true) {
+                const { data, error } = await supabase
+                    .from('products')
+                    .select('*')
+                    .eq('system_type', code)
+                    .order('name')
+                    .range(page * pageSize, (page + 1) * pageSize - 1)
+
+                if (error || !data || data.length === 0) break
+                allProducts = allProducts.concat(data)
+                if (data.length < pageSize) break
+                page++
+            }
+            if (isMounted) {
+                setProducts(allProducts)
+            }
+        }
+        loadProducts(systemCode)
+        return () => { isMounted = false }
+    }, [currentSystem?.code])
+
+    const handleOpenBulkChangeProduct = (lotIds: string[]) => {
+        if (!lotIds || lotIds.length === 0) return
+        setBulkChangeLotIds(lotIds)
+
+        // Try to preselect source product if all selected lots have a common product
+        let foundProductId: string | undefined = undefined
+        const selectedLotItems: any[] = []
+        lotIds.forEach(id => {
+            const lot = lotInfo[id]
+            if (lot && lot.items) {
+                selectedLotItems.push(...lot.items)
+            }
+        })
+
+        if (selectedLotItems.length > 0 && products.length > 0) {
+            const firstItem = selectedLotItems[0]
+            const matchedProduct = products.find(p => p.sku === firstItem.sku || p.name === firstItem.product_name)
+            if (matchedProduct) {
+                foundProductId = matchedProduct.id
+            }
+        }
+
+        setPreselectedProductId(foundProductId)
+        setIsBulkChangeProductOpen(true)
+    }
 
     const toggleMergeZone = (zoneId: string) => {
         setMergedZones(prev => {
@@ -1160,7 +1220,26 @@ function WarehouseMapContent() {
                 onOpenMove={() => setIsMoveModalOpen(true)}
                 onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}
                 onCloneLot={handleCloneLot}
+                onBulkChangeProduct={handleOpenBulkChangeProduct}
             />
+
+            {isBulkChangeProductOpen && (
+                <LotBulkChangeProductModal
+                    lotIds={bulkChangeLotIds || Array.from(selectedLotIds)}
+                    preselectedProductId={preselectedProductId}
+                    products={products}
+                    onClose={() => {
+                        setIsBulkChangeProductOpen(false)
+                        setBulkChangeLotIds(null)
+                    }}
+                    onSuccess={() => {
+                        setIsBulkChangeProductOpen(false)
+                        setBulkChangeLotIds(null)
+                        fetchData()
+                        setSelectedPositionIds(new Set())
+                    }}
+                />
+            )}
 
             <SelectWarehouseModal
                 isOpen={isAutoAssignModalOpen}

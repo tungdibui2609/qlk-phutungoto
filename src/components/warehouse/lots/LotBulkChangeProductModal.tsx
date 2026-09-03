@@ -13,9 +13,11 @@ interface LotBulkChangeProductModalProps {
     onClose: () => void
     onSuccess: () => void
     products: Product[]
+    lotIds?: string[]
+    preselectedProductId?: string
 }
 
-export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotBulkChangeProductModalProps) {
+export function LotBulkChangeProductModal({ onClose, onSuccess, products, lotIds, preselectedProductId }: LotBulkChangeProductModalProps) {
     const { showToast } = useToast()
     const { currentSystem } = useSystem()
     const { user } = useUser()
@@ -23,8 +25,14 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotB
     const [checking, setChecking] = useState(false)
 
     // Form states
-    const [sourceProductId, setSourceProductId] = useState('')
+    const [sourceProductId, setSourceProductId] = useState(preselectedProductId || '')
     const [targetProductId, setTargetProductId] = useState('')
+
+    useEffect(() => {
+        if (preselectedProductId) {
+            setSourceProductId(preselectedProductId)
+        }
+    }, [preselectedProductId])
 
     // Thống kê ảnh hưởng
     const [affectedItems, setAffectedItems] = useState<any[]>([])
@@ -53,11 +61,17 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotB
         const checkAffectedLots = async () => {
             setChecking(true)
             try {
-                const { data, error } = await supabase
+                let query = supabase
                     .from('lot_items')
                     .select('id, lot_id, quantity, unit, lots!inner(code, system_code)')
                     .eq('product_id', sourceProductId)
                     .eq('lots.system_code', currentSystem.code)
+
+                if (lotIds && lotIds.length > 0) {
+                    query = query.in('lot_id', lotIds)
+                }
+
+                const { data, error } = await query
 
                 if (error) {
                     console.error('Error fetching affected lots:', error)
@@ -109,11 +123,17 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotB
 
         try {
             // Lấy toàn bộ các lot_items của sản phẩm đích trong hệ thống hiện hành để so sánh trùng lặp
-            const { data: targetLotItems, error: targetError } = await supabase
+            let targetQuery = supabase
                 .from('lot_items')
                 .select('id, lot_id, quantity, unit, lots!inner(code, system_code)')
                 .eq('product_id', targetProductId)
                 .eq('lots.system_code', currentSystem.code)
+
+            if (lotIds && lotIds.length > 0) {
+                targetQuery = targetQuery.in('lot_id', lotIds)
+            }
+
+            const { data: targetLotItems, error: targetError } = await targetQuery
 
             if (targetError) {
                 showToast('Lỗi khi kiểm tra trùng lặp lô hàng.', 'error')
@@ -191,7 +211,7 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotB
                 table_name: 'lot_items',
                 record_id: sourceProductId,
                 changed_by: user?.email || 'system_bulk_change',
-                old_data: { sku: sourceSku, count: affectedItems.length },
+                old_data: { sku: sourceSku, count: affectedItems.length, lot_ids: lotIds || null },
                 new_data: { sku: targetSku, updatedCount, mergedCount },
                 system_code: currentSystem.code
             })
@@ -227,7 +247,9 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotB
                                 Đổi mã hàng hàng loạt
                             </h3>
                             <p className="text-xs text-slate-500 dark:text-slate-400">
-                                Chỉ tác động tới dữ liệu trong quản lý lô hàng (LOT)
+                                {lotIds && lotIds.length > 0
+                                    ? `Áp dụng cho ${lotIds.length} LOT đã chọn`
+                                    : 'Chỉ tác động tới dữ liệu trong quản lý lô hàng (LOT)'}
                             </p>
                         </div>
                     </div>
@@ -289,7 +311,11 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products }: LotB
                             <div className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 rounded-xl flex gap-3 text-amber-800 dark:text-amber-300 text-xs">
                                 <AlertTriangle size={18} className="shrink-0 text-amber-500" />
                                 <div>
-                                    <span className="font-bold">Cảnh báo:</span> Hành động này sẽ thay đổi trực tiếp sản phẩm của toàn bộ các lô hàng tương ứng trong phân hệ <span className="font-bold text-slate-900 dark:text-white">{(currentSystem?.name || currentSystem?.code)?.toUpperCase()}</span>. Vui lòng kiểm tra kỹ trước khi bấm xác nhận.
+                                    <span className="font-bold">Cảnh báo:</span> Hành động này sẽ thay đổi trực tiếp sản phẩm của {lotIds && lotIds.length > 0 ? (
+                                        <><span className="font-bold text-slate-900 dark:text-white">{affectedItems.length > 0 ? `${affectedItems.length} lô hàng trong các LOT được chọn` : 'các LOT được chọn'}</span> thuộc phân hệ </>
+                                    ) : (
+                                        <>toàn bộ các lô hàng tương ứng trong phân hệ </>
+                                    )}<span className="font-bold text-slate-900 dark:text-white">{(currentSystem?.name || currentSystem?.code)?.toUpperCase()}</span>. Vui lòng kiểm tra kỹ trước khi bấm xác nhận.
                                 </div>
                             </div>
 

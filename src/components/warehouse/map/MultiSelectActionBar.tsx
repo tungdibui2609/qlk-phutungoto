@@ -29,6 +29,7 @@ interface MultiSelectActionBarProps {
     onOpenMove?: () => void
     onOpenAutoAssignWarehouse?: () => void
     onCloneLot?: (lotId: string) => void
+    onBulkChangeProduct?: (lotIds: string[]) => void
 }
 
 export default function MultiSelectActionBar({
@@ -46,7 +47,8 @@ export default function MultiSelectActionBar({
     onOpenSelectHall,
     onOpenMove,
     onOpenAutoAssignWarehouse,
-    onCloneLot
+    onCloneLot,
+    onBulkChangeProduct
 }: MultiSelectActionBarProps) {
     const [isTagMenuOpen, setIsTagMenuOpen] = useState(false)
     const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false)
@@ -313,7 +315,7 @@ export default function MultiSelectActionBar({
                                 <span>In mã QR</span>
                             </button>
 
-                            {/* SUB MENU: MÃ PHỤ */}
+                            {/* SUB MENU: QUẢN LÝ MÃ (Gồm: Đổi mã hàng loạt, Gán mã phụ, Xóa mã phụ) */}
                             <div className="relative shrink-0">
                                 <button
                                     ref={tagButtonRef}
@@ -325,14 +327,14 @@ export default function MultiSelectActionBar({
                                         }`}
                                 >
                                     <Tag size={15} className={isTagMenuOpen ? 'text-white' : 'text-teal-600 dark:text-teal-400'} />
-                                    <span>Mã phụ</span>
+                                    <span>Quản lý mã</span>
                                     <ChevronDown size={13} className={`transition-transform duration-200 ${isTagMenuOpen ? 'rotate-180' : ''}`} />
                                 </button>
 
                                 {isTagMenuOpen && (
                                     <div
                                         ref={tagMenuRef}
-                                        className="fixed min-w-[180px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
                                         style={{
                                             top: tagMenuPos.top,
                                             left: tagMenuPos.left,
@@ -340,8 +342,27 @@ export default function MultiSelectActionBar({
                                         }}
                                     >
                                         <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-teal-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">
-                                            Quản lý mã phụ
+                                            Quản lý mã & Tag
                                         </div>
+
+                                        {onBulkChangeProduct && (
+                                            <button
+                                                onClick={() => {
+                                                    onBulkChangeProduct(Array.from(selectedLotIds))
+                                                    setIsTagMenuOpen(false)
+                                                }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-teal-50 dark:hover:bg-teal-900/40 rounded-xl transition-colors text-left group"
+                                            >
+                                                <Layers size={16} className="text-teal-600 dark:text-teal-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="font-bold">Đổi mã hàng loạt</span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">Đổi mã sản phẩm cho nhiều LOT</span>
+                                                </div>
+                                            </button>
+                                        )}
+
+                                        <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
+
                                         <button
                                             onClick={() => {
                                                 onTag(Array.from(selectedLotIds))
@@ -349,9 +370,13 @@ export default function MultiSelectActionBar({
                                             }}
                                             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-teal-50 dark:hover:bg-teal-900/40 rounded-xl transition-colors text-left group"
                                         >
-                                            <Tag size={15} className="text-teal-500 group-hover:scale-110 transition-transform" />
-                                            <span>Gán mã phụ</span>
+                                            <Tag size={16} className="text-teal-500 group-hover:scale-110 transition-transform shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-bold">Gán mã phụ</span>
+                                                <span className="text-[10px] text-gray-400 font-normal">Gán tag & mã phụ cho LOT</span>
+                                            </div>
                                         </button>
+
                                         <button
                                             onClick={() => {
                                                 onDeleteTags(Array.from(selectedLotIds))
@@ -359,8 +384,11 @@ export default function MultiSelectActionBar({
                                             }}
                                             className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors text-left group"
                                         >
-                                            <Trash2 size={15} className="text-rose-500 group-hover:scale-110 transition-transform" />
-                                            <span>Xóa mã phụ</span>
+                                            <Trash2 size={16} className="text-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-bold">Xóa mã phụ</span>
+                                                <span className="text-[10px] text-gray-400 font-normal">Xóa toàn bộ mã phụ đã gán</span>
+                                            </div>
                                         </button>
                                     </div>
                                 )}
