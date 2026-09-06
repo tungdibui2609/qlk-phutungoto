@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock, Eraser } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
@@ -58,6 +58,7 @@ export function LotPageManager() {
         handleBulkDeleteLots,
         handleToggleLock,
         handleBulkToggleLock,
+        handleBulkClearSTT,
         handleToggleStar,
         isModuleEnabled,
         isUtilityEnabled,
@@ -158,6 +159,15 @@ export function LotPageManager() {
         const ids = Array.from(selectedLotIds)
         if (ids.length === 0) return
         setBulkTagLotIds(ids)
+    }
+
+    const handleBulkClearDailySeqSelected = async () => {
+        const ids = Array.from(selectedLotIds)
+        if (ids.length === 0) return
+        const success = await handleBulkClearSTT(ids)
+        if (success) {
+            setSelectedLotIds(new Set())
+        }
     }
 
     // Handle click outside for dropdown menus
@@ -765,6 +775,16 @@ export function LotPageManager() {
                                     >
                                         <Trash2 size={15} />
                                         <span>Xóa ({selectedLotIds.size})</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkClearDailySeqSelected}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
+                                        title="Xóa STT của các LOT đã chọn"
+                                    >
+                                        <Eraser size={15} />
+                                        <span>Xóa STT</span>
                                     </button>
 
                                     <button

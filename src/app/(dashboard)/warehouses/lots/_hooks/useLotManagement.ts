@@ -1669,6 +1669,42 @@ export function useLotManagement() {
         return true
     }
 
+    async function handleBulkClearSTT(ids: string[]): Promise<boolean> {
+        if (!ids || ids.length === 0) return false
+        if (!await showConfirm(`Bạn có chắc chắn muốn xóa STT của ${ids.length} LOT đã chọn?`)) return false
+
+        const selectedLotsList = lots.filter(l => ids.includes(l.id))
+        const lockedLots = selectedLotsList.filter(l => l.is_locked)
+        let targetIds = ids
+
+        if (lockedLots.length > 0) {
+            if (lockedLots.length === ids.length) {
+                showToast('Tất cả LOT đã chọn đều đang bị khóa. Vui lòng mở khóa trước khi xóa STT.', 'warning')
+                return false
+            }
+            const confirmed = await showConfirm(`Phát hiện ${lockedLots.length} LOT đang bị khóa. Bạn có muốn bỏ qua các LOT bị khóa và tiếp tục xóa STT cho ${ids.length - lockedLots.length} LOT còn lại không?`)
+            if (!confirmed) return false
+            targetIds = ids.filter(id => !lockedLots.some(l => l.id === id))
+        }
+
+        const { error } = await (supabase
+            .from('lots') as any)
+            .update({ daily_seq: null })
+            .in('id', targetIds)
+
+        if (error) {
+            showToast('Lỗi xóa STT của LOT: ' + error.message, 'error')
+            return false
+        }
+
+        // Cập nhật state cục bộ ngay lập tức
+        setLots(prev => prev.map(lot => targetIds.includes(lot.id) ? { ...lot, daily_seq: null } : lot))
+
+        showToast(`Đã xóa STT thành công cho ${targetIds.length} LOT`, 'success')
+        fetchLots(false)
+        return true
+    }
+
     const handleToggleStar = async (lot: Lot) => {
         const metadata = lot.metadata ? { ...lot.metadata } : {};
         metadata.is_starred = !metadata.is_starred;
@@ -1737,6 +1773,7 @@ export function useLotManagement() {
         handleBulkDeleteLots,
         handleToggleLock,
         handleBulkToggleLock,
+        handleBulkClearSTT,
         handleToggleStar,
         isModuleEnabled: hasModule,
         isUtilityEnabled: hasModule,
