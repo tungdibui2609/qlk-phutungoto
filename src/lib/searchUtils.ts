@@ -36,6 +36,19 @@ export function matchSearch(data: any, term: string): boolean {
         return true;
     }
 
+    // Helper kiểm tra từ khóa với ranh giới từ chuẩn xác (tránh chữ 'a' khớp với 'cap', 'sau', 'ham'...)
+    const checkKeyword = (text: string, k: string) => {
+        if (!k || k === '-' || k === '+') return true;
+        const cleanK = k.replace(/^[()[\]{}]+|[()[\]{}]+$/g, '');
+        if (!cleanK) return true;
+
+        if (cleanK.length <= 2) {
+            const words = text.split(/[^a-z0-9\u00C0-\u024F\u1EA0-\u1EF9]+/i).filter(Boolean);
+            return words.includes(cleanK);
+        }
+        return text.includes(cleanK);
+    };
+
     // 2. Kiểm tra trực tiếp trên trường aliases / short_name nếu có
     if (typeof data === 'object' && data) {
         const rawAliases = data.aliases || data.short_name || data.alias;
@@ -49,7 +62,12 @@ export function matchSearch(data: any, term: string): boolean {
                 const unaccAlias = normalizeSearchString(alias, true);
                 if (normAlias === normalizedTerm || unaccAlias === unaccentedTerm) return true;
                 if (normAlias.includes(normalizedTerm) || unaccAlias.includes(unaccentedTerm)) return true;
-                if (normalizedTerm.includes(normAlias) || unaccentedTerm.includes(unaccAlias)) return true;
+                if (normAlias.length > 3 && (normalizedTerm.includes(normAlias) || unaccentedTerm.includes(unaccAlias))) {
+                    const aliasWords = normAlias.split(/\s+/).filter(Boolean);
+                    if (aliasWords.every(w => checkKeyword(normalizedTerm, w))) {
+                        return true;
+                    }
+                }
             }
         }
     }
@@ -59,24 +77,29 @@ export function matchSearch(data: any, term: string): boolean {
     const unaccentedKeywords = unaccentedTerm.split(/\s+/).filter(Boolean);
 
     if (keywords.length > 0) {
-        // Tất cả các từ khóa quan trọng phải xuất hiện trong dữ liệu
-        const matchesAccented = keywords.every(k => dynamicSearchString.includes(k));
-        const matchesUnaccented = unaccentedKeywords.every(k => unaccentedDataString.includes(k));
+        // Tất cả các từ khóa quan trọng phải xuất hiện trong dữ liệu theo đúng ranh giới từ
+        const matchesAccented = keywords.every(k => checkKeyword(dynamicSearchString, k));
+        const matchesUnaccented = unaccentedKeywords.every(k => checkKeyword(unaccentedDataString, k));
         if (matchesAccented || matchesUnaccented) return true;
     }
 
-    // 4. Xử lý trường hợp ngược: chuỗi tìm kiếm CHỨA dữ liệu (Ví dụ: tìm "Sầu riêng 4 túi" khớp với "Sầu riêng")
-    // Chỉ áp dụng cho các trường tên hoặc mã nếu data là object, hoặc chính nó nếu là string
+    // 4. Xử lý trường hợp ngược: chuỗi tìm kiếm CHỨA dữ liệu
     if (typeof data === 'string') {
         const normData = normalizeSearchString(data);
-        if (normData.length > 5 && normalizedTerm.includes(normData)) return true;
+        if (normData.length > 5 && normalizedTerm.includes(normData)) {
+            const words = normData.split(/\s+/).filter(Boolean);
+            if (words.every(w => checkKeyword(normalizedTerm, w))) return true;
+        }
     } else if (typeof data === 'object') {
         const fieldsToReverseMatch = ['name', 'product_name', 'sku', 'code', 'internal_code', 'aliases', 'short_name'];
         for (const field of fieldsToReverseMatch) {
             const val = data[field];
             if (typeof val === 'string' && val.length > 3) {
                 const normVal = normalizeSearchString(val);
-                if (normalizedTerm.includes(normVal)) return true;
+                if (normalizedTerm.includes(normVal)) {
+                    const words = normVal.split(/\s+/).filter(Boolean);
+                    if (words.every(w => checkKeyword(normalizedTerm, w))) return true;
+                }
             }
         }
     }

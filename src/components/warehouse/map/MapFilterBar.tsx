@@ -78,44 +78,141 @@ export function MapFilterBar({
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
 
-    // Tính toán gợi ý thông minh từ danh sách sản phẩm (bao gồm cả tên gõ tắt aliases)
+    // Tính toán gợi ý thông minh từ danh sách sản phẩm theo từng chế độ tìm kiếm riêng biệt
     const suggestions = useMemo(() => {
         const term = localSearchTerm.trim()
         if (!term || !products || products.length === 0) return []
 
+        // Chỉ hiển thị gợi ý cho các chế độ liên quan đến Tên, Mã, hoặc Tổng hợp
+        // Các chế độ khác (Vị trí, Mã phụ, Danh mục, Lệnh SX) để người dùng tự nhập chuẩn xác
+        if (searchMode !== 'all' && searchMode !== 'name' && searchMode !== 'code') {
+            return []
+        }
+
         const list: Array<{
             product: any
             score: number
-            matchedAlias?: string
-            matchedCode?: string
+            fillValue: string
+            displayTitle: string
+            displaySubtitle?: string
+            badgeType?: 'alias' | 'sku' | 'internal_code'
+            badgeText?: string
         }> = []
 
-        for (const p of products) {
-            const score = calculateSearchScore(p, term)
+        if (searchMode === 'code') {
+            // Chế độ "Theo Mã": CHỈ gợi ý Mã SKU hoặc Mã nội bộ, khi chọn sẽ điền MÃ (không điền tên)
+            for (const p of products) {
+                const skuMatch = p.sku && matchSearch(p.sku, term)
+                const codeMatch = p.internal_code && matchSearch(p.internal_code, term)
 
-            if (score > 0) {
-                let matchedAlias: string | undefined
-                if (p.aliases) {
-                    const aliasItems = p.aliases.split(',').map((a: string) => a.trim()).filter(Boolean)
-                    const found = aliasItems.find((a: string) => matchSearch(a, term))
-                    if (found) matchedAlias = found
+                if (skuMatch || codeMatch) {
+                    let fillValue = ''
+                    let badgeType: 'sku' | 'internal_code' = 'sku'
+                    let badgeText = ''
+
+                    if (codeMatch && (!skuMatch || matchSearch(p.internal_code, term))) {
+                        fillValue = p.internal_code
+                        badgeType = 'internal_code'
+                        badgeText = `Mã NB`
+                    } else if (skuMatch) {
+                        fillValue = p.sku
+                        badgeType = 'sku'
+                        badgeText = `SKU`
+                    }
+
+                    let score = 1000
+                    if (p.sku && p.sku.toLowerCase() === term.toLowerCase()) score += 2000
+                    if (p.internal_code && p.internal_code.toLowerCase() === term.toLowerCase()) score += 2000
+
+                    list.push({
+                        product: p,
+                        score,
+                        fillValue,
+                        displayTitle: fillValue,
+                        displaySubtitle: p.name,
+                        badgeType,
+                        badgeText
+                    })
                 }
-
-                let matchedCode: string | undefined
-                if (p.internal_code && matchSearch(p.internal_code, term)) {
-                    matchedCode = p.internal_code
-                } else if (p.sku && matchSearch(p.sku, term)) {
-                    matchedCode = p.sku
+            }
+        } else if (searchMode === 'name') {
+            // Chế độ "Theo Tên": Chỉ gợi ý Tên sản phẩm, Tên nội bộ hoặc Tên gõ tắt (aliases)
+            for (const p of products) {
+                const nameObj = {
+                    name: p.name,
+                    internal_name: p.internal_name,
+                    aliases: p.aliases
                 }
+                const score = calculateSearchScore(nameObj, term)
 
-                list.push({ product: p, score, matchedAlias, matchedCode })
+                if (score > 0) {
+                    let badgeText: string | undefined
+                    if (p.aliases) {
+                        const aliasItems = p.aliases.split(',').map((a: string) => a.trim()).filter(Boolean)
+                        const found = aliasItems.find((a: string) => matchSearch(a, term))
+                        if (found) badgeText = `⚡ ${found}`
+                    }
+
+                    list.push({
+                        product: p,
+                        score,
+                        fillValue: p.name,
+                        displayTitle: p.name,
+                        displaySubtitle: p.sku ? `SKU: ${p.sku}${p.internal_code ? ` | NB: ${p.internal_code}` : ''}` : undefined,
+                        badgeType: badgeText ? 'alias' : undefined,
+                        badgeText
+                    })
+                }
+            }
+        } else if (searchMode === 'all') {
+            // Chế độ "Tổng hợp": Cho phép cả Tên, Tên gõ tắt, SKU, Mã nội bộ
+            for (const p of products) {
+                const score = calculateSearchScore(p, term)
+
+                if (score > 0) {
+                    let badgeText: string | undefined
+                    let badgeType: 'alias' | 'sku' | 'internal_code' | undefined
+                    let fillValue = p.name
+
+                    if (p.aliases) {
+                        const aliasItems = p.aliases.split(',').map((a: string) => a.trim()).filter(Boolean)
+                        const found = aliasItems.find((a: string) => matchSearch(a, term))
+                        if (found) {
+                            badgeType = 'alias'
+                            badgeText = `⚡ ${found}`
+                            fillValue = p.name
+                        }
+                    }
+
+                    if (!badgeType) {
+                        if (p.internal_code && matchSearch(p.internal_code, term)) {
+                            badgeType = 'internal_code'
+                            badgeText = `NB: ${p.internal_code}`
+                            fillValue = p.internal_code
+                        } else if (p.sku && matchSearch(p.sku, term)) {
+                            badgeType = 'sku'
+                            badgeText = `SKU: ${p.sku}`
+                            fillValue = p.sku
+                        }
+                    }
+
+                    list.push({
+                        product: p,
+                        score,
+                        fillValue,
+                        displayTitle: p.name,
+                        displaySubtitle: p.sku ? `SKU: ${p.sku}${p.internal_code ? ` | NB: ${p.internal_code}` : ''}` : undefined,
+                        badgeType,
+                        badgeText
+                    })
+                }
             }
         }
 
         return list
             .sort((a, b) => b.score - a.score)
             .slice(0, 8)
-    }, [localSearchTerm, products])
+    }, [localSearchTerm, products, searchMode])
 
     // Manual trigger function
     const handleSearch = (termToSearch?: string) => {
@@ -125,9 +222,9 @@ export function MapFilterBar({
     }
 
     const handleSelectSuggestion = (item: typeof suggestions[0]) => {
-        const targetName = item.product.name
-        setLocalSearchTerm(targetName)
-        handleSearch(targetName)
+        const targetValue = item.fillValue
+        setLocalSearchTerm(targetValue)
+        handleSearch(targetValue)
     }
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -261,7 +358,7 @@ export function MapFilterBar({
                             <div className="px-3 py-1.5 bg-slate-50 dark:bg-slate-800/70 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] font-bold text-slate-500 dark:text-slate-400">
                                 <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                                     <Sparkles size={12} />
-                                    Gợi ý sản phẩm ({suggestions.length})
+                                    {searchMode === 'code' ? 'Gợi ý mã sản phẩm' : searchMode === 'name' ? 'Gợi ý tên sản phẩm' : 'Gợi ý tìm kiếm'} ({suggestions.length})
                                 </span>
                                 <span className="text-[10px] font-normal text-slate-400">
                                     Dùng ↑↓ để chọn, Enter để tìm
@@ -287,28 +384,24 @@ export function MapFilterBar({
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-1.5 flex-wrap">
                                                     <span className="font-semibold text-xs truncate max-w-full">
-                                                        {p.name}
+                                                        {item.displayTitle}
                                                     </span>
-                                                    {item.matchedAlias ? (
-                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 text-[10px] font-black tracking-wide shrink-0">
-                                                            ⚡ {item.matchedAlias}
-                                                        </span>
-                                                    ) : p.aliases ? (
-                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-[9px] font-medium shrink-0">
-                                                            Tắt: {p.aliases.split(',')[0]}
+                                                    {item.badgeText ? (
+                                                        <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide shrink-0 ${
+                                                            item.badgeType === 'alias' 
+                                                                ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                                                                : 'bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300'
+                                                        }`}>
+                                                            {item.badgeText}
                                                         </span>
                                                     ) : null}
                                                 </div>
 
-                                                <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-400 dark:text-slate-500 font-mono">
-                                                    {p.sku && <span>SKU: {p.sku}</span>}
-                                                    {p.internal_code && (
-                                                        <span className="text-purple-600 dark:text-purple-400 font-bold">
-                                                            NB: {p.internal_code}
-                                                        </span>
-                                                    )}
-                                                    {p.unit && <span>ĐVT: {p.unit}</span>}
-                                                </div>
+                                                {item.displaySubtitle && (
+                                                    <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500 dark:text-slate-400 truncate">
+                                                        <span>{item.displaySubtitle}</span>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             <CornerDownLeft size={13} className={`shrink-0 transition-opacity ${isHighlighted ? 'opacity-100 text-emerald-600' : 'opacity-0'}`} />
