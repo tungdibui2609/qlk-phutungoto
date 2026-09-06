@@ -83,6 +83,7 @@ export function InboundItemsTable({
                                                 label: `${displaySku} - ${displayName}`,
                                                 sku: displaySku || '',
                                                 name: displayName || '',
+                                                aliases: (p as any).aliases || '',
                                                 originalSku: p.sku || '',
                                                 originalName: p.name || ''
                                             }
@@ -246,6 +247,7 @@ export function InboundItemsTable({
                                         label: `${displaySku} - ${displayName}`,
                                         sku: displaySku || '',
                                         name: displayName || '',
+                                        aliases: (p as any).aliases || '',
                                         originalSku: p.sku || '',
                                         originalName: p.name || ''
                                     }

@@ -227,7 +227,14 @@ export function Combobox({
                                     {renderOption ? (
                                         renderOption(option)
                                     ) : (
-                                        <span className="truncate">{option.label}</span>
+                                        <div className="flex flex-col text-left py-0.5 min-w-0 flex-1 pr-2">
+                                            <span className="truncate font-medium">{option.label}</span>
+                                            {option.aliases && (
+                                                <span className="text-[10px] text-stone-400 dark:text-zinc-400 truncate mt-0.5">
+                                                    Viết tắt: {option.aliases}
+                                                </span>
+                                            )}
+                                        </div>
                                     )}
                                     {option.value === value && <Check size={16} />}
                                 </button>

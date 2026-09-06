@@ -106,7 +106,8 @@ export function OutboundItemsTable({
                                                     value: p.id,
                                                     label: `${displaySku} - ${displayName}`,
                                                     sku: displaySku || '',
-                                                    name: displayName || ''
+                                                    name: displayName || '',
+                                                    aliases: (p as any).aliases || ''
                                                 }
                                             })}
                                             value={item.productId}
@@ -304,7 +305,8 @@ export function OutboundItemsTable({
                                             value: p.id,
                                             label: `${displaySku} - ${displayName}`,
                                             sku: displaySku || '',
-                                            name: displayName || ''
+                                            name: displayName || '',
+                                            aliases: (p as any).aliases || ''
                                         }
                                     })}
                                     value={item.productId}

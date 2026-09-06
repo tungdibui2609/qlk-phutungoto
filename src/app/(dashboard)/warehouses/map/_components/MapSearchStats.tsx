@@ -60,10 +60,12 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                 lot.products?.sku || '',
                 lot.products?.internal_code || '',
                 lot.products?.internal_name || '',
+                lot.products?.aliases || '',
                 ...(lot.lot_items?.map((i: any) => i.products?.name || '') || []),
                 ...(lot.lot_items?.map((i: any) => i.products?.sku || '') || []),
                 ...(lot.lot_items?.map((i: any) => i.products?.internal_code || '') || []),
-                ...(lot.lot_items?.map((i: any) => i.products?.internal_name || '') || [])
+                ...(lot.lot_items?.map((i: any) => i.products?.internal_name || '') || []),
+                ...(lot.lot_items?.map((i: any) => i.products?.aliases || '') || [])
             ]
             return advancedMatchSearch(vals, searchTerm)
         })

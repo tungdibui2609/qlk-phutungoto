@@ -3,6 +3,10 @@ import { Database } from '@/lib/database.types'
 export type Product = Database['public']['Tables']['products']['Row'] & {
     stock_quantity?: number
     stock_details?: string
+    internal_code?: string | null
+    internal_name?: string | null
+    aliases?: string | null
+    part_number?: string | null
     product_units?: {
         unit_id: string
         conversion_rate: number

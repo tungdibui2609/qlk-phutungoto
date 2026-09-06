@@ -283,6 +283,12 @@ export interface Database {
           category_id: string | null
           unit: string | null
           image_url: string | null
+          cost_price?: number | null
+          sale_price?: number | null
+          part_number?: string | null
+          internal_code?: string | null
+          internal_name?: string | null
+          aliases?: string | null
           created_at: string | null
           system_code: string | null
           quantity_per_pallet: number | null
@@ -295,6 +301,12 @@ export interface Database {
           category_id?: string | null
           unit?: string | null
           image_url?: string | null
+          cost_price?: number | null
+          sale_price?: number | null
+          part_number?: string | null
+          internal_code?: string | null
+          internal_name?: string | null
+          aliases?: string | null
           created_at?: string | null
           system_code?: string | null
           quantity_per_pallet?: number | null
@@ -307,6 +319,12 @@ export interface Database {
           category_id?: string | null
           unit?: string | null
           image_url?: string | null
+          cost_price?: number | null
+          sale_price?: number | null
+          part_number?: string | null
+          internal_code?: string | null
+          internal_name?: string | null
+          aliases?: string | null
           created_at?: string | null
           system_code?: string | null
           quantity_per_pallet?: number | null

@@ -245,6 +245,7 @@ export function useLotManagement() {
             cost_price,
             internal_code,
             internal_name,
+            aliases,
             product_code: id,
             weight_kg,
             product_category_rel(categories(name))
@@ -254,7 +255,7 @@ export function useLotManagement() {
     suppliers(name),
     qc_info(name),
     lot_tags(tag, lot_item_id),
-    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, product_category_rel(categories(name))),
+    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, aliases, product_category_rel(categories(name))),
     box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)
         `
 
@@ -453,11 +454,12 @@ export function useLotManagement() {
                             localMatch((p as any).sku) ||
                             localMatch((p as any).internal_code) ||
                             localMatch((p as any).internal_name) ||
+                            localMatch((p as any).aliases) ||
                             (isUUID && p.id === searchTerm)
                         )
                         .map(p => p.id);
                 } else {
-                    let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`];
+                    let orConditionsProd = [`name.ilike.${term}`, `sku.ilike.${term}`, `internal_code.ilike.${term}`, `internal_name.ilike.${term}`, `aliases.ilike.${term}`];
                     if (isUUID) orConditionsProd.push(`id.eq.${searchTerm}`);
                     const { data: prods } = await (supabase.from('products') as any).select('id').or(orConditionsProd.join(',')).eq('system_type', currentSystem.code);
                     prodIds = prods?.map((p: any) => p.id) || [];

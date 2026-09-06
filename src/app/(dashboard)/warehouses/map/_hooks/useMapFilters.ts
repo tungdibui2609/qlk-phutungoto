@@ -86,15 +86,17 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (lot.code) res.push(lot.code)
                         }
 
-                        // Items data (Already contains product name, sku, internal codes, categories)
+                        // Items data (Already contains product name, sku, internal codes, categories, aliases)
                         lot.items?.forEach((it: any) => {
                             if (mode === 'all' || mode === 'name') {
                                 if (it.product_name) res.push(it.product_name)
                                 if (it.internal_name) res.push(it.internal_name)
+                                if (it.aliases) res.push(it.aliases)
                             }
                             if (mode === 'all' || mode === 'code') {
                                 if (it.sku) res.push(it.sku)
                                 if (it.internal_code) res.push(it.internal_code)
+                                if (it.aliases) res.push(it.aliases)
                             }
                             if (mode === 'all' || mode === 'category') {
                                 it.categoryNames?.forEach((cn: string) => res.push(cn))
@@ -123,6 +125,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                                     if (it.product_name) res.push(it.product_name)
                                     if (it.sku) res.push(it.sku)
                                     if (it.internal_code) res.push(it.internal_code)
+                                    if (it.aliases) res.push(it.aliases)
                                 })
                             }
                         }

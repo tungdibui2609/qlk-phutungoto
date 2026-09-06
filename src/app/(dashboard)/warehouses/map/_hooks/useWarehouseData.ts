@@ -91,7 +91,7 @@ export function useWarehouseData() {
 
         const { data: l, error } = await supabase
             .from('lots')
-            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, unit, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)')
+            .select('*, productions(code, name, production_lots(id, lot_code, product_id)), suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, aliases, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, unit, sku, internal_code, internal_name, aliases, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)')
             .eq('id', lotId)
             .single() as any
 
@@ -119,6 +119,7 @@ export function useWarehouseData() {
                     sku: item.products?.sku || '',
                     internal_code: item.products?.internal_code || '',
                     internal_name: item.products?.internal_name || '',
+                    aliases: item.products?.aliases || '',
                     unit: item.unit || item.products?.unit || '',
                     quantity: item.quantity || 0,
                     tags: itemTags,
@@ -140,6 +141,7 @@ export function useWarehouseData() {
                 sku: l.products.sku || '',
                 internal_code: l.products.internal_code || '',
                 internal_name: l.products.internal_name || '',
+                aliases: l.products.aliases || '',
                 unit: l.products.unit || '',
                 quantity: l.quantity || 0,
                 tags: itemTags,
@@ -245,7 +247,7 @@ export function useWarehouseData() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id'), '*', 5000),
                 fetchAllZonesPos(5000),
                 fetchAll('zone_layouts', q => q.order('id'), '*', 5000),
-                fetchAll('lots', q => q.eq('system_code', systemType).neq('status', 'Archived'), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, sku, internal_code, internal_name, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(code, semi_finished_lot_code, finished_lot_code)', 5000) as Promise<any[]>,
+                fetchAll('lots', q => q.eq('system_code', systemType).neq('status', 'Archived'), 'id, code, status, quantity, inbound_date, created_at, daily_seq, peeling_date, packaging_date, system_code, production_lot_id, products(id, name, sku, internal_code, internal_name, aliases, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, sku, internal_code, internal_name, aliases, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)))), lot_tags(tag, lot_item_id), productions(code, name, production_lots(id, lot_code, product_id)), box_labels(code, semi_finished_lot_code, finished_lot_code)', 5000) as Promise<any[]>,
                 supabase.from('export_task_items').select('position_id, lot_id, export_tasks!inner(status, system_code)').eq('export_tasks.system_code', systemType).in('export_tasks.status', ['Pending', 'Processing'])
             ])
 
@@ -281,6 +283,7 @@ export function useWarehouseData() {
                             sku: item.products?.sku,
                             internal_code: item.products?.internal_code,
                             internal_name: item.products?.internal_name,
+                            aliases: item.products?.aliases || '',
                             unit: item.unit || item.products?.unit,
                             quantity: item.quantity,
                             tags: itemTags,
@@ -302,6 +305,7 @@ export function useWarehouseData() {
                         sku: l.products.sku,
                         internal_code: l.products.internal_code,
                         internal_name: l.products.internal_name,
+                        aliases: l.products.aliases || '',
                         unit: l.products.unit,
                         quantity: l.quantity,
                         tags: itemTags,

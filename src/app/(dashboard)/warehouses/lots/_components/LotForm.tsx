@@ -1343,7 +1343,8 @@ export function LotForm({
                                                             label: `${pl.lot_code} - ${pl.products?.name || 'Sản phẩm'}`,
                                                             sku: pl.lot_code,
                                                             name: pl.products?.name || 'Sản phẩm',
-                                                            lotCode: pl.lot_code
+                                                            lotCode: pl.lot_code,
+                                                            aliases: (pl.products as any)?.aliases || ''
                                                         }))
                                                     : availableProducts.map(p => ({
                                                         value: p.id,
@@ -1352,6 +1353,7 @@ export function LotForm({
                                                             : `${p.sku} - ${p.name}`,
                                                         sku: hasModule('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
                                                         name: hasModule('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
+                                                        aliases: (p as any).aliases || '',
                                                         originalSku: p.sku,
                                                         originalName: p.name
                                                     }))}

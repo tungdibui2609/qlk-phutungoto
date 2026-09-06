@@ -15,6 +15,7 @@ export const APP_ROUTES: RouteItem[] = [
         children: [
             { name: 'Sản phẩm', path: '/products' },
             { name: 'Sản phẩm nội bộ', path: '/internal-products' },
+            { name: 'Tên gõ tắt', path: '/product-aliases' },
             { name: 'Danh mục', path: '/categories' },
             { name: 'Đơn vị', path: '/units' },
             { name: 'Xuất xứ', path: '/origins' },

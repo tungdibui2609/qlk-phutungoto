@@ -36,9 +36,27 @@ export function matchSearch(data: any, term: string): boolean {
         return true;
     }
 
-    // 2. Tìm kiếm theo từ khóa (Keywords)
-    const keywords = normalizedTerm.split(/\s+/).filter(k => k.length > 1); // Bỏ qua từ 1 ký tự
-    const unaccentedKeywords = unaccentedTerm.split(/\s+/).filter(k => k.length > 1);
+    // 2. Kiểm tra trực tiếp trên trường aliases / short_name nếu có
+    if (typeof data === 'object' && data) {
+        const rawAliases = data.aliases || data.short_name || data.alias;
+        if (rawAliases) {
+            const aliasList = Array.isArray(rawAliases) 
+                ? rawAliases.map((a: any) => String(a))
+                : String(rawAliases).split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+            
+            for (const alias of aliasList) {
+                const normAlias = normalizeSearchString(alias);
+                const unaccAlias = normalizeSearchString(alias, true);
+                if (normAlias === normalizedTerm || unaccAlias === unaccentedTerm) return true;
+                if (normAlias.includes(normalizedTerm) || unaccAlias.includes(unaccentedTerm)) return true;
+                if (normalizedTerm.includes(normAlias) || unaccentedTerm.includes(unaccAlias)) return true;
+            }
+        }
+    }
+
+    // 3. Tìm kiếm theo từ khóa (Keywords) - giữ lại cả ký tự phân loại A, B, C, 1, 2...
+    const keywords = normalizedTerm.split(/\s+/).filter(Boolean);
+    const unaccentedKeywords = unaccentedTerm.split(/\s+/).filter(Boolean);
 
     if (keywords.length > 0) {
         // Tất cả các từ khóa quan trọng phải xuất hiện trong dữ liệu
@@ -47,16 +65,16 @@ export function matchSearch(data: any, term: string): boolean {
         if (matchesAccented || matchesUnaccented) return true;
     }
 
-    // 3. Xử lý trường hợp ngược: chuỗi tìm kiếm CHỨA dữ liệu (Ví dụ: tìm "Sầu riêng 4 túi" khớp với "Sầu riêng")
+    // 4. Xử lý trường hợp ngược: chuỗi tìm kiếm CHỨA dữ liệu (Ví dụ: tìm "Sầu riêng 4 túi" khớp với "Sầu riêng")
     // Chỉ áp dụng cho các trường tên hoặc mã nếu data là object, hoặc chính nó nếu là string
     if (typeof data === 'string') {
         const normData = normalizeSearchString(data);
         if (normData.length > 5 && normalizedTerm.includes(normData)) return true;
     } else if (typeof data === 'object') {
-        const fieldsToReverseMatch = ['name', 'product_name', 'sku', 'code', 'internal_code'];
+        const fieldsToReverseMatch = ['name', 'product_name', 'sku', 'code', 'internal_code', 'aliases', 'short_name'];
         for (const field of fieldsToReverseMatch) {
             const val = data[field];
-            if (typeof val === 'string' && val.length > 5) {
+            if (typeof val === 'string' && val.length > 3) {
                 const normVal = normalizeSearchString(val);
                 if (normalizedTerm.includes(normVal)) return true;
             }
@@ -110,24 +128,64 @@ export function advancedMatchSearch(vals: string | string[] | null | undefined, 
  * Calculates a relevance score for a search term against a data object or string.
  * Higher score means better match.
  */
-export function calculateSearchScore(data: any, term: string): number {
+export function calculateSearchScore(data: any, term: string, extra?: Record<string, any>): number {
     if (!term) return 0;
     if (!data) return 0;
+
+    const targetData = extra 
+        ? (typeof data === 'object' ? { ...data, ...extra } : { name: data, ...extra })
+        : data;
 
     const normalizedTerm = normalizeSearchString(term);
     const unaccentedTerm = normalizeSearchString(term, true);
 
-    const stringData = typeof data === 'string' ? data : JSON.stringify(data);
+    const stringData = typeof targetData === 'string' ? targetData : JSON.stringify(targetData);
     const normalizedData = stringData.toLowerCase().normalize('NFC');
     const unaccentedData = normalizeSearchString(normalizedData, true);
 
     let score = 0;
 
     // 1. Nếu là đối tượng, ưu tiên kiểm tra các trường chính TRƯỚC khi stringify toàn bộ
-    if (typeof data === 'object') {
-        const priorityFields = ['label', 'name', 'code', 'sku', 'internal_name', 'internal_code'];
+    if (typeof targetData === 'object' && targetData) {
+        // 1a. ĐẶC BIỆT ƯU TIÊN: Kiểm tra trường gõ tắt (aliases / short_name)
+        const rawAliases = targetData.aliases || targetData.short_name || targetData.alias;
+        if (rawAliases) {
+            const aliasList = Array.isArray(rawAliases) 
+                ? rawAliases.map((a: any) => String(a))
+                : String(rawAliases).split(/[,;\n]/).map(s => s.trim()).filter(Boolean);
+            
+            for (const alias of aliasList) {
+                const val = normalizeSearchString(alias);
+                const unaccentedVal = normalizeSearchString(val, true);
+
+                // Khớp chính xác tên gõ tắt -> Đẩy lên Top 1 tuyệt đối
+                if (val === normalizedTerm || unaccentedVal === unaccentedTerm) {
+                    score += 3500;
+                    break;
+                }
+                // Bắt đầu bằng từ gõ tắt
+                if (val.startsWith(normalizedTerm) || unaccentedVal.startsWith(unaccentedTerm)) {
+                    score += 2200;
+                    break;
+                }
+                // Chứa từ gõ tắt
+                if (val.includes(normalizedTerm) || unaccentedVal.includes(unaccentedTerm)) {
+                    score += 1500;
+                    break;
+                }
+                // Hoặc từ tìm kiếm nằm trọn vẹn trong các từ của alias
+                const aliasWords = val.split(/[\s,._-]+/);
+                const termWords = normalizedTerm.split(/[\s,._-]+/).filter(Boolean);
+                if (termWords.length > 0 && termWords.every(tw => val.includes(tw) || unaccentedVal.includes(tw))) {
+                    score += 1200;
+                    break;
+                }
+            }
+        }
+
+        const priorityFields = ['label', 'name', 'code', 'sku', 'internal_name', 'internal_code', 'aliases', 'short_name'];
         for (const field of priorityFields) {
-            const valRaw = data[field];
+            const valRaw = targetData[field];
             if (!valRaw) continue;
 
             const val = normalizeSearchString(String(valRaw));
@@ -165,13 +223,13 @@ export function calculateSearchScore(data: any, term: string): number {
         }
 
         // Check primary category
-        if (data.categories) {
-            score += checkCategoryMatch(data.categories);
+        if (targetData.categories) {
+            score += checkCategoryMatch(targetData.categories);
         }
 
         // Check multiple categories in rel
-        if (Array.isArray(data.product_category_rel)) {
-            data.product_category_rel.forEach((rel: any) => {
+        if (Array.isArray(targetData.product_category_rel)) {
+            targetData.product_category_rel.forEach((rel: any) => {
                 if (rel.categories) {
                     score += checkCategoryMatch(rel.categories);
                 }

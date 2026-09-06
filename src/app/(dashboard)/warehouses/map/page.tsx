@@ -991,6 +991,7 @@ function WarehouseMapContent() {
                         categories={categories}
                         selectedCategoryId={selectedCategoryId}
                         onCategorySelect={setSelectedCategoryId}
+                        products={products}
                     />
                 );
             })()}

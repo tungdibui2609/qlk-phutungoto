@@ -488,6 +488,7 @@ export function LotPageManager() {
                 showMobileFilters={showMobileFilters}
                 toggleMobileFilters={() => setShowMobileFilters(!showMobileFilters)}
                 zones={zones}
+                products={products}
             />
 
             {/* Gợi ý ghép Lot lẻ */}

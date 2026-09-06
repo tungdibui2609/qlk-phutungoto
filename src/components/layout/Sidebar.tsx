@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -29,6 +29,7 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'products', name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
             { id: 'internal_products', name: 'Sản phẩm nội bộ', href: '/internal-products', icon: PackageSearch, requiredModule: 'internal_products' },
+            { id: 'product_aliases', name: 'Tên gõ tắt', href: '/product-aliases', icon: Sparkles, requiredPermission: 'product.view' },
             { id: 'categories', name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
             { id: 'units', name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
             { id: 'origins', name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
