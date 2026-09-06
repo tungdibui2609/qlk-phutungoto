@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { Eye, MoreHorizontal, Package } from 'lucide-react'
+import { Eye, MoreHorizontal, Package, Bookmark } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { advancedMatchSearch } from '@/lib/searchUtils'
@@ -19,6 +19,7 @@ const PositionCell = React.memo<{
     isOccupied: boolean,
     isSelected: boolean,
     isTargetLot: boolean,
+    isMarked?: boolean,
     lotDetail: any,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
@@ -33,7 +34,7 @@ const PositionCell = React.memo<{
     searchTerm?: string
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
-    isTargetLot, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
+    isTargetLot, isMarked, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
     onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
 }) => {
     const ids = (pos as any).realIds || [pos.id]
@@ -105,6 +106,16 @@ const PositionCell = React.memo<{
     } else if (isOccupied) {
         bgClass = 'bg-amber-50 dark:bg-amber-900/10'
         borderClass = 'border-amber-200 dark:border-amber-800'
+    }
+
+    if (isMarked) {
+        borderClass = 'border-amber-400 dark:border-amber-500'
+        ringClass = 'ring-2 ring-amber-400/80 dark:ring-amber-500/80 shadow-sm'
+        if (!searchTerm || searchStatus.isMatch) {
+            bgClass = isOccupied 
+                ? 'bg-amber-100/60 dark:bg-amber-950/40' 
+                : 'bg-amber-50/90 dark:bg-amber-950/30'
+        }
     }
 
     if (searchTerm) {
@@ -199,7 +210,12 @@ const PositionCell = React.memo<{
                     </button>
                 )}
 
-                <div className={`flex gap-0.5 absolute ${!isAssignmentMode && !isPrintPage ? 'right-5' : 'right-0'} top-0`}>
+                <div className={`flex items-center gap-0.5 absolute ${!isAssignmentMode && !isPrintPage ? 'right-5' : 'right-0'} top-0`}>
+                    {isMarked && (
+                        <div title="Vị trí đánh dấu kiểm tra" className="text-amber-500 animate-in zoom-in-50 duration-150">
+                            <Bookmark size={12} className="fill-amber-500 text-amber-600" />
+                        </div>
+                    )}
                     {isTargetLot && (
                         <div title="Đang chọn" className="w-2 h-2 rounded-full bg-purple-500 animate-pulse" />
                     )}

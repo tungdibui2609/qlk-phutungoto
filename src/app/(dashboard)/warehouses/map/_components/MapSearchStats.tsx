@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown, Bookmark } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 import { advancedMatchSearch } from '@/lib/searchUtils'
@@ -22,12 +22,14 @@ interface MapSearchStatsProps {
     isFifoAvailable?: boolean
     onToggleFifo?: () => void
     isGrouped?: boolean
+    markedPositionIds?: Set<string>
 }
 
 interface PositionCardProps {
     pos: PositionWithZone
     lot: any
     isSelected: boolean
+    isMarked?: boolean
     onPositionSelect?: (positionId: string) => void
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onViewDetails?: (lotId: string) => void
@@ -38,6 +40,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     pos,
     lot,
     isSelected,
+    isMarked,
     onPositionSelect,
     onPositionMenu,
     onViewDetails,
@@ -75,17 +78,15 @@ const MemoizedPositionCard = React.memo(function PositionCard({
         }
 
         if (matchedLabels.length === labels.length) {
-            // Khớp hoàn toàn -> Màu xanh emerald
             return {
                 isMatch: true,
                 isExact: true,
                 bgClass: 'bg-emerald-50 dark:bg-emerald-950/20',
-                borderClass: 'border-emerald-500/80 shadow-[0_0_8px_rgba(16,185,129,0.15)] dark:border-emerald-600/80',
-                badgeText: 'Khớp 100%',
-                badgeClass: 'bg-emerald-500 text-white dark:bg-emerald-600'
+                borderClass: 'border-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.2)] dark:border-emerald-500',
+                badgeText: `Khớp ${matchedLabels.length}/${labels.length}`,
+                badgeClass: 'bg-emerald-600 text-white dark:bg-emerald-500'
             }
         } else {
-            // Khớp một phần -> Màu vàng cam amber
             return {
                 isMatch: true,
                 isExact: false,
@@ -103,6 +104,9 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     if (isSelected) {
         bgClass = "bg-emerald-50 dark:bg-emerald-900/30"
         borderClass = "border-emerald-500"
+    } else if (isMarked) {
+        bgClass = "bg-amber-50/80 dark:bg-amber-950/30"
+        borderClass = "border-amber-400 dark:border-amber-500 ring-1 ring-amber-400"
     } else if (searchStatus.isMatch) {
         bgClass = searchStatus.bgClass
         borderClass = searchStatus.borderClass
@@ -155,8 +159,13 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                 </button>
             )}
 
-            <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-1 px-5">
-                {pos.code}
+            <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-1 px-5 flex items-center justify-center gap-1">
+                <span>{pos.code}</span>
+                {isMarked && (
+                    <span title="Vị trí đánh dấu kiểm tra" className="shrink-0 flex items-center">
+                        <Bookmark size={11} className="fill-amber-500 text-amber-600" />
+                    </span>
+                )}
             </div>
             {lot ? (
                 <div className="flex flex-col gap-1 flex-1 justify-start overflow-hidden pt-1">
@@ -259,6 +268,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     return prev.pos.id === next.pos.id &&
         prev.pos.lot_id === next.pos.lot_id &&
         prev.isSelected === next.isSelected &&
+        prev.isMarked === next.isMarked &&
         prev.searchTerm === next.searchTerm &&
         prev.lot === next.lot
 })
@@ -277,7 +287,8 @@ export function MapSearchStats({
     isFifoEnabled,
     isFifoAvailable,
     onToggleFifo,
-    isGrouped = false
+    isGrouped = false,
+    markedPositionIds = new Set()
 }: MapSearchStatsProps) {
     // Helper to build full zone path
     const getZonePath = (zoneId: string) => {
@@ -396,6 +407,7 @@ export function MapSearchStats({
         const hasLot = !!pos.lot_id
         const lot = hasLot ? lotInfo[pos.lot_id!] : null
         const isSelected = selectedPositionIds.has(pos.id)
+        const isMarked = markedPositionIds ? (markedPositionIds.has(pos.id) || ((pos as any).realIds && (pos as any).realIds.some((id: string) => markedPositionIds.has(id)))) : false
 
         return (
             <MemoizedPositionCard
@@ -403,6 +415,7 @@ export function MapSearchStats({
                 pos={pos}
                 lot={lot}
                 isSelected={isSelected}
+                isMarked={isMarked}
                 onPositionSelect={onPositionSelect}
                 onPositionMenu={onPositionMenu}
                 onViewDetails={onViewDetails}

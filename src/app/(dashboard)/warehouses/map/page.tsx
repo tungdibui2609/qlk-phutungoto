@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { ChevronUp, ChevronDown, Layers, X, Maximize2 } from 'lucide-react'
+import { ChevronUp, ChevronDown, Layers, X, Maximize2, Bookmark, FileSpreadsheet, Printer, Trash2, Eye } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
@@ -19,6 +19,7 @@ import { usePositionActionManager } from '@/components/warehouse/map/PositionAct
 import { MapFilterBar } from '@/components/warehouse/map/MapFilterBar'
 import { useWarehouseData } from './_hooks/useWarehouseData'
 import { useMapFilters } from './_hooks/useMapFilters'
+import { useMarkedPositions } from './_hooks/useMarkedPositions'
 import { MapHeader } from './_components/MapHeader'
 import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
@@ -31,6 +32,7 @@ import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMov
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
+import { exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
 import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
 import { logActivity } from '@/lib/audit'
 
@@ -67,7 +69,24 @@ function WarehouseMapContent() {
         pendingExportPosIds
     } = useWarehouseData()
 
-    // 2. Filter Hook
+    // 2. Marked Positions Hook
+    const {
+        markedPositionIds,
+        markedCount,
+        isMarked,
+        toggleMark,
+        clearAllMarks,
+        onlyShowMarked,
+        setOnlyShowMarked,
+        toggleOnlyShowMarked,
+        exportMarkedExcel,
+        printMarked
+    } = useMarkedPositions({
+        systemType,
+        systemName: currentSystem?.name
+    })
+
+    // 3. Filter Hook
     const {
         selectedZoneId, setSelectedZoneId,
         selectedCategoryId, setSelectedCategoryId,
@@ -83,7 +102,15 @@ function WarehouseMapContent() {
         toggleFifo,
         hidePendingExport,
         setHidePendingExport
-    } = useMapFilters({ positions, zones, lotInfo, isFifoEnabled: hasModule('fifo_priority'), pendingExportPosIds })
+    } = useMapFilters({
+        positions,
+        zones,
+        lotInfo,
+        isFifoEnabled: hasModule('fifo_priority'),
+        pendingExportPosIds,
+        onlyShowMarked,
+        markedPositionIds
+    })
 
     // Categories list for filter
     const [categories, setCategories] = useState<any[]>([])
@@ -381,7 +408,9 @@ function WarehouseMapContent() {
         currentSystemCode: currentSystem?.code,
         onRefreshMap: fetchData,
         onRefreshLot: refreshLotInfo,
-        onCloneLot: handleCloneLot
+        onCloneLot: handleCloneLot,
+        onToggleMark: (pos) => toggleMark(pos.id),
+        isMarked: (id) => isMarked(id)
     })
 
     async function fetchFullLotDetails(lotId: string) {
@@ -614,6 +643,35 @@ function WarehouseMapContent() {
 
     const handleBulkPrint = (lotIds: string[]) => {
         setBulkPrintLotIds(lotIds)
+    }
+
+    const handleExportSelectedExcel = async (selPositions: any[]) => {
+        const targetPositions = positions.filter(p => {
+            if (selectedPositionIds.has(p.id)) return true
+            const realIds = (p as any).realIds
+            return realIds && Array.isArray(realIds) && realIds.some((id: string) => selectedPositionIds.has(id))
+        })
+
+        const positionsToExport = targetPositions.length > 0 ? targetPositions : selPositions
+
+        if (positionsToExport.length === 0) {
+            showToast('Chưa có vị trí nào được chọn để xuất Excel', 'warning')
+            return
+        }
+
+        try {
+            await exportMarkedPositionsToExcel({
+                systemName: currentSystem?.name || systemType || 'Kho',
+                positions: positionsToExport,
+                lotInfo,
+                zones,
+                title: `Vị trí đã chọn (${positionsToExport.length} vị trí)`
+            })
+            showToast(`Đã xuất Excel thành công cho ${positionsToExport.length} vị trí đã chọn`, 'success')
+        } catch (e: any) {
+            console.error('Error exporting selected positions to Excel:', e)
+            showToast('Lỗi khi xuất file Excel: ' + (e?.message || 'Không xác định'), 'error')
+        }
     }
 
     async function handleMoveToHall(hallId: string) {
@@ -961,6 +1019,65 @@ function WarehouseMapContent() {
                 assignLot={assignLot}
             />
 
+            {/* Banner khi đang lọc các vị trí đánh dấu kiểm tra */}
+            {onlyShowMarked && (
+                <div className="bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/80 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md shadow-amber-500/20">
+                            <Bookmark size={20} className="fill-white" />
+                        </div>
+                        <div>
+                            <div className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2 text-sm sm:text-base">
+                                <span>Đang lọc vị trí đánh dấu kiểm tra</span>
+                                <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200">
+                                    {markedCount} vị trí
+                                </span>
+                            </div>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                Chỉ các vị trí bạn đã đánh dấu đang được hiển thị trên sơ đồ kho.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <button
+                            onClick={printMarked}
+                            className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                            title="In sơ đồ các vị trí đánh dấu"
+                        >
+                            <Printer size={14} className="text-amber-600 dark:text-amber-400" />
+                            <span>In sơ đồ</span>
+                        </button>
+
+                        <button
+                            onClick={() => exportMarkedExcel(positions, lotInfo, zones)}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                            title="Xuất file Excel danh sách vị trí đánh dấu"
+                        >
+                            <FileSpreadsheet size={14} />
+                            <span>Xuất Excel</span>
+                        </button>
+
+                        <button
+                            onClick={() => setOnlyShowMarked(false)}
+                            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
+                            title="Hiển thị lại toàn bộ sơ đồ kho"
+                        >
+                            <Eye size={14} />
+                            <span>Hiện tất cả</span>
+                        </button>
+
+                        <button
+                            onClick={clearAllMarks}
+                            className="px-2.5 py-1.5 text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 rounded-xl text-xs font-semibold transition-all"
+                            title="Xóa toàn bộ các vị trí đã đánh dấu"
+                        >
+                            <Trash2 size={14} />
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Memoize grouped data for filters */}
             {(() => {
                 const groupedData = isGrouped 
@@ -992,6 +1109,9 @@ function WarehouseMapContent() {
                         selectedCategoryId={selectedCategoryId}
                         onCategorySelect={setSelectedCategoryId}
                         products={products}
+                        onlyShowMarked={onlyShowMarked}
+                        onToggleOnlyShowMarked={toggleOnlyShowMarked}
+                        markedCount={markedCount}
                     />
                 );
             })()}
@@ -1019,6 +1139,7 @@ function WarehouseMapContent() {
                         isFifoAvailable={isFifoAvailable}
                         onToggleFifo={toggleFifo}
                         isGrouped={isGrouped}
+                        markedPositionIds={markedPositionIds}
                     />
                 )
             })()}
@@ -1068,6 +1189,7 @@ function WarehouseMapContent() {
                                     onTogglePageBreak={handleTogglePageBreak}
                                     mergedZones={mergedZones}
                                     onToggleMergeZone={toggleMergeZone}
+                                    markedPositionIds={markedPositionIds}
                                     onPrintZone={(zoneId) => {
                                         const params = new URLSearchParams()
                                         params.set('systemType', systemType)
@@ -1222,6 +1344,9 @@ function WarehouseMapContent() {
                 onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}
                 onCloneLot={handleCloneLot}
                 onBulkChangeProduct={handleOpenBulkChangeProduct}
+                onToggleMark={(posIds) => toggleMark(posIds)}
+                isMarked={(id) => isMarked(id)}
+                onExportExcel={handleExportSelectedExcel}
             />
 
             {isBulkChangeProductOpen && (

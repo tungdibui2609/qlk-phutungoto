@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList, Sparkles, CornerDownLeft } from 'lucide-react'
+import { Search, Filter, HelpCircle, Tag, Package, Hash, MapPin, Layers, LayoutGrid, X, ClipboardList, Sparkles, CornerDownLeft, Bookmark, RotateCcw } from 'lucide-react'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { DateRangeFilter, DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
@@ -29,6 +29,9 @@ interface MapFilterBarProps {
     selectedCategoryId?: string | null
     onCategorySelect?: (catId: string | null) => void
     products?: any[]
+    onlyShowMarked?: boolean
+    onToggleOnlyShowMarked?: () => void
+    markedCount?: number
 }
 
 export function MapFilterBar({
@@ -53,7 +56,10 @@ export function MapFilterBar({
     categories,
     selectedCategoryId,
     onCategorySelect,
-    products
+    products,
+    onlyShowMarked,
+    onToggleOnlyShowMarked,
+    markedCount
 }: MapFilterBarProps) {
     // Local state for debounce
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
@@ -258,17 +264,37 @@ export function MapFilterBar({
         }
     }
 
+    const hasActiveFilters = Boolean(
+        localSearchTerm ||
+        (selectedCategoryId && selectedCategoryId !== 'all') ||
+        startDate ||
+        endDate ||
+        onlyShowMarked ||
+        hidePendingExport
+    )
+
+    const handleClearAllFilters = () => {
+        setLocalSearchTerm('')
+        onSearchChange('')
+        if (onCategorySelect) onCategorySelect(null)
+        onStartDateChange('')
+        onEndDateChange('')
+        if (onlyShowMarked && onToggleOnlyShowMarked) onToggleOnlyShowMarked()
+        if (hidePendingExport && onHidePendingExportChange) onHidePendingExportChange(false)
+        setShowSuggestions(false)
+    }
+
     return (
-        <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 p-2.5 shadow-sm space-y-2">
-            {/* Row 1: Search & Date Filters */}
-            <div className="flex items-center gap-2 w-full">
+        <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200/90 dark:border-slate-800/90 p-3 shadow-xs space-y-2.5">
+            {/* Dòng 1: Tìm kiếm chính & Tiêu điểm nhanh (Search & Fast Actions) */}
+            <div className="flex items-center gap-2.5 w-full">
                 {/* Search */}
                 <div 
                     ref={searchContainerRef}
-                    className="relative flex-1 min-w-0 flex items-center bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 transition-all"
+                    className="relative flex-1 min-w-0 flex items-center bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-xl focus-within:ring-2 focus-within:ring-emerald-500/20 focus-within:border-emerald-500 focus-within:bg-white dark:focus-within:bg-slate-850 transition-all p-1"
                 >
-                    <div className="flex items-center border-r border-slate-200 dark:border-slate-700 px-2 lg:px-3">
-                        {searchMode === 'all' && <Layers size={14} className="text-slate-400 mr-1.5" />}
+                    <div className="flex items-center bg-white dark:bg-slate-700/60 border border-slate-200/60 dark:border-slate-600/50 rounded-lg px-2.5 py-1.5 shadow-2xs mr-1 shrink-0">
+                        {searchMode === 'all' && <Layers size={14} className="text-slate-500 mr-1.5" />}
                         {searchMode === 'name' && <Package size={14} className="text-emerald-600 mr-1.5" />}
                         {searchMode === 'code' && <Hash size={14} className="text-purple-500 mr-1.5" />}
                         {searchMode === 'tag' && <Tag size={14} className="text-amber-500 mr-1.5" />}
@@ -279,7 +305,7 @@ export function MapFilterBar({
                         <select
                             value={searchMode}
                             onChange={(e) => onSearchModeChange(e.target.value as SearchMode)}
-                            className="bg-transparent border-none text-[10px] lg:text-[11px] font-bold text-slate-600 dark:text-slate-300 focus:ring-0 cursor-pointer p-0 pr-4 appearance-none"
+                            className="bg-transparent border-none text-xs font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 pr-4 appearance-none outline-none"
                         >
                             <option value="all">Tổng hợp</option>
                             <option value="name">Theo Tên</option>
@@ -291,8 +317,8 @@ export function MapFilterBar({
                         </select>
                     </div>
 
-                    <div className="relative flex-1 flex items-center">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <div className="relative flex-1 flex items-center min-w-0">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 shrink-0" size={15} />
                         <input
                             type="text"
                             placeholder={
@@ -316,7 +342,7 @@ export function MapFilterBar({
                                 }
                             }}
                             onKeyDown={handleKeyDown}
-                            className="w-full pl-9 pr-28 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm"
+                            className="w-full pl-8 pr-24 py-1.5 bg-transparent border-none outline-none font-medium text-xs lg:text-sm text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
                         />
                         <div className="absolute right-1 flex items-center gap-1">
                             {localSearchTerm && (
@@ -327,7 +353,7 @@ export function MapFilterBar({
                                         onSearchChange('')
                                         setShowSuggestions(false)
                                     }}
-                                    className="text-slate-400 hover:text-red-500 transition-colors rounded-full p-1"
+                                    className="text-slate-400 hover:text-red-500 transition-colors rounded-full p-1 cursor-pointer"
                                     title="Xóa tìm kiếm"
                                 >
                                     <X size={14} />
@@ -336,7 +362,7 @@ export function MapFilterBar({
                             <button
                                 type="button"
                                 onClick={() => setIsHelpOpen(true)}
-                                className="text-slate-400 hover:text-emerald-600 transition-colors rounded-full p-1"
+                                className="text-slate-400 hover:text-emerald-600 transition-colors rounded-full p-1 cursor-pointer"
                                 title="Hướng dẫn tìm kiếm"
                             >
                                 <HelpCircle size={14} />
@@ -344,10 +370,10 @@ export function MapFilterBar({
                             <button
                                 type="button"
                                 onClick={() => handleSearch()}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] lg:text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all shadow-sm active:scale-95 flex items-center gap-1"
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg transition-all shadow-xs active:scale-95 flex items-center gap-1 cursor-pointer shrink-0"
                             >
-                                <Search size={12} />
-                                Tìm
+                                <Search size={13} />
+                                <span>Tìm</span>
                             </button>
                         </div>
                     </div>
@@ -412,25 +438,81 @@ export function MapFilterBar({
                         </div>
                     )}
                 </div>
-                <SearchHelpModal isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} />
 
                 {/* Mobile Filter Toggle */}
                 <button
-                    className="lg:hidden p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 shadow-sm border border-emerald-200 dark:border-emerald-800 shrink-0"
+                    className="lg:hidden p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 shadow-xs border border-emerald-200 dark:border-emerald-800 shrink-0 cursor-pointer"
                     onClick={toggleMobileFilters}
                 >
                     <Filter size={18} />
                 </button>
 
-                {/* Desktop Extra Filters Wrapper */}
-                <div className="hidden lg:flex items-center gap-2">
+                {/* Dòng 1 Actions (Desktop): Vị trí đánh dấu & Ẩn chờ xuất */}
+                <div className="hidden lg:flex items-center gap-2 shrink-0">
+                    {onToggleOnlyShowMarked && (
+                        <button
+                            type="button"
+                            onClick={onToggleOnlyShowMarked}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all whitespace-nowrap shadow-xs active:scale-95 shrink-0 cursor-pointer ${
+                                onlyShowMarked
+                                    ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300 dark:ring-amber-700 shadow-amber-500/20'
+                                    : (markedCount && markedCount > 0)
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/60'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/80'
+                            }`}
+                            title={onlyShowMarked ? "Đang lọc: chỉ hiện vị trí đánh dấu (Bấm để hiện tất cả)" : "Lọc hiển thị các vị trí được đánh dấu"}
+                        >
+                            <Bookmark
+                                size={14}
+                                className={onlyShowMarked ? "fill-white text-white" : (markedCount && markedCount > 0 ? "fill-amber-500 text-amber-600" : "text-slate-400")}
+                            />
+                            <span>Vị trí đánh dấu</span>
+                            {markedCount !== undefined && markedCount > 0 && (
+                                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black leading-none ${
+                                    onlyShowMarked 
+                                        ? 'bg-white text-amber-700' 
+                                        : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
+                                }`}>
+                                    {markedCount}
+                                </span>
+                            )}
+                        </button>
+                    )}
+
+                    {onHidePendingExportChange && (
+                        <button
+                            type="button"
+                            onClick={() => onHidePendingExportChange(!hidePendingExport)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-semibold transition-all whitespace-nowrap shadow-xs active:scale-95 shrink-0 cursor-pointer ${
+                                hidePendingExport 
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400 ring-2 ring-indigo-200/50' 
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/80'
+                            }`}
+                            title="Ẩn các vị trí đang có lệnh xuất kho chờ xử lý"
+                        >
+                            <ClipboardList size={14} className={hidePendingExport ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"} />
+                            <span>Ẩn chờ xuất</span>
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Dòng 2 (Desktop): Chi tiết Danh mục, Khoảng ngày & Đặt lại bộ lọc */}
+            <div className="hidden lg:flex items-center justify-between gap-3 pt-2 border-t border-slate-100 dark:border-slate-800/60">
+                <div className="flex items-center gap-2.5 flex-wrap min-w-0">
+                    <div className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 mr-1 shrink-0">
+                        <Filter size={12} />
+                        <span>Bộ lọc:</span>
+                    </div>
+
                     {categories && categories.length > 0 && onCategorySelect && (
-                        <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-2.5 py-1.5 shrink-0">
-                            <LayoutGrid size={14} className="text-indigo-500 shrink-0" />
+                        <div className="flex items-center gap-1.5 bg-slate-50/90 dark:bg-slate-800/60 border border-slate-200/80 dark:border-slate-700/80 rounded-xl px-3 py-1.5 shrink-0 shadow-2xs hover:border-slate-300 dark:hover:border-slate-600 transition-colors">
+                            <LayoutGrid size={13} className="text-indigo-500 shrink-0" />
+                            <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium whitespace-nowrap">Danh mục:</span>
                             <select
                                 value={selectedCategoryId || 'all'}
                                 onChange={(e) => onCategorySelect(e.target.value === 'all' ? null : e.target.value)}
-                                className="bg-transparent border-none text-xs font-medium text-slate-700 dark:text-slate-300 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[150px] truncate"
+                                className="bg-transparent border-none text-xs font-semibold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer pr-4 appearance-none outline-none max-w-[200px] truncate"
                             >
                                 <option value="all">Tất cả danh mục</option>
                                 {categories.map((cat: any) => (
@@ -440,22 +522,6 @@ export function MapFilterBar({
                         </div>
                     )}
 
-                    {onHidePendingExportChange && (
-                        <button
-                            type="button"
-                            onClick={() => onHidePendingExportChange(!hidePendingExport)}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-medium transition-colors whitespace-nowrap ${
-                                hidePendingExport 
-                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700 dark:bg-indigo-900/40 dark:border-indigo-800 dark:text-indigo-400' 
-                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800/80'
-                            }`}
-                            title="Ẩn các vị trí đang có lệnh xuất kho chờ xử lý"
-                        >
-                            <ClipboardList size={14} className={hidePendingExport ? "text-indigo-600 dark:text-indigo-400" : "text-slate-400"} />
-                            Ẩn vị trí đang chờ xuất
-                        </button>
-                    )}
-
                     <DateRangeFilter
                         dateFilterField={dateFilterField}
                         onDateFieldChange={onDateFieldChange}
@@ -463,14 +529,55 @@ export function MapFilterBar({
                         onStartDateChange={onStartDateChange}
                         endDate={endDate}
                         onEndDateChange={onEndDateChange}
-                        className="min-w-[310px]"
+                        className="shadow-2xs"
                     />
                 </div>
+
+                {hasActiveFilters && (
+                    <button
+                        type="button"
+                        onClick={handleClearAllFilters}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50/80 dark:bg-red-950/40 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-100 dark:hover:bg-red-900/60 transition-colors shrink-0 shadow-2xs cursor-pointer active:scale-95"
+                        title="Xóa tất cả các bộ lọc đang áp dụng"
+                    >
+                        <RotateCcw size={12} />
+                        <span>Đặt lại bộ lọc</span>
+                    </button>
+                )}
             </div>
 
             {/* Mobile Expanded Filters */}
             {showMobileFilters && (
                 <div className="lg:hidden flex flex-col gap-2 pt-2 border-t border-slate-100 dark:border-slate-800 animate-in slide-in-from-top-2">
+                    {onToggleOnlyShowMarked && (
+                        <button
+                            type="button"
+                            onClick={onToggleOnlyShowMarked}
+                            className={`flex items-center justify-center gap-2 px-3 py-2 w-full rounded-xl border text-xs font-bold transition-all shadow-xs active:scale-95 ${
+                                onlyShowMarked
+                                    ? 'bg-amber-500 text-white border-amber-600 ring-2 ring-amber-300 dark:ring-amber-700'
+                                    : (markedCount && markedCount > 0)
+                                        ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-300 dark:border-amber-700 text-amber-800 dark:text-amber-300'
+                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300'
+                            }`}
+                        >
+                            <Bookmark
+                                size={14}
+                                className={onlyShowMarked ? "fill-white text-white" : (markedCount && markedCount > 0 ? "fill-amber-500 text-amber-600" : "text-slate-400")}
+                            />
+                            <span>Vị trí đánh dấu kiểm tra</span>
+                            {markedCount !== undefined && markedCount > 0 && (
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    onlyShowMarked 
+                                        ? 'bg-white text-amber-700' 
+                                        : 'bg-amber-200 dark:bg-amber-900/80 text-amber-900 dark:text-amber-200'
+                                }`}>
+                                    {markedCount}
+                                </span>
+                            )}
+                        </button>
+                    )}
+
                     {categories && categories.length > 0 && onCategorySelect && (
                         <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 w-full">
                             <LayoutGrid size={14} className="text-indigo-500 shrink-0" />
@@ -510,11 +617,21 @@ export function MapFilterBar({
                         onEndDateChange={onEndDateChange}
                         className="w-full"
                     />
+                    {hasActiveFilters && (
+                        <button
+                            type="button"
+                            onClick={handleClearAllFilters}
+                            className="flex items-center justify-center gap-2 px-3 py-2 w-full rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 text-red-600 dark:text-red-400 text-xs font-bold transition-colors cursor-pointer"
+                        >
+                            <RotateCcw size={14} />
+                            <span>Đặt lại tất cả bộ lọc</span>
+                        </button>
+                    )}
                 </div>
             )}
 
-            {/* Row 2: Cascading Zone Filter */}
-            <div className={`${showMobileFilters ? 'block' : 'hidden lg:block'}`}>
+            {/* Dòng 3: Cascading Zone Filter */}
+            <div className={`pt-2 border-t border-slate-100 dark:border-slate-800/80 ${showMobileFilters ? 'block' : 'hidden lg:block'}`}>
                 <HorizontalZoneFilter
                     selectedZoneId={selectedZoneId}
                     onZoneSelect={onZoneSelect}
@@ -525,6 +642,8 @@ export function MapFilterBar({
                     grouped={grouped}
                 />
             </div>
+
+            <SearchHelpModal isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} />
         </div>
     )
 }

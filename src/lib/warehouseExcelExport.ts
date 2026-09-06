@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
+import { parsePositionCodeFallback, extractSubPosition } from './warehouseUtils';
 
 /**
  * Chuẩn hóa đơn vị tính để tránh trùng lặp khi nhóm.
@@ -165,7 +166,7 @@ export async function exportWarehouseToExcel(data: ExportWarehouseData) {
         row.getCell(3).value = pos.row || '';
         row.getCell(4).value = pos.bin || '';
         row.getCell(5).value = pos.level || '';
-        row.getCell(6).value = pos.subPosition || '';
+        row.getCell(6).value = pos.subPosition || extractSubPosition(pos.code);
         row.getCell(7).value = pos.code;
         row.getCell(8).value = pos.inboundDate ? new Date(pos.inboundDate).toLocaleDateString('vi-VN') : '';
         row.getCell(9).value = pos.lotCode || '(Trống)';
@@ -1189,3 +1190,130 @@ export async function exportExportOrderToExcel(data: ExportOrderExcelData) {
     const fileName = `Lenh_Xuat_Kho_${data.order.code.replace(/\//g, '-')}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
 }
+
+export interface ExportMarkedPositionsOptions {
+    systemName: string;
+    positions: any[];
+    lotInfo: Record<string, any>;
+    zones?: any[];
+    title?: string;
+}
+
+export async function exportMarkedPositionsToExcel({ systemName, positions, lotInfo, zones = [], title }: ExportMarkedPositionsOptions) {
+    const excelPositions: ExcelPosition[] = [];
+
+    // Helper map zone hierarchy
+    const zoneMap = new Map<string, any>();
+    zones.forEach(z => zoneMap.set(z.id, z));
+
+    positions.forEach(pos => {
+        const lot = pos.lot_id ? lotInfo[pos.lot_id] : null;
+
+        // Extract hierarchy info
+        let warehouse = '';
+        let row = '';
+        let bin = '';
+        let level = '';
+        let subPosition = extractSubPosition(pos.code);
+
+        if (pos.zone_id && zoneMap.has(pos.zone_id)) {
+            let curr = zoneMap.get(pos.zone_id);
+            const chain: string[] = [];
+            const seen = new Set();
+            while (curr && !seen.has(curr.id)) {
+                seen.add(curr.id);
+                chain.unshift(curr.name);
+                curr = curr.parent_id ? zoneMap.get(curr.parent_id) : null;
+            }
+            if (chain.length > 0) warehouse = chain[0] || '';
+            if (chain.length > 1) row = chain[1] || '';
+            if (chain.length > 2) bin = chain[2] || '';
+            if (chain.length > 3) level = chain[3] || '';
+        }
+
+        // Fallback parse code if any hierarchy info or subPosition is missing
+        const parsed = parsePositionCodeFallback(pos.code);
+        if (parsed) {
+            warehouse = warehouse || parsed.warehouse;
+            row = row || parsed.row;
+            bin = bin || parsed.bin;
+            level = level || parsed.level;
+            if (!subPosition) {
+                subPosition = parsed.subPosition;
+            }
+        }
+
+
+        if (lot && lot.items && lot.items.length > 0) {
+            lot.items.forEach((item: any) => {
+                const kgQty = item.unit?.toLowerCase().includes('kg')
+                    ? Number(item.quantity)
+                    : null;
+
+                excelPositions.push({
+                    code: pos.code,
+                    warehouse,
+                    row,
+                    bin,
+                    level,
+                    subPosition,
+                    lotCode: lot.code || '',
+                    productName: item.product_name || item.internal_name || '',
+                    sku: item.sku || item.internal_code || '',
+                    unit: item.unit || '',
+                    quantity: item.quantity || 0,
+                    kgQuantity: kgQty,
+                    tags: item.tags?.join(', ') || lot.tags?.join(', ') || '',
+                    notes: lot.notes || '',
+                    inboundDate: lot.inbound_date || lot.created_at || null
+                });
+            });
+        } else if (lot) {
+            excelPositions.push({
+                code: pos.code,
+                warehouse,
+                row,
+                bin,
+                level,
+                subPosition,
+                lotCode: lot.code || '',
+                productName: lot.product_name || '',
+                sku: lot.sku || '',
+                unit: lot.unit || '',
+                quantity: lot.quantity || 0,
+                kgQuantity: null,
+                tags: lot.tags?.join(', ') || '',
+                notes: lot.notes || '',
+                inboundDate: lot.inbound_date || lot.created_at || null
+            });
+        } else {
+            // Empty position marked for inspection
+            excelPositions.push({
+                code: pos.code,
+                warehouse,
+                row,
+                bin,
+                level,
+                subPosition,
+                lotCode: '(Trống)',
+                productName: '',
+                sku: '',
+                unit: '',
+                quantity: 0,
+                kgQuantity: null,
+                tags: '',
+                notes: title ? 'Vị trí trống' : 'Vị trí trống được đánh dấu kiểm tra',
+                inboundDate: null
+            });
+        }
+    });
+
+    await exportWarehouseToExcel({
+        systemName,
+        zoneName: title || `Vị trí đánh dấu kiểm tra (${positions.length} vị trí)`,
+        searchTerm: title ? '' : 'ĐÁNH DẤU KIỂM TRA',
+        positions: excelPositions
+    });
+}
+
+

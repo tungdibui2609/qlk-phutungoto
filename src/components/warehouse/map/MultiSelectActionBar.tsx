@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -30,6 +30,9 @@ interface MultiSelectActionBarProps {
     onOpenAutoAssignWarehouse?: () => void
     onCloneLot?: (lotId: string) => void
     onBulkChangeProduct?: (lotIds: string[]) => void
+    onToggleMark?: (posIds: string[]) => void
+    isMarked?: (posId: string) => boolean
+    onExportExcel?: (selectedPositions: Position[]) => void
 }
 
 export default function MultiSelectActionBar({
@@ -48,13 +51,26 @@ export default function MultiSelectActionBar({
     onOpenMove,
     onOpenAutoAssignWarehouse,
     onCloneLot,
-    onBulkChangeProduct
+    onBulkChangeProduct,
+    onToggleMark,
+    isMarked,
+    onExportExcel
 }: MultiSelectActionBarProps) {
+    const [isOperationMenuOpen, setIsOperationMenuOpen] = useState(false)
+    const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false)
     const [isTagMenuOpen, setIsTagMenuOpen] = useState(false)
     const [isLocationMenuOpen, setIsLocationMenuOpen] = useState(false)
 
+    const [operationMenuPos, setOperationMenuPos] = useState({ top: 0, left: 0 })
+    const [utilityMenuPos, setUtilityMenuPos] = useState({ top: 0, left: 0 })
     const [tagMenuPos, setTagMenuPos] = useState({ top: 0, left: 0 })
     const [locationMenuPos, setLocationMenuPos] = useState({ top: 0, left: 0 })
+
+    const operationMenuRef = useRef<HTMLDivElement>(null)
+    const operationButtonRef = useRef<HTMLButtonElement>(null)
+
+    const utilityMenuRef = useRef<HTMLDivElement>(null)
+    const utilityButtonRef = useRef<HTMLButtonElement>(null)
 
     const tagMenuRef = useRef<HTMLDivElement>(null)
     const tagButtonRef = useRef<HTMLButtonElement>(null)
@@ -65,6 +81,12 @@ export default function MultiSelectActionBar({
     // Close menus when clicking outside
     useEffect(() => {
         function handleClickOutside(event: MouseEvent) {
+            if (operationMenuRef.current && !operationMenuRef.current.contains(event.target as Node)) {
+                setIsOperationMenuOpen(false)
+            }
+            if (utilityMenuRef.current && !utilityMenuRef.current.contains(event.target as Node)) {
+                setIsUtilityMenuOpen(false)
+            }
             if (tagMenuRef.current && !tagMenuRef.current.contains(event.target as Node)) {
                 setIsTagMenuOpen(false)
             }
@@ -76,12 +98,36 @@ export default function MultiSelectActionBar({
         return () => document.removeEventListener('mousedown', handleClickOutside)
     }, [])
 
+    const handleToggleOperationMenu = () => {
+        if (!isOperationMenuOpen && operationButtonRef.current) {
+            const rect = operationButtonRef.current.getBoundingClientRect()
+            setOperationMenuPos({ top: rect.top - 8, left: rect.left })
+        }
+        setIsOperationMenuOpen(!isOperationMenuOpen)
+        setIsUtilityMenuOpen(false)
+        setIsTagMenuOpen(false)
+        setIsLocationMenuOpen(false)
+    }
+
+    const handleToggleUtilityMenu = () => {
+        if (!isUtilityMenuOpen && utilityButtonRef.current) {
+            const rect = utilityButtonRef.current.getBoundingClientRect()
+            setUtilityMenuPos({ top: rect.top - 8, left: rect.left })
+        }
+        setIsUtilityMenuOpen(!isUtilityMenuOpen)
+        setIsOperationMenuOpen(false)
+        setIsTagMenuOpen(false)
+        setIsLocationMenuOpen(false)
+    }
+
     const handleToggleTagMenu = () => {
         if (!isTagMenuOpen && tagButtonRef.current) {
             const rect = tagButtonRef.current.getBoundingClientRect()
             setTagMenuPos({ top: rect.top - 8, left: rect.left })
         }
         setIsTagMenuOpen(!isTagMenuOpen)
+        setIsOperationMenuOpen(false)
+        setIsUtilityMenuOpen(false)
         setIsLocationMenuOpen(false)
     }
 
@@ -91,12 +137,19 @@ export default function MultiSelectActionBar({
             setLocationMenuPos({ top: rect.top - 8, left: rect.left })
         }
         setIsLocationMenuOpen(!isLocationMenuOpen)
+        setIsOperationMenuOpen(false)
+        setIsUtilityMenuOpen(false)
         setIsTagMenuOpen(false)
     }
 
+
     // Get selected positions data
     const selectedPositions = useMemo(() => {
-        return positions.filter(p => selectedPositionIds.has(p.id))
+        return positions.filter(p => {
+            if (selectedPositionIds.has(p.id)) return true
+            const realIds = (p as any).realIds
+            return realIds && Array.isArray(realIds) && realIds.some((id: string) => selectedPositionIds.has(id))
+        })
     }, [positions, selectedPositionIds])
 
     // Get unique LOT IDs from selected positions
@@ -107,6 +160,11 @@ export default function MultiSelectActionBar({
         })
         return lotIds
     }, [selectedPositions])
+
+    const allSelectedMarked = useMemo(() => {
+        if (!isMarked || selectedPositionIds.size === 0) return false
+        return Array.from(selectedPositionIds).every(id => isMarked(id))
+    }, [selectedPositionIds, isMarked])
 
     // Aggregate selected items for display
     const aggregatedItems = useMemo(() => {
@@ -187,15 +245,83 @@ export default function MultiSelectActionBar({
                         {/* Action buttons scrollable container */}
                         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
                             
-                            {/* Nút 1: Lệnh xuất kho */}
-                            <button
-                                onClick={() => onExportOrder(Array.from(selectedPositionIds), Array.from(selectedLotIds))}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-50/80 dark:bg-blue-950/50 border border-blue-200/80 dark:border-blue-800/80 hover:bg-blue-100 dark:hover:bg-blue-900/60 rounded-xl transition-all active:scale-95 whitespace-nowrap shrink-0 shadow-sm"
-                                title="Tạo lệnh xuất kho"
-                            >
-                                <FileOutput size={15} className="text-blue-600 dark:text-blue-400" />
-                                <span>Lệnh xuất kho</span>
-                            </button>
+                            {/* SUB MENU: NGHIỆP VỤ (Gồm: Lệnh xuất kho, Xuất khỏi kho) */}
+                            <div className="relative shrink-0">
+                                <button
+                                    ref={operationButtonRef}
+                                    onClick={handleToggleOperationMenu}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shadow-sm cursor-pointer ${isOperationMenuOpen
+                                        ? 'bg-blue-600 text-white ring-2 ring-blue-300 dark:ring-blue-800'
+                                        : 'bg-blue-50/80 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800/80 hover:bg-blue-100 dark:hover:bg-blue-900/60'
+                                        }`}
+                                    title="Các nghiệp vụ xuất kho"
+                                >
+                                    <Briefcase size={15} className={isOperationMenuOpen ? 'text-white' : 'text-blue-600 dark:text-blue-400'} />
+                                    <span>Nghiệp vụ</span>
+                                    <ChevronDown size={13} className={`transition-transform duration-200 ${isOperationMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isOperationMenuOpen && (
+                                    <div
+                                        ref={operationMenuRef}
+                                        className="fixed min-w-[220px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        style={{
+                                            top: operationMenuPos.top,
+                                            left: operationMenuPos.left,
+                                            transform: 'translateY(-100%)'
+                                        }}
+                                    >
+                                        <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-blue-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">
+                                            Nghiệp vụ xuất kho
+                                        </div>
+
+                                        <button
+                                            onClick={() => {
+                                                onExportOrder(Array.from(selectedPositionIds), Array.from(selectedLotIds))
+                                                setIsOperationMenuOpen(false)
+                                            }}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                        >
+                                            <FileOutput size={16} className="text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-bold text-blue-700 dark:text-blue-300">Lệnh xuất kho</span>
+                                                <span className="text-[10px] text-gray-400 font-normal">Tạo phiếu / lệnh xuất kho</span>
+                                            </div>
+                                        </button>
+
+                                        <button
+                                            onClick={() => {
+                                                onBulkExport()
+                                                setIsOperationMenuOpen(false)
+                                            }}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-rose-50 dark:hover:bg-rose-900/30 rounded-xl transition-colors text-left group cursor-pointer"
+                                        >
+                                            <PackageMinus size={16} className="text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-bold text-rose-600 dark:text-rose-400">Xuất khỏi kho</span>
+                                                <span className="text-[10px] text-gray-400 font-normal">Xuất trực tiếp toàn bộ khỏi kho</span>
+                                            </div>
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Nút: Đánh dấu kiểm tra */}
+                            {onToggleMark && (
+                                <button
+                                    onClick={() => onToggleMark(Array.from(selectedPositionIds))}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shrink-0 shadow-sm ${
+                                        allSelectedMarked
+                                            ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-200'
+                                            : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
+                                    }`}
+                                    title={allSelectedMarked ? "Bỏ đánh dấu các vị trí đã chọn" : "Đánh dấu kiểm tra các vị trí đã chọn"}
+                                >
+                                    <Bookmark size={15} className={allSelectedMarked ? "fill-amber-600 text-amber-600" : "fill-white text-white"} />
+                                    <span>{allSelectedMarked ? `Bỏ đánh dấu (${selectedPositionIds.size})` : `Đánh dấu (${selectedPositionIds.size})`}</span>
+                                </button>
+                            )}
+
 
                             {/* Nút: Nhân bản LOT */}
                             <button
@@ -304,16 +430,70 @@ export default function MultiSelectActionBar({
                                 )}
                             </div>
 
-                            {/* Nút 3: In mã QR */}
-                            <button
-                                onClick={() => onBulkPrint(Array.from(selectedLotIds))}
-                                disabled={selectedLotIds.size === 0}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50/80 dark:bg-emerald-950/50 border border-emerald-200/80 dark:border-emerald-800/80 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded-xl transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0 shadow-sm"
-                                title="In mã QR hàng loạt"
-                            >
-                                <Printer size={15} className="text-emerald-600 dark:text-emerald-400" />
-                                <span>In mã QR</span>
-                            </button>
+                            {/* SUB MENU: TIỆN ÍCH (Gồm: In mã QR, Xuất Excel) */}
+                            <div className="relative shrink-0">
+                                <button
+                                    ref={utilityButtonRef}
+                                    onClick={handleToggleUtilityMenu}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shadow-sm cursor-pointer ${isUtilityMenuOpen
+                                        ? 'bg-emerald-600 text-white ring-2 ring-emerald-300 dark:ring-emerald-800'
+                                        : 'bg-emerald-50/80 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200/80 dark:border-emerald-800/80 hover:bg-emerald-100 dark:hover:bg-emerald-900/60'
+                                        }`}
+                                    title="Tiện ích in ấn & xuất file"
+                                >
+                                    <Wrench size={15} className={isUtilityMenuOpen ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'} />
+                                    <span>Tiện ích</span>
+                                    <ChevronDown size={13} className={`transition-transform duration-200 ${isUtilityMenuOpen ? 'rotate-180' : ''}`} />
+                                </button>
+
+                                {isUtilityMenuOpen && (
+                                    <div
+                                        ref={utilityMenuRef}
+                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        style={{
+                                            top: utilityMenuPos.top,
+                                            left: utilityMenuPos.left,
+                                            transform: 'translateY(-100%)'
+                                        }}
+                                    >
+                                        <div className="px-2.5 py-1.5 text-[10px] font-extrabold text-emerald-500 uppercase tracking-wider select-none border-b border-gray-100 dark:border-gray-700/60 mb-1">
+                                            Tiện ích & In ấn
+                                        </div>
+
+                                        <button
+                                            onClick={() => {
+                                                onBulkPrint(Array.from(selectedLotIds))
+                                                setIsUtilityMenuOpen(false)
+                                            }}
+                                            disabled={selectedLotIds.size === 0}
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-xl transition-colors text-left disabled:opacity-50 group cursor-pointer"
+                                        >
+                                            <Printer size={16} className="text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="font-bold">In mã QR</span>
+                                                <span className="text-[10px] text-gray-400 font-normal">In tem / nhãn QR hàng loạt</span>
+                                            </div>
+                                        </button>
+
+                                        {onExportExcel && (
+                                            <button
+                                                onClick={() => {
+                                                    onExportExcel(selectedPositions)
+                                                    setIsUtilityMenuOpen(false)
+                                                }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-emerald-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                            >
+                                                <FileSpreadsheet size={16} className="text-emerald-600 dark:text-emerald-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="font-bold">Xuất Excel</span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">Xuất các vị trí đã chọn ra Excel</span>
+                                                </div>
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
 
                             {/* SUB MENU: QUẢN LÝ MÃ (Gồm: Đổi mã hàng loạt, Gán mã phụ, Xóa mã phụ) */}
                             <div className="relative shrink-0">
@@ -394,15 +574,6 @@ export default function MultiSelectActionBar({
                                 )}
                             </div>
 
-                            {/* Nút 5: Xuất khỏi kho */}
-                            <button
-                                onClick={onBulkExport}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-rose-700 dark:text-rose-300 bg-rose-50/80 dark:bg-rose-950/50 border border-rose-200/80 dark:border-rose-800/80 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl transition-all active:scale-95 whitespace-nowrap shrink-0 shadow-sm"
-                                title="Xuất trực tiếp toàn bộ khỏi kho"
-                            >
-                                <PackageMinus size={15} className="text-rose-500" />
-                                <span>Xuất khỏi kho</span>
-                            </button>
 
                             {/* Nút 6: Xóa LOT */}
                             <button

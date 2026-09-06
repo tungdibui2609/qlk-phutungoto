@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { Maximize2, Eye, Package, MoreHorizontal, Layers } from 'lucide-react'
+import { Maximize2, Eye, Package, MoreHorizontal, Layers, Bookmark } from 'lucide-react'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 
 const MergedBigCell = React.memo<{
@@ -9,6 +9,7 @@ const MergedBigCell = React.memo<{
     isOccupied: boolean,
     isSelected: boolean,
     isTargetLot: boolean,
+    isMarked?: boolean,
     aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string, lotCodes?: string[] }>,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
@@ -26,7 +27,7 @@ const MergedBigCell = React.memo<{
     isEmptyMode?: boolean,
     searchTerm?: string,
     lots?: any[]
-}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, isMarked, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
     const ids = pos.realIds || [pos.id]
     const mergedCount = pos.mergedCount || ids.length
     const originalCodes = pos.originalCodes || [pos.code]
@@ -111,6 +112,16 @@ const MergedBigCell = React.memo<{
         borderClass = 'border-amber-300 dark:border-amber-700'
     }
 
+    if (isMarked) {
+        borderClass = 'border-amber-400 dark:border-amber-500'
+        ringClass = 'ring-2 ring-amber-400/80 dark:ring-amber-500/80 shadow-md shadow-amber-200/50 dark:shadow-amber-950/50'
+        if (!searchTerm || searchStatus.isMatch) {
+            bgClass = isOccupied 
+                ? 'bg-gradient-to-br from-amber-100/70 to-orange-100/70 dark:from-amber-950/40 dark:to-orange-950/40' 
+                : 'bg-amber-50/80 dark:bg-amber-950/30'
+        }
+    }
+
     if (searchTerm) {
         if (!searchStatus.isMatch) {
             opacityClass = 'opacity-30 dark:opacity-20 hover:opacity-80 transition-opacity'
@@ -176,6 +187,12 @@ const MergedBigCell = React.memo<{
                                     ? `Gộp ${mergedLevels.length} tầng`
                                     : `${mergedCount} ô gộp`
                                 }
+                            </span>
+                        )}
+                        {isMarked && (
+                            <span className="flex items-center gap-1 text-[9px] bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap animate-in zoom-in-50">
+                                <Bookmark size={10} className="fill-amber-500 text-amber-600" />
+                                <span>Đã đánh dấu</span>
                             </span>
                         )}
                         {searchStatus.isMatch && (

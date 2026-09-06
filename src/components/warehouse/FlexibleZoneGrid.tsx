@@ -58,6 +58,7 @@ interface FlexibleZoneGridProps {
     onToggleCheckedZone?: (zoneId: string, isChecked: boolean) => void
     searchTerm?: string
     selectedCategoryId?: string | null
+    markedPositionIds?: Set<string>
 }
 
 export default function FlexibleZoneGrid({
@@ -92,7 +93,8 @@ export default function FlexibleZoneGrid({
     checkedZoneIds = new Set(),
     onToggleCheckedZone,
     searchTerm = '',
-    selectedCategoryId = null
+    selectedCategoryId = null,
+    markedPositionIds = new Set()
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -273,6 +275,15 @@ export default function FlexibleZoneGrid({
             })
     }, [zones, positions])
 
+    const isPosMarked = (p: any) => {
+        if (!markedPositionIds || markedPositionIds.size === 0) return false
+        if (markedPositionIds.has(p.id)) return true
+        if (p.realIds && Array.isArray(p.realIds)) {
+            return p.realIds.some((id: string) => markedPositionIds.has(id))
+        }
+        return false
+    }
+
     function renderPositionCell(pos: PositionWithZone | any, cellHeight: number, cellWidth: number, isSanh?: boolean) {
         const realIds = pos.realIds || [pos.id]
         const isOccupied = realIds.some((id: string) => occupiedIds.has(id)) || !!pos.lot_id
@@ -282,6 +293,7 @@ export default function FlexibleZoneGrid({
             return lotId === highlightLotId
         }) : false
         const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
+        const isMarked = isPosMarked(pos)
 
         // Render merged big cell for virtual positions
         if (pos.isVirtual && pos.mergedCount > 1) {
@@ -298,6 +310,7 @@ export default function FlexibleZoneGrid({
                     isOccupied={isOccupied}
                     isSelected={isSelected}
                     isTargetLot={isTargetLot}
+                    isMarked={isMarked}
                     aggregatedItems={pos.lot_id && lotInfo[pos.lot_id]?.items ? lotInfo[pos.lot_id].items : []}
                     isAssignmentMode={isAssignmentMode}
                     isHighlightBlinking={isHighlightBlinking}
@@ -325,6 +338,7 @@ export default function FlexibleZoneGrid({
                 isOccupied={isOccupied}
                 isSelected={isSelected}
                 isTargetLot={isTargetLot}
+                isMarked={isMarked}
                 lotDetail={pos.lot_id ? lotInfo[pos.lot_id] : null}
                 isAssignmentMode={isAssignmentMode}
                 isHighlightBlinking={isHighlightBlinking}
@@ -483,6 +497,7 @@ export default function FlexibleZoneGrid({
                         isOccupied={isOccupied}
                         isSelected={isSelected}
                         isTargetLot={isTargetLot}
+                        isMarked={isPosMarked(mergedPos)}
                         aggregatedItems={aggregatedItems}
                         isAssignmentMode={isAssignmentMode}
                         isHighlightBlinking={isHighlightBlinking}

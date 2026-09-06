@@ -226,6 +226,23 @@ export function parsePositionCodeFallback(code: string) {
         subPosition: subPos
     };
 }
+
+/**
+ * Lấy 2 số cuối cùng của mã vị trí làm số thứ tự vị trí (subPosition).
+ * Ví dụ: K1D1A10T101 -> "01", K1D1C10T102 -> "02", A10-1-01 -> "01", A10-1 -> "01"
+ */
+export function extractSubPosition(code?: string | null): string {
+    if (!code) return '';
+    const trimmed = code.trim();
+    // Tìm cụm số ở cuối mã (hoặc trước bất kỳ ký tự không phải số nào ở đuôi)
+    const match = trimmed.match(/(\d+)[^\d]*$/);
+    if (match) {
+        const digits = match[1];
+        return digits.length >= 2 ? digits.slice(-2) : digits.padStart(2, '0');
+    }
+    return '';
+}
+
 /**
  * Sorts positions by Bin-priority (Tier -> Bin -> Row).
  * Pattern: K1S1A01T101

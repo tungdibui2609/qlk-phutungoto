@@ -11,11 +11,13 @@ interface UseMapFiltersProps {
     lotInfo: Record<string, any>
     isFifoEnabled?: boolean
     pendingExportPosIds?: Set<string>
+    onlyShowMarked?: boolean
+    markedPositionIds?: Set<string>
 }
 
 export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production' | 'stt' | 'box_count'
 
-export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds }: UseMapFiltersProps) {
+export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds, onlyShowMarked, markedPositionIds }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
@@ -47,6 +49,16 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                     it.primary_category_id === selectedCategoryId ||
                     (it.category_ids && it.category_ids.includes(selectedCategoryId))
                 )
+            })
+        }
+
+        // Filter by marked positions
+        if (onlyShowMarked) {
+            result = result.filter(p => {
+                if (!markedPositionIds || markedPositionIds.size === 0) return false
+                if (markedPositionIds.has(p.id)) return true
+                const realIds = (p as any).realIds
+                return realIds && Array.isArray(realIds) && realIds.some((id: string) => markedPositionIds.has(id))
             })
         }
 
@@ -235,9 +247,34 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         }
 
         return result
-    }, [positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds])
+    }, [positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, onlyShowMarked, markedPositionIds])
 
     const filteredZones = useMemo(() => {
+        // If onlyShowMarked is active, filter zones containing marked positions
+        if (onlyShowMarked) {
+            if (!markedPositionIds || markedPositionIds.size === 0) return []
+            const markedZoneIds = new Set<string>()
+            positions.forEach(p => {
+                const isMarked = markedPositionIds.has(p.id) || ((p as any).realIds && (p as any).realIds.some((id: string) => markedPositionIds.has(id)))
+                if (isMarked && p.zone_id) {
+                    markedZoneIds.add(p.zone_id)
+                }
+            })
+
+            const idsWithAncestors = new Set<string>(markedZoneIds)
+            const findAncestors = (childId: string) => {
+                const zone = zones.find(z => z.id === childId)
+                if (zone && zone.parent_id) {
+                    if (!idsWithAncestors.has(zone.parent_id)) {
+                        idsWithAncestors.add(zone.parent_id)
+                        findAncestors(zone.parent_id)
+                    }
+                }
+            }
+            markedZoneIds.forEach(id => findAncestors(id))
+            return zones.filter(z => idsWithAncestors.has(z.id))
+        }
+
         if (!selectedZoneId) return zones
 
         const { virtualToRealMap } = groupWarehouseData(zones, positions)
@@ -282,7 +319,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         allowedIds.forEach(id => findAncestors(id))
 
         return zones.filter(z => idsWithAncestors.has(z.id))
-    }, [zones, positions, selectedZoneId])
+    }, [zones, positions, selectedZoneId, onlyShowMarked, markedPositionIds])
 
     return {
         selectedZoneId, setSelectedZoneId,

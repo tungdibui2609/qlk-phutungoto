@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy, Bookmark } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 import { logActivity } from '@/lib/audit'
@@ -18,9 +18,11 @@ interface UsePositionActionManagerProps {
     onRefreshMap: () => void
     onRefreshLot: (lotId: string) => void
     onCloneLot?: (lotId: string) => void
+    onToggleMark?: (pos: any) => void
+    isMarked?: (posId: string) => boolean
 }
 
-export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot, onCloneLot }: UsePositionActionManagerProps) {
+export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot, onCloneLot, onToggleMark, isMarked }: UsePositionActionManagerProps) {
     const router = useRouter()
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
@@ -296,9 +298,30 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                 <>
                     <div className="fixed inset-0 z-40" onClick={() => setContextMenu(null)} />
                     <div
-                        className="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-1 min-w-[150px] animate-in fade-in zoom-in-95 duration-100"
+                        className="fixed z-50 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 p-1 min-w-[170px] animate-in fade-in zoom-in-95 duration-100"
                         style={{ top: contextMenu.y, left: contextMenu.x }}
                     >
+                        {onToggleMark && (
+                            <>
+                                <button
+                                    onClick={() => {
+                                        const p = contextMenu.position
+                                        setContextMenu(null)
+                                        onToggleMark(p)
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
+                                >
+                                    <Bookmark
+                                        size={16}
+                                        className={isMarked?.(contextMenu.position?.id) ? "text-amber-500 fill-amber-500" : "text-amber-500"}
+                                    />
+                                    <span className={isMarked?.(contextMenu.position?.id) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
+                                        {isMarked?.(contextMenu.position?.id) ? "Bỏ đánh dấu" : "Đánh dấu kiểm tra"}
+                                    </span>
+                                </button>
+                                <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+                            </>
+                        )}
                         {contextMenu.position?.lot_id ? (
                             <>
                                 <button

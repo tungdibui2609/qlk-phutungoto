@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useMemo } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers, Maximize2, Plus, Trash2, RefreshCw, Filter, LayoutGrid } from 'lucide-react'
+import { Loader2, Printer, Download, Search, Check, ChevronDown, ChevronRight, MapPin, X, Settings as SettingsIcon, Layout, Monitor, Layers, Maximize2, Plus, Trash2, RefreshCw, Filter, LayoutGrid, Bookmark } from 'lucide-react'
 import { toJpeg } from 'html-to-image'
 import { useCaptureReceipt } from '@/hooks/useCaptureReceipt'
 import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -11,8 +11,8 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
-import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
-import { exportWarehouseToExcel, exportWarehouseGridToExcel, exportWarehouseLobbyDetailToExcel, ExportWarehouseLobbyData } from '@/lib/warehouseExcelExport'
+import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority, extractSubPosition } from '@/lib/warehouseUtils'
+import { exportWarehouseToExcel, exportWarehouseGridToExcel, exportWarehouseLobbyDetailToExcel, ExportWarehouseLobbyData, exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 
@@ -83,6 +83,7 @@ export default function WarehouseMapPrintPage() {
     const isSnapshot = searchParams.get('snapshot') === '1'
     const displayInternalCode = searchParams.get('internalCode') === 'true'
     const orientationParam = searchParams.get('orientation') as 'portrait' | 'landscape' | null
+    const onlyMarkedParam = searchParams.get('onlyMarked') === 'true'
 
     // --- State: UI & Controls ---
     const [loading, setLoading] = useState(true)
@@ -99,7 +100,33 @@ export default function WarehouseMapPrintPage() {
     const [isGrouped, setIsGrouped] = useState(true)
     const [isEmptyMap, setIsEmptyMap] = useState(false)
     const [onlyShowChecked, setOnlyShowChecked] = useState(false)
+    const [onlyMarked, setOnlyMarked] = useState(onlyMarkedParam)
+    const [markedPositionIds, setMarkedPositionIds] = useState<Set<string>>(new Set())
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
+
+    // Load marked position IDs from localStorage
+    useEffect(() => {
+        if (typeof window === 'undefined' || !systemType) return
+        try {
+            const storageKey = `warehouse_marked_positions_${systemType}`
+            const raw = localStorage.getItem(storageKey)
+            if (raw) {
+                const parsed = JSON.parse(raw)
+                if (Array.isArray(parsed)) {
+                    setMarkedPositionIds(new Set(parsed))
+                }
+            }
+        } catch (err) {
+            console.error('Error loading marked positions in print page:', err)
+        }
+    }, [systemType])
+
+    useEffect(() => {
+        if (onlyMarkedParam) {
+            setOnlyMarked(true)
+            setEditReportTitle('SƠ ĐỒ VỊ TRÍ ĐÁNH DẤU KIỂM TRA')
+        }
+    }, [onlyMarkedParam])
 
     useEffect(() => {
         if (!systemType) return
@@ -369,6 +396,11 @@ export default function WarehouseMapPrintPage() {
             })
         roots.forEach(walk)
 
+        // --- Marked Positions Filter ---
+        if (onlyMarked) {
+            result = result.filter(p => markedPositionIds.has(p.id))
+        }
+
         return [...result].sort((a, b) => {
             const zoneIdxA = a.zone_id ? (zoneOrderMap.get(a.zone_id) ?? 99999) : 99999
             const zoneIdxB = b.zone_id ? (zoneOrderMap.get(b.zone_id) ?? 99999) : 99999
@@ -376,12 +408,30 @@ export default function WarehouseMapPrintPage() {
             const sorted = sortPositionsByBinPriority([a, b])
             return sorted[0] === a ? -1 : 1
         })
-    }, [displayPositions, descendantIdSet, occupancyFilter, selectedCategoryId, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows])
+    }, [displayPositions, descendantIdSet, occupancyFilter, selectedCategoryId, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows, onlyMarked, markedPositionIds])
 
     const filteredZones = useMemo(() => {
         let result = displayZones
         if (descendantIdSet) {
             result = result.filter(z => descendantIdSet.has(z.id))
+        }
+
+        // --- Marked Positions Filter (Preserve Ancestor Zones) ---
+        if (onlyMarked) {
+            const activeZoneIds = new Set<string>()
+            filteredPositions.forEach(p => {
+                if (p.zone_id) activeZoneIds.add(p.zone_id)
+            })
+            const ancestorZoneIds = new Set<string>()
+            activeZoneIds.forEach(zid => {
+                let curr: Zone | undefined = displayZones.find(z => z.id === zid)
+                while (curr) {
+                    ancestorZoneIds.add(curr.id)
+                    const pId: string | null | undefined = curr.parent_id
+                    curr = pId ? displayZones.find(z => z.id === pId) : undefined
+                }
+            })
+            result = result.filter(z => ancestorZoneIds.has(z.id))
         }
 
         // --- Hierarchical Filtering for Zones (Multi-row Support) ---
@@ -453,7 +503,7 @@ export default function WarehouseMapPrintPage() {
         }
 
         return result
-    }, [displayZones, descendantIdSet, displayInternalCode, filterRows, onlyShowChecked, checkedZoneIds])
+    }, [displayZones, descendantIdSet, displayInternalCode, filterRows, onlyShowChecked, checkedZoneIds, onlyMarked, filteredPositions])
 
     // --- Handlers: Data Fetching ---
     async function fetchData() {
@@ -681,10 +731,11 @@ export default function WarehouseMapPrintPage() {
             const row = path[1]?.name || parsed?.row || '-'
             const bin = path[2]?.name || parsed?.bin || '-'
             const level = path[3]?.name || (path.length > 4 ? path[path.length - 1].name : (parsed?.level || '-'))
+            const subPosition = extractSubPosition(p.code) || parsed?.subPosition || ''
 
-            if (!lot) return [{ code: p.code, warehouse, row, bin, level, subPosition: parsed?.subPosition, notes: '', inboundDate: null }]
+            if (!lot) return [{ code: p.code, warehouse, row, bin, level, subPosition, notes: '', inboundDate: null }]
             return lot.items.map((item: any) => ({
-                code: p.code, warehouse, row, bin, level, subPosition: parsed?.subPosition,
+                code: p.code, warehouse, row, bin, level, subPosition,
                 inboundDate: lot.inbound_date || null,
                 lotCode: lot.code, productName: displayInternalCode && item.internal_name ? item.internal_name : item.product_name,
                 sku: item.sku || '',
@@ -818,6 +869,17 @@ export default function WarehouseMapPrintPage() {
             return { name: lobby.name, parentName: filteredZones.find(z => z.id === lobby.parent_id)?.name, columns, positions: excelPositions };
         });
         await exportWarehouseLobbyDetailToExcel({ systemName: systemType || 'KHO', lobbies: lobbyData });
+    }
+
+    const handleExportExcelMarked = async () => {
+        const targetPositions = positions.filter(p => markedPositionIds.has(p.id))
+        if (targetPositions.length === 0) return alert("Không tìm thấy vị trí đánh dấu nào để xuất Excel.")
+        await exportMarkedPositionsToExcel({
+            systemName: systemType || 'KHO',
+            positions: targetPositions,
+            lotInfo,
+            zones
+        })
     }
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
@@ -1040,6 +1102,33 @@ export default function WarehouseMapPrintPage() {
                 </div>
 
                 <div className="flex bg-white rounded-lg shadow-xl border border-gray-200 p-1 gap-1 flex-wrap">
+                    {markedPositionIds.size > 0 && (
+                        <button
+                            onClick={() => {
+                                const next = !onlyMarked
+                                setOnlyMarked(next)
+                                if (next) {
+                                    setEditReportTitle('SƠ ĐỒ VỊ TRÍ ĐÁNH DẤU KIỂM TRA')
+                                } else {
+                                    setEditReportTitle('SƠ ĐỒ BỐ TRÍ KHO')
+                                }
+                            }}
+                            className={`px-3 py-2 rounded-md text-sm font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm ${
+                                onlyMarked
+                                    ? 'bg-amber-500 text-white hover:bg-amber-600 ring-2 ring-amber-300'
+                                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-300'
+                            }`}
+                            title={onlyMarked ? "Hiện toàn bộ sơ đồ" : "Chỉ in các vị trí đã đánh dấu"}
+                        >
+                            <Bookmark size={15} className={onlyMarked ? "fill-white" : "fill-amber-500 text-amber-600"} />
+                            {onlyMarked ? `Đang lọc Đánh dấu (${markedPositionIds.size})` : `Chỉ vị trí Đánh dấu (${markedPositionIds.size})`}
+                        </button>
+                    )}
+                    {markedPositionIds.size > 0 && (
+                        <button onClick={handleExportExcelMarked} className="px-4 py-2 bg-amber-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-amber-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}>
+                            <FileSpreadsheet size={16} /> Excel (Đánh dấu)
+                        </button>
+                    )}
                     <button onClick={handleDownload} className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-green-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}>{isCapturing ? <Loader2 className="animate-spin" size={16} /> : <Download size={16} />} Tải ảnh phiếu</button>
                     <button onClick={handleExportExcelTable} className="px-4 py-2 bg-indigo-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}><FileSpreadsheet size={16} /> Excel (Bảng)</button>
                     <button onClick={handleExportExcelGrid} className="px-4 py-2 bg-emerald-600 text-white rounded-md text-sm font-bold flex items-center gap-2 hover:bg-emerald-700 transition-colors cursor-pointer shadow-sm" disabled={isCapturing}><Layout size={16} /> Excel (Lưới)</button>
@@ -1246,6 +1335,12 @@ export default function WarehouseMapPrintPage() {
                         {searchTerm && (
                             <p className="text-sm mt-1">Lọc theo: "{searchTerm}"</p>
                         )}
+                        {onlyMarked && (
+                            <p className="font-semibold text-amber-700 mt-1 flex items-center justify-center gap-1">
+                                <Bookmark size={14} className="fill-amber-500" />
+                                Danh sách {filteredPositions.length} vị trí được đánh dấu kiểm tra
+                            </p>
+                        )}
                     </div>
 
                     {/* The Map Grid OR Data Table View */}
@@ -1270,12 +1365,13 @@ export default function WarehouseMapPrintPage() {
                                     onPrintZone={() => { }}
                                     isGrouped={isGrouped}
                                     mergedZones={mergedZones}
-                                     onToggleMergeZone={handleToggleMergeZone}
+                                    onToggleMergeZone={handleToggleMergeZone}
                                     isCapturing={isCapturing}
                                     isPrintPage={true}
                                     isEmptyMode={isEmptyMap}
                                     checkedZoneIds={checkedZoneIds}
                                     onToggleCheckedZone={handleToggleCheckedZone}
+                                    markedPositionIds={markedPositionIds}
                                 />
                             </div>
                         ) : (
