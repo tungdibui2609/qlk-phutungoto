@@ -3,7 +3,7 @@
 import React, { useEffect, useState, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Hash, ArrowLeft, CheckCircle2, AlertTriangle, X, RotateCcw, Lock, Unlock, Search, Copy } from 'lucide-react'
+import { Printer, Loader2, Hash, ArrowLeft, CheckCircle2, AlertTriangle, X, RotateCcw, Lock, Unlock, Search, Copy, Shuffle, Sparkles, Plus } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 
 export default function CustomLabelPrintPage() {
@@ -155,7 +155,44 @@ function CustomLabelContent() {
         label_count: 1,
         start_index: 1,
         lot_number_custom: '',
+        is_random_index: false,
+        random_from_index: 1,
+        random_to_index: 99,
+        random_count: 5,
     })
+
+    const [randomIndices, setRandomIndices] = useState<number[]>([])
+    const [selectedPreviewIndex, setSelectedPreviewIndex] = useState<number | null>(null)
+    const [manualAddIndex, setManualAddIndex] = useState('')
+
+    const generateRandomIndices = (fromVal: number, toVal: number, countVal: number) => {
+        const fromIdx = Math.max(1, Number(fromVal) || 1)
+        const toIdx = Math.max(fromIdx, Number(toVal) || 99)
+        const maxAvailable = toIdx - fromIdx + 1
+        const countNeeded = Math.min(maxAvailable, Math.max(1, Number(countVal) || 5))
+
+        const pool: number[] = []
+        for (let i = fromIdx; i <= toIdx; i++) {
+            pool.push(i)
+        }
+
+        const shuffled = [...pool]
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1))
+            ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+        }
+
+        const result = shuffled.slice(0, countNeeded).sort((a, b) => a - b)
+        setRandomIndices(result)
+        return result
+    }
+
+    // Tự động sinh danh sách kiện số ngẫu nhiên khi chuyển chế độ hoặc thay đổi dải/số lượng
+    useEffect(() => {
+        if (config.is_random_index) {
+            generateRandomIndices(config.random_from_index, config.random_to_index, config.random_count)
+        }
+    }, [config.is_random_index, config.random_from_index, config.random_to_index, config.random_count])
 
     const [showLoadModal, setShowLoadModal] = useState(false)
     const [oldLots, setOldLots] = useState<any[]>([])
@@ -228,6 +265,10 @@ function CustomLabelContent() {
             expiry_date: oldConfig.expiry_date || eDate,
             barcode: oldConfig.barcode ?? prev.barcode,
             lot_number_custom: oldConfig.lot_number_custom ?? prev.lot_number_custom,
+            is_random_index: oldConfig.is_random_index ?? prev.is_random_index,
+            random_from_index: oldConfig.random_from_index ?? prev.random_from_index,
+            random_to_index: oldConfig.random_to_index ?? prev.random_to_index,
+            random_count: oldConfig.random_count ?? prev.random_count,
         }))
         
         setShowLoadModal(false)
@@ -288,6 +329,10 @@ function CustomLabelContent() {
                     lot_number_custom: merged.lot_number_custom || '',
 
                     start_index: (raw.last_printed_index || 0) + 1,
+                    is_random_index: merged.is_random_index ?? false,
+                    random_from_index: merged.random_from_index || 1,
+                    random_to_index: merged.random_to_index || Math.max(99, ((raw.last_printed_index || 0) + 50)),
+                    random_count: merged.random_count || 5,
                 })
             }
             setLoading(false)
@@ -326,23 +371,36 @@ function CustomLabelContent() {
     const handlePrint = async () => {
         if (!data || !lotId) return
         setIsSaving(true)
-        const count = Number(config.label_count) || 1
+        const isRandom = config.is_random_index
+        const currentRandomIndices = randomIndices.length > 0
+            ? randomIndices
+            : generateRandomIndices(config.random_from_index, config.random_to_index, config.random_count)
+        const count = isRandom ? currentRandomIndices.length : (Number(config.label_count) || 1)
         const startIdx = Number(config.start_index) || 1
         try {
-            const updates = {
+            const updates: any = {
                 total_printed_labels: (Number(data.total_printed_labels) || 0) + count,
-                last_printed_index: startIdx + count - 1,
                 last_printed_at: new Date().toISOString(),
                 print_config: config, // Đồng thời lưu cấu hình tem khi in
+            }
+            if (!isRandom) {
+                updates.last_printed_index = startIdx + count - 1
+            } else {
+                const maxRand = currentRandomIndices.length > 0 ? Math.max(...currentRandomIndices) : 0
+                if (maxRand > (Number(data.last_printed_index) || 0)) {
+                    updates.last_printed_index = maxRand
+                }
             }
             await (supabase.from('production_lots') as any).update(updates).eq('id', lotId)
             setData((p: any) => ({ ...p, ...updates }))
             localStorage.setItem(`cpl_${lotId}`, JSON.stringify(config))
             setTimeout(() => {
                 window.print()
-                setConfig(p => ({ ...p, start_index: updates.last_printed_index + 1 }))
+                if (!isRandom) {
+                    setConfig(p => ({ ...p, start_index: (updates.last_printed_index || startIdx) + 1 }))
+                }
                 setIsSaving(false)
-                showToast(`Đã in ${count} tem khách hàng và lưu cấu hình!`)
+                showToast(`Đã in ${count} tem khách hàng (${isRandom ? 'kiện số ngẫu nhiên' : 'tuần tự'}) và lưu cấu hình!`)
             }, 300)
         } catch (e: any) {
             showToast('Lỗi khi lưu: ' + e.message, 'error')
@@ -371,9 +429,21 @@ function CustomLabelContent() {
         </div>
     )
 
-    const labels = Array.from({ length: Number(config.label_count) || 1 }, (_, i) => ({
-        index: (Number(config.start_index) || 1) + i
-    }))
+    const currentActiveIndices = config.is_random_index
+        ? (randomIndices.length > 0 ? randomIndices : generateRandomIndices(config.random_from_index, config.random_to_index, config.random_count))
+        : []
+
+    const labels = config.is_random_index
+        ? currentActiveIndices.map(idx => ({ index: idx }))
+        : Array.from({ length: Number(config.label_count) || 1 }, (_, i) => ({
+            index: (Number(config.start_index) || 1) + i
+        }))
+
+    const previewIndex = config.is_random_index
+        ? (selectedPreviewIndex !== null && currentActiveIndices.includes(selectedPreviewIndex)
+            ? selectedPreviewIndex
+            : (currentActiveIndices[0] || config.random_from_index || 1))
+        : (Number(config.start_index) || 1)
 
     return (
         <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-rose-50 print:bg-white print:p-0">
@@ -418,7 +488,7 @@ function CustomLabelContent() {
                         className="flex items-center gap-2 bg-gradient-to-r from-orange-500 to-rose-500 hover:from-orange-600 hover:to-rose-600 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95 shadow-lg shadow-orange-500/20 disabled:opacity-50"
                     >
                         {isSaving ? <Loader2 className="animate-spin" size={16} /> : <Printer size={16} />}
-                        Xác nhận & In
+                        Xác nhận & In ({config.is_random_index ? `${labels.length} kiện ngẫu nhiên` : `${config.label_count} tem`})
                     </button>
                 </div>
             </div>
@@ -592,7 +662,7 @@ function CustomLabelContent() {
                         </div>
 
                         {/* Barcode text */}
-                        <div className="lg:col-span-2 space-y-1">
+                        <div className="lg:col-span-3 space-y-1">
                             <div className="flex items-center justify-between">
                                 <label className="text-[9px] font-black uppercase text-zinc-400">Tham chiếu</label>
                                 <button
@@ -619,22 +689,208 @@ function CustomLabelContent() {
                                 className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200 disabled:opacity-60 disabled:cursor-not-allowed"
                                 placeholder="G010801213TC06P023CTF" />
                         </div>
+                    </div>
 
-                        {/* Số lượng */}
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-black uppercase text-orange-500">Số lượng tem</label>
-                            <input type="number" min={1} value={config.label_count}
-                                onChange={e => setConfig(p => ({ ...p, label_count: parseInt(e.target.value) || 1 }))}
-                                className="w-full px-3 py-2.5 rounded-xl bg-orange-50 border border-orange-200 text-sm font-black text-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200" />
+                    {/* ── Chế độ Kiện số (Index) & In ấn ── */}
+                    <div className="mt-8 pt-6 border-t border-zinc-200">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-5">
+                            <div>
+                                <h3 className="text-sm font-black uppercase tracking-wider text-zinc-800 flex items-center gap-2">
+                                    <Sparkles size={16} className="text-orange-500" />
+                                    <span>Cấu hình Kiện số (Index) & Chế độ in</span>
+                                </h3>
+                                <p className="text-xs text-zinc-400 font-medium mt-0.5">Chọn in kiện số liên tục (tuần tự) hoặc in ngẫu nhiên các kiện số trong dải</p>
+                            </div>
+                            
+                            {/* Switcher Tab */}
+                            <div className="bg-zinc-100 p-1.5 rounded-2xl border border-zinc-200 flex items-center gap-1.5 self-start sm:self-auto">
+                                <button
+                                    type="button"
+                                    onClick={() => setConfig(p => ({ ...p, is_random_index: false }))}
+                                    className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-tight transition-all flex items-center gap-2 ${
+                                        !config.is_random_index
+                                            ? 'bg-zinc-900 text-white shadow-md'
+                                            : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60'
+                                    }`}
+                                >
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                                    In Tuần Tự
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setConfig(p => ({ ...p, is_random_index: true }))
+                                        generateRandomIndices(config.random_from_index, config.random_to_index, config.random_count)
+                                    }}
+                                    className={`px-4 py-2 rounded-xl font-black text-xs uppercase tracking-tight transition-all flex items-center gap-2 ${
+                                        config.is_random_index
+                                            ? 'bg-gradient-to-r from-orange-500 to-rose-500 text-white shadow-md shadow-orange-500/20'
+                                            : 'text-zinc-500 hover:text-zinc-900 hover:bg-zinc-200/60'
+                                    }`}
+                                >
+                                    <Shuffle size={14} />
+                                    <span>In Random Kiện Số</span>
+                                </button>
+                            </div>
                         </div>
 
-                        {/* STT bắt đầu */}
-                        <div className="space-y-1">
-                            <label className="text-[9px] font-black uppercase text-zinc-400">STT bắt đầu</label>
-                            <input type="number" min={1} value={config.start_index}
-                                onChange={e => setConfig(p => ({ ...p, start_index: parseInt(e.target.value) || 1 }))}
-                                className="w-full px-3 py-2.5 rounded-xl bg-zinc-50 border border-zinc-200 text-sm font-bold focus:outline-none focus:ring-2 focus:ring-orange-200" />
-                        </div>
+                        {!config.is_random_index ? (
+                            /* Chế độ In Tuần Tự */
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-zinc-50/70 p-4 rounded-2xl border border-zinc-200/80">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">STT / Kiện số bắt đầu</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={config.start_index}
+                                        onChange={e => setConfig(p => ({ ...p, start_index: parseInt(e.target.value) || 1 }))}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-white border border-zinc-200 text-sm font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                    />
+                                    <p className="text-[10px] text-zinc-400">Kiện số sẽ in: từ #{config.start_index.toString().padStart(2, '0')} đến #{(Number(config.start_index) + Number(config.label_count) - 1).toString().padStart(2, '0')}</p>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] font-black uppercase tracking-widest text-orange-600">Số lượng tem cần in</label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        value={config.label_count}
+                                        onChange={e => setConfig(p => ({ ...p, label_count: parseInt(e.target.value) || 1 }))}
+                                        className="w-full px-4 py-2.5 rounded-xl bg-orange-50 border border-orange-200 text-sm font-black text-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                    />
+                                    <p className="text-[10px] text-orange-600 font-medium">Tổng cộng in {config.label_count} con tem theo thứ tự tăng dần</p>
+                                </div>
+                            </div>
+                        ) : (
+                            /* Chế độ In Random Kiện Số Ngẫu Nhiên */
+                            <div className="space-y-4 bg-orange-50/40 p-5 rounded-2xl border border-orange-200 animate-in fade-in duration-300">
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-orange-700">Từ Kiện số (Dải bắt đầu)</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={config.random_from_index}
+                                            onChange={e => setConfig(p => ({ ...p, random_from_index: parseInt(e.target.value) || 1 }))}
+                                            className="w-full px-4 py-2.5 rounded-xl bg-white border border-orange-200 text-sm font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                            placeholder="1"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-orange-700">Đến Kiện số (Dải kết thúc)</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={config.random_to_index}
+                                            onChange={e => setConfig(p => ({ ...p, random_to_index: parseInt(e.target.value) || 99 }))}
+                                            className="w-full px-4 py-2.5 rounded-xl bg-white border border-orange-200 text-sm font-bold text-zinc-800 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                            placeholder="99"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-orange-700">Số lượng kiện cần in</label>
+                                        <input
+                                            type="number"
+                                            min={1}
+                                            value={config.random_count}
+                                            onChange={e => setConfig(p => ({ ...p, random_count: parseInt(e.target.value) || 1 }))}
+                                            className="w-full px-4 py-2.5 rounded-xl bg-white border border-orange-200 text-sm font-black text-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200"
+                                            placeholder="5"
+                                        />
+                                    </div>
+                                </div>
+
+                                {/* Danh sách các số kiện ngẫu nhiên đã random */}
+                                <div className="flex flex-col gap-3 bg-white p-4 rounded-xl border border-orange-200/80 shadow-sm">
+                                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                                        <div className="flex items-center gap-1.5 text-xs font-black text-orange-950">
+                                            <Sparkles size={14} className="text-orange-500" />
+                                            <span>Danh sách kiện số ngẫu nhiên ({currentActiveIndices.length} tem):</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => generateRandomIndices(config.random_from_index, config.random_to_index, config.random_count)}
+                                            className="text-xs font-black text-orange-700 hover:text-orange-900 bg-orange-100/70 hover:bg-orange-100 px-4 py-2 rounded-xl border border-orange-300 shadow-xs flex items-center gap-1.5 transition-all flex-shrink-0 active:scale-95"
+                                        >
+                                            <Shuffle size={13} className="text-orange-600" />
+                                            <span>🎲 Quay Số Random Lại</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Badges danh sách kiện số */}
+                                    <div className="flex flex-wrap gap-1.5 items-center pt-1">
+                                        {currentActiveIndices.length === 0 ? (
+                                            <span className="text-xs text-zinc-400 italic">Chưa có kiện số nào được tạo</span>
+                                        ) : (
+                                            currentActiveIndices.map((sttNum) => {
+                                                const isSelected = previewIndex === sttNum
+                                                return (
+                                                    <button
+                                                        key={sttNum}
+                                                        type="button"
+                                                        onClick={() => setSelectedPreviewIndex(sttNum)}
+                                                        title="Bấm vào để xem trước tem này"
+                                                        className={`group px-2.5 py-1 rounded-lg text-xs font-black transition-all flex items-center gap-1.5 border ${
+                                                            isSelected
+                                                                ? 'bg-orange-500 text-white border-orange-600 shadow-sm'
+                                                                : 'bg-orange-50 text-orange-900 border-orange-200 hover:bg-orange-100'
+                                                        }`}
+                                                    >
+                                                        <span>#{sttNum.toString().padStart(2, '0')}</span>
+                                                        <span
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                setRandomIndices(prev => prev.filter(n => n !== sttNum))
+                                                            }}
+                                                            title="Xóa kiện số này"
+                                                            className={`text-[10px] p-0.5 rounded-md hover:bg-black/10 ${isSelected ? 'text-white' : 'text-orange-600'}`}
+                                                        >
+                                                            ✕
+                                                        </span>
+                                                    </button>
+                                                )
+                                            })
+                                        )}
+
+                                        {/* Thêm nhanh 1 kiện số thủ công */}
+                                        <div className="flex items-center gap-1 ml-2">
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                placeholder="Thêm số..."
+                                                value={manualAddIndex}
+                                                onChange={e => setManualAddIndex(e.target.value)}
+                                                onKeyDown={e => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault()
+                                                        const val = parseInt(manualAddIndex)
+                                                        if (!isNaN(val) && val > 0 && !randomIndices.includes(val)) {
+                                                            setRandomIndices(prev => [...prev, val].sort((a, b) => a - b))
+                                                            setManualAddIndex('')
+                                                        }
+                                                    }
+                                                }}
+                                                className="w-20 px-2 py-1 text-xs font-bold rounded-lg border border-zinc-200 bg-zinc-50 focus:outline-none focus:ring-1 focus:ring-orange-200"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const val = parseInt(manualAddIndex)
+                                                    if (!isNaN(val) && val > 0 && !randomIndices.includes(val)) {
+                                                        setRandomIndices(prev => [...prev, val].sort((a, b) => a - b))
+                                                        setManualAddIndex('')
+                                                    }
+                                                }}
+                                                className="p-1 rounded-lg bg-orange-100 hover:bg-orange-200 text-orange-700 text-xs font-bold"
+                                                title="Thêm kiện số này vào danh sách"
+                                            >
+                                                <Plus size={14} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <p className="text-[10px] text-zinc-400 italic">Mẹo: Bấm vào từng kiện số ở trên để xem trước tem mẫu. Bấm dấu ✕ để loại bỏ kiện số không muốn in.</p>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Preview Julian & LOT */}
@@ -664,9 +920,18 @@ function CustomLabelContent() {
 
                 {/* Preview tem */}
                 <div className="mt-8">
-                    <h2 className="text-sm font-black uppercase tracking-widest text-zinc-400 mb-4">Xem trước tem (1 tem mẫu)</h2>
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+                        <h2 className="text-sm font-black uppercase tracking-widest text-zinc-500">
+                            Xem trước tem mẫu (Kiện số #{previewIndex.toString().padStart(2, '0')})
+                        </h2>
+                        {config.is_random_index && (
+                            <span className="text-xs font-bold text-orange-700 bg-orange-100/70 border border-orange-300 px-3 py-1 rounded-xl">
+                                Đang hiển thị tem cho Kiện số #{previewIndex.toString().padStart(2, '0')} (Tổng in {labels.length} tem ngẫu nhiên)
+                            </span>
+                        )}
+                    </div>
                     <div className="inline-block">
-                        <CustomLabel data={data} config={config} index={config.start_index} />
+                        <CustomLabel data={data} config={config} index={previewIndex} />
                     </div>
                 </div>
             </div>
