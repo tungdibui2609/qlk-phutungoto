@@ -1207,6 +1207,7 @@ export async function exportMarkedPositionsToExcel({ systemName, positions, lotI
     zones.forEach(z => zoneMap.set(z.id, z));
 
     positions.forEach(pos => {
+        if ((pos as any).isLocked || (pos as any).is_locked) return;
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null;
 
         // Extract hierarchy info

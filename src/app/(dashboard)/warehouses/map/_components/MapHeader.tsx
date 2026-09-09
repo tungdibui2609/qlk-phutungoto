@@ -6,6 +6,8 @@ import Protected from '@/components/auth/Protected'
 interface MapHeaderProps {
     totalPositions: number
     totalZones: number
+    officialPositionsCount?: number
+    hallPositionsCount?: number
     systemType: string | null
     selectedZoneId: string | null
     selectedCategoryId?: string | null
@@ -21,6 +23,8 @@ interface MapHeaderProps {
 export function MapHeader({
     totalPositions,
     totalZones,
+    officialPositionsCount,
+    hallPositionsCount,
     systemType,
     selectedZoneId,
     selectedCategoryId,
@@ -49,8 +53,17 @@ export function MapHeader({
                     <Map className="text-emerald-600" size={isMobile ? 24 : 28} />
                     Sơ đồ Kho
                 </h1>
-                <p className="text-gray-500 dark:text-gray-400 mt-1 text-xs sm:text-sm">
-                    {totalPositions} vị trí | {totalZones} zone
+                <p className="text-gray-500 dark:text-gray-400 mt-1 text-xs sm:text-sm flex flex-wrap items-center gap-x-2">
+                    <span>
+                        <span className="font-semibold text-gray-800 dark:text-gray-200">{totalPositions}</span> vị trí
+                        {hallPositionsCount != null && hallPositionsCount > 0 && (
+                            <span className="ml-1 text-xs text-gray-500 dark:text-gray-400">
+                                (Lô kệ: <span className="font-medium text-emerald-600 dark:text-emerald-400">{officialPositionsCount}</span> • Sảnh: <span className="font-medium text-amber-600 dark:text-amber-400">{hallPositionsCount}</span>)
+                            </span>
+                        )}
+                    </span>
+                    <span>|</span>
+                    <span>{totalZones} zone</span>
                 </p>
             </div>
 

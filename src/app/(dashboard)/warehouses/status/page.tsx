@@ -34,6 +34,7 @@ function WarehouseStatusContent() {
     // Filter state
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
+    const [zoneTypeFilter, setZoneTypeFilter] = useState<'all' | 'rack' | 'hall'>('all')
 
     // Design mode state
     const [isDesignMode, setIsDesignMode] = useState(false)
@@ -297,7 +298,35 @@ function WarehouseStatusContent() {
         }
     }
 
-    const filteredPositions = useMemo(() => {
+    // Helper kiểm tra một zone (hoặc tổ tiên) có phải là Sảnh hay không
+    const isHallZoneId = useMemo(() => {
+        const zoneMap = new Map<string, Zone>()
+        zones.forEach(z => zoneMap.set(z.id, z))
+
+        return (zoneId?: string | null): boolean => {
+            let currId = zoneId
+            const seen = new Set<string>()
+            while (currId && !seen.has(currId)) {
+                seen.add(currId)
+                const z = zoneMap.get(currId)
+                if (!z) break
+                if ((z as any).is_hall) return true
+                const nameUpper = (z.name || '').trim().toUpperCase()
+                if (
+                    nameUpper.startsWith('SẢNH') ||
+                    nameUpper.startsWith('SÀNH') ||
+                    nameUpper.startsWith('SANH') ||
+                    nameUpper.includes('SẢNH') ||
+                    nameUpper.includes('SÀNH')
+                ) return true
+                currId = z.parent_id
+            }
+            return false
+        }
+    }, [zones])
+
+    // Tập hợp vị trí sau khi tìm kiếm và chọn kho (chưa áp dụng lọc loại Lô kệ/Sảnh)
+    const filteredPositionsBase = useMemo(() => {
         let result = positions
         if (searchTerm) {
             const normalize = (str?: string | null) => {
@@ -337,17 +366,64 @@ function WarehouseStatusContent() {
         return result
     }, [positions, selectedZoneId, searchTerm, zones])
 
-    const filteredZones = useMemo(() => {
-        if (!selectedZoneId) return zones
-        const collect = (pId: string): string[] => {
-            const children = zones.filter(z => z.parent_id === pId)
-            let ids = children.map(c => c.id)
-            children.forEach(c => ids = [...ids, ...collect(c.id)])
-            return ids
+    // Thống kê phân loại vị trí Lô kệ vs Sảnh
+    const { officialPositionsCount, hallPositionsCount, officialOccupiedCount, hallOccupiedCount } = useMemo(() => {
+        let hallCount = 0
+        let officialCount = 0
+        let hallOcc = 0
+        let officialOcc = 0
+
+        filteredPositionsBase.forEach(p => {
+            const isOcc = !!p.lot_id
+            if (isHallZoneId(p.zone_id)) {
+                hallCount++
+                if (isOcc) hallOcc++
+            } else {
+                officialCount++
+                if (isOcc) officialOcc++
+            }
+        })
+
+        return {
+            officialPositionsCount: officialCount,
+            hallPositionsCount: hallCount,
+            officialOccupiedCount: officialOcc,
+            hallOccupiedCount: hallOcc
         }
-        const allowed = new Set([selectedZoneId, ...collect(selectedZoneId)])
-        return zones.filter(z => allowed.has(z.id))
-    }, [zones, selectedZoneId])
+    }, [filteredPositionsBase, isHallZoneId])
+
+    // Vị trí hiển thị sau khi lọc theo phân loại Lô kệ / Sảnh
+    const filteredPositions = useMemo(() => {
+        if (zoneTypeFilter === 'rack') {
+            return filteredPositionsBase.filter(p => !isHallZoneId(p.zone_id))
+        }
+        if (zoneTypeFilter === 'hall') {
+            return filteredPositionsBase.filter(p => isHallZoneId(p.zone_id))
+        }
+        return filteredPositionsBase
+    }, [filteredPositionsBase, zoneTypeFilter, isHallZoneId])
+
+    const filteredZones = useMemo(() => {
+        let baseZones = zones
+        if (selectedZoneId) {
+            const collect = (pId: string): string[] => {
+                const children = zones.filter(z => z.parent_id === pId)
+                let ids = children.map(c => c.id)
+                children.forEach(c => ids = [...ids, ...collect(c.id)])
+                return ids
+            }
+            const allowed = new Set([selectedZoneId, ...collect(selectedZoneId)])
+            baseZones = zones.filter(z => allowed.has(z.id))
+        }
+
+        if (zoneTypeFilter === 'rack') {
+            return baseZones.filter(z => !isHallZoneId(z.id))
+        }
+        if (zoneTypeFilter === 'hall') {
+            return baseZones.filter(z => isHallZoneId(z.id) || (!z.parent_id && zones.some(sub => sub.parent_id === z.id && isHallZoneId(sub.id))))
+        }
+        return baseZones
+    }, [zones, selectedZoneId, zoneTypeFilter, isHallZoneId])
 
     function toggleZoneCollapse(zoneId: string) {
         setCollapsedZones(prev => {
@@ -621,14 +697,39 @@ function WarehouseStatusContent() {
                 {/* Cột trái: Stats Overview (4 ô thống kê chính) */}
                 <div className="lg:col-span-4 grid grid-cols-2 gap-4">
                     {[
-                        { label: 'TỔNG VỊ TRÍ', val: filteredPositions.length, color: 'indigo' },
-                        { label: 'ĐÃ LẤP ĐẦY', val: occupiedIds.size, color: 'emerald' },
-                        { label: 'CÒN TRỐNG', val: filteredPositions.length - occupiedIds.size, color: 'slate' },
-                        { label: 'TỶ LỆ LẤP ĐẦY', val: `${((occupiedIds.size / (filteredPositions.length || 1)) * 100).toFixed(1)}%`, color: 'amber' },
+                        {
+                            label: 'TỔNG VỊ TRÍ',
+                            val: filteredPositionsBase.length,
+                            color: 'indigo',
+                            sub: hallPositionsCount > 0 ? `Lô kệ: ${officialPositionsCount} • Sảnh: ${hallPositionsCount}` : null
+                        },
+                        {
+                            label: 'ĐÃ LẤP ĐẦY',
+                            val: officialOccupiedCount + hallOccupiedCount,
+                            color: 'emerald',
+                            sub: hallPositionsCount > 0 ? `Lô kệ: ${officialOccupiedCount} • Sảnh: ${hallOccupiedCount}` : null
+                        },
+                        {
+                            label: 'CÒN TRỐNG',
+                            val: filteredPositionsBase.length - (officialOccupiedCount + hallOccupiedCount),
+                            color: 'slate',
+                            sub: hallPositionsCount > 0 ? `Lô kệ: ${officialPositionsCount - officialOccupiedCount} • Sảnh: ${hallPositionsCount - hallOccupiedCount}` : null
+                        },
+                        {
+                            label: 'TỶ LỆ LẤP ĐẦY',
+                            val: `${(((officialOccupiedCount + hallOccupiedCount) / (filteredPositionsBase.length || 1)) * 100).toFixed(1)}%`,
+                            color: 'amber',
+                            sub: hallPositionsCount > 0 ? `Lô kệ: ${((officialOccupiedCount / (officialPositionsCount || 1)) * 100).toFixed(1)}% • Sảnh: ${((hallOccupiedCount / (hallPositionsCount || 1)) * 100).toFixed(1)}%` : null
+                        },
                     ].map((stat, i) => (
-                        <div key={i} className="bg-white dark:bg-slate-900 p-5 border border-slate-100 dark:border-slate-800 shadow-sm rounded-2xl flex flex-col justify-between h-28 transition-all hover:shadow-md group">
+                        <div key={i} className="bg-white dark:bg-slate-900 p-4 border border-slate-100 dark:border-slate-800 shadow-sm rounded-2xl flex flex-col justify-between min-h-[118px] transition-all hover:shadow-md group">
                             <div className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest leading-tight">{stat.label}</div>
-                            <div className={`text-3xl font-black text-${stat.color}-600 dark:text-${stat.color}-400 group-hover:scale-105 transition-transform duration-200 origin-left`}>{stat.val}</div>
+                            <div className={`text-2xl sm:text-3xl font-black text-${stat.color}-600 dark:text-${stat.color}-400 group-hover:scale-105 transition-transform duration-200 origin-left`}>{stat.val}</div>
+                            {stat.sub && (
+                                <div className="text-[9px] font-bold text-slate-500 dark:text-slate-400 pt-1.5 border-t border-slate-100 dark:border-slate-800/80 truncate" title={stat.sub}>
+                                    {stat.sub}
+                                </div>
+                            )}
                         </div>
                     ))}
                 </div>
@@ -797,6 +898,61 @@ function WarehouseStatusContent() {
                         </div>
                     )}
                 </div>
+            </div>
+
+            {/* Bộ lọc phân loại Lô kệ / Sảnh */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white dark:bg-slate-900 p-3.5 border border-slate-100 dark:border-slate-800 rounded-2xl shadow-xs">
+                <div className="flex flex-wrap items-center gap-2.5">
+                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <Layout size={14} className="text-indigo-500" />
+                        PHÂN LOẠI HIỂN THỊ:
+                    </span>
+                    <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+                        <button
+                            onClick={() => setZoneTypeFilter('all')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                zoneTypeFilter === 'all'
+                                    ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            TẤT CẢ ({filteredPositionsBase.length})
+                        </button>
+                        <button
+                            onClick={() => setZoneTypeFilter('rack')}
+                            className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                                zoneTypeFilter === 'rack'
+                                    ? 'bg-indigo-600 text-white shadow-xs'
+                                    : 'text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400'
+                            }`}
+                        >
+                            <span className="w-2 h-2 rounded-full bg-indigo-400"></span>
+                            LÔ KỆ ({officialPositionsCount})
+                        </button>
+                        {hallPositionsCount > 0 && (
+                            <button
+                                onClick={() => setZoneTypeFilter('hall')}
+                                className={`px-3 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                                    zoneTypeFilter === 'hall'
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : 'text-slate-500 hover:text-amber-600 dark:hover:text-amber-400'
+                                }`}
+                            >
+                                <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                                SẢNH ({hallPositionsCount})
+                            </button>
+                        )}
+                    </div>
+                </div>
+
+                {zoneTypeFilter !== 'all' && (
+                    <button
+                        onClick={() => setZoneTypeFilter('all')}
+                        className="text-[10px] font-bold text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 underline uppercase transition-colors"
+                    >
+                        Bỏ lọc phân loại
+                    </button>
+                )}
             </div>
 
             {/* Main Status Diagram - Legend */}

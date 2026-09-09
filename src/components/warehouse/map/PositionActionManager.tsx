@@ -3,7 +3,7 @@
 import React, { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy, Bookmark } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy, Bookmark, Lock, Unlock } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 import { logActivity } from '@/lib/audit'
@@ -20,9 +20,11 @@ interface UsePositionActionManagerProps {
     onCloneLot?: (lotId: string) => void
     onToggleMark?: (pos: any) => void
     isMarked?: (posId: string) => boolean
+    onToggleLock?: (posIds: string[]) => void
+    isLocked?: (posId: string) => boolean
 }
 
-export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot, onCloneLot, onToggleMark, isMarked }: UsePositionActionManagerProps) {
+export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot, onCloneLot, onToggleMark, isMarked, onToggleLock, isLocked }: UsePositionActionManagerProps) {
     const router = useRouter()
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
@@ -318,6 +320,32 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                                     <span className={isMarked?.(contextMenu.position?.id) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
                                         {isMarked?.(contextMenu.position?.id) ? "Bỏ đánh dấu" : "Đánh dấu kiểm tra"}
                                     </span>
+                                </button>
+                                <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+                            </>
+                        )}
+                        {onToggleLock && contextMenu.position && (
+                            <>
+                                <button
+                                    onClick={() => {
+                                        const p = contextMenu.position
+                                        setContextMenu(null)
+                                        const ids = p.realIds || [p.id]
+                                        onToggleLock(ids)
+                                    }}
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md transition-colors text-left font-medium"
+                                >
+                                    {isLocked?.(contextMenu.position.id) ? (
+                                        <>
+                                            <Unlock size={16} className="text-emerald-600" />
+                                            <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Mở khóa vị trí</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Lock size={16} className="text-slate-600 dark:text-slate-400" />
+                                            <span className="text-slate-700 dark:text-slate-300">Khóa vị trí này</span>
+                                        </>
+                                    )}
                                 </button>
                                 <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
                             </>

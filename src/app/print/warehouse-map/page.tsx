@@ -102,6 +102,7 @@ export default function WarehouseMapPrintPage() {
     const [onlyShowChecked, setOnlyShowChecked] = useState(false)
     const [onlyMarked, setOnlyMarked] = useState(onlyMarkedParam)
     const [markedPositionIds, setMarkedPositionIds] = useState<Set<string>>(new Set())
+    const [lockedPositionIds, setLockedPositionIds] = useState<Set<string>>(new Set())
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
 
     // Load marked position IDs from localStorage
@@ -118,6 +119,19 @@ export default function WarehouseMapPrintPage() {
             }
         } catch (err) {
             console.error('Error loading marked positions in print page:', err)
+        }
+
+        try {
+            const lockKey = `warehouse_locked_positions_${systemType}`
+            const rawLock = localStorage.getItem(lockKey)
+            if (rawLock) {
+                const parsedLock = JSON.parse(rawLock)
+                if (Array.isArray(parsedLock)) {
+                    setLockedPositionIds(new Set(parsedLock))
+                }
+            }
+        } catch (err) {
+            console.error('Error loading locked positions in print page:', err)
         }
     }, [systemType])
 
@@ -236,6 +250,10 @@ export default function WarehouseMapPrintPage() {
 
     const filteredPositions = useMemo(() => {
         let result = displayPositions
+
+        if (lockedPositionIds.size > 0) {
+            result = result.filter(p => !lockedPositionIds.has(p.id))
+        }
 
         if (descendantIdSet) {
             result = result.filter(p => p.zone_id && descendantIdSet.has(p.zone_id))
@@ -401,6 +419,11 @@ export default function WarehouseMapPrintPage() {
             result = result.filter(p => markedPositionIds.has(p.id))
         }
 
+        // --- Locked Positions Filter (Loại bỏ vị trí đã bị khóa khỏi in ấn & xuất Excel) ---
+        if (lockedPositionIds && lockedPositionIds.size > 0) {
+            result = result.filter(p => !lockedPositionIds.has(p.id) && (!p.code || !lockedPositionIds.has(p.code)))
+        }
+
         return [...result].sort((a, b) => {
             const zoneIdxA = a.zone_id ? (zoneOrderMap.get(a.zone_id) ?? 99999) : 99999
             const zoneIdxB = b.zone_id ? (zoneOrderMap.get(b.zone_id) ?? 99999) : 99999
@@ -408,7 +431,7 @@ export default function WarehouseMapPrintPage() {
             const sorted = sortPositionsByBinPriority([a, b])
             return sorted[0] === a ? -1 : 1
         })
-    }, [displayPositions, descendantIdSet, occupancyFilter, selectedCategoryId, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows, onlyMarked, markedPositionIds])
+    }, [displayPositions, descendantIdSet, occupancyFilter, selectedCategoryId, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows, onlyMarked, markedPositionIds, lockedPositionIds])
 
     const filteredZones = useMemo(() => {
         let result = displayZones
@@ -872,7 +895,7 @@ export default function WarehouseMapPrintPage() {
     }
 
     const handleExportExcelMarked = async () => {
-        const targetPositions = positions.filter(p => markedPositionIds.has(p.id))
+        const targetPositions = positions.filter(p => markedPositionIds.has(p.id) && !lockedPositionIds.has(p.id) && (!p.code || !lockedPositionIds.has(p.code)))
         if (targetPositions.length === 0) return alert("Không tìm thấy vị trí đánh dấu nào để xuất Excel.")
         await exportMarkedPositionsToExcel({
             systemName: systemType || 'KHO',
@@ -1372,6 +1395,7 @@ export default function WarehouseMapPrintPage() {
                                     checkedZoneIds={checkedZoneIds}
                                     onToggleCheckedZone={handleToggleCheckedZone}
                                     markedPositionIds={markedPositionIds}
+                                    lockedPositionIds={lockedPositionIds}
                                 />
                             </div>
                         ) : (

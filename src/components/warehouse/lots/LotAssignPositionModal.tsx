@@ -38,7 +38,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             setLoadingPositions(true)
             try {
                 let query = (supabase.from('positions') as any)
-                    .select('code')
+                    .select('id, code')
                     .eq('system_type', currentSystem!.code)
                     .order('code')
                     .limit(100)
@@ -51,10 +51,22 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
 
                 if (error) throw error
                 if (data) {
-                    const options = data.map((p: any) => ({
-                        value: p.code,
-                        label: p.code
-                    }))
+                    let lockedIds = new Set<string>()
+                    if (typeof window !== 'undefined' && currentSystem?.code) {
+                        try {
+                            const raw = localStorage.getItem(`warehouse_locked_positions_${currentSystem.code}`)
+                            if (raw) {
+                                const arr = JSON.parse(raw)
+                                if (Array.isArray(arr)) lockedIds = new Set(arr)
+                            }
+                        } catch (e) {}
+                    }
+                    const options = data
+                        .filter((p: any) => !lockedIds.has(p.id) && !lockedIds.has(p.code))
+                        .map((p: any) => ({
+                            value: p.code,
+                            label: p.code
+                        }))
                     setPositions(options)
                 }
             } catch (err) {

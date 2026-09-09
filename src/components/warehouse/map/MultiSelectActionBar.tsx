@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -32,6 +32,8 @@ interface MultiSelectActionBarProps {
     onBulkChangeProduct?: (lotIds: string[]) => void
     onToggleMark?: (posIds: string[]) => void
     isMarked?: (posId: string) => boolean
+    onToggleLock?: (posIds: string[]) => void
+    isLocked?: (posId: string) => boolean
     onExportExcel?: (selectedPositions: Position[]) => void
 }
 
@@ -54,6 +56,8 @@ export default function MultiSelectActionBar({
     onBulkChangeProduct,
     onToggleMark,
     isMarked,
+    onToggleLock,
+    isLocked,
     onExportExcel
 }: MultiSelectActionBarProps) {
     const [isOperationMenuOpen, setIsOperationMenuOpen] = useState(false)
@@ -165,6 +169,11 @@ export default function MultiSelectActionBar({
         if (!isMarked || selectedPositionIds.size === 0) return false
         return Array.from(selectedPositionIds).every(id => isMarked(id))
     }, [selectedPositionIds, isMarked])
+
+    const allSelectedLocked = useMemo(() => {
+        if (!isLocked || selectedPositionIds.size === 0) return false
+        return Array.from(selectedPositionIds).every(id => isLocked(id))
+    }, [selectedPositionIds, isLocked])
 
     // Aggregate selected items for display
     const aggregatedItems = useMemo(() => {
@@ -319,6 +328,26 @@ export default function MultiSelectActionBar({
                                 >
                                     <Bookmark size={15} className={allSelectedMarked ? "fill-amber-600 text-amber-600" : "fill-white text-white"} />
                                     <span>{allSelectedMarked ? `Bỏ đánh dấu (${selectedPositionIds.size})` : `Đánh dấu (${selectedPositionIds.size})`}</span>
+                                </button>
+                            )}
+
+                            {/* Nút: Khóa / Mở khóa vị trí */}
+                            {onToggleLock && (
+                                <button
+                                    onClick={() => onToggleLock(Array.from(selectedPositionIds))}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shrink-0 shadow-sm ${
+                                        allSelectedLocked
+                                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700 hover:bg-rose-200'
+                                            : 'bg-slate-700 hover:bg-slate-800 text-white shadow-slate-700/20'
+                                    }`}
+                                    title={allSelectedLocked ? "Mở khóa các vị trí đã chọn" : "Khóa vị trí (không thể gán hàng, không xuất Excel, không tính thống kê)"}
+                                >
+                                    {allSelectedLocked ? (
+                                        <Unlock size={15} className="text-rose-600 dark:text-rose-400" />
+                                    ) : (
+                                        <Lock size={15} className="text-white" />
+                                    )}
+                                    <span>{allSelectedLocked ? `Mở khóa (${selectedPositionIds.size})` : `Khóa vị trí (${selectedPositionIds.size})`}</span>
                                 </button>
                             )}
 

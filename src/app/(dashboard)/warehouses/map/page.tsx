@@ -20,6 +20,7 @@ import { MapFilterBar } from '@/components/warehouse/map/MapFilterBar'
 import { useWarehouseData } from './_hooks/useWarehouseData'
 import { useMapFilters } from './_hooks/useMapFilters'
 import { useMarkedPositions } from './_hooks/useMarkedPositions'
+import { useLockedPositions } from './_hooks/useLockedPositions'
 import { MapHeader } from './_components/MapHeader'
 import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
@@ -84,6 +85,16 @@ function WarehouseMapContent() {
     } = useMarkedPositions({
         systemType,
         systemName: currentSystem?.name
+    })
+
+    // 2.5. Locked Positions Hook
+    const {
+        lockedPositionIds,
+        isLocked,
+        toggleLock
+    } = useLockedPositions({
+        systemType,
+        initialModules: currentSystem?.modules
     })
 
     // 3. Filter Hook
@@ -275,6 +286,10 @@ function WarehouseMapContent() {
         const targetIds = Array.isArray(positionIdOrIds) ? positionIdOrIds : [positionIdOrIds]
 
         if (assignLot && assignLotId) {
+            if (targetIds.some(id => lockedPositionIds.has(id))) {
+                showToast('Vị trí này đã bị khóa, không thể gán hàng.', 'warning')
+                return
+            }
             // Assignment / Move Logic - focusing on first ID if multi-select but usually it should be single action applied to all
             // For now, let's just handle the first one or apply to all if it makes sense. 
             // In assignment mode, usually we assign ONE lot to ONE or MORE positions.
@@ -410,7 +425,9 @@ function WarehouseMapContent() {
         onRefreshLot: refreshLotInfo,
         onCloneLot: handleCloneLot,
         onToggleMark: (pos) => toggleMark(pos.id),
-        isMarked: (id) => isMarked(id)
+        isMarked: (id) => isMarked(id),
+        onToggleLock: (ids) => toggleLock(ids),
+        isLocked: (id) => isLocked(id)
     })
 
     async function fetchFullLotDetails(lotId: string) {
@@ -647,12 +664,13 @@ function WarehouseMapContent() {
 
     const handleExportSelectedExcel = async (selPositions: any[]) => {
         const targetPositions = positions.filter(p => {
+            if (lockedPositionIds.has(p.id)) return false
             if (selectedPositionIds.has(p.id)) return true
             const realIds = (p as any).realIds
             return realIds && Array.isArray(realIds) && realIds.some((id: string) => selectedPositionIds.has(id))
         })
 
-        const positionsToExport = targetPositions.length > 0 ? targetPositions : selPositions
+        const positionsToExport = (targetPositions.length > 0 ? targetPositions : selPositions).filter(p => !lockedPositionIds.has(p.id))
 
         if (positionsToExport.length === 0) {
             showToast('Chưa có vị trí nào được chọn để xuất Excel', 'warning')
@@ -985,6 +1003,46 @@ function WarehouseMapContent() {
         return rec
     }, [layouts])
 
+    // Phân loại tổng số vị trí chính thức và vị trí sảnh
+    const { officialPositionsCount, hallPositionsCount } = useMemo(() => {
+        const zoneMap = new Map<string, any>()
+        zones.forEach(z => zoneMap.set(z.id, z))
+
+        const isHall = (zoneId?: string | null): boolean => {
+            let currId = zoneId
+            const seen = new Set<string>()
+            while (currId && !seen.has(currId)) {
+                seen.add(currId)
+                const z = zoneMap.get(currId)
+                if (!z) break
+                if ((z as any).is_hall) return true
+                const nameUpper = (z.name || '').trim().toUpperCase()
+                if (
+                    nameUpper.startsWith('SẢNH') ||
+                    nameUpper.startsWith('SÀNH') ||
+                    nameUpper.startsWith('SANH') ||
+                    nameUpper.includes('SẢNH') ||
+                    nameUpper.includes('SÀNH')
+                ) return true
+                currId = z.parent_id
+            }
+            return false
+        }
+
+        let hallCount = 0
+        let officialCount = 0
+        positions.forEach(p => {
+            if (lockedPositionIds.has(p.id)) return
+            if (isHall(p.zone_id)) {
+                hallCount++
+            } else {
+                officialCount++
+            }
+        })
+
+        return { officialPositionsCount: officialCount, hallPositionsCount: hallCount }
+    }, [positions, zones, lockedPositionIds])
+
     if (!systemType) return <div>Vui lòng chọn kho hàng.</div>
     if (loading && positions.length === 0) return (
         <div className="flex items-center justify-center min-h-screen">
@@ -1000,8 +1058,10 @@ function WarehouseMapContent() {
     return (
         <div className="space-y-4">
             <MapHeader
-                totalPositions={totalPositions}
+                totalPositions={officialPositionsCount + hallPositionsCount}
                 totalZones={totalZones}
+                officialPositionsCount={officialPositionsCount}
+                hallPositionsCount={hallPositionsCount}
                 systemType={systemType}
                 selectedZoneId={selectedZoneId}
                 selectedCategoryId={selectedCategoryId}
@@ -1190,6 +1250,7 @@ function WarehouseMapContent() {
                                     mergedZones={mergedZones}
                                     onToggleMergeZone={toggleMergeZone}
                                     markedPositionIds={markedPositionIds}
+                                    lockedPositionIds={lockedPositionIds}
                                     onPrintZone={(zoneId) => {
                                         const params = new URLSearchParams()
                                         params.set('systemType', systemType)
@@ -1346,6 +1407,8 @@ function WarehouseMapContent() {
                 onBulkChangeProduct={handleOpenBulkChangeProduct}
                 onToggleMark={(posIds) => toggleMark(posIds)}
                 isMarked={(id) => isMarked(id)}
+                onToggleLock={(posIds) => toggleLock(posIds)}
+                isLocked={(id) => isLocked(id)}
                 onExportExcel={handleExportSelectedExcel}
             />
 

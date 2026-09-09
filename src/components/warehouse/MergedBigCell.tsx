@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { Maximize2, Eye, Package, MoreHorizontal, Layers, Bookmark } from 'lucide-react'
+import { Maximize2, Eye, Package, MoreHorizontal, Layers, Bookmark, Lock } from 'lucide-react'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 
 const MergedBigCell = React.memo<{
@@ -10,6 +10,7 @@ const MergedBigCell = React.memo<{
     isSelected: boolean,
     isTargetLot: boolean,
     isMarked?: boolean,
+    isLocked?: boolean,
     aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string, lotCodes?: string[] }>,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
@@ -27,7 +28,7 @@ const MergedBigCell = React.memo<{
     isEmptyMode?: boolean,
     searchTerm?: string,
     lots?: any[]
-}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, isMarked, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, isMarked, isLocked, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
     const ids = pos.realIds || [pos.id]
     const mergedCount = pos.mergedCount || ids.length
     const originalCodes = pos.originalCodes || [pos.code]
@@ -122,6 +123,16 @@ const MergedBigCell = React.memo<{
         }
     }
 
+    if (isLocked) {
+        bgClass = isSelected 
+            ? 'bg-rose-50/90 dark:bg-rose-950/40' 
+            : 'bg-slate-100/95 dark:bg-slate-900/95'
+        borderClass = isSelected
+            ? 'border-dashed border-rose-500 ring-2 ring-rose-300 dark:ring-rose-800'
+            : 'border-dashed border-rose-400/80 dark:border-rose-500/70 shadow-inner'
+        opacityClass = 'opacity-85 hover:opacity-100'
+    }
+
     if (searchTerm) {
         if (!searchStatus.isMatch) {
             opacityClass = 'opacity-30 dark:opacity-20 hover:opacity-80 transition-opacity'
@@ -137,18 +148,49 @@ const MergedBigCell = React.memo<{
                     : (isPrintPage ? (isSanh ? '60px' : (isManualMerge ? '250px' : '125px')) : (isMobile ? '110px' : '150px')),
                 height: isPrintPage || isEmptyMode ? 'auto' : '100%',
                 width: isEmptyMode ? '100%' : '100%',
-                minWidth: isEmptyMode ? '70px' : '0'
+                minWidth: isEmptyMode ? '70px' : '0',
+                ...(isLocked ? {
+                    backgroundImage: `repeating-linear-gradient(
+                        -45deg,
+                        rgba(244, 63, 94, 0.08),
+                        rgba(244, 63, 94, 0.08) 10px,
+                        rgba(226, 232, 240, 0.6) 10px,
+                        rgba(226, 232, 240, 0.6) 20px
+                    )`
+                } : {})
             }}
             className={`
-                relative ${isAssignmentMode ? 'cursor-pointer' : ''} p-2.5 print:p-1.5 rounded-xl border-2 transition-all
+                relative ${isAssignmentMode ? (isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:shadow-lg hover:scale-[1.01] hover:z-10') : ''} p-2.5 print:p-1.5 rounded-xl border-2 transition-all
                 flex flex-col flex-1 h-full min-h-0 overflow-hidden print:overflow-visible
                 ${bgClass} ${borderClass} ${ringClass} ${opacityClass}
-                ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.01] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                 ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px]' : ''}
             `}
-            onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
+            onClick={() => {
+                if (isAssignmentMode) {
+                    if (isLocked) return
+                    onPositionSelect?.(ids)
+                }
+            }}
+            title={isLocked ? "Vị trí đã bị khóa (không thể gán hàng, không xuất Excel, không tính thống kê)" : undefined}
         >
+            {/* Đường gạch chéo */}
+            {isLocked && (
+                <>
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" preserveAspectRatio="none">
+                        <line x1="0" y1="0" x2="100%" y2="100%" stroke="#e11d48" strokeWidth="2" strokeDasharray="6 4" strokeOpacity="0.75" />
+                        <line x1="100%" y1="0" x2="0" y2="100%" stroke="#e11d48" strokeWidth="2" strokeDasharray="6 4" strokeOpacity="0.75" />
+                    </svg>
+                    {!isEmptyMode && (
+                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-15">
+                            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 dark:bg-slate-950/95 text-white shadow-lg border border-rose-500/50 backdrop-blur-xs">
+                                <Lock size={12} className="text-rose-400 shrink-0" />
+                                <span className="text-[10px] font-black tracking-wider uppercase text-rose-200">ĐÃ KHÓA</span>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
             {/* Top row: badge + code + actions */}
             <div className={`flex items-start justify-between gap-2 ${isEmptyMode ? 'm-0 h-auto' : 'mb-1.5'}`}>
                 <div className={`flex items-start gap-2 min-w-0 ${isEmptyMode ? 'justify-center w-full' : ''}`}>
@@ -187,6 +229,12 @@ const MergedBigCell = React.memo<{
                                     ? `Gộp ${mergedLevels.length} tầng`
                                     : `${mergedCount} ô gộp`
                                 }
+                            </span>
+                        )}
+                        {isLocked && (
+                            <span className="flex items-center gap-1 text-[9px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-300 dark:border-slate-600 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap animate-in zoom-in-50">
+                                <Lock size={10} className="text-slate-600 dark:text-slate-400" />
+                                <span>Đã khóa</span>
                             </span>
                         )}
                         {isMarked && (
@@ -348,6 +396,8 @@ const MergedBigCell = React.memo<{
         prev.isOccupied === next.isOccupied &&
         prev.isSelected === next.isSelected &&
         prev.isTargetLot === next.isTargetLot &&
+        prev.isMarked === next.isMarked &&
+        prev.isLocked === next.isLocked &&
         prev.aggregatedItems === next.aggregatedItems &&
         prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&

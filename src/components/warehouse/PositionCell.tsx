@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { Eye, MoreHorizontal, Package, Bookmark } from 'lucide-react'
+import { Eye, MoreHorizontal, Package, Bookmark, Lock } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { advancedMatchSearch } from '@/lib/searchUtils'
@@ -20,6 +20,7 @@ const PositionCell = React.memo<{
     isSelected: boolean,
     isTargetLot: boolean,
     isMarked?: boolean,
+    isLocked?: boolean,
     lotDetail: any,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
@@ -34,7 +35,7 @@ const PositionCell = React.memo<{
     searchTerm?: string
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
-    isTargetLot, isMarked, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
+    isTargetLot, isMarked, isLocked, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
     onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
 }) => {
     const ids = (pos as any).realIds || [pos.id]
@@ -118,6 +119,16 @@ const PositionCell = React.memo<{
         }
     }
 
+    if (isLocked) {
+        bgClass = isSelected 
+            ? 'bg-rose-50/90 dark:bg-rose-950/40' 
+            : 'bg-slate-100/95 dark:bg-slate-900/95'
+        borderClass = isSelected
+            ? 'border-dashed border-rose-500 ring-2 ring-rose-300 dark:ring-rose-800'
+            : 'border-dashed border-rose-400/80 dark:border-rose-500/70 shadow-inner'
+        opacityClass = 'opacity-85 hover:opacity-100'
+    }
+
     if (searchTerm) {
         if (!searchStatus.isMatch) {
             opacityClass = 'opacity-30 dark:opacity-20 hover:opacity-80 transition-opacity'
@@ -140,19 +151,51 @@ const PositionCell = React.memo<{
                 width: isEmptyMode 
                     ? '100%' 
                     : (cellWidth > 0 ? `${cellWidth}px` : '100%'),
-                minWidth: isEmptyMode ? '70px' : '0'
+                minWidth: isEmptyMode ? '70px' : '0',
+                ...(isLocked ? {
+                    backgroundImage: `repeating-linear-gradient(
+                        -45deg,
+                        rgba(244, 63, 94, 0.08),
+                        rgba(244, 63, 94, 0.08) 10px,
+                        rgba(226, 232, 240, 0.6) 10px,
+                        rgba(226, 232, 240, 0.6) 20px
+                    )`
+                } : {})
             }}
             className={`
-                relative ${isAssignmentMode ? 'cursor-pointer' : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
+                relative ${isAssignmentMode ? (isLocked ? 'cursor-not-allowed opacity-40' : 'cursor-pointer hover:shadow-lg hover:scale-[1.02] hover:z-10') : ''} ${isMobile ? 'p-0.5' : 'p-1'} rounded-lg border-2 transition-all
                 flex flex-col justify-between overflow-hidden
                 ${bgClass} ${borderClass} ${ringClass} ${opacityClass}
-                ${isAssignmentMode ? 'hover:shadow-lg hover:scale-[1.02] hover:z-10' : ''}
                 ${isHighlightBlinking ? 'animate-highlight-blink' : ''}
                 ${isPrintPage && !isEmptyMode ? `min-h-${isSanh ? '0' : '[125px]'} h-${isSanh ? 'auto' : '[125px]'} print:overflow-visible` : ''}
                 ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px] print:rounded-none print:border-stone-300' : ''}
             `}
-            onClick={() => isAssignmentMode && onPositionSelect?.(ids)}
+            onClick={() => {
+                if (isAssignmentMode) {
+                    if (isLocked) return
+                    onPositionSelect?.(ids)
+                }
+            }}
+            title={isLocked ? "Vị trí đã bị khóa (không thể gán hàng, không xuất Excel, không tính thống kê)" : undefined}
         >
+            {/* Đường gạch chéo & Huy hiệu ĐÃ KHÓA */}
+            {isLocked && (
+                <>
+                    {/* SVG đường gạch chéo X nổi bật */}
+                    <svg className="absolute inset-0 w-full h-full pointer-events-none z-10" preserveAspectRatio="none">
+                        <line x1="0" y1="0" x2="100%" y2="100%" stroke="#e11d48" strokeWidth="2" strokeDasharray="6 4" strokeOpacity="0.75" />
+                        <line x1="100%" y1="0" x2="0" y2="100%" stroke="#e11d48" strokeWidth="2" strokeDasharray="6 4" strokeOpacity="0.75" />
+                    </svg>
+                    {!isEmptyMode && (
+                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-15">
+                            <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900/90 dark:bg-slate-950/95 text-white shadow-lg border border-rose-500/50 backdrop-blur-xs">
+                                <Lock size={10} className="text-rose-400 shrink-0" />
+                                <span className="text-[8.5px] font-black tracking-wider uppercase text-rose-200">ĐÃ KHÓA</span>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
             {!isAssignmentMode && !isPrintPage && (
                 <button
                     onClick={(e) => {
@@ -192,8 +235,9 @@ const PositionCell = React.memo<{
                     </button>
                 )}
 
-                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center text-black dark:text-white font-bold leading-tight w-full text-center ${isEmptyMode ? 'whitespace-nowrap px-1 overflow-hidden' : (cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5')}`} style={{ minWidth: 0 }}>
-                    {pos.code}
+                <div className={`font-mono ${isGrouped ? 'text-[8px]' : 'text-[10px]'} flex justify-center items-center gap-1 ${isLocked ? 'text-rose-700 dark:text-rose-400 font-extrabold' : 'text-black dark:text-white font-bold'} leading-tight w-full text-center ${isEmptyMode ? 'whitespace-nowrap px-1 overflow-hidden' : (cellWidth === 0 && !isGrouped ? 'whitespace-nowrap px-1' : 'break-all px-0.5')}`} style={{ minWidth: 0 }}>
+                    {isLocked && <Lock size={10} className="text-rose-500 shrink-0" />}
+                    <span>{pos.code}</span>
                 </div>
 
                 {!isAssignmentMode && !isPrintPage && (
@@ -211,6 +255,11 @@ const PositionCell = React.memo<{
                 )}
 
                 <div className={`flex items-center gap-0.5 absolute ${!isAssignmentMode && !isPrintPage ? 'right-5' : 'right-0'} top-0`}>
+                    {isLocked && (
+                        <div title="Vị trí đã bị khóa" className="text-slate-400 dark:text-slate-500 animate-in zoom-in-50 duration-150">
+                            <Lock size={12} />
+                        </div>
+                    )}
                     {isMarked && (
                         <div title="Vị trí đánh dấu kiểm tra" className="text-amber-500 animate-in zoom-in-50 duration-150">
                             <Bookmark size={12} className="fill-amber-500 text-amber-600" />
@@ -330,6 +379,8 @@ const PositionCell = React.memo<{
         prev.isOccupied === next.isOccupied &&
         prev.isSelected === next.isSelected &&
         prev.isTargetLot === next.isTargetLot &&
+        prev.isMarked === next.isMarked &&
+        prev.isLocked === next.isLocked &&
         prev.lotDetail === next.lotDetail &&
         prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&

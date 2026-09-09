@@ -59,6 +59,7 @@ interface FlexibleZoneGridProps {
     searchTerm?: string
     selectedCategoryId?: string | null
     markedPositionIds?: Set<string>
+    lockedPositionIds?: Set<string>
 }
 
 export default function FlexibleZoneGrid({
@@ -94,11 +95,23 @@ export default function FlexibleZoneGrid({
     onToggleCheckedZone,
     searchTerm = '',
     selectedCategoryId = null,
-    markedPositionIds = new Set()
+    markedPositionIds = new Set(),
+    lockedPositionIds = new Set()
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
     const [copiedZoneId, setCopiedZoneId] = React.useState<string | null>(null)
+
+    const isPosLocked = React.useCallback((p: any) => {
+        if (!lockedPositionIds || lockedPositionIds.size === 0) return false
+        if (lockedPositionIds.has(p.id)) return true
+        if (p.code && lockedPositionIds.has(p.code)) return true
+        if (p.name && lockedPositionIds.has(p.name)) return true
+        if (p.realIds && Array.isArray(p.realIds)) {
+            return p.realIds.some((id: string) => lockedPositionIds.has(id))
+        }
+        return false
+    }, [lockedPositionIds])
 
     const getZonePositionCodes = React.useCallback((node: ZoneTreeNode): string[] => {
         const codes: string[] = []
@@ -247,7 +260,7 @@ export default function FlexibleZoneGrid({
             })
             node.positions = sortPositionsByBinPriority(node.positions)
 
-            let totalPos = node.positions.length
+            let totalPos = node.positions.filter(p => !isPosLocked(p)).length
             let descIds: string[] = []
 
             node.children.forEach((child: ZoneTreeNode) => {
@@ -273,7 +286,182 @@ export default function FlexibleZoneGrid({
                 if (oa !== ob) return oa - ob
                 return (a.code || '').localeCompare(b.code || '')
             })
-    }, [zones, positions])
+    }, [zones, positions, isPosLocked])
+
+    const isHallZone = React.useCallback((z: Zone | ZoneTreeNode): boolean => {
+        if ((z as any).is_hall) return true
+        const nameUpper = (z.name || '').trim().toUpperCase()
+        return (
+            nameUpper.startsWith('SẢNH') ||
+            nameUpper.startsWith('SÀNH') ||
+            nameUpper.startsWith('SANH') ||
+            nameUpper.includes('SẢNH') ||
+            nameUpper.includes('SÀNH')
+        )
+    }, [])
+
+    const zoneStatsMap = useMemo(() => {
+        const statsMap = new Map<string, {
+            total: number
+            occupied: number
+            officialTotal: number
+            officialOccupied: number
+            hallTotal: number
+            hallOccupied: number
+        }>()
+
+        const computeNodeStats = (node: ZoneTreeNode, ancestorIsHall: boolean): {
+            total: number
+            occupied: number
+            officialTotal: number
+            officialOccupied: number
+            hallTotal: number
+            hallOccupied: number
+        } => {
+            const currentIsHall = ancestorIsHall || isHallZone(node)
+
+            let total = 0
+            let occupied = 0
+            let officialTotal = 0
+            let officialOccupied = 0
+            let hallTotal = 0
+            let hallOccupied = 0
+
+            if (node.positions && node.positions.length > 0) {
+                node.positions.forEach(p => {
+                    if (isPosLocked(p)) return
+                    total++
+                    const realIds = (p as any).realIds || [p.id]
+                    const isOcc = realIds.some((id: string) => occupiedIds.has(id)) || !!p.lot_id
+                    if (isOcc) occupied++
+
+                    if (currentIsHall) {
+                        hallTotal++
+                        if (isOcc) hallOccupied++
+                    } else {
+                        officialTotal++
+                        if (isOcc) officialOccupied++
+                    }
+                })
+            }
+
+            if (node.children && node.children.length > 0) {
+                node.children.forEach(child => {
+                    const childStats = computeNodeStats(child, currentIsHall)
+                    total += childStats.total
+                    occupied += childStats.occupied
+                    officialTotal += childStats.officialTotal
+                    officialOccupied += childStats.officialOccupied
+                    hallTotal += childStats.hallTotal
+                    hallOccupied += childStats.hallOccupied
+                })
+            }
+
+            const res = {
+                total,
+                occupied,
+                officialTotal,
+                officialOccupied,
+                hallTotal,
+                hallOccupied
+            }
+
+            statsMap.set(node.id, res)
+            return res
+        }
+
+        zoneTree.forEach(root => computeNodeStats(root, false))
+
+        return statsMap
+    }, [zoneTree, occupiedIds, isHallZone, isPosLocked])
+
+    const renderZoneHeaderStats = React.useCallback((
+        zoneNode: ZoneTreeNode,
+        isDark: boolean,
+        textColor: string | null | undefined,
+        highlightColor: string,
+        isSubLevel: boolean,
+        selectableCount: number
+    ) => {
+        if (isSubLevel || zoneNode.totalPositions <= 0) return null
+
+        const stats = zoneStatsMap.get(zoneNode.id) || {
+            total: zoneNode.totalPositions,
+            occupied: selectableCount,
+            officialTotal: zoneNode.totalPositions,
+            officialOccupied: selectableCount,
+            hallTotal: 0,
+            hallOccupied: 0
+        }
+
+        const hasHall = stats.hallTotal > 0
+        const hasOfficial = stats.officialTotal > 0
+        const totalPos = zoneNode.totalPositions
+
+        // Nếu zone chỉ gồm 1 loại (chỉ chính thức hoặc chỉ sảnh)
+        if (!hasHall || !hasOfficial) {
+            return (
+                <p
+                    className="text-xs whitespace-nowrap shrink-0 print:hidden flex items-center gap-1.5"
+                    style={{ color: textColor ? `${textColor}cc` : (isDark ? 'rgba(255,255,255,0.85)' : undefined) }}
+                    title={`Tổng cộng: ${totalPos} ô (${selectableCount} có hàng)`}
+                >
+                    <span>{totalPos} ô / <span className={highlightColor}>{selectableCount} có hàng</span></span>
+                    {hasHall && !hasOfficial && (
+                        <span className={`px-1.5 py-0.2 text-[10px] font-bold rounded shadow-xs ${
+                            isDark
+                                ? 'bg-amber-400/25 text-amber-200 border border-amber-300/30'
+                                : 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                        }`}>
+                            Sảnh
+                        </span>
+                    )}
+                </p>
+            )
+        }
+
+        // Zone có cả vị trí chính thức và sảnh (ví dụ: KHO 1, KHO 2, KHO 3, KHO 4...)
+        return (
+            <div
+                className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs print:hidden pt-0.5"
+                style={{ color: textColor ? `${textColor}cc` : (isDark ? 'rgba(255,255,255,0.85)' : undefined) }}
+                title={`Tổng: ${totalPos} ô (${selectableCount} có hàng) | Lô kệ: ${stats.officialTotal} ô (${stats.officialOccupied} có hàng) | Sảnh: ${stats.hallTotal} ô (${stats.hallOccupied} có hàng)`}
+            >
+                {/* Tổng số */}
+                <span className="whitespace-nowrap">
+                    <span className={isDark ? "font-semibold text-white/90" : "font-semibold text-gray-700 dark:text-gray-200"}>Tổng:</span> {totalPos} ô / <span className={highlightColor}>{selectableCount} có hàng</span>
+                </span>
+
+                <span className={isDark ? "text-white/40 hidden sm:inline" : "text-gray-300 dark:text-gray-600 hidden sm:inline"}>•</span>
+
+                {/* Vị trí lô kệ */}
+                <span className="whitespace-nowrap flex items-center gap-1">
+                    <span className={isDark ? "opacity-80 text-emerald-100" : "text-gray-600 dark:text-gray-400 font-medium"}>Lô kệ:</span>
+                    <span className={isDark ? "font-semibold text-white" : "font-semibold text-gray-900 dark:text-gray-100"}>{stats.officialTotal} ô</span>
+                    <span className="opacity-50">/</span>
+                    <span className={isDark ? "text-amber-200 font-bold" : "text-emerald-700 dark:text-emerald-400 font-bold"}>
+                        {stats.officialOccupied} có hàng
+                    </span>
+                </span>
+
+                <span className={isDark ? "text-white/40 hidden sm:inline" : "text-gray-300 dark:text-gray-600 hidden sm:inline"}>•</span>
+
+                {/* Sảnh */}
+                <span className={`whitespace-nowrap inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md ${
+                    isDark
+                        ? 'bg-amber-400/20 border border-amber-300/35 text-amber-100 shadow-xs'
+                        : 'bg-indigo-50 border border-indigo-200 text-indigo-900 dark:bg-indigo-950/40 dark:border-indigo-800 dark:text-indigo-200'
+                }`}>
+                    <span className={`font-bold ${isDark ? 'text-amber-300' : 'text-indigo-600 dark:text-indigo-400'}`}>Sảnh:</span>
+                    <span className="font-semibold">{stats.hallTotal} ô</span>
+                    <span className="opacity-50">/</span>
+                    <span className={`font-bold ${isDark ? 'text-amber-200' : 'text-indigo-700 dark:text-indigo-300'}`}>
+                        {stats.hallOccupied} có hàng
+                    </span>
+                </span>
+            </div>
+        )
+    }, [zoneStatsMap])
 
     const isPosMarked = (p: any) => {
         if (!markedPositionIds || markedPositionIds.size === 0) return false
@@ -294,6 +482,7 @@ export default function FlexibleZoneGrid({
         }) : false
         const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
         const isMarked = isPosMarked(pos)
+        const isLocked = isPosLocked(pos)
 
         // Render merged big cell for virtual positions
         if (pos.isVirtual && pos.mergedCount > 1) {
@@ -311,6 +500,7 @@ export default function FlexibleZoneGrid({
                     isSelected={isSelected}
                     isTargetLot={isTargetLot}
                     isMarked={isMarked}
+                    isLocked={isLocked}
                     aggregatedItems={pos.lot_id && lotInfo[pos.lot_id]?.items ? lotInfo[pos.lot_id].items : []}
                     isAssignmentMode={isAssignmentMode}
                     isHighlightBlinking={isHighlightBlinking}
@@ -339,6 +529,7 @@ export default function FlexibleZoneGrid({
                 isSelected={isSelected}
                 isTargetLot={isTargetLot}
                 isMarked={isMarked}
+                isLocked={isLocked}
                 lotDetail={pos.lot_id ? lotInfo[pos.lot_id] : null}
                 isAssignmentMode={isAssignmentMode}
                 isHighlightBlinking={isHighlightBlinking}
@@ -652,8 +843,8 @@ export default function FlexibleZoneGrid({
         // Quick extraction to get all positions in descendant zones
         const exploreSelectableIds = (z: ZoneTreeNode) => {
             const zSelectable = isAssignmentMode
-                ? z.positions.map((p: PositionWithZone) => p.id)
-                : z.positions.filter((p: PositionWithZone) => occupiedIds.has(p.id)).map((p: PositionWithZone) => p.id)
+                ? z.positions.filter((p: PositionWithZone) => !isPosLocked(p)).map((p: PositionWithZone) => p.id)
+                : z.positions.filter((p: PositionWithZone) => !isPosLocked(p) && occupiedIds.has(p.id)).map((p: PositionWithZone) => p.id)
             allSelectableDescendantIds.push(...zSelectable)
             z.children.forEach((child: ZoneTreeNode) => exploreSelectableIds(child))
         }
@@ -821,14 +1012,7 @@ export default function FlexibleZoneGrid({
                                             </div>
                                         )}
                                     </div>
-                                    {!isLevelUnderBin && totalPositions > 0 && (
-                                        <p
-                                            className="text-xs whitespace-nowrap shrink-0 print:hidden"
-                                            style={{ color: effectiveHeaderTextColor ? `${effectiveHeaderTextColor}cc` : (isDarkHeader ? 'rgba(255,255,255,0.85)' : undefined) }}
-                                        >
-                                            {totalPositions} ô / <span className={statHighlightColor}>{totalSelectableCount} có hàng</span>
-                                        </p>
-                                    )}
+                                    {renderZoneHeaderStats(zone, isDarkHeader, effectiveHeaderTextColor, statHighlightColor, isLevelUnderBin, totalSelectableCount)}
                                 </div>
                             </div>
                             <div className={`flex items-center gap-2 print:hidden ${isCapturing ? "hidden" : ""}`}>
@@ -1062,14 +1246,7 @@ export default function FlexibleZoneGrid({
                                             </div>
                                         )}
                                     </div>
-                                    {!isLevelUnderBin && totalPositions > 0 && (
-                                        <p
-                                            className="text-xs whitespace-nowrap shrink-0 print:hidden"
-                                            style={{ color: effectiveHeaderTextColor ? `${effectiveHeaderTextColor}cc` : (isDarkHeader ? 'rgba(255,255,255,0.85)' : undefined) }}
-                                        >
-                                            {totalPositions} ô / <span className={statHighlightColor}>{totalSelectableCount} có hàng</span>
-                                        </p>
-                                    )}
+                                    {renderZoneHeaderStats(zone, isDarkHeader, effectiveHeaderTextColor, statHighlightColor, isLevelUnderBin, totalSelectableCount)}
                                 </div>
                             </div>
                             <div className={`flex items-center gap-2 print:hidden ${isCapturing ? "hidden" : ""}`}>
@@ -1325,17 +1502,7 @@ export default function FlexibleZoneGrid({
                                         />
                                     </div>
                                 )}
-                                {!isLevelUnderBin && totalPositions > 0 && (
-                                    <span
-                                        className={`px-1.5 py-0.5 rounded-full whitespace-nowrap shrink-0 print:hidden ${isLevelUnderBin ? 'text-[10px]' : 'text-xs'}`}
-                                        style={{
-                                            backgroundColor: isDarkHeader ? 'rgba(255,255,255,0.2)' : '#d1fae5',
-                                            color: isDarkHeader ? '#ffffff' : '#047857'
-                                        }}
-                                    >
-                                        {totalPositions} vị trí
-                                    </span>
-                                )}
+                                {renderZoneHeaderStats(zone, isDarkHeader, effectiveHeaderTextColor, statHighlightColor, isLevelUnderBin, totalSelectableCount)}
                             </div>
 
                             <div className={`flex items-center gap-2 print:hidden ${isCapturing ? 'hidden' : ''}`}>

@@ -216,6 +216,49 @@ export default function WarehouseStatusMap({
             })
     }, [zones, positions])
 
+    const zoneMap = useMemo(() => {
+        const map = new Map<string, Zone>()
+        zones.forEach(z => map.set(z.id, z))
+        return map
+    }, [zones])
+
+    const isHallZone = React.useCallback((z: Zone | any): boolean => {
+        if (!z) return false
+        if ((z as any).is_hall) return true
+        const nameUpper = (z.name || '').trim().toUpperCase()
+        return (
+            nameUpper.startsWith('SẢNH') ||
+            nameUpper.startsWith('SÀNH') ||
+            nameUpper.startsWith('SANH') ||
+            nameUpper.includes('SẢNH') ||
+            nameUpper.includes('SÀNH')
+        )
+    }, [])
+
+    const isZoneOrAncestorHall = React.useCallback((zoneId: string | null | undefined, breadcrumb: string[] = []): boolean => {
+        for (const b of breadcrumb) {
+            const bUpper = (b || '').trim().toUpperCase()
+            if (
+                bUpper.startsWith('SẢNH') ||
+                bUpper.startsWith('SÀNH') ||
+                bUpper.startsWith('SANH') ||
+                bUpper.includes('SẢNH') ||
+                bUpper.includes('SÀNH')
+            ) return true
+        }
+
+        let currId = zoneId
+        const seen = new Set<string>()
+        while (currId && !seen.has(currId)) {
+            seen.add(currId)
+            const z = zoneMap.get(currId)
+            if (!z) break
+            if (isHallZone(z)) return true
+            currId = z.parent_id
+        }
+        return false
+    }, [zoneMap, isHallZone])
+
     const getAllDescendantIds = React.useCallback((zone: Zone & { children: Zone[] }): string[] => {
         let ids: string[] = []
         zone.children.forEach(child => {
@@ -318,9 +361,22 @@ export default function WarehouseStatusMap({
                         <div className="flex items-center gap-3">
                             <div className={`w-1.5 h-6 rounded-full ${depth === 0 ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-700'}`}></div>
                             <div>
-                                <h3 className={`font-bold tracking-tight ${depth === 0 ? 'text-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-300 text-sm'}`}>
-                                    {effectiveDisplayType === 'grid' || effectiveDisplayType === 'section' ? currentBreadcrumb.join(' / ') : zone.name}
-                                </h3>
+                                <div className="flex items-center gap-2">
+                                    <h3 className={`font-bold tracking-tight ${depth === 0 ? 'text-slate-800 dark:text-white' : 'text-slate-600 dark:text-slate-300 text-sm'}`}>
+                                        {effectiveDisplayType === 'grid' || effectiveDisplayType === 'section' ? currentBreadcrumb.join(' / ') : zone.name}
+                                    </h3>
+                                    {depth > 0 && (
+                                        isZoneOrAncestorHall(zone.id, currentBreadcrumb) ? (
+                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/50 shrink-0">
+                                                SẢNH
+                                            </span>
+                                        ) : (
+                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                                                LÔ KỆ
+                                            </span>
+                                        )
+                                    )}
+                                </div>
                                 <div className="flex items-center gap-2 mt-0.5">
                                     <span className="text-[10px] items-center flex gap-1 font-bold text-slate-400 bg-slate-100 dark:bg-slate-800/50 px-1.5 py-0.5 rounded">
                                         <BarChart3 size={10} /> {totalPos} VỊ TRÍ
@@ -501,6 +557,15 @@ export default function WarehouseStatusMap({
                         <span className="text-[11px] font-black text-slate-800 dark:text-slate-200 uppercase tracking-tight">
                             {compactTitle}
                         </span>
+                        {isZoneOrAncestorHall(zone.id, breadcrumb) || isHallZone(zone) ? (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/50 shrink-0">
+                                SẢNH
+                            </span>
+                        ) : (
+                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                                LÔ KỆ
+                            </span>
+                        )}
                         {isDesignMode && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onConfigureZone?.(zone); }}
@@ -684,23 +749,75 @@ export default function WarehouseStatusMap({
                 {Array.from(groupsByWarehouse.entries()).map(([whName, groups]) => {
                     const isCollapsed = collapsedWarehouses.has(whName)
 
+                    // Tính toán thống kê Lô kệ và Sảnh cho kho này
+                    let whTotalPos = 0
+                    let whOccupied = 0
+                    let whOfficialTotal = 0
+                    let whOfficialOccupied = 0
+                    let whHallTotal = 0
+                    let whHallOccupied = 0
+
+                    groups.forEach(group => {
+                        const gTotal = group.leafChildren.reduce((sum, c) => sum + c.positions.length, 0)
+                        const gOcc = group.leafChildren.reduce((sum, c) => sum + c.positions.filter(p => occupiedIds.has(p.id)).length, 0)
+                        const isGroupHall = isHallZone(group.parent) || isZoneOrAncestorHall(group.parent.id, group.breadcrumb)
+
+                        whTotalPos += gTotal
+                        whOccupied += gOcc
+                        if (isGroupHall) {
+                            whHallTotal += gTotal
+                            whHallOccupied += gOcc
+                        } else {
+                            whOfficialTotal += gTotal
+                            whOfficialOccupied += gOcc
+                        }
+                    })
+
                     return (
                         <div key={whName} className="space-y-3">
                             {/* Warehouse Header Wrapper */}
                             <div
-                                className="flex items-center justify-between px-3 py-2 bg-slate-100/80 dark:bg-slate-800/80 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-lg cursor-pointer hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors group"
+                                className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 bg-slate-100/90 dark:bg-slate-800/90 backdrop-blur-sm border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer hover:bg-slate-200/80 dark:hover:bg-slate-750 transition-colors group gap-2"
                                 onClick={() => toggleWarehouse(whName)}
                             >
-                                <div className="flex items-center gap-2">
-                                    <div className="p-1 bg-indigo-500 rounded text-white">
-                                        <Warehouse className="w-4 h-4" />
+                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-1.5 bg-indigo-600 rounded-lg text-white shadow-xs">
+                                            <Warehouse className="w-4 h-4" />
+                                        </div>
+                                        <span className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wide">
+                                            {whName}
+                                        </span>
                                     </div>
-                                    <span className="text-sm font-black text-slate-800 dark:text-slate-100 uppercase tracking-wide">
-                                        {whName}
-                                    </span>
+
+                                    {/* Stats breakdown */}
+                                    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                                        <span>
+                                            <strong className="text-slate-700 dark:text-slate-200 font-semibold">Tổng:</strong> {whTotalPos} ô / <span className="font-bold text-emerald-600 dark:text-emerald-400">{whOccupied} có hàng</span>
+                                        </span>
+                                        {whHallTotal > 0 && (
+                                            <>
+                                                <span className="text-slate-300 dark:text-slate-600 hidden sm:inline">•</span>
+                                                <span className="flex items-center gap-1">
+                                                    <span>Lô kệ:</span>
+                                                    <strong className="text-slate-700 dark:text-slate-200 font-semibold">{whOfficialTotal} ô</strong>
+                                                    <span className="opacity-50">/</span>
+                                                    <span className="font-bold text-emerald-600 dark:text-emerald-400">{whOfficialOccupied} có hàng</span>
+                                                </span>
+                                                <span className="text-slate-300 dark:text-slate-600 hidden sm:inline">•</span>
+                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-300/40 font-medium">
+                                                    <span className="font-bold text-amber-600 dark:text-amber-400">Sảnh:</span>
+                                                    <strong className="font-semibold">{whHallTotal} ô</strong>
+                                                    <span className="opacity-50">/</span>
+                                                    <span className="font-bold">{whHallOccupied} có hàng</span>
+                                                </span>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                                <div className="flex items-center gap-3">
-                                    <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 transition-colors">
+
+                                <div className="flex items-center gap-3 self-end sm:self-auto">
+                                    <span className="text-[10px] font-bold text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300 transition-colors">
                                         {groups.length} khu vực
                                     </span>
                                     {isCollapsed ? <ChevronRight className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
@@ -714,7 +831,7 @@ export default function WarehouseStatusMap({
                                         const groupOccupied = group.leafChildren.reduce((sum, c) => sum + c.positions.filter(p => occupiedIds.has(p.id)).length, 0)
                                         const groupPercent = groupTotalPos > 0 ? (groupOccupied / groupTotalPos) * 100 : 0
 
-                                        const isHall = !!(group.parent as any).is_hall
+                                        const isHall = isHallZone(group.parent) || isZoneOrAncestorHall(group.parent.id, group.breadcrumb)
 
                                         // Path minus the warehouse name
                                         const relativePath = group.breadcrumb.length > 1
@@ -729,11 +846,20 @@ export default function WarehouseStatusMap({
                                             <div key={group.parent.id} className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm overflow-hidden rounded-md">
                                                 {/* Group Header (Dãy/Sảnh) */}
                                                 <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 dark:bg-slate-800/30 border-b border-slate-100 dark:border-slate-800">
-                                                    <div className="flex items-center gap-2">
-                                                        <div className={`w-1 h-3 rounded-full ${isHall ? 'bg-amber-400' : 'bg-indigo-400'}`}></div>
-                                                        <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-tight">
+                                                    <div className="flex items-center gap-2 min-w-0">
+                                                        <div className={`w-1 h-3 rounded-full shrink-0 ${isHall ? 'bg-amber-400' : 'bg-indigo-500'}`}></div>
+                                                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-tight truncate">
                                                             {displayTitle}
                                                         </span>
+                                                        {isHall ? (
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/50 shrink-0">
+                                                                SẢNH
+                                                            </span>
+                                                        ) : (
+                                                            <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700 shrink-0">
+                                                                LÔ KỆ
+                                                            </span>
+                                                        )}
                                                     </div>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-[9px] font-mono font-bold text-slate-400 bg-white dark:bg-slate-900 px-1.5 py-0.5 border border-slate-100 dark:border-slate-700 rounded-sm">
