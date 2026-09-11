@@ -60,6 +60,7 @@ import CompleteTaskModal from './CompleteTaskModal'
 import ImageLightbox from './ImageLightbox'
 import TeamsOverview from './TeamsOverview'
 import MobileShiftTasksView from './MobileShiftTasksView'
+import TaskConfirmModal from './TaskConfirmModal'
 
 interface ShiftTasksViewProps {
     isSanxuat?: boolean
@@ -548,27 +549,80 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
         }
     }
 
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean
+        title: string
+        message?: string
+        taskSnippet?: { code?: string; title?: string }
+        confirmText?: string
+        cancelText?: string
+        variant?: 'danger' | 'warning' | 'info' | 'success'
+        isDanger?: boolean
+        hideCancel?: boolean
+        onConfirm: () => void | Promise<void>
+    }>({
+        isOpen: false,
+        title: '',
+        onConfirm: () => {},
+    })
+
     // Quick Delete from card (người tạo hoặc quản trị viên cấp 1, cấp 2)
     const handleQuickDelete = async (e: React.MouseEvent, task: ShiftTask) => {
         e.stopPropagation()
         const canDelete = canManageTask(task, profile)
         if (!canDelete) {
-            alert('Chỉ người tạo hoặc Quản trị viên mới có quyền xóa mục này.')
+            setConfirmModal({
+                isOpen: true,
+                title: 'Không có quyền xóa',
+                message: 'Chỉ người tạo hoặc Quản trị viên mới có quyền xóa mục này.',
+                variant: 'warning',
+                isDanger: false,
+                hideCancel: true,
+                confirmText: 'Đã hiểu',
+                onConfirm: () => {},
+            })
             return
         }
-        if (!confirm(`Bạn có chắc chắn muốn xóa lời nhắc / việc #${task.code}?`)) return
-        try {
-            const { error } = await (supabase as any)
-                .from('shift_tasks')
-                .delete()
-                .eq('id', task.id)
 
-            if (error) throw error
-            handleTaskDeleted(task.id)
-        } catch (err) {
-            console.error('Error deleting task:', err)
-            alert('Không thể xóa việc.')
-        }
+        const isReminder = getTaskType(task) === 'reminder'
+        const typeLabel = isReminder ? 'lời nhắc' : 'công việc'
+
+        setConfirmModal({
+            isOpen: true,
+            title: `Xác nhận xóa ${typeLabel}`,
+            message: `Bạn có chắc chắn muốn xóa vĩnh viễn ${typeLabel} này không?`,
+            taskSnippet: {
+                code: task.code,
+                title: task.title,
+            },
+            variant: 'danger',
+            isDanger: true,
+            confirmText: 'Xóa vĩnh viễn',
+            cancelText: 'Hủy bỏ',
+            onConfirm: async () => {
+                try {
+                    const { error } = await (supabase as any)
+                        .from('shift_tasks')
+                        .delete()
+                        .eq('id', task.id)
+
+                    if (error) throw error
+                    handleTaskDeleted(task.id)
+                } catch (err) {
+                    console.error('Error deleting task:', err)
+                    setConfirmModal({
+                        isOpen: true,
+                        title: 'Không thể xóa',
+                        message: 'Đã xảy ra lỗi khi xóa dữ liệu. Vui lòng kiểm tra lại kết nối mạng.',
+                        variant: 'warning',
+                        isDanger: false,
+                        hideCancel: true,
+                        confirmText: 'Đóng',
+                        onConfirm: () => {},
+                    })
+                }
+            },
+        })
     }
 
     const handleOpenCardLightbox = (e: React.MouseEvent, imgs: string[], idx: number) => {
@@ -658,6 +712,12 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                         onNavigate={(i) => setLightboxIndex(i)}
                     />
                 )}
+
+                {/* Custom Responsive Confirmation & Alert Modal */}
+                <TaskConfirmModal
+                    {...confirmModal}
+                    onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                />
             </>
         )
     }
@@ -1558,6 +1618,12 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     onNavigate={(i) => setLightboxIndex(i)}
                 />
             )}
+
+            {/* Custom Responsive Confirmation & Alert Modal */}
+            <TaskConfirmModal
+                {...confirmModal}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
+            />
         </div>
     )
 }

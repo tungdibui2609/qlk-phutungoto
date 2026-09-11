@@ -9,6 +9,7 @@ import { formatDateTime, formatDateRelative, uploadTaskImage, getAssignedTeams, 
 import ImageLightbox from './ImageLightbox'
 import EditTaskModal from './EditTaskModal'
 import TaskRichContent from './TaskRichContent'
+import TaskConfirmModal from './TaskConfirmModal'
 import { extractInlineImageUrls } from './taskContentUtils'
 
 interface TaskDetailModalProps {
@@ -360,34 +361,85 @@ export default function TaskDetailModal({
     }
 
     const isCreatorOrAdmin = canManageTask(task, profile)
+    const isReminder = getTaskType(task) === 'reminder'
+    const isPending = task.status === 'pending'
+
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean
+        title: string
+        message?: string
+        taskSnippet?: { code?: string; title?: string }
+        confirmText?: string
+        cancelText?: string
+        variant?: 'danger' | 'warning' | 'info' | 'success'
+        isDanger?: boolean
+        hideCancel?: boolean
+        onConfirm: () => void | Promise<void>
+    }>({
+        isOpen: false,
+        title: '',
+        onConfirm: () => {},
+    })
 
     // Xóa việc (người tạo hoặc quản trị viên cấp 1, cấp 2)
     const handleDelete = async () => {
         if (!isCreatorOrAdmin) {
-            alert('Chỉ người tạo hoặc Quản trị viên mới có quyền xóa lời nhắc / công việc này.')
+            setConfirmModal({
+                isOpen: true,
+                title: 'Không có quyền xóa',
+                message: 'Chỉ người tạo hoặc Quản trị viên mới có quyền xóa lời nhắc / công việc này.',
+                variant: 'warning',
+                isDanger: false,
+                hideCancel: true,
+                confirmText: 'Đã hiểu',
+                onConfirm: () => {},
+            })
             return
         }
-        if (!confirm(`Bạn có chắc chắn muốn xóa lời nhắc / công việc #${task.code}?`)) return
-        setDeleting(true)
-        try {
-            const { error } = await (supabase as any)
-                .from('shift_tasks')
-                .delete()
-                .eq('id', task.id)
 
-            if (error) throw error
-            onTaskDeleted(task.id)
-            onClose()
-        } catch (err) {
-            console.error('Error deleting task:', err)
-            alert('Không thể xóa việc.')
-        } finally {
-            setDeleting(false)
-        }
+        const typeLabel = isReminder ? 'lời nhắc' : 'công việc'
+
+        setConfirmModal({
+            isOpen: true,
+            title: `Xóa ${typeLabel}`,
+            message: `Bạn có chắc chắn muốn xóa vĩnh viễn ${typeLabel} #${task.code}?`,
+            taskSnippet: {
+                code: task.code,
+                title: task.title,
+            },
+            variant: 'danger',
+            isDanger: true,
+            confirmText: 'Xóa vĩnh viễn',
+            cancelText: 'Hủy bỏ',
+            onConfirm: async () => {
+                setDeleting(true)
+                try {
+                    const { error } = await (supabase as any)
+                        .from('shift_tasks')
+                        .delete()
+                        .eq('id', task.id)
+
+                    if (error) throw error
+                    onTaskDeleted(task.id)
+                    onClose()
+                } catch (err) {
+                    console.error('Error deleting task:', err)
+                    setConfirmModal({
+                        isOpen: true,
+                        title: 'Không thể xóa',
+                        message: 'Đã xảy ra lỗi khi xóa dữ liệu. Vui lòng thử lại sau.',
+                        variant: 'warning',
+                        isDanger: false,
+                        hideCancel: true,
+                        confirmText: 'Đóng',
+                        onConfirm: () => {},
+                    })
+                } finally {
+                    setDeleting(false)
+                }
+            },
+        })
     }
-
-    const isReminder = getTaskType(task) === 'reminder'
-    const isPending = task.status === 'pending'
     const isInProgress = task.status === 'in_progress'
     const isCompleted = task.status === 'completed'
 
@@ -1319,6 +1371,12 @@ export default function TaskDetailModal({
                     setLiveTask(updated)
                     onTaskUpdated(updated)
                 }}
+            />
+
+            {/* Custom Responsive Confirmation & Alert Modal */}
+            <TaskConfirmModal
+                {...confirmModal}
+                onClose={() => setConfirmModal(prev => ({ ...prev, isOpen: false }))}
             />
         </>
     )
