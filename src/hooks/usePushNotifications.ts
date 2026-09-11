@@ -31,8 +31,29 @@ export function usePushNotifications({
     const [isSupported, setIsSupported] = useState(false)
     const [permission, setPermission] = useState<NotificationPermission>('default')
     const [isSubscribed, setIsSubscribed] = useState(false)
+    const [subscription, setSubscription] = useState<PushSubscription | null>(null)
     const [loading, setLoading] = useState(false)
     const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null)
+
+    // Helper to sync push subscription to database
+    const syncSubscriptionToBackend = useCallback(async (sub: PushSubscription) => {
+        try {
+            await fetch('/api/notifications/subscribe', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    subscription: sub.toJSON(),
+                    user_id: userId || null,
+                    user_name: userName || 'Nhân viên',
+                    team_names: teamNames,
+                    system_code: systemCode,
+                    company_id: companyId,
+                }),
+            })
+        } catch (err) {
+            console.warn('Auto-sync push subscription failed:', err)
+        }
+    }, [userId, userName, JSON.stringify(teamNames), systemCode, companyId])
 
     // Check support and register Service Worker on mount
     useEffect(() => {
@@ -51,28 +72,37 @@ export function usePushNotifications({
                 setRegistration(reg)
                 const sub = await reg.pushManager.getSubscription()
                 if (sub) {
+                    setSubscription(sub)
                     setIsSubscribed(true)
-                    // Auto-sync team names & user if already subscribed
-                    if (userId) {
-                        fetch('/api/notifications/subscribe', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                subscription: sub.toJSON(),
-                                user_id: userId,
-                                user_name: userName || 'Nhân viên',
-                                team_names: teamNames,
-                                system_code: systemCode,
-                                company_id: companyId,
-                            }),
-                        }).catch(() => {})
-                    }
+                    // Always ensure existing subscription is synced into database
+                    syncSubscriptionToBackend(sub)
+                } else {
+                    setSubscription(null)
+                    setIsSubscribed(false)
                 }
             })
             .catch((err) => {
                 console.warn('Service Worker registration failed:', err)
             })
-    }, [userId, userName, JSON.stringify(teamNames), systemCode, companyId])
+    }, [syncSubscriptionToBackend])
+
+    // Helper to get active subscription directly
+    const getSubscription = useCallback(async (): Promise<PushSubscription | null> => {
+        try {
+            let reg = registration
+            if (!reg && 'serviceWorker' in navigator) {
+                reg = await navigator.serviceWorker.ready
+            }
+            if (reg) {
+                const sub = await reg.pushManager.getSubscription()
+                if (sub) setSubscription(sub)
+                return sub
+            }
+        } catch (err) {
+            console.warn('Error fetching subscription:', err)
+        }
+        return null
+    }, [registration])
 
     // Subscribe to push notifications
     const subscribe = useCallback(async (): Promise<boolean> => {
@@ -83,9 +113,10 @@ export function usePushNotifications({
 
         setLoading(true)
         try {
-            const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+            const vapidKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || 'BIS8rwKrO4HnMfX48d4CYdX7IBGE7DpxSU6dDwNljpEoi8J7Me4CmOl0uiaiEHnhLcSDTBae9lDLuHTcbEXjxxA'
             if (!vapidKey) {
                 console.error('VAPID public key is missing')
+                alert('Chưa cấu hình mã VAPID Public Key trên máy chủ.')
                 return false
             }
 
@@ -93,6 +124,7 @@ export function usePushNotifications({
             setPermission(perm)
 
             if (perm !== 'granted') {
+                alert('Bạn đã từ chối hoặc chưa cấp quyền thông báo. Hãy bấm vào biểu tượng ổ khóa cạnh thanh địa chỉ web trên trình duyệt để Bật quyền thông báo nhé!')
                 return false
             }
 
@@ -113,7 +145,7 @@ export function usePushNotifications({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     subscription: sub.toJSON(),
-                    user_id: userId,
+                    user_id: userId || null,
                     user_name: userName || 'Nhân viên',
                     team_names: teamNames,
                     system_code: systemCode,
@@ -121,12 +153,18 @@ export function usePushNotifications({
                 }),
             })
 
-            if (!res.ok) throw new Error('Không thể lưu thông tin đăng ký nhận thông báo')
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}))
+                throw new Error(errData.error || 'Không thể lưu thông tin đăng ký nhận thông báo lên máy chủ')
+            }
 
+            setSubscription(sub)
             setIsSubscribed(true)
+            alert('🎉 Đã kích hoạt chuông báo và số đỏ trên điện thoại thành công! Hãy bấm "Thử chuông ngay" để kiểm tra.')
             return true
         } catch (err: any) {
             console.error('Error subscribing to push:', err)
+            alert('Lỗi kích hoạt chuông thông báo: ' + (err?.message || 'Không thể kết nối máy chủ'))
             return false
         } finally {
             setLoading(false)
@@ -147,6 +185,7 @@ export function usePushNotifications({
                 })
                 await sub.unsubscribe()
             }
+            setSubscription(null)
             setIsSubscribed(false)
             return true
         } catch (err) {
@@ -176,6 +215,8 @@ export function usePushNotifications({
         isSupported,
         permission,
         isSubscribed,
+        subscription,
+        getSubscription,
         loading,
         subscribe,
         unsubscribe,

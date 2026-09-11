@@ -44,27 +44,31 @@ export async function POST(req: NextRequest) {
 
         if (matched) {
             // Update existing record
-            await supabaseAdmin
+            const { error: updateErr } = await supabaseAdmin
                 .from('audit_logs')
                 .update({
                     record_id: user_id || matched.id,
                     new_data: subscriptionData,
-                    action: 'UPDATE_SUBSCRIBE',
+                    action: 'UPDATE',
                 })
                 .eq('id', matched.id)
+
+            if (updateErr) throw updateErr
         } else {
             // Insert new record
-            await supabaseAdmin
+            const { error: insertErr } = await supabaseAdmin
                 .from('audit_logs')
                 .insert({
                     table_name: 'push_subscriptions',
                     record_id: user_id || 'anonymous',
-                    action: 'SUBSCRIBE',
+                    action: 'CREATE',
                     new_data: subscriptionData,
                     system_code: system_code || 'sanxuat',
                     company_id: company_id || null,
                     created_at: now,
                 })
+
+            if (insertErr) throw insertErr
         }
 
         return NextResponse.json({ success: true, message: 'Subscribed successfully' })

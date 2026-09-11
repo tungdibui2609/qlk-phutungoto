@@ -109,6 +109,8 @@ export default function MobileShiftTasksView({
         isSupported: isPushSupported,
         permission: pushPermission,
         isSubscribed: isPushSubscribed,
+        subscription: pushSubscription,
+        getSubscription: getPushSubscription,
         loading: pushLoading,
         subscribe: subscribePush,
         updateAppBadge,
@@ -119,6 +121,40 @@ export default function MobileShiftTasksView({
         systemCode: currentSystem?.code,
         companyId: currentSystem?.company_id || profile?.company_id,
     })
+
+    const [testingPush, setTestingPush] = useState(false)
+
+    const handleTestPush = async () => {
+        setTestingPush(true)
+        try {
+            const currentSub = pushSubscription || (getPushSubscription ? await getPushSubscription() : null)
+            const res = await fetch('/api/notifications/send-push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: '🔔 Thử Chuông Báo Chánh Thu',
+                    body: 'Điện thoại của bạn đã kết nối thành công và sẵn sàng nhận thông báo việc mới!',
+                    target_shifts: rawMyTeamNames,
+                    user_id: profile?.id,
+                    user_name: profile?.full_name,
+                    subscription: currentSub ? currentSub.toJSON() : undefined,
+                    is_test: true,
+                    url: '/work/tasks',
+                    badgeCount: unackTasksForMe.length || 1,
+                }),
+            })
+            const data = await res.json()
+            if (data.sentCount > 0) {
+                alert('🔔 Đã gửi chuông test thành công! Bạn hãy khóa màn hình hoặc kéo thanh thông báo điện thoại xuống để xem nhé.')
+            } else {
+                alert(data.message || 'Chưa tìm thấy thiết bị nào đã đăng ký. Bạn hãy chắc chắn đã bấm Bật ngay và chọn Cho phép trên điện thoại nhé!')
+            }
+        } catch (e: any) {
+            alert('Lỗi khi gửi test: ' + e.message)
+        } finally {
+            setTestingPush(false)
+        }
+    }
 
     // Automatically synchronize App Badge (red dot / counter on phone icon)
     React.useEffect(() => {
@@ -497,25 +533,53 @@ export default function MobileShiftTasksView({
             </div>
 
             {/* PWA Push Notification & Vibration Prompt Banner */}
-            {isPushSupported && !isPushSubscribed && pushPermission !== 'denied' && (
-                <div className="mx-3 mt-2 p-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                            <Bell className="w-4 h-4 text-white animate-bounce" />
+            {isPushSupported && (
+                !isPushSubscribed ? (
+                    pushPermission === 'denied' ? (
+                        <div className="mx-3 mt-2 p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-start gap-2.5">
+                            <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                            <div>
+                                <strong className="block font-bold">Quyền thông báo đang bị chặn trên trình duyệt</strong>
+                                <span className="text-[11px] text-amber-700">
+                                    Hãy bấm vào biểu tượng ổ khóa 🔒 trên thanh địa chỉ ➔ Chọn &quot;Quyền trang web&quot; ➔ Bật &quot;Thông báo&quot; để nhận chuông báo nhé.
+                                </span>
+                            </div>
                         </div>
-                        <div className="min-w-0">
-                            <h5 className="font-bold text-xs leading-tight">Bật chuông báo & số đỏ trên icon</h5>
-                            <p className="text-[10px] text-emerald-100 truncate">Rung chuông khi có việc mới giao cho đội</p>
+                    ) : (
+                        <div className="mx-3 mt-2 p-3 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 text-white shadow-md flex items-center justify-between gap-3 animate-in fade-in">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
+                                    <Bell className="w-4 h-4 text-white animate-bounce" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h5 className="font-bold text-xs leading-tight">Bật chuông báo &amp; số đỏ trên icon</h5>
+                                    <p className="text-[10px] text-emerald-100 truncate">Rung chuông khi có việc mới giao cho đội</p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => subscribePush()}
+                                disabled={pushLoading}
+                                className="px-3 py-1.5 rounded-xl bg-white text-emerald-800 text-xs font-bold shadow-sm active:scale-95 transition flex-shrink-0"
+                            >
+                                {pushLoading ? 'Đang bật...' : 'Bật ngay'}
+                            </button>
                         </div>
+                    )
+                ) : (
+                    <div className="mx-3 mt-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 truncate">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                            <span className="font-semibold truncate">Chuông &amp; số đỏ: <strong>Đang bật</strong></span>
+                        </div>
+                        <button
+                            onClick={handleTestPush}
+                            disabled={testingPush}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[10px] font-bold shadow-2xs hover:bg-emerald-700 active:scale-95 transition flex-shrink-0"
+                        >
+                            {testingPush ? 'Đang gửi...' : 'Thử chuông ngay'}
+                        </button>
                     </div>
-                    <button
-                        onClick={() => subscribePush()}
-                        disabled={pushLoading}
-                        className="px-3 py-1.5 rounded-xl bg-white text-emerald-800 text-xs font-bold shadow-sm active:scale-95 transition flex-shrink-0"
-                    >
-                        {pushLoading ? 'Đang bật...' : 'Bật ngay'}
-                    </button>
-                </div>
+                )
             )}
 
             {/* 4. Nội Dung Chính */}
