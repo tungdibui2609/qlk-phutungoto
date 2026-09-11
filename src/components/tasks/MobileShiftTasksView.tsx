@@ -724,68 +724,69 @@ export default function MobileShiftTasksView({
                                     }`}
                                 >
                                     {/* Card Header */}
-                                    <div className="p-3.5 border-b border-stone-100 flex items-center justify-between gap-2">
-                                        <div className="flex items-center gap-2">
-                                            <div
-                                                className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 ${
-                                                    item.isMyTeam
-                                                        ? 'bg-purple-600 text-white shadow-sm'
-                                                        : 'bg-stone-100 text-stone-700'
-                                                }`}
-                                            >
-                                                {item.team.name.slice(0, 2).toUpperCase()}
-                                            </div>
-                                            <div>
-                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                    <h3 className="font-extrabold text-sm text-stone-900">
+                                    <div className="p-3 border-b border-stone-100 space-y-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <div
+                                                    className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs flex-shrink-0 ${
+                                                        item.isMyTeam
+                                                            ? 'bg-purple-600 text-white shadow-sm'
+                                                            : 'bg-stone-100 text-stone-700'
+                                                    }`}
+                                                >
+                                                    {item.team.name.slice(0, 2).toUpperCase()}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 min-w-0">
+                                                    <h3 className="font-extrabold text-sm text-stone-900 truncate">
                                                         {item.team.name}
                                                     </h3>
                                                     {item.isMyTeam && (
-                                                        <span className="text-[10px] font-black px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-700 border border-purple-200 flex items-center gap-0.5">
+                                                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200/80 inline-flex items-center gap-0.5 flex-shrink-0 leading-none">
                                                             ⭐ Đội của bạn
                                                         </span>
                                                     )}
                                                 </div>
-                                                <div className="text-[11px] text-stone-500 flex items-center gap-2 mt-0.5">
-                                                    <span>Tổng: <strong>{item.total}</strong> việc</span>
-                                                </div>
                                             </div>
+
+                                            {/* Status Badge */}
+                                            {item.isMyTeam ? (
+                                                hasUnack ? (
+                                                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-600 text-white font-black text-[11px] shadow-sm animate-pulse flex-shrink-0">
+                                                        <Bell className="w-3 h-3" />
+                                                        <span>{item.unackCount} việc mới</span>
+                                                    </div>
+                                                ) : item.total > 0 ? (
+                                                    <div className="flex items-center gap-1 text-[10.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex-shrink-0">
+                                                        <Check className="w-3 h-3" />
+                                                        <span>Đã nhận hết</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[10.5px] text-stone-400 px-2 py-0.5 rounded-full bg-stone-50 border border-stone-100 flex-shrink-0">
+                                                        Chưa có việc
+                                                    </div>
+                                                )
+                                            ) : (
+                                                item.teamUnackCount > 0 ? (
+                                                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 text-white font-bold text-[11px] shadow-xs flex-shrink-0">
+                                                        <Clock className="w-3 h-3" />
+                                                        <span>{item.teamUnackCount} chưa nhận</span>
+                                                    </div>
+                                                ) : item.total > 0 ? (
+                                                    <div className="flex items-center gap-1 text-[10.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex-shrink-0">
+                                                        <Check className="w-3 h-3" />
+                                                        <span>Đội đã nhận hết</span>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[10.5px] text-stone-400 px-2 py-0.5 rounded-full bg-stone-50 border border-stone-100 flex-shrink-0">
+                                                        Chưa có việc
+                                                    </div>
+                                                )
+                                            )}
                                         </div>
 
-                                        {/* Status Badge */}
-                                        {item.isMyTeam ? (
-                                            hasUnack ? (
-                                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-rose-600 text-white font-black text-[11px] shadow-sm animate-pulse flex-shrink-0">
-                                                    <Bell className="w-3 h-3" />
-                                                    <span>{item.unackCount} việc mới</span>
-                                                </div>
-                                            ) : item.total > 0 ? (
-                                                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg flex-shrink-0">
-                                                    <Check className="w-3 h-3" />
-                                                    <span>Đã nhận hết</span>
-                                                </div>
-                                            ) : (
-                                                <div className="text-[11px] text-stone-400 px-2 py-0.5 rounded bg-stone-50">
-                                                    Chưa có việc
-                                                </div>
-                                            )
-                                        ) : (
-                                            item.teamUnackCount > 0 ? (
-                                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 text-white font-bold text-[11px] shadow-xs flex-shrink-0">
-                                                    <Clock className="w-3 h-3" />
-                                                    <span>{item.teamUnackCount} chưa nhận</span>
-                                                </div>
-                                            ) : item.total > 0 ? (
-                                                <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg flex-shrink-0">
-                                                    <Check className="w-3 h-3" />
-                                                    <span>Đội đã nhận hết</span>
-                                                </div>
-                                            ) : (
-                                                <div className="text-[11px] text-stone-400 px-2 py-0.5 rounded bg-stone-50">
-                                                    Chưa có việc
-                                                </div>
-                                            )
-                                        )}
+                                        <div className="pl-10 text-[11px] text-stone-500 flex items-center gap-2">
+                                            <span>Tổng: <strong>{item.total}</strong> việc</span>
+                                        </div>
                                     </div>
 
                                     {/* 4-Stage Segment Tabs: Mới nhất | Chờ xác nhận | Đã xác nhận | Hoàn thành */}
