@@ -64,6 +64,23 @@ export default function TaskDetailModal({
     const [uploadingMessageImage, setUploadingMessageImage] = useState(false)
     const chatFileInputRef = useRef<HTMLInputElement>(null)
 
+    const [confirmModal, setConfirmModal] = useState<{
+        isOpen: boolean
+        title: string
+        message?: string
+        taskSnippet?: { code?: string; title?: string }
+        confirmText?: string
+        cancelText?: string
+        variant?: 'danger' | 'warning' | 'info' | 'success'
+        isDanger?: boolean
+        hideCancel?: boolean
+        onConfirm: () => void | Promise<void>
+    }>({
+        isOpen: false,
+        title: '',
+        onConfirm: () => {},
+    })
+
     const handleSelectChatImages = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files
         if (!files || files.length === 0) return
@@ -369,23 +386,6 @@ export default function TaskDetailModal({
     const isCreatorOrAdmin = canManageTask(task, profile)
     const isReminder = getTaskType(task) === 'reminder'
     const isPending = task.status === 'pending'
-
-    const [confirmModal, setConfirmModal] = useState<{
-        isOpen: boolean
-        title: string
-        message?: string
-        taskSnippet?: { code?: string; title?: string }
-        confirmText?: string
-        cancelText?: string
-        variant?: 'danger' | 'warning' | 'info' | 'success'
-        isDanger?: boolean
-        hideCancel?: boolean
-        onConfirm: () => void | Promise<void>
-    }>({
-        isOpen: false,
-        title: '',
-        onConfirm: () => {},
-    })
 
     // Xóa việc (người tạo hoặc quản trị viên cấp 1, cấp 2)
     const handleDelete = async () => {
