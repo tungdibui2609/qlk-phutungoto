@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
     LayoutGrid,
     Search,
@@ -12,6 +12,7 @@ import {
     AlertTriangle,
     Flame,
     Users,
+    ChevronLeft,
     ChevronRight,
     Sparkles,
     Pencil,
@@ -19,9 +20,13 @@ import {
     Image as ImageIcon,
     CheckCircle2,
     Monitor,
+    ShieldCheck,
+    UserCheck,
     X,
     Filter,
-    ArrowUpDown
+    ArrowUpDown,
+    Send,
+    TrendingUp
 } from 'lucide-react'
 import { ShiftTask, TaskStatus } from './types'
 import { 
@@ -32,10 +37,19 @@ import {
     getAssignedTeams,
     getTeamCompletions,
     isTeamCompleted,
+    isTeamAcknowledged,
     getTaskTeamProgress,
-    canUserCompleteTeamTask
+    canUserCompleteTeamTask,
+    canUserAcknowledgeTask,
+    getTaskType,
+    canManageTask,
+    getTeamMemberAckInfo,
+    getDeduplicatedAcknowledgements
 } from './taskUtils'
+import { formatTaskContentPreview, getCardContentPreview, extractInlineImageUrls } from './taskContentUtils'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
+
+type TeamCardStage = 'latest' | 'waiting_ack' | 'acknowledged' | 'completed'
 
 interface MobileShiftTasksViewProps {
     tasks: ShiftTask[]
@@ -84,6 +98,11 @@ export default function MobileShiftTasksView({
     const [showSearch, setShowSearch] = useState(false)
     const [selectedTeamFilter, setSelectedTeamFilter] = useState<string | null>(null)
 
+    // Stage map cho từng thẻ đội trên mobile ('latest' | 'waiting_ack' | 'acknowledged' | 'completed')
+    const [cardStageMap, setCardStageMap] = useState<Record<string, TeamCardStage>>({})
+    const getTeamStage = (teamId: string): TeamCardStage => cardStageMap[teamId] || 'latest'
+    const setTeamStage = (teamId: string, stage: TeamCardStage) => setCardStageMap(prev => ({ ...prev, [teamId]: stage }))
+
     // My teams names
     const myTeamNames = useMemo(() => {
         return teams
@@ -97,12 +116,38 @@ export default function MobileShiftTasksView({
             .map(t => t.name)
     }, [teams, myTeamIds])
 
-    // Total unacknowledged tasks for the current logged-in user
+    // Total unacknowledged tasks for the current logged-in user:
+    // Only tasks assigned to this user or user's teams that haven't been acknowledged yet.
+    // Tasks created by this user for other teams are NOT counted here!
     const unackTasksForMe = useMemo(() => {
         return tasks.filter(t => 
-            t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+            t.status !== 'completed' &&
+            !hasUserAcknowledged(t, profile?.id, profile?.full_name) &&
+            canUserAcknowledgeTask(t, profile, rawMyTeamNames, allMembers, teams)
+        )
+    }, [tasks, profile, rawMyTeamNames, allMembers, teams])
+
+    // Tasks created by the current logged-in user (Công việc / Lời nhắc đã giao)
+    const myCreatedTasks = useMemo(() => {
+        return tasks.filter(t => 
+            (profile?.id && t.created_by && profile.id === t.created_by) ||
+            (profile?.full_name && t.created_by_name && profile.full_name.trim().toLowerCase() === t.created_by_name.trim().toLowerCase())
         )
     }, [tasks, profile?.id, profile?.full_name])
+
+    const inProgressCount = useMemo(() => tasks.filter(t => t.status === 'in_progress').length, [tasks])
+    const completedCount = useMemo(() => tasks.filter(t => t.status === 'completed').length, [tasks])
+    const myTasksCount = useMemo(() => {
+        return tasks.filter(t => {
+            const isForMyTeam = myTeamNames.some(name => isTaskAssignedToTeam(t, name))
+            const isAssignedToMe = t.assigned_to === profile?.id
+            const isCreatedByMe = t.created_by === profile?.id
+            return isForMyTeam || isAssignedToMe || isCreatedByMe
+        }).length
+    }, [tasks, myTeamNames, profile?.id])
+
+    // State mở Menu danh mục & bộ lọc dạng Bottom Sheet
+    const [showMenuSheet, setShowMenuSheet] = useState(false)
 
     // Push Notifications & App Badge Manager
     const {
@@ -193,6 +238,33 @@ export default function MobileShiftTasksView({
                 )
             })
 
+            // Acknowledged (in_progress or acknowledged by user/team, but not completed)
+            const acknowledgedTasks = teamTasks.filter(t => {
+                if (t.status === 'completed') return false
+                if (isMyTeam) {
+                    return hasUserAcknowledged(t, profile?.id, profile?.full_name) || t.status === 'in_progress'
+                } else {
+                    const acks: any[] = Array.isArray(t.acknowledgements) && t.acknowledgements.length > 0
+                        ? t.acknowledgements
+                        : (t.acknowledged_by_name ? [{ user_id: t.acknowledged_by, user_name: t.acknowledged_by_name }] : [])
+                    const ackedByTeam = acks.some(a => 
+                        (a.user_id && teamMemberUserIds.has(a.user_id)) ||
+                        (a.user_name && teamMemberNames.has(a.user_name.trim().toLowerCase()))
+                    )
+                    return ackedByTeam || t.status === 'in_progress'
+                }
+            }).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
+
+            const completedTasksList = teamTasks.filter(t => t.status === 'completed').sort(
+                (a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+            )
+
+            const latestTasks = [...teamTasks].sort(
+                (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+            )
+
+            const waitingAckTasks = isMyTeam ? unackTasks : teamUnackTasks
+
             return {
                 team,
                 isMyTeam,
@@ -201,6 +273,10 @@ export default function MobileShiftTasksView({
                 unackCount: unackTasks.length,
                 teamUnackCount: teamUnackTasks.length,
                 teamUnackTasks,
+                waitingAckTasks,
+                acknowledgedTasks,
+                completedTasksList,
+                latestTasks,
                 allTeamTasks: teamTasks,
             }
         }).sort((a, b) => {
@@ -239,8 +315,12 @@ export default function MobileShiftTasksView({
             })
         } else if (activeTab === 'unack') {
             list = list.filter(t => 
-                t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+                t.status !== 'completed' &&
+                !hasUserAcknowledged(t, profile?.id, profile?.full_name) &&
+                canUserAcknowledgeTask(t, profile, rawMyTeamNames, allMembers, teams)
             )
+        } else if (activeTab === 'created_by_me') {
+            list = myCreatedTasks
         } else if (activeTab === 'pending') {
             list = list.filter(t => t.status === 'pending')
         } else if (activeTab === 'in_progress') {
@@ -276,6 +356,21 @@ export default function MobileShiftTasksView({
             return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
         })
     }, [tasks, activeTab, selectedTeamFilter, searchQuery, myTeamNames, profile?.id, profile?.full_name])
+
+    // Phân trang 12 công việc / lời nhắc mỗi trang
+    const [currentPage, setCurrentPage] = useState(1)
+    const PAGE_SIZE = 12
+
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [activeTab, selectedTeamFilter, searchQuery])
+
+    const totalPages = Math.ceil(filteredTasks.length / PAGE_SIZE) || 1
+
+    const paginatedTasks = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE
+        return filteredTasks.slice(start, start + PAGE_SIZE)
+    }, [filteredTasks, currentPage])
 
     return (
         <div className="min-h-screen bg-stone-100 pb-24 font-sans text-stone-800 antialiased selection:bg-purple-100">
@@ -396,127 +491,137 @@ export default function MobileShiftTasksView({
                 </div>
             )}
 
-            {/* 3. Filter Pills Bar (Cuộn ngang một chạm) */}
-            <div className="sticky top-[53px] z-20 bg-white/90 backdrop-blur border-b border-stone-200/80 px-3 py-2 shadow-2xs">
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-                    {/* Tab: 🏢 Tổ đội */}
+            {/* 3. Filter Bar (Hiện đại, không cần vuốt, có Menu đầy đủ) */}
+            <div className="sticky top-[53px] z-20 bg-white/95 backdrop-blur-md border-b border-stone-200/80 px-3 py-2 shadow-2xs space-y-2">
+                {/* Row 1: Segment Chế độ xem & Nút Menu Danh mục */}
+                <div className="flex items-center gap-2">
+                    {/* Segmented Switcher */}
+                    <div className="flex-1 grid grid-cols-2 p-1 bg-stone-100 rounded-xl">
+                        <button
+                            onClick={() => {
+                                setActiveTab('teams')
+                                setSelectedTeamFilter(null)
+                            }}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                                activeTab === 'teams'
+                                    ? 'bg-white text-purple-800 shadow-2xs'
+                                    : 'text-stone-600 hover:text-stone-900'
+                            }`}
+                        >
+                            <LayoutGrid className="w-3.5 h-3.5 text-purple-600" />
+                            <span>Theo Tổ đội</span>
+                            {unackTasksForMe.length > 0 && (
+                                <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                            )}
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                if (activeTab === 'teams') setActiveTab('all')
+                                setSelectedTeamFilter(null)
+                            }}
+                            className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition ${
+                                activeTab !== 'teams'
+                                    ? 'bg-white text-stone-900 shadow-2xs'
+                                    : 'text-stone-600 hover:text-stone-900'
+                            }`}
+                        >
+                            <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                            <span>Danh sách ({tasks.length})</span>
+                        </button>
+                    </div>
+
+                    {/* Nút Menu Bộ Lọc & Danh Mục */}
                     <button
-                        onClick={() => {
-                            setActiveTab('teams')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'teams'
-                                ? 'bg-purple-700 text-white shadow-sm'
-                                : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                        onClick={() => setShowMenuSheet(true)}
+                        className={`py-1.5 px-2.5 rounded-xl border flex items-center gap-1.5 text-xs font-bold transition active:scale-95 flex-shrink-0 ${
+                            activeTab !== 'teams' && activeTab !== 'all'
+                                ? 'bg-purple-50 border-purple-300 text-purple-800'
+                                : 'bg-white border-stone-200 text-stone-700 hover:bg-stone-50'
                         }`}
+                        title="Mở menu danh mục & bộ lọc"
                     >
-                        <LayoutGrid className="w-3.5 h-3.5" />
-                        <span>Tổ đội</span>
-                        {unackTasksForMe.length > 0 && (
-                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                        <Filter className="w-3.5 h-3.5 text-purple-600" />
+                        <span>Menu</span>
+                        {activeTab !== 'teams' && activeTab !== 'all' && (
+                            <span className="w-2 h-2 rounded-full bg-purple-600" />
                         )}
-                    </button>
-
-                    {/* Tab: 👤 Của tôi */}
-                    <button
-                        onClick={() => {
-                            setActiveTab('my_tasks')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'my_tasks'
-                                ? 'bg-stone-900 text-white shadow-sm'
-                                : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                        }`}
-                    >
-                        <span>Của tôi</span>
-                    </button>
-
-                    {/* Tab: ⚡ Cần tiếp nhận */}
-                    <button
-                        onClick={() => {
-                            setActiveTab('unack')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'unack'
-                                ? 'bg-rose-600 text-white shadow-sm'
-                                : 'bg-rose-50 text-rose-700 border border-rose-200'
-                        }`}
-                    >
-                        <Bell className="w-3.5 h-3.5" />
-                        <span>Cần tiếp nhận</span>
-                        {unackTasksForMe.length > 0 && (
-                            <span className="bg-rose-500 text-white text-[10px] font-black px-1.5 rounded-full">
-                                {unackTasksForMe.length}
-                            </span>
-                        )}
-                    </button>
-
-                    {/* Tab: 🟡 Chờ làm */}
-                    <button
-                        onClick={() => {
-                            setActiveTab('pending')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'pending'
-                                ? 'bg-amber-500 text-white shadow-sm'
-                                : 'bg-stone-100 text-stone-700 hover:bg-amber-50 hover:text-amber-700'
-                        }`}
-                    >
-                        <span className="w-2 h-2 rounded-full bg-amber-400" />
-                        <span>Chờ làm</span>
-                    </button>
-
-                    {/* Tab: 🔵 Đang làm */}
-                    <button
-                        onClick={() => {
-                            setActiveTab('in_progress')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'in_progress'
-                                ? 'bg-blue-600 text-white shadow-sm'
-                                : 'bg-stone-100 text-stone-700 hover:bg-blue-50 hover:text-blue-700'
-                        }`}
-                    >
-                        <span className="w-2 h-2 rounded-full bg-blue-400" />
-                        <span>Đang làm</span>
-                    </button>
-
-                    {/* Tab: 🟢 Đã xong */}
-                    <button
-                        onClick={() => {
-                            setActiveTab('completed')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'completed'
-                                ? 'bg-emerald-600 text-white shadow-sm'
-                                : 'bg-stone-100 text-stone-700 hover:bg-emerald-50 hover:text-emerald-700'
-                        }`}
-                    >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                        <span>Đã xong</span>
-                    </button>
-
-                    {/* Tab: Tất cả */}
-                    <button
-                        onClick={() => {
-                            setActiveTab('all')
-                            setSelectedTeamFilter(null)
-                        }}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition active:scale-95 flex-shrink-0 ${
-                            activeTab === 'all'
-                                ? 'bg-stone-800 text-white shadow-sm'
-                                : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                        }`}
-                    >
-                        <span>Tất cả ({tasks.length})</span>
                     </button>
                 </div>
+
+                {/* Row 2: Bộ lọc nhanh khi ở chế độ Danh sách việc (4 ô vừa khít màn hình, KHÔNG CẦN VUỐT) */}
+                {activeTab !== 'teams' && (
+                    <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                        {/* 1. Tất cả */}
+                        <button
+                            onClick={() => {
+                                setActiveTab('all')
+                                setSelectedTeamFilter(null)
+                            }}
+                            className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center truncate transition ${
+                                activeTab === 'all'
+                                    ? 'bg-stone-900 text-white shadow-2xs'
+                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                            }`}
+                        >
+                            Tất cả ({tasks.length})
+                        </button>
+
+                        {/* 2. Chờ bạn nhận */}
+                        <button
+                            onClick={() => {
+                                setActiveTab('unack')
+                                setSelectedTeamFilter(null)
+                            }}
+                            className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center truncate transition relative ${
+                                activeTab === 'unack'
+                                    ? 'bg-rose-600 text-white shadow-2xs'
+                                    : unackTasksForMe.length > 0
+                                    ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                            }`}
+                        >
+                            Chờ nhận {unackTasksForMe.length > 0 ? `(${unackTasksForMe.length})` : ''}
+                        </button>
+
+                        {/* 3. Tôi giao */}
+                        <button
+                            onClick={() => {
+                                setActiveTab('created_by_me')
+                                setSelectedTeamFilter(null)
+                            }}
+                            className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center truncate transition ${
+                                activeTab === 'created_by_me'
+                                    ? 'bg-purple-700 text-white shadow-2xs'
+                                    : myCreatedTasks.length > 0
+                                    ? 'bg-purple-50 text-purple-700 border border-purple-200/80'
+                                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                            }`}
+                        >
+                            Tôi giao ({myCreatedTasks.length})
+                        </button>
+
+                        {/* 4. Menu thêm */}
+                        <button
+                            onClick={() => setShowMenuSheet(true)}
+                            className={`py-1.5 px-1 rounded-lg text-[11px] font-bold text-center truncate transition flex items-center justify-center gap-0.5 ${
+                                ['in_progress', 'completed', 'my_tasks'].includes(activeTab)
+                                    ? 'bg-purple-700 text-white shadow-2xs'
+                                    : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                            }`}
+                        >
+                            <span>
+                                {activeTab === 'in_progress'
+                                    ? 'Đang làm'
+                                    : activeTab === 'completed'
+                                    ? 'Đã xong'
+                                    : activeTab === 'my_tasks'
+                                    ? 'Của tôi'
+                                    : 'Thêm ▾'}
+                            </span>
+                        </button>
+                    </div>
+                )}
 
                 {/* Hiển thị nếu đang lọc theo một đội cụ thể */}
                 {selectedTeamFilter && (
@@ -594,6 +699,20 @@ export default function MobileShiftTasksView({
 
                         {teamItems.map(item => {
                             const hasUnack = item.isMyTeam ? item.unackCount > 0 : item.teamUnackCount > 0
+                            const currentStage = getTeamStage(item.team.id)
+
+                            // Chọn danh sách công việc theo phân loại tab
+                            const displayedTasks = (() => {
+                                if (currentStage === 'waiting_ack') return item.waitingAckTasks
+                                if (currentStage === 'acknowledged') return item.acknowledgedTasks
+                                if (currentStage === 'completed') return item.completedTasksList
+                                return item.latestTasks
+                            })()
+
+                            // Mặc định tab Mới nhất chỉ hiển thị 1 công việc mới nhất để card siêu gọn
+                            const tasksToShow = currentStage === 'latest'
+                                ? displayedTasks.slice(0, 1)
+                                : displayedTasks.slice(0, 3)
 
                             return (
                                 <div
@@ -652,7 +771,7 @@ export default function MobileShiftTasksView({
                                             )
                                         ) : (
                                             item.teamUnackCount > 0 ? (
-                                                <div className="flex items-center gap-1 px-2 py-1 rounded-xl bg-amber-500 text-white font-bold text-[11px] shadow-xs flex-shrink-0">
+                                                <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 text-white font-bold text-[11px] shadow-xs flex-shrink-0">
                                                     <Clock className="w-3 h-3" />
                                                     <span>{item.teamUnackCount} chưa nhận</span>
                                                 </div>
@@ -669,46 +788,227 @@ export default function MobileShiftTasksView({
                                         )}
                                     </div>
 
-                                    {/* Danh sách việc chưa tiếp nhận cần xử lý ngay */}
-                                    {hasUnack && (
-                                        <div className="p-3 bg-amber-50/50 space-y-2 border-b border-stone-100">
-                                            <div className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
-                                                <Flame className="w-3.5 h-3.5 text-amber-600" />
-                                                <span>Cần bấm xác nhận tiếp nhận:</span>
+                                    {/* 4-Stage Segment Tabs: Mới nhất | Chờ xác nhận | Đã xác nhận | Hoàn thành */}
+                                    <div className="px-3 pt-2.5 pb-1 border-b border-stone-100 bg-stone-50/50">
+                                        <div className="grid grid-cols-4 gap-1 p-1 bg-stone-200/70 rounded-xl text-center text-[10.5px] font-bold">
+                                            {/* 1. Mới nhất */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setTeamStage(item.team.id, 'latest')}
+                                                className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                    currentStage === 'latest'
+                                                        ? 'bg-white text-stone-900 shadow-2xs'
+                                                        : 'text-stone-600 hover:text-stone-900'
+                                                }`}
+                                            >
+                                                <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                                <span>Mới nhất</span>
+                                            </button>
+
+                                            {/* 2. Chờ nhận */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setTeamStage(item.team.id, 'waiting_ack')}
+                                                className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                    currentStage === 'waiting_ack'
+                                                        ? 'bg-white text-rose-700 shadow-2xs'
+                                                        : 'text-stone-600 hover:text-rose-700'
+                                                }`}
+                                            >
+                                                <span>Chờ nhận</span>
+                                                {item.waitingAckTasks.length > 0 && (
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                                        currentStage === 'waiting_ack'
+                                                            ? 'bg-rose-600 text-white'
+                                                            : 'bg-rose-100 text-rose-700'
+                                                    }`}>
+                                                        {item.waitingAckTasks.length}
+                                                    </span>
+                                                )}
+                                            </button>
+
+                                            {/* 3. Đã nhận */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setTeamStage(item.team.id, 'acknowledged')}
+                                                className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                    currentStage === 'acknowledged'
+                                                        ? 'bg-white text-blue-700 shadow-2xs'
+                                                        : 'text-stone-600 hover:text-blue-700'
+                                                }`}
+                                            >
+                                                <span>Đã nhận</span>
+                                                {item.acknowledgedTasks.length > 0 && (
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                                                        currentStage === 'acknowledged'
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                        {item.acknowledgedTasks.length}
+                                                    </span>
+                                                )}
+                                            </button>
+
+                                            {/* 4. Hoàn thành */}
+                                            <button
+                                                type="button"
+                                                onClick={() => setTeamStage(item.team.id, 'completed')}
+                                                className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                    currentStage === 'completed'
+                                                        ? 'bg-white text-emerald-700 shadow-2xs'
+                                                        : 'text-stone-600 hover:text-emerald-700'
+                                                }`}
+                                            >
+                                                <span>Đã xong</span>
+                                                {item.completedTasksList.length > 0 && (
+                                                    <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                                                        currentStage === 'completed'
+                                                            ? 'bg-emerald-600 text-white'
+                                                            : 'bg-emerald-100 text-emerald-700'
+                                                    }`}>
+                                                        {item.completedTasksList.length}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Card Body: Danh sách công việc theo tab stage */}
+                                    <div className="p-3 space-y-2">
+                                        {displayedTasks.length === 0 ? (
+                                            <div className="py-4 text-center text-stone-400">
+                                                {currentStage === 'waiting_ack' && (
+                                                    <div className="space-y-0.5">
+                                                        <CheckCircle2 className="w-6 h-6 text-emerald-500 mx-auto" />
+                                                        <p className="text-xs font-semibold text-emerald-700">Không có việc chờ tiếp nhận</p>
+                                                    </div>
+                                                )}
+                                                {currentStage === 'acknowledged' && (
+                                                    <p className="text-xs font-medium">Chưa có việc nào đang xử lý</p>
+                                                )}
+                                                {currentStage === 'completed' && (
+                                                    <p className="text-xs font-medium">Chưa có việc nào đã hoàn thành</p>
+                                                )}
+                                                {currentStage === 'latest' && (
+                                                    <p className="text-xs font-medium">Đội chưa có thông báo nào</p>
+                                                )}
                                             </div>
-                                            {item.unackTasks.slice(0, 2).map(task => (
-                                                <div
-                                                    key={task.id}
-                                                    onClick={() => onSelectTask(task)}
-                                                    className="p-2.5 rounded-xl bg-white border border-amber-200 flex items-center justify-between gap-2 shadow-2xs active:bg-stone-50 cursor-pointer"
-                                                >
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="flex items-center gap-1.5">
-                                                            <span className="font-mono text-[10px] font-bold text-stone-500">
-                                                                #{task.code}
-                                                            </span>
-                                                            {task.priority === 'urgent' && (
-                                                                <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-red-100 text-red-700">
-                                                                    GẤP
-                                                                </span>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {tasksToShow.map(task => {
+                                                    const isTaskCompleted = task.status === 'completed'
+                                                    const isTaskInProgress = task.status === 'in_progress'
+                                                    const isCreatedByMe = Boolean(
+                                                        (profile?.id && task.created_by && profile.id === task.created_by) ||
+                                                        (profile?.full_name && task.created_by_name && profile.full_name.trim().toLowerCase() === task.created_by_name.trim().toLowerCase())
+                                                    )
+                                                    const canAckThisTask = canUserAcknowledgeTask(task, profile, rawMyTeamNames, allMembers, teams)
+                                                    const needsMyAck = !isTaskCompleted && !hasUserAcknowledged(task, profile?.id, profile?.full_name) && canAckThisTask
+
+                                                    return (
+                                                        <div
+                                                            key={task.id}
+                                                            onClick={() => onSelectTask(task)}
+                                                            className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 shadow-2xs active:bg-stone-50 cursor-pointer transition ${
+                                                                isTaskCompleted
+                                                                    ? 'bg-emerald-50/20 border-emerald-200'
+                                                                    : needsMyAck
+                                                                    ? 'bg-rose-50/30 border-rose-200'
+                                                                    : isTaskInProgress
+                                                                    ? 'bg-blue-50/20 border-blue-200'
+                                                                    : 'bg-white border-stone-200'
+                                                            }`}
+                                                        >
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                    <span className="font-mono text-[10px] font-bold text-stone-500">
+                                                                        #{task.code}
+                                                                    </span>
+                                                                    {isTaskCompleted ? (
+                                                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-700">
+                                                                            Đã xong
+                                                                        </span>
+                                                                    ) : needsMyAck ? (
+                                                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-rose-100 text-rose-700 animate-pulse">
+                                                                            Chờ bạn nhận
+                                                                        </span>
+                                                                    ) : isCreatedByMe ? (
+                                                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                                                                            Bạn đã giao
+                                                                        </span>
+                                                                    ) : isTaskInProgress ? (
+                                                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-blue-100 text-blue-700">
+                                                                            Đang làm
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-700">
+                                                                            Chờ đội nhận
+                                                                        </span>
+                                                                    )}
+                                                                    {task.priority === 'urgent' && (
+                                                                        <span className="text-[9px] font-black px-1.5 py-0.2 rounded bg-red-100 text-red-700">
+                                                                            GẤP
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-xs font-bold text-stone-800 truncate mt-0.5">
+                                                                    {task.title}
+                                                                </div>
+                                                                <div className="text-[10px] text-stone-400 mt-0.5 truncate">
+                                                                    Giao bởi {task.created_by_name || 'Nhân viên'} • {formatDateRelative(task.created_at)}
+                                                                </div>
+                                                            </div>
+
+                                                            {needsMyAck ? (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => onQuickAcknowledge(e, task)}
+                                                                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600 active:bg-emerald-700 text-white font-bold text-[11px] shadow-sm flex items-center gap-1 flex-shrink-0"
+                                                                >
+                                                                    <Check className="w-3 h-3" />
+                                                                    <span>Nhận</span>
+                                                                </button>
+                                                            ) : (
+                                                                <ChevronRight className="w-4 h-4 text-stone-300 flex-shrink-0" />
                                                             )}
                                                         </div>
-                                                        <div className="text-xs font-bold text-stone-800 truncate mt-0.5">
-                                                            {task.title}
-                                                        </div>
-                                                    </div>
+                                                    )
+                                                })}
 
-                                                    <button
-                                                        onClick={(e) => onQuickAcknowledge(e, task)}
-                                                        className="px-2.5 py-1.5 rounded-xl bg-emerald-600 active:bg-emerald-700 text-white font-bold text-[11px] shadow-sm flex items-center gap-1 flex-shrink-0"
-                                                    >
-                                                        <Check className="w-3 h-3" />
-                                                        <span>Nhận</span>
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                                {currentStage === 'latest' && item.total > 1 && (
+                                                    <div className="text-center pt-0.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedTeamFilter(item.team.name)
+                                                                setActiveTab('all')
+                                                            }}
+                                                            className="text-[11px] text-purple-700 font-bold hover:underline inline-flex items-center gap-0.5"
+                                                        >
+                                                            <span>+{item.total - 1} việc khác của đội...</span>
+                                                            <ChevronRight className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
+
+                                                {currentStage !== 'latest' && displayedTasks.length > 3 && (
+                                                    <div className="text-center pt-0.5">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setSelectedTeamFilter(item.team.name)
+                                                                setActiveTab('all')
+                                                            }}
+                                                            className="text-[11px] text-purple-700 font-bold hover:underline inline-flex items-center gap-0.5"
+                                                        >
+                                                            <span>+{displayedTasks.length - 3} việc khác trong mục này...</span>
+                                                            <ChevronRight className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
 
                                     {/* Action Bar dưới chân Card đội */}
                                     <div className="px-3.5 py-2.5 bg-stone-50/60 flex items-center justify-between text-xs">
@@ -757,21 +1057,17 @@ export default function MobileShiftTasksView({
                                 </button>
                             </div>
                         ) : (
-                            filteredTasks.map(task => {
+                            paginatedTasks.map(task => {
                                 const isPending = task.status === 'pending'
                                 const isInProgress = task.status === 'in_progress'
                                 const isCompleted = task.status === 'completed'
 
-                                const acks: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
-                                    ? task.acknowledgements
-                                    : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
-                                const hasMyAck = acks.some(a => a.user_id === profile?.id || (a.user_name && a.user_name === profile?.full_name))
-                                const isCreator = Boolean(
-                                    profile?.id === task.created_by ||
-                                    (profile?.full_name && task.created_by_name === profile.full_name) ||
-                                    profile?.roles?.code === 'admin' ||
-                                    (profile as any)?.role === 'admin'
+                                const acks = getDeduplicatedAcknowledgements(task)
+                                const hasMyAck = acks.some(a => 
+                                    (profile?.id && a.user_id && a.user_id === profile.id) || 
+                                    (profile?.full_name && a.user_name && a.user_name.trim().toLowerCase() === profile.full_name.trim().toLowerCase())
                                 )
+                                const isCreatorOrAdmin = canManageTask(task, profile)
 
                                 const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                                     ? task.target_shifts
@@ -810,24 +1106,60 @@ export default function MobileShiftTasksView({
                                                         #{task.code}
                                                     </span>
 
+                                                    {(() => {
+                                                        const tType = getTaskType(task)
+                                                        return (
+                                                            <span
+                                                                className={`text-[9px] font-black px-1.5 py-0.2 rounded border ${
+                                                                    tType === 'reminder'
+                                                                        ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                                        : 'bg-blue-50 text-blue-800 border-blue-200'
+                                                                }`}
+                                                            >
+                                                                {tType === 'reminder' ? '🔔 LỜI NHẮC' : '📋 VIỆC'}
+                                                            </span>
+                                                        )
+                                                    })()}
+
                                                     {task.priority === 'urgent' && (
                                                         <span className="text-[10px] font-black px-1.5 py-0.2 rounded-full bg-red-100 text-red-700 border border-red-200 animate-pulse">
                                                             Khẩn cấp
                                                         </span>
                                                     )}
 
-                                                    {shiftsList.slice(0, 2).map((shift, idx) => (
-                                                        <span
-                                                            key={idx}
-                                                            className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
-                                                                shift.startsWith('Đội')
-                                                                    ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                                    : 'bg-blue-50 text-blue-700 border-blue-200'
-                                                            }`}
-                                                        >
-                                                            {shift}
-                                                        </span>
-                                                    ))}
+                                                    {shiftsList.slice(0, 2).map((shift, idx) => {
+                                                        const isAll = shift === 'Toàn bộ' || shift === 'Toàn đội'
+                                                        return (
+                                                            <span
+                                                                key={idx}
+                                                                className={`text-[10px] font-bold px-1.5 py-0.2 rounded-full border ${
+                                                                    isAll
+                                                                        ? 'bg-purple-700 text-white border-purple-700'
+                                                                        : shift.startsWith('Đội')
+                                                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                        : 'bg-blue-50 text-blue-700 border-blue-200'
+                                                                }`}
+                                                            >
+                                                                {isAll ? '🏢 Toàn bộ' : shift}
+                                                            </span>
+                                                        )
+                                                    })}
+
+                                                    {(() => {
+                                                        const isCreatedByMe = Boolean(
+                                                            (profile?.id && task.created_by && profile.id === task.created_by) ||
+                                                            (profile?.full_name && task.created_by_name && profile.full_name.trim().toLowerCase() === task.created_by_name.trim().toLowerCase())
+                                                        )
+                                                        if (isCreatedByMe) {
+                                                            return (
+                                                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded-full bg-purple-50 text-purple-800 border border-purple-200">
+                                                                    📤 Bạn đã giao
+                                                                </span>
+                                                            )
+                                                        }
+                                                        return null
+                                                    })()}
+
                                                 </div>
 
                                                 <span className="text-[11px] text-stone-400 whitespace-nowrap flex-shrink-0">
@@ -840,44 +1172,52 @@ export default function MobileShiftTasksView({
                                                 <h4 className="font-bold text-sm text-stone-900 leading-snug line-clamp-2">
                                                     {task.title}
                                                 </h4>
-                                                {task.content && (
+                                                {task.content && getCardContentPreview(task.content) && (
                                                     <p className="text-xs text-stone-600 line-clamp-2 mt-1">
-                                                        {task.content}
+                                                        {getCardContentPreview(task.content)}
                                                     </p>
                                                 )}
                                             </div>
 
                                             {/* Image Thumbnails preview */}
-                                            {task.images && task.images.length > 0 && (
-                                                <div className="flex items-center gap-1.5 pt-1">
-                                                    {task.images.slice(0, 3).map((img, idx) => (
-                                                        <div
-                                                            key={idx}
-                                                            onClick={(e) => {
-                                                                e.stopPropagation()
-                                                                onImageClick(task.images || [], idx)
-                                                            }}
-                                                            className="w-12 h-12 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 flex-shrink-0 relative cursor-pointer"
-                                                        >
-                                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                            <img
-                                                                src={img}
-                                                                alt={`Ảnh ${idx + 1}`}
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        </div>
-                                                    ))}
-                                                    {task.images.length > 3 && (
-                                                        <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded-lg">
-                                                            +{task.images.length - 3}
-                                                        </span>
-                                                    )}
-                                                </div>
-                                            )}
+                                            {(() => {
+                                                const cardImages = (task.images && task.images.length > 0)
+                                                    ? task.images
+                                                    : extractInlineImageUrls(task.content)
+                                                if (!cardImages || cardImages.length === 0) return null
+
+                                                return (
+                                                    <div className="flex items-center gap-1.5 pt-1">
+                                                        {cardImages.slice(0, 3).map((img, idx) => (
+                                                            <div
+                                                                key={idx}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation()
+                                                                    onImageClick(cardImages, idx)
+                                                                }}
+                                                                className="w-12 h-12 rounded-lg overflow-hidden border border-stone-200 bg-stone-100 flex-shrink-0 relative cursor-pointer"
+                                                            >
+                                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                <img
+                                                                    src={img}
+                                                                    alt={`Ảnh ${idx + 1}`}
+                                                                    className="w-full h-full object-cover"
+                                                                />
+                                                            </div>
+                                                        ))}
+                                                        {cardImages.length > 3 && (
+                                                            <span className="text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-1 rounded-lg">
+                                                                +{cardImages.length - 3}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })()}
 
                                             {/* Multi-team progress breakdown */}
                                             {(() => {
-                                                const teamProgress = getTaskTeamProgress(task)
+                                                const isReminder = getTaskType(task) === 'reminder'
+                                                const teamProgress = getTaskTeamProgress(task, allMembers, teams)
                                                 if (teamProgress.total <= 1) return null
 
                                                 return (
@@ -885,7 +1225,7 @@ export default function MobileShiftTasksView({
                                                         <div className="flex items-center justify-between text-[11px]">
                                                             <span className="font-bold text-stone-700 flex items-center gap-1">
                                                                 <Users className="w-3 h-3 text-purple-600" />
-                                                                Tiến độ các đội:
+                                                                {isReminder ? 'Tiến độ tiếp nhận:' : 'Tiến độ các đội:'}
                                                             </span>
                                                             <span className={`font-black px-2 py-0.5 rounded-md text-[10px] ${
                                                                 teamProgress.isAllCompleted
@@ -894,7 +1234,7 @@ export default function MobileShiftTasksView({
                                                                     ? 'bg-amber-100 text-amber-800'
                                                                     : 'bg-stone-200/80 text-stone-700'
                                                             }`}>
-                                                                {teamProgress.ratioText} đội xong ({teamProgress.percent}%)
+                                                                {teamProgress.ratioText} {isReminder ? 'đội đã nhận' : 'đội xong'} ({teamProgress.percent}%)
                                                             </span>
                                                         </div>
 
@@ -909,18 +1249,34 @@ export default function MobileShiftTasksView({
                                                         {/* Teams breakdown tags */}
                                                         <div className="flex flex-wrap gap-1 pt-0.5">
                                                             {teamProgress.assignedTeams.map(t => {
-                                                                const isDone = isTeamCompleted(task, t)
+                                                                const isDone = isTeamCompleted(task, t) || (isReminder && isTeamAcknowledged(task, t, allMembers, teams))
+                                                                const isAcked = isTeamAcknowledged(task, t, allMembers, teams)
+                                                                const memberInfo = getTeamMemberAckInfo(task, t, allMembers, teams)
+                                                                const memberRatioStr = memberInfo.totalMembers > 0
+                                                                    ? ` (${memberInfo.ackedCount}/${memberInfo.totalMembers})`
+                                                                    : (memberInfo.ackedCount > 0 ? ` (${memberInfo.ackedCount})` : '')
+
+                                                                let label = 'Chưa nhận'
+                                                                let tagClass = 'bg-white border-stone-200 text-stone-500'
+                                                                let Icon = Clock
+
+                                                                if (isDone) {
+                                                                    label = isReminder ? 'Đã nhận' : 'Đã xong'
+                                                                    tagClass = 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                                                    Icon = CheckCircle2
+                                                                } else if (isAcked) {
+                                                                    label = 'Đang làm'
+                                                                    tagClass = 'bg-blue-50 border-blue-300 text-blue-800'
+                                                                    Icon = Clock
+                                                                }
+
                                                                 return (
                                                                     <span
                                                                         key={t}
-                                                                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
-                                                                            isDone
-                                                                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                                                                                : 'bg-white border-stone-200 text-stone-500'
-                                                                        }`}
+                                                                        className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${tagClass}`}
                                                                     >
-                                                                        {isDone ? <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> : <Clock className="w-2.5 h-2.5 text-stone-400" />}
-                                                                        <span>{t}: {isDone ? 'Đã xong' : 'Chưa'}</span>
+                                                                        <Icon className="w-2.5 h-2.5" />
+                                                                        <span>{t}: {label}{memberRatioStr}</span>
                                                                     </span>
                                                                 )
                                                             })}
@@ -931,8 +1287,14 @@ export default function MobileShiftTasksView({
 
                                             {/* Footer metadata: Người giao & Ai đã nhận */}
                                             <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-500">
-                                                <div className="truncate max-w-[170px]">
-                                                    Giao bởi: <strong className="text-stone-700">{task.created_by_name || 'Hệ thống'}</strong>
+                                                <div className="truncate max-w-[62%] flex items-center gap-1">
+                                                    <span className="truncate">Giao: <strong className="text-stone-700">{task.created_by_name || 'Hệ thống'}</strong></span>
+                                                    {task.assigned_to_name && (
+                                                        <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded font-medium flex items-center gap-0.5 flex-shrink-0" title={`Chỉ định cho ${task.assigned_to_name}`}>
+                                                            <UserCheck className="w-2.5 h-2.5 flex-shrink-0" />
+                                                            <span className="truncate max-w-[70px]">{task.assigned_to_name}</span>
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div>
                                                     {acks.length > 0 ? (
@@ -952,8 +1314,10 @@ export default function MobileShiftTasksView({
                                         <div className="p-2.5 bg-stone-50/80 border-t border-stone-100 flex items-center justify-between gap-2">
                                             {/* Trạng thái xác nhận của người dùng hiện tại */}
                                             {(() => {
+                                                const isReminder = getTaskType(task) === 'reminder'
                                                 const completionInfo = canUserCompleteTeamTask(task, profile, rawMyTeamNames)
-                                                const teamProgress = getTaskTeamProgress(task)
+                                                const teamProgress = getTaskTeamProgress(task, allMembers, teams)
+                                                const canAcknowledge = canUserAcknowledgeTask(task, profile, rawMyTeamNames, allMembers, teams)
                                                 const isDone = isCompleted || teamProgress.isAllCompleted
 
                                                 if (isDone) {
@@ -964,7 +1328,7 @@ export default function MobileShiftTasksView({
                                                     )
                                                 }
 
-                                                if (!hasMyAck) {
+                                                if (!hasMyAck && canAcknowledge) {
                                                     return (
                                                         <button
                                                             onClick={(e) => onQuickAcknowledge(e, task)}
@@ -978,10 +1342,16 @@ export default function MobileShiftTasksView({
 
                                                 return (
                                                     <div className="w-full flex items-center justify-between gap-2">
-                                                        <div className="flex items-center gap-1 text-emerald-700 font-bold text-xs bg-emerald-100/60 px-2.5 py-1.5 rounded-xl">
-                                                            <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                                            <span>Đã tiếp nhận</span>
-                                                        </div>
+                                                        {hasMyAck ? (
+                                                            <div className="flex items-center gap-1 text-emerald-700 font-bold text-xs bg-emerald-100/60 px-2.5 py-1.5 rounded-xl">
+                                                                <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                                                <span>Đã tiếp nhận</span>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="text-[11px] text-stone-500 font-medium bg-stone-100/80 px-2 py-1 rounded-xl">
+                                                                Đang chờ các đội
+                                                            </div>
+                                                        )}
 
                                                         {completionInfo.canComplete ? (
                                                             <button
@@ -1003,6 +1373,11 @@ export default function MobileShiftTasksView({
                                                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                                                 <span>Đội bạn đã xong</span>
                                                             </div>
+                                                        ) : task.assigned_to_name && !isReminder ? (
+                                                            <span className="text-[11px] text-blue-700 font-medium truncate flex items-center gap-1" title={`Chỉ định riêng cho ${task.assigned_to_name} báo cáo`}>
+                                                                <UserCheck className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                                                <span className="truncate">Chỉ định: <strong>{task.assigned_to_name}</strong></span>
+                                                            </span>
                                                         ) : (
                                                             <span className="text-[11px] text-stone-400 italic">
                                                                 Chờ các đội thực hiện
@@ -1012,8 +1387,8 @@ export default function MobileShiftTasksView({
                                                 )
                                             })()}
 
-                                            {/* Action nhỏ cho người tạo */}
-                                            {isCreator && (
+                                            {/* Action nhỏ cho người tạo hoặc quản trị viên */}
+                                            {isCreatorOrAdmin && (
                                                 <div className="flex items-center gap-1">
                                                     <button
                                                         onClick={(e) => {
@@ -1039,6 +1414,35 @@ export default function MobileShiftTasksView({
                                 )
                             })
                         )}
+
+                        {/* Mobile Pagination Bar */}
+                        {filteredTasks.length > PAGE_SIZE && (
+                            <div className="flex items-center justify-between gap-2 pt-3 pb-6 px-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-bold text-stone-700 shadow-2xs active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-1 transition"
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                    <span>Trang trước</span>
+                                </button>
+
+                                <span className="text-xs font-bold text-stone-700 bg-white border border-stone-200 px-3 py-2 rounded-xl shadow-2xs">
+                                    Trang {currentPage} / {totalPages}
+                                </span>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-2 rounded-xl border border-stone-200 bg-white text-xs font-bold text-stone-700 shadow-2xs active:scale-95 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-1 transition"
+                                >
+                                    <span>Trang sau</span>
+                                    <ChevronRight className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
                     </div>
                 )}
             </main>
@@ -1053,6 +1457,348 @@ export default function MobileShiftTasksView({
                     <Plus className="w-7 h-7 stroke-[2.5]" />
                 </button>
             </div>
+
+            {/* 6. BOTTOM SHEET MENU - DANH MỤC & BỘ LỌC CÔNG VIỆC TRÊN MOBILE (KHÔNG CẦN VUỐT NGANG) */}
+            {showMenuSheet && (
+                <div 
+                    className="fixed inset-0 z-50 bg-stone-900/60 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200"
+                    onClick={() => setShowMenuSheet(false)}
+                >
+                    <div 
+                        className="bg-white rounded-t-3xl shadow-2xl p-4 max-h-[85vh] overflow-y-auto pb-8 border-t border-stone-100 flex flex-col space-y-4 animate-in slide-in-from-bottom duration-250"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Thanh gạt & Header */}
+                        <div>
+                            <div className="w-12 h-1.5 bg-stone-300 rounded-full mx-auto mb-3" />
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
+                                        <Filter className="w-4 h-4 text-purple-600" />
+                                        <span>Danh mục & Bộ lọc việc</span>
+                                    </h3>
+                                    <p className="text-xs text-stone-500 mt-0.5">
+                                        Chọn chế độ xem hoặc trạng thái nhanh chóng không cần vuốt
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowMenuSheet(false)}
+                                    className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Nhóm 1: Chế độ xem & Trạng thái chính */}
+                        <div className="space-y-1.5">
+                            <span className="text-[11px] font-bold tracking-wider text-stone-400 uppercase">
+                                Trạng thái & Phân loại
+                            </span>
+
+                            {/* Option 1: Theo tổ đội */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('teams')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'teams'
+                                        ? 'bg-purple-50 border border-purple-200 text-purple-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <LayoutGrid className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Theo từng Tổ đội</span>
+                                            {activeTab === 'teams' && (
+                                                <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Xem nhóm việc theo từng ca đội phụ trách
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-xs font-bold px-2 py-1 rounded-lg bg-white border border-stone-200 text-stone-600">
+                                    {teams.length} đội
+                                </div>
+                            </button>
+
+                            {/* Option 2: Tất cả công việc */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('all')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'all' && !selectedTeamFilter
+                                        ? 'bg-amber-50 border border-amber-200 text-amber-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-amber-500 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <Sparkles className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Tất cả công việc</span>
+                                            {activeTab === 'all' && !selectedTeamFilter && (
+                                                <span className="text-[10px] bg-amber-200 text-amber-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Toàn bộ danh sách công việc & lời nhắc trong ca
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-stone-700">
+                                    {tasks.length}
+                                </div>
+                            </button>
+
+                            {/* Option 3: Chờ bạn nhận */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('unack')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'unack'
+                                        ? 'bg-rose-50 border border-rose-200 text-rose-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <Clock className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Chờ bạn tiếp nhận</span>
+                                            {activeTab === 'unack' && (
+                                                <span className="text-[10px] bg-rose-200 text-rose-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Việc giao cho bạn hoặc đội bạn chưa bấm nhận
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className={`text-xs font-bold px-2.5 py-1 rounded-lg ${
+                                    unackTasksForMe.length > 0 
+                                        ? 'bg-rose-600 text-white animate-pulse' 
+                                        : 'bg-white border border-stone-200 text-stone-600'
+                                }`}>
+                                    {unackTasksForMe.length}
+                                </div>
+                            </button>
+
+                            {/* Option 4: Việc tôi đã giao */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('created_by_me')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'created_by_me'
+                                        ? 'bg-purple-50 border border-purple-200 text-purple-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-purple-700 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <Send className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Công việc tôi đã giao</span>
+                                            {activeTab === 'created_by_me' && (
+                                                <span className="text-[10px] bg-purple-200 text-purple-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Các đầu việc bạn giao cho các tổ đội/thành viên
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-purple-700">
+                                    {myCreatedTasks.length}
+                                </div>
+                            </button>
+
+                            {/* Option 5: Việc liên quan đến tôi */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('my_tasks')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'my_tasks'
+                                        ? 'bg-indigo-50 border border-indigo-200 text-indigo-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <UserCheck className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Việc của tôi & đội tôi</span>
+                                            {activeTab === 'my_tasks' && (
+                                                <span className="text-[10px] bg-indigo-200 text-indigo-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Bao gồm việc đội bạn, việc chỉ định bạn hoặc bạn giao
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-indigo-700">
+                                    {myTasksCount}
+                                </div>
+                            </button>
+
+                            {/* Option 6: Đang thực hiện */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('in_progress')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'in_progress'
+                                        ? 'bg-blue-50 border border-blue-200 text-blue-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <TrendingUp className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Đang thực hiện</span>
+                                            {activeTab === 'in_progress' && (
+                                                <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Các việc đã được nhận và đang trong quá trình làm
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-blue-700">
+                                    {inProgressCount}
+                                </div>
+                            </button>
+
+                            {/* Option 7: Đã hoàn thành */}
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setActiveTab('completed')
+                                    setSelectedTeamFilter(null)
+                                    setShowMenuSheet(false)
+                                }}
+                                className={`w-full p-2.5 rounded-2xl flex items-center justify-between transition text-left ${
+                                    activeTab === 'completed'
+                                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-900'
+                                        : 'bg-stone-50 hover:bg-stone-100 text-stone-800'
+                                }`}
+                            >
+                                <div className="flex items-center gap-3">
+                                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-2xs">
+                                        <CheckCircle2 className="w-5 h-5" />
+                                    </div>
+                                    <div>
+                                        <div className="text-xs font-bold text-stone-900 flex items-center gap-1.5">
+                                            <span>Đã hoàn thành</span>
+                                            {activeTab === 'completed' && (
+                                                <span className="text-[10px] bg-emerald-200 text-emerald-800 px-1.5 py-0.2 rounded-md font-medium">Đang chọn</span>
+                                            )}
+                                        </div>
+                                        <div className="text-[11px] text-stone-500">
+                                            Các công việc đã báo cáo hoặc xác nhận xong
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="text-xs font-bold px-2.5 py-1 rounded-lg bg-white border border-stone-200 text-emerald-700">
+                                    {completedCount}
+                                </div>
+                            </button>
+                        </div>
+
+                        {/* Nhóm 2: Lọc nhanh theo Tổ Đội cụ thể */}
+                        {teams.length > 0 && (
+                            <div className="pt-2 border-t border-stone-100 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold tracking-wider text-stone-400 uppercase">
+                                        Lọc theo tổ đội cụ thể
+                                    </span>
+                                    {selectedTeamFilter && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedTeamFilter(null)}
+                                            className="text-xs text-purple-600 font-bold hover:underline"
+                                        >
+                                            Bỏ lọc đội
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-wrap gap-1.5">
+                                    {teams.map(team => {
+                                        const teamTaskCount = tasks.filter(t => isTaskAssignedToTeam(t, team.name)).length
+                                        const isSelected = selectedTeamFilter === team.name
+                                        return (
+                                            <button
+                                                key={team.id}
+                                                type="button"
+                                                onClick={() => {
+                                                    setActiveTab('all')
+                                                    setSelectedTeamFilter(team.name)
+                                                    setShowMenuSheet(false)
+                                                }}
+                                                className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition ${
+                                                    isSelected
+                                                        ? 'bg-purple-700 text-white shadow-2xs'
+                                                        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                                                }`}
+                                            >
+                                                <span>{team.name}</span>
+                                                <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                                                    isSelected ? 'bg-white/25 text-white' : 'bg-white text-stone-600'
+                                                }`}>
+                                                    {teamTaskCount}
+                                                </span>
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
         </div>
     )
 }

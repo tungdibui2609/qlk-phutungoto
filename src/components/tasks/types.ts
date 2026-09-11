@@ -1,3 +1,4 @@
+export type TaskType = 'task' | 'reminder'
 export type TaskPriority = 'urgent' | 'important' | 'normal'
 export type TaskStatus = 'pending' | 'in_progress' | 'completed' | 'cancelled'
 
@@ -5,6 +6,11 @@ export interface TaskAcknowledgement {
     user_id: string | null
     user_name: string | null
     acknowledged_at: string
+    is_completed?: boolean
+    completed_team?: string | null
+    completed_at?: string | null
+    completion_notes?: string | null
+    completion_images?: string[]
 }
 
 export interface TaskEditHistoryEntry {
@@ -39,6 +45,7 @@ export interface ShiftTask {
     content: string | null
     priority: TaskPriority
     status: TaskStatus
+    task_type?: TaskType
     target_shift: string | null
     target_shifts?: string[]
     assigned_to: string | null

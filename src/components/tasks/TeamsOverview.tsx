@@ -16,7 +16,8 @@ import {
     Check,
     Loader2,
     Calendar,
-    ArrowRight
+    ArrowRight,
+    Sparkles
 } from 'lucide-react'
 import { ShiftTask, TaskPriority } from './types'
 import { formatDateTime, formatDateRelative, isTaskAssignedToTeam, hasUserAcknowledged, hasTeamAcknowledged } from './taskUtils'
@@ -26,12 +27,14 @@ interface TeamsOverviewProps {
     tasks: ShiftTask[]
     profile: any
     myTeamIds?: string[]
-    allMembers?: { team_id: string | null; user_id: string | null; full_name: string | null }[]
+    allMembers?: { id: string; team_id: string | null; user_id: string | null; full_name: string | null }[]
     onSelectTask: (task: ShiftTask) => void
     onQuickAcknowledge: (e: React.MouseEvent, task: ShiftTask) => Promise<void>
     onFilterByTeam: (teamName: string) => void
     onCreateTaskForTeam: (teamName: string) => void
 }
+
+type TeamCardStage = 'latest' | 'waiting_ack' | 'acknowledged' | 'completed'
 
 export default function TeamsOverview({
     teams,
@@ -47,6 +50,15 @@ export default function TeamsOverview({
     const [teamSearch, setTeamSearch] = useState('')
     const [onlyUnackFilter, setOnlyUnackFilter] = useState(false)
     const [acknowledgingId, setAcknowledgingId] = useState<string | null>(null)
+    const [cardStageMap, setCardStageMap] = useState<Record<string, TeamCardStage>>({})
+
+    const getTeamStage = (teamId: string): TeamCardStage => {
+        return cardStageMap[teamId] || 'latest'
+    }
+
+    const setTeamStage = (teamId: string, stage: TeamCardStage) => {
+        setCardStageMap(prev => ({ ...prev, [teamId]: stage }))
+    }
 
     const handleAcknowledgeClick = async (e: React.MouseEvent, task: ShiftTask) => {
         e.stopPropagation()
@@ -62,9 +74,6 @@ export default function TeamsOverview({
     const teamStats = teams.map((team) => {
         const isMyTeam = myTeamIds.includes(team.id)
         const teamTasks = tasks.filter((t) => isTaskAssignedToTeam(t, team.name))
-        const pendingTasks = teamTasks.filter((t) => t.status === 'pending')
-        const inProgressTasks = teamTasks.filter((t) => t.status === 'in_progress')
-        const completedTasks = teamTasks.filter((t) => t.status === 'completed')
 
         // Tasks that current user has NOT acknowledged yet
         const userUnackTasks = teamTasks.filter(
@@ -76,20 +85,47 @@ export default function TeamsOverview({
             (t) => t.status !== 'completed' && !hasTeamAcknowledged(t, team, allMembers)
         )
 
-        // For my team: alert if I personally haven't acknowledged yet.
-        // For other teams: alert if the team has not acknowledged yet.
-        const unacknowledgedTasks = isMyTeam ? userUnackTasks : teamUnackTasks
-        const unackCount = unacknowledgedTasks.length
+        // Chờ xác nhận: Với đội của mình là việc mình chưa xác nhận; với đội khác là việc chưa ai trong đội xác nhận
+        const waitingAckTasks = (isMyTeam ? userUnackTasks : teamUnackTasks).sort(
+            (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        )
+        const unackCount = waitingAckTasks.length
+
+        // Đã xác nhận: Chưa hoàn thành nhưng đã có người nhận (hoặc status in_progress hoặc đã ack)
+        const acknowledgedTasks = teamTasks.filter((t) => {
+            if (t.status === 'completed') return false
+            if (isMyTeam) {
+                return hasUserAcknowledged(t, profile?.id, profile?.full_name) || t.status === 'in_progress'
+            } else {
+                return hasTeamAcknowledged(t, team, allMembers) || t.status === 'in_progress'
+            }
+        }).sort(
+            (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        )
+
+        // Hoàn thành
+        const completedTasks = teamTasks.filter((t) => t.status === 'completed').sort(
+            (a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
+        )
+
+        // Mới nhất (toàn bộ các việc sắp xếp thời gian giảm dần)
+        const latestTasks = [...teamTasks].sort(
+            (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
+        )
 
         return {
             team,
             teamName: team.name,
             isMyTeam,
             total: teamTasks.length,
-            pending: pendingTasks.length,
-            inProgress: inProgressTasks.length,
+            pending: teamTasks.filter(t => t.status === 'pending').length,
+            inProgress: teamTasks.filter(t => t.status === 'in_progress').length,
             completed: completedTasks.length,
-            unacknowledged: unacknowledgedTasks,
+            unacknowledged: waitingAckTasks,
+            waitingAckTasks,
+            acknowledgedTasks,
+            latestTasks,
+            completedTasksList: completedTasks,
             unackCount,
             userUnackCount: userUnackTasks.length,
             teamUnackCount: teamUnackTasks.length,
@@ -259,6 +295,20 @@ export default function TeamsOverview({
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
                     {filteredTeams.map((item) => {
                         const hasUnack = item.unackCount > 0
+                        const currentStage = getTeamStage(item.team.id)
+
+                        // Chọn danh sách công việc theo phân loại tab
+                        const displayedTasks = (() => {
+                            if (currentStage === 'waiting_ack') return item.waitingAckTasks
+                            if (currentStage === 'acknowledged') return item.acknowledgedTasks
+                            if (currentStage === 'completed') return item.completedTasksList
+                            return item.latestTasks
+                        })()
+
+                        // Mặc định tab Mới nhất chỉ hiển thị 1 công việc mới nhất để card siêu gọn
+                        const tasksToShow = currentStage === 'latest'
+                            ? displayedTasks.slice(0, 1)
+                            : displayedTasks.slice(0, 3)
 
                         return (
                             <div
@@ -351,30 +401,137 @@ export default function TeamsOverview({
                                     </div>
                                 </div>
 
-                                {/* Card Body: Unacknowledged tasks needing attention */}
-                                <div className="p-4 flex-1 space-y-3">
-                                    {hasUnack ? (
-                                        <div className="space-y-2.5">
-                                            <div className="flex items-center justify-between text-xs">
-                                                <span className={`font-bold flex items-center gap-1.5 ${item.isMyTeam ? 'text-rose-700' : 'text-amber-700'}`}>
-                                                    <Flame className={`w-3.5 h-3.5 ${item.isMyTeam ? 'text-rose-500' : 'text-amber-500'}`} />
-                                                    {item.isMyTeam ? 'Cần bạn bấm xác nhận tiếp nhận:' : 'Việc đội này chưa tiếp nhận:'}
-                                                </span>
-                                                <span className={`text-[11px] font-semibold ${item.isMyTeam ? 'text-rose-600' : 'text-amber-600'}`}>
-                                                    {item.unackCount} việc
-                                                </span>
-                                            </div>
+                                {/* 4-Stage Segment Tabs: Mới nhất | Chờ xác nhận | Đã xác nhận | Hoàn thành */}
+                                <div className="px-3 pt-2.5 pb-1 border-b border-stone-100 bg-stone-50/50">
+                                    <div className="grid grid-cols-4 gap-1 p-1 bg-stone-200/70 rounded-xl text-center text-[10.5px] font-bold">
+                                        {/* 1. Mới nhất */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setTeamStage(item.team.id, 'latest')}
+                                            className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                currentStage === 'latest'
+                                                    ? 'bg-white text-stone-900 shadow-xs'
+                                                    : 'text-stone-600 hover:text-stone-900'
+                                            }`}
+                                        >
+                                            <Sparkles className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                                            <span>Mới nhất</span>
+                                        </button>
 
-                                            {item.unacknowledged.slice(0, 3).map((task) => {
+                                        {/* 2. Chờ xác nhận */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setTeamStage(item.team.id, 'waiting_ack')}
+                                            className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                currentStage === 'waiting_ack'
+                                                    ? 'bg-white text-rose-700 shadow-xs'
+                                                    : 'text-stone-600 hover:text-rose-700'
+                                            }`}
+                                        >
+                                            <span>Chờ nhận</span>
+                                            {item.waitingAckTasks.length > 0 && (
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
+                                                    currentStage === 'waiting_ack'
+                                                        ? 'bg-rose-600 text-white'
+                                                        : 'bg-rose-100 text-rose-700'
+                                                }`}>
+                                                    {item.waitingAckTasks.length}
+                                                </span>
+                                            )}
+                                        </button>
+
+                                        {/* 3. Đã xác nhận */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setTeamStage(item.team.id, 'acknowledged')}
+                                            className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                currentStage === 'acknowledged'
+                                                    ? 'bg-white text-blue-700 shadow-xs'
+                                                    : 'text-stone-600 hover:text-blue-700'
+                                            }`}
+                                        >
+                                            <span>Đã nhận</span>
+                                            {item.acknowledgedTasks.length > 0 && (
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                                                    currentStage === 'acknowledged'
+                                                        ? 'bg-blue-600 text-white'
+                                                        : 'bg-blue-100 text-blue-700'
+                                                }`}>
+                                                    {item.acknowledgedTasks.length}
+                                                </span>
+                                            )}
+                                        </button>
+
+                                        {/* 4. Hoàn thành */}
+                                        <button
+                                            type="button"
+                                            onClick={() => setTeamStage(item.team.id, 'completed')}
+                                            className={`py-1.5 px-0.5 rounded-lg transition flex items-center justify-center gap-1 ${
+                                                currentStage === 'completed'
+                                                    ? 'bg-white text-emerald-700 shadow-xs'
+                                                    : 'text-stone-600 hover:text-emerald-700'
+                                            }`}
+                                        >
+                                            <span>Đã xong</span>
+                                            {item.completedTasksList.length > 0 && (
+                                                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-bold ${
+                                                    currentStage === 'completed'
+                                                        ? 'bg-emerald-600 text-white'
+                                                        : 'bg-emerald-100 text-emerald-700'
+                                                }`}>
+                                                    {item.completedTasksList.length}
+                                                </span>
+                                            )}
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Card Body: Hiển thị danh sách việc theo tab stage đã chọn */}
+                                <div className="p-4 flex-1 space-y-2.5">
+                                    {displayedTasks.length === 0 ? (
+                                        <div className="py-8 text-center text-stone-400">
+                                            {currentStage === 'waiting_ack' && (
+                                                <div className="space-y-1">
+                                                    <CheckCircle2 className="w-8 h-8 text-emerald-400 mx-auto" />
+                                                    <p className="text-xs font-semibold text-emerald-700">Tuyệt vời! Không có việc nào chờ tiếp nhận</p>
+                                                    <p className="text-[11px] text-stone-400">Tất cả thông báo đã được tiếp nhận đầy đủ</p>
+                                                </div>
+                                            )}
+                                            {currentStage === 'acknowledged' && (
+                                                <p className="text-xs font-medium">Chưa có công việc nào đang xử lý trong mục này</p>
+                                            )}
+                                            {currentStage === 'completed' && (
+                                                <p className="text-xs font-medium">Chưa có công việc nào đã hoàn thành</p>
+                                            )}
+                                            {currentStage === 'latest' && (
+                                                <p className="text-xs font-medium">Đội chưa có thông báo hoặc công việc nào</p>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {tasksToShow.map((task) => {
                                                 const isUrgent = task.priority === 'urgent'
                                                 const isImportant = task.priority === 'important'
                                                 const isTaskAcknowledging = acknowledgingId === task.id
+                                                const isTaskCompleted = task.status === 'completed'
+                                                const isTaskPending = task.status === 'pending'
+                                                const isTaskInProgress = task.status === 'in_progress'
+
+                                                const needsMyAck = !isTaskCompleted && !hasUserAcknowledged(task, profile?.id, profile?.full_name) && (item.isMyTeam || profile?.roles?.code === 'admin' || (profile as any)?.role === 'admin')
 
                                                 return (
                                                     <div
                                                         key={task.id}
                                                         onClick={() => onSelectTask(task)}
-                                                        className="p-3 rounded-xl bg-white border border-rose-200 hover:border-rose-400 shadow-sm hover:shadow transition cursor-pointer space-y-2"
+                                                        className={`p-3 rounded-xl bg-white border shadow-2xs hover:shadow transition cursor-pointer space-y-1.5 ${
+                                                            isTaskCompleted
+                                                                ? 'border-emerald-200 hover:border-emerald-300 bg-emerald-50/10'
+                                                                : needsMyAck
+                                                                ? 'border-rose-200 hover:border-rose-400'
+                                                                : isTaskInProgress
+                                                                ? 'border-blue-200 hover:border-blue-300'
+                                                                : 'border-stone-200 hover:border-purple-300'
+                                                        }`}
                                                     >
                                                         <div className="flex items-start justify-between gap-2">
                                                             <div className="flex-1 min-w-0">
@@ -382,6 +539,26 @@ export default function TeamsOverview({
                                                                     <span className="font-mono text-[10px] font-bold text-stone-500 px-1.5 py-0.5 bg-stone-100 rounded">
                                                                         #{task.code}
                                                                     </span>
+
+                                                                    {/* Stage Badge */}
+                                                                    {isTaskCompleted ? (
+                                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                                            Đã xong
+                                                                        </span>
+                                                                    ) : needsMyAck ? (
+                                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200 animate-pulse">
+                                                                            Chờ bạn nhận
+                                                                        </span>
+                                                                    ) : isTaskInProgress ? (
+                                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                                                                            Đang làm
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                                                            Chờ đội nhận
+                                                                        </span>
+                                                                    )}
+
                                                                     {isUrgent && (
                                                                         <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-200">
                                                                             Khẩn cấp
@@ -393,6 +570,7 @@ export default function TeamsOverview({
                                                                         </span>
                                                                     )}
                                                                 </div>
+
                                                                 <h4 className="text-xs font-bold text-stone-900 line-clamp-1 hover:text-purple-700">
                                                                     {task.title}
                                                                 </h4>
@@ -403,14 +581,14 @@ export default function TeamsOverview({
                                                                 </p>
                                                             </div>
 
-                                                            {/* Action Button: Chỉ hiện nút nhận nhanh cho đội của mình hoặc quản trị */}
-                                                            {item.isMyTeam || profile?.role === 'admin' ? (
+                                                            {/* Nút hành động */}
+                                                            {needsMyAck ? (
                                                                 <button
                                                                     type="button"
                                                                     onClick={(e) => handleAcknowledgeClick(e, task)}
                                                                     disabled={isTaskAcknowledging}
                                                                     className="px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-sm inline-flex items-center gap-1.5 transition flex-shrink-0 disabled:opacity-50"
-                                                                    title="Xác nhận tiếp nhận công việc này"
+                                                                    title="Bấm để xác nhận tiếp nhận công việc này"
                                                                 >
                                                                     {isTaskAcknowledging ? (
                                                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -419,63 +597,39 @@ export default function TeamsOverview({
                                                                     )}
                                                                     <span>Xác nhận</span>
                                                                 </button>
-                                                            ) : (
-                                                                <span className="text-[10px] text-amber-700 font-semibold bg-amber-50 border border-amber-200 px-2 py-1 rounded-lg flex-shrink-0">
-                                                                    Chờ đội nhận
-                                                                </span>
+                                                            ) : !isTaskCompleted && (
+                                                                <ChevronRight className="w-4 h-4 text-stone-300 mt-2 flex-shrink-0" />
                                                             )}
                                                         </div>
                                                     </div>
                                                 )
                                             })}
 
-                                            {item.unackCount > 3 && (
+                                            {currentStage === 'latest' && item.total > 1 && (
                                                 <div className="text-center pt-1">
                                                     <button
+                                                        type="button"
                                                         onClick={() => onFilterByTeam(`Đội ${item.teamName}`)}
-                                                        className="text-xs text-rose-700 font-bold hover:underline inline-flex items-center gap-1"
+                                                        className="text-xs text-purple-700 font-bold hover:underline inline-flex items-center gap-1"
                                                     >
-                                                        <span>+{item.unackCount - 3} việc cần nhận khác...</span>
+                                                        <span>+{item.total - 1} việc khác của đội...</span>
                                                         <ArrowRight className="w-3 h-3" />
                                                     </button>
                                                 </div>
                                             )}
-                                        </div>
-                                    ) : item.allTasks.length > 0 ? (
-                                        <div className="space-y-2">
-                                            <div className="text-xs font-bold text-stone-600 flex items-center gap-1.5">
-                                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                                                <span>Công việc gần đây của đội:</span>
-                                            </div>
-                                            {item.allTasks.slice(0, 2).map((task) => (
-                                                <div
-                                                    key={task.id}
-                                                    onClick={() => onSelectTask(task)}
-                                                    className="p-2.5 rounded-xl bg-stone-50 border border-stone-200 hover:border-purple-300 hover:bg-white transition cursor-pointer flex items-center justify-between gap-2 text-xs"
-                                                >
-                                                    <div className="min-w-0 flex-1">
-                                                        <div className="font-semibold text-stone-800 truncate">
-                                                            {task.title}
-                                                        </div>
-                                                        <div className="text-[10px] text-stone-500 mt-0.5">
-                                                            #{task.code} • {formatDateRelative(task.created_at)}
-                                                        </div>
-                                                    </div>
-                                                    <span
-                                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                                            task.status === 'completed'
-                                                                ? 'bg-emerald-100 text-emerald-800'
-                                                                : 'bg-blue-100 text-blue-800'
-                                                        }`}
+
+                                            {currentStage !== 'latest' && displayedTasks.length > 3 && (
+                                                <div className="text-center pt-1">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => onFilterByTeam(`Đội ${item.teamName}`)}
+                                                        className="text-xs text-purple-700 font-bold hover:underline inline-flex items-center gap-1"
                                                     >
-                                                        {task.status === 'completed' ? 'Đã xong' : 'Đang làm'}
-                                                    </span>
+                                                        <span>+{displayedTasks.length - 3} việc khác trong mục này...</span>
+                                                        <ArrowRight className="w-3 h-3" />
+                                                    </button>
                                                 </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="py-6 text-center text-stone-400">
-                                            <p className="text-xs font-medium">Đội chưa có lời nhắc việc nào</p>
+                                            )}
                                         </div>
                                     )}
                                 </div>

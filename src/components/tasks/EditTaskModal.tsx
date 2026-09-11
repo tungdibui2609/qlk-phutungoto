@@ -5,8 +5,10 @@ import { X, Camera, Image as ImageIcon, Loader2, AlertTriangle, Check, User, Clo
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
-import { ShiftTask, TaskPriority, TaskEditHistoryEntry } from './types'
-import { uploadTaskImage } from './taskUtils'
+import { ShiftTask, TaskPriority, TaskEditHistoryEntry, TaskType } from './types'
+import { uploadTaskImage, getTaskType, canManageTask } from './taskUtils'
+import TaskContentEditor from './TaskContentEditor'
+import { extractInlineImageUrls } from './taskContentUtils'
 
 interface EditTaskModalProps {
     isOpen: boolean
@@ -37,34 +39,39 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
     const { currentSystem } = useSystem()
     const { profile } = useUser()
 
+    const [taskType, setTaskType] = useState<TaskType>('reminder')
     const [title, setTitle] = useState('')
     const [content, setContent] = useState('')
     const [priority, setPriority] = useState<TaskPriority>('normal')
-    const [targetShifts, setTargetShifts] = useState<string[]>(['Ca tiếp theo'])
+    const [targetShifts, setTargetShifts] = useState<string[]>([])
     const [assignedTo, setAssignedTo] = useState<string>('')
     const [users, setUsers] = useState<UserOption[]>([])
     const [teams, setTeams] = useState<TeamOption[]>([])
 
-    // Toggle multi-team or shift selection
-    const toggleTargetShift = (shiftName: string) => {
+    // Toggle multi-team selection (hỗ trợ Toàn bộ gửi cho tất cả các đội)
+    const toggleTargetShift = (teamName: string) => {
+        if (teamName === 'Toàn bộ') {
+            setTargetShifts(['Toàn bộ'])
+            return
+        }
+
         setTargetShifts(prev => {
-            if (prev.includes(shiftName)) {
-                const next = prev.filter(s => s !== shiftName)
-                return next.length === 0 ? ['Ca tiếp theo'] : next
+            const withoutAll = prev.filter(s => s !== 'Toàn bộ')
+            if (withoutAll.includes(teamName)) {
+                const next = withoutAll.filter(s => s !== teamName)
+                return next.length === 0 ? ['Toàn bộ'] : next
             } else {
-                const filtered = prev.filter(s => s !== 'Ca tiếp theo')
-                return [...filtered, shiftName]
+                return [...withoutAll, teamName]
             }
         })
     }
 
     const selectAllTeams = () => {
-        if (teams.length === 0) return
-        setTargetShifts(teams.map(t => `Đội ${t.name}`))
+        setTargetShifts(['Toàn bộ'])
     }
 
-    const clearTeams = () => {
-        setTargetShifts(['Ca tiếp theo'])
+    const resetTeams = () => {
+        setTargetShifts(['Toàn bộ'])
     }
 
     const [images, setImages] = useState<string[]>([])
@@ -75,29 +82,32 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
     const fileInputRef = useRef<HTMLInputElement>(null)
     const cameraInputRef = useRef<HTMLInputElement>(null)
 
-    // Check if current user is creator
-    const isCreator = Boolean(
-        task &&
-        (profile?.id === task.created_by ||
-            (profile?.full_name && task.created_by_name === profile.full_name) ||
-            profile?.role === 'admin')
-    )
+    // Check if current user is creator or admin
+    const isCreator = Boolean(canManageTask(task, profile))
 
-    // Load form data whenever task changes
+    const prevIsOpenRef = useRef(false)
+    const prevTaskIdRef = useRef<string | null>(null)
+
+    // Load form data ONLY when modal freshly opens or task ID changes
     useEffect(() => {
-        if (task && isOpen) {
+        const isFreshOpen = (isOpen && !prevIsOpenRef.current) || (task && task.id !== prevTaskIdRef.current)
+        if (task && isOpen && isFreshOpen) {
+            setTaskType(getTaskType(task))
             setTitle(task.title || '')
             setContent(task.content || '')
             setPriority(task.priority || 'normal')
             const initialShifts: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                 ? task.target_shifts
-                : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : ['Ca tiếp theo'])
-            setTargetShifts(initialShifts.length > 0 ? initialShifts : ['Ca tiếp theo'])
+                : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : [])
+            setTargetShifts(initialShifts)
+
             setAssignedTo(task.assigned_to || '')
             setImages(Array.isArray(task.images) ? [...task.images] : [])
             setErrorMsg('')
+            prevTaskIdRef.current = task.id
         }
-    }, [task, isOpen])
+        prevIsOpenRef.current = isOpen
+    }, [task?.id, isOpen])
 
     // Load active users and teams in same company & system
     useEffect(() => {
@@ -172,7 +182,7 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
         setErrorMsg('')
         try {
             const uploadPromises = Array.from(files).map(file =>
-                uploadTaskImage(file, companyId, 'task-images')
+                uploadTaskImage(file)
             )
             const uploadedUrls = await Promise.all(uploadPromises)
             const validUrls = uploadedUrls.filter((url): url is string => url !== null)
@@ -223,10 +233,16 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                 changes.push(`Mức ưu tiên: ${PRIORITY_LABELS[task.priority] || task.priority} → ${PRIORITY_LABELS[priority] || priority}`)
             }
 
+            if (targetShifts.length === 0) {
+                setErrorMsg('Vui lòng chọn ít nhất một Đội nhận việc')
+                setSubmitting(false)
+                return
+            }
+
             const oldShifts: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                 ? task.target_shifts
-                : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : ['Ca tiếp theo'])
-            const effectiveShifts = targetShifts.length > 0 ? targetShifts : ['Ca tiếp theo']
+                : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : [])
+            const effectiveShifts = targetShifts
             const oldShiftsStr = oldShifts.join(', ')
             const newShiftsStr = effectiveShifts.join(', ')
             if (oldShiftsStr !== newShiftsStr) {
@@ -243,6 +259,11 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
             const newImgCount = images.length
             if (oldImgCount !== newImgCount || JSON.stringify(task.images || []) !== JSON.stringify(images)) {
                 changes.push(`Ảnh minh chứng hiện trường: ${oldImgCount} ảnh → ${newImgCount} ảnh`)
+            }
+
+            const currentTaskType = getTaskType(task)
+            if (currentTaskType !== taskType) {
+                changes.push(`Hình thức: "${currentTaskType === 'reminder' ? 'Lời nhắc / Cảnh báo' : 'Công việc phải làm'}" → "${taskType === 'reminder' ? 'Lời nhắc / Cảnh báo' : 'Công việc phải làm'}"`)
             }
 
             if (changes.length === 0) {
@@ -272,19 +293,24 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
             const currentHistory = Array.isArray(task.edit_history) ? task.edit_history : []
             const updatedHistory = [historyEntry, ...currentHistory]
 
-            const updatePayload = {
+            const inlineUrls = extractInlineImageUrls(newContent)
+            const combinedImages = Array.from(new Set([...images, ...inlineUrls]))
+
+            const updatePayload: any = {
                 title: newTitle,
                 content: newContent || null,
+                task_type: taskType,
                 priority,
                 target_shift: newShiftsStr,
                 target_shifts: effectiveShifts,
                 assigned_to: assignedTo || null,
                 assigned_to_name: assignedUser ? assignedUser.full_name : null,
-                images,
+                images: combinedImages,
                 edit_history: updatedHistory,
                 updated_at: now,
             }
 
+            let updatedData: any = null
             const { data, error } = await (supabase as any)
                 .from('shift_tasks')
                 .update(updatePayload)
@@ -292,9 +318,27 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                 .select()
                 .single()
 
-            if (error) throw error
+            if (error) {
+                if (error.message && (error.message.includes('task_type') || error.code === 'PGRST204')) {
+                    const fallbackPayload = { ...updatePayload }
+                    delete fallbackPayload.task_type
+                    const { data: retryData, error: retryError } = await (supabase as any)
+                        .from('shift_tasks')
+                        .update(fallbackPayload)
+                        .eq('id', task.id)
+                        .select()
+                        .single()
 
-            onTaskUpdated(data)
+                    if (retryError) throw retryError
+                    updatedData = { ...retryData, task_type: taskType }
+                } else {
+                    throw error
+                }
+            } else {
+                updatedData = data
+            }
+
+            onTaskUpdated(updatedData)
             onClose()
         } catch (err: any) {
             console.error('Error updating task:', err)
@@ -336,8 +380,8 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                         <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-xs text-red-800 flex items-start gap-2.5">
                             <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" />
                             <div>
-                                <span className="font-bold block">Bạn không có quyền chỉnh sửa việc này</span>
-                                Chỉ người tạo việc (<strong>{task.created_by_name || 'Hệ thống'}</strong>) mới có quyền chỉnh sửa nội dung công việc.
+                                <span className="font-bold block">Bạn không có quyền chỉnh sửa mục này</span>
+                                Chỉ người tạo (<strong>{task.created_by_name || 'Hệ thống'}</strong>) hoặc Quản trị viên mới có quyền chỉnh sửa.
                             </div>
                         </div>
                     )}
@@ -349,29 +393,84 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                         </div>
                     )}
 
+                    {/* Chọn hình thức thông tin: Lời nhắc vs Công việc */}
+                    {isCreator && (
+                        <div>
+                            <label className="block text-xs font-bold text-stone-700 uppercase tracking-wider mb-2">
+                                Hình thức thông tin <span className="text-red-500">*</span>
+                            </label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                <button
+                                    type="button"
+                                    onClick={() => setTaskType('reminder')}
+                                    disabled={submitting}
+                                    className={`p-3 rounded-xl border-2 text-left transition flex items-start gap-2.5 ${
+                                        taskType === 'reminder'
+                                            ? 'border-amber-500 bg-amber-50/70 ring-2 ring-amber-500/20'
+                                            : 'border-stone-200 bg-white hover:border-stone-300'
+                                    }`}
+                                >
+                                    <span className="text-xl">🔔</span>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-xs font-bold text-stone-900 flex items-center justify-between">
+                                            <span>Lời nhắc / Cảnh báo</span>
+                                            {taskType === 'reminder' && <span className="text-amber-600 font-bold">✓</span>}
+                                        </div>
+                                        <p className="text-[10px] text-stone-500 mt-0.5">Ghi chú bàn giao, lưu ý, việc dở dang</p>
+                                    </div>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    onClick={() => setTaskType('task')}
+                                    disabled={submitting}
+                                    className={`p-3 rounded-xl border-2 text-left transition flex items-start gap-2.5 ${
+                                        taskType === 'task'
+                                            ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-500/20'
+                                            : 'border-stone-200 bg-white hover:border-stone-300'
+                                    }`}
+                                >
+                                    <span className="text-xl">📋</span>
+                                    <div className="min-w-0 flex-1">
+                                        <div className="text-xs font-bold text-stone-900 flex items-center justify-between">
+                                            <span>Công việc phải làm</span>
+                                            {taskType === 'task' && <span className="text-blue-600 font-bold">✓</span>}
+                                        </div>
+                                        <p className="text-[10px] text-stone-500 mt-0.5">Giao việc cần thực hiện &amp; báo cáo hoàn thành</p>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Tiêu đề */}
                     <div>
                         <label className="block text-xs font-bold text-stone-700 mb-1">
-                            Tiêu đề công việc / Nhắc nhở <span className="text-red-500">*</span>
+                            {taskType === 'reminder' ? 'Tiêu đề Lời nhắc / Cảnh báo' : 'Tiêu đề Công việc phải làm'}{' '}
+                            <span className="text-red-500">*</span>
                         </label>
                         <input
                             type="text"
                             value={title}
                             onChange={(e) => setTitle(e.target.value)}
                             disabled={!isCreator || submitting}
-                            placeholder="Ví dụ: Kiểm đếm khay hàng dở dang lô A12, nạp ắc quy xe nâng..."
+                            placeholder={
+                                taskType === 'reminder'
+                                    ? 'Ví dụ: Lô hàng dở dang, máy ép số 2 có tiếng kêu lạ...'
+                                    : 'Ví dụ: Đóng gói 50 thùng xoài xuất khẩu, nạp ắc quy xe nâng...'
+                            }
                             className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition disabled:bg-stone-100 disabled:text-stone-400"
                             required
                         />
                     </div>
 
-                    {/* Giao cho Đội / Ca / Đối tượng (Hỗ trợ nhiều đội) */}
+                    {/* Giao cho Đội nhận việc */}
                     <div>
                         <div className="flex items-center justify-between mb-1.5">
                             <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
-                                <span>Giao cho Đội / Ca / Đối tượng</span>
+                                <span>Giao cho Đội nhận việc</span>
                                 <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-full">
-                                    {targetShifts.length} đối tượng nhận việc
+                                    {targetShifts.includes('Toàn bộ') ? 'Toàn bộ (Tất cả các đội)' : `${targetShifts.length} đội nhận việc`}
                                 </span>
                             </label>
                             {teams.length > 0 && isCreator && (
@@ -381,12 +480,12 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                                         onClick={selectAllTeams}
                                         className="text-[11px] font-semibold text-purple-600 hover:text-purple-800 hover:underline"
                                     >
-                                        Chọn tất cả đội ({teams.length})
+                                        Chọn tất cả ({teams.length})
                                     </button>
-                                    {targetShifts.length > 1 && (
+                                    {(!targetShifts.includes('Toàn bộ') || targetShifts.length > 1) && (
                                         <button
                                             type="button"
-                                            onClick={clearTeams}
+                                            onClick={resetTeams}
                                             className="text-[11px] text-stone-400 hover:text-stone-600"
                                         >
                                             Đặt lại
@@ -400,17 +499,17 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                         <div className="p-3 rounded-xl border border-stone-200 bg-stone-50/50 space-y-2.5">
                             <div className="flex flex-wrap gap-1.5 min-h-[30px] items-center">
                                 {targetShifts.map((shift, idx) => {
-                                    const isTeam = shift.startsWith('Đội')
+                                    const isAll = shift === 'Toàn bộ'
                                     return (
                                         <span
                                             key={idx}
                                             className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg border shadow-2xs transition ${
-                                                isTeam
-                                                    ? 'bg-purple-100 text-purple-800 border-purple-200'
-                                                    : 'bg-blue-100 text-blue-800 border-blue-200'
+                                                isAll
+                                                    ? 'bg-purple-700 text-white border-purple-700'
+                                                    : 'bg-purple-100 text-purple-800 border-purple-200'
                                             }`}
                                         >
-                                            <span>{isTeam ? `👥 ${shift}` : `🎯 ${shift}`}</span>
+                                            <span>{isAll ? '🏢 Toàn bộ (Tất cả các đội)' : `👥 ${shift}`}</span>
                                             {isCreator && targetShifts.length > 1 && (
                                                 <button
                                                     type="button"
@@ -427,12 +526,26 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                             </div>
 
                             {/* Clickable available teams */}
-                            {teams.length > 0 && isCreator && (
+                            {isCreator && (
                                 <div className="pt-2 border-t border-stone-200/60">
                                     <span className="text-[10px] font-bold text-stone-500 uppercase tracking-wider block mb-1.5">
-                                        Bấm để chọn nhiều Đội cùng nhận việc:
+                                        Bấm để chọn Đội nhận việc (Mặc định: Toàn bộ):
                                     </span>
                                     <div className="flex flex-wrap gap-1.5">
+                                        {/* Nút Toàn bộ (Mặc định) */}
+                                        <button
+                                            type="button"
+                                            onClick={() => toggleTargetShift('Toàn bộ')}
+                                            className={`text-xs px-2.5 py-1 rounded-lg border transition flex items-center gap-1 ${
+                                                targetShifts.includes('Toàn bộ')
+                                                    ? 'bg-purple-600 text-white border-purple-600 shadow-2xs font-bold ring-2 ring-purple-300'
+                                                    : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-100 font-medium'
+                                            }`}
+                                        >
+                                            <span>{targetShifts.includes('Toàn bộ') ? '✓' : '+'}</span>
+                                            <span>🏢 Toàn bộ (Tất cả các đội)</span>
+                                        </button>
+
                                         {teams.map(t => {
                                             const teamName = `Đội ${t.name}`
                                             const isSelected = targetShifts.includes(teamName)
@@ -455,32 +568,10 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                                     </div>
                                 </div>
                             )}
-
-                            {/* Tùy chọn Ca */}
-                            {isCreator && (
-                                <div className="pt-2 border-t border-stone-200/60 flex items-center gap-1.5 flex-wrap">
-                                    <span className="text-[10px] text-stone-400 font-medium mr-1">Hoặc Ca:</span>
-                                    {['Ca tiếp theo', 'Ca 1 (Sáng)', 'Ca 2 (Chiều)', 'Ca 3 (Đêm)', 'Toàn ca'].map((c) => {
-                                        const isSelected = targetShifts.includes(c)
-                                        return (
-                                            <button
-                                                key={c}
-                                                type="button"
-                                                onClick={() => toggleTargetShift(c)}
-                                                className={`text-[11px] px-2.5 py-1 rounded-md border transition font-medium ${
-                                                    isSelected
-                                                        ? 'bg-blue-600 text-white border-blue-600 font-semibold'
-                                                        : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
-                                                }`}
-                                            >
-                                                {isSelected ? '✓ ' : ''}{c}
-                                            </button>
-                                        )
-                                    })}
-                                </div>
-                            )}
                         </div>
                     </div>
+
+
 
                     {/* Hàng: Mức độ ưu tiên & Người nhận cụ thể */}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -552,20 +643,15 @@ export default function EditTaskModal({ isOpen, task, onClose, onTaskUpdated }: 
                         </div>
                     </div>
 
-                    {/* Nội dung chi tiết */}
-                    <div>
-                        <label className="block text-xs font-bold text-stone-700 mb-1">
-                            Ghi chú dở dang & Dặn dò chi tiết
-                        </label>
-                        <textarea
-                            value={content}
-                            onChange={(e) => setContent(e.target.value)}
-                            disabled={!isCreator || submitting}
-                            rows={3}
-                            placeholder="Mô tả cụ thể hiện trạng máy móc, khay hàng để ở đâu, cần làm gì tiếp theo..."
-                            className="w-full px-3.5 py-2.5 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition resize-none disabled:bg-stone-100"
-                        />
-                    </div>
+                    {/* Nội dung chi tiết hỗ trợ chèn ảnh inline */}
+                    <TaskContentEditor
+                        label="Ghi chú dở dang & Dặn dò chi tiết"
+                        value={content}
+                        onChange={setContent}
+                        disabled={!isCreator || submitting}
+                        rows={4}
+                        placeholder="Mô tả cụ thể hiện trạng máy móc, khay hàng để ở đâu, cần làm gì tiếp theo..."
+                    />
 
                     {/* Đính kèm ảnh */}
                     <div>

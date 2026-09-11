@@ -32,6 +32,10 @@ export async function POST(req: NextRequest) {
             title = 'Thông Báo Việc Mới - Chánh Thu',
             body: messageBody = 'Bạn có công việc mới được phân công.',
             target_shifts = [],
+            target_user_ids = [],
+            target_user_names = [],
+            exclude_user_ids = [],
+            exclude_user_names = [],
             task_id = null,
             url = '/work/tasks',
             badgeCount = 1,
@@ -113,19 +117,54 @@ export async function POST(req: NextRequest) {
                     .map((s: string) => (s || '').toLowerCase().replace(/^đội\s+/, '').trim())
                     .filter(Boolean)
 
-                const hasSpecificTeams = normalizedTargetTeams.some(t => !t.startsWith('ca ') && t !== 'chung')
+                const isBroadcastAll = normalizedTargetTeams.some(t =>
+                    t === 'toàn bộ' || t === 'tất cả' || t === 'toàn đội' || t === 'toàn ca' || t === 'chung'
+                )
+                const hasSpecificTeams = !isBroadcastAll && normalizedTargetTeams.some(t => !t.startsWith('ca ') && t !== 'chung')
+
+                const normalizedTargetUserIds = (Array.isArray(target_user_ids) ? target_user_ids : [target_user_ids]).filter(Boolean)
+                const normalizedTargetUserNames = (Array.isArray(target_user_names) ? target_user_names : [target_user_names])
+                    .map((n: string) => (n || '').trim().toLowerCase())
+                    .filter(Boolean)
+
+                const normalizedExcludeUserIds = (Array.isArray(exclude_user_ids) ? exclude_user_ids : [exclude_user_ids]).filter(Boolean)
+                const normalizedExcludeUserNames = (Array.isArray(exclude_user_names) ? exclude_user_names : [exclude_user_names])
+                    .map((n: string) => (n || '').trim().toLowerCase())
+                    .filter(Boolean)
 
                 targets = validRecords.filter(row => {
                     const data = row.new_data as any
+                    const subUserId = data?.user_id
+                    const subUserName = (data?.user_name || '').trim().toLowerCase()
+
+                    // Check exclusions first (e.g. sender/completer should not receive self-push)
+                    if (subUserId && normalizedExcludeUserIds.includes(subUserId)) {
+                        return false
+                    }
+                    if (subUserName && normalizedExcludeUserNames.includes(subUserName)) {
+                        return false
+                    }
+
+                    // Explicitly included user (e.g. task creator or designated assignee)
+                    if (subUserId && normalizedTargetUserIds.includes(subUserId)) {
+                        return true
+                    }
+                    if (subUserName && normalizedTargetUserNames.includes(subUserName)) {
+                        return true
+                    }
+
+                    // Check team matching
                     if (hasSpecificTeams) {
                         const userTeams = (Array.isArray(data.team_names) ? data.team_names : [])
                             .map((t: string) => (t || '').toLowerCase().replace(/^đội\s+/, '').trim())
 
-                        const matchesTeam = userTeams.some(myT =>
-                            normalizedTargetTeams.some(targetT => myT === targetT || myT.includes(targetT) || targetT.includes(myT))
+                        const matchesTeam = userTeams.some((myT: string) =>
+                            normalizedTargetTeams.some((targetT: string) => myT === targetT || myT.includes(targetT) || targetT.includes(myT))
                         )
                         return matchesTeam
                     }
+
+                    // If no specific teams or broadcast, match all non-excluded
                     return true
                 })
             }

@@ -5,14 +5,24 @@ import { Readable } from "stream";
 export const runtime = 'nodejs';
 
 /**
- * Tìm hoặc tạo thư mục theo tên trong thư mục cha
+const folderCache = new Map<string, string>();
+
+/**
+ * Tìm hoặc tạo thư mục theo tên trong thư mục cha (có cache để upload siêu nhanh)
  */
 async function getOrCreateFolder(drive: drive_v3.Drive, folderName: string, parentId: string): Promise<string> {
+    const cacheKey = `${parentId}_${folderName}`;
+    if (folderCache.has(cacheKey)) {
+        return folderCache.get(cacheKey)!;
+    }
+
     const q = `name = '${folderName.replace(/'/g, "\\'")}' and mimeType = 'application/vnd.google-apps.folder' and '${parentId}' in parents and trashed = false`;
     const res = await drive.files.list({ q, fields: 'files(id, name)' });
 
     if (res.data.files && res.data.files.length > 0) {
-        return res.data.files[0].id!;
+        const id = res.data.files[0].id!;
+        folderCache.set(cacheKey, id);
+        return id;
     }
 
     // Tạo mới nếu không thấy
@@ -24,7 +34,9 @@ async function getOrCreateFolder(drive: drive_v3.Drive, folderName: string, pare
         },
         fields: 'id'
     });
-    return newFolder.data.id!;
+    const id = newFolder.data.id!;
+    folderCache.set(cacheKey, id);
+    return id;
 }
 
 export async function POST(req: NextRequest) {

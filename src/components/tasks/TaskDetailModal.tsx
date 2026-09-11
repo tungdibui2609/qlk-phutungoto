@@ -1,18 +1,22 @@
 'use client'
 
 import React, { useState, useEffect, useRef } from 'react'
-import { X, CheckCircle2, Clock, User, AlertTriangle, Send, Loader2, MessageSquare, Image as ImageIcon, Trash2, Check, ArrowRight, ShieldCheck, Pencil, History, Camera, Users } from 'lucide-react'
+import { X, CheckCircle2, Clock, User, UserCheck, AlertTriangle, Send, Loader2, MessageSquare, Image as ImageIcon, Trash2, Check, ArrowRight, ShieldCheck, Pencil, History, Camera, Users } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useUser } from '@/contexts/UserContext'
 import { ShiftTask, ShiftTaskMessage } from './types'
-import { formatDateTime, formatDateRelative, uploadTaskImage, getAssignedTeams, getTeamCompletions, isTeamCompleted, getTaskTeamProgress, canUserCompleteTeamTask } from './taskUtils'
+import { formatDateTime, formatDateRelative, uploadTaskImage, getAssignedTeams, getTeamCompletions, isTeamCompleted, isTeamAcknowledged, getTaskTeamProgress, canUserCompleteTeamTask, canUserAcknowledgeTask, getTaskType, canManageTask, getTeamMemberAckInfo, getDeduplicatedAcknowledgements, dispatchTaskMessageNotification, dispatchTaskCompletionNotification } from './taskUtils'
 import ImageLightbox from './ImageLightbox'
 import EditTaskModal from './EditTaskModal'
+import TaskRichContent from './TaskRichContent'
+import { extractInlineImageUrls } from './taskContentUtils'
 
 interface TaskDetailModalProps {
     isOpen: boolean
     task: ShiftTask | null
     myTeamNames?: string[]
+    allMembers?: { team_id: string | null; user_id: string | null; full_name: string | null }[]
+    teams?: { id: string; name: string }[]
     onClose: () => void
     onTaskUpdated: (updatedTask: ShiftTask) => void
     onTaskDeleted: (taskId: string) => void
@@ -21,14 +25,25 @@ interface TaskDetailModalProps {
 
 export default function TaskDetailModal({
     isOpen,
-    task,
+    task: initialTask,
     myTeamNames = [],
+    allMembers = [],
+    teams = [],
     onClose,
     onTaskUpdated,
     onTaskDeleted,
     onOpenCompleteModal,
 }: TaskDetailModalProps) {
     const { profile } = useUser()
+
+    const [liveTask, setLiveTask] = useState<ShiftTask | null>(initialTask)
+    const [fetchingFullTask, setFetchingFullTask] = useState(false)
+
+    useEffect(() => {
+        setLiveTask(initialTask)
+    }, [initialTask])
+
+    const task = liveTask || initialTask
 
     const [messages, setMessages] = useState<ShiftTaskMessage[]>([])
     const [loadingMessages, setLoadingMessages] = useState(false)
@@ -74,6 +89,68 @@ export default function TaskDetailModal({
     }
 
     const messagesEndRef = useRef<HTMLDivElement>(null)
+
+    // Fetch latest complete task data to ensure content and images are never empty in live mode
+    useEffect(() => {
+        const taskId = initialTask?.id
+        if (!isOpen || !taskId) return
+
+        let isMounted = true
+
+        const fetchFullTask = async () => {
+            if (!initialTask?.content && (!initialTask?.images || initialTask.images.length === 0)) {
+                setFetchingFullTask(true)
+            }
+            try {
+                const { data, error } = await (supabase as any)
+                    .from('shift_tasks')
+                    .select('*')
+                    .eq('id', taskId)
+                    .single()
+
+                if (!error && data && isMounted) {
+                    setLiveTask(prev => {
+                        const merged = {
+                            ...(prev || initialTask || data),
+                            ...data,
+                            content: data.content ?? prev?.content ?? initialTask?.content ?? '',
+                            images: (data.images && data.images.length > 0) ? data.images : (prev?.images || initialTask?.images || []),
+                        }
+                        return merged
+                    })
+                    onTaskUpdated(data)
+                }
+            } catch (err) {
+                console.error('Error fetching full task details:', err)
+            } finally {
+                if (isMounted) setFetchingFullTask(false)
+            }
+        }
+
+        fetchFullTask()
+
+        // Realtime subscription specifically for this task while modal is open
+        const channel = supabase
+            .channel(`task_detail_watch_${taskId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: 'UPDATE',
+                    schema: 'public',
+                    table: 'shift_tasks',
+                    filter: `id=eq.${taskId}`,
+                },
+                async () => {
+                    fetchFullTask()
+                }
+            )
+            .subscribe()
+
+        return () => {
+            isMounted = false
+            supabase.removeChannel(channel)
+        }
+    }, [isOpen, initialTask?.id])
 
     // Load comments/messages for this task
     useEffect(() => {
@@ -123,7 +200,7 @@ export default function TaskDetailModal({
         return () => {
             supabase.removeChannel(channel)
         }
-    }, [isOpen, task])
+    }, [isOpen, task?.id])
 
     // Scroll to bottom when new messages arrive
     useEffect(() => {
@@ -138,32 +215,72 @@ export default function TaskDetailModal({
         setShowLightbox(true)
     }
 
+    const inlineUrls = extractInlineImageUrls(task?.content, task?.images || [])
+    const allTaskImages = Array.from(new Set([...inlineUrls, ...(task?.images || [])]))
+    const standaloneImages = (task?.images || []).filter(img => !inlineUrls.includes(img))
+
     // Xác nhận tiếp nhận bàn giao (hỗ trợ nhiều người)
     const handleAcknowledge = async () => {
         setAcknowledging(true)
         try {
             const now = new Date().toISOString()
             const currentAcks: any[] = Array.isArray(task.acknowledgements) ? task.acknowledgements : []
-            const alreadyAcked = currentAcks.some(a => a.user_id === profile?.id || (a.user_name && a.user_name === profile?.full_name))
+            const myId = profile?.id
+            const myName = (profile?.full_name || '').trim().toLowerCase()
+
+            const alreadyAcked = currentAcks.some(a => 
+                (myId && a.user_id && a.user_id === myId) || 
+                (myName && a.user_name && a.user_name.trim().toLowerCase() === myName)
+            )
+
+            const isReminder = getTaskType(task) === 'reminder'
+            const myTeamNamesList = Array.isArray(myTeamNames) ? myTeamNames : []
+
+            // Khử trùng lặp: nếu đã có bản ghi của người này thì dọn dẹp các bản ghi phụ trùng lặp
+            const deduplicatedCurrent = currentAcks.filter((a, idx) => {
+                const firstIdx = currentAcks.findIndex(x => 
+                    (x.user_id && a.user_id && x.user_id === a.user_id) ||
+                    (x.user_name && a.user_name && x.user_name.trim().toLowerCase() === a.user_name.trim().toLowerCase())
+                )
+                return firstIdx === idx
+            })
 
             const updatedAcks = alreadyAcked
-                ? currentAcks
+                ? deduplicatedCurrent
                 : [
-                    ...currentAcks,
+                    ...deduplicatedCurrent,
                     {
                         user_id: profile?.id || null,
                         user_name: profile?.full_name || 'Nhân viên tiếp nhận',
+                        team_names: myTeamNamesList,
                         acknowledged_at: now,
                     }
                 ]
 
-            const payload = {
-                status: task.status === 'pending' ? 'in_progress' : task.status,
+            let newStatus = task.status === 'pending' ? 'in_progress' : task.status
+            let completedAt = task.completed_at
+            let completedByName = task.completed_by_name
+
+            // Với LỜI NHẮC: nếu tất cả các đội đều đã nhận -> hoàn tất
+            if (isReminder) {
+                const tempTask = { ...task, acknowledgements: updatedAcks }
+                const progress = getTaskTeamProgress(tempTask, allMembers, teams)
+                if (progress.isAllCompleted) {
+                    newStatus = 'completed'
+                    completedAt = now
+                    completedByName = 'Các đội đã tiếp nhận'
+                }
+            }
+
+            const payload: any = {
+                status: newStatus,
                 acknowledgements: updatedAcks,
                 acknowledged_by: task.acknowledged_by || profile?.id || null,
                 acknowledged_by_name: task.acknowledged_by_name || profile?.full_name || 'Nhân viên tiếp nhận',
                 acknowledged_at: task.acknowledged_at || now,
             }
+            if (completedAt) payload.completed_at = completedAt
+            if (completedByName) payload.completed_by_name = completedByName
 
             const { data, error } = await (supabase as any)
                 .from('shift_tasks')
@@ -173,7 +290,24 @@ export default function TaskDetailModal({
                 .single()
 
             if (error) throw error
-            onTaskUpdated(data)
+            const merged = {
+                ...task,
+                ...data,
+                content: data.content ?? task.content,
+                images: (data.images && data.images.length > 0) ? data.images : task.images,
+            }
+            setLiveTask(merged)
+            onTaskUpdated(merged)
+
+            if (isReminder && newStatus === 'completed') {
+                dispatchTaskCompletionNotification({
+                    task: merged,
+                    completer: { id: profile?.id, name: profile?.full_name },
+                    completionTeam: 'Toàn bộ các đội',
+                    notes: 'Tất cả các đội đã xác nhận tiếp nhận lời nhắc.',
+                    isAllCompleted: true,
+                })
+            }
         } catch (err) {
             console.error('Error acknowledging task:', err)
             alert('Không thể xác nhận tiếp nhận việc. Vui lòng thử lại.')
@@ -206,8 +340,18 @@ export default function TaskDetailModal({
 
             if (error) throw error
             setMessages(prev => [...prev, data])
+            const sentText = newMessage.trim()
+            const hadImages = messageImages.length > 0
             setNewMessage('')
             setMessageImages([])
+
+            // Dispatch push notification to relevant parties (task creator, assigned teams, assignee)
+            dispatchTaskMessageNotification({
+                task,
+                sender: { id: profile?.id, name: profile?.full_name },
+                messageText: sentText,
+                hasImages: hadImages,
+            })
         } catch (err) {
             console.error('Error sending message:', err)
         } finally {
@@ -215,20 +359,15 @@ export default function TaskDetailModal({
         }
     }
 
-    const isCreator = Boolean(
-        task &&
-        (profile?.id === task.created_by ||
-            (profile?.full_name && task.created_by_name === profile.full_name) ||
-            profile?.role === 'admin')
-    )
+    const isCreatorOrAdmin = canManageTask(task, profile)
 
-    // Xóa việc (chỉ người tạo mới được xóa)
+    // Xóa việc (người tạo hoặc quản trị viên cấp 1, cấp 2)
     const handleDelete = async () => {
-        if (!isCreator) {
-            alert('Chỉ người tạo việc mới có quyền xóa lời nhắc này.')
+        if (!isCreatorOrAdmin) {
+            alert('Chỉ người tạo hoặc Quản trị viên mới có quyền xóa lời nhắc / công việc này.')
             return
         }
-        if (!confirm(`Bạn có chắc chắn muốn xóa lời nhắc việc #${task.code}?`)) return
+        if (!confirm(`Bạn có chắc chắn muốn xóa lời nhắc / công việc #${task.code}?`)) return
         setDeleting(true)
         try {
             const { error } = await (supabase as any)
@@ -247,154 +386,284 @@ export default function TaskDetailModal({
         }
     }
 
+    const isReminder = getTaskType(task) === 'reminder'
     const isPending = task.status === 'pending'
     const isInProgress = task.status === 'in_progress'
     const isCompleted = task.status === 'completed'
 
-    const acks: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
-        ? task.acknowledgements
-        : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
+    const acks = getDeduplicatedAcknowledgements(task)
 
-    const hasMyAck = acks.some(a => a.user_id === profile?.id || (a.user_name && a.user_name === profile?.full_name))
+    const hasMyAck = acks.some(a => 
+        (profile?.id && a.user_id && a.user_id === profile.id) || 
+        (profile?.full_name && a.user_name && a.user_name.trim().toLowerCase() === profile.full_name.trim().toLowerCase())
+    )
+
+    const canAcknowledge = canUserAcknowledgeTask(task, profile, myTeamNames, allMembers, teams)
 
     return (
         <>
             <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4 md:p-6 overflow-y-auto">
                 <div className="bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl w-full sm:max-w-3xl border border-stone-200 overflow-hidden flex flex-col max-h-[94vh] animate-in slide-in-from-bottom sm:zoom-in-95 duration-200">
                     {/* Header */}
-                    <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100 bg-stone-50/80">
-                        <div className="flex items-center gap-3">
-                            <span className="font-mono text-xs font-bold px-2.5 py-1 rounded-lg bg-stone-200 text-stone-700">
-                                #{task.code}
-                            </span>
-                            {task.priority === 'urgent' && (
-                                <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-red-100 text-red-700 border border-red-200">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse"></span>
-                                    Khẩn cấp
+                    <div className="px-4 sm:px-6 py-3 sm:py-3.5 border-b border-stone-200/80 bg-stone-50/70 backdrop-blur-xs flex-shrink-0">
+                        {/* Row 1: Code, Type, Status & Actions */}
+                        <div className="flex items-center justify-between gap-2">
+                            {/* Left: Code + Type + Status + Priority */}
+                            <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0">
+                                {/* Code */}
+                                <span className="font-mono text-[11px] sm:text-xs font-bold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-stone-200/80 text-stone-700 border border-stone-300/80 shadow-2xs whitespace-nowrap flex-shrink-0">
+                                    #{task.code}
                                 </span>
-                            )}
-                            {task.priority === 'important' && (
-                                <span className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1 rounded-full bg-amber-100 text-amber-700 border border-amber-200">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
-                                    Quan trọng
-                                </span>
-                            )}
-                            {(() => {
-                                const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
-                                    ? task.target_shifts
-                                    : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : [])
-                                return shiftsList.map((shift, idx) => (
-                                    <span
-                                        key={idx}
-                                        className={`text-xs font-semibold px-2.5 py-1 rounded-full border shadow-2xs ${
-                                            shift.startsWith('Đội')
-                                                ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                : 'bg-blue-50 text-blue-700 border-blue-200'
-                                        }`}
-                                    >
-                                        {shift.startsWith('Đội') ? `👥 ${shift}` : `🎯 ${shift}`}
+
+                                {/* Type: Lời nhắc / Cảnh báo vs Việc cần làm */}
+                                {(() => {
+                                    const tType = getTaskType(task)
+                                    return (
+                                        <span
+                                            className={`inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md border whitespace-nowrap flex-shrink-0 shadow-2xs ${
+                                                tType === 'reminder'
+                                                    ? 'bg-amber-50 text-amber-900 border-amber-300/80'
+                                                    : 'bg-blue-50 text-blue-900 border-blue-300/80'
+                                            }`}
+                                        >
+                                            <span>{tType === 'reminder' ? '🔔 Lời nhắc / Cảnh báo' : '📋 Việc cần làm'}</span>
+                                        </span>
+                                    )
+                                })()}
+
+                                {/* Status Badge */}
+                                {isCompleted ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-2xs whitespace-nowrap flex-shrink-0">
+                                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                                        <span>Đã xong</span>
                                     </span>
-                                ))
-                            })()}
+                                ) : isInProgress ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-sky-50 text-sky-800 border border-sky-200 shadow-2xs whitespace-nowrap flex-shrink-0">
+                                        <Clock className="w-3.5 h-3.5 text-sky-600 flex-shrink-0" />
+                                        <span>Đang làm</span>
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-md bg-amber-50 text-amber-800 border border-amber-200 shadow-2xs whitespace-nowrap flex-shrink-0">
+                                        <Clock className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                                        <span>Chờ nhận</span>
+                                    </span>
+                                )}
+
+                                {/* Priority */}
+                                {task.priority === 'urgent' && (
+                                    <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-bold px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 shadow-2xs whitespace-nowrap flex-shrink-0">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-ping"></span>
+                                        Khẩn cấp
+                                    </span>
+                                )}
+                                {task.priority === 'important' && (
+                                    <span className="inline-flex items-center gap-1 text-[11px] sm:text-xs font-semibold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 shadow-2xs whitespace-nowrap flex-shrink-0">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                                        Quan trọng
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Right: Actions & Close */}
+                            <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0">
+                                {isCreatorOrAdmin && (
+                                    <>
+                                        <button
+                                            onClick={() => setShowEditModal(true)}
+                                            className="px-2.5 py-1 rounded-lg border border-stone-200/90 text-stone-700 bg-white hover:bg-stone-50 hover:text-amber-700 hover:border-amber-300 transition flex items-center gap-1 text-xs font-semibold shadow-2xs active:scale-95"
+                                            title="Chỉnh sửa nội dung việc"
+                                        >
+                                            <Pencil className="w-3.5 h-3.5 text-stone-500" />
+                                            <span>Sửa</span>
+                                        </button>
+                                        <button
+                                            onClick={handleDelete}
+                                            disabled={deleting}
+                                            className="p-1 sm:p-1.5 rounded-lg border border-stone-200/90 text-stone-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 transition flex items-center justify-center shadow-2xs active:scale-95 disabled:opacity-50"
+                                            title="Xóa lời nhắc / công việc này"
+                                        >
+                                            {deleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                                        </button>
+                                    </>
+                                )}
+                                <button
+                                    onClick={onClose}
+                                    className="p-1 sm:p-1.5 rounded-lg border border-stone-200/90 bg-white text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition shadow-2xs active:scale-95 ml-0.5"
+                                    title="Đóng cửa sổ"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
                         </div>
 
-                        <div className="flex items-center gap-1.5">
-                            {isCreator && (
-                                <>
-                                    <button
-                                        onClick={() => setShowEditModal(true)}
-                                        className="px-2.5 py-1.5 rounded-xl border border-stone-200 text-stone-700 bg-white hover:bg-stone-50 hover:text-amber-700 transition flex items-center gap-1 text-xs font-semibold shadow-2xs"
-                                        title="Chỉnh sửa nội dung việc (Chỉ người tạo)"
-                                    >
-                                        <Pencil className="w-3.5 h-3.5 text-stone-500" />
-                                        <span>Sửa</span>
-                                    </button>
-                                    <button
-                                        onClick={handleDelete}
-                                        disabled={deleting}
-                                        className="p-2 rounded-xl text-stone-400 hover:text-red-600 hover:bg-red-50 transition"
-                                        title="Xóa lời nhắc này"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </>
-                            )}
-                            <button
-                                onClick={onClose}
-                                className="p-2 rounded-xl text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
+                        {/* Row 2: Sub-row phân công đội & người chỉ định */}
+                        {(() => {
+                            const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
+                                ? task.target_shifts
+                                : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : [])
+
+                            if (shiftsList.length === 0 && !task.assigned_to_name) return null
+
+                            return (
+                                <div className="flex items-center gap-1.5 flex-wrap pt-2 mt-2 border-t border-stone-200/60 text-xs">
+                                    <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wide mr-0.5">
+                                        Giao cho:
+                                    </span>
+                                    {shiftsList.map((shift, idx) => {
+                                        const isAll = shift === 'Toàn bộ' || shift === 'Toàn đội'
+                                        return (
+                                            <span
+                                                key={idx}
+                                                className={`text-[11px] font-semibold px-2 py-0.5 rounded-md border shadow-2xs whitespace-nowrap flex items-center gap-1 ${
+                                                    isAll
+                                                        ? 'bg-purple-700 text-white border-purple-700'
+                                                        : shift.startsWith('Đội')
+                                                        ? 'bg-purple-50 text-purple-800 border-purple-200/80'
+                                                        : 'bg-indigo-50 text-indigo-800 border-indigo-200/80'
+                                                }`}
+                                            >
+                                                <Users className={`w-3 h-3 ${isAll ? 'text-white' : 'text-purple-600'} flex-shrink-0`} />
+                                                <span>{shift}</span>
+                                            </span>
+                                        )
+                                    })}
+
+                                    {task.assigned_to_name && (
+                                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md border border-blue-200 bg-blue-50 text-blue-800 shadow-2xs whitespace-nowrap flex items-center gap-1">
+                                            <UserCheck className="w-3 h-3 text-blue-600 flex-shrink-0" />
+                                            <span>Chỉ định: <strong>{task.assigned_to_name}</strong></span>
+                                        </span>
+                                    )}
+                                </div>
+                            )
+                        })()}
                     </div>
 
                     {/* Scrollable Content */}
-                    <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 sm:space-y-6">
 
                         {/* Title & Content */}
                         <div className="space-y-3">
                             <h3 className="text-xl font-bold text-stone-900 leading-snug">{task.title}</h3>
-                            {task.content && (
-                                <div className="p-4 rounded-xl bg-stone-50 border border-stone-100 text-sm text-stone-800 whitespace-pre-line leading-relaxed">
-                                    {task.content}
+                            {task.content ? (
+                                <div className="p-4 rounded-xl bg-stone-50 border border-stone-100 text-sm text-stone-800 leading-relaxed">
+                                    <TaskRichContent
+                                        content={task.content}
+                                        fallbackImages={task.images || []}
+                                        onImageClick={(imgs, idx) => {
+                                            const clickedUrl = imgs[idx]
+                                            const targetIdx = allTaskImages.indexOf(clickedUrl)
+                                            handleOpenLightbox(allTaskImages, targetIdx !== -1 ? targetIdx : 0)
+                                        }}
+                                    />
                                 </div>
-                            )}
+                            ) : fetchingFullTask ? (
+                                <div className="flex items-center gap-2.5 p-4 rounded-xl bg-stone-50 border border-stone-100 text-xs text-stone-500 animate-pulse">
+                                    <Loader2 className="w-4 h-4 animate-spin text-stone-400" />
+                                    <span>Đang đồng bộ nội dung chi tiết...</span>
+                                </div>
+                            ) : null}
                         </div>
 
                         {/* Metadata grid */}
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-xl bg-stone-50 border border-stone-100 text-xs">
-                            <div>
-                                <span className="text-stone-400 block mb-0.5">Người giao</span>
-                                <span className="font-semibold text-stone-800 flex items-center gap-1">
-                                    <User className="w-3.5 h-3.5 text-stone-400" />
-                                    {task.created_by_name || 'Hệ thống'}
-                                </span>
-                            </div>
-                            <div>
-                                <span className="text-stone-400 block mb-0.5">Thời gian giao</span>
-                                <span className="font-semibold text-stone-800">
-                                    {formatDateTime(task.created_at)}
-                                </span>
-                            </div>
-                            <div>
-                                <span className="text-stone-400 block mb-0.5">Đã tiếp nhận ({acks.length})</span>
-                                <span className="font-semibold text-stone-800 truncate block" title={acks.map(a => a.user_name).join(', ')}>
-                                    {acks.length > 0 ? acks.map(a => a.user_name).join(', ') : (task.assigned_to_name || 'Bất kỳ ai trong ca')}
-                                </span>
-                            </div>
-                            <div>
-                                <span className="text-stone-400 block mb-0.5">Thời gian nhận</span>
-                                <span className="font-semibold text-stone-800">
-                                    {acks.length > 0 ? formatDateTime(acks[0].acknowledged_at) : 'Chưa nhận'}
-                                </span>
-                            </div>
-                        </div>
+                        {(() => {
+                            const isAssigneeAcked = Boolean(
+                                task.assigned_to_name && acks.some(a => 
+                                    (task.assigned_to && a.user_id === task.assigned_to) || 
+                                    (a.user_name && a.user_name.trim().toLowerCase() === task.assigned_to_name!.trim().toLowerCase())
+                                )
+                            )
 
-                        {/* Attached Images lúc tạo việc */}
-                        {task.images && task.images.length > 0 && (
+                            return (
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 rounded-xl bg-stone-50 border border-stone-100 text-xs">
+                                    <div>
+                                        <span className="text-stone-400 block mb-0.5">Người giao</span>
+                                        <span className="font-semibold text-stone-800 flex items-center gap-1">
+                                            <User className="w-3.5 h-3.5 text-stone-400" />
+                                            <span className="truncate">{task.created_by_name || 'Hệ thống'}</span>
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-stone-400 block mb-0.5">Thời gian giao</span>
+                                        <span className="font-semibold text-stone-800">
+                                            {formatDateTime(task.created_at)}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <span className="text-stone-400 block mb-0.5">
+                                            {task.assigned_to_name ? 'Người được chỉ định' : 'Người phụ trách'}
+                                        </span>
+                                        {task.assigned_to_name ? (
+                                            <div>
+                                                <span className="font-bold text-blue-900 flex items-center gap-1">
+                                                    <UserCheck className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                                                    <span className="truncate" title={task.assigned_to_name}>{task.assigned_to_name}</span>
+                                                </span>
+                                                <span className={`text-[10px] font-semibold mt-0.5 inline-flex items-center gap-0.5 ${
+                                                    isAssigneeAcked ? 'text-emerald-600' : 'text-amber-600'
+                                                }`}>
+                                                    {isAssigneeAcked ? '✓ Đã tiếp nhận' : '⏳ Chưa nhận việc'}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <span className="font-medium text-stone-700">Bất kỳ ai trong đội</span>
+                                                <span className="text-[10px] text-stone-400 mt-0.5 block">Không chỉ định riêng</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <span className="text-stone-400 block mb-0.5">Đã tiếp nhận ({acks.length})</span>
+                                        {acks.length > 0 ? (
+                                            <div>
+                                                <span className="font-semibold text-emerald-800 truncate block" title={acks.map(a => a.user_name).join(', ')}>
+                                                    {acks.map(a => a.user_name).join(', ')}
+                                                </span>
+                                                <span className="text-[10px] text-stone-400 mt-0.5 block">
+                                                    {formatDateRelative(acks[0].acknowledged_at)}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                <span className="font-semibold text-stone-400">Chưa có ai nhận</span>
+                                                <span className="text-[10px] text-stone-400 mt-0.5 block">Đang chờ xác nhận</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )
+                        })()}
+
+                        {/* Attached Images lúc tạo việc (những ảnh đính kèm ngoài văn bản) */}
+                        {standaloneImages.length > 0 && (
                             <div>
                                 <h4 className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
                                     <ImageIcon className="w-4 h-4 text-amber-600" />
-                                    Ảnh hiện trường lúc bàn giao ({task.images.length})
+                                    {inlineUrls.length > 0
+                                        ? `Ảnh đính kèm bổ sung (${standaloneImages.length})`
+                                        : `Ảnh hiện trường lúc bàn giao (${standaloneImages.length})`}
                                 </h4>
                                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                    {task.images.map((img, idx) => (
-                                        <div
-                                            key={idx}
-                                            onClick={() => handleOpenLightbox(task.images, idx)}
-                                            className="relative aspect-video rounded-xl overflow-hidden border border-stone-200 bg-stone-100 cursor-pointer group shadow-sm hover:shadow-md transition"
-                                        >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={img}
-                                                alt={`Hiện trường ${idx + 1}`}
-                                                className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
-                                            />
-                                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-semibold">
-                                                Phóng to
+                                    {standaloneImages.map((img, idx) => {
+                                        const globalIdx = allTaskImages.indexOf(img)
+                                        return (
+                                            <div
+                                                key={idx}
+                                                onClick={() => handleOpenLightbox(allTaskImages, globalIdx !== -1 ? globalIdx : 0)}
+                                                className="relative aspect-video rounded-xl overflow-hidden border border-stone-200 bg-stone-100 cursor-pointer group shadow-sm hover:shadow-md transition"
+                                            >
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={img}
+                                                    alt={`Hiện trường ${idx + 1}`}
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
+                                                />
+                                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-semibold">
+                                                    Phóng to
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        )
+                                    })}
                                 </div>
                             </div>
                         )}
@@ -614,25 +883,33 @@ export default function TaskDetailModal({
                                     <div>
                                         <h4 className="text-sm font-bold text-amber-900">Đang chờ tiếp nhận việc</h4>
                                         <p className="text-xs text-amber-700 mt-0.5">
-                                            {task.created_by_name} đã giao việc. Các thành viên nhận việc hãy kiểm tra nội dung & ảnh rồi bấm xác nhận tiếp nhận.
+                                            {canAcknowledge
+                                                ? `${task.created_by_name || 'Người giao việc'} đã giao việc cho đội của bạn. Hãy kiểm tra nội dung & ảnh rồi bấm xác nhận tiếp nhận.`
+                                                : `${task.created_by_name || 'Người giao việc'} đã giao việc cho: ${getAssignedTeams(task).join(', ') || 'các đội'}. Đang chờ các đội tiếp nhận.`}
                                         </p>
                                     </div>
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={handleAcknowledge}
-                                    disabled={acknowledging}
-                                    className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/25 flex items-center justify-center gap-1.5 transition flex-shrink-0"
-                                >
-                                    {acknowledging ? (
-                                        <Loader2 className="w-4 h-4 animate-spin" />
-                                    ) : (
-                                        <>
-                                            <Check className="w-4 h-4" />
-                                            <span>Xác nhận tiếp nhận việc</span>
-                                        </>
-                                    )}
-                                </button>
+                                {canAcknowledge && !hasMyAck ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleAcknowledge}
+                                        disabled={acknowledging}
+                                        className="px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/25 flex items-center justify-center gap-1.5 transition flex-shrink-0"
+                                    >
+                                        {acknowledging ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Check className="w-4 h-4" />
+                                                <span>Xác nhận tiếp nhận việc</span>
+                                            </>
+                                        )}
+                                    </button>
+                                ) : !canAcknowledge ? (
+                                    <span className="text-xs font-semibold text-amber-800/80 bg-amber-100/70 border border-amber-200 px-3 py-1.5 rounded-xl flex-shrink-0">
+                                        Chờ các đội tiếp nhận
+                                    </span>
+                                ) : null}
                             </div>
                         )}
 
@@ -640,7 +917,8 @@ export default function TaskDetailModal({
                         {(() => {
                             const assignedTeams = getAssignedTeams(task)
                             if (assignedTeams.length <= 1) return null
-                            const teamProgress = getTaskTeamProgress(task)
+                            const isReminder = getTaskType(task) === 'reminder'
+                            const teamProgress = getTaskTeamProgress(task, allMembers, teams)
                             const teamCompletions = getTeamCompletions(task)
 
                             return (
@@ -651,11 +929,15 @@ export default function TaskDetailModal({
                                                 <Users className="w-5 h-5" />
                                             </div>
                                             <div>
-                                                <h4 className="text-sm font-bold text-purple-900">Tiến độ thực hiện của các đội</h4>
+                                                <h4 className="text-sm font-bold text-purple-900">
+                                                    {isReminder ? 'Tiến độ tiếp nhận của các đội' : 'Tiến độ thực hiện của các đội'}
+                                                </h4>
                                                 <p className="text-xs text-purple-700">
                                                     {teamProgress.isAllCompleted
-                                                        ? 'Tất cả các đội được giao đã hoàn thành xuất sắc nhiệm vụ!'
-                                                        : `Đã có ${teamProgress.completedCount}/${teamProgress.total} đội báo hoàn tất.`}
+                                                        ? (isReminder ? 'Tất cả các đội đã tiếp nhận lời nhắc!' : 'Tất cả các đội được giao đã hoàn thành xuất sắc nhiệm vụ!')
+                                                        : (isReminder
+                                                            ? `Đã có ${teamProgress.completedCount}/${teamProgress.total} đội tiếp nhận lời nhắc.`
+                                                            : `Đã có ${teamProgress.completedCount}/${teamProgress.total} đội báo hoàn tất (${teamProgress.ackedCount}/${teamProgress.total} đội đã nhận việc).`)}
                                                 </p>
                                             </div>
                                         </div>
@@ -681,12 +963,24 @@ export default function TaskDetailModal({
                                     {/* Cards for each team */}
                                     <div className="grid grid-cols-1 gap-2 pt-1">
                                         {assignedTeams.map(teamName => {
-                                            const isDone = isTeamCompleted(task, teamName)
+                                            const isDone = isTeamCompleted(task, teamName) || (isReminder && isTeamAcknowledged(task, teamName, allMembers, teams))
+                                            const isAcked = isTeamAcknowledged(task, teamName, allMembers, teams)
+                                            const memberInfo = getTeamMemberAckInfo(task, teamName, allMembers, teams)
                                             const completion = teamCompletions.find(c => {
                                                 const cNorm = (c.team_name || '').toLowerCase().trim().replace(/^đội\s+/, '')
                                                 const tNorm = teamName.toLowerCase().trim().replace(/^đội\s+/, '')
                                                 return cNorm === tNorm
                                             })
+
+                                            let badgeText = 'Chưa nhận việc'
+                                            let badgeClass = 'bg-stone-100 text-stone-600'
+                                            if (isDone) {
+                                                badgeText = isReminder ? 'Đã tiếp nhận' : 'Đã hoàn thành'
+                                                badgeClass = 'bg-emerald-100 text-emerald-800'
+                                            } else if (isAcked) {
+                                                badgeText = 'Đã nhận (Đang làm)'
+                                                badgeClass = 'bg-blue-100 text-blue-800'
+                                            }
 
                                             return (
                                                 <div
@@ -694,22 +988,35 @@ export default function TaskDetailModal({
                                                     className={`p-3 rounded-xl border text-xs transition ${
                                                         isDone
                                                             ? 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                                                            : isAcked
+                                                            ? 'bg-blue-50/60 border-blue-200 text-blue-900'
                                                             : 'bg-white border-stone-200 text-stone-700'
                                                     }`}
                                                 >
-                                                    <div className="flex items-center justify-between mb-1">
-                                                        <div className="flex items-center gap-2">
+                                                    <div className="flex items-center justify-between mb-1.5 flex-wrap gap-2">
+                                                        <div className="flex items-center gap-2 flex-wrap">
                                                             {isDone ? (
                                                                 <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                                                            ) : isAcked ? (
+                                                                <Clock className="w-4 h-4 text-blue-500 flex-shrink-0" />
                                                             ) : (
-                                                                <Clock className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                                                <Clock className="w-4 h-4 text-stone-400 flex-shrink-0" />
                                                             )}
                                                             <span className="font-bold text-sm text-stone-900">{teamName}</span>
+                                                            {memberInfo.totalMembers > 0 ? (
+                                                                <span className="text-[11px] font-semibold text-stone-600 bg-stone-100 px-2 py-0.5 rounded-full border border-stone-200 flex items-center gap-1">
+                                                                    <Users className="w-3 h-3 text-stone-400" />
+                                                                    <span>{memberInfo.ackedCount}/{memberInfo.totalMembers} người đã nhận</span>
+                                                                </span>
+                                                            ) : memberInfo.ackedCount > 0 ? (
+                                                                <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                                                    <Users className="w-3 h-3 text-emerald-500" />
+                                                                    <span>{memberInfo.ackedCount} người đã nhận</span>
+                                                                </span>
+                                                            ) : null}
                                                         </div>
-                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                                            isDone ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                                                        }`}>
-                                                            {isDone ? 'Đã hoàn thành' : 'Đang thực hiện'}
+                                                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${badgeClass}`}>
+                                                            {badgeText}
                                                         </span>
                                                     </div>
 
@@ -742,10 +1049,47 @@ export default function TaskDetailModal({
                                                                 </div>
                                                             )}
                                                         </div>
+                                                    ) : isAcked ? (
+                                                        <p className="text-[11px] text-blue-600 mt-1 italic">
+                                                            {isReminder ? 'Đội đã tiếp nhận và nắm bắt thông tin lời nhắc.' : 'Đội đã nhận việc và đang tiến hành thực hiện.'}
+                                                        </p>
                                                     ) : (
                                                         <p className="text-[11px] text-stone-400 mt-1 italic">
-                                                            Đội chưa bấm xác nhận hoàn thành phần việc này.
+                                                            {isReminder ? 'Đội chưa có thành viên nào bấm tiếp nhận lời nhắc này.' : 'Đội chưa có thành viên nào bấm xác nhận tiếp nhận việc.'}
                                                         </p>
+                                                    )}
+
+                                                    {/* Danh sách thành viên trong đội đã tiếp nhận */}
+                                                    {memberInfo.ackedMembers.length > 0 && (
+                                                        <div className="mt-2 pt-2 border-t border-stone-200/60 space-y-1">
+                                                            <div className="flex items-center gap-1 text-[11px] font-bold text-stone-700">
+                                                                <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                                                                <span>Thành viên đội đã tiếp nhận ({memberInfo.ackedMembers.length}):</span>
+                                                            </div>
+                                                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                                {memberInfo.ackedMembers.map((m, idx) => (
+                                                                    <span
+                                                                        key={idx}
+                                                                        className="inline-flex items-center gap-1 text-[11px] font-medium bg-white text-stone-800 border border-emerald-200 px-2 py-0.5 rounded-md shadow-2xs"
+                                                                    >
+                                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                                        <strong className="text-stone-900">{m.user_name}</strong>
+                                                                        <span className="text-[10px] text-stone-400">({formatDateRelative(m.acknowledged_at)})</span>
+                                                                    </span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+
+                                                    {memberInfo.unackedMemberNames.length > 0 && (
+                                                        <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-stone-500">
+                                                            <span className="text-stone-400 font-medium">
+                                                                {memberInfo.ackedCount > 0 
+                                                                    ? `Chưa nhận (${memberInfo.unackedMemberNames.length}):` 
+                                                                    : `Thành viên trong đội (${memberInfo.totalMembers}):`}
+                                                            </span>
+                                                            <span className="text-stone-600">{memberInfo.unackedMemberNames.join(', ')}</span>
+                                                        </div>
                                                     )}
                                                 </div>
                                             )
@@ -770,13 +1114,17 @@ export default function TaskDetailModal({
                                                 </span>
                                             </h4>
                                             <p className="text-xs text-blue-700 mt-0.5">
-                                                {hasMyAck ? '✓ Bạn đã xác nhận tiếp nhận việc này.' : 'Bạn chưa xác nhận tiếp nhận. Hãy bấm nút bên phải để xác nhận cùng làm.'}
+                                                {hasMyAck 
+                                                    ? '✓ Bạn đã xác nhận tiếp nhận việc này.' 
+                                                    : canAcknowledge
+                                                    ? 'Bạn chưa xác nhận tiếp nhận. Hãy bấm nút bên phải để xác nhận cùng làm.'
+                                                    : `Công việc được giao cho: ${getAssignedTeams(task).join(', ') || 'các đội khác'}. Bạn không thuộc đội nhận việc này.`}
                                             </p>
                                         </div>
                                     </div>
 
                                     <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                                        {!hasMyAck && (
+                                        {!hasMyAck && canAcknowledge && (
                                             <button
                                                 type="button"
                                                 onClick={handleAcknowledge}
@@ -810,6 +1158,14 @@ export default function TaskDetailModal({
                                                     <div className="flex items-center gap-1 text-emerald-700 font-bold text-xs bg-emerald-100 border border-emerald-300 px-3 py-2 rounded-xl flex-shrink-0">
                                                         <CheckCircle2 className="w-4 h-4 text-emerald-600" />
                                                         <span>Đội bạn đã xong</span>
+                                                    </div>
+                                                )
+                                            }
+                                            if (task.assigned_to_name && !isReminder && !isCompleted) {
+                                                return (
+                                                    <div className="flex items-center gap-1.5 text-blue-800 font-medium text-xs bg-blue-50 border border-blue-200 px-3 py-2 rounded-xl flex-shrink-0" title="Chỉ người được chỉ định hoặc Quản trị viên mới có quyền báo cáo hoàn thành">
+                                                        <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                                        <span>Chỉ định: <strong>{task.assigned_to_name}</strong> báo cáo</span>
                                                     </div>
                                                 )
                                             }
@@ -886,7 +1242,7 @@ export default function TaskDetailModal({
                             Cập nhật lần cuối: {formatDateTime(task.updated_at)}
                         </span>
                         <div className="flex items-center gap-2">
-                            {isPending && (
+                            {isPending && !hasMyAck && canAcknowledge && (
                                 <button
                                     onClick={handleAcknowledge}
                                     disabled={acknowledging}
@@ -896,7 +1252,7 @@ export default function TaskDetailModal({
                                     <span>Xác nhận tiếp nhận</span>
                                 </button>
                             )}
-                            {isInProgress && !hasMyAck && (
+                            {isInProgress && !hasMyAck && canAcknowledge && (
                                 <button
                                     onClick={handleAcknowledge}
                                     disabled={acknowledging}
@@ -921,6 +1277,14 @@ export default function TaskDetailModal({
                                                     : 'Đánh dấu hoàn thành'}
                                             </span>
                                         </button>
+                                    )
+                                }
+                                if (task.assigned_to_name && !isReminder && !isCompleted) {
+                                    return (
+                                        <div className="flex items-center gap-1.5 text-blue-800 font-medium text-xs bg-blue-50 border border-blue-200 px-3 py-2 rounded-xl">
+                                            <UserCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                                            <span>Chỉ định: <strong>{task.assigned_to_name}</strong> báo cáo</span>
+                                        </div>
                                     )
                                 }
                                 return null
@@ -952,6 +1316,7 @@ export default function TaskDetailModal({
                 task={task}
                 onClose={() => setShowEditModal(false)}
                 onTaskUpdated={(updated) => {
+                    setLiveTask(updated)
                     onTaskUpdated(updated)
                 }}
             />

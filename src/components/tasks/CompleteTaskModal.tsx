@@ -5,7 +5,7 @@ import { X, CheckCircle2, Camera, Image as ImageIcon, Loader2, AlertTriangle, Ch
 import { supabase } from '@/lib/supabaseClient'
 import { useUser } from '@/contexts/UserContext'
 import { ShiftTask, TeamCompletion } from './types'
-import { uploadTaskImage, getAssignedTeams, getTeamCompletions, isTeamCompleted, canUserCompleteTeamTask } from './taskUtils'
+import { uploadTaskImage, getAssignedTeams, getTeamCompletions, isTeamCompleted, canUserCompleteTeamTask, dispatchTaskCompletionNotification } from './taskUtils'
 
 interface CompleteTaskModalProps {
     isOpen: boolean
@@ -77,8 +77,15 @@ export default function CompleteTaskModal({ isOpen, task, myTeamNames = [], onCl
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        setSubmitting(true)
-        setErrorMsg('')
+        if (!completionInfo.canComplete) {
+            setErrorMsg(
+                task.assigned_to_name
+                    ? `Công việc này được chỉ định riêng cho ${task.assigned_to_name}. Chỉ người phụ trách này hoặc Quản trị viên mới có quyền báo cáo hoàn thành.`
+                    : 'Bạn không có quyền báo cáo hoàn thành cho công việc này.'
+            )
+            setSubmitting(false)
+            return
+        }
 
         try {
             const now = new Date().toISOString()
@@ -120,20 +127,42 @@ export default function CompleteTaskModal({ isOpen, task, myTeamNames = [], onCl
 
             // Construct acknowledgements payload (fallback storage so team completions persist reliably)
             const existingAcks = Array.isArray(task.acknowledgements) ? [...task.acknowledgements] : []
-            existingAcks.push({
-                user_id: profile?.id || null,
+            const myId = profile?.id
+            const myName = (profile?.full_name || '').trim().toLowerCase()
+
+            const userAckIdx = existingAcks.findIndex(a => 
+                (myId && a.user_id && a.user_id === myId) ||
+                (myName && a.user_name && a.user_name.trim().toLowerCase() === myName)
+            )
+
+            const completionEntry = {
+                user_id: myId || null,
                 user_name: profile?.full_name || 'Nhân viên',
                 is_completed: true,
                 completed_team: targetTeam,
                 completed_at: now,
                 completion_notes: notes.trim() || null,
                 completion_images: images,
-                acknowledged_at: now,
-            })
+                acknowledged_at: userAckIdx >= 0 ? (existingAcks[userAckIdx].acknowledged_at || now) : now,
+            }
+
+            let updatedAcks: any[] = []
+            if (userAckIdx >= 0) {
+                updatedAcks = existingAcks
+                    .filter((a, idx) => {
+                        if (idx === userAckIdx) return true
+                        const isMatch = (myId && a.user_id && a.user_id === myId) ||
+                                        (myName && a.user_name && a.user_name.trim().toLowerCase() === myName)
+                        return !isMatch
+                    })
+                    .map((a, idx) => (idx === userAckIdx ? { ...a, ...completionEntry } : a))
+            } else {
+                updatedAcks = [...existingAcks, completionEntry]
+            }
 
             const payload: any = {
                 status: isAllDone ? 'completed' : 'in_progress',
-                acknowledgements: existingAcks,
+                acknowledgements: updatedAcks,
             }
 
             // Only set root completed_at/completed_by if all teams finished or it's single team
@@ -162,6 +191,15 @@ export default function CompleteTaskModal({ isOpen, task, myTeamNames = [], onCl
                 ...data,
                 team_completions: updatedCompletions,
             }
+
+            // Dispatch push notification to relevant parties (creator, assigned teams, assignee)
+            dispatchTaskCompletionNotification({
+                task,
+                completer: { id: profile?.id, name: profile?.full_name },
+                completionTeam: targetTeam,
+                notes: notes.trim(),
+                isAllCompleted: isAllDone,
+            })
 
             onTaskCompleted(fullUpdatedTask)
             onClose()

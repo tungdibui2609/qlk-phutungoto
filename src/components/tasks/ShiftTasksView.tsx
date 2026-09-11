@@ -16,7 +16,9 @@ import {
     MessageSquare,
     Image as ImageIcon,
     ShieldCheck,
+    UserCheck,
     Check,
+    ChevronLeft,
     ChevronRight,
     Sparkles,
     Flame,
@@ -39,9 +41,17 @@ import {
     getAssignedTeams,
     getTeamCompletions,
     isTeamCompleted,
+    isTeamAcknowledged,
     getTaskTeamProgress,
-    canUserCompleteTeamTask
+    canUserCompleteTeamTask,
+    canUserAcknowledgeTask,
+    getTaskType,
+    canManageTask,
+    isUserAdmin,
+    getTeamMemberAckInfo,
+    getDeduplicatedAcknowledgements
 } from './taskUtils'
+import { formatTaskContentPreview, getCardContentPreview, extractInlineImageUrls } from './taskContentUtils'
 import { usePushNotifications } from '@/hooks/usePushNotifications'
 import CreateTaskModal from './CreateTaskModal'
 import TaskDetailModal from './TaskDetailModal'
@@ -235,14 +245,64 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     table: 'shift_tasks',
                     filter: `system_code=eq.${currentSystem.code}`,
                 },
-                (payload) => {
+                async (payload) => {
                     if (payload.eventType === 'INSERT') {
-                        const newTask = payload.new as ShiftTask
-                        setTasks(prev => [newTask, ...prev.filter(t => t.id !== newTask.id)])
+                        const rawNew = payload.new as ShiftTask
+                        setTasks(prev => [rawNew, ...prev.filter(t => t.id !== rawNew.id)])
+                        try {
+                            const { data, error } = await (supabase as any)
+                                .from('shift_tasks')
+                                .select('*')
+                                .eq('id', rawNew.id)
+                                .single()
+                            if (!error && data) {
+                                setTasks(prev => prev.map(t => t.id === data.id ? data : t))
+                            }
+                        } catch (e) {
+                            console.error('Error fetching full task on insert:', e)
+                        }
                     } else if (payload.eventType === 'UPDATE') {
-                        const updatedTask = payload.new as ShiftTask
-                        setTasks(prev => prev.map(t => (t.id === updatedTask.id ? updatedTask : t)))
-                        setSelectedTask(prev => (prev?.id === updatedTask.id ? updatedTask : prev))
+                        const rawUpdated = payload.new as ShiftTask
+                        // Merge safely without erasing content or images
+                        setTasks(prev => prev.map(t => {
+                            if (t.id === rawUpdated.id) {
+                                return {
+                                    ...t,
+                                    ...rawUpdated,
+                                    content: rawUpdated.content ?? t.content,
+                                    images: (rawUpdated.images && rawUpdated.images.length > 0) ? rawUpdated.images : t.images,
+                                    target_shifts: (rawUpdated.target_shifts && rawUpdated.target_shifts.length > 0) ? rawUpdated.target_shifts : t.target_shifts,
+                                }
+                            }
+                            return t
+                        }))
+                        setSelectedTask(prev => {
+                            if (prev?.id === rawUpdated.id) {
+                                return {
+                                    ...prev,
+                                    ...rawUpdated,
+                                    content: rawUpdated.content ?? prev.content,
+                                    images: (rawUpdated.images && rawUpdated.images.length > 0) ? rawUpdated.images : prev.images,
+                                    target_shifts: (rawUpdated.target_shifts && rawUpdated.target_shifts.length > 0) ? rawUpdated.target_shifts : prev.target_shifts,
+                                }
+                            }
+                            return prev
+                        })
+
+                        // In background, fetch pristine full row from DB
+                        try {
+                            const { data, error } = await (supabase as any)
+                                .from('shift_tasks')
+                                .select('*')
+                                .eq('id', rawUpdated.id)
+                                .single()
+                            if (!error && data) {
+                                setTasks(prev => prev.map(t => t.id === data.id ? data : t))
+                                setSelectedTask(prev => prev?.id === data.id ? data : prev)
+                            }
+                        } catch (e) {
+                            console.error('Error fetching full task on update:', e)
+                        }
                     } else if (payload.eventType === 'DELETE') {
                         const deletedId = (payload.old as any).id
                         setTasks(prev => prev.filter(t => t.id !== deletedId))
@@ -286,12 +346,19 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     ? t.target_shifts
                     : (t.target_shift ? t.target_shift.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
 
-                if (shiftFilter === 'other') {
-                    const hasStandardShift = taskShifts.some(s => ['Ca 1 (Sáng)', 'Ca 2 (Chiều)', 'Ca 3 (Đêm)', 'Ca tiếp theo', 'Toàn ca'].includes(s))
-                    if (hasStandardShift) return false
-                } else {
-                    const matches = taskShifts.some(s => s.toLowerCase() === shiftFilter.toLowerCase() || s.toLowerCase().includes(shiftFilter.toLowerCase()))
-                    if (!matches && t.target_shift !== shiftFilter) return false
+                const isBroadcast = taskShifts.some(s => {
+                    const l = s.toLowerCase()
+                    return l === 'toàn bộ' || l === 'toàn đội' || l === 'tất cả' || l === 'tất cả các đội'
+                })
+
+                if (!isBroadcast) {
+                    if (shiftFilter === 'other') {
+                        const hasStandardShift = taskShifts.some(s => ['Ca 1 (Sáng)', 'Ca 2 (Chiều)', 'Ca 3 (Đêm)', 'Ca tiếp theo', 'Toàn ca'].includes(s))
+                        if (hasStandardShift) return false
+                    } else {
+                        const matches = taskShifts.some(s => s.toLowerCase() === shiftFilter.toLowerCase() || s.toLowerCase().includes(shiftFilter.toLowerCase()))
+                        if (!matches && t.target_shift !== shiftFilter) return false
+                    }
                 }
             }
 
@@ -341,25 +408,51 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
         })
     }, [tasks, statusFilter, shiftFilter, priorityFilter, myTasksFilter, searchQuery, profile?.id, myTeamIds, teams])
 
+    // Phân trang 12 công việc / lời nhắc mỗi trang
+    const [currentPage, setCurrentPage] = useState(1)
+    const PAGE_SIZE = 12
+
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [statusFilter, shiftFilter, priorityFilter, myTasksFilter, searchQuery, activeMainTab])
+
+    const totalPages = Math.ceil(filteredTasks.length / PAGE_SIZE) || 1
+
+    const paginatedTasks = useMemo(() => {
+        const start = (currentPage - 1) * PAGE_SIZE
+        return filteredTasks.slice(start, start + PAGE_SIZE)
+    }, [filteredTasks, currentPage])
+
     // Quick Acknowledge from card (hỗ trợ nhiều người tiếp nhận)
     const handleQuickAcknowledge = async (e: React.MouseEvent, task: ShiftTask) => {
         e.stopPropagation()
         try {
             const now = new Date().toISOString()
-            const currentAcks: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
-                ? task.acknowledgements
-                : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
+            const currentAcks: any[] = Array.isArray(task.acknowledgements) ? task.acknowledgements : []
+            const myId = profile?.id
+            const myName = (profile?.full_name || '').trim().toLowerCase()
 
-            const alreadyAcked = currentAcks.some(a => a.user_id === profile?.id || (a.user_name && a.user_name === profile?.full_name))
+            const alreadyAcked = currentAcks.some(a => 
+                (myId && a.user_id && a.user_id === myId) || 
+                (myName && a.user_name && a.user_name.trim().toLowerCase() === myName)
+            )
 
             const myTeamNames = teams
                 .filter(t => myTeamIds.includes(t.id))
                 .map(t => t.name)
 
+            const deduplicatedCurrent = currentAcks.filter((a, idx) => {
+                const firstIdx = currentAcks.findIndex(x => 
+                    (x.user_id && a.user_id && x.user_id === a.user_id) ||
+                    (x.user_name && a.user_name && x.user_name.trim().toLowerCase() === a.user_name.trim().toLowerCase())
+                )
+                return firstIdx === idx
+            })
+
             const updatedAcks = alreadyAcked
-                ? currentAcks
+                ? deduplicatedCurrent
                 : [
-                    ...currentAcks,
+                    ...deduplicatedCurrent,
                     {
                         user_id: profile?.id || null,
                         user_name: profile?.full_name || 'Nhân viên tiếp nhận',
@@ -368,13 +461,31 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     }
                 ]
 
-            const payload = {
-                status: task.status === 'pending' ? 'in_progress' : task.status,
+            const isReminder = getTaskType(task) === 'reminder'
+            let newStatus = task.status === 'pending' ? 'in_progress' : task.status
+            let completedAt = task.completed_at
+            let completedByName = task.completed_by_name
+
+            if (isReminder) {
+                const tempTask = { ...task, acknowledgements: updatedAcks }
+                const progress = getTaskTeamProgress(tempTask, allMembers, teams)
+                if (progress.isAllCompleted) {
+                    newStatus = 'completed'
+                    completedAt = now
+                    completedByName = 'Các đội đã tiếp nhận'
+                }
+            }
+
+            const payload: any = {
+                status: newStatus,
                 acknowledgements: updatedAcks,
                 acknowledged_by: task.acknowledged_by || profile?.id || null,
                 acknowledged_by_name: task.acknowledged_by_name || profile?.full_name || 'Nhân viên tiếp nhận',
                 acknowledged_at: task.acknowledged_at || now,
             }
+            if (completedAt) payload.completed_at = completedAt
+            if (completedByName) payload.completed_by_name = completedByName
+
             const { data, error } = await (supabase as any)
                 .from('shift_tasks')
                 .update(payload)
@@ -390,14 +501,43 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
         }
     }
 
+    const handleSelectTask = async (task: ShiftTask) => {
+        setSelectedTask(task)
+        if (!task.content || !task.images || task.images.length === 0) {
+            try {
+                const { data, error } = await (supabase as any)
+                    .from('shift_tasks')
+                    .select('*')
+                    .eq('id', task.id)
+                    .single()
+                if (!error && data) {
+                    setSelectedTask(data)
+                    setTasks(prev => prev.map(t => t.id === data.id ? data : t))
+                }
+            } catch (e) {
+                console.error('Error hydrating task on select:', e)
+            }
+        }
+    }
+
     const handleTaskCreated = (newTask: ShiftTask) => {
         setTasks(prev => [newTask, ...prev])
     }
 
     const handleTaskUpdated = (updatedTask: ShiftTask) => {
-        setTasks(prev => prev.map(t => (t.id === updatedTask.id ? updatedTask : t)))
+        setTasks(prev => prev.map(t => (t.id === updatedTask.id ? {
+            ...t,
+            ...updatedTask,
+            content: updatedTask.content ?? t.content,
+            images: (updatedTask.images && updatedTask.images.length > 0) ? updatedTask.images : t.images,
+        } : t)))
         if (selectedTask?.id === updatedTask.id) {
-            setSelectedTask(updatedTask)
+            setSelectedTask(prev => prev ? {
+                ...prev,
+                ...updatedTask,
+                content: updatedTask.content ?? prev.content,
+                images: (updatedTask.images && updatedTask.images.length > 0) ? updatedTask.images : prev.images,
+            } : updatedTask)
         }
     }
 
@@ -408,20 +548,15 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
         }
     }
 
-    // Quick Delete from card (chỉ người tạo mới được xóa)
+    // Quick Delete from card (người tạo hoặc quản trị viên cấp 1, cấp 2)
     const handleQuickDelete = async (e: React.MouseEvent, task: ShiftTask) => {
         e.stopPropagation()
-        const isCreator = Boolean(
-            profile?.id === task.created_by ||
-            (profile?.full_name && task.created_by_name === profile.full_name) ||
-            profile?.roles?.code === 'admin' ||
-            (profile as any)?.role === 'admin'
-        )
-        if (!isCreator) {
-            alert('Chỉ người tạo việc mới có quyền xóa lời nhắc này.')
+        const canDelete = canManageTask(task, profile)
+        if (!canDelete) {
+            alert('Chỉ người tạo hoặc Quản trị viên mới có quyền xóa mục này.')
             return
         }
-        if (!confirm(`Bạn có chắc chắn muốn xóa lời nhắc việc #${task.code}?`)) return
+        if (!confirm(`Bạn có chắc chắn muốn xóa lời nhắc / việc #${task.code}?`)) return
         try {
             const { error } = await (supabase as any)
                 .from('shift_tasks')
@@ -458,7 +593,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                         setCreateForTeam(targetShift)
                         setShowCreateModal(true)
                     }}
-                    onSelectTask={(task) => setSelectedTask(task)}
+                    onSelectTask={handleSelectTask}
                     onQuickAcknowledge={handleQuickAcknowledge}
                     onQuickDelete={handleQuickDelete}
                     onOpenCompleteModal={(task) => setTaskToComplete(task)}
@@ -489,6 +624,8 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     isOpen={Boolean(selectedTask)}
                     task={selectedTask}
                     myTeamNames={myTeamNames}
+                    allMembers={allMembers}
+                    teams={teams}
                     onClose={() => setSelectedTask(null)}
                     onTaskUpdated={handleTaskUpdated}
                     onTaskDeleted={handleTaskDeleted}
@@ -705,7 +842,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                         )}
                     </button>
 
-                    {/* 1. Tất cả lời nhắc */}
+                    {/* 1. Tất cả (Mới nhất) */}
                     <button
                         onClick={() => {
                             setActiveMainTab('tasks')
@@ -717,13 +854,14 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                 : 'text-stone-600 hover:bg-stone-100'
                         }`}
                     >
-                        <span>Tất cả lời nhắc</span>
+                        <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Tất cả (Mới nhất)</span>
                         <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-white/20">
                             {tasks.length}
                         </span>
                     </button>
 
-                    {/* 2. Chờ tiếp nhận */}
+                    {/* 2. Chờ xác nhận */}
                     <button
                         onClick={() => {
                             setActiveMainTab('tasks')
@@ -735,14 +873,14 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                 : 'text-stone-600 hover:bg-amber-50 hover:text-amber-700'
                         }`}
                     >
-                        <span className="w-2 h-2 rounded-full bg-amber-400"></span>
-                        <span>Chờ tiếp nhận</span>
+                        <Clock className="w-3.5 h-3.5 text-amber-500" />
+                        <span>Chờ xác nhận</span>
                         <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeMainTab === 'tasks' && statusFilter === 'pending' ? 'bg-white/20' : 'bg-amber-100 text-amber-700'}`}>
                             {stats.pending}
                         </span>
                     </button>
 
-                    {/* 3. Đang làm dở */}
+                    {/* 3. Đã xác nhận */}
                     <button
                         onClick={() => {
                             setActiveMainTab('tasks')
@@ -754,14 +892,14 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                 : 'text-stone-600 hover:bg-blue-50 hover:text-blue-700'
                         }`}
                     >
-                        <span className="w-2 h-2 rounded-full bg-blue-400"></span>
-                        <span>Đang làm dở</span>
+                        <ShieldCheck className="w-3.5 h-3.5 text-blue-500" />
+                        <span>Đã xác nhận</span>
                         <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeMainTab === 'tasks' && statusFilter === 'in_progress' ? 'bg-white/20' : 'bg-blue-100 text-blue-700'}`}>
                             {stats.inProgress}
                         </span>
                     </button>
 
-                    {/* 4. Đã hoàn thành */}
+                    {/* 4. Hoàn thành */}
                     <button
                         onClick={() => {
                             setActiveMainTab('tasks')
@@ -773,8 +911,8 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                 : 'text-stone-600 hover:bg-emerald-50 hover:text-emerald-700'
                         }`}
                     >
-                        <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                        <span>Đã hoàn thành</span>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                        <span>Hoàn thành</span>
                         <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${activeMainTab === 'tasks' && statusFilter === 'completed' ? 'bg-white/20' : 'bg-emerald-100 text-emerald-700'}`}>
                             {tasks.filter(t => t.status === 'completed').length}
                         </span>
@@ -796,30 +934,19 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                             />
                         </div>
 
-                        {/* Filter by Shift / Team */}
+                        {/* Filter by Team */}
                         <div>
                             <select
                                 value={shiftFilter}
                                 onChange={(e) => setShiftFilter(e.target.value)}
                                 className="w-full px-3 py-2 rounded-xl border border-stone-200 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500/30 focus:border-amber-500 text-stone-700 bg-white font-medium"
                             >
-                                <option value="all">🎯 Tất cả Đội & Ca</option>
-                                {teams.length > 0 && (
-                                    <optgroup label="👥 Các Đội nhóm">
-                                        {teams.map(t => (
-                                            <option key={t.id} value={`Đội ${t.name}`}>
-                                                👥 Đội {t.name}
-                                            </option>
-                                        ))}
-                                    </optgroup>
-                                )}
-                                <optgroup label="⏰ Ca làm việc">
-                                    <option value="Ca tiếp theo">Ca tiếp theo</option>
-                                    <option value="Ca 1 (Sáng)">Ca 1 (Sáng)</option>
-                                    <option value="Ca 2 (Chiều)">Ca 2 (Chiều)</option>
-                                    <option value="Ca 3 (Đêm)">Ca 3 (Đêm)</option>
-                                    <option value="Toàn ca">Toàn ca</option>
-                                </optgroup>
+                                <option value="all">👥 Tất cả các Đội</option>
+                                {teams.map(t => (
+                                    <option key={t.id} value={`Đội ${t.name}`}>
+                                        👥 Đội {t.name}
+                                    </option>
+                                ))}
                             </select>
                         </div>
 
@@ -861,7 +988,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     profile={profile}
                     myTeamIds={myTeamIds}
                     allMembers={allMembers}
-                    onSelectTask={(task) => setSelectedTask(task)}
+                    onSelectTask={handleSelectTask}
                     onQuickAcknowledge={handleQuickAcknowledge}
                     onFilterByTeam={(teamName) => {
                         setShiftFilter(teamName)
@@ -898,27 +1025,26 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     </button>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {filteredTasks.map((task: ShiftTask) => {
+                <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {paginatedTasks.map((task: ShiftTask) => {
                         const isPending = task.status === 'pending'
                         const isInProgress = task.status === 'in_progress'
                         const isCompleted = task.status === 'completed'
+                        const isReminder = getTaskType(task) === 'reminder'
 
-                        const acks: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
-                            ? task.acknowledgements
-                            : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
-                        const hasMyAck = acks.some(a => a.user_id === profile?.id || (a.user_name && a.user_name === profile?.full_name))
-                        const isCreator = Boolean(
-                            profile?.id === task.created_by ||
-                            (profile?.full_name && task.created_by_name === profile.full_name) ||
-                            profile?.roles?.code === 'admin' ||
-                            (profile as any)?.role === 'admin'
+                        const acks = getDeduplicatedAcknowledgements(task)
+                        const hasMyAck = acks.some(a => 
+                            (profile?.id && a.user_id && a.user_id === profile.id) || 
+                            (profile?.full_name && a.user_name && a.user_name.trim().toLowerCase() === profile.full_name.trim().toLowerCase())
                         )
+                        const isCreatorOrAdmin = canManageTask(task, profile)
+                        const canAcknowledge = canUserAcknowledgeTask(task, profile, myTeamNames, allMembers, teams)
 
                         return (
                             <div
                                 key={task.id}
-                                onClick={() => setSelectedTask(task)}
+                                onClick={() => handleSelectTask(task)}
                                 className={`rounded-2xl border transition-all duration-200 p-5 flex flex-col justify-between cursor-pointer group bg-white shadow-sm hover:shadow-md relative overflow-hidden ${
                                     isPending
                                         ? 'border-amber-200 hover:border-amber-400 bg-gradient-to-b from-amber-50/20 to-white'
@@ -948,24 +1074,44 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                 #{task.code}
                                             </span>
                                             {(() => {
+                                                const tType = getTaskType(task)
+                                                return (
+                                                    <span
+                                                        className={`text-[10px] font-bold px-2 py-0.5 rounded-md border flex items-center gap-1 ${
+                                                            tType === 'reminder'
+                                                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                                                : 'bg-blue-50 text-blue-800 border-blue-200'
+                                                        }`}
+                                                    >
+                                                        <span>{tType === 'reminder' ? '🔔 Lời nhắc' : '📋 Công việc'}</span>
+                                                    </span>
+                                                )
+                                            })()}
+                                            {(() => {
                                                 const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                                                     ? task.target_shifts
                                                     : (task.target_shift ? task.target_shift.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
                                                 if (shiftsList.length === 0) return null
                                                 return (
                                                     <div className="flex items-center gap-1 flex-wrap">
-                                                        {shiftsList.slice(0, 2).map((shift: string, idx: number) => (
-                                                            <span
-                                                                key={idx}
-                                                                className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
-                                                                    shift.startsWith('Đội')
-                                                                        ? 'bg-purple-50 text-purple-700 border-purple-200'
-                                                                        : 'bg-stone-100 text-stone-600 border-stone-200'
-                                                                }`}
-                                                            >
-                                                                {shift.startsWith('Đội') ? `👥 ${shift}` : `🎯 ${shift}`}
-                                                            </span>
-                                                        ))}
+                                                        {shiftsList.slice(0, 2).map((shift: string, idx: number) => {
+                                                            const isAll = shift === 'Toàn bộ' || shift === 'Toàn đội'
+                                                            return (
+                                                                <span
+                                                                    key={idx}
+                                                                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
+                                                                        isAll
+                                                                            ? 'bg-purple-700 text-white border-purple-700'
+                                                                            : shift.startsWith('Đội')
+                                                                            ? 'bg-purple-50 text-purple-700 border-purple-200'
+                                                                            : 'bg-stone-100 text-stone-600 border-stone-200'
+                                                                    }`}
+                                                                >
+                                                                    {isAll ? '🏢 Toàn bộ' : shift.startsWith('Đội') ? `👥 ${shift}` : `🎯 ${shift}`}
+                                                                </span>
+                                                            )
+                                                        })}
+
                                                         {shiftsList.length > 2 && (
                                                             <span
                                                                 className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200 cursor-default"
@@ -1000,8 +1146,8 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                 </span>
                                             )}
 
-                                            {/* Creator Quick Edit & Delete */}
-                                            {isCreator && (
+                                            {/* Creator & Admin Quick Edit & Delete */}
+                                            {isCreatorOrAdmin && (
                                                 <div className="flex items-center gap-0.5 pl-1 border-l border-stone-200">
                                                     <button
                                                         type="button"
@@ -1010,7 +1156,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                             setTaskToEdit(task)
                                                         }}
                                                         className="p-1 rounded-md text-stone-400 hover:text-amber-700 hover:bg-amber-50 transition"
-                                                        title="Sửa lời nhắc (Chỉ người tạo)"
+                                                        title="Sửa lời nhắc / công việc"
                                                     >
                                                         <Pencil className="w-3.5 h-3.5" />
                                                     </button>
@@ -1018,7 +1164,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                         type="button"
                                                         onClick={(e) => handleQuickDelete(e, task)}
                                                         className="p-1 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 transition"
-                                                        title="Xóa lời nhắc (Chỉ người tạo)"
+                                                        title="Xóa lời nhắc / công việc"
                                                     >
                                                         <Trash2 className="w-3.5 h-3.5" />
                                                     </button>
@@ -1043,36 +1189,43 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                     </h3>
 
                                     {/* Content preview */}
-                                    {task.content && (
+                                    {task.content && getCardContentPreview(task.content) && (
                                         <p className="text-xs text-stone-600 line-clamp-3 mb-3 leading-relaxed">
-                                            {task.content}
+                                            {getCardContentPreview(task.content)}
                                         </p>
                                     )}
 
-                                    {/* Image Thumbnails Row */}
-                                    {task.images && task.images.length > 0 && (
-                                        <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
-                                            {task.images.slice(0, 4).map((img, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    onClick={(e) => handleOpenCardLightbox(e, task.images, idx)}
-                                                    className="relative w-14 h-14 rounded-lg overflow-hidden border border-stone-200 flex-shrink-0 bg-stone-100 hover:opacity-90 transition shadow-xs"
-                                                >
-                                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                                    <img
-                                                        src={img}
-                                                        alt="Ảnh đính kèm"
-                                                        className="w-full h-full object-cover"
-                                                    />
-                                                    {idx === 3 && task.images.length > 4 && (
-                                                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[10px] font-bold">
-                                                            +{task.images.length - 4}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
+                                    {/* Image Thumbnails Row (hỗ trợ cả ảnh đính kèm và ảnh chèn inline) */}
+                                    {(() => {
+                                        const cardImages = (task.images && task.images.length > 0)
+                                            ? task.images
+                                            : extractInlineImageUrls(task.content)
+                                        if (!cardImages || cardImages.length === 0) return null
+
+                                        return (
+                                            <div className="flex items-center gap-2 mb-3 overflow-x-auto pb-1">
+                                                {cardImages.slice(0, 4).map((img, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        onClick={(e) => handleOpenCardLightbox(e, cardImages, idx)}
+                                                        className="relative w-14 h-14 rounded-lg overflow-hidden border border-stone-200 flex-shrink-0 bg-stone-100 hover:opacity-90 transition shadow-xs cursor-pointer"
+                                                    >
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src={img}
+                                                            alt="Ảnh đính kèm"
+                                                            className="w-full h-full object-cover"
+                                                        />
+                                                        {idx === 3 && cardImages.length > 4 && (
+                                                            <div className="absolute inset-0 bg-black/60 flex items-center justify-center text-white text-[10px] font-bold">
+                                                                +{cardImages.length - 4}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )
+                                    })()}
                                 </div>
 
                                 {/* Card Footer & Actions */}
@@ -1082,6 +1235,12 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                         <div className="flex items-center gap-1.5 truncate max-w-[65%]">
                                             <User className="w-3 h-3 text-stone-400 flex-shrink-0" />
                                             <span className="truncate font-medium">{task.created_by_name || 'Hệ thống'}</span>
+                                            {task.assigned_to_name && (
+                                                <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200/80 px-1.5 py-0.2 rounded font-medium flex items-center gap-0.5 flex-shrink-0" title={`Chỉ định riêng cho ${task.assigned_to_name}`}>
+                                                    <UserCheck className="w-2.5 h-2.5" />
+                                                    {task.assigned_to_name}
+                                                </span>
+                                            )}
                                             {task.edit_history && task.edit_history.length > 0 && (
                                                 <span
                                                     className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 rounded font-medium flex-shrink-0"
@@ -1127,7 +1286,8 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
 
                                     {/* Multi-team progress breakdown */}
                                     {(() => {
-                                        const teamProgress = getTaskTeamProgress(task)
+                                        const isReminder = getTaskType(task) === 'reminder'
+                                        const teamProgress = getTaskTeamProgress(task, allMembers, teams)
                                         if (teamProgress.total <= 1) return null
 
                                         return (
@@ -1135,7 +1295,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                 <div className="flex items-center justify-between text-[11px]">
                                                     <span className="font-bold text-stone-700 flex items-center gap-1">
                                                         <Users className="w-3 h-3 text-purple-600" />
-                                                        Tiến độ các đội:
+                                                        {isReminder ? 'Tiến độ tiếp nhận:' : 'Tiến độ các đội:'}
                                                     </span>
                                                     <span className={`font-black px-2 py-0.5 rounded-md text-[10px] ${
                                                         teamProgress.isAllCompleted
@@ -1144,7 +1304,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                             ? 'bg-amber-100 text-amber-800'
                                                             : 'bg-stone-200/80 text-stone-700'
                                                     }`}>
-                                                        {teamProgress.ratioText} đội xong ({teamProgress.percent}%)
+                                                        {teamProgress.ratioText} {isReminder ? 'đội đã nhận' : 'đội xong'} ({teamProgress.percent}%)
                                                     </span>
                                                 </div>
 
@@ -1159,18 +1319,35 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                 {/* Teams breakdown tags */}
                                                 <div className="flex flex-wrap gap-1 pt-0.5">
                                                     {teamProgress.assignedTeams.map(t => {
-                                                        const isDone = isTeamCompleted(task, t)
+                                                        const isDone = isTeamCompleted(task, t) || (isReminder && isTeamAcknowledged(task, t, allMembers, teams))
+                                                        const isAcked = isTeamAcknowledged(task, t, allMembers, teams)
+                                                        const memberInfo = getTeamMemberAckInfo(task, t, allMembers, teams)
+                                                        const memberRatioStr = memberInfo.totalMembers > 0
+                                                            ? ` (${memberInfo.ackedCount}/${memberInfo.totalMembers})`
+                                                            : (memberInfo.ackedCount > 0 ? ` (${memberInfo.ackedCount})` : '')
+
+                                                        let label = 'Chưa nhận'
+                                                        let tagClass = 'bg-white border-stone-200 text-stone-500'
+                                                        let Icon = Clock
+
+                                                        if (isDone) {
+                                                            label = isReminder ? 'Đã nhận' : 'Đã xong'
+                                                            tagClass = 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                                            Icon = CheckCircle2
+                                                        } else if (isAcked) {
+                                                            label = 'Đang làm'
+                                                            tagClass = 'bg-blue-50 border-blue-300 text-blue-800'
+                                                            Icon = Clock
+                                                        }
+
                                                         return (
                                                             <span
                                                                 key={t}
-                                                                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${
-                                                                    isDone
-                                                                        ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                                                                        : 'bg-white border-stone-200 text-stone-500'
-                                                                }`}
+                                                                className={`inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-lg border ${tagClass}`}
+                                                                title={memberInfo.ackedMembers.length > 0 ? `Đã nhận: ${memberInfo.ackedMembers.map(m => m.user_name).join(', ')}` : 'Chưa ai nhận'}
                                                             >
-                                                                {isDone ? <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" /> : <Clock className="w-2.5 h-2.5 text-stone-400" />}
-                                                                <span>{t}: {isDone ? 'Đã xong' : 'Chưa'}</span>
+                                                                <Icon className="w-2.5 h-2.5" />
+                                                                <span>{t}: {label}{memberRatioStr}</span>
                                                             </span>
                                                         )
                                                     })}
@@ -1182,19 +1359,25 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                     {/* Quick action buttons */}
                                     <div className="flex items-center gap-2 pt-1">
                                         {isPending && (
-                                            <button
-                                                type="button"
-                                                onClick={(e) => handleQuickAcknowledge(e, task)}
-                                                className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition active:scale-[0.99]"
-                                            >
-                                                <Check className="w-3.5 h-3.5" />
-                                                <span>Xác nhận tiếp nhận việc</span>
-                                            </button>
+                                            canAcknowledge && !hasMyAck ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => handleQuickAcknowledge(e, task)}
+                                                    className="w-full py-2 px-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold shadow-sm flex items-center justify-center gap-1.5 transition active:scale-[0.99]"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                    <span>Xác nhận tiếp nhận việc</span>
+                                                </button>
+                                            ) : (
+                                                <div className="w-full py-1.5 px-3 rounded-xl bg-stone-50 border border-stone-200 text-stone-500 text-xs font-medium text-center">
+                                                    Đang chờ các đội nhận việc
+                                                </div>
+                                            )
                                         )}
 
                                         {isInProgress && (
                                             <>
-                                                {!hasMyAck && (
+                                                {!hasMyAck && canAcknowledge && (
                                                     <button
                                                         type="button"
                                                         onClick={(e) => handleQuickAcknowledge(e, task)}
@@ -1234,6 +1417,14 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                             </div>
                                                         )
                                                     }
+                                                    if (task.assigned_to_name && !isReminder) {
+                                                        return (
+                                                            <div className="w-full py-1.5 px-3 rounded-xl bg-blue-50/70 border border-blue-200/60 text-blue-800 text-[11px] font-medium flex items-center justify-center gap-1 text-center truncate" title={`Công việc được chỉ định riêng cho ${task.assigned_to_name} báo cáo`}>
+                                                                <UserCheck className="w-3.5 h-3.5 text-blue-600 flex-shrink-0" />
+                                                                <span className="truncate">Chỉ định: <strong>{task.assigned_to_name}</strong> báo cáo</span>
+                                                            </div>
+                                                        )
+                                                    }
                                                     return (
                                                         <div className="w-full py-1.5 px-3 text-stone-400 text-xs text-center italic">
                                                             Chờ các đội thực hiện
@@ -1255,7 +1446,67 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                         )
                     })}
                 </div>
-            )}
+
+                {/* Pagination Controls */}
+                {filteredTasks.length > PAGE_SIZE && (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 pb-2 px-1 border-t border-stone-200">
+                        <div className="text-xs text-stone-500 font-medium">
+                            Hiển thị <b className="text-stone-800">{(currentPage - 1) * PAGE_SIZE + 1}</b> - <b className="text-stone-800">{Math.min(currentPage * PAGE_SIZE, filteredTasks.length)}</b> trên tổng số <b className="text-stone-800">{filteredTasks.length}</b> việc
+                        </div>
+
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-600 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-1 transition shadow-2xs"
+                            >
+                                <ChevronLeft className="w-3.5 h-3.5" />
+                                <span>Trang trước</span>
+                            </button>
+
+                            <div className="flex items-center gap-1 px-1">
+                                {Array.from({ length: totalPages }, (_, i) => i + 1)
+                                    .filter(page => {
+                                        return page === 1 || page === totalPages || Math.abs(page - currentPage) <= 1
+                                    })
+                                    .map((page, idx, arr) => {
+                                        const prevPage = arr[idx - 1]
+                                        const hasGap = prevPage && page - prevPage > 1
+
+                                        return (
+                                            <React.Fragment key={page}>
+                                                {hasGap && <span className="px-1 text-stone-400 text-xs">...</span>}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setCurrentPage(page)}
+                                                    className={`w-8 h-8 rounded-xl text-xs font-bold transition shadow-2xs ${
+                                                        currentPage === page
+                                                            ? 'bg-stone-900 text-white shadow-sm'
+                                                            : 'bg-white border border-stone-200 text-stone-700 hover:bg-stone-50'
+                                                    }`}
+                                                >
+                                                    {page}
+                                                </button>
+                                            </React.Fragment>
+                                        )
+                                    })}
+                            </div>
+
+                            <button
+                                type="button"
+                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="px-3 py-1.5 rounded-xl border border-stone-200 text-xs font-bold text-stone-600 hover:bg-stone-50 disabled:opacity-35 disabled:cursor-not-allowed flex items-center gap-1 transition shadow-2xs"
+                            >
+                                <span>Trang sau</span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )}
 
             {/* Modals */}
             <CreateTaskModal
@@ -1265,13 +1516,15 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                     setCreateForTeam(undefined)
                 }}
                 onTaskCreated={handleTaskCreated}
-                defaultShift={createForTeam || (shiftFilter !== 'all' ? shiftFilter : 'Ca tiếp theo')}
+                defaultShift={createForTeam || (shiftFilter !== 'all' && shiftFilter.startsWith('Đội') ? shiftFilter : undefined)}
             />
 
             <TaskDetailModal
                 isOpen={!!selectedTask}
                 task={selectedTask}
                 myTeamNames={myTeamNames}
+                allMembers={allMembers}
+                teams={teams}
                 onClose={() => setSelectedTask(null)}
                 onTaskUpdated={handleTaskUpdated}
                 onTaskDeleted={handleTaskDeleted}

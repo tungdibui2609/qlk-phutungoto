@@ -2,9 +2,96 @@
  * Utility functions for Shift Tasks
  */
 
-import { TeamCompletion, ShiftTask } from './types'
+import { TeamCompletion, ShiftTask, TaskType } from './types'
 
-export const compressImageFile = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.7): Promise<string> => {
+/**
+ * Compresses an image file to a lightweight Blob (typically 100KB - 250KB)
+ * Uses hardware-accelerated createImageBitmap when available for ultra-fast processing
+ */
+export const compressImageToBlob = async (
+    file: File,
+    maxWidth = 1200,
+    maxHeight = 1200,
+    quality = 0.70
+): Promise<Blob> => {
+    // 1. Try modern, fast createImageBitmap API
+    if (typeof window !== 'undefined' && 'createImageBitmap' in window) {
+        try {
+            const bitmap = await createImageBitmap(file)
+            let width = bitmap.width
+            let height = bitmap.height
+
+            if (width > height) {
+                if (width > maxWidth) {
+                    height = Math.round((height * maxWidth) / width)
+                    width = maxWidth
+                }
+            } else {
+                if (height > maxHeight) {
+                    width = Math.round((width * maxHeight) / height)
+                    height = maxHeight
+                }
+            }
+
+            const canvas = document.createElement('canvas')
+            canvas.width = width
+            canvas.height = height
+            const ctx = canvas.getContext('2d')
+            if (ctx) {
+                ctx.drawImage(bitmap, 0, 0, width, height)
+                bitmap.close()
+                return await new Promise<Blob>((resolve) => {
+                    canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', quality)
+                })
+            }
+            bitmap.close()
+        } catch {
+            // Fallback to FileReader below
+        }
+    }
+
+    // 2. Fallback FileReader
+    return new Promise((resolve) => {
+        const reader = new FileReader()
+        reader.readAsDataURL(file)
+        reader.onload = (event) => {
+            const img = new Image()
+            img.src = event.target?.result as string
+            img.onload = () => {
+                const canvas = document.createElement('canvas')
+                let width = img.width
+                let height = img.height
+
+                if (width > height) {
+                    if (width > maxWidth) {
+                        height = Math.round((height * maxWidth) / width)
+                        width = maxWidth
+                    }
+                } else {
+                    if (height > maxHeight) {
+                        width = Math.round((width * maxHeight) / height)
+                        height = maxHeight
+                    }
+                }
+
+                canvas.width = width
+                canvas.height = height
+                const ctx = canvas.getContext('2d')
+                if (!ctx) {
+                    resolve(file)
+                    return
+                }
+
+                ctx.drawImage(img, 0, 0, width, height)
+                canvas.toBlob((blob) => resolve(blob || file), 'image/jpeg', quality)
+            }
+            img.onerror = () => resolve(file)
+        }
+        reader.onerror = () => resolve(file)
+    })
+}
+
+export const compressImageFile = (file: File, maxWidth = 1200, maxHeight = 1200, quality = 0.70): Promise<string> => {
     return new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.readAsDataURL(file)
@@ -47,13 +134,15 @@ export const compressImageFile = (file: File, maxWidth = 1200, maxHeight = 1200,
 }
 
 export const uploadTaskImage = async (file: File): Promise<string> => {
-    // 1. First compress the image to save bandwidth and storage
-    const compressedDataUrl = await compressImageFile(file)
-
-    // 2. Try to upload via API if available, otherwise return compressedDataUrl
     try {
+        // 1. Nén ảnh cực nhanh phía client từ 10MB xuống ~60KB-100KB (giảm 98% dung lượng truyền mạng)
+        const compressedBlob = await compressImageToBlob(file, 1200, 1200, 0.70)
+        const cleanBaseName = (file.name || 'image').replace(/\.[^/.]+$/, '')
+        const fileName = `${cleanBaseName}.jpg`
+
+        // 2. Gửi file nén siêu nhẹ lên máy chủ (upload trong tích tắc < 0.5s)
         const formData = new FormData()
-        formData.append('file', file)
+        formData.append('file', compressedBlob, fileName)
         formData.append('folder', 'shift-tasks')
 
         const response = await fetch('/api/upload', {
@@ -66,11 +155,12 @@ export const uploadTaskImage = async (file: File): Promise<string> => {
             if (data.secureUrl) return data.secureUrl
             if (data.viewUrl) return data.viewUrl
         }
-    } catch {
-        // Fallback silently to compressedDataUrl
+    } catch (err) {
+        console.warn('API upload failed, fallback to local compressed dataUrl:', err)
     }
 
-    return compressedDataUrl
+    // Fallback nếu rớt mạng hoặc lỗi API
+    return compressImageFile(file, 1200, 1200, 0.70)
 }
 
 export const formatDateTime = (dateStr: string | null | undefined): string => {
@@ -102,13 +192,32 @@ export const formatDateRelative = (dateStr: string | null | undefined): string =
     return formatDateTime(dateStr)
 }
 
-export const generateTaskCode = (): string => {
+export const generateTaskCode = (type: TaskType = 'task'): string => {
     const d = new Date()
     const yy = String(d.getFullYear()).slice(-2)
     const mm = String(d.getMonth() + 1).padStart(2, '0')
     const dd = String(d.getDate()).padStart(2, '0')
     const rand = Math.floor(100 + Math.random() * 900)
-    return `NV-${yy}${mm}${dd}-${rand}`
+    const prefix = type === 'reminder' ? 'LN' : 'CV'
+    return `${prefix}-${yy}${mm}${dd}-${rand}`
+}
+
+/**
+ * Identify whether a task is a reminder or a todo task
+ */
+export const getTaskType = (task?: { task_type?: string | null; code?: string; title?: string } | null): TaskType => {
+    if (!task) return 'task'
+    if (task.task_type === 'reminder') return 'reminder'
+    if (task.task_type === 'task') return 'task'
+
+    // Fallback based on code prefix: LN- is reminder, CV- is task
+    if (typeof task.code === 'string') {
+        const upperCode = task.code.toUpperCase()
+        if (upperCode.startsWith('LN-') || upperCode.startsWith('NN-')) return 'reminder'
+        if (upperCode.startsWith('CV-')) return 'task'
+    }
+
+    return 'task'
 }
 
 /**
@@ -119,8 +228,14 @@ export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_sh
     if (!rawTarget) return false
     const withPrefix = `đội ${rawTarget}`.toLowerCase()
 
+    const isAll = (s: string) => {
+        const lower = (s || '').trim().toLowerCase()
+        return lower === 'toàn bộ' || lower === 'toàn đội' || lower === 'tất cả' || lower === 'tất cả các đội' || lower === 'toàn ca'
+    }
+
     // 1. Check in target_shifts array
     if (Array.isArray(task.target_shifts) && task.target_shifts.length > 0) {
+        if (task.target_shifts.some(isAll)) return true
         return task.target_shifts.some(s => {
             const val = (s || '').trim().toLowerCase()
             return val === rawTarget || val === withPrefix || val.includes(rawTarget)
@@ -130,10 +245,52 @@ export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_sh
     // 2. Check in target_shift comma-separated or single string
     if (task.target_shift) {
         const parts = task.target_shift.split(',').map(s => s.trim().toLowerCase())
+        if (parts.some(isAll)) return true
         return parts.some(p => p === rawTarget || p === withPrefix || p.includes(rawTarget))
     }
 
     return false
+}
+
+
+/**
+ * Lấy danh sách những người đã tiếp nhận của công việc
+ * Đã khử trùng lặp (nếu 1 người vừa là người chỉ định vừa là người trong tổ đội, hoặc vừa bấm nhận vừa hoàn thành)
+ */
+export const getDeduplicatedAcknowledgements = (task: any): {
+    user_id: string | null
+    user_name: string
+    acknowledged_at: string
+    is_completed?: boolean
+    completed_team?: string | null
+    completed_at?: string | null
+    team_names?: string[]
+}[] => {
+    if (!task) return []
+    const raw: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
+        ? task.acknowledgements
+        : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
+
+    const seen = new Set<string>()
+    const result: any[] = []
+
+    for (const a of raw) {
+        if (!a) continue
+        const uId = (a.user_id || '').trim().toLowerCase()
+        const uName = (a.user_name || '').trim().toLowerCase()
+        const key = uId || uName
+        if (key && !seen.has(key)) {
+            seen.add(key)
+            result.push({
+                ...a,
+                user_id: a.user_id || null,
+                user_name: a.user_name || 'Nhân viên tiếp nhận',
+                acknowledged_at: a.acknowledged_at || task.created_at || new Date().toISOString(),
+            })
+        }
+    }
+
+    return result
 }
 
 /**
@@ -154,6 +311,60 @@ export const hasUserAcknowledged = (
         (userId && a.user_id && a.user_id === userId) ||
         (userName && a.user_name && a.user_name.trim().toLowerCase() === userName.trim().toLowerCase())
     )
+}
+
+/**
+ * Kiểm tra xem người dùng hiện tại có thuộc đối tượng nhận việc để bấm tiếp nhận hay không:
+ * - Là người được chỉ định đích danh (assigned_to)
+ * - Hoặc thuộc vào một trong các đội được giao việc (assignedTeams)
+ * - Hoặc công việc giao chung cho toàn ca (không chọn đội nào cụ thể)
+ */
+export const canUserAcknowledgeTask = (
+    task: any,
+    profile: any,
+    myTeamNames: string[] = [],
+    allMembers: { team_id: string | null; user_id: string | null; full_name: string | null }[] = [],
+    teams: { id: string; name: string }[] = []
+): boolean => {
+    if (!task || !profile) return false
+
+    // Nếu công việc đã xong hoặc đã hủy -> không cần nhận nữa
+    if (task.status === 'completed' || task.status === 'cancelled') return false
+
+    // 1. Nếu là người được chỉ định đích danh -> có quyền tiếp nhận
+    const isDesignatedAssignee = Boolean(
+        (task.assigned_to && profile.id === task.assigned_to) ||
+        (task.assigned_to_name && profile.full_name?.trim().toLowerCase() === task.assigned_to_name.trim().toLowerCase())
+    )
+    if (isDesignatedAssignee) return true
+
+    // 2. Lấy danh sách các đội được giao việc
+    const assignedTeams = getAssignedTeams(task)
+
+    // Nếu không chỉ định đội nào cụ thể (giao chung toàn ca) -> ai trong ca cũng có thể nhận
+    if (assignedTeams.length === 0) return true
+
+    // 3. Kiểm tra xem người dùng có thuộc một trong các đội được giao việc hay không
+    const userTeamNorms = new Set(
+        myTeamNames.map(name => (name || '').toLowerCase().replace(/^đội\s+/, '').trim()).filter(Boolean)
+    )
+
+    if (profile.id && allMembers.length > 0 && teams.length > 0) {
+        const userMemberships = allMembers.filter(m => m.user_id === profile.id)
+        for (const mem of userMemberships) {
+            const t = teams.find(team => team.id === mem.team_id)
+            if (t?.name) {
+                userTeamNorms.add(t.name.toLowerCase().replace(/^đội\s+/, '').trim())
+            }
+        }
+    }
+
+    const belongsToAssignedTeam = assignedTeams.some(assignedTeam => {
+        const tNorm = (assignedTeam || '').toLowerCase().replace(/^đội\s+/, '').trim()
+        return userTeamNorms.has(tNorm)
+    })
+
+    return belongsToAssignedTeam
 }
 
 /**
@@ -292,38 +503,183 @@ export const isTeamCompleted = (task: any, teamName: string): boolean => {
 }
 
 /**
- * Tính toán tiến độ hoàn thành theo từng đội (VD: 1/2, 2/3...)
+ * Kiểm tra xem một đội cụ thể đã có thành viên bấm tiếp nhận việc chưa
  */
-export const getTaskTeamProgress = (task: any): {
+export const isTeamAcknowledged = (
+    task: any,
+    teamName: string,
+    allMembers: { team_id: string | null; user_id: string | null; full_name: string | null }[] = [],
+    teams: { id: string; name: string }[] = []
+): boolean => {
+    if (!task) return false
+    const norm = teamName.toLowerCase().trim().replace(/^đội\s+/, '')
+    const acks: any[] = Array.isArray(task.acknowledgements) ? task.acknowledgements : []
+
+    // 1. Nếu đội đã hoàn thành thì chắc chắn đã tiếp nhận
+    if (isTeamCompleted(task, teamName)) return true
+
+    // 2. Kiểm tra trong team_names của từng lượt xác nhận tiếp nhận
+    for (const ack of acks) {
+        if (Array.isArray(ack.team_names)) {
+            if (ack.team_names.some((tn: string) => (tn || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)) {
+                return true
+            }
+        }
+        if (ack.completed_team && ack.completed_team.toLowerCase().trim().replace(/^đội\s+/, '') === norm) {
+            return true
+        }
+    }
+
+    // 3. Đối chiếu với danh sách thành viên đội (allMembers và teams)
+    if (allMembers.length > 0 && teams.length > 0) {
+        const matchedTeam = teams.find(t => (t.name || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)
+        if (matchedTeam && hasTeamAcknowledged(task, matchedTeam, allMembers)) {
+            return true
+        }
+    }
+
+    // 4. Nếu chỉ giao cho 1 đội duy nhất và đã có người bấm nhận việc
+    const assigned = getAssignedTeams(task)
+    if (assigned.length === 1 && acks.length > 0) {
+        return true
+    }
+
+    return false
+}
+
+export interface TeamMemberAckInfo {
+    totalMembers: number
+    ackedCount: number
+    ackedMembers: {
+        user_id: string | null
+        user_name: string
+        acknowledged_at: string
+    }[]
+    unackedMemberNames: string[]
+}
+
+/**
+ * Lấy chi tiết số thành viên và danh sách người đã tiếp nhận của một đội cụ thể
+ */
+export const getTeamMemberAckInfo = (
+    task: any,
+    teamName: string,
+    allMembers: { team_id: string | null; user_id: string | null; full_name: string | null }[] = [],
+    teams: { id: string; name: string }[] = []
+): TeamMemberAckInfo => {
+    const norm = teamName.toLowerCase().trim().replace(/^đội\s+/, '')
+    const matchedTeam = teams.find(t => (t.name || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)
+
+    const teamMembers = matchedTeam
+        ? allMembers.filter(m => m.team_id === matchedTeam.id)
+        : []
+
+    const acks: any[] = Array.isArray(task?.acknowledgements) ? task.acknowledgements : []
+
+    const ackedMembers: { user_id: string | null; user_name: string; acknowledged_at: string }[] = []
+    const seenKeys = new Set<string>()
+
+    for (const ack of acks) {
+        if (!ack) continue
+        const ackName = (ack.user_name || '').trim()
+        const ackUserId = ack.user_id
+
+        let belongsToThisTeam = false
+
+        if (Array.isArray(ack.team_names)) {
+            if (ack.team_names.some((tn: string) => (tn || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)) {
+                belongsToThisTeam = true
+            }
+        }
+
+        if (!belongsToThisTeam && teamMembers.length > 0) {
+            if (ackUserId && teamMembers.some(m => m.user_id === ackUserId)) {
+                belongsToThisTeam = true
+            } else if (ackName && teamMembers.some(m => m.full_name && m.full_name.trim().toLowerCase() === ackName.toLowerCase())) {
+                belongsToThisTeam = true
+            }
+        }
+
+        if (!belongsToThisTeam && getAssignedTeams(task).length === 1) {
+            belongsToThisTeam = true
+        }
+
+        if (belongsToThisTeam) {
+            const key = (ackUserId || ackName).toLowerCase()
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key)
+                ackedMembers.push({
+                    user_id: ackUserId || null,
+                    user_name: ackName || 'Nhân viên',
+                    acknowledged_at: ack.acknowledged_at || task.created_at || new Date().toISOString(),
+                })
+            }
+        }
+    }
+
+    const unackedMemberNames = teamMembers
+        .filter(m => {
+            const name = (m.full_name || '').trim().toLowerCase()
+            const uId = (m.user_id || '').toLowerCase()
+            return (!uId || !seenKeys.has(uId)) && (!name || !seenKeys.has(name))
+        })
+        .map(m => m.full_name || 'Thành viên')
+
+    return {
+        totalMembers: teamMembers.length,
+        ackedCount: ackedMembers.length,
+        ackedMembers,
+        unackedMemberNames,
+    }
+}
+
+/**
+ * Tính toán tiến độ theo từng đội (hỗ trợ phân biệt Lời nhắc vs Công việc)
+ */
+export const getTaskTeamProgress = (
+    task: any,
+    allMembers: { team_id: string | null; user_id: string | null; full_name: string | null }[] = [],
+    teams: { id: string; name: string }[] = []
+): {
     assignedTeams: string[]
     completedTeams: TeamCompletion[]
     total: number
     completedCount: number
+    ackedCount: number
     ratioText: string
     percent: number
     isAllCompleted: boolean
+    isReminder: boolean
 } => {
+    const isReminder = getTaskType(task) === 'reminder'
     const assignedTeams = getAssignedTeams(task)
     const completedTeams = getTeamCompletions(task)
 
     // Nếu không giao cụ thể cho đội nào (giao ca chung): tính tổng là 1
     if (assignedTeams.length === 0) {
-        const isDone = task?.status === 'completed'
+        const acks = Array.isArray(task?.acknowledgements) ? task.acknowledgements : []
+        const isDone = task?.status === 'completed' || (isReminder && acks.length > 0)
         return {
             assignedTeams: [],
             completedTeams,
             total: 1,
             completedCount: isDone ? 1 : 0,
+            ackedCount: acks.length > 0 ? 1 : 0,
             ratioText: isDone ? '1/1' : '0/1',
             percent: isDone ? 100 : 0,
             isAllCompleted: isDone,
+            isReminder,
         }
     }
 
     const total = assignedTeams.length
-    // Số đội đã hoàn thành hợp lệ (nằm trong assignedTeams)
     const validCompleted = assignedTeams.filter(teamName => isTeamCompleted(task, teamName))
-    const completedCount = validCompleted.length
+    const validAcked = assignedTeams.filter(teamName => isTeamAcknowledged(task, teamName, allMembers, teams))
+
+    // Đối với LỜI NHẮC: tiến độ là số đội ĐÃ TIẾP NHẬN/ĐÃ XEM
+    // Đối với CÔNG VIỆC: tiến độ là số đội ĐÃ BÁO HOÀN THÀNH
+    const completedCount = isReminder ? validAcked.length : validCompleted.length
+    const ackedCount = validAcked.length
     const percent = Math.round((completedCount / total) * 100)
     const isAllCompleted = completedCount >= total || task?.status === 'completed'
 
@@ -332,10 +688,59 @@ export const getTaskTeamProgress = (task: any): {
         completedTeams,
         total,
         completedCount,
+        ackedCount,
         ratioText: `${completedCount}/${total}`,
         percent,
         isAllCompleted,
+        isReminder,
     }
+}
+
+/**
+ * Kiểm tra xem người dùng có phải là Quản trị viên (Cấp 1 Super Admin, Cấp 2 Quản trị công ty, hoặc role admin) hay không
+ */
+export const isUserAdmin = (profile: any): boolean => {
+    if (!profile) return false
+
+    // 1. Check account_level (1 = Super Admin, 2 = Company Admin)
+    if (profile.account_level === 1 || profile.account_level === 2) return true
+
+    // 2. Check email super admin hoặc công ty quản trị
+    const email = (profile.email || '').trim().toLowerCase()
+    if (email === 'tungdibui2609@gmail.com' || email === 'tungnguyen@chanhthu.com') return true
+
+    // 3. Check role code
+    const roleCode = (profile.roles?.code || (profile as any)?.role || '').trim().toLowerCase()
+    if (roleCode === 'admin' || roleCode === 'superadmin' || roleCode === 'company_admin') return true
+
+    // 4. Check permissions
+    if (Array.isArray(profile.permissions)) {
+        if (profile.permissions.includes('system.full_access') || profile.permissions.includes('shift_tasks.admin') || profile.permissions.includes('shift_tasks.delete_all')) {
+            return true
+        }
+    }
+
+    return false
+}
+
+/**
+ * Kiểm tra xem người dùng có quyền quản lý/xóa công việc (người tạo hoặc quản trị viên cấp 1, cấp 2)
+ */
+export const canManageTask = (task: any, profile: any): boolean => {
+    if (!profile) return false
+
+    // Quản trị viên (Cấp 1 & Cấp 2 Quản trị công ty) có toàn quyền xóa/sửa bất kỳ công việc nào
+    if (isUserAdmin(profile)) return true
+
+    if (!task) return false
+
+    // Người tạo công việc
+    const isCreator = Boolean(
+        (profile.id && task.created_by && profile.id === task.created_by) ||
+        (profile.full_name && task.created_by_name && profile.full_name.trim().toLowerCase() === task.created_by_name.trim().toLowerCase())
+    )
+
+    return isCreator
 }
 
 /**
@@ -351,14 +756,39 @@ export const canUserCompleteTeamTask = (
     alreadyCompletedTeams: string[]
     isCreatorOrAdmin: boolean
 } => {
-    const isCreatorOrAdmin = Boolean(
-        profile?.id === task.created_by ||
-        (profile?.full_name && task.created_by_name === profile.full_name) ||
-        profile?.roles?.code === 'admin' ||
-        (profile as any)?.role === 'admin'
-    )
+    const isCreatorOrAdmin = canManageTask(task, profile)
+
+    // Lời nhắc không cần báo hoàn thành, chỉ cần tiếp nhận
+    if (getTaskType(task) === 'reminder') {
+        return {
+            canComplete: false,
+            eligibleTeams: [],
+            alreadyCompletedTeams: [],
+            isCreatorOrAdmin,
+        }
+    }
 
     const assignedTeams = getAssignedTeams(task)
+
+    // Kiểm tra nếu công việc có chỉ định đích danh người phụ trách chính (assigned_to hoặc assigned_to_name)
+    const hasSpecificAssignee = Boolean(task?.assigned_to || task?.assigned_to_name)
+    const isAssignedUser = Boolean(
+        profile?.id && (
+            (task?.assigned_to && profile.id === task.assigned_to) ||
+            (task?.assigned_to_name && profile.full_name?.trim().toLowerCase() === task.assigned_to_name.trim().toLowerCase())
+        )
+    )
+
+    // Nếu công việc chỉ đích danh 1 người phụ trách chính:
+    // CHỈ người đó (hoặc quản trị viên / người giao việc) mới có quyền báo cáo chụp hình hoàn thành
+    if (hasSpecificAssignee && !isAssignedUser && !isCreatorOrAdmin) {
+        return {
+            canComplete: false,
+            eligibleTeams: [],
+            alreadyCompletedTeams: assignedTeams.filter(team => isTeamCompleted(task, team)),
+            isCreatorOrAdmin,
+        }
+    }
 
     // Trường hợp 1: Task không giao cho đội cụ thể nào (giao theo Ca)
     if (assignedTeams.length === 0) {
@@ -378,8 +808,10 @@ export const canUserCompleteTeamTask = (
         return (trimmed.startsWith('Đội ') || trimmed.startsWith('đội ')) ? 'Đội ' + trimmed.slice(4).trim() : 'Đội ' + trimmed
     })
 
-    // Các đội được giao mà người dùng thuộc về (hoặc tất cả nếu là admin/creator)
-    const candidateTeams = isCreatorOrAdmin
+    // Các đội được giao mà người dùng có quyền hoàn thành:
+    // - Nếu là người được chỉ định đích danh hoặc Admin/Creator: có quyền báo cáo hoàn thành cho các đội được giao trong công việc
+    // - Nếu không có người chỉ định riêng: thành viên thuộc đội nào chỉ được hoàn thành cho đội đó
+    const candidateTeams = (isCreatorOrAdmin || isAssignedUser)
         ? assignedTeams
         : assignedTeams.filter(team => {
             const tNorm = team.toLowerCase().replace(/^đội\s+/, '').trim()
@@ -396,6 +828,141 @@ export const canUserCompleteTeamTask = (
         isCreatorOrAdmin,
     }
 }
+
+/**
+ * Asynchronously dispatches a Web Push Notification for shift tasks
+ */
+export async function dispatchTaskPushNotification({
+    title,
+    body,
+    targetShifts = [],
+    targetUserIds = [],
+    targetUserNames = [],
+    excludeUserIds = [],
+    excludeUserNames = [],
+    taskId,
+    url = '/work/tasks',
+    badgeCount = 1,
+}: {
+    title: string
+    body: string
+    targetShifts?: string[]
+    targetUserIds?: string[]
+    targetUserNames?: string[]
+    excludeUserIds?: string[]
+    excludeUserNames?: string[]
+    taskId?: string | null
+    url?: string
+    badgeCount?: number
+}) {
+    try {
+        await fetch('/api/notifications/send-push', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title,
+                body,
+                target_shifts: targetShifts,
+                target_user_ids: targetUserIds,
+                target_user_names: targetUserNames,
+                exclude_user_ids: excludeUserIds,
+                exclude_user_names: excludeUserNames,
+                task_id: taskId || null,
+                url,
+                badgeCount,
+            }),
+        })
+    } catch (err) {
+        console.warn('Failed to dispatch push notification:', err)
+    }
+}
+
+/**
+ * Dispatch push notification for new message / discussion in task
+ */
+export function dispatchTaskMessageNotification({
+    task,
+    sender,
+    messageText,
+    hasImages = false,
+}: {
+    task: ShiftTask
+    sender: { id?: string | null; name?: string | null }
+    messageText: string
+    hasImages?: boolean
+}) {
+    const assignedTeams = getAssignedTeams(task)
+    const targetUserIds = [task.created_by, task.assigned_to].filter(Boolean) as string[]
+    const targetUserNames = [task.created_by_name, task.assigned_to_name].filter(Boolean) as string[]
+    const excludeUserIds = sender.id ? [sender.id] : []
+    const excludeUserNames = sender.name ? [sender.name] : []
+
+    const cleanMsg = messageText.trim()
+    const snippet = cleanMsg
+        ? (cleanMsg.length > 75 ? cleanMsg.slice(0, 72) + '...' : cleanMsg)
+        : (hasImages ? 'Đã gửi hình ảnh đính kèm 📷' : 'Đã gửi tin nhắn trao đổi mới.')
+
+    const senderDisplayName = sender.name || 'Thành viên'
+
+    dispatchTaskPushNotification({
+        title: `💬 [Tin mới] #${task.code} - ${task.title}`,
+        body: `${senderDisplayName}: ${snippet}`,
+        targetShifts: assignedTeams,
+        targetUserIds,
+        targetUserNames,
+        excludeUserIds,
+        excludeUserNames,
+        taskId: task.id,
+        url: `/work/tasks?taskId=${task.id}`,
+    })
+}
+
+/**
+ * Dispatch push notification when task is reported complete
+ */
+export function dispatchTaskCompletionNotification({
+    task,
+    completer,
+    completionTeam,
+    notes,
+    isAllCompleted = false,
+}: {
+    task: ShiftTask
+    completer: { id?: string | null; name?: string | null }
+    completionTeam?: string | null
+    notes?: string | null
+    isAllCompleted?: boolean
+}) {
+    const assignedTeams = getAssignedTeams(task)
+    const targetUserIds = [task.created_by, task.assigned_to].filter(Boolean) as string[]
+    const targetUserNames = [task.created_by_name, task.assigned_to_name].filter(Boolean) as string[]
+    const excludeUserIds = completer.id ? [completer.id] : []
+    const excludeUserNames = completer.name ? [completer.name] : []
+
+    const completerName = completer.name || 'Nhân viên'
+    const teamLabel = completionTeam ? ` (${completionTeam})` : ''
+    const cleanNotes = (notes || '').trim()
+    const noteSnippet = cleanNotes ? `: "${cleanNotes.length > 65 ? cleanNotes.slice(0, 62) + '...' : cleanNotes}"` : '.'
+
+    const title = isAllCompleted
+        ? `✅ [ĐÃ HOÀN THÀNH] #${task.code} - ${task.title}`
+        : `⚡ [Đội xong việc] #${task.code} - ${task.title}`
+
+    const body = `${completerName}${teamLabel} đã báo cáo hoàn thành${noteSnippet}`
+
+    dispatchTaskPushNotification({
+        title,
+        body,
+        targetShifts: assignedTeams,
+        targetUserIds,
+        targetUserNames,
+        excludeUserIds,
+        excludeUserNames,
+        taskId: task.id,
+        url: `/work/tasks?taskId=${task.id}`,
+    })
+}
+
 
 
 

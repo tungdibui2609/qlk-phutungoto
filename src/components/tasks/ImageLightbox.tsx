@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react'
 import { X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { getHighResImageUrl } from './taskContentUtils'
 
 interface ImageLightboxProps {
     images: string[]
@@ -27,7 +28,8 @@ export default function ImageLightbox({ images, currentIndex, onClose, onNavigat
 
     if (!images || images.length === 0) return null
 
-    const currentImg = images[currentIndex] || images[0]
+    const rawCurrentImg = images[currentIndex] || images[0]
+    const highResImg = getHighResImageUrl(rawCurrentImg)
 
     return (
         <div className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex items-center justify-center p-4">
@@ -37,7 +39,7 @@ export default function ImageLightbox({ images, currentIndex, onClose, onNavigat
                     {currentIndex + 1} / {images.length}
                 </span>
                 <a
-                    href={currentImg}
+                    href={highResImg}
                     download={`anh-nhac-viec-${currentIndex + 1}.jpg`}
                     target="_blank"
                     rel="noreferrer"
@@ -78,10 +80,11 @@ export default function ImageLightbox({ images, currentIndex, onClose, onNavigat
             <div className="max-w-5xl max-h-[85vh] flex items-center justify-center overflow-hidden rounded-lg shadow-2xl">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
-                    src={currentImg}
+                    src={highResImg}
                     alt="Hình ảnh phóng to"
                     className="max-w-full max-h-[85vh] object-contain rounded-lg animate-in zoom-in-95 duration-150"
                 />
+
             </div>
         </div>
     )
