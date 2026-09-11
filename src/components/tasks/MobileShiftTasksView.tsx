@@ -689,8 +689,30 @@ export default function MobileShiftTasksView({
 
             {/* 4. Nội Dung Chính */}
             <main className="p-3 space-y-3">
-                {/* 4A. TAB TỔ ĐỘI */}
-                {activeTab === 'teams' && !selectedTeamFilter ? (
+                {loading ? (
+                    <div className="space-y-3 animate-pulse">
+                        <div className="flex items-center justify-between px-1">
+                            <div className="h-4 bg-stone-200 rounded w-44" />
+                            <div className="h-3.5 bg-stone-100 rounded w-24" />
+                        </div>
+                        {[1, 2, 3].map(i => (
+                            <div key={i} className="bg-white rounded-2xl border border-stone-200/80 p-3.5 space-y-3 shadow-2xs">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-xl bg-stone-200" />
+                                        <div className="space-y-1.5">
+                                            <div className="h-3.5 bg-stone-200 rounded w-28" />
+                                            <div className="h-2.5 bg-stone-100 rounded w-16" />
+                                        </div>
+                                    </div>
+                                    <div className="h-5 bg-stone-100 rounded-full w-20" />
+                                </div>
+                                <div className="h-9 bg-stone-100/70 rounded-xl" />
+                                <div className="h-16 bg-stone-50 rounded-xl border border-stone-100" />
+                            </div>
+                        ))}
+                    </div>
+                ) : activeTab === 'teams' && !selectedTeamFilter ? (
                     <div className="space-y-3">
                         <div className="flex items-center justify-between text-xs text-stone-500 font-medium px-1">
                             <span>Tình hình nhận việc theo đội ({teamItems.length} đội)</span>

@@ -96,7 +96,7 @@ export default function RootLayout({
   return (
     <html lang="vi">
       <head>
-        <link rel="apple-touch-icon" href="/logoanywarehouse.png" />
+        <link rel="apple-touch-icon" href="/icon-512.png" />
         <meta name="theme-color" content="#059669" />
       </head>
       <body className={`${inter.variable} antialiased font-sans`}>

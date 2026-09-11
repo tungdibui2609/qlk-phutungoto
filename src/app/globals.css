@@ -385,3 +385,16 @@ body::before {
     page-break-after: avoid !important;
   }
 }
+
+/* === PWA & Web App Loading Animations === */
+@keyframes loadingSlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(80%);
+  }
+  100% {
+    transform: translateX(220%);
+  }
+}
