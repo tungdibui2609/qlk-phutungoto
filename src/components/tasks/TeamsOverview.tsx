@@ -153,10 +153,10 @@ export default function TeamsOverview({
     const filteredTeams = teamStats
         .filter((item) => {
             if (teamSearch.trim()) {
-                const q = teamSearch.toLowerCase()
-                const matchName = item.teamName.toLowerCase().includes(q)
-                const matchTask = item.allTasks.some(
-                    (t) => t.title.toLowerCase().includes(q) || t.code.toLowerCase().includes(q)
+                const q = teamSearch.toLowerCase().trim()
+                const matchName = String(item.teamName || '').toLowerCase().includes(q)
+                const matchTask = (item.allTasks || []).some(
+                    (t) => String(t.title || '').toLowerCase().includes(q) || String(t.code || '').toLowerCase().includes(q)
                 )
                 if (!matchName && !matchTask) return false
             }

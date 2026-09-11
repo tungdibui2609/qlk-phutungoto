@@ -2,7 +2,12 @@
 
 import React from 'react'
 import ShiftTasksView from '@/components/tasks/ShiftTasksView'
+import TaskErrorBoundary from '@/components/tasks/TaskErrorBoundary'
 
 export default function WorkTasksPage() {
-    return <ShiftTasksView isSanxuat={false} />
+    return (
+        <TaskErrorBoundary>
+            <ShiftTasksView isSanxuat={false} />
+        </TaskErrorBoundary>
+    )
 }

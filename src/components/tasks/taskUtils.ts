@@ -533,9 +533,9 @@ export const getTeamCompletions = (task: any): TeamCompletion[] => {
  */
 export const isTeamCompleted = (task: any, teamName: string): boolean => {
     const completions = getTeamCompletions(task)
-    const norm = teamName.toLowerCase().trim().replace(/^đội\s+/, '')
+    const norm = String(teamName || '').toLowerCase().trim().replace(/^đội\s+/, '')
     return completions.some(c => {
-        const cNorm = (c.team_name || '').toLowerCase().trim().replace(/^đội\s+/, '')
+        const cNorm = String(c?.team_name || '').toLowerCase().trim().replace(/^đội\s+/, '')
         return cNorm === norm
     })
 }
@@ -550,27 +550,28 @@ export const isTeamAcknowledged = (
     teams: { id: string; name: string }[] = []
 ): boolean => {
     if (!task) return false
-    const norm = teamName.toLowerCase().trim().replace(/^đội\s+/, '')
-    const acks: any[] = Array.isArray(task.acknowledgements) ? task.acknowledgements : []
+    const norm = String(teamName || '').toLowerCase().trim().replace(/^đội\s+/, '')
+    const acks = getDeduplicatedAcknowledgements(task)
 
     // 1. Nếu đội đã hoàn thành thì chắc chắn đã tiếp nhận
     if (isTeamCompleted(task, teamName)) return true
 
     // 2. Kiểm tra trong team_names của từng lượt xác nhận tiếp nhận
     for (const ack of acks) {
+        if (!ack) continue
         if (Array.isArray(ack.team_names)) {
-            if (ack.team_names.some((tn: string) => (tn || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)) {
+            if (ack.team_names.some((tn: string) => String(tn || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)) {
                 return true
             }
         }
-        if (ack.completed_team && ack.completed_team.toLowerCase().trim().replace(/^đội\s+/, '') === norm) {
+        if (ack.completed_team && String(ack.completed_team).toLowerCase().trim().replace(/^đội\s+/, '') === norm) {
             return true
         }
     }
 
     // 3. Đối chiếu với danh sách thành viên đội (allMembers và teams)
     if (allMembers.length > 0 && teams.length > 0) {
-        const matchedTeam = teams.find(t => (t.name || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)
+        const matchedTeam = teams.find(t => String(t?.name || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)
         if (matchedTeam && hasTeamAcknowledged(task, matchedTeam, allMembers)) {
             return true
         }
@@ -597,7 +598,7 @@ export interface TeamMemberAckInfo {
 }
 
 /**
- * Lấy chi tiết số thành viên và danh sách người đã tiếp nhận của một đội cụ thể
+ * Lấy chi tiết thông tin ai trong đội đã tiếp nhận, ai chưa tiếp nhận của 1 task
  */
 export const getTeamMemberAckInfo = (
     task: any,
@@ -630,8 +631,8 @@ export const getTeamMemberAckInfo = (
             }
         }
 
-        if (!belongsToThisTeam && teamMembers.length > 0) {
-            if (ackUserId && teamMembers.some(m => m.user_id === ackUserId)) {
+        if (!belongsToThisTeam && matchedTeam) {
+            if (ackUserId && teamMembers.some(m => m.user_id && m.user_id === ackUserId)) {
                 belongsToThisTeam = true
             } else if (ackName && teamMembers.some(m => m.full_name && m.full_name.trim().toLowerCase() === ackName.toLowerCase())) {
                 belongsToThisTeam = true
@@ -644,11 +645,11 @@ export const getTeamMemberAckInfo = (
 
         if (belongsToThisTeam) {
             const key = (ackUserId || ackName).toLowerCase()
-            if (!seenKeys.has(key)) {
+            if (key && !seenKeys.has(key)) {
                 seenKeys.add(key)
                 ackedMembers.push({
-                    user_id: ackUserId || null,
-                    user_name: ackName || 'Nhân viên',
+                    user_id: ackUserId,
+                    user_name: ackName || 'Nhân viên tiếp nhận',
                     acknowledged_at: ack.acknowledged_at || task.created_at || new Date().toISOString(),
                 })
             }
