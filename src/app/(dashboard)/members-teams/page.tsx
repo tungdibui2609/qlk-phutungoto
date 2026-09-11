@@ -49,7 +49,7 @@ export default function ConstructionMembersPage() {
         if (activeTab === 'members') {
             const { data, error } = await (supabase
                 .from('construction_members') as any)
-                .select('*, teams:team_id(id, name)')
+                .select('*, teams:team_id(id, name), user:user_id(id, full_name, username, email, employee_code, avatar_url)')
                 .eq('system_code', currentSystem.code)
                 .order('full_name')
 
@@ -199,6 +199,7 @@ export default function ConstructionMembersPage() {
                                 <thead className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
                                     <tr>
                                         <th className="text-left px-6 py-3 font-medium text-gray-500">Họ và tên</th>
+                                        <th className="text-left px-6 py-3 font-medium text-gray-500">Tài khoản đăng nhập</th>
                                         <th className="text-left px-6 py-3 font-medium text-gray-500">Liên hệ</th>
                                         <th className="text-left px-6 py-3 font-medium text-gray-500">Vai trò</th>
                                         <th className="text-left px-6 py-3 font-medium text-gray-500">Thuộc Đội</th>
@@ -206,10 +207,29 @@ export default function ConstructionMembersPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
-                                    {members.filter(m => m.full_name.toLowerCase().includes(searchTerm.toLowerCase())).map((member) => (
+                                    {members.filter(m => {
+                                        const q = searchTerm.toLowerCase()
+                                        return m.full_name.toLowerCase().includes(q) ||
+                                            (m.phone && m.phone.includes(q)) ||
+                                            (m.user?.username && m.user.username.toLowerCase().includes(q)) ||
+                                            (m.user?.email && m.user.email.toLowerCase().includes(q))
+                                    }).map((member) => (
                                         <tr key={member.id} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
                                             <td className="px-6 py-4 font-medium text-gray-900 dark:text-gray-200">
                                                 {member.full_name}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {member.user ? (
+                                                    <div className="flex items-center gap-1.5 text-xs text-emerald-800 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 px-2.5 py-1 rounded-lg w-fit">
+                                                        <Shield size={13} className="text-emerald-600 flex-shrink-0" />
+                                                        <span className="font-semibold">{member.user.full_name}</span>
+                                                        {member.user.username && (
+                                                            <span className="text-[10px] text-emerald-600/70 font-mono">(@{member.user.username})</span>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-xs text-gray-400 italic">Chưa liên kết</span>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 text-gray-500">
                                                 {member.phone ? (
@@ -247,7 +267,7 @@ export default function ConstructionMembersPage() {
                                     ))}
                                     {members.length === 0 && (
                                         <tr>
-                                            <td colSpan={5} className="text-center py-10 text-gray-500">Chưa có thành viên nào</td>
+                                            <td colSpan={6} className="text-center py-10 text-gray-500">Chưa có thành viên nào</td>
                                         </tr>
                                     )}
                                 </tbody>

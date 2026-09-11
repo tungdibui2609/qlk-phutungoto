@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { logActivity } from '@/lib/audit'
 import { useUser } from '@/contexts/UserContext'
-import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building, Warehouse } from 'lucide-react'
+import { ArrowLeft, Save, Loader2, User, Phone, Mail, Shield, Building, Warehouse, Key, Eye, EyeOff } from 'lucide-react'
 import Link from 'next/link'
 
 interface Role {
@@ -15,6 +15,7 @@ interface Role {
 }
 
 interface System {
+    id?: string
     code: string
     name: string
 }
@@ -48,6 +49,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
     const isSystemAdmin = isEditMode && !initialData?.employee_code
     const [newPassword, setNewPassword] = useState('')
     const [resettingPass, setResettingPass] = useState(false)
+    const [showPassword, setShowPassword] = useState(false)
     const [companyPrefix, setCompanyPrefix] = useState('')
 
     const [formData, setFormData] = useState({
@@ -79,7 +81,7 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
         if (!isEditMode) {
             fetchCompanyPrefix()
         }
-    }, [isEditMode])
+    }, [isEditMode, loggedInProfile?.company_id])
 
     useEffect(() => {
         if (!isEditMode && companyPrefix) {
@@ -112,10 +114,22 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
     }
 
     async function fetchSystems() {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const { data } = await supabase.from('systems' as any).select('code, name').order('created_at')
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        if (data) setSystems(data as any)
+        let query = (supabase.from('systems') as any).select('id, code, name')
+        if (loggedInProfile?.company_id) {
+            query = query.eq('company_id', loggedInProfile.company_id)
+        }
+        const { data } = await query.order('created_at')
+        if (data) {
+            const seen = new Set<string>()
+            const unique: System[] = []
+            for (const s of data as any[]) {
+                if (s.code && !seen.has(s.code)) {
+                    seen.add(s.code)
+                    unique.push(s)
+                }
+            }
+            setSystems(unique)
+        }
     }
 
     async function fetchLatestEmployeeCode(prefixStr: string) {
@@ -226,6 +240,23 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                     .eq('id', initialData.id)
 
                 if (error) throw error
+
+                // If user entered a new password, update auth password
+                if (newPassword) {
+                    if (newPassword.length < 6) {
+                        throw new Error('Mật khẩu mới phải có ít nhất 6 ký tự')
+                    }
+                    const res = await fetch('/api/admin/reset-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: initialData.id,
+                            password: newPassword
+                        })
+                    })
+                    const result = await res.json()
+                    if (!res.ok) throw new Error(result.error || 'Lỗi cập nhật mật khẩu')
+                }
 
                 await logActivity({
                     supabase,
@@ -357,80 +388,112 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
 
             <form onSubmit={handleSubmit} className="space-y-6">
 
-                {/* ACCOUNT INFO */}
-                {(!isEditMode || isSystemAdmin) && (
+                {/* ACCOUNT INFO FOR NEW USER */}
+                {!isEditMode && (
                     <div className="bg-white rounded-xl p-5 space-y-4 border border-stone-200">
                         <h2 className="font-semibold text-stone-800 pb-3 border-b border-stone-200 flex items-center gap-2 text-sm">
                             <Shield size={16} className="text-orange-500" />
-                            {isSystemAdmin ? 'Đổi mật khẩu' : 'Thông tin đăng nhập'}
+                            Thông tin đăng nhập
                         </h2>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            {!isSystemAdmin && (
-                                <div>
-                                    <label className="block text-xs font-medium text-stone-700 mb-1.5">
-                                        Tên tài khoản (Username) <span className="text-red-500">*</span>
-                                    </label>
-                                    <div className="flex rounded-lg shadow-sm ring-1 ring-inset ring-stone-300 focus-within:ring-2 focus-within:ring-inset focus-within:ring-orange-500 bg-white overflow-hidden">
-                                        {companyPrefix && (
-                                            <span className="flex select-none items-center pl-3 pr-2 text-stone-500 text-sm bg-stone-50 border-r border-stone-100">
-                                                {companyPrefix}.
-                                            </span>
-                                        )}
-                                        <input
-                                            name="username"
-                                            required
-                                            value={formData.username}
-                                            onChange={handleChange}
-                                            className="block flex-1 border-0 bg-transparent py-2.5 pl-2 text-stone-900 placeholder:text-stone-400 focus:ring-0 sm:text-sm sm:leading-6 outline-none"
-                                            placeholder="user01"
-                                        />
-                                    </div>
-                                </div>
-                            )}
-
-                            {/* Password Field Logic */}
-                            {!isSystemAdmin ? (
-                                <div>
-                                    <label className="block text-xs font-medium text-stone-700 mb-1.5">
-                                        Mật khẩu <span className="text-red-500">*</span>
-                                    </label>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-medium text-stone-700 mb-1.5">
+                                    Tên tài khoản (Username) <span className="text-red-500">*</span>
+                                </label>
+                                <div className="flex rounded-lg shadow-sm ring-1 ring-inset ring-stone-300 focus-within:ring-2 focus-within:ring-inset focus-within:ring-orange-500 bg-white overflow-hidden">
+                                    {companyPrefix && (
+                                        <span className="flex select-none items-center pl-3 pr-2 text-stone-500 text-sm bg-stone-50 border-r border-stone-100">
+                                            {companyPrefix}.
+                                        </span>
+                                    )}
                                     <input
-                                        type="password"
+                                        name="username"
+                                        required
+                                        value={formData.username}
+                                        onChange={handleChange}
+                                        className="block flex-1 border-0 bg-transparent py-2.5 pl-2 text-stone-900 placeholder:text-stone-400 focus:ring-0 sm:text-sm sm:leading-6 outline-none"
+                                        placeholder="user01"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-xs font-medium text-stone-700 mb-1.5">
+                                    Mật khẩu <span className="text-red-500">*</span>
+                                </label>
+                                <div className="relative">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
                                         name="password"
                                         required
                                         value={formData.password}
                                         onChange={handleChange}
-                                        className={inputClass}
+                                        className={`${inputClass} pr-10`}
                                         placeholder="Tối thiểu 6 ký tự"
                                         minLength={6}
                                     />
-                                </div>
-                            ) : (
-                                // Admin Password Reset UI
-                                <div className="col-span-2 flex items-end gap-3">
-                                    <div className="flex-1">
-                                        <label className="block text-xs font-medium text-stone-700 mb-1.5">
-                                            Mật khẩu mới
-                                        </label>
-                                        <input
-                                            type="password"
-                                            value={newPassword}
-                                            onChange={(e) => setNewPassword(e.target.value)}
-                                            className={inputClass}
-                                            placeholder="Nhập mật khẩu mới..."
-                                        />
-                                    </div>
                                     <button
                                         type="button"
-                                        disabled={resettingPass || !newPassword}
-                                        onClick={handleResetPassword}
-                                        className="px-4 py-2.5 rounded-lg bg-stone-800 text-white text-sm font-medium hover:bg-stone-900 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
                                     >
-                                        {resettingPass ? <Loader2 className="animate-spin" size={16} /> : 'Cập nhật Mật khẩu'}
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
-                            )}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* PASSWORD RESET IN EDIT MODE */}
+                {isEditMode && (
+                    <div className="bg-white rounded-xl p-5 space-y-4 border border-stone-200">
+                        <div className="flex items-center justify-between pb-3 border-b border-stone-200">
+                            <h2 className="font-semibold text-stone-800 flex items-center gap-2 text-sm">
+                                <Key size={16} className="text-orange-500" />
+                                Thay đổi mật khẩu
+                            </h2>
+                            <span className="text-xs text-stone-500">
+                                Đặt lại mật khẩu đăng nhập cho tài khoản này
+                            </span>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-xs font-medium text-stone-700">
+                                Mật khẩu mới
+                            </label>
+                            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                                <div className="relative flex-1">
+                                    <input
+                                        type={showPassword ? 'text' : 'password'}
+                                        value={newPassword}
+                                        onChange={(e) => setNewPassword(e.target.value)}
+                                        className={`${inputClass} pr-10`}
+                                        placeholder="Nhập mật khẩu mới (tối thiểu 6 ký tự)..."
+                                        minLength={6}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                                    >
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                <button
+                                    type="button"
+                                    disabled={resettingPass || !newPassword || newPassword.length < 6}
+                                    onClick={handleResetPassword}
+                                    className="px-4 py-2.5 rounded-lg bg-stone-800 text-white text-sm font-medium hover:bg-stone-900 disabled:opacity-40 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2 shrink-0 shadow-sm"
+                                >
+                                    {resettingPass ? <Loader2 className="animate-spin" size={16} /> : <Key size={15} />}
+                                    <span>Cập nhật mật khẩu</span>
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-stone-400">
+                                * Bạn có thể bấm &quot;Cập nhật mật khẩu&quot; ngay hoặc nhập mật khẩu mới rồi bấm &quot;Lưu thay đổi&quot; ở cuối trang.
+                            </p>
                         </div>
                     </div>
                 )}
@@ -558,8 +621,8 @@ export default function UserForm({ initialData, isEditMode = false }: UserFormPr
                                         Tài khoản này có toàn quyền truy cập mọi kho.
                                     </div>
                                 ) : (
-                                    systems.map((sys) => (
-                                        <label key={sys.code} className={`
+                                    systems.map((sys, idx) => (
+                                        <label key={sys.id || `${sys.code}-${idx}`} className={`
                                             flex items-center gap-2 cursor-pointer p-2 rounded border transition-colors select-none
                                             ${(formData.allowed_systems || []).includes(sys.code)
                                                 ? 'bg-orange-50 border-orange-200 text-orange-800'

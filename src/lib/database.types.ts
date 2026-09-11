@@ -347,7 +347,11 @@ export interface Database {
         Insert: { id?: string; code: string; status?: string | null; supplier_id?: string | null; supplier_address?: string | null; supplier_phone?: string | null; warehouse_name?: string | null; description?: string | null; order_type_id?: string | null; images?: string[] | null; metadata?: any; system_code?: string | null; system_type?: string | null; type?: string | null; created_at?: string; updated_at?: string | null; created_by_name?: string | null; company_id?: string | null }
         Update: { id?: string; code?: string; status?: string | null; supplier_id?: string | null; supplier_address?: string | null; supplier_phone?: string | null; warehouse_name?: string | null; description?: string | null; order_type_id?: string | null; images?: string[] | null; metadata?: any; system_code?: string | null; system_type?: string | null; type?: string | null; created_at?: string; updated_at?: string | null; created_by_name?: string | null; company_id?: string | null }
       }
-      user_profiles: { Row: { id: string; email: string | null; full_name: string; role_id: string | null; company_id: string | null } }
+      user_profiles: {
+        Row: { id: string; email: string | null; full_name: string; role_id: string | null; company_id: string | null; is_active?: boolean | null; department?: string | null; employee_code?: string | null; avatar_url?: string | null; last_login?: string | null; account_level?: number | null; created_at?: string | null; updated_at?: string | null }
+        Insert: { id?: string; email?: string | null; full_name?: string; role_id?: string | null; company_id?: string | null; is_active?: boolean | null; department?: string | null; employee_code?: string | null; avatar_url?: string | null; last_login?: string | null; account_level?: number | null; created_at?: string | null; updated_at?: string | null }
+        Update: { id?: string; email?: string | null; full_name?: string; role_id?: string | null; company_id?: string | null; is_active?: boolean | null; department?: string | null; employee_code?: string | null; avatar_url?: string | null; last_login?: string | null; account_level?: number | null; created_at?: string | null; updated_at?: string | null }
+      }
       companies: { Row: { id: string; code: string; name: string } }
       branches: { Row: { id: string; code: string; name: string; system_type: string } }
       audit_logs: {

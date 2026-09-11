@@ -84,7 +84,7 @@ export default function UsersPage() {
         // Fetch old data for audit
         const oldUser = users.find(u => u.id === id);
 
-        const { error } = await supabase.from('user_profiles')
+        const { error } = await (supabase as any).from('user_profiles')
             .update({ is_active: !currentStatus })
             .eq('id', id)
 
@@ -110,13 +110,23 @@ export default function UsersPage() {
         // Fetch old data for audit
         const oldUser = users.find(u => u.id === id);
 
-        const { error } = await supabase.from('user_profiles')
-            .delete()
-            .eq('id', id)
+        try {
+            const res = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: id })
+            })
+            const data = await res.json()
 
-        if (error) {
-            alert('Lỗi khi xóa người dùng: ' + error.message)
-        } else {
+            if (!res.ok) {
+                // Fallback to direct supabase delete
+                const { error } = await supabase.from('user_profiles').delete().eq('id', id)
+                if (error) {
+                    alert('Lỗi khi xóa người dùng: ' + (data.error || error.message))
+                    return
+                }
+            }
+
             // Log Activity
             if (oldUser) {
                 await logActivity({
@@ -130,6 +140,24 @@ export default function UsersPage() {
             }
             setConfirmDeleteId(null)
             fetchUsers()
+        } catch (err: any) {
+            const { error } = await supabase.from('user_profiles').delete().eq('id', id)
+            if (error) {
+                alert('Lỗi khi xóa người dùng: ' + error.message)
+            } else {
+                if (oldUser) {
+                    await logActivity({
+                        supabase,
+                        tableName: 'user_profiles',
+                        recordId: id,
+                        action: 'DELETE',
+                        oldData: oldUser,
+                        newData: null
+                    })
+                }
+                setConfirmDeleteId(null)
+                fetchUsers()
+            }
         }
     }
 

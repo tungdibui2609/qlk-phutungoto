@@ -195,6 +195,22 @@ export default function SanxuatUserForm({ initialData, isEditMode = false }: Use
 
                 if (error) throw error
 
+                if (formData.password) {
+                    if (formData.password.length < 6) {
+                        throw new Error('Mật khẩu mới phải có ít nhất 6 ký tự')
+                    }
+                    const res = await fetch('/api/admin/reset-password', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            userId: initialData.id,
+                            password: formData.password
+                        })
+                    })
+                    const result = await res.json()
+                    if (!res.ok) throw new Error(result.error || 'Lỗi cập nhật mật khẩu')
+                }
+
                 await logActivity({
                     supabase,
                     tableName: 'user_profiles',

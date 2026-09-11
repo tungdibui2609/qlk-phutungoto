@@ -13,5 +13,14 @@ export interface ConstructionMember {
     role: string | null
     team_id: string | null
     is_active: boolean
+    user_id?: string | null
     teams?: ConstructionTeam // For join
+    user?: {
+        id: string
+        full_name: string
+        username: string | null
+        email: string | null
+        employee_code?: string | null
+        avatar_url?: string | null
+    } | null
 }

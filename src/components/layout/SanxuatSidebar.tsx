@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, LogOut, ChevronRight, ChevronDown, List, FolderTree, Boxes, ShieldAlert, Users, Shield, Tag, PackageSearch, KanbanSquare, FileText, Settings, ClipboardList, Factory, History, Printer } from 'lucide-react'
+import { LayoutDashboard, Package, LogOut, ChevronRight, ChevronDown, List, FolderTree, Boxes, ShieldAlert, Users, Shield, Tag, PackageSearch, KanbanSquare, FileText, Settings, ClipboardList, Factory, History, Printer, CheckSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -52,6 +52,14 @@ const menuItems: MenuItem[] = [
             { id: 'delivery_settings_sanxuat', name: 'Cài đặt giao nhận', href: '/sanxuat/delivery-settings', icon: Settings },
             { id: 'delivery_journal_sanxuat', name: 'Nhật ký giao nhận sản xuất', href: '/sanxuat/delivery-journal', icon: Factory },
             { id: 'delivery_shifts_sanxuat', name: 'Ca làm & Thống kê', href: '/sanxuat/delivery-shifts', icon: History },
+        ]
+    },
+    {
+        id: 'work_cat_sanxuat',
+        name: 'Công việc & Ca trực',
+        icon: CheckSquare,
+        children: [
+            { id: 'shift_tasks_sanxuat', name: 'Giao việc & Bàn giao ca', href: '/sanxuat/work/tasks', icon: CheckSquare },
         ]
     },
     {

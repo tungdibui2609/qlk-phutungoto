@@ -48,17 +48,28 @@ export async function generateMetadata(): Promise<Metadata> {
 
     // console.log("Fetched company name:", data?.name);
 
+    const baseMeta = {
+      manifest: '/manifest.webmanifest',
+      appleWebApp: {
+        capable: true,
+        statusBarStyle: 'default' as const,
+        title: 'Chánh Thu',
+      },
+    }
+
     if ((data as any)?.short_name) {
       return {
+        ...baseMeta,
         title: generateAppTitle((data as any).short_name),
-        description: "Hệ thống quản lý kho phụ tùng ô tô chuyên nghiệp",
+        description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
       };
     }
 
     if ((data as any)?.name) {
       return {
+        ...baseMeta,
         title: generateAppTitle((data as any).name),
-        description: "Hệ thống quản lý kho phụ tùng ô tô chuyên nghiệp",
+        description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
       };
     }
   } catch (error) {
@@ -66,8 +77,14 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 
   return {
+    manifest: '/manifest.webmanifest',
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: 'default',
+      title: 'Chánh Thu',
+    },
     title: generateAppTitle(COMPANY_INFO.name),
-    description: "Hệ thống quản lý kho phụ tùng ô tô chuyên nghiệp",
+    description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
   };
 }
 
@@ -78,6 +95,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="vi">
+      <head>
+        <link rel="apple-touch-icon" href="/logoanywarehouse.png" />
+        <meta name="theme-color" content="#059669" />
+      </head>
       <body className={`${inter.variable} antialiased font-sans`}>
         <UserProvider>
           <SystemProvider>

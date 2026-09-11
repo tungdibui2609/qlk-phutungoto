@@ -62,6 +62,15 @@ export const APP_ROUTES: RouteItem[] = [
         ]
     },
     {
+        name: 'Công việc',
+        path: '/work-management',
+        children: [
+            { name: 'Giao việc & Bàn giao ca', path: '/work/tasks' },
+            { name: 'Lệnh xuất kho', path: '/work/export-order' },
+            { name: 'Kiểm kê nội bộ', path: '/work/inventory' },
+        ]
+    },
+    {
         name: 'Người dùng & Phân quyền',
         path: '/users-management',
         children: [

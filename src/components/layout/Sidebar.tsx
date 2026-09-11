@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, Sparkles, CheckSquare } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -156,6 +156,7 @@ const menuItems: MenuItem[] = [
         name: 'Công việc',
         icon: ClipboardCheck,
         children: [
+            { id: 'shift_tasks', name: 'Giao việc & Bàn giao ca', href: '/work/tasks', icon: CheckSquare },
             { id: 'export_order', name: 'Lệnh xuất kho', href: '/work/export-order', icon: ArrowUpFromLine, requiredModule: 'work_export_order' },
             { id: 'internal_inventory', name: 'Kiểm kê nội bộ', href: '/work/inventory', icon: ClipboardCheck },
         ]

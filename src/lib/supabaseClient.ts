@@ -405,6 +405,7 @@ type ConstructionMembersTable = {
         id: string
         company_id: string | null
         team_id: string | null
+        user_id: string | null
         full_name: string
         phone: string | null
         role: string | null
@@ -417,6 +418,7 @@ type ConstructionMembersTable = {
         id?: string
         company_id?: string | null
         team_id?: string | null
+        user_id?: string | null
         full_name: string
         phone?: string | null
         role?: string | null
@@ -429,6 +431,7 @@ type ConstructionMembersTable = {
         id?: string
         company_id?: string | null
         team_id?: string | null
+        user_id?: string | null
         full_name?: string
         phone?: string | null
         role?: string | null

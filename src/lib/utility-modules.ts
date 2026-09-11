@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -141,6 +141,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         name: 'Nhật ký giao nhận',
         description: 'Nhật ký giao nhận giữa Kho và Sản xuất: Kho gửi vật tư, SX nhận và hoàn trả thành phẩm. Đồng bộ real-time.',
         icon: ClipboardList,
+        category: 'core',
+        is_basic: true,
+        default_enabled: true
+    },
+    {
+        id: 'shift_tasks',
+        name: 'Sổ Giao Việc & Nhắc Nhở Bàn Giao',
+        description: 'Giao việc dở dang, tạo nhắc nhở giao ca kèm hình ảnh minh chứng và xác nhận tiếp nhận 2 bên rõ ràng.',
+        icon: CheckSquare,
         category: 'core',
         is_basic: true,
         default_enabled: true
