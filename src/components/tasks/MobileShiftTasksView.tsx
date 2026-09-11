@@ -1088,13 +1088,16 @@ export default function MobileShiftTasksView({
                                 const acks = getDeduplicatedAcknowledgements(task)
                                 const hasMyAck = acks.some(a => 
                                     (profile?.id && a.user_id && a.user_id === profile.id) || 
-                                    (profile?.full_name && a.user_name && a.user_name.trim().toLowerCase() === profile.full_name.trim().toLowerCase())
+                                    (profile?.full_name && a.user_name && String(a.user_name).trim().toLowerCase() === String(profile.full_name).trim().toLowerCase())
                                 )
                                 const isCreatorOrAdmin = canManageTask(task, profile)
 
+                                const rawTargetShift = (task as any)?.target_shift
                                 const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                                     ? task.target_shifts
-                                    : (task.target_shift ? task.target_shift.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+                                    : (Array.isArray(rawTargetShift)
+                                        ? rawTargetShift
+                                        : (typeof rawTargetShift === 'string' ? rawTargetShift.split(',').map((s: string) => s.trim()).filter(Boolean) : []))
 
                                 return (
                                     <div

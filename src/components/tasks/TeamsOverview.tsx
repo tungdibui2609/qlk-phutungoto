@@ -609,7 +609,7 @@ export default function TeamsOverview({
                                                 <div className="text-center pt-1">
                                                     <button
                                                         type="button"
-                                                        onClick={() => onFilterByTeam(`Đội ${item.teamName}`)}
+                                                        onClick={() => onFilterByTeam(item.teamName.startsWith('Đội ') ? item.teamName : `Đội ${item.teamName}`)}
                                                         className="text-xs text-purple-700 font-bold hover:underline inline-flex items-center gap-1"
                                                     >
                                                         <span>+{item.total - 1} việc khác của đội...</span>
@@ -622,7 +622,7 @@ export default function TeamsOverview({
                                                 <div className="text-center pt-1">
                                                     <button
                                                         type="button"
-                                                        onClick={() => onFilterByTeam(`Đội ${item.teamName}`)}
+                                                        onClick={() => onFilterByTeam(item.teamName.startsWith('Đội ') ? item.teamName : `Đội ${item.teamName}`)}
                                                         className="text-xs text-purple-700 font-bold hover:underline inline-flex items-center gap-1"
                                                     >
                                                         <span>+{displayedTasks.length - 3} việc khác trong mục này...</span>
@@ -638,7 +638,7 @@ export default function TeamsOverview({
                                 <div className="p-3 bg-stone-50 border-t border-stone-100 flex items-center justify-between gap-2">
                                     <button
                                         type="button"
-                                        onClick={() => onCreateTaskForTeam(`Đội ${item.teamName}`)}
+                                        onClick={() => onCreateTaskForTeam(item.teamName.startsWith('Đội ') ? item.teamName : `Đội ${item.teamName}`)}
                                         className="text-xs font-bold text-stone-700 hover:text-purple-700 inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg hover:bg-white transition"
                                     >
                                         <Plus className="w-3.5 h-3.5 text-purple-600" />
@@ -647,7 +647,7 @@ export default function TeamsOverview({
 
                                     <button
                                         type="button"
-                                        onClick={() => onFilterByTeam(`Đội ${item.teamName}`)}
+                                        onClick={() => onFilterByTeam(item.teamName.startsWith('Đội ') ? item.teamName : `Đội ${item.teamName}`)}
                                         className="text-xs font-bold text-purple-700 hover:text-purple-900 inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-purple-100/60 hover:bg-purple-100 transition"
                                     >
                                         <span>Xem danh sách ({item.total})</span>

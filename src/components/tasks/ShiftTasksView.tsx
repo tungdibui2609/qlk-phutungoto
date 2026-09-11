@@ -343,12 +343,15 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
             // Shift filter
             // Shift / Team filter
             if (shiftFilter !== 'all') {
+                const rawTargetShift = (t as any)?.target_shift
                 const taskShifts: string[] = Array.isArray(t.target_shifts) && t.target_shifts.length > 0
                     ? t.target_shifts
-                    : (t.target_shift ? t.target_shift.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+                    : (Array.isArray(rawTargetShift)
+                        ? rawTargetShift
+                        : (typeof rawTargetShift === 'string' ? rawTargetShift.split(',').map((s: string) => s.trim()).filter(Boolean) : []))
 
                 const isBroadcast = taskShifts.some(s => {
-                    const l = s.toLowerCase()
+                    const l = String(s || '').toLowerCase()
                     return l === 'toàn bộ' || l === 'toàn đội' || l === 'tất cả' || l === 'tất cả các đội'
                 })
 
@@ -357,8 +360,11 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                         const hasStandardShift = taskShifts.some(s => ['Ca 1 (Sáng)', 'Ca 2 (Chiều)', 'Ca 3 (Đêm)', 'Ca tiếp theo', 'Toàn ca'].includes(s))
                         if (hasStandardShift) return false
                     } else {
-                        const matches = taskShifts.some(s => s.toLowerCase() === shiftFilter.toLowerCase() || s.toLowerCase().includes(shiftFilter.toLowerCase()))
-                        if (!matches && t.target_shift !== shiftFilter) return false
+                        const matches = taskShifts.some(s => {
+                            const l = String(s || '').toLowerCase()
+                            return l === shiftFilter.toLowerCase() || l.includes(shiftFilter.toLowerCase())
+                        })
+                        if (!matches && String(t.target_shift || '') !== shiftFilter) return false
                     }
                 }
             }
@@ -373,12 +379,12 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
             // Search query
             if (searchQuery.trim()) {
                 const q = searchQuery.toLowerCase().trim()
-                const matchCode = t.code.toLowerCase().includes(q)
-                const matchTitle = t.title.toLowerCase().includes(q)
-                const matchContent = (t.content || '').toLowerCase().includes(q)
-                const matchCreator = (t.created_by_name || '').toLowerCase().includes(q)
-                const matchAssignee = (t.assigned_to_name || '').toLowerCase().includes(q)
-                const matchAck = (t.acknowledged_by_name || '').toLowerCase().includes(q)
+                const matchCode = String(t.code || '').toLowerCase().includes(q)
+                const matchTitle = String(t.title || '').toLowerCase().includes(q)
+                const matchContent = String(t.content || '').toLowerCase().includes(q)
+                const matchCreator = String(t.created_by_name || '').toLowerCase().includes(q)
+                const matchAssignee = String(t.assigned_to_name || '').toLowerCase().includes(q)
+                const matchAck = String(t.acknowledged_by_name || '').toLowerCase().includes(q)
                 if (!matchCode && !matchTitle && !matchContent && !matchCreator && !matchAssignee && !matchAck) {
                     return false
                 }
@@ -1148,9 +1154,12 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                 )
                                             })()}
                                             {(() => {
+                                                const rawTargetShift = (task as any)?.target_shift
                                                 const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                                                     ? task.target_shifts
-                                                    : (task.target_shift ? task.target_shift.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+                                                    : (Array.isArray(rawTargetShift)
+                                                        ? rawTargetShift
+                                                        : (typeof rawTargetShift === 'string' ? rawTargetShift.split(',').map((s: string) => s.trim()).filter(Boolean) : []))
                                                 if (shiftsList.length === 0) return null
                                                 return (
                                                     <div className="flex items-center gap-1 flex-wrap">
@@ -1257,7 +1266,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
 
                                     {/* Image Thumbnails Row (hỗ trợ cả ảnh đính kèm và ảnh chèn inline) */}
                                     {(() => {
-                                        const cardImages = (task.images && task.images.length > 0)
+                                        const cardImages = (Array.isArray(task.images) && task.images.length > 0)
                                             ? task.images
                                             : extractInlineImageUrls(task.content)
                                         if (!cardImages || cardImages.length === 0) return null
@@ -1301,7 +1310,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                                                     {task.assigned_to_name}
                                                 </span>
                                             )}
-                                            {task.edit_history && task.edit_history.length > 0 && (
+                                            {Array.isArray(task.edit_history) && task.edit_history.length > 0 && (
                                                 <span
                                                     className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200/80 px-1.5 py-0.2 rounded font-medium flex-shrink-0"
                                                     title={`Đã chỉnh sửa ${task.edit_history.length} lần`}

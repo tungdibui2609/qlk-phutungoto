@@ -223,27 +223,35 @@ export const getTaskType = (task?: { task_type?: string | null; code?: string; t
 /**
  * Check if a task is assigned to a specific team
  */
-export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_shift?: string | null }, teamName: string): boolean => {
-    const rawTarget = (teamName || '').trim().toLowerCase()
+export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_shift?: string | null | any }, teamName: string): boolean => {
+    const rawTarget = String(teamName || '').trim().toLowerCase()
     if (!rawTarget) return false
     const withPrefix = `đội ${rawTarget}`.toLowerCase()
 
-    const isAll = (s: string) => {
-        const lower = (s || '').trim().toLowerCase()
+    const isAll = (s: any) => {
+        const lower = String(s || '').trim().toLowerCase()
         return lower === 'toàn bộ' || lower === 'toàn đội' || lower === 'tất cả' || lower === 'tất cả các đội' || lower === 'toàn ca'
     }
 
     // 1. Check in target_shifts array
-    if (Array.isArray(task.target_shifts) && task.target_shifts.length > 0) {
+    if (Array.isArray(task?.target_shifts) && task.target_shifts.length > 0) {
         if (task.target_shifts.some(isAll)) return true
         return task.target_shifts.some(s => {
-            const val = (s || '').trim().toLowerCase()
+            const val = String(s || '').trim().toLowerCase()
             return val === rawTarget || val === withPrefix || val.includes(rawTarget)
         })
     }
 
-    // 2. Check in target_shift comma-separated or single string
-    if (task.target_shift) {
+    // 2. Check in target_shift (array, comma-separated string, or single string)
+    if (Array.isArray(task?.target_shift)) {
+        if (task.target_shift.some(isAll)) return true
+        return task.target_shift.some(s => {
+            const val = String(s || '').trim().toLowerCase()
+            return val === rawTarget || val === withPrefix || val.includes(rawTarget)
+        })
+    }
+
+    if (typeof task?.target_shift === 'string' && task.target_shift.trim()) {
         const parts = task.target_shift.split(',').map(s => s.trim().toLowerCase())
         if (parts.some(isAll)) return true
         return parts.some(p => p === rawTarget || p === withPrefix || p.includes(rawTarget))
@@ -251,7 +259,6 @@ export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_sh
 
     return false
 }
-
 
 /**
  * Lấy danh sách những người đã tiếp nhận của công việc
@@ -267,25 +274,52 @@ export const getDeduplicatedAcknowledgements = (task: any): {
     team_names?: string[]
 }[] => {
     if (!task) return []
-    const raw: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
-        ? task.acknowledgements
-        : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
+    let raw: any[] = []
+    if (Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0) {
+        raw = task.acknowledgements
+    } else if (typeof task.acknowledgements === 'string' && task.acknowledgements.trim().startsWith('[')) {
+        try {
+            const parsed = JSON.parse(task.acknowledgements)
+            if (Array.isArray(parsed)) raw = parsed
+        } catch {
+            raw = []
+        }
+    } else if (task.acknowledged_by_name) {
+        raw = [{
+            user_id: task.acknowledged_by ? String(task.acknowledged_by) : null,
+            user_name: String(task.acknowledged_by_name),
+            acknowledged_at: task.acknowledged_at || task.created_at,
+        }]
+    }
 
     const seen = new Set<string>()
     const result: any[] = []
 
     for (const a of raw) {
         if (!a) continue
-        const uId = (a.user_id || '').trim().toLowerCase()
-        const uName = (a.user_name || '').trim().toLowerCase()
+        if (typeof a === 'string') {
+            const trimmed = a.trim()
+            if (trimmed && !seen.has(trimmed.toLowerCase())) {
+                seen.add(trimmed.toLowerCase())
+                result.push({
+                    user_id: null,
+                    user_name: trimmed,
+                    acknowledged_at: task.created_at ? String(task.created_at) : new Date().toISOString(),
+                })
+            }
+            continue
+        }
+
+        const uId = String(a.user_id || '').trim().toLowerCase()
+        const uName = String(a.user_name || '').trim().toLowerCase()
         const key = uId || uName
         if (key && !seen.has(key)) {
             seen.add(key)
             result.push({
                 ...a,
-                user_id: a.user_id || null,
-                user_name: a.user_name || 'Nhân viên tiếp nhận',
-                acknowledged_at: a.acknowledged_at || task.created_at || new Date().toISOString(),
+                user_id: a.user_id ? String(a.user_id) : null,
+                user_name: a.user_name ? String(a.user_name) : 'Nhân viên tiếp nhận',
+                acknowledged_at: a.acknowledged_at ? String(a.acknowledged_at) : (task.created_at ? String(task.created_at) : new Date().toISOString()),
             })
         }
     }
@@ -303,14 +337,16 @@ export const hasUserAcknowledged = (
 ): boolean => {
     if (!userId && !userName) return false
 
-    const acks: any[] = Array.isArray(task.acknowledgements) && task.acknowledgements.length > 0
-        ? task.acknowledgements
-        : (task.acknowledged_by_name ? [{ user_id: task.acknowledged_by, user_name: task.acknowledged_by_name, acknowledged_at: task.acknowledged_at || task.created_at }] : [])
+    const acks = getDeduplicatedAcknowledgements(task)
+    const normUserId = userId ? String(userId).trim().toLowerCase() : ''
+    const normUserName = userName ? String(userName).trim().toLowerCase() : ''
 
-    return acks.some(a => 
-        (userId && a.user_id && a.user_id === userId) ||
-        (userName && a.user_name && a.user_name.trim().toLowerCase() === userName.trim().toLowerCase())
-    )
+    return acks.some(a => {
+        const aId = a.user_id ? String(a.user_id).trim().toLowerCase() : ''
+        const aName = a.user_name ? String(a.user_name).trim().toLowerCase() : ''
+        return (normUserId && aId && aId === normUserId) ||
+               (normUserName && aName && aName === normUserName)
+    })
 }
 
 /**
@@ -426,15 +462,17 @@ export const hasTeamAcknowledged = (
 /**
  * Lấy danh sách tên các đội được giao trong một task (chuẩn hóa dạng: 'Đội Thống kê', 'Đội Xe nâng cao'...)
  */
-export const getAssignedTeams = (task: { target_shifts?: string[]; target_shift?: string | null }): string[] => {
+export const getAssignedTeams = (task: { target_shifts?: string[]; target_shift?: string | null | any }): string[] => {
     if (!task) return []
     const rawList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
         ? task.target_shifts
-        : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : [])
+        : (Array.isArray(task.target_shift)
+            ? task.target_shift
+            : (typeof task.target_shift === 'string' ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : []))
 
     const teams: string[] = []
     for (const item of rawList) {
-        const trimmed = item.trim()
+        const trimmed = String(item || '').trim()
         if (trimmed.startsWith('Đội ') || trimmed.startsWith('đội ')) {
             // Chuẩn hóa chữ hoa đầu từ: 'Đội Tên'
             const teamName = 'Đội ' + trimmed.slice(4).trim()
@@ -567,27 +605,27 @@ export const getTeamMemberAckInfo = (
     allMembers: { team_id: string | null; user_id: string | null; full_name: string | null }[] = [],
     teams: { id: string; name: string }[] = []
 ): TeamMemberAckInfo => {
-    const norm = teamName.toLowerCase().trim().replace(/^đội\s+/, '')
+    const norm = String(teamName || '').toLowerCase().trim().replace(/^đội\s+/, '')
     const matchedTeam = teams.find(t => (t.name || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)
 
     const teamMembers = matchedTeam
         ? allMembers.filter(m => m.team_id === matchedTeam.id)
         : []
 
-    const acks: any[] = Array.isArray(task?.acknowledgements) ? task.acknowledgements : []
+    const acks = getDeduplicatedAcknowledgements(task)
 
     const ackedMembers: { user_id: string | null; user_name: string; acknowledged_at: string }[] = []
     const seenKeys = new Set<string>()
 
     for (const ack of acks) {
         if (!ack) continue
-        const ackName = (ack.user_name || '').trim()
-        const ackUserId = ack.user_id
+        const ackName = String(ack.user_name || '').trim()
+        const ackUserId = ack.user_id ? String(ack.user_id) : null
 
         let belongsToThisTeam = false
 
         if (Array.isArray(ack.team_names)) {
-            if (ack.team_names.some((tn: string) => (tn || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)) {
+            if (ack.team_names.some((tn: string) => String(tn || '').toLowerCase().trim().replace(/^đội\s+/, '') === norm)) {
                 belongsToThisTeam = true
             }
         }
@@ -619,8 +657,8 @@ export const getTeamMemberAckInfo = (
 
     const unackedMemberNames = teamMembers
         .filter(m => {
-            const name = (m.full_name || '').trim().toLowerCase()
-            const uId = (m.user_id || '').toLowerCase()
+            const name = String(m.full_name || '').trim().toLowerCase()
+            const uId = String(m.user_id || '').toLowerCase()
             return (!uId || !seenKeys.has(uId)) && (!name || !seenKeys.has(name))
         })
         .map(m => m.full_name || 'Thành viên')

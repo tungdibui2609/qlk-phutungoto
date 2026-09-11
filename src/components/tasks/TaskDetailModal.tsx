@@ -216,9 +216,15 @@ export default function TaskDetailModal({
         setShowLightbox(true)
     }
 
-    const inlineUrls = extractInlineImageUrls(task?.content, task?.images || [])
-    const allTaskImages = Array.from(new Set([...inlineUrls, ...(task?.images || [])]))
-    const standaloneImages = (task?.images || []).filter(img => !inlineUrls.includes(img))
+    const rawImages = (task as any)?.images
+    const taskImages: string[] = Array.isArray(rawImages)
+        ? rawImages
+        : (typeof rawImages === 'string' && rawImages.trim().startsWith('[')
+            ? (() => { try { return JSON.parse(rawImages) } catch { return [] } })()
+            : [])
+    const inlineUrls = extractInlineImageUrls(task?.content, taskImages)
+    const allTaskImages = Array.from(new Set([...inlineUrls, ...taskImages]))
+    const standaloneImages = taskImages.filter(img => !inlineUrls.includes(img))
 
     // Xác nhận tiếp nhận bàn giao (hỗ trợ nhiều người)
     const handleAcknowledge = async () => {
@@ -447,7 +453,7 @@ export default function TaskDetailModal({
 
     const hasMyAck = acks.some(a => 
         (profile?.id && a.user_id && a.user_id === profile.id) || 
-        (profile?.full_name && a.user_name && a.user_name.trim().toLowerCase() === profile.full_name.trim().toLowerCase())
+        (profile?.full_name && a.user_name && String(a.user_name).trim().toLowerCase() === String(profile.full_name).trim().toLowerCase())
     )
 
     const canAcknowledge = canUserAcknowledgeTask(task, profile, myTeamNames, allMembers, teams)
@@ -550,9 +556,12 @@ export default function TaskDetailModal({
 
                         {/* Row 2: Sub-row phân công đội & người chỉ định */}
                         {(() => {
+                            const rawTargetShift = (task as any)?.target_shift
                             const shiftsList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
                                 ? task.target_shifts
-                                : (task.target_shift ? task.target_shift.split(',').map(s => s.trim()).filter(Boolean) : [])
+                                : (Array.isArray(rawTargetShift)
+                                    ? rawTargetShift
+                                    : (typeof rawTargetShift === 'string' ? rawTargetShift.split(',').map(s => s.trim()).filter(Boolean) : []))
 
                             if (shiftsList.length === 0 && !task.assigned_to_name) return null
 
@@ -622,7 +631,7 @@ export default function TaskDetailModal({
                             const isAssigneeAcked = Boolean(
                                 task.assigned_to_name && acks.some(a => 
                                     (task.assigned_to && a.user_id === task.assigned_to) || 
-                                    (a.user_name && a.user_name.trim().toLowerCase() === task.assigned_to_name!.trim().toLowerCase())
+                                    (a.user_name && String(a.user_name).trim().toLowerCase() === String(task.assigned_to_name).trim().toLowerCase())
                                 )
                             )
 
@@ -721,67 +730,90 @@ export default function TaskDetailModal({
                         )}
 
                         {/* Attached Images lúc nghiệm thu hoàn thành */}
-                        {task.completion_images && task.completion_images.length > 0 && (
-                            <div>
-                                <h4 className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                                    Ảnh kết quả sau khi hoàn thành ({task.completion_images.length})
-                                </h4>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                                    {task.completion_images.map((img, idx) => (
-                                        <div
-                                            key={idx}
-                                            onClick={() => handleOpenLightbox(task.completion_images, idx)}
-                                            className="relative aspect-video rounded-xl overflow-hidden border border-emerald-200 bg-emerald-50 cursor-pointer group shadow-sm hover:shadow-md transition"
-                                        >
-                                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                                            <img
-                                                src={img}
-                                                alt={`Kết quả ${idx + 1}`}
-                                                className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
-                                            />
-                                            <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-semibold">
-                                                Phóng to
+                        {(() => {
+                            const rawCompImages = (task as any)?.completion_images
+                            const completionImagesList: string[] = Array.isArray(rawCompImages)
+                                ? rawCompImages
+                                : (typeof rawCompImages === 'string' && rawCompImages.trim().startsWith('[')
+                                    ? (() => { try { return JSON.parse(rawCompImages) } catch { return [] } })()
+                                    : [])
+                            if (completionImagesList.length === 0) return null
+                            return (
+                                <div>
+                                    <h4 className="text-xs font-bold text-stone-500 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                        Ảnh kết quả sau khi hoàn thành ({completionImagesList.length})
+                                    </h4>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                                        {completionImagesList.map((img, idx) => (
+                                            <div
+                                                key={idx}
+                                                onClick={() => handleOpenLightbox(completionImagesList, idx)}
+                                                className="relative aspect-video rounded-xl overflow-hidden border border-emerald-200 bg-emerald-50 cursor-pointer group shadow-sm hover:shadow-md transition"
+                                            >
+                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                <img
+                                                    src={img}
+                                                    alt={`Kết quả ${idx + 1}`}
+                                                    className="w-full h-full object-cover group-hover:scale-105 transition duration-200"
+                                                />
+                                                <div className="absolute inset-0 bg-black/30 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-white text-xs font-semibold">
+                                                    Phóng to
+                                                </div>
                                             </div>
-                                        </div>
-                                    ))}
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )
+                        })()}
 
                         {/* Lịch sử chỉnh sửa nếu có */}
-                        {task.edit_history && task.edit_history.length > 0 && (
-                            <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80 space-y-2.5">
-                                <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
-                                    <History className="w-4 h-4 text-amber-600" />
-                                    Lịch sử chỉnh sửa ({task.edit_history.length} lần)
-                                </h4>
-                                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                                    {task.edit_history.map((entry, idx) => (
-                                        <div key={idx} className="p-3 rounded-xl bg-white border border-stone-200 text-xs space-y-1.5 shadow-2xs">
-                                            <div className="flex items-center justify-between text-stone-500 font-medium border-b border-stone-100 pb-1.5">
-                                                <span className="font-semibold text-stone-800 flex items-center gap-1.5">
-                                                    <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-[10px]">
-                                                        {(entry.edited_by_name || 'N').charAt(0).toUpperCase()}
+                        {(() => {
+                            const rawHistory = (task as any)?.edit_history
+                            const editHistoryList: any[] = Array.isArray(rawHistory)
+                                ? rawHistory
+                                : (typeof rawHistory === 'string' && rawHistory.trim().startsWith('[')
+                                    ? (() => { try { return JSON.parse(rawHistory) } catch { return [] } })()
+                                    : [])
+                            if (editHistoryList.length === 0) return null
+                            return (
+                                <div className="p-4 rounded-xl bg-stone-50 border border-stone-200/80 space-y-2.5">
+                                    <h4 className="text-xs font-bold text-stone-700 uppercase tracking-wider flex items-center gap-1.5">
+                                        <History className="w-4 h-4 text-amber-600" />
+                                        Lịch sử chỉnh sửa ({editHistoryList.length} lần)
+                                    </h4>
+                                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                        {editHistoryList.map((entry, idx) => {
+                                            const changesList: string[] = Array.isArray(entry?.changes) ? entry.changes : []
+                                            return (
+                                                <div key={idx} className="p-3 rounded-xl bg-white border border-stone-200 text-xs space-y-1.5 shadow-2xs">
+                                                    <div className="flex items-center justify-between text-stone-500 font-medium border-b border-stone-100 pb-1.5">
+                                                        <span className="font-semibold text-stone-800 flex items-center gap-1.5">
+                                                            <div className="w-5 h-5 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center font-bold text-[10px]">
+                                                                {(entry?.edited_by_name || 'N').charAt(0).toUpperCase()}
+                                                            </div>
+                                                            {entry?.edited_by_name || 'Người tạo việc'}
+                                                        </span>
+                                                        <span className="text-[10px] text-stone-400">
+                                                            {formatDateTime(entry?.edited_at)}
+                                                        </span>
                                                     </div>
-                                                    {entry.edited_by_name || 'Người tạo việc'}
-                                                </span>
-                                                <span className="text-[10px] text-stone-400">
-                                                    {formatDateTime(entry.edited_at)}
-                                                </span>
-                                            </div>
-                                            <ul className="list-disc list-inside text-stone-600 space-y-0.5 pt-0.5">
-                                                {entry.changes.map((change, cIdx) => (
-                                                    <li key={cIdx} className="text-[11px] leading-relaxed text-stone-700 font-normal">
-                                                        {change}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    ))}
+                                                    {changesList.length > 0 && (
+                                                        <ul className="list-disc list-inside text-stone-600 space-y-0.5 pt-0.5">
+                                                            {changesList.map((change, cIdx) => (
+                                                                <li key={cIdx} className="text-[11px] leading-relaxed text-stone-700 font-normal">
+                                                                    {change}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            )
+                        })()}
 
                         {/* Trao đổi tin nhắn giữa 2 ca */}
                         <div className="pt-4 border-t border-stone-100">
