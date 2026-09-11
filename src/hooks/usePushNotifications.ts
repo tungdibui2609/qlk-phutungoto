@@ -133,11 +133,37 @@ export function usePushNotifications({
                 reg = await navigator.serviceWorker.ready
             }
 
-            const existingSub = await reg.pushManager.getSubscription()
-            const sub = existingSub || await reg.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(vapidKey),
-            })
+            // Clean up or get existing subscription
+            let sub: PushSubscription | null = null
+            try {
+                sub = await reg.pushManager.getSubscription()
+            } catch (readErr) {
+                console.warn('Error checking existing subscription:', readErr)
+            }
+
+            if (!sub) {
+                try {
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                    })
+                } catch (subErr: any) {
+                    console.warn('Lần đăng ký push thứ 1 không thành công, thử dọn dẹp và thử lại lần 2...', subErr)
+                    // Hủy đăng ký cũ nếu có để tránh xung đột mã FCM trên Android
+                    try {
+                        const staleSub = await reg.pushManager.getSubscription()
+                        if (staleSub) await staleSub.unsubscribe()
+                    } catch (_) {}
+
+                    await new Promise(resolve => setTimeout(resolve, 400))
+
+                    // Thử lại lần 2
+                    sub = await reg.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(vapidKey),
+                    })
+                }
+            }
 
             // Save to database
             const res = await fetch('/api/notifications/subscribe', {
@@ -164,7 +190,12 @@ export function usePushNotifications({
             return true
         } catch (err: any) {
             console.error('Error subscribing to push:', err)
-            alert('Lỗi kích hoạt chuông thông báo: ' + (err?.message || 'Không thể kết nối máy chủ'))
+            const rawMsg = err?.message || ''
+            let friendlyMsg = rawMsg
+            if (rawMsg.includes('push service error') || rawMsg.includes('Registration failed')) {
+                friendlyMsg = 'Dịch vụ thông báo của Google (FCM) trên điện thoại đang bị ngắt kết nối hoặc chặn ngầm.\n\nCách khắc phục nhanh:\n1. Vào Cài đặt điện thoại ➔ Ứng dụng ➔ Chrome (hoặc Chánh Thu) ➔ Bật Thông báo.\n2. Đảm bảo điện thoại có 4G/WiFi ổn định.\n3. Tắt Tiết kiệm pin cho Dịch vụ Google Play / Chrome rồi bấm Bật lại nhé!'
+            }
+            alert(friendlyMsg)
             return false
         } finally {
             setLoading(false)
