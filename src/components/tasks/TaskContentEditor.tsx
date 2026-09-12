@@ -11,6 +11,14 @@ import {
     Sparkles,
     UploadCloud,
     AlertCircle,
+    Bold,
+    Italic,
+    Underline,
+    Highlighter,
+    Palette,
+    Type,
+    ChevronDown,
+    Eraser,
 } from 'lucide-react'
 import { uploadTaskImage } from './taskUtils'
 import {
@@ -18,6 +26,10 @@ import {
     markdownToDisplayText,
     displayTextToMarkdown,
     SHORT_IMAGE_TAG_REGEX,
+    TEXT_COLORS,
+    TEXT_SIZES,
+    StyleUpdateOptions,
+    applyStyleToSelectedText,
 } from './taskContentUtils'
 import TaskRichContent from './TaskRichContent'
 
@@ -47,6 +59,11 @@ export default function TaskContentEditor({
     const [uploadError, setUploadError] = useState('')
     const [isDragging, setIsDragging] = useState(false)
 
+    // Rich text styling pickers
+    const [showColorPicker, setShowColorPicker] = useState(false)
+    const [showSizePicker, setShowSizePicker] = useState(false)
+    const [hasSelection, setHasSelection] = useState(false)
+
     // Parse initial value into friendly display text (with short tags like [📷 Ảnh 1]) and entries
     const initialParsed = useRef(markdownToDisplayText(value))
     const [displayText, setDisplayText] = useState(initialParsed.current.displayText)
@@ -55,6 +72,7 @@ export default function TaskContentEditor({
     const textareaRef = useRef<HTMLTextAreaElement>(null)
     const fileInputRef = useRef<HTMLInputElement>(null)
     const cameraInputRef = useRef<HTMLInputElement>(null)
+    const toolbarRef = useRef<HTMLDivElement>(null)
 
     // Keep refs synchronized to avoid stale closures during async uploads
     const displayTextRef = useRef(displayText)
@@ -65,6 +83,18 @@ export default function TaskContentEditor({
 
     // Keep track of the markdown we emitted so we don't re-parse our own emitted changes
     const lastEmittedMarkdownRef = useRef<string>(value)
+
+    // Close color & size popovers on click outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+                setShowColorPicker(false)
+                setShowSizePicker(false)
+            }
+        }
+        document.addEventListener('mousedown', handleClickOutside)
+        return () => document.removeEventListener('mousedown', handleClickOutside)
+    }, [])
 
     // When value changes from parent (e.g. form reset or initial edit load)
     useEffect(() => {
@@ -89,8 +119,63 @@ export default function TaskContentEditor({
             const start = textareaRef.current.selectionStart ?? (displayTextRef.current || '').length
             const end = textareaRef.current.selectionEnd ?? (displayTextRef.current || '').length
             cursorPosRef.current = { start, end }
+            setHasSelection(start !== end)
         }
     }, [])
+
+    /**
+     * Áp dụng định dạng văn bản (màu sắc, cỡ chữ, in đậm...) cho đoạn bôi đen
+     */
+    const handleApplyFormatting = useCallback((opts: StyleUpdateOptions) => {
+        const textarea = textareaRef.current
+        const currentText = displayTextRef.current || ''
+        const start = textarea?.selectionStart ?? cursorPosRef.current.start
+        const end = textarea?.selectionEnd ?? cursorPosRef.current.end
+
+        const { newText, newSelectionStart, newSelectionEnd } = applyStyleToSelectedText(
+            currentText,
+            start,
+            end,
+            opts
+        )
+
+        setDisplayText(newText)
+        displayTextRef.current = newText
+        cursorPosRef.current = { start: newSelectionStart, end: newSelectionEnd }
+
+        const markdown = displayTextToMarkdown(newText, imageEntriesRef.current)
+        lastEmittedMarkdownRef.current = markdown
+        onChange(markdown)
+
+        setShowColorPicker(false)
+        setShowSizePicker(false)
+
+        setTimeout(() => {
+            if (textareaRef.current) {
+                textareaRef.current.focus()
+                textareaRef.current.setSelectionRange(newSelectionStart, newSelectionEnd)
+                setHasSelection(newSelectionStart !== newSelectionEnd)
+            }
+        }, 30)
+    }, [onChange])
+
+    /**
+     * Phím tắt tiện lợi: Ctrl+B (Đậm), Ctrl+I (Nghiêng), Ctrl+U (Gạch chân)
+     */
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+        if (e.ctrlKey || e.metaKey) {
+            if (e.key === 'b' || e.key === 'B') {
+                e.preventDefault()
+                handleApplyFormatting({ bold: true })
+            } else if (e.key === 'i' || e.key === 'I') {
+                e.preventDefault()
+                handleApplyFormatting({ italic: true })
+            } else if (e.key === 'u' || e.key === 'U') {
+                e.preventDefault()
+                handleApplyFormatting({ underline: true })
+            }
+        }
+    }
 
     /**
      * User types in textarea: update display text and emit corresponding markdown
@@ -382,9 +467,13 @@ export default function TaskContentEditor({
                         onChange={handleFileInputChange}
                     />
 
-                    {/* Toolbar for inserting inline images */}
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-stone-100 bg-stone-50/70 rounded-t-xl gap-2 flex-wrap">
+                    {/* Toolbar for inserting inline images & rich text formatting */}
+                    <div
+                        ref={toolbarRef}
+                        className="flex items-center justify-between px-2.5 py-2 border-b border-stone-100 bg-stone-50/75 rounded-t-xl gap-1.5 flex-wrap"
+                    >
                         <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Chèn ảnh & chụp ảnh */}
                             <button
                                 type="button"
                                 disabled={disabled || uploading}
@@ -416,11 +505,174 @@ export default function TaskContentEditor({
                                 <Camera className="w-3.5 h-3.5 text-stone-600" />
                                 <span>Chụp ảnh chèn vào</span>
                             </button>
+
+                            {/* Divider */}
+                            <div className="h-4 w-px bg-stone-300 mx-0.5 hidden sm:block" />
+
+                            {/* Cỡ chữ Dropdown */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    disabled={disabled || uploading}
+                                    onClick={() => {
+                                        setShowSizePicker(prev => !prev)
+                                        setShowColorPicker(false)
+                                    }}
+                                    className={`px-2 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1 transition shadow-2xs ${
+                                        showSizePicker || hasSelection
+                                            ? 'border-amber-400 bg-amber-50/80 text-amber-800 ring-1 ring-amber-400/30'
+                                            : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                                    }`}
+                                    title="Chọn kích cỡ chữ (Bôi đen đoạn văn bản trước để áp dụng)"
+                                >
+                                    <Type className="w-3.5 h-3.5 text-stone-600" />
+                                    <span className="hidden sm:inline text-[11px]">Cỡ chữ</span>
+                                    <ChevronDown className="w-3 h-3 text-stone-400" />
+                                </button>
+
+                                {showSizePicker && (
+                                    <div className="absolute left-0 top-full mt-1.5 w-52 bg-white rounded-xl shadow-xl border border-stone-200 py-1 z-30 animate-in fade-in-50 zoom-in-95">
+                                        <div className="px-3 py-1 text-[10px] font-bold text-stone-400 uppercase tracking-wider border-b border-stone-100">
+                                            {hasSelection ? 'Áp dụng cho đoạn bôi đen:' : 'Chọn kích cỡ chữ:'}
+                                        </div>
+                                        {TEXT_SIZES.map((s) => (
+                                            <button
+                                                key={s.value}
+                                                type="button"
+                                                onClick={() => handleApplyFormatting({ fontSize: s.value })}
+                                                className="w-full px-3 py-1.5 text-left hover:bg-amber-50/70 flex items-center justify-between transition group"
+                                                title={s.title}
+                                            >
+                                                <span className={`${s.preview} text-stone-800 group-hover:text-amber-800`}>
+                                                    {s.label}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Màu chữ Popover */}
+                            <div className="relative">
+                                <button
+                                    type="button"
+                                    disabled={disabled || uploading}
+                                    onClick={() => {
+                                        setShowColorPicker(prev => !prev)
+                                        setShowSizePicker(false)
+                                    }}
+                                    className={`px-2 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs ${
+                                        showColorPicker || hasSelection
+                                            ? 'border-amber-400 bg-amber-50/80 text-amber-800 ring-1 ring-amber-400/30'
+                                            : 'border-stone-200 bg-white hover:bg-stone-50 text-stone-700'
+                                    }`}
+                                    title="Chọn màu sắc chữ (Bôi đen đoạn văn bản trước để áp dụng)"
+                                >
+                                    <div className="flex items-center gap-0.5">
+                                        <span className="font-bold text-xs underline decoration-red-500 decoration-2">A</span>
+                                        <Palette className="w-3 h-3 text-amber-600" />
+                                    </div>
+                                    <span className="hidden sm:inline text-[11px]">Màu sắc</span>
+                                    <ChevronDown className="w-3 h-3 text-stone-400" />
+                                </button>
+
+                                {showColorPicker && (
+                                    <div className="absolute left-0 top-full mt-1.5 w-56 bg-white rounded-xl shadow-xl border border-stone-200 p-2 z-30 animate-in fade-in-50 zoom-in-95 space-y-1">
+                                        <div className="px-1 text-[10px] font-bold text-stone-400 uppercase tracking-wider">
+                                            {hasSelection ? 'Đổi màu cho đoạn bôi đen:' : 'Chọn màu chữ:'}
+                                        </div>
+                                        <div className="grid grid-cols-1 gap-0.5">
+                                            {TEXT_COLORS.map((c) => (
+                                                <button
+                                                    key={c.value}
+                                                    type="button"
+                                                    onClick={() => handleApplyFormatting({ color: c.value })}
+                                                    className="w-full px-2 py-1.5 rounded-lg hover:bg-stone-50 flex items-center gap-2 text-left transition group"
+                                                    title={c.desc}
+                                                >
+                                                    <span className={`w-3.5 h-3.5 rounded-full ${c.bg} flex-shrink-0 shadow-2xs group-hover:scale-110 transition`} />
+                                                    <span className="text-xs font-semibold text-stone-700 flex-1">{c.label}</span>
+                                                </button>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                onClick={() => handleApplyFormatting({ color: 'clear' })}
+                                                className="w-full px-2 py-1.5 rounded-lg hover:bg-red-50 text-stone-500 hover:text-red-700 flex items-center gap-2 text-left text-xs transition border-t border-stone-100 pt-1.5 mt-1"
+                                            >
+                                                <Eraser className="w-3.5 h-3.5" />
+                                                <span>Màu mặc định (Xóa màu)</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Cụm định dạng nhanh: B, I, U, Highlight */}
+                            <div className="flex items-center gap-0.5 border border-stone-200 rounded-lg p-0.5 bg-white shadow-2xs">
+                                <button
+                                    type="button"
+                                    disabled={disabled || uploading}
+                                    onClick={() => handleApplyFormatting({ bold: true })}
+                                    className="w-6 h-6 rounded flex items-center justify-center hover:bg-stone-100 text-stone-700 transition"
+                                    title="In đậm (Ctrl+B)"
+                                >
+                                    <Bold className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={disabled || uploading}
+                                    onClick={() => handleApplyFormatting({ italic: true })}
+                                    className="w-6 h-6 rounded flex items-center justify-center hover:bg-stone-100 text-stone-700 transition"
+                                    title="In nghiêng (Ctrl+I)"
+                                >
+                                    <Italic className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={disabled || uploading}
+                                    onClick={() => handleApplyFormatting({ underline: true })}
+                                    className="w-6 h-6 rounded flex items-center justify-center hover:bg-stone-100 text-stone-700 transition"
+                                    title="Gạch chân (Ctrl+U)"
+                                >
+                                    <Underline className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                    type="button"
+                                    disabled={disabled || uploading}
+                                    onClick={() => handleApplyFormatting({ mark: true })}
+                                    className="w-6 h-6 rounded flex items-center justify-center hover:bg-amber-100 text-amber-700 transition"
+                                    title="Dạ quang / Highlight vàng"
+                                >
+                                    <Highlighter className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+
+                            {/* Nút xóa định dạng khi đang bôi đen */}
+                            {hasSelection && (
+                                <button
+                                    type="button"
+                                    onClick={() => handleApplyFormatting({ clear: true })}
+                                    className="px-2 py-1 rounded-lg border border-stone-200 bg-white hover:bg-red-50 hover:border-red-200 text-stone-500 hover:text-red-700 text-xs flex items-center gap-1 transition shadow-2xs animate-in fade-in-50"
+                                    title="Xóa toàn bộ màu sắc và định dạng khỏi đoạn bôi đen"
+                                >
+                                    <Eraser className="w-3 h-3" />
+                                    <span className="hidden sm:inline text-[10px] font-medium">Bỏ định dạng</span>
+                                </button>
+                            )}
                         </div>
 
-                        <span className="text-[11px] text-stone-400 font-medium hidden sm:inline-block">
-                            💡 Gõ <code className="px-1.5 py-0.5 bg-stone-200 text-stone-700 rounded text-[10px] font-bold">[📷 Ảnh 1]</code> hoặc dán <kbd className="px-1 py-0.5 bg-stone-200 text-stone-700 rounded text-[10px] font-mono">Ctrl+V</kbd>
-                        </span>
+                        {/* Gợi ý trạng thái bôi đen */}
+                        <div className="flex items-center gap-1.5 text-[11px] text-stone-400 font-medium ml-auto">
+                            {hasSelection ? (
+                                <span className="text-amber-700 font-semibold flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 animate-in fade-in-50 text-[10px]">
+                                    ✨ Đã bôi đen: Chọn màu hoặc cỡ chữ
+                                </span>
+                            ) : (
+                                <span className="hidden sm:inline text-[10px]">
+                                    💡 Bôi đen chữ để đổi màu & cỡ
+                                </span>
+                            )}
+                        </div>
                     </div>
 
                     {/* Textarea: User only sees clean short tags like [📷 Ảnh 1], no long URLs! */}
@@ -430,7 +682,9 @@ export default function TaskContentEditor({
                         onChange={(e) => handleTextareaChange(e.target.value)}
                         onSelect={recordCursorPos}
                         onClick={recordCursorPos}
+                        onMouseUp={recordCursorPos}
                         onKeyUp={recordCursorPos}
+                        onKeyDown={handleKeyDown}
                         onBlur={recordCursorPos}
                         onPaste={handlePaste}
                         disabled={disabled}

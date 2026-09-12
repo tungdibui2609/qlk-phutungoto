@@ -13,6 +13,8 @@ interface PositionWithZone extends Position {
     zone_id?: string | null
 }
 
+import { FloorSuggestion } from '@/lib/warehouseArrangement'
+
 interface WarehouseStatusMapProps {
     zones: Zone[]
     positions: PositionWithZone[]
@@ -42,6 +44,8 @@ interface WarehouseStatusMapProps {
         tags?: string[]
     }>
     displayInternalInfo?: boolean
+    suggestions?: FloorSuggestion[]
+    onMoveLot?: (lotId: string, fromPosId: string, toPosId: string, lotCode: string, targetPosCode: string) => Promise<boolean>
 }
 
 interface StatusCellProps {
@@ -161,7 +165,9 @@ export default function WarehouseStatusMap({
     onConfigureZone,
     onViewDetails,
     lotInfo = {},
-    displayInternalInfo = false
+    displayInternalInfo = false,
+    suggestions = [],
+    onMoveLot
 }: WarehouseStatusMapProps) {
     const [viewingZone, setViewingZone] = React.useState<{ zone: Zone, allPositions: PositionWithZone[] } | null>(null)
     const [collapsedWarehouses, setCollapsedWarehouses] = useState<Set<string>>(() => {
@@ -169,6 +175,12 @@ export default function WarehouseStatusMap({
         zones.filter(z => !z.parent_id).forEach(z => rootNames.add(z.name))
         return rootNames
     })
+
+    const suggestionsByLevel = useMemo(() => {
+        const map = new Map<string, FloorSuggestion>()
+        suggestions.forEach(s => map.set(s.levelId, s))
+        return map
+    }, [suggestions])
 
     // Build zone tree (copied structure logic from FlexibleZoneGrid)
     const zoneTree = useMemo(() => {
@@ -941,8 +953,10 @@ export default function WarehouseStatusMap({
                                                                             return levelIds.map(lvlId => (
                                                                                 <div key={lvlId} className="flex gap-[2px] w-full px-[1px]">
                                                                                     {posByLevel.get(lvlId)!.sort((a, b) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true })).map(pos => {
-                                                                                     const isOccupied = occupiedIds.has(pos.id)
+                                                                                        const isOccupied = occupiedIds.has(pos.id)
                                                                                         const lotDetail = pos.lot_id ? lotInfo[pos.lot_id] : null
+                                                                                        const lvlSuggestion = suggestionsByLevel.get(lvlId)
+                                                                                        const canSuggestThisEmptyPos = !isOccupied && lvlSuggestion && lvlSuggestion.candidateLots.length > 0
                                                                                         let dotColor = {}
 
                                                                                         if (isOccupied) {
@@ -950,12 +964,24 @@ export default function WarehouseStatusMap({
                                                                                             dotColor = getProductColorStyle(pColor)
                                                                                         }
 
+                                                                                        const slotTitle = isOccupied && lotDetail
+                                                                                            ? `${pos.code} • ${lotDetail.items?.[0]?.internal_code || lotDetail.items?.[0]?.sku || lotDetail.code}${lotDetail.items?.[0]?.internal_name ? `\n${lotDetail.items?.[0]?.internal_name}` : ''}`
+                                                                                            : canSuggestThisEmptyPos
+                                                                                                ? `${pos.code} (Trống) • 💡 Gợi ý đưa vào: ${lvlSuggestion.dominantProduct.internalName || lvlSuggestion.dominantProduct.productName} (${lvlSuggestion.candidateLots.length} lô cùng loại)`
+                                                                                                : pos.code
+
                                                                                         return (
                                                                                             <div
                                                                                                 key={pos.id}
-                                                                                                className={`flex-1 min-w-[6px] max-w-[12px] h-[12px] rounded-[1px] ${isOccupied ? '' : 'bg-slate-200 dark:bg-slate-700'}`}
+                                                                                                className={`flex-1 min-w-[6px] max-w-[12px] h-[12px] rounded-[1px] transition-all ${
+                                                                                                    isOccupied
+                                                                                                        ? ''
+                                                                                                        : canSuggestThisEmptyPos
+                                                                                                            ? 'border border-amber-400 dark:border-amber-500 bg-amber-50 dark:bg-amber-950/50 animate-pulse'
+                                                                                                            : 'bg-slate-200 dark:bg-slate-700'
+                                                                                                }`}
                                                                                                 style={dotColor}
-                                                                                                title={`${pos.code}${isOccupied && lotDetail ? ` • ${lotDetail.items?.[0]?.internal_code || lotDetail.items?.[0]?.sku || lotDetail.code}${lotDetail.items?.[0]?.internal_name ? `\n${lotDetail.items?.[0]?.internal_name}` : ''}` : ''}`}
+                                                                                                title={slotTitle}
                                                                                             />
                                                                                         )
                                                                                     })}
@@ -985,6 +1011,8 @@ export default function WarehouseStatusMap({
                         occupiedIds={occupiedIds}
                         lotInfo={lotInfo}
                         displayInternalInfo={displayInternalInfo}
+                        suggestions={suggestions}
+                        onMoveLot={onMoveLot}
                         onClose={() => setViewingZone(null)}
                     />
                 )}
@@ -1004,6 +1032,8 @@ export default function WarehouseStatusMap({
                     occupiedIds={occupiedIds}
                     lotInfo={lotInfo}
                     displayInternalInfo={displayInternalInfo}
+                    suggestions={suggestions}
+                    onMoveLot={onMoveLot}
                     onClose={() => setViewingZone(null)}
                 />
             )}

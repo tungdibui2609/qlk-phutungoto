@@ -6,6 +6,8 @@ import {
     parseContentWithInlineImages,
     extractInlineImageUrls,
     getOptimizedThumbnailUrl,
+    stripRawImageUrlsFromText,
+    formatRichTextToHtml,
 } from './taskContentUtils'
 import ImageLightbox from './ImageLightbox'
 
@@ -41,13 +43,16 @@ export default function TaskRichContent({
         <div className={`space-y-3 leading-relaxed ${className}`}>
             {segments.map((seg, idx) => {
                 if (seg.type === 'text') {
-                    // Only render non-empty text
-                    const trimmed = seg.text.trim()
-                    if (!trimmed) return null
+                    // Loại bỏ triệt để bất kỳ đường dẫn ảnh thô nào (như base64 data:image) khỏi văn bản hiển thị
+                    const cleaned = stripRawImageUrlsFromText(seg.text).trim()
+                    if (!cleaned) return null
+                    const formattedHtml = formatRichTextToHtml(cleaned)
                     return (
-                        <div key={idx} className="whitespace-pre-line text-stone-800 text-sm leading-relaxed">
-                            {seg.text}
-                        </div>
+                        <div
+                            key={idx}
+                            className="whitespace-pre-line text-stone-800 text-sm leading-relaxed"
+                            dangerouslySetInnerHTML={{ __html: formattedHtml }}
+                        />
                     )
                 }
 

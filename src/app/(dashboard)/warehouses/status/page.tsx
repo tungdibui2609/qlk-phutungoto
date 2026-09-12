@@ -3,16 +3,19 @@ import { useState, useEffect, useMemo, Suspense, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye, PackageSearch, ChevronDown, Layers, Filter, Check, X, SlidersHorizontal, FolderTree } from 'lucide-react'
+import { BarChart3, Settings, Package, Map as MapIcon, Info, Layout, Palette, Eye, PackageSearch, ChevronDown, Layers, Filter, Check, X, SlidersHorizontal, FolderTree, Sparkles } from 'lucide-react'
 import WarehouseStatusMap from '@/components/warehouse/status/WarehouseStatusMap'
 import StatusLayoutConfigPanel from '@/components/warehouse/status/StatusLayoutConfigPanel'
 import { ProductColorConfigModal } from '@/components/warehouse/status/ProductColorConfigModal'
+import { ArrangementSuggestionsModal } from '@/components/warehouse/status/ArrangementSuggestionsModal'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
 import Protected from '@/components/auth/Protected'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { groupWarehouseData, getProductColorStyle } from '@/lib/warehouseUtils'
+import { analyzeWarehouseArrangements } from '@/lib/warehouseArrangement'
+import { logActivity } from '@/lib/audit'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -56,6 +59,7 @@ function WarehouseStatusContent() {
     const [viewingLot, setViewingLot] = useState<any>(null)
     const [qrLot, setQrLot] = useState<any>(null)
     const [isColorModalOpen, setIsColorModalOpen] = useState(false)
+    const [isSuggestionsModalOpen, setIsSuggestionsModalOpen] = useState(false)
 
     // Thống kê theo danh mục sản phẩm (Category Stats)
     const [categories, setCategories] = useState<any[]>([])
@@ -550,6 +554,73 @@ function WarehouseStatusContent() {
         return { displayZones: filteredZones, displayPositions: filteredPositions }
     }, [isGroupMergingEnabled, filteredZones, filteredPositions])
 
+    // Gợi ý sắp xếp hàng hóa cùng loại vào các vị trí còn thiếu
+    const arrangementSuggestions = useMemo(() => {
+        return analyzeWarehouseArrangements(displayPositions, displayZones, lotInfo, isHallZoneId)
+    }, [displayPositions, displayZones, lotInfo, isHallZoneId])
+
+    const handleMoveLotToPosition = async (
+        lotId: string,
+        fromPosId: string,
+        toPosId: string,
+        lotCode: string,
+        targetPosCode: string
+    ): Promise<boolean> => {
+        try {
+            // 1. Unassign current position if any
+            if (fromPosId) {
+                const { error: clearErr } = await (supabase.from('positions') as any)
+                    .update({ lot_id: null })
+                    .eq('id', fromPosId)
+                if (clearErr) throw clearErr
+
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: fromPosId,
+                    action: 'UPDATE',
+                    oldData: { lot_id: lotId },
+                    newData: { lot_id: null },
+                    systemCode: currentSystem?.code || ''
+                })
+            }
+
+            // 2. Assign to new target position
+            const { error: assignErr } = await (supabase.from('positions') as any)
+                .update({ lot_id: lotId })
+                .eq('id', toPosId)
+            if (assignErr) throw assignErr
+
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: toPosId,
+                action: 'UPDATE',
+                oldData: { lot_id: null },
+                newData: { lot_id: lotId },
+                systemCode: currentSystem?.code || ''
+            })
+
+            // 3. Update local state immediately
+            setPositions(prev => prev.map(p => {
+                if (p.id === fromPosId) {
+                    return { ...p, lot_id: null }
+                }
+                if (p.id === toPosId) {
+                    return { ...p, lot_id: lotId }
+                }
+                return p
+            }))
+
+            showToast(`Đã đưa lô ${lotCode} vào vị trí ${targetPosCode} thành công!`, 'success')
+            return true
+        } catch (err: any) {
+            console.error('Lỗi khi chuyển vị trí lô hàng:', err)
+            showToast(`Không thể chuyển vị trí: ${err.message}`, 'error')
+            return false
+        }
+    }
+
     // Generate Legend Data
     const legendItems = useMemo(() => {
         const colorMap = new Map<string, { code: string, name: string, sort_order: number | null }>()
@@ -608,6 +679,19 @@ function WarehouseStatusContent() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsSuggestionsModalOpen(true)}
+                        className="flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white active:scale-95 border border-amber-400/40 relative group"
+                        title="Gợi ý sắp xếp & lấp đầy vị trí còn thiếu bằng hàng cùng loại"
+                    >
+                        <Sparkles size={14} className="animate-pulse text-amber-200" />
+                        <span>GỢI Ý SẮP XẾP</span>
+                        {arrangementSuggestions.length > 0 && (
+                            <span className="ml-0.5 px-1.5 py-0.2 bg-white text-amber-700 font-black rounded-full text-[9px] shadow-xs">
+                                {arrangementSuggestions.length}
+                            </span>
+                        )}
+                    </button>
                     <button
                         onClick={() => setIsCompactMode(!isCompactMode)}
                         className={`flex items-center gap-1.5 px-3.5 h-8 rounded-xl font-bold text-[10px] transition-all shadow-sm active:scale-95 ${
@@ -1020,6 +1104,8 @@ function WarehouseStatusContent() {
                     isDesignMode={isDesignMode}
                     isCompactMode={isCompactMode}
                     displayInternalInfo={displayInternalInfo}
+                    suggestions={arrangementSuggestions}
+                    onMoveLot={handleMoveLotToPosition}
                     onToggleCollapse={toggleZoneCollapse}
                     onUpdateCollapsedWarehouses={setCollapsedZones}
                     onConfigureZone={setConfiguringZone}
@@ -1063,6 +1149,19 @@ function WarehouseStatusContent() {
                     onClose={() => setIsColorModalOpen(false)}
                     onSaved={fetchData}
                     displayInternalInfo={displayInternalInfo}
+                />
+            )}
+
+            {isSuggestionsModalOpen && (
+                <ArrangementSuggestionsModal
+                    suggestions={arrangementSuggestions}
+                    warehouses={warehouses.map(w => ({ id: w.id, name: w.name }))}
+                    displayInternalInfo={displayInternalInfo}
+                    onClose={() => setIsSuggestionsModalOpen(false)}
+                    onMoveLot={handleMoveLotToPosition}
+                    onSelectZone={(binId) => {
+                        setSelectedZoneId(binId)
+                    }}
                 />
             )}
         </div>

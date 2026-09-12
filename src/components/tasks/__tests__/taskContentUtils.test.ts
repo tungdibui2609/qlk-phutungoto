@@ -118,6 +118,67 @@ nhớ kiểm tra kệ A`
         expect(isTaskAssignedToTeam(broadcastTask, 'Đội Thống kê')).toBe(true)
         expect(isTaskAssignedToTeam(broadcastTask, 'Xe nâng cao')).toBe(true)
     })
+
+    it('never leaks raw data:image url into text segments when parsing markdown image with fallbackImages', () => {
+        const base64Img = 'data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/test123456789'
+        const contentWithBase64 = `thư máy\n\n![Ảnh 1](${base64Img})\n\nlàm xong chụp hình lại`
+        const fallbackImages = [base64Img]
+
+        const segments = parseContentWithInlineImages(contentWithBase64, fallbackImages)
+        expect(segments).toHaveLength(3)
+        expect(segments[0].type).toBe('text')
+        expect((segments[0] as any).text.trim()).toBe('thư máy')
+
+        expect(segments[1].type).toBe('image')
+        expect((segments[1] as any).alt).toBe('Ảnh 1')
+        expect((segments[1] as any).url).toBe(base64Img)
+
+        expect(segments[2].type).toBe('text')
+        expect((segments[2] as any).text.trim()).toBe('làm xong chụp hình lại')
+        // Tuyệt đối không được chứa chuỗi data:image trong text
+        expect((segments[2] as any).text).not.toContain('data:image')
+    })
+
+    it('strips any leaked raw data:image or parentheses url from text', () => {
+        const rawTextWithLeak = '(data:image/jpeg;base64,/9j/4AAQSkZJRg==)\n\nlàm xong chụp hình lại'
+        const cleaned = getCardContentPreview(rawTextWithLeak)
+        expect(cleaned).toBe('làm xong chụp hình lại')
+        expect(cleaned).not.toContain('data:image')
+    })
+
+    it('applies text color and font size to selected text correctly', async () => {
+        const { applyStyleToSelectedText } = await import('../taskContentUtils')
+        const originalText = 'Không được ghép hàng tem vàng với tem đỏ'
+
+        // 1. Áp dụng màu đỏ cho đoạn bôi đen
+        const redResult = applyStyleToSelectedText(originalText, 0, originalText.length, {
+            color: '#dc2626',
+        })
+        expect(redResult.newText).toBe('<span style="color:#dc2626">Không được ghép hàng tem vàng với tem đỏ</span>')
+
+        // 2. Áp dụng cỡ chữ to tiếp theo
+        const sizeResult = applyStyleToSelectedText(redResult.newText, 0, redResult.newText.length, {
+            fontSize: '1.25em',
+        })
+        expect(sizeResult.newText).toContain('color:#dc2626')
+        expect(sizeResult.newText).toContain('font-size:1.25em')
+
+        // 3. Xóa định dạng
+        const clearResult = applyStyleToSelectedText(sizeResult.newText, 0, sizeResult.newText.length, {
+            clear: true,
+        })
+        expect(clearResult.newText).toBe(originalText)
+    })
+
+    it('renders safe rich text html with styled color and font size', async () => {
+        const { formatRichTextToHtml } = await import('../taskContentUtils')
+        const input = '<span style="color:#dc2626;font-size:1.18em">Không được ghép hàng</span>\n<script>alert(1)</script>'
+        const html = formatRichTextToHtml(input)
+        expect(html).toContain('<span style="color:#dc2626;font-size:1.18em">Không được ghép hàng</span>')
+        // Tuyệt đối không cho phép script
+        expect(html).not.toContain('<script>')
+        expect(html).not.toContain('alert(1)')
+    })
 })
 
 
