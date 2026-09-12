@@ -217,9 +217,13 @@ export default function MobileShiftTasksView({
             const total = teamTasks.length
 
             // Unacknowledged by current user
-            const unackTasks = teamTasks.filter(
-                t => t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
-            )
+            const unackTasks = teamTasks.filter(t => {
+                const isReminder = getTaskType(t) === 'reminder'
+                if (isReminder) {
+                    return !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+                }
+                return t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+            })
 
             // Tasks not acknowledged by ANY member of this team
             const teamMembers = allMembers.filter(m => m.team_id === team.id)
@@ -227,7 +231,8 @@ export default function MobileShiftTasksView({
             const teamMemberNames = new Set(teamMembers.map(m => m.full_name?.trim().toLowerCase()).filter(Boolean))
 
             const teamUnackTasks = teamTasks.filter(t => {
-                if (t.status === 'completed') return false
+                const isReminder = getTaskType(t) === 'reminder'
+                if (t.status === 'completed' && !isReminder) return false
                 const acks: any[] = Array.isArray(t.acknowledgements) && t.acknowledgements.length > 0
                     ? t.acknowledgements
                     : (t.acknowledged_by_name ? [{ user_id: t.acknowledged_by, user_name: t.acknowledged_by_name }] : [])
@@ -240,6 +245,21 @@ export default function MobileShiftTasksView({
 
             // Acknowledged (in_progress or acknowledged by user/team, but not completed)
             const acknowledgedTasks = teamTasks.filter(t => {
+                const isReminder = getTaskType(t) === 'reminder'
+                if (isReminder) {
+                    if (t.status === 'completed') return false
+                    if (isMyTeam) {
+                        return hasUserAcknowledged(t, profile?.id, profile?.full_name)
+                    } else {
+                        const acks: any[] = Array.isArray(t.acknowledgements) && t.acknowledgements.length > 0
+                            ? t.acknowledgements
+                            : (t.acknowledged_by_name ? [{ user_id: t.acknowledged_by, user_name: t.acknowledged_by_name }] : [])
+                        return acks.some(a => 
+                            (a.user_id && teamMemberUserIds.has(a.user_id)) ||
+                            (a.user_name && teamMemberNames.has(a.user_name.trim().toLowerCase()))
+                        )
+                    }
+                }
                 if (t.status === 'completed') return false
                 if (isMyTeam) {
                     return hasUserAcknowledged(t, profile?.id, profile?.full_name) || t.status === 'in_progress'
@@ -255,7 +275,23 @@ export default function MobileShiftTasksView({
                 }
             }).sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
 
-            const completedTasksList = teamTasks.filter(t => t.status === 'completed').sort(
+            const completedTasksList = teamTasks.filter(t => {
+                if (t.status !== 'completed') return false
+                const isReminder = getTaskType(t) === 'reminder'
+                if (isReminder) {
+                    if (isMyTeam) {
+                        return hasUserAcknowledged(t, profile?.id, profile?.full_name)
+                    }
+                    const acks: any[] = Array.isArray(t.acknowledgements) && t.acknowledgements.length > 0
+                        ? t.acknowledgements
+                        : (t.acknowledged_by_name ? [{ user_id: t.acknowledged_by, user_name: t.acknowledged_by_name }] : [])
+                    return acks.some(a => 
+                        (a.user_id && teamMemberUserIds.has(a.user_id)) ||
+                        (a.user_name && teamMemberNames.has(a.user_name.trim().toLowerCase()))
+                    )
+                }
+                return true
+            }).sort(
                 (a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
             )
 
@@ -789,14 +825,13 @@ export default function MobileShiftTasksView({
                                                 )
                                             ) : (
                                                 item.teamUnackCount > 0 ? (
-                                                    <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500 text-white font-bold text-[11px] shadow-xs flex-shrink-0">
-                                                        <Clock className="w-3 h-3" />
-                                                        <span>{item.teamUnackCount} chưa nhận</span>
+                                                    <div className="text-[10.5px] font-medium text-stone-400 px-2.5 py-0.5 rounded-full bg-stone-50 border border-stone-100 flex-shrink-0">
+                                                        Chờ đội nhận
                                                     </div>
                                                 ) : item.total > 0 ? (
                                                     <div className="flex items-center gap-1 text-[10.5px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-0.5 rounded-full flex-shrink-0">
-                                                        <Check className="w-3 h-3" />
-                                                        <span>Đội đã nhận hết</span>
+                                                        <Check className="w-3 h-3 text-emerald-600" />
+                                                        <span>Đội đã nhận</span>
                                                     </div>
                                                 ) : (
                                                     <div className="text-[10.5px] text-stone-400 px-2 py-0.5 rounded-full bg-stone-50 border border-stone-100 flex-shrink-0">
@@ -839,7 +874,7 @@ export default function MobileShiftTasksView({
                                                 }`}
                                             >
                                                 <span>Chờ nhận</span>
-                                                {item.waitingAckTasks.length > 0 && (
+                                                {item.isMyTeam && item.waitingAckTasks.length > 0 && (
                                                     <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
                                                         currentStage === 'waiting_ack'
                                                             ? 'bg-rose-600 text-white'
@@ -925,8 +960,9 @@ export default function MobileShiftTasksView({
                                                         (profile?.id && task.created_by && profile.id === task.created_by) ||
                                                         (profile?.full_name && task.created_by_name && profile.full_name.trim().toLowerCase() === task.created_by_name.trim().toLowerCase())
                                                     )
+                                                    const isReminder = getTaskType(task) === 'reminder'
                                                     const canAckThisTask = canUserAcknowledgeTask(task, profile, rawMyTeamNames, allMembers, teams)
-                                                    const needsMyAck = !isTaskCompleted && !hasUserAcknowledged(task, profile?.id, profile?.full_name) && canAckThisTask
+                                                    const needsMyAck = (!isTaskCompleted || isReminder) && !hasUserAcknowledged(task, profile?.id, profile?.full_name) && canAckThisTask && item.isMyTeam
 
                                                     return (
                                                         <div

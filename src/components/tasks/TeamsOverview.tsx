@@ -20,7 +20,7 @@ import {
     Sparkles
 } from 'lucide-react'
 import { ShiftTask, TaskPriority } from './types'
-import { formatDateTime, formatDateRelative, isTaskAssignedToTeam, hasUserAcknowledged, hasTeamAcknowledged } from './taskUtils'
+import { formatDateTime, formatDateRelative, isTaskAssignedToTeam, hasUserAcknowledged, hasTeamAcknowledged, getTaskType, getAssignedTeams, isTaskAssignedToAll } from './taskUtils'
 
 interface TeamsOverviewProps {
     teams: { id: string; name: string }[]
@@ -76,14 +76,22 @@ export default function TeamsOverview({
         const teamTasks = tasks.filter((t) => isTaskAssignedToTeam(t, team.name))
 
         // Tasks that current user has NOT acknowledged yet
-        const userUnackTasks = teamTasks.filter(
-            (t) => t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
-        )
+        const userUnackTasks = teamTasks.filter((t) => {
+            const isReminder = getTaskType(t) === 'reminder'
+            if (isReminder) {
+                return !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+            }
+            return t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+        })
 
         // Tasks that NO member of THIS team has acknowledged yet
-        const teamUnackTasks = teamTasks.filter(
-            (t) => t.status !== 'completed' && !hasTeamAcknowledged(t, team, allMembers)
-        )
+        const teamUnackTasks = teamTasks.filter((t) => {
+            const isReminder = getTaskType(t) === 'reminder'
+            if (isReminder) {
+                return !hasTeamAcknowledged(t, team, allMembers)
+            }
+            return t.status !== 'completed' && !hasTeamAcknowledged(t, team, allMembers)
+        })
 
         // Chờ xác nhận: Với đội của mình là việc mình chưa xác nhận; với đội khác là việc chưa ai trong đội xác nhận
         const waitingAckTasks = (isMyTeam ? userUnackTasks : teamUnackTasks).sort(
@@ -93,6 +101,15 @@ export default function TeamsOverview({
 
         // Đã xác nhận: Chưa hoàn thành nhưng đã có người nhận (hoặc status in_progress hoặc đã ack)
         const acknowledgedTasks = teamTasks.filter((t) => {
+            const isReminder = getTaskType(t) === 'reminder'
+            if (isReminder) {
+                if (t.status === 'completed') return false
+                if (isMyTeam) {
+                    return hasUserAcknowledged(t, profile?.id, profile?.full_name)
+                } else {
+                    return hasTeamAcknowledged(t, team, allMembers)
+                }
+            }
             if (t.status === 'completed') return false
             if (isMyTeam) {
                 return hasUserAcknowledged(t, profile?.id, profile?.full_name) || t.status === 'in_progress'
@@ -104,7 +121,17 @@ export default function TeamsOverview({
         )
 
         // Hoàn thành
-        const completedTasks = teamTasks.filter((t) => t.status === 'completed').sort(
+        const completedTasks = teamTasks.filter((t) => {
+            if (t.status !== 'completed') return false
+            const isReminder = getTaskType(t) === 'reminder'
+            if (isReminder) {
+                if (isMyTeam) {
+                    return hasUserAcknowledged(t, profile?.id, profile?.full_name)
+                }
+                return hasTeamAcknowledged(t, team, allMembers)
+            }
+            return true
+        }).sort(
             (a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime()
         )
 
@@ -135,12 +162,18 @@ export default function TeamsOverview({
 
     // 2. Also check tasks not assigned to any registered team (e.g. Ca 1, Ca 2, Chung)
     const genericTasks = tasks.filter((t) => {
-        return !teams.some((team) => isTaskAssignedToTeam(t, team.name))
+        if (isTaskAssignedToAll(t)) return false
+        const assignedTeams = getAssignedTeams(t, teams)
+        return assignedTeams.length === 0
     })
 
-    const genericUnacknowledged = genericTasks.filter(
-        (t) => t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
-    )
+    const genericUnacknowledged = genericTasks.filter((t) => {
+        const isReminder = getTaskType(t) === 'reminder'
+        if (isReminder) {
+            return !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+        }
+        return t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+    })
 
     // Total unacknowledged tasks for the current logged-in user:
     // If user has specific teams, only count unacknowledged tasks in their teams (+ generic tasks)
@@ -378,19 +411,15 @@ export default function TeamsOverview({
                                                 </div>
                                             )
                                         ) : (
-                                            // Dành cho các đội khác (hiển thị xem đội đó đã tiếp nhận hay chưa)
+                                            // Dành cho các đội khác (không hiện box số cảnh báo cam giục nhận việc)
                                             item.teamUnackCount > 0 ? (
-                                                <div
-                                                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500 text-white font-bold text-[11px] shadow-sm flex-shrink-0"
-                                                    title={`${item.teamUnackCount} việc chưa có thành viên đội này tiếp nhận`}
-                                                >
-                                                    <Clock className="w-3.5 h-3.5" />
-                                                    <span>{item.teamUnackCount} việc chưa nhận</span>
+                                                <div className="text-[11px] font-medium text-stone-400 px-2.5 py-1 rounded-xl bg-stone-50 border border-stone-100 flex-shrink-0">
+                                                    Chờ đội nhận
                                                 </div>
                                             ) : item.total > 0 ? (
                                                 <div className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-xl flex-shrink-0">
                                                     <Check className="w-3 h-3 text-emerald-600" />
-                                                    <span>Đội đã nhận hết</span>
+                                                    <span>Đội đã nhận</span>
                                                 </div>
                                             ) : (
                                                 <div className="text-[11px] text-stone-400 px-2 py-0.5 rounded bg-stone-50 border border-stone-100">
@@ -429,7 +458,7 @@ export default function TeamsOverview({
                                             }`}
                                         >
                                             <span>Chờ nhận</span>
-                                            {item.waitingAckTasks.length > 0 && (
+                                            {item.isMyTeam && item.waitingAckTasks.length > 0 && (
                                                 <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-black ${
                                                     currentStage === 'waiting_ack'
                                                         ? 'bg-rose-600 text-white'
@@ -516,8 +545,8 @@ export default function TeamsOverview({
                                                 const isTaskCompleted = task.status === 'completed'
                                                 const isTaskPending = task.status === 'pending'
                                                 const isTaskInProgress = task.status === 'in_progress'
-
-                                                const needsMyAck = !isTaskCompleted && !hasUserAcknowledged(task, profile?.id, profile?.full_name) && (item.isMyTeam || profile?.roles?.code === 'admin' || (profile as any)?.role === 'admin')
+                                                const isReminder = getTaskType(task) === 'reminder'
+                                                const needsMyAck = (!isTaskCompleted || isReminder) && !hasUserAcknowledged(task, profile?.id, profile?.full_name) && item.isMyTeam
 
                                                 return (
                                                     <div

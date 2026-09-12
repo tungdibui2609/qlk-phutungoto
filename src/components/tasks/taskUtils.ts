@@ -221,6 +221,32 @@ export const getTaskType = (task?: { task_type?: string | null; code?: string; t
 }
 
 /**
+ * Kiểm tra xem công việc / lời nhắc có được giao cho Toàn bộ / Tất cả các đội hay không
+ */
+export const isTaskAssignedToAll = (task?: { target_shifts?: string[]; target_shift?: string | null | any } | null): boolean => {
+    if (!task) return false
+    const isAll = (s: any) => {
+        const lower = String(s || '').trim().toLowerCase()
+        return lower === 'toàn bộ' || lower === 'toàn đội' || lower === 'tất cả' || lower === 'tất cả các đội' || lower === 'toàn ca'
+    }
+
+    if (Array.isArray(task?.target_shifts) && task.target_shifts.length > 0) {
+        if (task.target_shifts.some(isAll)) return true
+    }
+
+    if (Array.isArray(task?.target_shift)) {
+        if (task.target_shift.some(isAll)) return true
+    }
+
+    if (typeof task?.target_shift === 'string' && task.target_shift.trim()) {
+        const parts = task.target_shift.split(',').map(s => s.trim().toLowerCase())
+        if (parts.some(isAll)) return true
+    }
+
+    return false
+}
+
+/**
  * Check if a task is assigned to a specific team
  */
 export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_shift?: string | null | any }, teamName: string): boolean => {
@@ -228,14 +254,10 @@ export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_sh
     if (!rawTarget) return false
     const withPrefix = `đội ${rawTarget}`.toLowerCase()
 
-    const isAll = (s: any) => {
-        const lower = String(s || '').trim().toLowerCase()
-        return lower === 'toàn bộ' || lower === 'toàn đội' || lower === 'tất cả' || lower === 'tất cả các đội' || lower === 'toàn ca'
-    }
+    if (isTaskAssignedToAll(task)) return true
 
     // 1. Check in target_shifts array
     if (Array.isArray(task?.target_shifts) && task.target_shifts.length > 0) {
-        if (task.target_shifts.some(isAll)) return true
         return task.target_shifts.some(s => {
             const val = String(s || '').trim().toLowerCase()
             return val === rawTarget || val === withPrefix || val.includes(rawTarget)
@@ -244,7 +266,6 @@ export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_sh
 
     // 2. Check in target_shift (array, comma-separated string, or single string)
     if (Array.isArray(task?.target_shift)) {
-        if (task.target_shift.some(isAll)) return true
         return task.target_shift.some(s => {
             const val = String(s || '').trim().toLowerCase()
             return val === rawTarget || val === withPrefix || val.includes(rawTarget)
@@ -253,7 +274,6 @@ export const isTaskAssignedToTeam = (task: { target_shifts?: string[]; target_sh
 
     if (typeof task?.target_shift === 'string' && task.target_shift.trim()) {
         const parts = task.target_shift.split(',').map(s => s.trim().toLowerCase())
-        if (parts.some(isAll)) return true
         return parts.some(p => p === rawTarget || p === withPrefix || p.includes(rawTarget))
     }
 
@@ -364,8 +384,13 @@ export const canUserAcknowledgeTask = (
 ): boolean => {
     if (!task || !profile) return false
 
-    // Nếu công việc đã xong hoặc đã hủy -> không cần nhận nữa
-    if (task.status === 'completed' || task.status === 'cancelled') return false
+    // Nếu công việc đã bị hủy -> không cần nhận nữa
+    if (task.status === 'cancelled') return false
+
+    // Đối với công việc bình thường: nếu đã hoàn thành -> không nhận nữa
+    // NHƯNG đối với LỜI NHẮC (reminder): bất kỳ thành viên nào chưa tiếp nhận vẫn có quyền bấm tiếp nhận/đã đọc!
+    const isReminder = getTaskType(task) === 'reminder'
+    if (task.status === 'completed' && !isReminder) return false
 
     // 1. Nếu là người được chỉ định đích danh -> có quyền tiếp nhận
     const isDesignatedAssignee = Boolean(
@@ -374,13 +399,16 @@ export const canUserAcknowledgeTask = (
     )
     if (isDesignatedAssignee) return true
 
-    // 2. Lấy danh sách các đội được giao việc
-    const assignedTeams = getAssignedTeams(task)
+    // 2. Nếu giao cho Toàn bộ / Tất cả các đội -> bất kỳ ai cũng có quyền tiếp nhận
+    if (isTaskAssignedToAll(task)) return true
+
+    // 3. Lấy danh sách các đội được giao việc
+    const assignedTeams = getAssignedTeams(task, teams)
 
     // Nếu không chỉ định đội nào cụ thể (giao chung toàn ca) -> ai trong ca cũng có thể nhận
     if (assignedTeams.length === 0) return true
 
-    // 3. Kiểm tra xem người dùng có thuộc một trong các đội được giao việc hay không
+    // 4. Kiểm tra xem người dùng có thuộc một trong các đội được giao việc hay không
     const userTeamNorms = new Set(
         myTeamNames.map(name => (name || '').toLowerCase().replace(/^đội\s+/, '').trim()).filter(Boolean)
     )
@@ -462,8 +490,21 @@ export const hasTeamAcknowledged = (
 /**
  * Lấy danh sách tên các đội được giao trong một task (chuẩn hóa dạng: 'Đội Thống kê', 'Đội Xe nâng cao'...)
  */
-export const getAssignedTeams = (task: { target_shifts?: string[]; target_shift?: string | null | any }): string[] => {
+export const getAssignedTeams = (
+    task: { target_shifts?: string[]; target_shift?: string | null | any },
+    allTeamsList?: { id?: string; name: string }[]
+): string[] => {
     if (!task) return []
+    // Nếu giao cho "Toàn bộ" và có danh sách tất cả các đội -> trả về toàn bộ tên các đội
+    if (isTaskAssignedToAll(task) && Array.isArray(allTeamsList) && allTeamsList.length > 0) {
+        return allTeamsList.map(t => {
+            const trimmed = String(t?.name || '').trim()
+            return trimmed.startsWith('Đội ') || trimmed.startsWith('đội ')
+                ? 'Đội ' + trimmed.replace(/^[đĐ]ội\s+/, '')
+                : `Đội ${trimmed}`
+        })
+    }
+
     const rawList: string[] = Array.isArray(task.target_shifts) && task.target_shifts.length > 0
         ? task.target_shifts
         : (Array.isArray(task.target_shift)
@@ -691,21 +732,22 @@ export const getTaskTeamProgress = (
     isReminder: boolean
 } => {
     const isReminder = getTaskType(task) === 'reminder'
-    const assignedTeams = getAssignedTeams(task)
+    const assignedTeams = getAssignedTeams(task, teams)
     const completedTeams = getTeamCompletions(task)
 
     // Nếu không giao cụ thể cho đội nào (giao ca chung): tính tổng là 1
     if (assignedTeams.length === 0) {
         const acks = Array.isArray(task?.acknowledgements) ? task.acknowledgements : []
-        const isDone = task?.status === 'completed' || (isReminder && acks.length > 0)
+        // Đối với lời nhắc không gán đội cụ thể: không tự ý hoàn tất chỉ vì 1 người bấm tiếp nhận (acks.length > 0)
+        const isDone = task?.status === 'completed'
         return {
             assignedTeams: [],
             completedTeams,
             total: 1,
             completedCount: isDone ? 1 : 0,
-            ackedCount: acks.length > 0 ? 1 : 0,
-            ratioText: isDone ? '1/1' : '0/1',
-            percent: isDone ? 100 : 0,
+            ackedCount: acks.length,
+            ratioText: isDone ? '1/1' : `${acks.length} người đã nhận`,
+            percent: isDone ? 100 : (acks.length > 0 ? 50 : 0),
             isAllCompleted: isDone,
             isReminder,
         }

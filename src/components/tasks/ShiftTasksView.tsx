@@ -90,9 +90,13 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
 
     // Total unacknowledged tasks for the current logged-in user
     const totalMyUnacknowledged = useMemo(() => {
-        return tasks.filter(t => 
-            t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
-        ).length
+        return tasks.filter(t => {
+            const isReminder = getTaskType(t) === 'reminder'
+            if (isReminder) {
+                return !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+            }
+            return t.status !== 'completed' && !hasUserAcknowledged(t, profile?.id, profile?.full_name)
+        }).length
     }, [tasks, profile?.id, profile?.full_name])
 
     // Current user team names
@@ -338,7 +342,24 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
     const filteredTasks = useMemo(() => {
         const filtered = tasks.filter((t: ShiftTask) => {
             // Status filter
-            if (statusFilter !== 'all' && t.status !== statusFilter) return false
+            if (statusFilter !== 'all') {
+                const isReminder = getTaskType(t) === 'reminder'
+                if (statusFilter === 'pending') {
+                    if (isReminder) {
+                        if (hasUserAcknowledged(t, profile?.id, profile?.full_name)) return false
+                    } else if (t.status !== 'pending') {
+                        return false
+                    }
+                } else if (statusFilter === 'completed') {
+                    if (isReminder) {
+                        if (!hasUserAcknowledged(t, profile?.id, profile?.full_name)) return false
+                    } else if (t.status !== 'completed') {
+                        return false
+                    }
+                } else if (t.status !== statusFilter) {
+                    return false
+                }
+            }
 
             // Shift filter
             // Shift / Team filter
@@ -476,10 +497,12 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
             if (isReminder) {
                 const tempTask = { ...task, acknowledgements: updatedAcks }
                 const progress = getTaskTeamProgress(tempTask, allMembers, teams)
-                if (progress.isAllCompleted) {
+                if (progress.assignedTeams.length > 0 && progress.completedCount >= progress.total) {
                     newStatus = 'completed'
                     completedAt = now
-                    completedByName = 'Các đội đã tiếp nhận'
+                    completedByName = 'Tất cả các đội đã tiếp nhận'
+                } else if (task.status === 'completed') {
+                    newStatus = 'completed'
                 }
             }
 

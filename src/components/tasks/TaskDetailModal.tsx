@@ -285,14 +285,17 @@ export default function TaskDetailModal({
             let completedAt = task.completed_at
             let completedByName = task.completed_by_name
 
-            // Với LỜI NHẮC: nếu tất cả các đội đều đã nhận -> hoàn tất
+            // Với LỜI NHẮC: chỉ tự động hoàn tất nếu CÓ danh sách đội cụ thể và TẤT CẢ các đội đều đã có người tiếp nhận
             if (isReminder) {
                 const tempTask = { ...task, acknowledgements: updatedAcks }
                 const progress = getTaskTeamProgress(tempTask, allMembers, teams)
-                if (progress.isAllCompleted) {
+                if (progress.assignedTeams.length > 0 && progress.completedCount >= progress.total) {
                     newStatus = 'completed'
                     completedAt = now
-                    completedByName = 'Các đội đã tiếp nhận'
+                    completedByName = 'Tất cả các đội đã tiếp nhận'
+                } else if (task.status === 'completed') {
+                    // Nếu task đã ở trạng thái completed từ trước (thành viên tiếp tục vào xác nhận), giữ nguyên completed
+                    newStatus = 'completed'
                 }
             }
 
@@ -1285,37 +1288,71 @@ export default function TaskDetailModal({
                         )}
 
                         {isCompleted && (
-                            <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-3">
-                                <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 mt-0.5">
-                                    <CheckCircle2 className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="text-sm font-bold text-emerald-900">Công việc đã hoàn thành</h4>
-                                    <p className="text-xs text-emerald-700 mt-0.5">
-                                        Hoàn tất bởi <strong>{task.completed_by_name}</strong> lúc {formatDateTime(task.completed_at)}
-                                    </p>
-                                    {task.completion_notes && (
-                                        <p className="text-xs text-emerald-800 mt-2 p-2.5 rounded-lg bg-emerald-100/60 font-medium">
-                                            📝 Ghi chú hoàn thành: {task.completion_notes}
+                            <div className="space-y-3">
+                                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 flex items-start gap-3">
+                                    <div className="p-2 rounded-lg bg-emerald-100 text-emerald-700 mt-0.5">
+                                        <CheckCircle2 className="w-5 h-5" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <h4 className="text-sm font-bold text-emerald-900">
+                                            {isReminder ? 'Lời nhắc đã được tiếp nhận' : 'Công việc đã hoàn thành'}
+                                        </h4>
+                                        <p className="text-xs text-emerald-700 mt-0.5">
+                                            Hoàn tất bởi <strong>{task.completed_by_name}</strong> lúc {formatDateTime(task.completed_at)}
                                         </p>
-                                    )}
-                                    {acks.length > 0 && (
-                                        <div className="mt-2.5 pt-2.5 border-t border-emerald-200/60">
-                                            <span className="text-[11px] font-bold text-emerald-900 block mb-1">
-                                                👥 Các thành viên đã tiếp nhận ({acks.length}):
-                                            </span>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {acks.map((ack, i) => (
-                                                    <span key={i} className="inline-flex items-center gap-1 text-[11px] bg-white border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-md font-medium shadow-2xs">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                                                        {ack.user_name}
-                                                        <span className="text-[10px] text-stone-400">({formatDateTime(ack.acknowledged_at)})</span>
-                                                    </span>
-                                                ))}
+                                        {task.completion_notes && (
+                                            <p className="text-xs text-emerald-800 mt-2 p-2.5 rounded-lg bg-emerald-100/60 font-medium">
+                                                📝 Ghi chú hoàn thành: {task.completion_notes}
+                                            </p>
+                                        )}
+                                        {acks.length > 0 && (
+                                            <div className="mt-2.5 pt-2.5 border-t border-emerald-200/60">
+                                                <span className="text-[11px] font-bold text-emerald-900 block mb-1">
+                                                    👥 Các thành viên đã tiếp nhận ({acks.length}):
+                                                </span>
+                                                <div className="flex flex-wrap gap-1.5">
+                                                    {acks.map((ack, i) => (
+                                                        <span key={i} className="inline-flex items-center gap-1 text-[11px] bg-white border border-emerald-200 text-emerald-800 px-2 py-0.5 rounded-md font-medium shadow-2xs">
+                                                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                                            {ack.user_name}
+                                                            <span className="text-[10px] text-stone-400">({formatDateTime(ack.acknowledged_at)})</span>
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Banner xác nhận tiếp nhận nếu thành viên chưa xác nhận */}
+                                {!hasMyAck && canAcknowledge && (
+                                    <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in duration-200">
+                                        <div className="flex items-start gap-2.5">
+                                            <div className="p-1.5 rounded-lg bg-amber-100 text-amber-700 mt-0.5 flex-shrink-0">
+                                                <Clock className="w-4 h-4" />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-bold text-amber-900">
+                                                    Bạn chưa xác nhận tiếp nhận {isReminder ? 'lời nhắc này' : 'công việc này'}
+                                                </p>
+                                                <p className="text-[11px] text-amber-700 mt-0.5">
+                                                    {isReminder 
+                                                        ? 'Hãy bấm xác nhận để ghi nhận bạn đã đọc và nắm bắt lời nhắc này.' 
+                                                        : 'Hãy bấm xác nhận để ghi nhận bạn đã tham gia tiếp nhận công việc.'}
+                                                </p>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
+                                        <button
+                                            type="button"
+                                            onClick={handleAcknowledge}
+                                            disabled={acknowledging}
+                                            className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/25 flex items-center justify-center gap-1.5 transition flex-shrink-0"
+                                        >
+                                            {acknowledging ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                            <span>{isReminder ? 'Xác nhận đã đọc & tiếp nhận' : 'Tôi cũng tiếp nhận'}</span>
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -1326,24 +1363,31 @@ export default function TaskDetailModal({
                             Cập nhật lần cuối: {formatDateTime(task.updated_at)}
                         </span>
                         <div className="flex items-center gap-2">
-                            {isPending && !hasMyAck && canAcknowledge && (
+                            {!hasMyAck && canAcknowledge && (
                                 <button
+                                    type="button"
                                     onClick={handleAcknowledge}
                                     disabled={acknowledging}
-                                    className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-md shadow-amber-600/25 flex items-center gap-1.5 transition"
+                                    className={`px-4 sm:px-5 py-2 rounded-xl text-white text-xs font-bold shadow-md flex items-center gap-1.5 transition flex-shrink-0 ${
+                                        isPending
+                                            ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25'
+                                            : isCompleted
+                                            ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/25'
+                                            : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/25'
+                                    }`}
                                 >
-                                    <Check className="w-4 h-4" />
-                                    <span>Xác nhận tiếp nhận</span>
-                                </button>
-                            )}
-                            {isInProgress && !hasMyAck && canAcknowledge && (
-                                <button
-                                    onClick={handleAcknowledge}
-                                    disabled={acknowledging}
-                                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-md shadow-blue-600/25 flex items-center gap-1.5 transition"
-                                >
-                                    <Check className="w-4 h-4" />
-                                    <span>Tôi cũng tiếp nhận</span>
+                                    {acknowledging ? (
+                                        <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                        <Check className="w-4 h-4" />
+                                    )}
+                                    <span>
+                                        {isReminder
+                                            ? 'Xác nhận đã đọc & tiếp nhận'
+                                            : isPending
+                                            ? 'Xác nhận tiếp nhận'
+                                            : 'Tôi cũng tiếp nhận'}
+                                    </span>
                                 </button>
                             )}
                             {isInProgress && (() => {
