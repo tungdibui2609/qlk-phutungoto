@@ -15,6 +15,8 @@ interface LotFilterProps {
     onPositionFilterChange: (value: 'all' | 'assigned' | 'unassigned') => void
     lockFilter: 'all' | 'unlocked' | 'locked'
     onLockFilterChange: (value: 'all' | 'unlocked' | 'locked') => void
+    sttFilter: 'all' | 'has_stt' | 'no_stt'
+    onSttFilterChange: (value: 'all' | 'has_stt' | 'no_stt') => void
     selectedZoneId: string | null
     onZoneSelect: (zoneId: string | null) => void
     dateFilterField: DateFilterField
@@ -38,6 +40,8 @@ export function LotFilter({
     onPositionFilterChange,
     lockFilter,
     onLockFilterChange,
+    sttFilter,
+    onSttFilterChange,
     selectedZoneId,
     onZoneSelect,
     dateFilterField,
@@ -442,6 +446,24 @@ export function LotFilter({
                             <option value="all">Khóa: Tất cả</option>
                             <option value="unlocked">Chưa khóa</option>
                             <option value="locked">Đã khóa</option>
+                        </select>
+                    </div>
+
+                    {/* STT Status Filter */}
+                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl border min-w-[115px] transition-colors ${
+                        sttFilter !== 'all'
+                            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                            : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                    }`}>
+                        <Hash size={12} className={sttFilter !== 'all' ? 'text-emerald-600' : 'text-slate-500'} />
+                        <select
+                            value={sttFilter}
+                            onChange={(e) => onSttFilterChange(e.target.value as any)}
+                            className="bg-transparent border-none text-[11px] font-bold focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full text-inherit"
+                        >
+                            <option value="all">STT: Tất cả</option>
+                            <option value="has_stt">Đã có STT</option>
+                            <option value="no_stt">Chưa có STT</option>
                         </select>
                     </div>
 

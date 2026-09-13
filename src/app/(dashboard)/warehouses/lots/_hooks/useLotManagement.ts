@@ -72,6 +72,7 @@ export function useLotManagement() {
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
     const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('all')
+    const [sttFilter, setSttFilter] = useState<'all' | 'has_stt' | 'no_stt'>('all')
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState<string>('')
@@ -146,7 +147,7 @@ export function useLotManagement() {
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter])
+    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter, sttFilter])
 
     // Effect for page change ONLY
     useEffect(() => {
@@ -466,6 +467,12 @@ export function useLotManagement() {
                         query = query.in('id', zoneLotIds.slice(0, 150))
                     }
                 }
+            }
+
+            if (sttFilter === 'has_stt') {
+                query = query.not('daily_seq', 'is', null)
+            } else if (sttFilter === 'no_stt') {
+                query = query.is('daily_seq', null)
             }
 
             // Implementation Strategy for filters:
@@ -1803,6 +1810,8 @@ export function useLotManagement() {
         setPositionFilter,
         lockFilter,
         setLockFilter,
+        sttFilter,
+        setSttFilter,
         setSelectedZoneId, // Zone filter effectively disabled for now or needs updates
         dateFilterField,
         setDateFilterField,

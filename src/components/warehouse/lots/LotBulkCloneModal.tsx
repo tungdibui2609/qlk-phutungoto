@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
-import { X, Copy, AlertCircle, Loader2 } from 'lucide-react'
+import React, { useState, useMemo } from 'react'
+import { X, Copy, AlertCircle, Loader2, Hash, Ban } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { useSystem } from '@/contexts/SystemContext'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
+import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 
 interface LotBulkCloneModalProps {
     lot: Lot
@@ -16,6 +17,35 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
     const [cloneCount, setCloneCount] = useState<number>(1)
     const [isSubmitting, setIsSubmitting] = useState(false)
     const [error, setError] = useState<string | null>(null)
+
+    // STT Options
+    const originalDailySeq = (lot as any).daily_seq as number | null
+    const originalSttStr = decodeSTT(originalDailySeq)
+    const [sttMode, setSttMode] = useState<'none' | 'increment'>(originalDailySeq ? 'increment' : 'none')
+    const [customStartStt, setCustomStartStt] = useState('')
+
+    // Preview list of generated STTs
+    const previewSttList = useMemo(() => {
+        if (sttMode === 'none') return []
+        let baseSeq: number | null = null
+        let startIndex = 1
+        if (originalDailySeq) {
+            baseSeq = originalDailySeq
+            startIndex = 1
+        } else if (customStartStt.trim()) {
+            baseSeq = encodeSTT(customStartStt.trim())
+            startIndex = 0
+        }
+
+        if (baseSeq === null || isNaN(baseSeq)) return []
+
+        const list: string[] = []
+        const countToShow = Math.min(cloneCount, 3)
+        for (let i = 0; i < countToShow; i++) {
+            list.push(decodeSTT(baseSeq + startIndex + i))
+        }
+        return list
+    }, [sttMode, originalDailySeq, customStartStt, cloneCount])
 
     const handleClone = async () => {
         if (!currentSystem) {
@@ -32,6 +62,55 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
         setError(null)
 
         try {
+            // 1. Calculate Target STTs
+            let targetSeqs: (number | null)[] = []
+            if (sttMode === 'none') {
+                targetSeqs = Array.from({ length: cloneCount }).map(() => null)
+            } else {
+                let baseSeq: number | null = null
+                let startIndex = 1
+                if (originalDailySeq) {
+                    baseSeq = originalDailySeq
+                    startIndex = 1
+                } else if (customStartStt.trim()) {
+                    baseSeq = encodeSTT(customStartStt.trim())
+                    startIndex = 0
+                    if (baseSeq === null || isNaN(baseSeq)) {
+                        setError('Định dạng STT bắt đầu không hợp lệ (ví dụ: F1 hoặc 100)')
+                        setIsSubmitting(false)
+                        return
+                    }
+                } else {
+                    setError('Lô gốc chưa có STT. Vui lòng nhập STT bắt đầu hoặc chọn tùy chọn "Không kèm STT"')
+                    setIsSubmitting(false)
+                    return
+                }
+
+                targetSeqs = Array.from({ length: cloneCount }).map((_, i) => baseSeq! + startIndex + i)
+
+                // Check for duplicate STTs in database
+                const validSeqs = targetSeqs.filter((s): s is number => s !== null)
+                if (validSeqs.length > 0) {
+                    const { data: duplicateLots, error: checkError } = await (supabase.from('lots') as any)
+                        .select('code, daily_seq')
+                        .eq('system_code', currentSystem.code)
+                        .in('daily_seq', validSeqs)
+                        .neq('status', 'hidden')
+                        .neq('status', 'exported')
+
+                    if (checkError) throw checkError
+
+                    if (duplicateLots && duplicateLots.length > 0) {
+                        const conflictInfo = duplicateLots
+                            .map((l: any) => `"${decodeSTT(l.daily_seq)}" (lô ${l.code})`)
+                            .join(', ')
+                        setError(`Phát hiện STT đã có lô hàng khác sử dụng: ${conflictInfo}. Vui lòng chọn cách nhân bản khác hoặc đổi STT.`)
+                        setIsSubmitting(false)
+                        return
+                    }
+                }
+            }
+
             // Fetch the lot details to ensure we have all items and tags
             const { data: fullData, error: fetchError } = await supabase
                 .from('lots')
@@ -48,19 +127,6 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             const { lot_items, lot_tags, id: originalId, code: originalCode, created_at, ...lotDataWithoutIds } = fullLot
 
-            // Get current system sequence (STT)
-            const { data: lastLots } = await supabase
-                .from('lots')
-                .select('daily_seq')
-                .eq('system_code', currentSystem.code)
-                .order('created_at', { ascending: false })
-                .limit(1)
-
-            let lastSequence = 0
-            if (lastLots && lastLots.length > 0) {
-                lastSequence = (lastLots[0] as any).daily_seq || 0
-            }
-
             const commonMetadata = {
                 ...(typeof lotDataWithoutIds.metadata === 'object' && lotDataWithoutIds.metadata !== null ? lotDataWithoutIds.metadata : {}),
                 system_history: {
@@ -72,7 +138,7 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             const newLots = await Promise.all(
                 Array.from({ length: cloneCount }).map(async (_, i) => {
-                    const currentSeq = lastSequence + (i + 1)
+                    const currentSeq = targetSeqs[i]
                     const newCode = await generateUniqueLotCode(supabase, currentSystem.name)
 
                     return {
@@ -221,13 +287,121 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
                                 className="w-full px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all font-medium text-lg text-center"
                                 placeholder="Nhập số lượng (1-50)"
                             />
-                            {error && (
-                                <p className="mt-2 text-sm text-red-500 flex items-center gap-1.5">
-                                    <AlertCircle size={14} />
-                                    {error}
-                                </p>
-                            )}
                         </div>
+
+                        {/* Tùy chọn STT */}
+                        <div className="space-y-2 pt-1">
+                            <label className="block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                                Tùy chọn Số thứ tự (STT)
+                            </label>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                                {/* Option 1: Không kèm STT */}
+                                <button
+                                    type="button"
+                                    onClick={() => setSttMode('none')}
+                                    className={`flex items-start gap-2.5 p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                                        sttMode === 'none'
+                                            ? 'bg-amber-50/60 dark:bg-amber-950/30 border-amber-500 ring-2 ring-amber-500/20 shadow-xs'
+                                            : 'bg-white dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                    }`}
+                                >
+                                    <div className={`mt-0.5 p-1 rounded-full ${sttMode === 'none' ? 'bg-amber-500 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
+                                        <Ban size={13} className="stroke-[2.5]" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                            Không kèm STT
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                                            LOT tạo ra không có STT
+                                        </div>
+                                    </div>
+                                </button>
+
+                                {/* Option 2: Tăng dần theo STT gốc */}
+                                <button
+                                    type="button"
+                                    onClick={() => setSttMode('increment')}
+                                    className={`flex items-start gap-2.5 p-3 rounded-2xl border text-left transition-all cursor-pointer ${
+                                        sttMode === 'increment'
+                                            ? 'bg-emerald-50/60 dark:bg-emerald-950/30 border-emerald-500 ring-2 ring-emerald-500/20 shadow-xs'
+                                            : 'bg-white dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-300'
+                                    }`}
+                                >
+                                    <div className={`mt-0.5 p-1 rounded-full ${sttMode === 'increment' ? 'bg-emerald-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
+                                        <Hash size={13} className="stroke-[2.5]" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100">
+                                            STT tăng dần
+                                        </div>
+                                        <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5 leading-tight">
+                                            {originalSttStr ? (
+                                                <>Tăng theo <span className="font-black text-emerald-700 dark:text-emerald-400">{originalSttStr}</span></>
+                                            ) : (
+                                                'Nhập STT bắt đầu'
+                                            )}
+                                        </div>
+                                    </div>
+                                </button>
+                            </div>
+
+                            {/* Extra input if original lot has no STT but user chooses increment */}
+                            {sttMode === 'increment' && !originalSttStr && (
+                                <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-xl border border-emerald-200 dark:border-emerald-800/40 space-y-1.5 animate-in fade-in duration-150">
+                                    <label className="block text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                                        Lô gốc chưa có STT. Nhập STT bắt đầu cho lô đầu tiên:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={customStartStt}
+                                        onChange={(e) => setCustomStartStt(e.target.value.toUpperCase())}
+                                        placeholder="Ví dụ: F1 hoặc 100"
+                                        className="w-full px-3 py-1.5 bg-white dark:bg-slate-800 rounded-lg border border-emerald-300 dark:border-emerald-700 text-xs font-black uppercase tracking-wider text-slate-900 dark:text-white outline-none focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                </div>
+                            )}
+
+                            {/* Preview Badge */}
+                            <div className="p-2.5 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200/80 dark:border-slate-800 flex items-center justify-between text-xs">
+                                <span className="text-slate-500 dark:text-slate-400 font-medium">
+                                    Dự kiến STT mới:
+                                </span>
+                                {sttMode === 'none' ? (
+                                    <span className="px-2 py-0.5 rounded-lg bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold text-[11px]">
+                                        Không có STT (--)
+                                    </span>
+                                ) : previewSttList.length > 0 ? (
+                                    <div className="flex items-center gap-1 flex-wrap justify-end">
+                                        {previewSttList.map((stt, idx) => (
+                                            <span
+                                                key={idx}
+                                                className="px-2 py-0.5 rounded-lg bg-emerald-700 text-white font-black text-[11px] shadow-xs"
+                                            >
+                                                {stt}
+                                            </span>
+                                        ))}
+                                        {cloneCount > 3 && (
+                                            <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-400">
+                                                ... ({cloneCount} LOT)
+                                            </span>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <span className="text-amber-600 dark:text-amber-400 italic text-[11px]">
+                                        Chưa có STT hợp lệ
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+
+                        {error && (
+                            <p className="text-sm text-red-500 flex items-center gap-1.5 p-2.5 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40">
+                                <AlertCircle size={14} className="shrink-0" />
+                                <span>{error}</span>
+                            </p>
+                        )}
                     </div>
                 </div>
 

@@ -43,6 +43,8 @@ export function LotPageManager() {
         setPositionFilter,
         lockFilter,
         setLockFilter,
+        sttFilter,
+        setSttFilter,
         dateFilterField,
         setDateFilterField,
         startDate,
@@ -488,6 +490,8 @@ export function LotPageManager() {
                 onPositionFilterChange={setPositionFilter}
                 lockFilter={lockFilter}
                 onLockFilterChange={setLockFilter}
+                sttFilter={sttFilter}
+                onSttFilterChange={setSttFilter}
                 selectedZoneId={selectedZoneId}
                 onZoneSelect={setSelectedZoneId}
                 dateFilterField={dateFilterField}
