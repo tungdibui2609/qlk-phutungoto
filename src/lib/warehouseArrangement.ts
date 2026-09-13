@@ -31,6 +31,7 @@ export interface FloorSuggestion {
     binCode?: string | null
     levelId: string
     levelName: string
+    floorNumber: number
     totalPositions: number
     occupiedCount: number
     emptyCount: number
@@ -43,10 +44,42 @@ export interface FloorSuggestion {
         internalName?: string
         productColor?: string | null
         unit: string
+        quantityPerPallet?: number | null
+        palletUnit?: string | null
+        inferredQuantityPerPallet?: number | null
+        inferredSampleCount?: number
         occupiedPositionsCount: number
         percentage: number
     }
     candidateLots: CandidateLot[]
+}
+
+/**
+ * Trích xuất số tầng từ tên tầng hoặc mã vị trí
+ * Ví dụ: "TẦNG 2" -> 2, "K1D1A02T202" -> 2
+ */
+export function parseFloorNumber(levelName?: string | null, samplePositionCode?: string | null): number {
+    if (levelName) {
+        const match = levelName.match(/(?:tầng|floor|t|f)\s*(\d+)/i)
+        if (match) {
+            const num = parseInt(match[1], 10)
+            if (!isNaN(num) && num > 0) return num
+        }
+    }
+    if (samplePositionCode) {
+        // Ví dụ: K1D1A02T202 -> T2 là tầng, 02 là vị trí
+        const matchT = samplePositionCode.match(/T(\d+?)(\d{2})$/i)
+        if (matchT) {
+            const num = parseInt(matchT[1], 10)
+            if (!isNaN(num) && num > 0) return num
+        }
+        const matchAnyT = samplePositionCode.match(/T(\d+)/i)
+        if (matchAnyT) {
+            const num = parseInt(matchAnyT[1], 10)
+            if (!isNaN(num) && num > 0) return num
+        }
+    }
+    return 1
 }
 
 /**
@@ -207,6 +240,40 @@ export function analyzeWarehouseArrangements(
         // (Trong thực tế như ảnh của người dùng là 5/5 vị trí có hàng = 100%)
         if (dominantRatio < 0.5 || !dominantItem) return
 
+        // Thu thập số lượng thùng thực tế từ các vị trí ĐÃ CÓ HÀNG của sản phẩm này trên tầng
+        const occupiedLotQuantities: number[] = []
+        occupiedPositions.forEach(p => {
+            const lot = lotInfo[p.lot_id!]
+            if (lot) {
+                let matchedItem = lot.items?.find((it: any) => (it.product_id || it.sku) === dominantKey)
+                if (!matchedItem && lot.items && lot.items.length > 0) {
+                    matchedItem = lot.items[0]
+                }
+                const rawQty = matchedItem?.quantity ?? lot.quantity
+                const num = Number(rawQty)
+                if (!isNaN(num) && num > 0) {
+                    occupiedLotQuantities.push(Math.round(num))
+                }
+            }
+        })
+
+        // Tự động suy ra quy cách 1 pallet = bao nhiêu thùng (dựa vào số lượng xuất hiện phổ biến nhất trên tầng)
+        let inferredQuantityPerPallet: number | null = null
+        if (occupiedLotQuantities.length > 0) {
+            const freq = new Map<number, number>()
+            let maxF = 0
+            let bestQty = occupiedLotQuantities[0]
+            occupiedLotQuantities.forEach(q => {
+                const c = (freq.get(q) || 0) + 1
+                freq.set(q, c)
+                if (c > maxF) {
+                    maxF = c
+                    bestQty = q
+                }
+            })
+            inferredQuantityPerPallet = bestQty
+        }
+
         // 5. Tìm các lô hàng ứng viên cùng loại trong kho để đưa vào
         const allMatchingLots = lotsByProduct.get(dominantKey) || []
         const currentLevelPositionIds = new Set(levelPositions.map(p => p.id))
@@ -257,6 +324,8 @@ export function analyzeWarehouseArrangements(
 
         // Thu thập thông tin phả hệ của tầng này
         const hierarchy = getZoneHierarchy(levelId)
+        const sampleCode = levelPositions[0]?.code || emptyPositions[0]?.code
+        const floorNumber = parseFloorNumber(levelZone.name, sampleCode)
 
         suggestions.push({
             key: `${hierarchy.binId || levelId}-${levelId}`,
@@ -268,6 +337,7 @@ export function analyzeWarehouseArrangements(
             binCode: hierarchy.binCode,
             levelId: levelId,
             levelName: levelZone.name,
+            floorNumber,
             totalPositions: levelPositions.length,
             occupiedCount: occupiedPositions.length,
             emptyCount: emptyPositions.length,
@@ -280,6 +350,10 @@ export function analyzeWarehouseArrangements(
                 internalName: dominantItem.internal_name,
                 productColor: dominantItem.product_color,
                 unit: dominantItem.unit || '',
+                quantityPerPallet: dominantItem.quantity_per_pallet ?? null,
+                palletUnit: dominantItem.pallet_unit ?? null,
+                inferredQuantityPerPallet,
+                inferredSampleCount: occupiedLotQuantities.length,
                 occupiedPositionsCount: maxCount,
                 percentage: Math.round(dominantRatio * 100)
             },

@@ -222,7 +222,7 @@ function WarehouseStatusContent() {
                     // Attempt fetch with sort_order
                     const mainQuery = await supabase
                         .from('lots')
-                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, sort_order, product_category_rel(category_id))), lot_tags(tag, lot_item_id)')
+                        .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, sort_order, quantity_per_pallet, pallet_unit, product_category_rel(category_id))), lot_tags(tag, lot_item_id)')
                         .in('id', chunk)
 
                     let data = mainQuery.data as any[] | null
@@ -233,7 +233,7 @@ function WarehouseStatusContent() {
                         console.warn("[FetchLots] sort_order column missing, falling back...");
                         const fallback = await supabase
                             .from('lots')
-                            .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, product_category_rel(category_id))), lot_tags(tag, lot_item_id)')
+                            .select('id, code, quantity, lot_items(id, product_id, quantity, unit, products(name, sku, unit, color, internal_code, internal_name, quantity_per_pallet, pallet_unit, product_category_rel(category_id))), lot_tags(tag, lot_item_id)')
                             .in('id', chunk)
                         data = fallback.data as any[] | null
                         error = fallback.error
@@ -278,6 +278,8 @@ function WarehouseStatusContent() {
                         unit: it.unit || it.products?.unit,
                         product_color: it.products?.color,
                         sort_order: it.products?.sort_order ?? null,
+                        quantity_per_pallet: it.products?.quantity_per_pallet ?? null,
+                        pallet_unit: it.products?.pallet_unit ?? null,
                         category_ids: it.products?.product_category_rel?.map((r: any) => r.category_id) || [],
                         quantity: it.quantity,
                         tags: l.lot_tags?.filter((t: any) => t.lot_item_id === it.id && !t.tag.startsWith('MERGED_')).map((t: any) => t.tag) || []
