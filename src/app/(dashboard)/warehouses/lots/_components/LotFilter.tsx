@@ -419,54 +419,8 @@ export function LotFilter({
                     <SearchHelpModal isOpen={isHelpOpen} onOpenChange={setIsHelpOpen} />
                 </div>
 
-                {/* Extra Filters Wrapper - Groups them to wrap together and fills space */}
-                <div className={`${showMobileFilters ? 'flex' : 'hidden lg:flex'} flex-wrap items-center gap-2 flex-[4]`}>
-                    {/* Position Assignment Status - Smaller */}
-                    <div className="flex items-center gap-1.5 bg-emerald-50/50 dark:bg-emerald-950/20 px-2 py-1.5 rounded-xl border border-emerald-200 dark:border-emerald-800/50 min-w-[120px]">
-                        <Warehouse size={12} className="text-emerald-600 shrink-0" />
-                        <select
-                            value={positionFilter}
-                            onChange={(e) => onPositionFilterChange(e.target.value as any)}
-                            className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full"
-                        >
-                            <option value="all">Vị trí: Tất cả</option>
-                            <option value="assigned">Đã gán</option>
-                            <option value="unassigned">Chưa gán</option>
-                        </select>
-                    </div>
-
-                    {/* Lock Status Filter */}
-                    <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-2 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 min-w-[110px]">
-                        <Filter size={12} className="text-slate-500 shrink-0" />
-                        <select
-                            value={lockFilter}
-                            onChange={(e) => onLockFilterChange(e.target.value as any)}
-                            className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full"
-                        >
-                            <option value="all">Khóa: Tất cả</option>
-                            <option value="unlocked">Chưa khóa</option>
-                            <option value="locked">Đã khóa</option>
-                        </select>
-                    </div>
-
-                    {/* STT Status Filter */}
-                    <div className={`flex items-center gap-1.5 px-2 py-1.5 rounded-xl border min-w-[115px] transition-colors ${
-                        sttFilter !== 'all'
-                            ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
-                            : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
-                    }`}>
-                        <Hash size={12} className={sttFilter !== 'all' ? 'text-emerald-600' : 'text-slate-500'} />
-                        <select
-                            value={sttFilter}
-                            onChange={(e) => onSttFilterChange(e.target.value as any)}
-                            className="bg-transparent border-none text-[11px] font-bold focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full text-inherit"
-                        >
-                            <option value="all">STT: Tất cả</option>
-                            <option value="has_stt">Đã có STT</option>
-                            <option value="no_stt">Chưa có STT</option>
-                        </select>
-                    </div>
-
+                {/* Date Filter */}
+                <div className={`${showMobileFilters ? 'flex' : 'hidden lg:flex'} items-center shrink-0 min-w-[280px]`}>
                     <DateRangeFilter
                         dateFilterField={dateFilterField}
                         onDateFieldChange={onDateFieldChange}
@@ -474,7 +428,7 @@ export function LotFilter({
                         onStartDateChange={onStartDateChange}
                         endDate={endDate}
                         onEndDateChange={onEndDateChange}
-                        className="flex-[1.5] min-w-[310px]"
+                        className="w-full"
                     />
                 </div>
 
@@ -490,9 +444,62 @@ export function LotFilter({
             {/* Row 2: Advanced Position Filter (From Map) - Always full width but compact */}
             {/* Cascading Zone Filter */}
             <div className="space-y-1.5 pt-1">
-                <div className="flex items-center gap-2 px-1">
-                    <div className="w-1 h-4 bg-emerald-500 rounded-full" />
-                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Khu vực / Dãy hàng</span>
+                <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2 shrink-0">
+                            <div className="w-1 h-4 bg-emerald-500 rounded-full" />
+                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Khu vực / Dãy hàng</span>
+                        </div>
+
+                        {/* Quick filter pills right next to Khu vực / Dãy hàng */}
+                        <div className={`${showMobileFilters ? 'flex' : 'hidden sm:flex'} flex-wrap items-center gap-2`}>
+                            {/* Position Assignment Status */}
+                            <div className="flex items-center gap-1.5 bg-emerald-50/50 dark:bg-emerald-950/20 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800/50 min-w-[115px]">
+                                <Warehouse size={12} className="text-emerald-600 shrink-0" />
+                                <select
+                                    value={positionFilter}
+                                    onChange={(e) => onPositionFilterChange(e.target.value as any)}
+                                    className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full"
+                                >
+                                    <option value="all">Vị trí: Tất cả</option>
+                                    <option value="assigned">Đã gán</option>
+                                    <option value="unassigned">Chưa gán</option>
+                                </select>
+                            </div>
+
+                            {/* Lock Status Filter */}
+                            <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-800/50 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700 min-w-[105px]">
+                                <Filter size={12} className="text-slate-500 shrink-0" />
+                                <select
+                                    value={lockFilter}
+                                    onChange={(e) => onLockFilterChange(e.target.value as any)}
+                                    className="bg-transparent border-none text-[11px] font-bold text-slate-700 dark:text-slate-200 focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full"
+                                >
+                                    <option value="all">Khóa: Tất cả</option>
+                                    <option value="unlocked">Chưa khóa</option>
+                                    <option value="locked">Đã khóa</option>
+                                </select>
+                            </div>
+
+                            {/* STT Status Filter */}
+                            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border min-w-[110px] transition-colors ${
+                                sttFilter !== 'all'
+                                    ? 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-300 dark:border-emerald-800 text-emerald-800 dark:text-emerald-200'
+                                    : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                            }`}>
+                                <Hash size={12} className={sttFilter !== 'all' ? 'text-emerald-600' : 'text-slate-500'} />
+                                <select
+                                    value={sttFilter}
+                                    onChange={(e) => onSttFilterChange(e.target.value as any)}
+                                    className="bg-transparent border-none text-[11px] font-bold focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full text-inherit"
+                                >
+                                    <option value="all">STT: Tất cả</option>
+                                    <option value="has_stt">Đã có STT</option>
+                                    <option value="no_stt">Chưa có STT</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
                 </div>
                 <HorizontalZoneFilter
                     selectedZoneId={selectedZoneId}
