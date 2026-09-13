@@ -11,7 +11,7 @@ import { useUser } from '@/contexts/UserContext'
 import { getProductColorStyle } from '@/lib/warehouseUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
-import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
+import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { useToast } from '@/components/ui/ToastProvider'
 
 interface LotDetailsModalProps {
@@ -48,7 +48,13 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
             showToast('Lô hàng đã bị khóa. Vui lòng mở khóa để sửa STT.', 'warning')
             return
         }
-        setEditSttValue(decodeSTT((lot as any)?.daily_seq) || '')
+        const currentStt = decodeSTT((lot as any)?.daily_seq) || ''
+        if (!currentStt) {
+            const lastStt = getLastUpdatedSTT()
+            setEditSttValue(lastStt ? getNextSTT(lastStt) : '')
+        } else {
+            setEditSttValue(currentStt)
+        }
         setIsEditingSTT(true)
         setTimeout(() => {
             sttInputRef.current?.focus()
@@ -72,6 +78,9 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
             const success = await onQuickUpdateSTT(lot.id, editSttValue)
             if (success) {
                 setIsEditingSTT(false)
+                if (editSttValue.trim()) {
+                    setLastUpdatedSTT(editSttValue.trim())
+                }
             }
         } finally {
             setIsSavingSTT(false)
@@ -183,6 +192,21 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                             className="w-20 px-1.5 py-0.5 text-xs font-black uppercase text-slate-900 dark:text-white bg-emerald-50/50 dark:bg-emerald-950/40 rounded border border-emerald-300 dark:border-emerald-700 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-slate-400 placeholder:font-normal placeholder:normal-case"
                                             autoFocus
                                         />
+                                        {getLastUpdatedSTT() && getNextSTT(getLastUpdatedSTT()) !== editSttValue && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setEditSttValue(getNextSTT(getLastUpdatedSTT()))
+                                                    sttInputRef.current?.focus()
+                                                }}
+                                                disabled={isSavingSTT}
+                                                className="px-1.5 py-0.5 rounded text-[10px] font-black bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+                                                title={`Bấm để điền nhanh STT tiếp theo: ${getNextSTT(getLastUpdatedSTT())}`}
+                                            >
+                                                ⚡ {getNextSTT(getLastUpdatedSTT())}
+                                            </button>
+                                        )}
                                         <button
                                             type="button"
                                             onClick={handleSaveSTT}

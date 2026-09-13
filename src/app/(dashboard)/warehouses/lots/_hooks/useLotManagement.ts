@@ -8,7 +8,7 @@ import { matchDateRange } from '@/lib/dateUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
-import { encodeSTT, decodeSTT } from '@/lib/numberUtils'
+import { encodeSTT, decodeSTT, setLastUpdatedSTT, getLastUpdatedSTT, getNextSTT } from '@/lib/numberUtils'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -1774,6 +1774,9 @@ export function useLotManagement() {
 
         // Cập nhật state cục bộ ngay lập tức
         setLots(prev => prev.map(l => l.id === lotId ? { ...l, daily_seq: encodedVal } : l))
+        if (encodedVal !== null) {
+            setLastUpdatedSTT(decodeSTT(encodedVal))
+        }
         showToast(encodedVal !== null ? `Đã cập nhật STT thành công: ${decodeSTT(encodedVal)}` : 'Đã xóa STT của lô hàng', 'success')
         return true
     }

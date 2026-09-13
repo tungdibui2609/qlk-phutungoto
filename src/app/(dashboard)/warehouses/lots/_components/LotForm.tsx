@@ -5,7 +5,7 @@ import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { logActivity } from '@/lib/audit'
-import { parseQuantity, encodeSTT, decodeSTT } from '@/lib/numberUtils'
+import { parseQuantity, encodeSTT, decodeSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/useLotManagement'
 import { useUser } from '@/contexts/UserContext'
@@ -947,6 +947,10 @@ export function LotForm({
             console.error('Failed to log activity', err)
         }
 
+        const dailySeqStr = String(dailySeq ?? '').trim()
+        if (dailySeqStr) {
+            setLastUpdatedSTT(dailySeqStr)
+        }
         await onSuccess(lotId ? { id: lotId, ...lotData } : undefined)
         } catch (error: any) {
             console.error('Submit Error:', error)

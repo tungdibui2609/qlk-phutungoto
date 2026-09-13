@@ -116,3 +116,48 @@ export function decodeSTT(val: number | string | null | undefined): string {
     return String(num)
 }
 
+/**
+ * Tự động tính toán STT tăng dần tiếp theo từ một chuỗi STT bất kỳ.
+ * Ví dụ: "f223" -> "f224", "F223" -> "F224", "100" -> "101", "A09" -> "A10".
+ */
+export function getNextSTT(sttStr: string | null | undefined): string {
+    if (!sttStr) return ''
+    const str = String(sttStr).trim()
+    if (!str) return ''
+
+    // Tách phần tiền tố và phần số ở cuối
+    const match = str.match(/^(.*?)(\d+)$/)
+    if (match) {
+        const prefix = match[1]
+        const numStr = match[2]
+        const nextNum = parseInt(numStr, 10) + 1
+        // Giữ nguyên độ dài đệm số 0 nếu có, vd: "005" -> "006"
+        const paddedNextNum = String(nextNum).padStart(numStr.length, '0')
+        return `${prefix}${paddedNextNum}`
+    }
+
+    return str
+}
+
+const LAST_UPDATED_STT_KEY = 'warehouse_last_assigned_stt'
+
+export function getLastUpdatedSTT(): string {
+    if (typeof window === 'undefined') return ''
+    try {
+        return sessionStorage.getItem(LAST_UPDATED_STT_KEY) || localStorage.getItem(LAST_UPDATED_STT_KEY) || ''
+    } catch {
+        return ''
+    }
+}
+
+export function setLastUpdatedSTT(stt: string | null | undefined): void {
+    if (typeof window === 'undefined') return
+    try {
+        const val = String(stt || '').trim()
+        if (val) {
+            sessionStorage.setItem(LAST_UPDATED_STT_KEY, val)
+            localStorage.setItem(LAST_UPDATED_STT_KEY, val)
+        }
+    } catch {}
+}
+
