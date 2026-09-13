@@ -8,7 +8,7 @@ import { matchDateRange } from '@/lib/dateUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
-import { encodeSTT } from '@/lib/numberUtils'
+import { encodeSTT, decodeSTT } from '@/lib/numberUtils'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -1705,6 +1705,72 @@ export function useLotManagement() {
         return true
     }
 
+    async function handleQuickUpdateSTT(lotId: string, newSttStr: string): Promise<boolean> {
+        const targetLot = lots.find(l => l.id === lotId)
+        if (targetLot?.is_locked) {
+            showToast('Lô hàng đã bị khóa. Vui lòng mở khóa để sửa STT.', 'warning')
+            return false
+        }
+
+        const trimmed = (newSttStr || '').trim().toUpperCase()
+        let encodedVal: number | null = null
+
+        if (trimmed) {
+            encodedVal = encodeSTT(trimmed)
+            if (encodedVal === null || isNaN(encodedVal)) {
+                showToast('Định dạng STT không hợp lệ. Vui lòng nhập số (ví dụ: 125) hoặc 1 chữ cái kèm số (ví dụ: F3174).', 'warning')
+                return false
+            }
+
+            // Nếu không thay đổi so với STT hiện tại thì không cần lưu
+            if (targetLot && (targetLot as any).daily_seq === encodedVal) {
+                return true
+            }
+
+            // Kiểm tra trùng STT trên toàn hệ thống
+            const { data: matchedLots, error: checkSttError } = await (supabase.from('lots') as any)
+                .select('id, code, inbound_date')
+                .eq('system_code', currentSystem?.code || '')
+                .eq('daily_seq', encodedVal)
+                .neq('status', 'hidden')
+                .neq('status', 'exported')
+                .neq('id', lotId)
+
+            if (checkSttError) {
+                showToast('Lỗi kiểm tra trùng STT: ' + checkSttError.message, 'error')
+                return false
+            }
+
+            if (matchedLots && matchedLots.length > 0) {
+                const existingLot = matchedLots[0]
+                const formattedDate = existingLot.inbound_date 
+                    ? existingLot.inbound_date.split('-').reverse().join('/') 
+                    : 'không rõ ngày'
+                showToast(`Số Thứ Tự (STT) "${decodeSTT(encodedVal)}" đang được sử dụng bởi lô hàng "${existingLot.code}" (nhập ngày ${formattedDate}). Vui lòng chọn STT khác.`, 'warning')
+                return false
+            }
+        } else {
+            // Trường hợp xóa STT (chuỗi rỗng)
+            if (targetLot && !(targetLot as any).daily_seq) {
+                return true
+            }
+        }
+
+        const { error } = await (supabase.from('lots') as any)
+            .update({ daily_seq: encodedVal })
+            .eq('id', lotId)
+
+        if (error) {
+            showToast('Lỗi cập nhật STT: ' + error.message, 'error')
+            return false
+        }
+
+        // Cập nhật state cục bộ ngay lập tức
+        setLots(prev => prev.map(l => l.id === lotId ? { ...l, daily_seq: encodedVal } : l))
+        showToast(encodedVal !== null ? `Đã cập nhật STT thành công: ${decodeSTT(encodedVal)}` : 'Đã xóa STT của lô hàng', 'success')
+        return true
+    }
+
     const handleToggleStar = async (lot: Lot) => {
         const metadata = lot.metadata ? { ...lot.metadata } : {};
         metadata.is_starred = !metadata.is_starred;
@@ -1774,6 +1840,7 @@ export function useLotManagement() {
         handleToggleLock,
         handleBulkToggleLock,
         handleBulkClearSTT,
+        handleQuickUpdateSTT,
         handleToggleStar,
         isModuleEnabled: hasModule,
         isUtilityEnabled: hasModule,

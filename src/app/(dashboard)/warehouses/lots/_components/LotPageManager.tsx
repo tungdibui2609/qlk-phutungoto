@@ -59,6 +59,7 @@ export function LotPageManager() {
         handleToggleLock,
         handleBulkToggleLock,
         handleBulkClearSTT,
+        handleQuickUpdateSTT,
         handleToggleStar,
         isModuleEnabled,
         isUtilityEnabled,
@@ -560,6 +561,7 @@ export function LotPageManager() {
                     onExport={handleExport}
                     onBulkClone={handleBulkClone}
                     onAssignLocation={setAssigningLot}
+                    onQuickUpdateSTT={handleQuickUpdateSTT}
                     searchTerm={searchTerm}
                 />
 
@@ -640,6 +642,7 @@ export function LotPageManager() {
                     setViewingLot(null);
                 }}
                 onDelete={handleDelete}
+                onQuickUpdateSTT={handleQuickUpdateSTT}
                 isModuleEnabled={isModuleEnabled}
                 managePermission="warehouse_lot.manage"
             />

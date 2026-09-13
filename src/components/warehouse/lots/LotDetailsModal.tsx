@@ -1,7 +1,7 @@
 'use client'
 
-import React, { useState } from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash, Lock } from 'lucide-react'
+import React, { useState, useRef } from 'react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash, Lock, Pencil, Loader2, Check } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -12,27 +12,71 @@ import { getProductColorStyle } from '@/lib/warehouseUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
-
+import { useToast } from '@/components/ui/ToastProvider'
 
 interface LotDetailsModalProps {
     lot: Lot | null
     onClose: () => void
     onOpenQr: (lot: Lot) => void
     onDelete?: (id: string) => void
+    onQuickUpdateSTT?: (lotId: string, newStt: string) => Promise<boolean>
     isModuleEnabled: (moduleId: string) => boolean
     managePermission?: string
 }
 
-export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, onDelete, isModuleEnabled, managePermission }) => {
+export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, onOpenQr, onDelete, onQuickUpdateSTT, isModuleEnabled, managePermission }) => {
     const router = useRouter()
     const pathname = usePathname()
     const { profile } = useUser() // Assuming useUser provides a profile
+    const { showToast } = useToast()
     const isSanxuat = pathname?.startsWith('/sanxuat') || false
 
     const [historyData, setHistoryData] = React.useState<any>(null)
     const [isHighlighting, setIsHighlighting] = React.useState(false)
     const [isEditing, setIsEditing] = useState(false) // Added from diff
     const [selectedImage, setSelectedImage] = React.useState<string | null>(null)
+
+    // Quick STT Inline Edit
+    const [isEditingSTT, setIsEditingSTT] = useState(false)
+    const [editSttValue, setEditSttValue] = useState('')
+    const [isSavingSTT, setIsSavingSTT] = useState(false)
+    const sttInputRef = useRef<HTMLInputElement>(null)
+
+    const handleStartEditSTT = (e: React.MouseEvent) => {
+        e.stopPropagation()
+        if (lot?.is_locked) {
+            showToast('Lô hàng đã bị khóa. Vui lòng mở khóa để sửa STT.', 'warning')
+            return
+        }
+        setEditSttValue(decodeSTT((lot as any)?.daily_seq) || '')
+        setIsEditingSTT(true)
+        setTimeout(() => {
+            sttInputRef.current?.focus()
+            sttInputRef.current?.select()
+        }, 50)
+    }
+
+    const handleCancelEditSTT = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation()
+        setIsEditingSTT(false)
+        setEditSttValue('')
+    }
+
+    const handleSaveSTT = async (e?: React.MouseEvent | React.FormEvent) => {
+        if (e) e.stopPropagation()
+        if (isSavingSTT || !lot) return
+        if (!onQuickUpdateSTT) return
+
+        setIsSavingSTT(true)
+        try {
+            const success = await onQuickUpdateSTT(lot.id, editSttValue)
+            if (success) {
+                setIsEditingSTT(false)
+            }
+        } finally {
+            setIsSavingSTT(false)
+        }
+    }
 
     // Trigger highlight when positions change
     const positionsHash = JSON.stringify(lot?.positions || [])
@@ -114,9 +158,73 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                         ĐÃ KHÓA
                                     </span>
                                 )}
-                                <span className={`px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border ${(lot as any).daily_seq ? 'bg-emerald-700 text-white border-emerald-800' : 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'}`}>
-                                    STT: {decodeSTT((lot as any).daily_seq) || '--'}
-                                </span>
+                                {isEditingSTT ? (
+                                    <div
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 p-0.5 pl-2 rounded-lg border-2 border-emerald-500 shadow-md animate-in fade-in zoom-in-95 duration-150 z-10"
+                                    >
+                                        <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-tight">STT:</span>
+                                        <input
+                                            ref={sttInputRef}
+                                            type="text"
+                                            value={editSttValue}
+                                            onChange={(e) => setEditSttValue(e.target.value.toUpperCase())}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault()
+                                                    handleSaveSTT()
+                                                } else if (e.key === 'Escape') {
+                                                    e.preventDefault()
+                                                    handleCancelEditSTT()
+                                                }
+                                            }}
+                                            placeholder="vd: F3174"
+                                            disabled={isSavingSTT}
+                                            className="w-20 px-1.5 py-0.5 text-xs font-black uppercase text-slate-900 dark:text-white bg-emerald-50/50 dark:bg-emerald-950/40 rounded border border-emerald-300 dark:border-emerald-700 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-slate-400 placeholder:font-normal placeholder:normal-case"
+                                            autoFocus
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleSaveSTT}
+                                            disabled={isSavingSTT}
+                                            className="p-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition-colors cursor-pointer shadow-xs"
+                                            title="Lưu (Enter)"
+                                        >
+                                            {isSavingSTT ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} className="stroke-[3]" />}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleCancelEditSTT}
+                                            disabled={isSavingSTT}
+                                            className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors cursor-pointer shadow-xs"
+                                            title="Hủy (Esc)"
+                                        >
+                                            <X size={12} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className={`group/stt inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border transition-all ${
+                                        (lot as any).daily_seq
+                                            ? 'bg-emerald-700 text-white border-emerald-800'
+                                            : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                                    }`}>
+                                        <span>STT: {decodeSTT((lot as any).daily_seq) || '--'}</span>
+                                        {!lot.is_locked && (
+                                            <button
+                                                type="button"
+                                                onClick={handleStartEditSTT}
+                                                className={`p-0.5 rounded transition-all cursor-pointer ${
+                                                    (lot as any).daily_seq
+                                                        ? 'text-emerald-200 hover:text-white hover:bg-emerald-600/60'
+                                                        : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                                }`}
+                                                title="Bấm vào cây bút để sửa STT nhanh"
+                                            >
+                                                <Pencil size={11} className="stroke-[2.5]" />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <p className="text-xs text-emerald-700 dark:text-emerald-400 font-mono mt-1 font-bold">{lot.code}</p>
                         </div>

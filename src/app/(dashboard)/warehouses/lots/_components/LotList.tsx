@@ -23,6 +23,7 @@ interface LotListProps {
     onBulkClone?: (lot: Lot) => void
     onAssignLocation?: (lot: Lot) => void
     onToggleLock?: (id: string, currentLocked: boolean) => Promise<boolean>
+    onQuickUpdateSTT?: (lotId: string, newStt: string) => Promise<boolean>
     managePermission?: string
     searchTerm?: string
 }
@@ -48,6 +49,7 @@ export function LotList({
     onExport,
     onBulkClone,
     onAssignLocation,
+    onQuickUpdateSTT,
     managePermission,
     searchTerm
 }: LotListProps) {
@@ -150,6 +152,7 @@ export function LotList({
                         onBulkClone={onBulkClone}
                         onAssignLocation={onAssignLocation}
                         onToggleLock={onToggleLock}
+                        onQuickUpdateSTT={onQuickUpdateSTT}
                         searchTerm={searchTerm}
                     />
                 ))}
