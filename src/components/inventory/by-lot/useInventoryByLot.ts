@@ -69,10 +69,12 @@ export function useInventoryByLot(
         viewMode?: 'lot' | 'month'
         dateFrom?: string
         dateTo?: string
+        enabled?: boolean
     }
 ) {
+    const enabled = externalFilters?.enabled !== undefined ? externalFilters.enabled : true
     const [lots, setLots] = useState<Lot[]>([])
-    const [loading, setLoading] = useState(true)
+    const [loading, setLoading] = useState(enabled)
     const [internalSearchTerm, setInternalSearchTerm] = useState('')
     const [internalBranch, setInternalBranch] = useState('Tất cả')
     const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
@@ -117,11 +119,17 @@ export function useInventoryByLot(
     const { convertUnit, unitNameMap, conversionMap } = useUnitConversion()
 
     useEffect(() => {
+        if (!enabled) {
+            setLoading(false)
+            return
+        }
+
         setSelectedZoneId(null)
         fetchBranches()
         fetchLots()
 
-        // Real-time Subscription: Listen for changes in positions
+        // Real-time Subscription: Listen for changes in positions with debounce
+        let posDebounceTimer: NodeJS.Timeout | null = null
         const channel = supabase
             .channel('inventory-by-lot-positions')
             .on(
@@ -131,16 +139,20 @@ export function useInventoryByLot(
                     schema: 'public',
                     table: 'positions'
                 },
-                (payload) => {
-                    fetchLots(false)
+                () => {
+                    if (posDebounceTimer) clearTimeout(posDebounceTimer)
+                    posDebounceTimer = setTimeout(() => {
+                        fetchLots(false)
+                    }, 600)
                 }
             )
             .subscribe()
 
         return () => {
+            if (posDebounceTimer) clearTimeout(posDebounceTimer)
             supabase.removeChannel(channel)
         }
-    }, [systemType, selectedBranch])
+    }, [systemType, selectedBranch, enabled])
 
     async function fetchBranches() {
         const { data, error } = await supabase
@@ -209,8 +221,8 @@ export function useInventoryByLot(
                 allCategories,
                 allProductionLots
             ] = await Promise.all([
-                fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode)),
-                fetchAll('lot_items', '*'),
+                fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode).eq('status', 'active')),
+                fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, initial_quantity'),
                 fetchAll('products', '*', (q: any) => q.or(`system_code.eq.${sysCode},system_type.eq.${sysCode}`)),
                 fetchAll('suppliers', 'id, name'),
                 fetchAll('lot_tags', 'tag, lot_id, lot_item_id'),

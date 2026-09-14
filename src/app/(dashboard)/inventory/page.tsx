@@ -81,7 +81,16 @@ export default function InventoryPage() {
     const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
     const [viewMode, setViewMode] = useState<'lot' | 'month'>('lot')
 
-    // LOT Hook for LOT and Category tabs
+    const isLotTabActive = activeTab === 'lot' || activeTab === 'category'
+    const [hasLoadedLotData, setHasLoadedLotData] = useState(false)
+
+    useEffect(() => {
+        if (isLotTabActive && !hasLoadedLotData) {
+            setHasLoadedLotData(true)
+        }
+    }, [isLotTabActive, hasLoadedLotData])
+
+    // LOT Hook for LOT and Category tabs (Lazy-loaded only when user enters LOT or Category tab)
     const lotHookData = useInventoryByLot(units || [], {
         searchTerm: q,
         searchMode: searchMode,
@@ -92,7 +101,8 @@ export default function InventoryPage() {
         lockFilter: lockFilter,
         viewMode: viewMode,
         dateFrom: dateFrom,
-        dateTo: dateTo
+        dateTo: dateTo,
+        enabled: hasLoadedLotData
     })
 
     // Load Branches
