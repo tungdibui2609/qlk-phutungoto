@@ -21,39 +21,65 @@ interface ProductUnit {
     conversion_rate: number
 }
 
+// Module-level in-memory cache to eliminate duplicate queries across multiple components (e.g. 21 LotCards on a single page)
+let globalUnits: Unit[] | null = null
+let globalProductUnits: ProductUnit[] | null = null
+let globalFetchPromise: Promise<void> | null = null
+
+export function invalidateUnitConversionCache() {
+    globalUnits = null
+    globalProductUnits = null
+    globalFetchPromise = null
+}
+
 export function useUnitConversion() {
-    const [loading, setLoading] = useState(true)
-    const [units, setUnits] = useState<Unit[]>([])
-    const [productUnits, setProductUnits] = useState<ProductUnit[]>([])
+    const [loading, setLoading] = useState(!globalUnits)
+    const [units, setUnits] = useState<Unit[]>(globalUnits || [])
+    const [productUnits, setProductUnits] = useState<ProductUnit[]>(globalProductUnits || [])
 
     useEffect(() => {
+        if (globalUnits && globalProductUnits) {
+            setUnits(globalUnits)
+            setProductUnits(globalProductUnits)
+            setLoading(false)
+            return
+        }
+
         async function fetchData() {
-            setLoading(true)
             try {
-                const fetchAll = async (tableName: string, query: any) => {
-                    let allResults: any[] = [];
-                    let from = 0;
-                    const LIMIT = 1000;
-                    while (true) {
-                        const { data, error } = await query.range(from, from + LIMIT - 1);
-                        if (error) throw error;
-                        if (!data || data.length === 0) break;
-                        allResults = [...allResults, ...data];
-                        if (data.length < LIMIT) break;
-                        from += LIMIT;
-                    }
-                    return allResults;
-                };
+                if (!globalFetchPromise) {
+                    globalFetchPromise = (async () => {
+                        const fetchAll = async (tableName: string, query: any) => {
+                            let allResults: any[] = [];
+                            let from = 0;
+                            const LIMIT = 1000;
+                            while (true) {
+                                const { data, error } = await query.range(from, from + LIMIT - 1);
+                                if (error) throw error;
+                                if (!data || data.length === 0) break;
+                                allResults = [...allResults, ...data];
+                                if (data.length < LIMIT) break;
+                                from += LIMIT;
+                            }
+                            return allResults;
+                        };
 
-                const [unitsData, prodUnitsData] = await Promise.all([
-                    fetchAll('units', supabase.from('units').select('id, name')),
-                    fetchAll('product_units', supabase.from('product_units').select('product_id, unit_id, conversion_rate'))
-                ]);
+                        const [unitsData, prodUnitsData] = await Promise.all([
+                            fetchAll('units', supabase.from('units').select('id, name')),
+                            fetchAll('product_units', supabase.from('product_units').select('product_id, unit_id, conversion_rate'))
+                        ]);
 
-                setUnits(unitsData || [])
-                setProductUnits(prodUnitsData || [])
+                        globalUnits = unitsData || []
+                        globalProductUnits = prodUnitsData || []
+                    })()
+                }
+
+                await globalFetchPromise
+                setUnits(globalUnits || [])
+                setProductUnits(globalProductUnits || [])
             } catch (error) {
                 console.error('Error fetching conversion data', error)
+                globalFetchPromise = null // allow retry on failure
             } finally {
                 setLoading(false)
             }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock, Eraser } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock, Eraser, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
@@ -16,6 +16,7 @@ import { LotBulkAssignModal } from '@/components/warehouse/lots/LotBulkAssignMod
 import { LotBulkAssignTagModal } from '@/components/warehouse/lots/LotBulkAssignTagModal'
 import { LotReportModal } from '@/components/warehouse/lots/LotReportModal'
 import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
+import { LotBulkEditDatesModal } from '@/components/warehouse/lots/LotBulkEditDatesModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
 import Protected from '@/components/auth/Protected'
@@ -118,6 +119,7 @@ export function LotPageManager() {
     // Selection States
     const [selectedLotIds, setSelectedLotIds] = useState<Set<string>>(new Set())
     const [bulkTagLotIds, setBulkTagLotIds] = useState<string[] | null>(null)
+    const [showBulkEditDates, setShowBulkEditDates] = useState(false)
 
     // Selection Handlers
     const handleToggleSelect = (id: string) => {
@@ -162,6 +164,12 @@ export function LotPageManager() {
         const ids = Array.from(selectedLotIds)
         if (ids.length === 0) return
         setBulkTagLotIds(ids)
+    }
+
+    const handleBulkEditDatesSelected = () => {
+        const ids = Array.from(selectedLotIds)
+        if (ids.length === 0) return
+        setShowBulkEditDates(true)
     }
 
     const handleBulkClearDailySeqSelected = async () => {
@@ -760,6 +768,20 @@ export function LotPageManager() {
                 />
             )}
 
+            {/* Bulk Edit Dates Modal for Multi-Selected LOTs */}
+            {showBulkEditDates && (
+                <LotBulkEditDatesModal
+                    lotIds={Array.from(selectedLotIds)}
+                    selectedLots={lots.filter(l => selectedLotIds.has(l.id))}
+                    onClose={() => setShowBulkEditDates(false)}
+                    onSuccess={() => {
+                        setShowBulkEditDates(false)
+                        setSelectedLotIds(new Set())
+                        fetchLots(false)
+                    }}
+                />
+            )}
+
             {/* Floating Multi-Select Action Bar */}
             {selectedLotIds.size > 0 && (
                 <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-5 duration-200">
@@ -802,6 +824,16 @@ export function LotPageManager() {
                                     >
                                         <Tag size={15} />
                                         <span>Gán mã phụ</span>
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={handleBulkEditDatesSelected}
+                                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all active:scale-95 cursor-pointer shadow-xs"
+                                        title="Đổi ngày tháng cho các LOT đã chọn"
+                                    >
+                                        <Calendar size={15} />
+                                        <span>Đổi ngày</span>
                                     </button>
 
                                     <button

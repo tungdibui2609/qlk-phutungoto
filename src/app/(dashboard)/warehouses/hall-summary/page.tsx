@@ -5,7 +5,6 @@ import { BarChart3, Loader2, Package, Search, Layers, Warehouse, Download, Print
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { normalizeSearchString } from '@/lib/searchUtils'
-import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import { decodeSTT } from '@/lib/numberUtils'
 
@@ -312,6 +311,7 @@ export default function HallSummaryPage() {
             return
         }
 
+        const ExcelJS = (await import('exceljs')).default
         const workbook = new ExcelJS.Workbook()
         
         // Helper
@@ -320,7 +320,7 @@ export default function HallSummaryPage() {
             return name.replace(/[*/:?[\]]/g, '').substring(0, 31)
         }
 
-        const setColumns = (worksheet: ExcelJS.Worksheet) => {
+        const setColumns = (worksheet: any) => {
             worksheet.columns = [
                 { width: 8 },  // STT
                 { width: 22 }, // SKU
@@ -333,7 +333,7 @@ export default function HallSummaryPage() {
             ]
         }
 
-        const renderTable = (worksheet: ExcelJS.Worksheet, title: string, data: any[], startRow: number) => {
+        const renderTable = (worksheet: any, title: string, data: any[], startRow: number) => {
             if (!data || data.length === 0) return startRow
 
             worksheet.mergeCells(`A${startRow}:H${startRow}`)

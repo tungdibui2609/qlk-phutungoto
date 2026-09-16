@@ -13,62 +13,54 @@ const inter = Inter({
 
 import { COMPANY_INFO } from "@/lib/constants";
 import { generateAppTitle } from "@/lib/utils";
-import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { createClient } from "@supabase/supabase-js";
 import { Database } from "@/lib/database.types";
 
-export const dynamic = "force-dynamic"; // Force dynamic rendering to avoid caching
+// Cached metadata to eliminate repeated DB requests on every page navigation
+let cachedCompanyTitle: string | null = null;
+let lastMetaFetch = 0;
+const META_CACHE_TTL = 3600 * 1000; // 1 hour
 
 export async function generateMetadata(): Promise<Metadata> {
+  const baseMeta = {
+    manifest: '/manifest.webmanifest',
+    appleWebApp: {
+      capable: true,
+      statusBarStyle: 'default' as const,
+      title: 'Chánh Thu',
+    },
+  };
+
+  const now = Date.now();
+  if (cachedCompanyTitle && now - lastMetaFetch < META_CACHE_TTL) {
+    return {
+      ...baseMeta,
+      title: generateAppTitle(cachedCompanyTitle),
+      description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
+    };
+  }
+
   try {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-    const cookieStore = await cookies();
 
-    const supabase = createServerClient<Database>(supabaseUrl, supabaseKey, {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet) {
-          // Metadata generation generally should not set cookies
-        },
-      },
+    const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
+      auth: { persistSession: false },
     });
 
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("company_settings")
       .select("name, short_name")
       .limit(1)
       .maybeSingle();
 
-    if (error) {
-      // console.error("Supabase metadata fetch error details:", JSON.stringify(error, null, 2));
-    }
-
-    // console.log("Fetched company name:", data?.name);
-
-    const baseMeta = {
-      manifest: '/manifest.webmanifest',
-      appleWebApp: {
-        capable: true,
-        statusBarStyle: 'default' as const,
-        title: 'Chánh Thu',
-      },
-    }
-
-    if ((data as any)?.short_name) {
+    const titleName = (data as any)?.short_name || (data as any)?.name;
+    if (titleName) {
+      cachedCompanyTitle = titleName;
+      lastMetaFetch = now;
       return {
         ...baseMeta,
-        title: generateAppTitle((data as any).short_name),
-        description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
-      };
-    }
-
-    if ((data as any)?.name) {
-      return {
-        ...baseMeta,
-        title: generateAppTitle((data as any).name),
+        title: generateAppTitle(titleName),
         description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
       };
     }
@@ -77,12 +69,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 
   return {
-    manifest: '/manifest.webmanifest',
-    appleWebApp: {
-      capable: true,
-      statusBarStyle: 'default',
-      title: 'Chánh Thu',
-    },
+    ...baseMeta,
     title: generateAppTitle(COMPANY_INFO.name),
     description: "Hệ thống quản lý kho và giao việc chuyên nghiệp",
   };

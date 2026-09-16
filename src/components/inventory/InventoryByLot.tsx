@@ -27,7 +27,9 @@ export default function InventoryByLot({ units, hookData, hideFilters, viewMode 
         groupedInventory,
         expandedProducts,
         toggleExpand,
-        systemType
+        systemType,
+        positionFilter,
+        setPositionFilter
     } = activeHookData
 
     // Use company info for printing params (Managed here or could be moved to Filters)
@@ -55,6 +57,8 @@ export default function InventoryByLot({ units, hookData, hideFilters, viewMode 
                     selectedZoneId={selectedZoneId}
                     setSelectedZoneId={setSelectedZoneId}
                     allZones={allZones}
+                    positionFilter={positionFilter}
+                    setPositionFilter={setPositionFilter}
                 />
             )}
 

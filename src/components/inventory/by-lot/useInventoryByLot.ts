@@ -66,6 +66,7 @@ export function useInventoryByLot(
         targetUnitId?: string | null
         selectedZoneId?: string | null
         lockFilter?: 'all' | 'unlocked' | 'locked'
+        positionFilter?: 'all' | 'has_position' | 'no_position'
         viewMode?: 'lot' | 'month'
         dateFrom?: string
         dateTo?: string
@@ -80,6 +81,7 @@ export function useInventoryByLot(
     const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
     const [internalTargetUnitId, setInternalTargetUnitId] = useState<string | null>(null)
     const [internalLockFilter, setInternalLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
+    const [internalPositionFilter, setInternalPositionFilter] = useState<'all' | 'has_position' | 'no_position'>('all')
     const [internalViewMode, setInternalViewMode] = useState<'lot' | 'month'>('lot')
     
     // Sync with external filters if provided
@@ -98,6 +100,9 @@ export function useInventoryByLot(
 
     const lockFilter = externalFilters?.lockFilter !== undefined ? externalFilters.lockFilter : internalLockFilter
     const setLockFilter = externalFilters?.lockFilter !== undefined ? (() => {}) : setInternalLockFilter
+
+    const positionFilter = externalFilters?.positionFilter !== undefined ? externalFilters.positionFilter : internalPositionFilter
+    const setPositionFilter = externalFilters?.positionFilter !== undefined ? (() => {}) : setInternalPositionFilter
 
     const viewMode = externalFilters?.viewMode !== undefined ? externalFilters.viewMode : internalViewMode
     const setViewMode = externalFilters?.viewMode !== undefined ? (() => {}) : setInternalViewMode
@@ -434,6 +439,14 @@ export function useInventoryByLot(
                 if (lot.is_locked) return false
             }
 
+            if (positionFilter === 'has_position') {
+                const hasPos = Array.isArray(lot.positions) && lot.positions.length > 0
+                if (!hasPos) return false
+            } else if (positionFilter === 'no_position') {
+                const hasPos = Array.isArray(lot.positions) && lot.positions.length > 0
+                if (hasPos) return false
+            }
+
             if (fromTime || toTime) {
                 const lotDateRaw = lot.inbound_date || lot.created_at || lot.production_date || lot.packaging_date
                 if (!lotDateRaw) return false
@@ -652,6 +665,8 @@ export function useInventoryByLot(
         setSelectedZoneId,
         lockFilter,
         setLockFilter,
+        positionFilter,
+        setPositionFilter,
         viewMode,
         setViewMode,
         allZones,

@@ -18,6 +18,8 @@ interface InventoryFiltersProps {
     selectedZoneId: string | null
     setSelectedZoneId: (value: string | null) => void
     allZones: any[]
+    positionFilter?: 'all' | 'has_position' | 'no_position'
+    setPositionFilter?: (value: 'all' | 'has_position' | 'no_position') => void
 }
 
 export function InventoryFilters({
@@ -34,7 +36,9 @@ export function InventoryFilters({
     loadingCompany,
     selectedZoneId,
     setSelectedZoneId,
-    allZones
+    allZones,
+    positionFilter,
+    setPositionFilter
 }: InventoryFiltersProps) {
 
     const handlePrint = async () => {
@@ -45,6 +49,7 @@ export function InventoryFilters({
         if (searchTerm) params.set('search', searchTerm)
         if (targetUnitId) params.set('targetUnitId', targetUnitId)
         if (selectedZoneId) params.set('zoneId', selectedZoneId)
+        if (positionFilter && positionFilter !== 'all') params.set('positionFilter', positionFilter)
         params.set('to', new Date().toISOString().split('T')[0])
 
         // Pass auth token
@@ -76,6 +81,7 @@ export function InventoryFilters({
         if (searchTerm) params.set('search', searchTerm)
         if (targetUnitId) params.set('targetUnitId', targetUnitId)
         if (selectedZoneId) params.set('zoneId', selectedZoneId)
+        if (positionFilter && positionFilter !== 'all') params.set('positionFilter', positionFilter)
         params.set('to', new Date().toISOString().split('T')[0])
 
         // Pass auth token
@@ -123,7 +129,7 @@ export function InventoryFilters({
                         <select
                             value={selectedBranch}
                             onChange={e => setSelectedBranch(e.target.value)}
-                            className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
+                            className="w-full pl-9 pr-8 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer"
                         >
                             <option value="Tất cả">Tất cả chi nhánh</option>
                             {branches.map(b => (
@@ -133,6 +139,24 @@ export function InventoryFilters({
                         <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
                     </div>
                 </div>
+
+                {setPositionFilter && (
+                    <div className="w-full md:w-1/2 xl:w-52">
+                        <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Vị trí lưu kho</label>
+                        <div className="relative">
+                            <select
+                                value={positionFilter || 'all'}
+                                onChange={e => setPositionFilter(e.target.value as any)}
+                                className="w-full pl-3 pr-8 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer font-medium"
+                            >
+                                <option value="all">Tất cả LOT (Mặc định)</option>
+                                <option value="has_position">📍 Chỉ LOT đã có vị trí</option>
+                                <option value="no_position">⚠️ Chỉ LOT chưa có vị trí</option>
+                            </select>
+                            <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                        </div>
+                    </div>
+                )}
 
                 <div className="flex items-center justify-between xl:justify-start gap-4 w-full xl:w-auto pt-2 xl:pt-0">
                     <div className="w-full xl:w-48">

@@ -132,6 +132,7 @@ export default function PrintInventoryPage() {
     const token = searchParams.get('token')
     const viewMode = searchParams.get('viewMode') || 'lot'
     const lockFilter = searchParams.get('lockFilter') || 'unlocked'
+    const positionFilter = searchParams.get('positionFilter') || 'all'
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -502,6 +503,12 @@ export default function PrintInventoryPage() {
                             if (lot.is_locked !== true) return []
                         } else if (lockFilter === 'unlocked') {
                             if (lot.is_locked === true) return []
+                        }
+
+                        if (positionFilter === 'has_position') {
+                            if (!lot.positions || lot.positions.length === 0) return []
+                        } else if (positionFilter === 'no_position') {
+                            if (lot.positions && lot.positions.length > 0) return []
                         }
 
                         const lotTags = (lot.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
@@ -1026,7 +1033,19 @@ export default function PrintInventoryPage() {
 
             {/* Content Table */}
             <div className="mb-8">
-                {warehouse && <p className="font-medium mb-1 text-left">Kho: {warehouse}</p>}
+                <div className="flex items-center gap-2 mb-1 text-left">
+                    {warehouse && <p className="font-medium">Kho: {warehouse}</p>}
+                    {positionFilter === 'has_position' && (
+                        <span className="text-xs bg-emerald-50 text-emerald-800 px-2 py-0.5 rounded border border-emerald-300 font-semibold print:border-black">
+                            📍 Chỉ LOT đã có vị trí
+                        </span>
+                    )}
+                    {positionFilter === 'no_position' && (
+                        <span className="text-xs bg-amber-50 text-amber-800 px-2 py-0.5 rounded border border-amber-300 font-semibold print:border-black">
+                            ⚠️ Chỉ LOT chưa có vị trí
+                        </span>
+                    )}
+                </div>
                 {type === 'accounting' && (
                     <table className="w-full border-collapse border border-black text-sm">
                         <thead>

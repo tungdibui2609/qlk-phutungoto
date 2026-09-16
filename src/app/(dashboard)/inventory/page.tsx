@@ -79,6 +79,7 @@ export default function InventoryPage() {
     const currentMode = searchModes.find(m => m.id === searchMode) || searchModes[0]
 
     const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
+    const [positionFilter, setPositionFilter] = useState<'all' | 'has_position' | 'no_position'>('all')
     const [viewMode, setViewMode] = useState<'lot' | 'month'>('lot')
 
     const isLotTabActive = activeTab === 'lot' || activeTab === 'category'
@@ -99,6 +100,7 @@ export default function InventoryPage() {
         targetUnitId: targetUnitId,
         selectedZoneId: selectedZoneId,
         lockFilter: lockFilter,
+        positionFilter: positionFilter,
         viewMode: viewMode,
         dateFrom: dateFrom,
         dateTo: dateTo,
@@ -329,6 +331,28 @@ export default function InventoryPage() {
                             </div>
                         )}
 
+                        {/* Position Filter (Chỉ tính LOT đã có vị trí) */}
+                        {(activeTab === 'lot' || activeTab === 'category') && (
+                            <div className="flex-1 min-w-[190px] max-w-xs">
+                                <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 flex items-center gap-1">
+                                    <MapPin size={14} className="text-orange-500" />
+                                    Vị trí lưu kho
+                                </label>
+                                <div className="relative">
+                                    <select
+                                        value={positionFilter}
+                                        onChange={e => setPositionFilter(e.target.value as any)}
+                                        className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer font-medium text-stone-800 dark:text-stone-200"
+                                    >
+                                        <option value="all">Tất cả LOT (Mặc định)</option>
+                                        <option value="has_position">📍 Chỉ LOT đã có vị trí</option>
+                                        <option value="no_position">⚠️ Chỉ LOT chưa có vị trí</option>
+                                    </select>
+                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
+                                </div>
+                            </div>
+                        )}
+
                         {/* View Mode Filter */}
                         {activeTab === 'lot' && (
                             <div className="flex-1 min-w-[170px] max-w-xs">
@@ -420,6 +444,9 @@ export default function InventoryPage() {
                                         if ((activeTab === 'lot' || activeTab === 'category') && lockFilter) {
                                             params.set('lockFilter', lockFilter)
                                         }
+                                        if ((activeTab === 'lot' || activeTab === 'category') && positionFilter && positionFilter !== 'all') {
+                                            params.set('positionFilter', positionFilter)
+                                        }
                                         const { data: { session } } = await supabase.auth.getSession()
                                         if (session?.access_token) params.set('token', session.access_token)
                                         if (companyInfo) {
@@ -456,6 +483,9 @@ export default function InventoryPage() {
                                         if (activeTab === 'lot' && viewMode) params.set('viewMode', viewMode)
                                         if ((activeTab === 'lot' || activeTab === 'category') && lockFilter) {
                                             params.set('lockFilter', lockFilter)
+                                        }
+                                        if ((activeTab === 'lot' || activeTab === 'category') && positionFilter && positionFilter !== 'all') {
+                                            params.set('positionFilter', positionFilter)
                                         }
                                         const { data: { session } } = await supabase.auth.getSession()
                                         if (session?.access_token) params.set('token', session.access_token)

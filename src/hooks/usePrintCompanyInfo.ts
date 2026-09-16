@@ -28,6 +28,15 @@ interface UsePrintCompanyInfoOptions {
     fallbackToProfile?: boolean
 }
 
+// In-memory cache for company info to prevent multiple calls on same page
+const companyInfoCache = new Map<string, CompanyInfo>()
+const companyLogoCache = new Map<string, string | null>()
+
+export function invalidateCompanyInfoCache() {
+    companyInfoCache.clear()
+    companyLogoCache.clear()
+}
+
 export function usePrintCompanyInfo(options: UsePrintCompanyInfoOptions = {}) {
     const {
         token,
@@ -36,11 +45,22 @@ export function usePrintCompanyInfo(options: UsePrintCompanyInfoOptions = {}) {
         fallbackToProfile = true
     } = options
 
-    const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(initialCompanyInfo || null)
-    const [logoSrc, setLogoSrc] = useState<string | null>(null)
-    const [loading, setLoading] = useState(true)
+    const cacheKey = orderCompanyId || 'default'
+    const cachedInfo = companyInfoCache.get(cacheKey) || initialCompanyInfo || null
+    const cachedLogo = companyLogoCache.get(cacheKey) || null
+
+    const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(cachedInfo)
+    const [logoSrc, setLogoSrc] = useState<string | null>(cachedLogo)
+    const [loading, setLoading] = useState(!cachedInfo)
 
     useEffect(() => {
+        if (cachedInfo) {
+            setCompanyInfo(cachedInfo)
+            setLogoSrc(cachedLogo)
+            setLoading(false)
+            return
+        }
+
         fetchCompanyInfo()
 
         // Subscribe to auth changes to retry fetching if session is restored late
@@ -109,6 +129,7 @@ export function usePrintCompanyInfo(options: UsePrintCompanyInfoOptions = {}) {
 
 
             if (companyData) {
+                companyInfoCache.set(cacheKey, companyData as CompanyInfo)
                 setCompanyInfo(companyData as CompanyInfo)
 
                 // Handle secure logo loading
@@ -121,14 +142,19 @@ export function usePrintCompanyInfo(options: UsePrintCompanyInfoOptions = {}) {
                             })
                             if (res.ok) {
                                 const blob = await res.blob()
-                                setLogoSrc(URL.createObjectURL(blob))
+                                const objUrl = URL.createObjectURL(blob)
+                                companyLogoCache.set(cacheKey, objUrl)
+                                setLogoSrc(objUrl)
                             } else {
+                                companyLogoCache.set(cacheKey, url)
                                 setLogoSrc(url)
                             }
                         } catch (e) {
+                            companyLogoCache.set(cacheKey, url)
                             setLogoSrc(url)
                         }
                     } else {
+                        companyLogoCache.set(cacheKey, url)
                         setLogoSrc(url)
                     }
                 }

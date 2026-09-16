@@ -9,7 +9,6 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { formatQuantityFull, decodeSTT } from '@/lib/numberUtils'
 import { format } from 'date-fns'
 import { vi } from 'date-fns/locale'
-import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 
@@ -757,6 +756,7 @@ export function LotReportModal({ onClose }: LotReportModalProps) {
         }
 
         try {
+            const ExcelJS = (await import('exceljs')).default
             const workbook = new ExcelJS.Workbook()
             const worksheet = workbook.addWorksheet(
                 activeTab === 'inward' 
