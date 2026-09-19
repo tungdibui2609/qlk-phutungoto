@@ -129,11 +129,11 @@ export function PrintBankOutbound({
     const [year, setYear] = useState(isValidDate ? orderDate.getFullYear().toString() : '20.....')
 
     // Document basis
-    const [recipientCompany, setRecipientCompany] = useState(order.customer_name || '................................................................')
+    const [recipientCompany, setRecipientCompany] = useState('Công Ty CPTM DVBV Ngày & Đêm')
     const [basisNum, setBasisNum] = useState(order.code || '..............')
     const [basisDate, setBasisDate] = useState(isValidDate ? format(orderDate, 'dd/MM/yyyy') : '...............')
     const [debtDate, setDebtDate] = useState('................')
-    const [proposeCompany, setProposeCompany] = useState(order.customer_name || '......................................................')
+    const [proposeCompany, setProposeCompany] = useState('Công Ty CPTM DVBV Ngày & Đêm')
     const [unitName, setUnitName] = useState('VNĐ')
 
     useEffect(() => {
@@ -201,7 +201,7 @@ export function PrintBankOutbound({
     const [signer1Name, setSigner1Name] = useState(order.created_by_name || '')
 
     const [signer2Title, setSigner2Title] = useState('THỦ KHO')
-    const [signer2Name, setSigner2Name] = useState('')
+    const [signer2Name, setSigner2Name] = useState('Nguyễn Đình Tùng')
 
     const [signer3Title, setSigner3Title] = useState('GIÁM ĐỐC NHÀ MÁY')
     const [signer3Name, setSigner3Name] = useState('')
@@ -340,13 +340,13 @@ export function PrintBankOutbound({
 
             {/* Salutation */}
             <div className="text-left text-[13px] leading-relaxed mb-2">
-                <span className="font-bold underline">Kính gửi</span> : - Công ty{' '}
+                <span className="font-bold underline">Kính gửi</span> : -{' '}
                 <span className={`print:hidden ${isSnapshot ? 'hidden' : ''} inline-block`}>
                     <input
                         type="text"
                         value={recipientCompany}
                         onChange={(e) => setRecipientCompany(e.target.value)}
-                        className="w-72 font-medium bg-transparent border-b border-dashed border-gray-400 focus:outline-none"
+                        className="w-80 font-medium bg-transparent border-b border-dashed border-gray-400 focus:outline-none"
                     />
                 </span>
                 <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''} font-medium`}>
@@ -398,13 +398,13 @@ export function PrintBankOutbound({
                     <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''} font-medium`}>
                         {debtDate}
                     </span>
-                    {' '}đề nghị Công ty{' '}
+                    {' '}đề nghị{' '}
                     <span className={`print:hidden ${isSnapshot ? 'hidden' : ''} inline-block`}>
                         <input
                             type="text"
                             value={proposeCompany}
                             onChange={(e) => setProposeCompany(e.target.value)}
-                            className="w-48 font-medium bg-transparent border-b border-dashed border-gray-400 focus:outline-none"
+                            className="w-72 font-medium bg-transparent border-b border-dashed border-gray-400 focus:outline-none"
                         />
                     </span>
                     <span className={`hidden print:inline ${isSnapshot ? 'inline' : ''} font-medium`}>
