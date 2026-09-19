@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye } from 'lucide-react'
+import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye, Landmark } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -575,6 +575,19 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                             <div>
                                                 <div className="font-medium">Hệ Thống</div>
                                                 <div className="text-xs text-stone-500">Mẫu 02-VT đầy đủ</div>
+                                            </div>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                window.open(`/print/outbound?id=${order.id}&type=bank`, '_blank')
+                                                setShowPrintMenu(false)
+                                            }}
+                                            className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
+                                        >
+                                            <Landmark size={16} className="text-emerald-600" />
+                                            <div>
+                                                <div className="font-medium">Ngân Hàng</div>
+                                                <div className="text-xs text-stone-500">Lệnh xuất kho VietinBank</div>
                                             </div>
                                         </button>
 

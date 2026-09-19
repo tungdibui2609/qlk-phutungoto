@@ -67,10 +67,12 @@ export async function getLotInventoryForReconciliation(
             .from('lots')
             .select(`
                 id,
+                code,
                 product_id,
                 quantity,
                 warehouse_name,
                 is_locked,
+                positions!positions_lot_id_fkey(id, code),
                 lot_items (
                     product_id,
                     quantity,

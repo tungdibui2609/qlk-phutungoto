@@ -5,6 +5,7 @@ import { CompanyInfo } from '@/hooks/usePrintCompanyInfo';
 interface InventoryReportExportData {
     type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags' | 'labels';
     viewMode?: 'lot' | 'month';
+    positionFilter?: 'all' | 'has_position' | 'no_position';
     dateTitle: string;
     warehouse: string;
     items: any[];
@@ -75,12 +76,17 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
             { header: 'ĐVT', key: 'unit', width: 10 },
         ];
     } else {
+        const lotHeader = data.positionFilter === 'has_position'
+            ? 'LOT Có Vị Trí'
+            : data.positionFilter === 'no_position'
+            ? 'LOT Chưa Vị Trí'
+            : 'Tổng LOT';
         cols = [
             { header: 'Mã SP', key: 'productCode', width: 20 },
             { header: 'Tên Sản Phẩm', key: 'productName', width: 40 },
             { header: 'ĐVT', key: 'unit', width: 10 },
             { header: 'Tồn Kế Toán', key: 'accountingBalance', width: 15 },
-            { header: 'Tổng LOT', key: 'lotBalance', width: 15 },
+            { header: lotHeader, key: 'lotBalance', width: 15 },
             { header: 'Chênh Lệch', key: 'diff', width: 15 },
         ];
     }

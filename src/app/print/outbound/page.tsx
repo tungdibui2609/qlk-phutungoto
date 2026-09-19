@@ -12,6 +12,7 @@ import { usePrintCompanyInfo, CompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader, PrintLegalHeader } from '@/components/print/PrintHeader'
 import { EditableText, numberToVietnameseText } from '@/components/print/PrintHelpers'
 import { PrintActionMenu } from '@/components/print/PrintActionMenu'
+import { PrintBankOutbound } from '@/components/print/PrintBankOutbound'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { calculateItemSpecification } from '@/lib/unitConversion'
 
@@ -52,9 +53,18 @@ export default function OutboundPrintPage() {
 function OutboundPrintContent() {
     const searchParams = useSearchParams()
     const orderId = searchParams.get('id')
-    const printType = searchParams.get('type') || 'official' // 'internal' or 'official'
+    const typeParam = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
+    const [currentPrintType, setCurrentPrintType] = useState<'internal' | 'official' | 'bank'>(typeParam || 'official')
+
+    useEffect(() => {
+        const t = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
+        if (t) setCurrentPrintType(t)
+    }, [searchParams])
+
+    const printType = currentPrintType
     const isSnapshot = searchParams.get('snapshot') === '1'
     const isInternal = printType === 'internal'
+    const isBank = printType === 'bank'
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -459,7 +469,7 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
+        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' && !isBank ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
@@ -478,13 +488,13 @@ function OutboundPrintContent() {
                     }
                 `}} />
             )}
-            {printSize === 'A4' && !isCapturing && (
+            {(printSize === 'A4' || isBank) && !isCapturing && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
                     @media print {
                         @page {
-                            size: A4 portrait;
-                            margin: 15mm 15mm 15mm 15mm;
+                            size: A4 portrait !important;
+                            margin: 12mm 15mm 12mm 15mm !important;
                         }
                     }
                 `}} />
@@ -500,8 +510,21 @@ function OutboundPrintContent() {
                 onDisplayInternalCodeChange={() => setDisplayInternalCode(!displayInternalCode)}
                 onPrint={handlePrint}
                 onExcelExport={handleExcelExport}
+                printType={currentPrintType}
+                onPrintTypeChange={setCurrentPrintType}
             />
 
+            {isBank ? (
+                <PrintBankOutbound
+                    order={order}
+                    items={items}
+                    unitsMap={unitsMap}
+                    isSnapshot={isSnapshotMode}
+                    printSize={printSize}
+                    displayInternalCode={displayInternalCode}
+                />
+            ) : (
+                <>
             {/* Header with Shared Component */}
             <PrintHeader
                 companyInfo={companyInfo}
@@ -977,142 +1000,225 @@ function OutboundPrintContent() {
                     <span className={`hidden print:inline font-semibold whitespace-nowrap ${isSnapshotMode ? 'inline' : ''}`}>{signPerson3}</span>
                 </div>
             </div>
+            </>
+            )}
 
 
-            <style jsx global>{`
-                @media print {
-                    @page {
-                        size: A5 landscape !important;
-                        margin: 0 !important;
+            {isBank ? (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait !important;
+                            margin: 12mm 15mm 12mm 15mm !important;
+                        }
+                        html, body {
+                            width: 100% !important;
+                            height: auto !important;
+                            min-height: 0 !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+                        #print-ready {
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            min-width: 0 !important;
+                            height: auto !important;
+                            margin: 0 auto !important;
+                            padding: 0 !important;
+                            box-sizing: border-box !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                            overflow: visible !important;
+                            font-size: 13px !important;
+                            line-height: 1.4 !important;
+                        }
+                        #print-ready table {
+                            width: 100% !important;
+                            table-layout: auto !important;
+                        }
+                        #print-ready table th,
+                        #print-ready table td {
+                            word-break: normal !important;
+                            overflow-wrap: normal !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
                     }
-                    html, body {
-                        width: 210mm !important;
-                        height: 148mm !important;
-                        margin: 0 !important;
-                        padding: 0 !important;
-                        overflow: hidden !important;
-                    }
-                    #print-ready {
-                        width: 210mm !important;
-                        height: 148mm !important;
-                        max-width: 210mm !important;
-                        min-width: 210mm !important;
-                        margin: 0 !important;
-                        padding: 2mm 20mm 5mm 5mm !important;
-                        box-sizing: border-box !important;
-                        box-shadow: none !important;
-                        border: none !important;
-                        overflow: hidden !important;
-                        font-size: 10px !important;
-                        line-height: 1.1 !important;
-                    }
-                    #print-ready #print-header-top * {
-                        line-height: 1.3 !important;
-                    }
-                    #print-ready h1 {
-                        font-size: 14px !important;
-                        margin-top: 0px !important;
-                        margin-bottom: 4px !important;
-                        line-height: 1.4 !important;
-                    }
-                    #print-ready h1 + div,
-                    #print-ready h1 + div + div {
-                        font-size: 11px !important;
-                        line-height: 1.3 !important;
-                        margin-bottom: 2px !important;
-                    }
-                    #print-ready #print-header-title {
-                        margin-right: 5mm !important; /* Shift left to center on paper */
-                    }
-                    
-                    /* Info section compact */
-                    #print-ready div.space-y-2 {
-                        display: flex !important;
-                        flex-direction: column !important;
-                        gap: 2px !important;
-                        font-size: 11.5px !important;
-                    }
-                    #print-ready .space-y-2 > * {
-                        margin-top: 0 !important;
-                    }
-                    
-                    /* Table: fill full width */
-                    #print-ready table {
-                        width: 100% !important;
-                        table-layout: fixed !important; /* Switch to fixed to control column widths */
-                    }
-                    #print-ready table th:nth-child(1), #print-ready table td:nth-child(1) { width: 8mm !important; } /* STT */
-                    #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 65mm !important; } /* Tên SP (Điều chỉnh lại để nhường chỗ cho Số lượng) */
-                    #print-ready table th:nth-child(3), #print-ready table td:nth-child(3) { width: 25mm !important; } /* Quy cách */
-                    #print-ready table th:nth-child(4), #print-ready table td:nth-child(4) { width: 15mm !important; } /* Đơn vị */
-                    #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 35mm !important; } /* Số lượng (Tăng độ rộng) */
-                    #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 35mm !important; } /* Quy đổi (Tăng độ rộng) */
-                    /* Remove ALL fixed Tailwind width classes on table cells */
-                    #print-ready table th {
-                        font-size: 11px !important;
-                        font-weight: bold !important;
-                        padding: 5px 3px !important;
-                    }
-                    #print-ready table td {
-                        font-size: 10px !important;
-                        padding: 5px 3px !important;
-                    }
-                    #print-ready table th,
-                    #print-ready table td {
-                        width: auto !important;
-                        min-width: 0 !important;
-                        max-width: none !important;
-                        word-break: break-word !important;
-                        overflow-wrap: break-word !important;
-                    }
-                    #print-ready .print-total-row td {
-                        padding-top: 8px !important;
-                        padding-bottom: 8px !important;
-                        font-weight: bold !important;
-                        font-size: 11px !important;
-                    }
-                    
-                    /* Signature section compact */
-                    #print-ready .signature-grid {
-                        page-break-inside: avoid !important;
-                        break-inside: avoid !important;
-                        gap: 1mm !important;
-                        margin-top: 2px !important;
-                        padding-right: 0 !important;
-                        display: grid !important;
-                        grid-template-columns: repeat(5, 1fr) !important;
-                        width: 100% !important;
-                    }
-                    #print-ready .signature-grid .font-semibold {
-                        font-size: 10px !important;
-                    }
-                    #print-ready .pb-6, #print-ready .pb-10 {
-                        padding-bottom: 0px !important;
+                    .no-print {
                         display: none !important;
                     }
-                    #print-ready .signature-grid .print\:pt-3 {
-                        padding-top: 15px !important;
-                        height: 85px !important; /* Adjusted to lift name up from bottom */
+                    #print-ready * {
+                        color: black !important;
                     }
-                    #print-ready .signature-grid .text-xs {
+                `}</style>
+            ) : printSize === 'A5' ? (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A5 landscape !important;
+                            margin: 0 !important;
+                        }
+                        html, body {
+                            width: 210mm !important;
+                            height: 148mm !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            overflow: hidden !important;
+                        }
+                        #print-ready {
+                            width: 210mm !important;
+                            height: 148mm !important;
+                            max-width: 210mm !important;
+                            min-width: 210mm !important;
+                            margin: 0 !important;
+                            padding: 2mm 20mm 5mm 5mm !important;
+                            box-sizing: border-box !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                            overflow: hidden !important;
+                            font-size: 10px !important;
+                            line-height: 1.1 !important;
+                        }
+                        #print-ready #print-header-top * {
+                            line-height: 1.3 !important;
+                        }
+                        #print-ready h1 {
+                            font-size: 14px !important;
+                            margin-top: 0px !important;
+                            margin-bottom: 4px !important;
+                            line-height: 1.4 !important;
+                        }
+                        #print-ready h1 + div,
+                        #print-ready h1 + div + div {
+                            font-size: 11px !important;
+                            line-height: 1.3 !important;
+                            margin-bottom: 2px !important;
+                        }
+                        #print-ready #print-header-title {
+                            margin-right: 5mm !important; /* Shift left to center on paper */
+                        }
+                        
+                        /* Info section compact */
+                        #print-ready div.space-y-2 {
+                            display: flex !important;
+                            flex-direction: column !important;
+                            gap: 2px !important;
+                            font-size: 11.5px !important;
+                        }
+                        #print-ready .space-y-2 > * {
+                            margin-top: 0 !important;
+                        }
+                        
+                        /* Table: fill full width */
+                        #print-ready table {
+                            width: 100% !important;
+                            table-layout: fixed !important; /* Switch to fixed to control column widths */
+                        }
+                        #print-ready table th:nth-child(1), #print-ready table td:nth-child(1) { width: 8mm !important; } /* STT */
+                        #print-ready table th:nth-child(2), #print-ready table td:nth-child(2) { width: 65mm !important; } /* Tên SP (Điều chỉnh lại để nhường chỗ cho Số lượng) */
+                        #print-ready table th:nth-child(3), #print-ready table td:nth-child(3) { width: 25mm !important; } /* Quy cách */
+                        #print-ready table th:nth-child(4), #print-ready table td:nth-child(4) { width: 15mm !important; } /* Đơn vị */
+                        #print-ready table th:nth-child(5), #print-ready table td:nth-child(5) { width: 35mm !important; } /* Số lượng (Tăng độ rộng) */
+                        #print-ready table th:nth-child(6), #print-ready table td:nth-child(6) { width: 35mm !important; } /* Quy đổi (Tăng độ rộng) */
+                        /* Remove ALL fixed Tailwind width classes on table cells */
+                        #print-ready table th {
+                            font-size: 11px !important;
+                            font-weight: bold !important;
+                            padding: 5px 3px !important;
+                        }
+                        #print-ready table td {
+                            font-size: 10px !important;
+                            padding: 5px 3px !important;
+                        }
+                        #print-ready table th,
+                        #print-ready table td {
+                            width: auto !important;
+                            min-width: 0 !important;
+                            max-width: none !important;
+                            word-break: break-word !important;
+                            overflow-wrap: break-word !important;
+                        }
+                        #print-ready .print-total-row td {
+                            padding-top: 8px !important;
+                            padding-bottom: 8px !important;
+                            font-weight: bold !important;
+                            font-size: 11px !important;
+                        }
+                        
+                        /* Signature section compact */
+                        #print-ready .signature-grid {
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                            gap: 1mm !important;
+                            margin-top: 2px !important;
+                            padding-right: 0 !important;
+                            display: grid !important;
+                            grid-template-columns: repeat(5, 1fr) !important;
+                            width: 100% !important;
+                        }
+                        #print-ready .signature-grid .font-semibold {
+                            font-size: 10px !important;
+                        }
+                        #print-ready .pb-6, #print-ready .pb-10 {
+                            padding-bottom: 0px !important;
+                            display: none !important;
+                        }
+                        #print-ready .signature-grid .print\\:pt-3 {
+                            padding-top: 15px !important;
+                            height: 85px !important; /* Adjusted to lift name up from bottom */
+                        }
+                        #print-ready .signature-grid .text-xs {
+                            display: none !important;
+                        }
+                        #print-ready img:not([alt="Logo"]) {
+                            max-height: 15px !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
+                    }
+                    .no-print {
                         display: none !important;
                     }
-                    #print-ready img:not([alt="Logo"]) {
-                        max-height: 15px !important;
+                    #print-ready * {
+                        color: black !important;
                     }
-                    thead {
-                        display: table-header-group !important;
+                `}</style>
+            ) : (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait !important;
+                            margin: 12mm 15mm 12mm 15mm !important;
+                        }
+                        html, body {
+                            width: 100% !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+                        #print-ready {
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                            padding: 0 !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
                     }
-                }
-                .no-print {
-                    display: none !important;
-                }
-
-                /* Force all text in the print area to be black, both on screen and when printed */
-                #print-ready * {
-                    color: black !important;
-                }
-            `}</style>
+                    .no-print {
+                        display: none !important;
+                    }
+                    #print-ready * {
+                        color: black !important;
+                    }
+                `}</style>
+            )}
 
             {
                 isSnapshot && (

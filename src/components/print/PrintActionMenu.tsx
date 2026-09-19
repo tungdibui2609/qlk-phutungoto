@@ -22,6 +22,8 @@ interface PrintActionMenuProps {
     onDisplayInternalCodeChange: () => void;
     onPrint: () => void;
     onExcelExport: () => void;
+    printType?: 'internal' | 'official' | 'bank';
+    onPrintTypeChange?: (type: 'internal' | 'official' | 'bank') => void;
 }
 
 export function PrintActionMenu({
@@ -33,7 +35,9 @@ export function PrintActionMenu({
     displayInternalCode,
     onDisplayInternalCodeChange,
     onPrint,
-    onExcelExport
+    onExcelExport,
+    printType,
+    onPrintTypeChange
 }: PrintActionMenuProps) {
     const [isOpen, setIsOpen] = useState(false)
 
@@ -104,6 +108,33 @@ export function PrintActionMenu({
                         <Hash size={20} />
                         <span>{displayInternalCode ? 'Hiện Mã Nội Bộ' : 'Hiện Mã Gốc'}</span>
                     </button>
+
+                    {/* Switch print template */}
+                    {onPrintTypeChange && (
+                        <div className="flex flex-col gap-1 items-end bg-white dark:bg-zinc-800 p-2.5 rounded-2xl shadow-xl border border-stone-200 dark:border-zinc-700">
+                            <span className="text-[10px] font-bold text-stone-500 uppercase px-1">Mẫu chứng từ</span>
+                            <div className="flex gap-1.5">
+                                <button
+                                    onClick={() => { onPrintTypeChange('internal'); setIsOpen(false); }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${printType === 'internal' ? 'bg-blue-600 text-white shadow' : 'bg-stone-100 hover:bg-stone-200 text-stone-700'}`}
+                                >
+                                    Nội bộ
+                                </button>
+                                <button
+                                    onClick={() => { onPrintTypeChange('official'); setIsOpen(false); }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${printType === 'official' ? 'bg-orange-500 text-white shadow' : 'bg-stone-100 hover:bg-stone-200 text-stone-700'}`}
+                                >
+                                    Hệ thống
+                                </button>
+                                <button
+                                    onClick={() => { onPrintTypeChange('bank'); setIsOpen(false); }}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${printType === 'bank' ? 'bg-emerald-600 text-white shadow' : 'bg-stone-100 hover:bg-stone-200 text-stone-700'}`}
+                                >
+                                    Ngân hàng
+                                </button>
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

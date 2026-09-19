@@ -747,6 +747,11 @@ export default function PrintInventoryPage() {
                     } else if (lockFilter === 'unlocked') {
                         if (lot.is_locked === true) return false
                     }
+                    if (positionFilter === 'has_position') {
+                        if (!lot.positions || lot.positions.length === 0) return false
+                    } else if (positionFilter === 'no_position') {
+                        if (lot.positions && lot.positions.length > 0) return false
+                    }
                     if (zoneId) {
                          return lot.positions?.some((p: any) => isDescendantOrSelf(activePosMap[p.id], zoneId, activeHierarchy))
                     }
@@ -911,6 +916,7 @@ export default function PrintInventoryPage() {
         await exportInventoryReportToExcel({
             type: type as any,
             viewMode: viewMode as any,
+            positionFilter: positionFilter as any,
             dateTitle,
             warehouse: warehouse || 'Tất cả',
             items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems)),
@@ -1523,7 +1529,13 @@ export default function PrintInventoryPage() {
                                 <th className="border border-black p-1">Tên Sản Phẩm</th>
                                 <th className="border border-black p-1 text-center">ĐVT</th>
                                 <th className="border border-black p-1 text-right">Tồn Kế Toán</th>
-                                <th className="border border-black p-1 text-right">Tổng LOT</th>
+                                <th className="border border-black p-1 text-right">
+                                    {positionFilter === 'has_position'
+                                        ? 'LOT Có Vị Trí'
+                                        : positionFilter === 'no_position'
+                                        ? 'LOT Chưa Vị Trí'
+                                        : 'Tổng LOT'}
+                                </th>
                                 <th className="border border-black p-1 text-right">Chênh Lệch</th>
                                 <th className="border border-black p-1 text-center">Trạng Thái</th>
                             </tr>
