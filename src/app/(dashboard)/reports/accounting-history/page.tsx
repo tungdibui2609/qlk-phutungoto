@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Search, Download, Calendar, Boxes, Building2, User, FileText, Filter, Layers, ChevronDown, DollarSign, ArrowUpRight, ArrowDownLeft, PackageSearch, TrendingUp, Check, X } from 'lucide-react'
+import { Search, Download, Calendar, Boxes, Building2, User, FileText, Filter, Layers, ChevronDown, DollarSign, ArrowUpRight, ArrowDownLeft, PackageSearch, TrendingUp, Check, X, Tag } from 'lucide-react'
 import { format, startOfMonth, endOfMonth, isBefore, parseISO } from 'date-fns'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -22,6 +22,7 @@ type ProductMovement = {
     productId: string
     sku: string
     name: string
+    categoryIds: string[]
     primaryCategoryName?: string
     unit: string
     opening: number
@@ -38,6 +39,7 @@ type DailyMovement = {
     productId: string
     sku: string
     name: string
+    categoryIds: string[]
     primaryCategoryName?: string
     unit: string
     totalIn: number
@@ -54,6 +56,8 @@ export default function AccountingHistoryPage() {
     const [endDate, setEndDate] = useState(format(endOfMonth(new Date()), 'yyyy-MM-dd'))
 
     const [products, setProducts] = useState<any[]>([])
+    const [categories, setCategories] = useState<{ id: string; name: string }[]>([])
+    const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
     const [orderTypes, setOrderTypes] = useState<OrderType[]>([])
     const [movements, setMovements] = useState<ProductMovement[]>([])
     const [dailyMovements, setDailyMovements] = useState<DailyMovement[]>([])
@@ -69,6 +73,11 @@ export default function AccountingHistoryPage() {
     const [exporting, setExporting] = useState(false)
 
     const { convertUnit, conversionMap, unitNameMap, loading: loadingConversion } = useUnitConversion()
+
+    useEffect(() => {
+        setSelectedCategoryIds([])
+        setSelectedProductIds([])
+    }, [systemType])
 
     useEffect(() => {
         fetchData()
@@ -96,11 +105,51 @@ export default function AccountingHistoryPage() {
             // 1. Fetch Products for this system
             const { data: prodData } = await (supabase
                 .from('products') as any)
-                .select('id, sku, name, unit, product_category_rel(category_id, is_primary, categories(id, name))')
+                .select('id, sku, name, unit, category_id, product_category_rel(category_id, is_primary, categories(id, name))')
                 .eq('system_type', systemType)
 
             if (!prodData) return
             setProducts(prodData)
+
+            // 1b. Fetch Categories for this system
+            const { data: catData } = await (supabase
+                .from('categories') as any)
+                .select('id, name')
+                .eq('system_type', systemType)
+                .order('name')
+
+            const catMap = new Map<string, string>()
+            ;(catData || []).forEach((c: any) => {
+                if (c.id && c.name) catMap.set(c.id, c.name)
+            })
+            ;(prodData || []).forEach((p: any) => {
+                p.product_category_rel?.forEach((r: any) => {
+                    const cId = r.category_id || r.categories?.id
+                    const cName = r.categories?.name
+                    if (cId && cName && !catMap.has(cId)) {
+                        catMap.set(cId, cName)
+                    }
+                })
+            })
+            const allCats = Array.from(catMap.entries())
+                .map(([id, name]) => ({ id, name }))
+                .sort((a, b) => a.name.localeCompare(b.name))
+            setCategories(allCats)
+
+            const getProductCatInfo = (prod: any) => {
+                const catIds = [
+                    ...(prod?.product_category_rel?.map((r: any) => r.category_id || r.categories?.id) || []),
+                    ...(prod?.category_id ? [prod.category_id] : [])
+                ].filter(Boolean) as string[]
+
+                const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
+                const primaryCategoryName = primaryRel?.categories?.name ||
+                    (prod?.category_id ? catMap.get(prod.category_id) : undefined) ||
+                    prod?.product_category_rel?.[0]?.categories?.name ||
+                    '-'
+
+                return { catIds, primaryCategoryName }
+            }
 
             // 2. Fetch Order Types
             const { data: typeData } = await (supabase.from('order_types') as any)
@@ -165,13 +214,13 @@ export default function AccountingHistoryPage() {
                 const key = (targetUnit && canConvert) ? productId : `${productId}_${unit}`
 
                 if (!movementMap[key]) {
-                    const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
-                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+                    const { catIds, primaryCategoryName } = getProductCatInfo(prod)
 
                     movementMap[key] = {
                         productId,
                         sku: prod?.sku || 'N/A',
                         name: prod?.name || 'Unknown',
+                        categoryIds: catIds,
                         primaryCategoryName,
                         unit: displayUnit,
                         opening: 0,
@@ -241,13 +290,13 @@ export default function AccountingHistoryPage() {
                 const key = (targetUnit && canConvert) ? prod.id : `${prod.id}_${displayUnit}`
 
                 if (!movementMap[key]) {
-                    const primaryRel = prod.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
-                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+                    const { catIds, primaryCategoryName } = getProductCatInfo(prod)
 
                     movementMap[key] = {
                         productId: prod.id,
                         sku: prod.sku || 'N/A',
                         name: prod.name || 'Unknown',
+                        categoryIds: catIds,
                         primaryCategoryName,
                         unit: displayUnit,
                         opening: 0,
@@ -287,14 +336,14 @@ export default function AccountingHistoryPage() {
                     : item.quantity
 
                 if (!dailyMap[key]) {
-                    const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
-                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+                    const { catIds, primaryCategoryName } = getProductCatInfo(prod)
 
                     dailyMap[key] = {
                         date: dateKey,
                         productId: item.product_id,
                         sku: prod?.sku || 'N/A',
                         name: prod?.name || 'Unknown',
+                        categoryIds: catIds,
                         primaryCategoryName,
                         unit: displayUnit,
                         totalIn: 0,
@@ -324,14 +373,14 @@ export default function AccountingHistoryPage() {
                     : item.quantity
 
                 if (!dailyMap[key]) {
-                    const primaryRel = prod?.product_category_rel?.find((r: any) => r.is_primary === true || r.is_primary === 'true')
-                    const primaryCategoryName = primaryRel?.categories?.name || '-'
+                    const { catIds, primaryCategoryName } = getProductCatInfo(prod)
 
                     dailyMap[key] = {
                         date: dateKey,
                         productId: item.product_id,
                         sku: prod?.sku || 'N/A',
                         name: prod?.name || 'Unknown',
+                        categoryIds: catIds,
                         primaryCategoryName,
                         unit: displayUnit,
                         totalIn: 0,
@@ -362,22 +411,69 @@ export default function AccountingHistoryPage() {
         }
     }
 
-    const filteredMovements = movements.filter(m => {
-        const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            m.name.toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
-        return matchesSearch && matchesProducts
-    }).filter(m => {
-        if (showAllProducts) return true
-        if (onlyWithMovements) {
-            return m.totalIn !== 0 || m.totalOut !== 0
-        }
-        return m.opening !== 0 || m.totalIn !== 0 || m.totalOut !== 0
-    })
+    const filteredMovements = useMemo(() => {
+        return movements.filter(m => {
+            const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                m.name.toLowerCase().includes(searchTerm.toLowerCase())
+            const matchesCategories = selectedCategoryIds.length === 0 ||
+                (m.categoryIds && m.categoryIds.some(cid => selectedCategoryIds.includes(cid)))
+            const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
+            return matchesSearch && matchesCategories && matchesProducts
+        }).filter(m => {
+            if (showAllProducts) return true
+            if (onlyWithMovements) {
+                return m.totalIn !== 0 || m.totalOut !== 0
+            }
+            return m.opening !== 0 || m.totalIn !== 0 || m.totalOut !== 0
+        })
+    }, [movements, searchTerm, selectedCategoryIds, selectedProductIds, showAllProducts, onlyWithMovements])
+
+    const filteredDailyMovements = useMemo(() => {
+        return dailyMovements.filter(m => {
+            const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                m.name.toLowerCase().includes(searchTerm.toLowerCase())
+            const matchesCategories = selectedCategoryIds.length === 0 ||
+                (m.categoryIds && m.categoryIds.some(cid => selectedCategoryIds.includes(cid)))
+            const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
+            return matchesSearch && matchesCategories && matchesProducts
+        }).filter(m => {
+            if (onlyWithMovements) {
+                return m.totalIn !== 0 || m.totalOut !== 0
+            }
+            return true
+        })
+    }, [dailyMovements, searchTerm, selectedCategoryIds, selectedProductIds, onlyWithMovements])
 
     // Dynamic columns for Order Types
     const inboundTypes = orderTypes.filter(t => t.scope === 'inbound' || t.scope === 'both')
     const outboundTypes = orderTypes.filter(t => t.scope === 'outbound' || t.scope === 'both')
+
+    // Count products per category
+    const categoryProductCounts = useMemo(() => {
+        const counts: Record<string, number> = {}
+        products.forEach((prod: any) => {
+            const catIds = [
+                ...(prod.product_category_rel?.map((r: any) => r.category_id || r.categories?.id) || []),
+                ...(prod.category_id ? [prod.category_id] : [])
+            ].filter(Boolean) as string[]
+            catIds.forEach(cid => {
+                counts[cid] = (counts[cid] || 0) + 1
+            })
+        })
+        return counts
+    }, [products])
+
+    // Products available in ProductMultiSelect (filtered by selected categories if any)
+    const availableProducts = useMemo(() => {
+        if (selectedCategoryIds.length === 0) return products
+        return products.filter(p => {
+            const catIds = [
+                ...(p.product_category_rel?.map((r: any) => r.category_id || r.categories?.id) || []),
+                ...(p.category_id ? [p.category_id] : [])
+            ].filter(Boolean) as string[]
+            return catIds.some(cid => selectedCategoryIds.includes(cid))
+        })
+    }, [products, selectedCategoryIds])
 
     // Summaries
     const summary = useMemo(() => {
@@ -391,17 +487,7 @@ export default function AccountingHistoryPage() {
     }, [filteredMovements])
 
     const handleExportExcel = async () => {
-        const currentData = viewMode === 'summary' ? filteredMovements : dailyMovements.filter(m => {
-            const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                m.name.toLowerCase().includes(searchTerm.toLowerCase())
-            const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
-            return matchesSearch && matchesProducts
-        }).filter(m => {
-            if (onlyWithMovements) {
-                return m.totalIn !== 0 || m.totalOut !== 0
-            }
-            return true
-        })
+        const currentData = viewMode === 'summary' ? filteredMovements : filteredDailyMovements
 
         if (currentData.length === 0) {
             showToast('Không có dữ liệu để xuất Excel', 'warning')
@@ -516,8 +602,8 @@ export default function AccountingHistoryPage() {
             {/* Filters Section */}
             <div className="bg-white dark:bg-slate-900 p-5 rounded-3xl border border-stone-200 dark:border-slate-800 shadow-sm sticky top-4 z-10 space-y-4">
                 <div className="flex flex-col lg:flex-row gap-4">
-                    {/* Search & Product MultiSelect Group */}
-                    <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {/* Search, Category & Product MultiSelect Group */}
+                    <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                         <div className="relative group">
                             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
                             <input
@@ -529,8 +615,15 @@ export default function AccountingHistoryPage() {
                             />
                         </div>
 
+                        <CategoryMultiSelect
+                            categories={categories}
+                            selectedIds={selectedCategoryIds}
+                            onChange={setSelectedCategoryIds}
+                            productCounts={categoryProductCounts}
+                        />
+
                         <ProductMultiSelect
-                            products={products}
+                            products={availableProducts}
                             selectedIds={selectedProductIds}
                             onChange={setSelectedProductIds}
                         />
@@ -622,6 +715,24 @@ export default function AccountingHistoryPage() {
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
+                        {selectedCategoryIds.length > 0 && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-indigo-50 dark:bg-indigo-900/10 border border-indigo-100 dark:border-indigo-900/30 rounded-lg animate-in fade-in zoom-in-95">
+                                <Tag size={12} className="text-indigo-500" />
+                                <span className="text-[10px] font-black text-indigo-600 dark:text-indigo-500 uppercase tracking-widest">
+                                    {selectedCategoryIds.length === 1
+                                        ? `Danh mục: ${categories.find(c => c.id === selectedCategoryIds[0])?.name || selectedCategoryIds[0]}`
+                                        : `Đang lọc ${selectedCategoryIds.length} danh mục`}
+                                </span>
+                                <button 
+                                    onClick={() => setSelectedCategoryIds([])}
+                                    className="ml-1 p-0.5 hover:bg-indigo-200 dark:hover:bg-indigo-900/50 rounded transition-colors text-indigo-600"
+                                    title="Xóa lọc danh mục"
+                                >
+                                    <X size={12} />
+                                </button>
+                            </div>
+                        )}
+
                         {showAllProducts && (
                             <div className="flex items-center gap-2 px-3 py-1.5 bg-cyan-50 dark:bg-cyan-900/10 border border-cyan-100 dark:border-cyan-900/30 rounded-lg animate-in fade-in zoom-in-95">
                                 <Boxes size={12} className="text-cyan-500" />
@@ -694,17 +805,7 @@ export default function AccountingHistoryPage() {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100 dark:divide-slate-800">
-                                {dailyMovements.filter(m => {
-                                    const matchesSearch = m.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                        m.name.toLowerCase().includes(searchTerm.toLowerCase())
-                                    const matchesProducts = selectedProductIds.length === 0 || selectedProductIds.includes(m.productId)
-                                    return matchesSearch && matchesProducts
-                                }).filter(m => {
-                                    if (onlyWithMovements) {
-                                        return m.totalIn !== 0 || m.totalOut !== 0
-                                    }
-                                    return true
-                                }).map((mov, idx) => (
+                                {filteredDailyMovements.map((mov, idx) => (
                                     <tr key={`${mov.date}-${mov.productId}-${idx}`} className="group hover:bg-indigo-50/20 dark:hover:bg-indigo-900/5 transition-colors">
                                         <td className="px-4 py-3 border-r border-stone-100 dark:border-slate-800 font-bold text-stone-600 dark:text-stone-400">
                                             {format(parseISO(mov.date), 'dd/MM/yyyy')}
@@ -1033,6 +1134,172 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
                     </button>
                 </div>
             </div>
+        </div>
+    )
+}
+
+function CategoryMultiSelect({ categories, selectedIds, onChange, productCounts = {} }: {
+    categories: { id: string; name: string }[]
+    selectedIds: string[]
+    onChange: (ids: string[]) => void
+    productCounts?: Record<string, number>
+}) {
+    const [isOpen, setIsOpen] = useState(false)
+    const [search, setSearch] = useState('')
+    const containerRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        function handleClickOutside(event: MouseEvent) {
+            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+                setIsOpen(false)
+            }
+        }
+        document.addEventListener("mousedown", handleClickOutside)
+        return () => document.removeEventListener("mousedown", handleClickOutside)
+    }, [])
+
+    const filtered = categories.filter((c: any) =>
+        c.name.toLowerCase().includes(search.toLowerCase())
+    )
+
+    const toggle = (id: string) => {
+        if (selectedIds.includes(id)) {
+            onChange(selectedIds.filter((sid: string) => sid !== id))
+        } else {
+            onChange([...selectedIds, id])
+        }
+    }
+
+    const selectAll = () => {
+        onChange(categories.map(c => c.id))
+    }
+
+    const clearAll = () => {
+        onChange([])
+    }
+
+    const label = useMemo(() => {
+        if (selectedIds.length === 0) return "Tất cả danh mục"
+        if (selectedIds.length === 1) {
+            const cat = categories.find(c => c.id === selectedIds[0])
+            return cat ? cat.name : "1 danh mục"
+        }
+        return `Đã chọn ${selectedIds.length} danh mục`
+    }, [selectedIds, categories])
+
+    return (
+        <div className="relative w-full" ref={containerRef}>
+            <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                className={`w-full px-4 py-2.5 rounded-xl bg-stone-50 dark:bg-slate-800 border text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-medium flex items-center justify-between ${
+                    selectedIds.length > 0 
+                        ? 'border-indigo-300 dark:border-indigo-700 bg-indigo-50/30 dark:bg-indigo-900/10 text-indigo-700 dark:text-indigo-300' 
+                        : 'border-stone-200 dark:border-slate-700 text-stone-600 dark:text-stone-300'
+                }`}
+            >
+                <div className="flex items-center gap-2 truncate">
+                    <Tag size={18} className={selectedIds.length > 0 ? "text-indigo-500 flex-shrink-0" : "text-stone-400 flex-shrink-0"} />
+                    <span className="truncate font-semibold text-xs sm:text-sm">
+                        {label}
+                    </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {selectedIds.length > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-indigo-500 text-white text-[10px] font-black flex items-center justify-center">
+                            {selectedIds.length}
+                        </span>
+                    )}
+                    <ChevronDown size={16} className={`text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+                </div>
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-full left-0 right-0 mt-2 p-2 bg-white dark:bg-slate-900 border border-stone-200 dark:border-slate-700 rounded-2xl shadow-2xl z-[100] animate-in fade-in slide-in-from-top-2 duration-200 min-w-[260px]">
+                    <div className="relative mb-2">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
+                        <input
+                            autoFocus
+                            type="text"
+                            placeholder="Tìm danh mục..."
+                            value={search}
+                            onChange={(e) => setSearch(e.target.value)}
+                            className="w-full pl-9 pr-4 py-2 rounded-lg bg-stone-50 dark:bg-slate-800 border border-stone-100 dark:border-slate-700 text-xs outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                    </div>
+
+                    <div className="flex items-center justify-between px-1 py-1 mb-1 border-b border-stone-100 dark:border-slate-800 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                        <button
+                            type="button"
+                            onClick={selectAll}
+                            className="hover:text-indigo-600 transition-colors"
+                        >
+                            Chọn tất cả ({categories.length})
+                        </button>
+                        {selectedIds.length > 0 && (
+                            <button
+                                type="button"
+                                onClick={clearAll}
+                                className="text-red-500 hover:text-red-600 transition-colors"
+                            >
+                                Bỏ chọn tất cả
+                            </button>
+                        )}
+                    </div>
+                    
+                    <div className="max-h-60 overflow-y-auto space-y-1 [scrollbar-width:thin] pr-1">
+                        {filtered.length === 0 ? (
+                            <div className="py-8 text-center text-stone-400 text-xs">Không tìm thấy danh mục</div>
+                        ) : (
+                            filtered.map((c: any) => {
+                                const isSelected = selectedIds.includes(c.id)
+                                const count = productCounts[c.id]
+                                return (
+                                    <label
+                                        key={c.id}
+                                        className="flex items-center gap-3 p-2 hover:bg-stone-50 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-colors group"
+                                    >
+                                        <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors flex-shrink-0 ${
+                                            isSelected 
+                                            ? 'bg-indigo-500 border-indigo-500 text-white' 
+                                            : 'border-stone-300 dark:border-slate-600'
+                                        }`}>
+                                            {isSelected && <Check size={12} strokeWidth={4} />}
+                                        </div>
+                                        <div className="flex-1 min-w-0 flex items-center justify-between">
+                                            <span className="text-[11px] font-bold text-stone-800 dark:text-stone-200 truncate">{c.name}</span>
+                                            {count !== undefined && (
+                                                <span className="text-[10px] font-mono text-stone-400 ml-2 px-1.5 py-0.5 rounded bg-stone-100 dark:bg-slate-800 flex-shrink-0">
+                                                    {count} SP
+                                                </span>
+                                            )}
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            className="hidden"
+                                            checked={isSelected}
+                                            onChange={() => toggle(c.id)}
+                                        />
+                                    </label>
+                                )
+                            })
+                        )}
+                    </div>
+
+                    {selectedIds.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-stone-100 dark:border-slate-800 flex justify-between items-center px-1">
+                            <span className="text-[10px] text-stone-400 font-bold uppercase tracking-wider">Đã chọn {selectedIds.length}/{categories.length}</span>
+                            <button
+                                type="button"
+                                onClick={clearAll}
+                                className="text-[10px] font-bold text-red-500 hover:text-red-600 transition-colors uppercase tracking-wider"
+                            >
+                                Xóa lọc
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
         </div>
     )
 }

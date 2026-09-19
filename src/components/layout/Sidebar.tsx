@@ -152,6 +152,14 @@ const menuItems: MenuItem[] = [
         ]
     },
     {
+        id: 'print_cat',
+        name: 'In ấn',
+        icon: Printer,
+        children: [
+            { id: 'print_bank_report', name: 'Phiếu ngân hàng', href: '/print/bank-report', icon: FileText },
+        ]
+    },
+    {
         id: 'work_cat',
         name: 'Công việc',
         icon: ClipboardCheck,
