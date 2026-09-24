@@ -63,6 +63,7 @@ export default function AssignmentApprovalPage() {
     const [dateTo, setDateTo] = useState(() => format(new Date(), 'yyyy-MM-dd'))
     
     const [pendingList, setPendingList] = useState<PendingAssignment[]>([])
+    const [pendingSearchTerm, setPendingSearchTerm] = useState('')
     const [approvedList, setApprovedList] = useState<PendingAssignment[]>([])
     const [rejectedList, setRejectedList] = useState<PendingAssignment[]>([])
     const [lotsInDay, setLotsInDay] = useState<Lot[]>([])
@@ -109,23 +110,48 @@ export default function AssignmentApprovalPage() {
     // Bulk selection state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+    // Helper lấy danh sách vị trí của một lô hàng
+    const getLotPositions = (lot: Lot | undefined | null) => {
+        if (!lot) return []
+        if (lot.positions && lot.positions.length > 0) {
+            return lot.positions
+        }
+        const found = allPositions.filter(p => p.lot_id === lot.id)
+        return found.map(p => ({ id: p.id, code: p.code }))
+    }
+
     // Danh sách các yêu cầu không tìm thấy lô hàng tương ứng (mục lỗi/rác)
     const unmatchedPendingList = useMemo(() => {
         return pendingList.filter(ass => {
             const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
             const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
-            const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
-            const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
-            const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
-            const hiddenByFilter = allMatchedLotsRaw.length > 0 && allMatchedLots.length === 0
-            const unassignedInRaw = allMatchedLotsRaw.filter(l => !l.positions?.[0])
-            const effectiveHiddenByFilter = hiddenByFilter && unassignedInRaw.length === 0
-            const effectiveMatchedLots = hiddenByFilter && unassignedInRaw.length > 0 ? unassignedInRaw : allMatchedLots
-            const effectiveHasMatches = effectiveMatchedLots.length > 0
-
-            return !perfectMatch && !effectiveHasMatches && !effectiveHiddenByFilter
+            return allMatchedLotsRaw.length === 0
         })
-    }, [pendingList, lotsInDay, manualEdits, showOnlyUnassigned])
+    }, [pendingList, lotsInDay, manualEdits])
+
+    // Danh sách yêu cầu chờ duyệt sau khi lọc tìm kiếm (STT, vị trí, tên sản phẩm/lô)
+    const filteredPendingList = useMemo(() => {
+        if (!pendingSearchTerm.trim()) return pendingList
+        const term = pendingSearchTerm.trim().toLowerCase().replace(/^#/, '')
+        return pendingList.filter(ass => {
+            const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
+            const sttDecoded = decodeSTT(targetStt).toLowerCase()
+            const rawStt = String(targetStt).toLowerCase()
+            const posCode = (manualEdits[ass.id]?.position_code || ass.position?.code || '').toLowerCase()
+
+            // Khớp số thứ tự (ví dụ: "5", "#5") hoặc mã vị trí
+            if (sttDecoded.includes(term) || rawStt.includes(term) || posCode.includes(term)) {
+                return true
+            }
+
+            // Khớp mã lô hoặc tên sản phẩm liên kết
+            const matchedLots = lotsInDay.filter(l => l.daily_seq === targetStt)
+            return matchedLots.some(l =>
+                l.code.toLowerCase().includes(term) ||
+                l.product_names?.some(p => p.toLowerCase().includes(term))
+            )
+        })
+    }, [pendingList, pendingSearchTerm, manualEdits, lotsInDay])
 
     const filteredHistory = useMemo(() => {
         return historyList.filter(h => {
@@ -157,12 +183,22 @@ export default function AssignmentApprovalPage() {
         }
     }, [showHistory, currentSystem, historyDateFrom, historyDateTo, dateFilterType])
 
-    async function fetchData() {
+    // Quét vị trí kẹt một lần ngầm sau khi trang tải xong 3 giây
+    useEffect(() => {
+        if (currentSystem?.code) {
+            const timer = setTimeout(() => {
+                checkOrphanedPositions(true)
+            }, 3000)
+            return () => clearTimeout(timer)
+        }
+    }, [currentSystem?.code])
+
+    async function fetchData(silent = false) {
         if (!currentSystem?.code) {
             setLoading(false)
             return
         }
-        setLoading(true)
+        if (!silent) setLoading(true)
         try {
             // 1. Fetch Assignments: Lấy toàn bộ các bản ghi đang chờ duyệt (pending) của phân hệ hiện tại bất kể thời gian
             const { data: pendingData, error: pendingErr } = await (supabase.from('pending_assignments') as any)
@@ -277,7 +313,7 @@ export default function AssignmentApprovalPage() {
 
             if (lErr1) throw lErr1
 
-            // Query 2: Lots matching pending STTs (expanded date range for older lots)
+            // Query 2: Lots matching pending STTs (không giới hạn thời gian để luôn tải được cả các lô nhập từ nhiều tháng trước)
             let sttMatchedLots: any[] = []
             if (pendingStts.length > 0) {
                 // Batch STTs to avoid overly long URL filters
@@ -290,7 +326,6 @@ export default function AssignmentApprovalPage() {
                         .neq('status', 'hidden')
                         .neq('status', 'exported')
                         .in('daily_seq', sttChunk)
-                        .gte('inbound_date', expandedLotDateFrom)
                         .order('inbound_date', { ascending: false })
                         .limit(5000)
                     
@@ -332,13 +367,11 @@ export default function AssignmentApprovalPage() {
             }))
 
             setLotsInDay(formattedLots)
-            // Tự động kiểm tra vị trí kho bị kẹt dữ liệu (chạy ngầm)
-            checkOrphanedPositions(true)
         } catch (e: any) {
             console.error('Fetch error:', e)
-            showToast('Lỗi tải dữ liệu: ' + (e.message || 'Không xác định'), 'error')
+            if (!silent) showToast('Lỗi tải dữ liệu: ' + (e.message || 'Không xác định'), 'error')
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
     }
 
@@ -623,9 +656,9 @@ export default function AssignmentApprovalPage() {
     const startEdit = (ass: PendingAssignment) => {
         setEditingId(ass.id)
         setEditValues({
-            lot_stt: decodeSTT(ass.lot_stt),
+            lot_stt: decodeSTT(manualEdits[ass.id]?.lot_stt || ass.lot_stt),
             position_id: ass.position_id,
-            position_code: (ass.position as any)?.code || ''
+            position_code: manualEdits[ass.id]?.position_code || (ass.position as any)?.code || ''
         })
     }
 
@@ -657,7 +690,6 @@ export default function AssignmentApprovalPage() {
                     .neq('status', 'hidden')
                     .neq('status', 'exported')
                     .eq('daily_seq', encodedStt)
-                    .gte('inbound_date', expandedLotDateFrom)
                     .order('inbound_date', { ascending: false })
                 
                 if (fetchLotErr) {
@@ -767,7 +799,24 @@ export default function AssignmentApprovalPage() {
 
             // 4. Check target position availability
             if (targetPosInfo?.lot_id && targetPosInfo.lot_id !== lotId) {
-                throw new Error(`Vị trí ${targetPosInfo.code} đã có Lô hàng khác đang ở đó! Hãy gỡ ra trước.`);
+                const confirmed = await showConfirm(`Vị trí ${targetPosInfo.code} hiện đang có một lô hàng khác đang ở đó. Bạn có muốn gỡ lô hàng cũ ra để gán lô mới vào không?`)
+                if (!confirmed) {
+                    setActionLoading(null)
+                    return
+                }
+                const { error: unbindTargetErr } = await (supabase.from('positions') as any)
+                    .update({ lot_id: null })
+                    .eq('id', targetPosId)
+                if (unbindTargetErr) throw new Error(`Lỗi khi gỡ lô cũ khỏi vị trí: ` + unbindTargetErr.message);
+                await logActivity({
+                    supabase,
+                    tableName: 'positions',
+                    recordId: targetPosId,
+                    action: 'UPDATE',
+                    oldData: { lot_id: targetPosInfo.lot_id },
+                    newData: { lot_id: null },
+                    systemCode: currentSystem?.code || ''
+                })
             }
 
             // 5. EXECUTE UPDATES
@@ -802,12 +851,36 @@ export default function AssignmentApprovalPage() {
             if (statusUpdateErr) {
                 // Warning: position linked but assignment status failed to update
                 showToast("Vị trí đã lưu nhưng lỗi cập nhật trạng thái: " + statusUpdateErr.message, "error");
-                fetchData() // Refresh to show linked position
+                fetchData(true)
                 return 
             }
 
+            // OPTIMISTIC STATE UPDATE
+            const targetPosCode = targetPosInfo?.code || manual?.position_code || ass.position?.code || ''
+            setPendingList(prev => prev.filter(p => p.id !== ass.id))
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                next.delete(ass.id)
+                return next
+            })
+            setAllPositions(prev => prev.map(p => {
+                if (p.id === targetPosId) return { ...p, lot_id: lotId }
+                if (otherPlacements.some((o: any) => o.id === p.id)) return { ...p, lot_id: null }
+                return p
+            }))
+            setLotsInDay(prev => prev.map(l => {
+                if (l.id === lotId) {
+                    return {
+                        ...l,
+                        positions: [{ id: targetPosId, code: targetPosCode }]
+                    }
+                }
+                return l
+            }))
+            setApprovedList(prev => [{ ...ass, status: finalStatus, position: { id: targetPosId, code: targetPosCode } }, ...prev])
+
             showToast('Đã duyệt và ghi nhận vị trí thành công!', 'success')
-            fetchData() 
+            fetchData(true) 
         } catch (e: any) {
             showToast(e.message || 'Có lỗi xảy ra', 'error')
             console.error('Approval Process Error:', e)
@@ -823,8 +896,18 @@ export default function AssignmentApprovalPage() {
         try {
             const { error } = await (supabase.from('pending_assignments') as any).update({ status: 'rejected' }).eq('id', ass.id)
             if (error) throw error
+
+            // OPTIMISTIC STATE UPDATE
+            setPendingList(prev => prev.filter(p => p.id !== ass.id))
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                next.delete(ass.id)
+                return next
+            })
+            setRejectedList(prev => [{ ...ass, status: 'rejected' }, ...prev])
+
             showToast('Đã hủy yêu cầu', 'success')
-            fetchData() 
+            fetchData(true) 
         } catch (e: any) {
             showToast('Lỗi khi hủy: ' + e.message, 'error')
         } finally {
@@ -839,13 +922,14 @@ export default function AssignmentApprovalPage() {
         try {
             const { error } = await (supabase.from('pending_assignments') as any).delete().eq('id', assId)
             if (error) throw error
+            setPendingList(prev => prev.filter(p => p.id !== assId))
             setSelectedIds(prev => {
                 const next = new Set(prev)
                 next.delete(assId)
                 return next
             })
             showToast('Đã xóa vĩnh viễn yêu cầu gán vị trí', 'success')
-            fetchData()
+            fetchData(true)
         } catch (e: any) {
             showToast('Lỗi khi xóa: ' + e.message, 'error')
         } finally {
@@ -867,12 +951,24 @@ export default function AssignmentApprovalPage() {
         })
     }
 
-    // Select or deselect all items in pending list
+    // Select or deselect all items in filtered pending list
     const handleSelectAll = () => {
-        if (selectedIds.size === pendingList.length && pendingList.length > 0) {
-            setSelectedIds(new Set())
+        const targetList = filteredPendingList
+        if (targetList.length === 0) return
+
+        const allTargetSelected = targetList.every(a => selectedIds.has(a.id))
+        if (allTargetSelected) {
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                targetList.forEach(a => next.delete(a.id))
+                return next
+            })
         } else {
-            setSelectedIds(new Set(pendingList.map(a => a.id)))
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                targetList.forEach(a => next.add(a.id))
+                return next
+            })
         }
     }
 
@@ -920,6 +1016,8 @@ export default function AssignmentApprovalPage() {
                 if (error) throw error
             }
 
+            const targetSet = new Set(targetIds)
+            setPendingList(prev => prev.filter(p => !targetSet.has(p.id)))
             setSelectedIds(prev => {
                 const next = new Set(prev)
                 targetIds.forEach(id => next.delete(id))
@@ -927,7 +1025,7 @@ export default function AssignmentApprovalPage() {
             })
 
             showToast(`Đã xóa vĩnh viễn ${targetIds.length} yêu cầu thành công!`, 'success')
-            fetchData()
+            fetchData(true)
         } catch (e: any) {
             console.error('[BULK DELETE] Error:', e)
             showToast('Lỗi khi xóa hàng loạt: ' + (e.message || 'Không xác định'), 'error')
@@ -959,14 +1057,18 @@ export default function AssignmentApprovalPage() {
                 if (error) throw error
             }
 
+            const targetSet = new Set(targetIds)
+            const rejectedAsses = pendingList.filter(p => targetSet.has(p.id)).map(p => ({ ...p, status: 'rejected' }))
+            setPendingList(prev => prev.filter(p => !targetSet.has(p.id)))
             setSelectedIds(prev => {
                 const next = new Set(prev)
                 targetIds.forEach(id => next.delete(id))
                 return next
             })
+            setRejectedList(prev => [...rejectedAsses, ...prev])
 
             showToast(`Đã hủy ${targetIds.length} yêu cầu thành công!`, 'success')
-            fetchData()
+            fetchData(true)
         } catch (e: any) {
             console.error('[BULK REJECT] Error:', e)
             showToast('Lỗi khi hủy hàng loạt: ' + (e.message || 'Không xác định'), 'error')
@@ -1076,7 +1178,7 @@ export default function AssignmentApprovalPage() {
             // Quét lại
             checkOrphanedPositions(true)
             // Tải lại dữ liệu trang
-            fetchData()
+            fetchData(true)
         } catch (e: any) {
             console.error('[ORPHANS RELEASE] Error:', e)
             showToast('Lỗi giải phóng vị trí: ' + e.message, 'error')
@@ -1085,88 +1187,150 @@ export default function AssignmentApprovalPage() {
         }
     }
 
-    const validBulkCount = useMemo(() => {
-        let count = 0;
-        const seenLots = new Set()
-        pendingList.forEach(ass => {
-            const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
-            const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
-            const unassignedLots = allMatchedLotsRaw.filter(l => !l.positions?.[0])
-            const allMatchedLots = showOnlyUnassigned ? unassignedLots : allMatchedLotsRaw
-            const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
-            let perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
-            
-            // Fallback: if no date match, but exactly 1 unassigned lot exists, use it
-            if (!perfectMatch && unassignedLots.length === 1) {
-                perfectMatch = unassignedLots[0]
-            }
-            
-            if (perfectMatch && !perfectMatch.positions?.[0]) {
-                if (!seenLots.has(perfectMatch.id)) {
-                    seenLots.add(perfectMatch.id)
-                    count++;
-                }
-            }
-        })
-        return count;
-    }, [pendingList, lotsInDay, manualEdits, showOnlyUnassigned])
+    // Helper xác định lô hàng và vị trí ứng viên hợp lệ để duyệt tự động
+    const getApprovedCandidate = (ass: PendingAssignment, allowMove = false) => {
+        const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
+        const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
+        const unassignedLots = allMatchedLotsRaw.filter(l => getLotPositions(l).length === 0)
+        const allMatchedLots = showOnlyUnassigned && unassignedLots.length > 0 ? unassignedLots : allMatchedLotsRaw
 
-    const handleApproveAll = async () => {
-        const validPairs: {ass: PendingAssignment, lot: Lot}[] = []
-        const seenLots = new Set()
-        
+        // Khớp chính xác ngày sản xuất (inbound_date) với ngày quét (production_date)
+        const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+        let perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
+
+        // Khi người dùng chủ động tích chọn (allowMove = true) và không có lô khớp ngày hôm nay:
+        // Nếu trong kho chỉ duy nhất có đúng 1 lô mang STT này, chấp nhận lô đó vì người dùng đã chủ động chọn duyệt!
+        if (!perfectMatch && allowMove && allMatchedLots.length === 1) {
+            perfectMatch = allMatchedLots[0]
+        }
+
+        if (!perfectMatch) {
+            return null // Không có hoặc có nhiều hơn 1 lô cùng ngày -> cần người dùng duyệt thủ công
+        }
+
+        // Nếu không cho phép di chuyển vị trí (trong duyệt nhanh), lô phải chưa có vị trí
+        if (!allowMove && getLotPositions(perfectMatch).length > 0) {
+            return null
+        }
+
+        // Xác định vị trí đích
+        let targetPosId = ass.position_id
+        let targetPosCode = ass.position?.code || ''
+        const manual = manualEdits[ass.id]
+        if (manual) {
+            const foundPos = allPositions.find(p => p.code?.toLowerCase() === manual.position_code.trim().toLowerCase())
+            if (foundPos) {
+                targetPosId = foundPos.id
+                targetPosCode = foundPos.code
+            } else {
+                return null // Không tìm thấy mã vị trí nhập tay
+            }
+        }
+
+        // Vị trí đích không được đang chứa một lô khác
+        const targetPos = allPositions.find(p => p.id === targetPosId)
+        if (targetPos?.lot_id && targetPos.lot_id !== perfectMatch.id) {
+            return null // Vị trí đã có lô khác chiếm giữ
+        }
+
+        return {
+            ass,
+            lot: perfectMatch,
+            targetPosId,
+            targetPosCode,
+            manual
+        }
+    }
+
+    // Số lượng yêu cầu hợp lệ có thể duyệt nhanh tự động (chính xác ngày, chưa có vị trí, vị trí trống)
+    const validBulkCount = useMemo(() => {
+        let count = 0
+        const seenLots = new Set<string>()
+        const seenPositions = new Set<string>()
+
         pendingList.forEach(ass => {
-            const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
-            const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
-            const unassignedLots = allMatchedLotsRaw.filter(l => !l.positions?.[0])
-            const allMatchedLots = showOnlyUnassigned ? unassignedLots : allMatchedLotsRaw
-            const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
-            let perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
-            
-            // Fallback: if no date match, but exactly 1 unassigned lot exists, use it
-            if (!perfectMatch && unassignedLots.length === 1) {
-                perfectMatch = unassignedLots[0]
-            }
-            
-            if (perfectMatch && !perfectMatch.positions?.[0]) {
-                if (!seenLots.has(perfectMatch.id)) {
-                    seenLots.add(perfectMatch.id)
-                    validPairs.push({ ass, lot: perfectMatch })
-                }
-            }
+            const cand = getApprovedCandidate(ass, false)
+            if (!cand) return
+            if (seenLots.has(cand.lot.id) || seenPositions.has(cand.targetPosId)) return
+            seenLots.add(cand.lot.id)
+            seenPositions.add(cand.targetPosId)
+            count++
         })
-        
-        if (validPairs.length === 0) return;
-        
-        const confirmed = await showConfirm(`Duyệt tự động ${validPairs.length} yêu cầu hợp lệ này?`)
-        if (!confirmed) return;
-        
+        return count
+    }, [pendingList, lotsInDay, manualEdits, showOnlyUnassigned, allPositions])
+
+    // Duyệt các yêu cầu đã chọn qua checkbox
+    const handleBulkApprove = async () => {
         if (!profile) {
             showToast('Vui lòng đăng nhập để thực hiện tác vụ này', 'error')
             return
         }
-        setActionLoading('bulk');
+        const targetIds = Array.from(selectedIds)
+        if (targetIds.length === 0) {
+            showToast('Chưa chọn yêu cầu nào để duyệt', 'error')
+            return
+        }
+
+        const selectedAsses = pendingList.filter(a => selectedIds.has(a.id))
+        const candidates: { ass: PendingAssignment, lot: Lot, targetPosId: string, targetPosCode: string, manual: any }[] = []
+        const seenLots = new Set<string>()
+        const seenPositions = new Set<string>()
+
+        for (const ass of selectedAsses) {
+            const cand = getApprovedCandidate(ass, true) // Cho phép chuyển vị trí nếu user đã chủ động tích chọn
+            if (cand && !seenLots.has(cand.lot.id) && !seenPositions.has(cand.targetPosId)) {
+                seenLots.add(cand.lot.id)
+                seenPositions.add(cand.targetPosId)
+                candidates.push(cand)
+            }
+        }
+
+        const ambiguousCount = selectedAsses.length - candidates.length
+
+        if (candidates.length === 0) {
+            showToast(
+                `Không thể duyệt tự động: Các yêu cầu đã chọn (${selectedAsses.length}) bị trùng nhiều lô, sai ngày SX hoặc vị trí bị chiếm. Vui lòng bấm Duyệt trên từng thẻ!`,
+                'error'
+            )
+            return
+        }
+
+        let confirmMsg = `Duyệt ${candidates.length} yêu cầu gán vị trí đã chọn?`
+        if (ambiguousCount > 0) {
+            confirmMsg = `Trong ${selectedAsses.length} yêu cầu đã chọn:\n• ${candidates.length} yêu cầu hợp lệ (đúng ngày SX, đúng STT, vị trí trống).\n• ${ambiguousCount} yêu cầu bị trùng STT/khác ngày/vị trí bận (cần duyệt thủ công).\n\nBạn có muốn duyệt ${candidates.length} yêu cầu hợp lệ này không?`
+        }
+
+        const confirmed = await showConfirm(confirmMsg)
+        if (!confirmed) return
+
+        setActionLoading('bulk-approve')
         try {
-            let successCount = 0;
-            for (const {ass, lot} of validPairs) {
-                let targetPosId = ass.position_id;
-                const manual = manualEdits[ass.id];
-                if (manual) {
-                    const { data: matchedPos } = await (supabase.from('positions') as any)
-                        .select('id').eq('system_type', currentSystem?.code).ilike('code', manual.position_code.trim()).limit(1).single()
-                    if (matchedPos) targetPosId = matchedPos.id
-                }
-                
-                const { data: targetPosInfo } = await (supabase.from('positions') as any).select('lot_id').eq('id', targetPosId).single()
-                if (targetPosInfo?.lot_id && targetPosInfo.lot_id !== lot.id) continue;
-                
-                // 1. Check if LOT is already at another position and clear it
-                // This ensures data integrity (one LOT at one place) and creates the "REMOVE" log for "Move" detection
-                const { data: currentPosData } = await (supabase.from('positions') as any).select('id, code').eq('lot_id', lot.id)
-                if (currentPosData && currentPosData.length > 0) {
-                    for (const oldPos of (currentPosData as any[])) {
-                        if (oldPos.id !== targetPosId) {
+            let successCount = 0
+            const processedAssIds: string[] = []
+            const updatedPositionsMap = new Map<string, string | null>()
+            const updatedLotsMap = new Map<string, { id: string, code: string }[]>()
+
+            // Chạy song song từng đợt 4 yêu cầu để tăng tốc gấp 4-5 lần
+            const chunkSize = 4
+            for (let i = 0; i < candidates.length; i += chunkSize) {
+                const chunk = candidates.slice(i, i + chunkSize)
+                await Promise.all(chunk.map(async ({ ass, lot, targetPosId, targetPosCode, manual }) => {
+                    try {
+                        if (manual) {
+                            await (supabase.from('pending_assignments') as any)
+                                .update({ position_id: targetPosId, lot_stt: manual.lot_stt })
+                                .eq('id', ass.id)
+                        }
+
+                        // Gỡ khỏi các vị trí cũ của lô này nếu có
+                        const { data: currentPosData } = await (supabase.from('positions') as any)
+                            .select('id, code')
+                            .eq('lot_id', lot.id)
+
+                        const otherPlacements = (currentPosData || []).filter((p: any) => p.id !== targetPosId)
+                        for (const oldPos of otherPlacements) {
                             await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', oldPos.id)
+                            updatedPositionsMap.set(oldPos.id, null)
                             await logActivity({
                                 supabase,
                                 tableName: 'positions',
@@ -1177,32 +1341,190 @@ export default function AssignmentApprovalPage() {
                                 systemCode: currentSystem?.code || ''
                             })
                         }
+
+                        // Gán vào vị trí đích
+                        await (supabase.from('positions') as any).update({ lot_id: lot.id }).eq('id', targetPosId)
+                        updatedPositionsMap.set(targetPosId, lot.id)
+                        await logActivity({
+                            supabase,
+                            tableName: 'positions',
+                            recordId: targetPosId,
+                            action: 'UPDATE',
+                            oldData: { lot_id: null },
+                            newData: { lot_id: lot.id },
+                            systemCode: currentSystem?.code || ''
+                        })
+
+                        const isMove = otherPlacements.length > 0
+                        const oldPosCodes = otherPlacements.map((p: any) => p.code).join(', ')
+                        const finalStatus = isMove ? `approved:move:${oldPosCodes}:${lot.id}` : `approved:new:${lot.id}`
+
+                        await (supabase.from('pending_assignments') as any).update({
+                            status: finalStatus,
+                            position_id: targetPosId,
+                            lot_stt: manual?.lot_stt || ass.lot_stt
+                        }).eq('id', ass.id)
+
+                        processedAssIds.push(ass.id)
+                        updatedLotsMap.set(lot.id, [{ id: targetPosId, code: targetPosCode }])
+                        successCount++
+                    } catch (itemErr) {
+                        console.error('Lỗi khi duyệt yêu cầu ID ' + ass.id, itemErr)
                     }
-                }
-                
-                // 2. Assign to new position
-                await (supabase.from('positions') as any).update({ lot_id: lot.id }).eq('id', targetPosId)
-                await logActivity({
-                    supabase,
-                    tableName: 'positions',
-                    recordId: targetPosId,
-                    action: 'UPDATE',
-                    oldData: { lot_id: targetPosInfo?.lot_id || null },
-                    newData: { lot_id: lot.id },
-                    systemCode: currentSystem?.code || ''
-                })
-                
-                // 3. Update assignment status
-                await (supabase.from('pending_assignments') as any).update({ 
-                    status: `approved:new:${lot.id}`, 
-                    position_id: targetPosId, 
-                    lot_stt: manual?.lot_stt || ass.lot_stt 
-                }).eq('id', ass.id)
-                successCount++;
+                }))
             }
-            showToast(`Đã duyệt thành công ${successCount}/${validPairs.length} yêu cầu.`, successCount > 0 ? 'success' : 'error')
-            fetchData();
+
+            // OPTIMISTIC STATE UPDATE
+            const processedSet = new Set(processedAssIds)
+            setPendingList(prev => prev.filter(p => !processedSet.has(p.id)))
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                processedAssIds.forEach(id => next.delete(id))
+                return next
+            })
+            setAllPositions(prev => prev.map(p => {
+                if (updatedPositionsMap.has(p.id)) {
+                    return { ...p, lot_id: updatedPositionsMap.get(p.id) }
+                }
+                return p
+            }))
+            setLotsInDay(prev => prev.map(l => {
+                if (updatedLotsMap.has(l.id)) {
+                    return { ...l, positions: updatedLotsMap.get(l.id) }
+                }
+                return l
+            }))
+
+            showToast(`Đã duyệt thành công ${successCount}/${candidates.length} yêu cầu!`, successCount > 0 ? 'success' : 'error')
+            fetchData(true)
         } catch (e: any) {
+            console.error('[BULK APPROVE] Error:', e)
+            showToast('Lỗi khi duyệt hàng loạt: ' + (e.message || 'Không xác định'), 'error')
+        } finally {
+            setActionLoading(null)
+        }
+    }
+
+    // Duyệt nhanh tất cả các yêu cầu hợp lệ
+    const handleApproveAll = async () => {
+        if (!profile) {
+            showToast('Vui lòng đăng nhập để thực hiện tác vụ này', 'error')
+            return
+        }
+
+        const candidates: { ass: PendingAssignment, lot: Lot, targetPosId: string, targetPosCode: string, manual: any }[] = []
+        const seenLots = new Set<string>()
+        const seenPositions = new Set<string>()
+
+        pendingList.forEach(ass => {
+            const cand = getApprovedCandidate(ass, false)
+            if (cand && !seenLots.has(cand.lot.id) && !seenPositions.has(cand.targetPosId)) {
+                seenLots.add(cand.lot.id)
+                seenPositions.add(cand.targetPosId)
+                candidates.push(cand)
+            }
+        })
+
+        if (candidates.length === 0) {
+            showToast('Không có yêu cầu hợp lệ nào đủ điều kiện duyệt tự động.', 'info')
+            return
+        }
+
+        const confirmed = await showConfirm(`Duyệt tự động ${candidates.length} yêu cầu hợp lệ này?`)
+        if (!confirmed) return
+
+        setActionLoading('bulk')
+        try {
+            let successCount = 0
+            const processedAssIds: string[] = []
+            const updatedPositionsMap = new Map<string, string | null>()
+            const updatedLotsMap = new Map<string, { id: string, code: string }[]>()
+
+            const chunkSize = 4
+            for (let i = 0; i < candidates.length; i += chunkSize) {
+                const chunk = candidates.slice(i, i + chunkSize)
+                await Promise.all(chunk.map(async ({ ass, lot, targetPosId, targetPosCode, manual }) => {
+                    try {
+                        if (manual) {
+                            await (supabase.from('pending_assignments') as any)
+                                .update({ position_id: targetPosId, lot_stt: manual.lot_stt })
+                                .eq('id', ass.id)
+                        }
+
+                        const { data: currentPosData } = await (supabase.from('positions') as any)
+                            .select('id, code')
+                            .eq('lot_id', lot.id)
+
+                        const otherPlacements = (currentPosData || []).filter((p: any) => p.id !== targetPosId)
+                        for (const oldPos of otherPlacements) {
+                            await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', oldPos.id)
+                            updatedPositionsMap.set(oldPos.id, null)
+                            await logActivity({
+                                supabase,
+                                tableName: 'positions',
+                                recordId: oldPos.id,
+                                action: 'UPDATE',
+                                oldData: { lot_id: lot.id },
+                                newData: { lot_id: null },
+                                systemCode: currentSystem?.code || ''
+                            })
+                        }
+
+                        await (supabase.from('positions') as any).update({ lot_id: lot.id }).eq('id', targetPosId)
+                        updatedPositionsMap.set(targetPosId, lot.id)
+                        await logActivity({
+                            supabase,
+                            tableName: 'positions',
+                            recordId: targetPosId,
+                            action: 'UPDATE',
+                            oldData: { lot_id: null },
+                            newData: { lot_id: lot.id },
+                            systemCode: currentSystem?.code || ''
+                        })
+
+                        const isMove = otherPlacements.length > 0
+                        const oldPosCodes = otherPlacements.map((p: any) => p.code).join(', ')
+                        const finalStatus = isMove ? `approved:move:${oldPosCodes}:${lot.id}` : `approved:new:${lot.id}`
+
+                        await (supabase.from('pending_assignments') as any).update({
+                            status: finalStatus,
+                            position_id: targetPosId,
+                            lot_stt: manual?.lot_stt || ass.lot_stt
+                        }).eq('id', ass.id)
+
+                        processedAssIds.push(ass.id)
+                        updatedLotsMap.set(lot.id, [{ id: targetPosId, code: targetPosCode }])
+                        successCount++
+                    } catch (itemErr) {
+                        console.error('Lỗi khi duyệt nhanh yêu cầu ID ' + ass.id, itemErr)
+                    }
+                }))
+            }
+
+            const processedSet = new Set(processedAssIds)
+            setPendingList(prev => prev.filter(p => !processedSet.has(p.id)))
+            setSelectedIds(prev => {
+                const next = new Set(prev)
+                processedAssIds.forEach(id => next.delete(id))
+                return next
+            })
+            setAllPositions(prev => prev.map(p => {
+                if (updatedPositionsMap.has(p.id)) {
+                    return { ...p, lot_id: updatedPositionsMap.get(p.id) }
+                }
+                return p
+            }))
+            setLotsInDay(prev => prev.map(l => {
+                if (updatedLotsMap.has(l.id)) {
+                    return { ...l, positions: updatedLotsMap.get(l.id) }
+                }
+                return l
+            }))
+
+            showToast(`Đã duyệt thành công ${successCount}/${candidates.length} yêu cầu!`, successCount > 0 ? 'success' : 'error')
+            fetchData(true)
+        } catch (e: any) {
+            console.error('[HANDLE APPROVE ALL] Error:', e)
             showToast('Có lỗi: ' + e.message, 'error')
         } finally {
             setActionLoading(null)
@@ -1289,7 +1611,7 @@ export default function AssignmentApprovalPage() {
                             </span>
                         )}
                     </button>
-                    <button onClick={fetchData} className="p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
+                    <button onClick={() => fetchData(false)} className="p-3 bg-white dark:bg-zinc-900 rounded-xl border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors">
                         <RefreshCcw size={18} className={`${loading ? 'animate-spin' : ''} text-zinc-600 dark:text-zinc-400`} />
                     </button>
                 </div>
@@ -1302,17 +1624,17 @@ export default function AssignmentApprovalPage() {
                         <div className="flex items-center gap-3">
                             <button 
                                 onClick={handleSelectAll}
-                                disabled={pendingList.length === 0}
+                                disabled={filteredPendingList.length === 0}
                                 className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${
-                                    selectedIds.size > 0 && selectedIds.size === pendingList.length
+                                    selectedIds.size > 0 && filteredPendingList.length > 0 && filteredPendingList.every(a => selectedIds.has(a.id))
                                         ? 'bg-blue-600 border-blue-600 text-white shadow-sm'
                                         : selectedIds.size > 0
                                         ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-600'
                                         : 'border-zinc-300 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:border-zinc-400 text-transparent'
                                 }`}
-                                title={selectedIds.size === pendingList.length ? "Bỏ chọn tất cả" : "Chọn tất cả"}
+                                title={filteredPendingList.length > 0 && filteredPendingList.every(a => selectedIds.has(a.id)) ? "Bỏ chọn tất cả" : "Chọn tất cả"}
                             >
-                                {selectedIds.size > 0 && selectedIds.size === pendingList.length ? (
+                                {selectedIds.size > 0 && filteredPendingList.length > 0 && filteredPendingList.every(a => selectedIds.has(a.id)) ? (
                                     <Check size={14} strokeWidth={3} />
                                 ) : selectedIds.size > 0 ? (
                                     <div className="w-2.5 h-1 bg-blue-600 rounded-full" />
@@ -1320,6 +1642,11 @@ export default function AssignmentApprovalPage() {
                             </button>
                             <h2 className="text-xs font-black text-zinc-400 uppercase tracking-widest flex items-center gap-2">
                                 Yêu cầu từ Mobile ({pendingList.length})
+                                {pendingSearchTerm && (
+                                    <span className="text-blue-600 dark:text-blue-400 normal-case font-bold text-xs">
+                                        (Khớp: {filteredPendingList.length})
+                                    </span>
+                                )}
                                 {selectedIds.size > 0 && (
                                     <span className="text-blue-600 dark:text-blue-400 font-bold normal-case text-xs">
                                         • Đã chọn {selectedIds.size}
@@ -1329,6 +1656,27 @@ export default function AssignmentApprovalPage() {
                         </div>
 
                         <div className="flex items-center gap-2 flex-wrap">
+                            {/* Ô tìm kiếm STT, Vị trí */}
+                            <div className="relative min-w-[160px] sm:min-w-[200px]">
+                                <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                                <input
+                                    type="text"
+                                    placeholder="Tìm STT (#), Vị trí..."
+                                    value={pendingSearchTerm}
+                                    onChange={(e) => setPendingSearchTerm(e.target.value)}
+                                    className="w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl py-1.5 pl-8 pr-7 text-xs font-bold text-zinc-900 dark:text-white placeholder:text-zinc-400 outline-none focus:border-blue-500 transition-colors shadow-sm"
+                                />
+                                {pendingSearchTerm && (
+                                    <button
+                                        onClick={() => setPendingSearchTerm('')}
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 p-0.5 rounded-full"
+                                        title="Xóa tìm kiếm"
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                )}
+                            </div>
+
                             {unmatchedPendingList.length > 0 && (
                                 <button
                                     onClick={handleSelectUnmatchedOnly}
@@ -1364,12 +1712,12 @@ export default function AssignmentApprovalPage() {
 
                             <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => handleBulkDelete()}
+                                    onClick={handleBulkApprove}
                                     disabled={!!actionLoading}
-                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-red-600/20 active:scale-95 transition-all"
+                                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-emerald-600/20 active:scale-95 transition-all"
                                 >
-                                    {actionLoading === 'bulk-delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
-                                    Xóa vĩnh viễn ({selectedIds.size})
+                                    {actionLoading === 'bulk-approve' ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                                    Duyệt đã chọn ({selectedIds.size})
                                 </button>
                                 <button
                                     onClick={() => handleBulkReject()}
@@ -1378,6 +1726,14 @@ export default function AssignmentApprovalPage() {
                                 >
                                     {actionLoading === 'bulk-reject' ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />}
                                     Từ chối ({selectedIds.size})
+                                </button>
+                                <button
+                                    onClick={() => handleBulkDelete()}
+                                    disabled={!!actionLoading}
+                                    className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-black text-xs uppercase rounded-xl flex items-center gap-2 shadow-lg shadow-red-600/20 active:scale-95 transition-all"
+                                >
+                                    {actionLoading === 'bulk-delete' ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                                    Xóa vĩnh viễn ({selectedIds.size})
                                 </button>
                                 <button
                                     onClick={handleClearSelection}
@@ -1400,26 +1756,40 @@ export default function AssignmentApprovalPage() {
                             <CheckCircle2 size={40} className="mb-4 opacity-20" />
                             <p className="text-zinc-400 font-bold text-[10px] uppercase tracking-widest">Không có yêu cầu chờ duyệt</p>
                         </div>
+                    ) : filteredPendingList.length === 0 ? (
+                        <div className="py-16 flex flex-col items-center justify-center bg-white dark:bg-zinc-900 rounded-[32px] border border-dashed border-zinc-200 dark:border-zinc-800 text-zinc-400">
+                            <Search size={36} className="mb-3 opacity-30 text-zinc-400" />
+                            <p className="text-zinc-700 dark:text-zinc-200 font-black text-sm">Không tìm thấy yêu cầu nào</p>
+                            <p className="text-zinc-400 text-xs mt-1">Không có STT hoặc vị trí nào khớp với "{pendingSearchTerm}"</p>
+                            <button
+                                onClick={() => setPendingSearchTerm('')}
+                                className="mt-4 px-3.5 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-xs font-bold rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors"
+                            >
+                                Xóa từ khóa tìm kiếm
+                            </button>
+                        </div>
                     ) : (
                         <div className="space-y-2">
-                            {pendingList.map((ass) => {
+                            {filteredPendingList.map((ass) => {
                                 const isSelected = selectedIds.has(ass.id)
                                 const targetStt = manualEdits[ass.id]?.lot_stt || ass.lot_stt
                                 const allMatchedLotsRaw = lotsInDay.filter(l => l.daily_seq === targetStt)
-                                const allMatchedLots = showOnlyUnassigned ? allMatchedLotsRaw.filter(l => !l.positions?.[0]) : allMatchedLotsRaw
+                                
+                                // Lô đã có vị trí trong kho trùng STT này
+                                const duplicateAssignedLots = allMatchedLotsRaw.filter(l => getLotPositions(l).length > 0)
+                                const duplicatePosCodes = Array.from(new Set(duplicateAssignedLots.flatMap(l => getLotPositions(l).map(p => p.code)))).filter(Boolean)
+
+                                const unassignedLots = allMatchedLotsRaw.filter(l => getLotPositions(l).length === 0)
+                                // Nếu bật lọc và có lô chưa gán, ưu tiên các lô chưa gán; nếu không có lô chưa gán thì hiển thị toàn bộ để không ẩn vị trí
+                                const allMatchedLots = (showOnlyUnassigned && unassignedLots.length > 0) ? unassignedLots : allMatchedLotsRaw
                                 const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
                                 const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
-                                // Fallback: if no date match but we have unassigned lots, use the closest one
-                                const hasOtherMatches = allMatchedLots.length > 0
-                                const hiddenByFilter = allMatchedLotsRaw.length > 0 && allMatchedLots.length === 0
-                                // NEW: Check if filter is hiding unassigned lots — if allMatchedLotsRaw has unassigned, show them
-                                const unassignedInRaw = allMatchedLotsRaw.filter(l => !l.positions?.[0])
-                                const effectiveHiddenByFilter = hiddenByFilter && unassignedInRaw.length === 0
-                                // If filter hides assigned lots but unassigned exist, show them directly
-                                const effectiveMatchedLots = hiddenByFilter && unassignedInRaw.length > 0 
-                                    ? unassignedInRaw 
-                                    : allMatchedLots
+
+                                // Danh sách lô trùng STT để hiển thị
+                                const effectiveMatchedLots = allMatchedLotsRaw.length > 0 ? (allMatchedLots.length > 0 ? allMatchedLots : allMatchedLotsRaw) : []
                                 const effectiveHasMatches = effectiveMatchedLots.length > 0
+                                const hiddenByFilter = allMatchedLotsRaw.length > 0 && allMatchedLots.length === 0
+                                const effectiveHiddenByFilter = hiddenByFilter && unassignedLots.length === 0 && effectiveMatchedLots.length === 0
 
                                 return (
                                     <div 
@@ -1472,6 +1842,7 @@ export default function AssignmentApprovalPage() {
                                                         </div>
                                                     </div>
                                                     
+                                                    {/* Cảnh báo vị trí đích đang bị chiếm bởi lô khác */}
                                                     {(() => {
                                                         const targetPosCode = manualEdits[ass.id]?.position_code || ass.position?.code
                                                         const pos = allPositions.find(p => p.code === targetPosCode)
@@ -1485,6 +1856,13 @@ export default function AssignmentApprovalPage() {
                                                         }
                                                         return null
                                                     })()}
+
+                                                    {/* Hiển thị vị trí hiện tại của lô trùng STT nếu đã có vị trí trong kho */}
+                                                    {duplicatePosCodes.length > 0 && (
+                                                        <div className="px-2 py-0.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-lg text-[8px] font-bold text-amber-700 dark:text-amber-300 flex items-center gap-1" title={`Lô mang STT này hiện đang nằm ở vị trí: ${duplicatePosCodes.join(', ')}`}>
+                                                            <MapPin size={9} className="text-amber-600 shrink-0" /> Trùng STT ở: {duplicatePosCodes.join(', ')}
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
 
@@ -1493,17 +1871,38 @@ export default function AssignmentApprovalPage() {
                                                 {perfectMatch ? (
                                                     <div className="p-2.5 sm:p-3 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/80 dark:border-emerald-800/40 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="flex items-center gap-2 mb-0.5">
+                                                            <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                                                                 <span className="text-[9px] font-black text-emerald-600 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-1">
                                                                     <CheckCircle2 size={12} /> Khớp STT & Ngày SX
                                                                 </span>
-                                                                {perfectMatch.positions?.[0] ? (
-                                                                    <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[8px] font-black rounded border border-amber-200">
-                                                                        Đã gán: {perfectMatch.positions[0].code}
-                                                                    </span>
-                                                                ) : (
-                                                                    <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 text-[8px] font-black rounded border border-emerald-200">
-                                                                        Chưa có vị trí
+                                                                {(() => {
+                                                                    const pmPositions = getLotPositions(perfectMatch)
+                                                                    const pmPosCodes = pmPositions.map(p => p.code).filter(Boolean).join(', ')
+                                                                    const targetPosCode = manualEdits[ass.id]?.position_code || ass.position?.code
+                                                                    const isAtTarget = pmPosCodes && pmPosCodes === targetPosCode
+
+                                                                    if (pmPosCodes) {
+                                                                        return (
+                                                                            <span className={`px-1.5 py-0.5 text-[8px] font-black rounded border flex items-center gap-1 shrink-0 ${
+                                                                                isAtTarget 
+                                                                                    ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700/60'
+                                                                                    : 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700/60'
+                                                                            }`}>
+                                                                                <MapPin size={9} className={isAtTarget ? 'text-blue-600' : 'text-amber-600 dark:text-amber-400'} />
+                                                                                {isAtTarget ? `Đã ở: ${pmPosCodes}` : `Đã gán: ${pmPosCodes}`}
+                                                                            </span>
+                                                                        )
+                                                                    }
+                                                                    return (
+                                                                        <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300 text-[8px] font-black rounded border border-emerald-200 dark:border-emerald-700/60 shrink-0">
+                                                                            Chưa có vị trí
+                                                                        </span>
+                                                                    )
+                                                                })()}
+                                                                {allMatchedLotsRaw.length > 1 && (
+                                                                    <span className="px-1.5 py-0.5 bg-red-100 dark:bg-red-900/40 text-red-800 dark:text-red-300 text-[8px] font-black rounded border border-red-300 dark:border-red-700/60 flex items-center gap-1 shrink-0">
+                                                                        <AlertTriangle size={9} />
+                                                                        Trùng thêm {allMatchedLotsRaw.length - 1} lô khác STT #{decodeSTT(targetStt)}
                                                                     </span>
                                                                 )}
                                                             </div>
@@ -1535,22 +1934,56 @@ export default function AssignmentApprovalPage() {
                                                             </div>
                                                         </div>
                                                         <div className="grid grid-cols-1 gap-1.5 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
-                                                            {effectiveMatchedLots.map(l => (
-                                                                <button 
-                                                                    key={l.id} 
-                                                                    onClick={() => handleApprove(ass, l.id)} 
-                                                                    className="w-full text-left p-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-blue-500 rounded-lg transition-all flex items-center justify-between gap-2"
-                                                                >
-                                                                    <div className="min-w-0 flex-1">
-                                                                        <div className="flex items-center gap-2">
-                                                                            <span className="text-[8px] font-bold px-1 py-0.5 bg-blue-50 text-blue-600 rounded">SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}</span>
-                                                                            <span className="text-[10px] font-black text-zinc-900 dark:text-white truncate">{l.code}</span>
+                                                            {effectiveMatchedLots.map(l => {
+                                                                const lotPositions = getLotPositions(l)
+                                                                const posCodes = lotPositions.map(p => p.code).filter(Boolean).join(', ')
+                                                                const targetPosCode = manualEdits[ass.id]?.position_code || ass.position?.code
+                                                                const isAtTargetPos = posCodes && posCodes === targetPosCode
+
+                                                                return (
+                                                                    <button 
+                                                                        key={l.id} 
+                                                                        onClick={() => handleApprove(ass, l.id)} 
+                                                                        disabled={!!actionLoading}
+                                                                        className="w-full text-left p-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-blue-500 rounded-lg transition-all flex items-center justify-between gap-3 group"
+                                                                    >
+                                                                        <div className="min-w-0 flex-1">
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                <span className="text-[8px] font-bold px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
+                                                                                    SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}
+                                                                                </span>
+                                                                                <span className="text-[10px] font-black text-zinc-900 dark:text-white truncate">
+                                                                                    {l.code}
+                                                                                </span>
+                                                                                {posCodes ? (
+                                                                                    <span className={`px-1.5 py-0.5 text-[8px] font-black rounded border flex items-center gap-1 shrink-0 ${
+                                                                                        isAtTargetPos 
+                                                                                            ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-700/60'
+                                                                                            : 'bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-700/60'
+                                                                                    }`}>
+                                                                                        <MapPin size={9} className={isAtTargetPos ? 'text-blue-600' : 'text-amber-600 dark:text-amber-400'} />
+                                                                                        {isAtTargetPos ? `Đã ở vị trí: ${posCodes}` : `Vị trí: ${posCodes}`}
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    <span className="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-[8px] font-black rounded border border-emerald-300 dark:border-emerald-700/60 shrink-0">
+                                                                                        Chưa có vị trí
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
+                                                                            <div className="text-[8px] text-zinc-500 dark:text-zinc-400 truncate mt-1">
+                                                                                {l.product_names?.join(', ') || '---'}
+                                                                            </div>
                                                                         </div>
-                                                                        <div className="text-[8px] text-zinc-500 truncate mt-0.5">{l.product_names?.join(', ')}</div>
-                                                                    </div>
-                                                                    <span className="px-2.5 py-1 bg-blue-600 text-white rounded-md text-[9px] font-black uppercase shrink-0">Duyệt</span>
-                                                                </button>
-                                                            ))}
+                                                                        <span className={`px-2.5 py-1 text-white rounded-md text-[9px] font-black uppercase shrink-0 transition-colors shadow-sm ${
+                                                                            posCodes && !isAtTargetPos
+                                                                                ? 'bg-amber-600 group-hover:bg-amber-700'
+                                                                                : 'bg-blue-600 group-hover:bg-blue-700'
+                                                                        }`}>
+                                                                            {posCodes && !isAtTargetPos ? 'Duyệt chuyển' : 'Duyệt'}
+                                                                        </span>
+                                                                    </button>
+                                                                )
+                                                            })}
                                                         </div>
                                                     </div>
                                                 ) : effectiveHiddenByFilter ? (
@@ -1559,7 +1992,9 @@ export default function AssignmentApprovalPage() {
                                                             <Filter size={14} className="text-amber-600 shrink-0" />
                                                             <div className="min-w-0">
                                                                 <div className="text-xs font-black text-amber-900 dark:text-amber-200 truncate">STT #{decodeSTT(targetStt)} đã có vị trí</div>
-                                                                <div className="text-[9px] text-amber-700 dark:text-amber-400 truncate">Tìm thấy {allMatchedLotsRaw.length} lô đã gán. Tắt lọc để chuyển vị trí.</div>
+                                                                <div className="text-[9px] text-amber-700 dark:text-amber-400 truncate">
+                                                                    {duplicatePosCodes.length > 0 ? `Đang ở vị trí: ${duplicatePosCodes.join(', ')}. ` : ''}Tìm thấy {allMatchedLotsRaw.length} lô đã gán. Tắt lọc để chuyển vị trí.
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-1 shrink-0">
