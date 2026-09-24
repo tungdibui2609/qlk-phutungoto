@@ -32,6 +32,7 @@ import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
+import { LotBulkEditDatesModal } from '@/components/warehouse/lots/LotBulkEditDatesModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import { exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
 import WarehouseLayoutViewer from '@/components/warehouse/layout-manager/WarehouseLayoutViewer'
@@ -160,6 +161,8 @@ function WarehouseMapContent() {
     const [isBulkChangeProductOpen, setIsBulkChangeProductOpen] = useState(false)
     const [bulkChangeLotIds, setBulkChangeLotIds] = useState<string[] | null>(null)
     const [preselectedProductId, setPreselectedProductId] = useState<string | undefined>(undefined)
+    const [isBulkEditDatesOpen, setIsBulkEditDatesOpen] = useState(false)
+    const [bulkEditDateLotIds, setBulkEditDateLotIds] = useState<string[] | null>(null)
     const [products, setProducts] = useState<any[]>([])
     const [taggingLotIds, setTaggingLotIds] = useState<string[] | null>(null)
     const [viewingLot, setViewingLot] = useState<any>(null)
@@ -224,6 +227,15 @@ function WarehouseMapContent() {
 
         setPreselectedProductId(foundProductId)
         setIsBulkChangeProductOpen(true)
+    }
+
+    const handleOpenBulkEditDates = (lotIds: string[]) => {
+        if (!lotIds || lotIds.length === 0) {
+            showToast('Các vị trí đã chọn không có LOT nào để đổi ngày', 'warning')
+            return
+        }
+        setBulkEditDateLotIds(lotIds)
+        setIsBulkEditDatesOpen(true)
     }
 
     const toggleMergeZone = (zoneId: string) => {
@@ -1396,6 +1408,7 @@ function WarehouseMapContent() {
                 onExportOrder={handleExportOrder}
                 onBulkExport={handleBulkExport}
                 onBulkPrint={handleBulkPrint}
+                onBulkEditDates={handleOpenBulkEditDates}
                 onTag={(lotIds) => setTaggingLotIds(lotIds)}
                 onDeleteTags={handleBulkDeleteTags}
                 onDeleteLot={handleBulkDeleteLot}
@@ -1424,6 +1437,23 @@ function WarehouseMapContent() {
                     onSuccess={() => {
                         setIsBulkChangeProductOpen(false)
                         setBulkChangeLotIds(null)
+                        fetchData()
+                        setSelectedPositionIds(new Set())
+                    }}
+                />
+            )}
+
+            {isBulkEditDatesOpen && (
+                <LotBulkEditDatesModal
+                    lotIds={bulkEditDateLotIds || []}
+                    selectedLots={(bulkEditDateLotIds || []).map(id => lotInfo[id]).filter(Boolean)}
+                    onClose={() => {
+                        setIsBulkEditDatesOpen(false)
+                        setBulkEditDateLotIds(null)
+                    }}
+                    onSuccess={() => {
+                        setIsBulkEditDatesOpen(false)
+                        setBulkEditDateLotIds(null)
                         fetchData()
                         setSelectedPositionIds(new Set())
                     }}

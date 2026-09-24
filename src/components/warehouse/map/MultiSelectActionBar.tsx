@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock, Calendar } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -35,6 +35,7 @@ interface MultiSelectActionBarProps {
     onToggleLock?: (posIds: string[]) => void
     isLocked?: (posId: string) => boolean
     onExportExcel?: (selectedPositions: Position[]) => void
+    onBulkEditDates?: (lotIds: string[]) => void
 }
 
 export default function MultiSelectActionBar({
@@ -58,7 +59,8 @@ export default function MultiSelectActionBar({
     isMarked,
     onToggleLock,
     isLocked,
-    onExportExcel
+    onExportExcel,
+    onBulkEditDates
 }: MultiSelectActionBarProps) {
     const [isOperationMenuOpen, setIsOperationMenuOpen] = useState(false)
     const [isUtilityMenuOpen, setIsUtilityMenuOpen] = useState(false)
@@ -315,43 +317,6 @@ export default function MultiSelectActionBar({
                                 )}
                             </div>
 
-                            {/* Nút: Đánh dấu kiểm tra */}
-                            {onToggleMark && (
-                                <button
-                                    onClick={() => onToggleMark(Array.from(selectedPositionIds))}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shrink-0 shadow-sm ${
-                                        allSelectedMarked
-                                            ? 'bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 hover:bg-amber-200'
-                                            : 'bg-amber-500 hover:bg-amber-600 text-white shadow-amber-500/20'
-                                    }`}
-                                    title={allSelectedMarked ? "Bỏ đánh dấu các vị trí đã chọn" : "Đánh dấu kiểm tra các vị trí đã chọn"}
-                                >
-                                    <Bookmark size={15} className={allSelectedMarked ? "fill-amber-600 text-amber-600" : "fill-white text-white"} />
-                                    <span>{allSelectedMarked ? `Bỏ đánh dấu (${selectedPositionIds.size})` : `Đánh dấu (${selectedPositionIds.size})`}</span>
-                                </button>
-                            )}
-
-                            {/* Nút: Khóa / Mở khóa vị trí */}
-                            {onToggleLock && (
-                                <button
-                                    onClick={() => onToggleLock(Array.from(selectedPositionIds))}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shrink-0 shadow-sm ${
-                                        allSelectedLocked
-                                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-700 hover:bg-rose-200'
-                                            : 'bg-slate-700 hover:bg-slate-800 text-white shadow-slate-700/20'
-                                    }`}
-                                    title={allSelectedLocked ? "Mở khóa các vị trí đã chọn" : "Khóa vị trí (không thể gán hàng, không xuất Excel, không tính thống kê)"}
-                                >
-                                    {allSelectedLocked ? (
-                                        <Unlock size={15} className="text-rose-600 dark:text-rose-400" />
-                                    ) : (
-                                        <Lock size={15} className="text-white" />
-                                    )}
-                                    <span>{allSelectedLocked ? `Mở khóa (${selectedPositionIds.size})` : `Khóa vị trí (${selectedPositionIds.size})`}</span>
-                                </button>
-                            )}
-
-
                             {/* Nút: Nhân bản LOT */}
                             <button
                                 onClick={() => {
@@ -361,19 +326,19 @@ export default function MultiSelectActionBar({
                                     }
                                 }}
                                 disabled={selectedLotIds.size === 0}
-                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 rounded-xl transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0 shadow-sm"
+                                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50/80 dark:bg-purple-950/50 border border-purple-200/80 dark:border-purple-800/80 hover:bg-purple-100 dark:hover:bg-purple-900/60 rounded-xl transition-all active:scale-95 disabled:opacity-50 whitespace-nowrap shrink-0 shadow-sm cursor-pointer"
                                 title="Nhân bản LOT đã chọn"
                             >
                                 <Copy size={15} className="text-purple-600 dark:text-purple-400" />
                                 <span>Nhân bản LOT</span>
                             </button>
 
-                            {/* SUB MENU: VỊ TRÍ & SẢNH (Gồm: Di chuyển, Hạ sảnh, Gán sảnh tự động, Gỡ vị trí) */}
+                            {/* SUB MENU: VỊ TRÍ & SẢNH (Gồm: Di chuyển, Hạ sảnh, Gán sảnh tự động, Đánh dấu, Khóa vị trí, Gỡ vị trí) */}
                             <div className="relative shrink-0">
                                 <button
                                     ref={locationButtonRef}
                                     onClick={handleToggleLocationMenu}
-                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shadow-sm ${isLocationMenuOpen
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl transition-all active:scale-95 whitespace-nowrap shadow-sm cursor-pointer ${isLocationMenuOpen
                                         ? 'bg-indigo-600 text-white ring-2 ring-indigo-300 dark:ring-indigo-800'
                                         : 'bg-indigo-50/80 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 border border-indigo-200/80 dark:border-indigo-800/80 hover:bg-indigo-100 dark:hover:bg-indigo-900/60'
                                         }`}
@@ -386,7 +351,7 @@ export default function MultiSelectActionBar({
                                 {isLocationMenuOpen && (
                                     <div
                                         ref={locationMenuRef}
-                                        className="fixed min-w-[210px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
+                                        className="fixed min-w-[220px] bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700 p-1.5 animate-in fade-in zoom-in-95 duration-150 z-[100]"
                                         style={{
                                             top: locationMenuPos.top,
                                             left: locationMenuPos.left,
@@ -402,7 +367,7 @@ export default function MultiSelectActionBar({
                                                 if (onOpenMove) onOpenMove()
                                                 setIsLocationMenuOpen(false)
                                             }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-xl transition-colors text-left group"
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-indigo-50 dark:hover:bg-indigo-900/40 rounded-xl transition-colors text-left group cursor-pointer"
                                         >
                                             <ArrowRightLeft size={16} className="text-indigo-500 group-hover:scale-110 transition-transform shrink-0" />
                                             <div className="flex flex-col min-w-0">
@@ -416,7 +381,7 @@ export default function MultiSelectActionBar({
                                                 if (onOpenSelectHall) onOpenSelectHall()
                                                 setIsLocationMenuOpen(false)
                                             }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/40 rounded-xl transition-colors text-left group"
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-orange-50 dark:hover:bg-orange-900/40 rounded-xl transition-colors text-left group cursor-pointer"
                                         >
                                             <ArrowDownToLine size={16} className="text-orange-500 group-hover:scale-110 transition-transform shrink-0" />
                                             <div className="flex flex-col min-w-0">
@@ -430,7 +395,7 @@ export default function MultiSelectActionBar({
                                                 if (onOpenAutoAssignWarehouse) onOpenAutoAssignWarehouse()
                                                 setIsLocationMenuOpen(false)
                                             }}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group"
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
                                         >
                                             <Zap size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
                                             <div className="flex flex-col min-w-0">
@@ -441,13 +406,61 @@ export default function MultiSelectActionBar({
 
                                         <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
 
+                                        {/* Đánh dấu kiểm tra */}
+                                        {onToggleMark && (
+                                            <button
+                                                onClick={() => {
+                                                    onToggleMark(Array.from(selectedPositionIds))
+                                                    setIsLocationMenuOpen(false)
+                                                }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                            >
+                                                <Bookmark size={16} className={allSelectedMarked ? "fill-amber-600 text-amber-600 group-hover:scale-110 transition-transform shrink-0" : "text-amber-500 group-hover:scale-110 transition-transform shrink-0"} />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className={`font-bold ${allSelectedMarked ? 'text-amber-600 dark:text-amber-400' : ''}`}>
+                                                        {allSelectedMarked ? `Bỏ đánh dấu (${selectedPositionIds.size})` : `Đánh dấu (${selectedPositionIds.size})`}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">
+                                                        {allSelectedMarked ? "Bỏ đánh dấu kiểm tra vị trí" : "Đánh dấu kiểm tra các vị trí đã chọn"}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        )}
+
+                                        {/* Khóa / Mở khóa vị trí */}
+                                        {onToggleLock && (
+                                            <button
+                                                onClick={() => {
+                                                    onToggleLock(Array.from(selectedPositionIds))
+                                                    setIsLocationMenuOpen(false)
+                                                }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-rose-50 dark:hover:bg-rose-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                            >
+                                                {allSelectedLocked ? (
+                                                    <Unlock size={16} className="text-rose-600 dark:text-rose-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                ) : (
+                                                    <Lock size={16} className="text-slate-600 dark:text-slate-300 group-hover:scale-110 transition-transform shrink-0" />
+                                                )}
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className={`font-bold ${allSelectedLocked ? 'text-rose-600 dark:text-rose-400' : ''}`}>
+                                                        {allSelectedLocked ? `Mở khóa vị trí (${selectedPositionIds.size})` : `Khóa vị trí (${selectedPositionIds.size})`}
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">
+                                                        {allSelectedLocked ? "Mở khóa các vị trí đã chọn" : "Khóa vị trí (ngăn gán hàng, xuất kho)"}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        )}
+
+                                        <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
+
                                         <button
                                             onClick={() => {
                                                 if (onUnassignPosition) onUnassignPosition(Array.from(selectedPositionIds))
                                                 setIsLocationMenuOpen(false)
                                             }}
                                             disabled={selectedLotIds.size === 0}
-                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors text-left disabled:opacity-50 group"
+                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-xl transition-colors text-left disabled:opacity-50 group cursor-pointer"
                                         >
                                             <MapPinOff size={16} className="text-gray-400 group-hover:scale-110 transition-transform shrink-0" />
                                             <div className="flex flex-col min-w-0">
@@ -503,6 +516,23 @@ export default function MultiSelectActionBar({
                                                 <span className="text-[10px] text-gray-400 font-normal">In tem / nhãn QR hàng loạt</span>
                                             </div>
                                         </button>
+
+                                        {onBulkEditDates && (
+                                            <button
+                                                onClick={() => {
+                                                    onBulkEditDates(Array.from(selectedLotIds))
+                                                    setIsUtilityMenuOpen(false)
+                                                }}
+                                                disabled={selectedLotIds.size === 0}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-blue-900/40 rounded-xl transition-colors text-left disabled:opacity-50 group cursor-pointer"
+                                            >
+                                                <Calendar size={16} className="text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="font-bold">Đổi ngày</span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">Đổi ngày tháng cho các LOT đã chọn</span>
+                                                </div>
+                                            </button>
+                                        )}
 
                                         {onExportExcel && (
                                             <button

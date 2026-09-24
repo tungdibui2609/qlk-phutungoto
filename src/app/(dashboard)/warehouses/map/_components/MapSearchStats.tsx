@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react'
-import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown, Bookmark } from 'lucide-react'
+import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown, Bookmark, FileSpreadsheet } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 import { advancedMatchSearch } from '@/lib/searchUtils'
+import { WarehouseSearchReportModal } from '@/components/warehouse/map/WarehouseSearchReportModal'
+
 
 type Zone = Database['public']['Tables']['zones']['Row']
 type Position = Database['public']['Tables']['positions']['Row']
@@ -396,6 +398,8 @@ export function MapSearchStats({
 
     // State for expanded zones
     const [expandedZoneId, setExpandedZoneId] = useState<string | null>(null)
+    // State for Search Report Modal
+    const [isReportModalOpen, setIsReportModalOpen] = useState(false)
 
     // Helper to toggle expansion
     const toggleZone = (id: string) => {
@@ -431,34 +435,49 @@ export function MapSearchStats({
 
     return (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm animate-in fade-in slide-in-from-top-2">
-            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3 flex items-center gap-2">
-                <span>{displayTitle}</span>
-                <span className="text-emerald-700 dark:text-emerald-400 font-bold">"{displayLabel}"</span>
-                {isFifoAvailable && (
-                    <label className="inline-flex items-center gap-2 cursor-pointer select-none ml-auto">
-                        <button
-                            role="switch"
-                            aria-checked={isFifoEnabled}
-                            onClick={onToggleFifo}
-                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoEnabled
-                                ? 'bg-emerald-600'
-                                : 'bg-slate-300 dark:bg-slate-600'
-                                }`}
-                        >
-                            <span
-                                className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${isFifoEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">{displayTitle}</span>
+                    <span className="text-emerald-700 dark:text-emerald-400 font-bold">"{displayLabel}"</span>
+                </div>
+
+                <div className="flex items-center gap-2.5 ml-auto">
+                    {/* Nút Xuất báo cáo theo ngày */}
+                    <button
+                        onClick={() => setIsReportModalOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 shadow-sm shadow-emerald-600/20 transition-all cursor-pointer"
+                        title="Xem báo cáo chi tiết theo ngày, nhiều tùy chọn sắp xếp và xuất file Excel"
+                    >
+                        <FileSpreadsheet size={15} />
+                        <span>Xuất báo cáo theo ngày</span>
+                    </button>
+
+                    {isFifoAvailable && (
+                        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                            <button
+                                role="switch"
+                                aria-checked={isFifoEnabled}
+                                onClick={onToggleFifo}
+                                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200 focus:outline-none ${isFifoEnabled
+                                    ? 'bg-emerald-600'
+                                    : 'bg-slate-300 dark:bg-slate-600'
                                     }`}
-                            />
-                        </button>
-                        <span className={`text-sm font-semibold ${isFifoEnabled
-                            ? 'text-slate-800 dark:text-slate-200'
-                            : 'text-slate-400 dark:text-slate-500'
-                            }`}>
-                            Ưu tiên FIFO
-                        </span>
-                    </label>
-                )}
-            </h3>
+                            >
+                                <span
+                                    className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-md transition-transform duration-200 ${isFifoEnabled ? 'translate-x-[22px]' : 'translate-x-[2px]'
+                                        }`}
+                                />
+                            </button>
+                            <span className={`text-sm font-semibold ${isFifoEnabled
+                                ? 'text-slate-800 dark:text-slate-200'
+                                : 'text-slate-400 dark:text-slate-500'
+                                }`}>
+                                Ưu tiên FIFO
+                            </span>
+                        </label>
+                    )}
+                </div>
+            </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-700">
@@ -489,30 +508,42 @@ export function MapSearchStats({
 
             <div className="flex items-center justify-between mb-2">
                 <div className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider">Phân bố theo khu vực</div>
-                {onBulkSelect && filteredPositions.length > 0 && (
+                <div className="flex items-center gap-2">
                     <button
-                        onClick={() => {
-                            const allFilteredIds = filteredPositions.map(p => p.id)
-                            const isAllSelected = allFilteredIds.every(id => selectedPositionIds.has(id))
-                            onBulkSelect(allFilteredIds, !isAllSelected)
-                        }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${filteredPositions.every(p => selectedPositionIds.has(p.id))
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800'
-                            : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300 hover:text-emerald-700 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800 dark:hover:border-emerald-700'
-                            }`}
+                        onClick={() => setIsReportModalOpen(true)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 transition-all cursor-pointer"
+                        title="Mở bảng báo cáo và xuất Excel"
                     >
-                        {filteredPositions.every(p => selectedPositionIds.has(p.id)) ? (
-                            <>
-                        </>
-                    ) : (
-                        <>
-                            <Square size={14} />
-                            Chọn tất cả kết quả ({filteredPositions.length})
-                        </>
+                        <FileSpreadsheet size={14} className="text-emerald-600 dark:text-emerald-400" />
+                        <span>Báo cáo & Excel</span>
+                    </button>
+                    {onBulkSelect && filteredPositions.length > 0 && (
+                        <button
+                            onClick={() => {
+                                const allFilteredIds = filteredPositions.map(p => p.id)
+                                const isAllSelected = allFilteredIds.every(id => selectedPositionIds.has(id))
+                                onBulkSelect(allFilteredIds, !isAllSelected)
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border ${filteredPositions.every(p => selectedPositionIds.has(p.id))
+                                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800'
+                                : 'bg-white text-slate-700 border-slate-200 hover:border-emerald-300 hover:text-emerald-700 dark:bg-slate-900 dark:text-slate-300 dark:border-slate-800 dark:hover:border-emerald-700'
+                                }`}
+                        >
+                            {filteredPositions.every(p => selectedPositionIds.has(p.id)) ? (
+                                <>
+                                    <CheckSquare size={14} />
+                                    Bỏ chọn tất cả ({filteredPositions.length})
+                                </>
+                            ) : (
+                                <>
+                                    <Square size={14} />
+                                    Chọn tất cả kết quả ({filteredPositions.length})
+                                </>
+                            )}
+                        </button>
                     )}
-                </button>
-            )}
-        </div>
+                </div>
+            </div>
 
         <div className="grid grid-cols-1 gap-2 max-h-[60vh] overflow-y-auto pr-1 custom-scrollbar">
             {stats.zoneBreakdown.map((group, idx) => {
@@ -604,7 +635,22 @@ export function MapSearchStats({
                     </div>
                 )
             })}
+            </div>
+
+            {/* Modal Báo cáo vị trí & sản phẩm theo ngày */}
+            {isReportModalOpen && (
+                <WarehouseSearchReportModal
+                    isOpen={isReportModalOpen}
+                    onClose={() => setIsReportModalOpen(false)}
+                    positions={filteredPositions}
+                    zones={zones}
+                    lotInfo={lotInfo}
+                    searchTerm={searchTerm}
+                    categoryName={categoryName}
+                    selectedPositionIds={selectedPositionIds}
+                />
+            )}
         </div>
-    </div>
-)
+    )
 }
+
