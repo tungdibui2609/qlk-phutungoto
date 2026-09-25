@@ -5,75 +5,155 @@ import { exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
 interface UseMarkedPositionsProps {
     systemType: string | null
     systemName?: string
+    initialModules?: any
 }
 
-export function useMarkedPositions({ systemType, systemName }: UseMarkedPositionsProps) {
+function parseStoredMarkedData(raw: string | null): { ids: Set<string>; notes: Record<string, string> } {
+    if (!raw) return { ids: new Set(), notes: {} }
+    try {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+            return { ids: new Set(parsed), notes: {} }
+        } else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.ids)) {
+                return {
+                    ids: new Set(parsed.ids),
+                    notes: parsed.notes && typeof parsed.notes === 'object' ? parsed.notes : {}
+                }
+            } else {
+                const ids = new Set<string>()
+                const notes: Record<string, string> = {}
+                Object.entries(parsed).forEach(([id, val]) => {
+                    ids.add(id)
+                    if (typeof val === 'string') notes[id] = val
+                    else if (val && typeof val === 'object' && 'note' in val) notes[id] = (val as any).note || ''
+                })
+                return { ids, notes }
+            }
+        }
+    } catch (e) {
+        console.error('Error parsing stored marked positions:', e)
+    }
+    return { ids: new Set(), notes: {} }
+}
+
+function parseModulesMarkedData(rawMarked: any): { ids: Set<string>; notes: Record<string, string> } {
+    if (!rawMarked) return { ids: new Set(), notes: {} }
+    const ids = new Set<string>()
+    const notes: Record<string, string> = {}
+    if (Array.isArray(rawMarked)) {
+        rawMarked.forEach((id: string) => {
+            ids.add(id)
+            notes[id] = ''
+        })
+    } else if (typeof rawMarked === 'object' && rawMarked !== null) {
+        Object.entries(rawMarked).forEach(([id, val]) => {
+            ids.add(id)
+            if (typeof val === 'string') {
+                notes[id] = val
+            } else if (typeof val === 'object' && val !== null && 'note' in val) {
+                notes[id] = (val as any).note || ''
+            }
+        })
+    }
+    return { ids, notes }
+}
+
+export function useMarkedPositions({ systemType, systemName, initialModules }: UseMarkedPositionsProps) {
     const { showToast, showConfirm } = useToast()
     const storageKey = useMemo(() => {
         return `warehouse_marked_positions_${systemType || 'default'}`
     }, [systemType])
 
-    // Load initial state from localStorage
+    // Load initial state
     const [markedPositionIds, setMarkedPositionIds] = useState<Set<string>>(() => {
-        if (typeof window === 'undefined') return new Set()
-        try {
-            const raw = localStorage.getItem(`warehouse_marked_positions_${systemType || 'default'}`)
-            if (raw) {
-                const arr = JSON.parse(raw)
-                if (Array.isArray(arr)) return new Set(arr)
-            }
-        } catch (e) {
-            console.error('Error loading marked positions:', e)
+        if (initialModules?.marked_positions) {
+            return parseModulesMarkedData(initialModules.marked_positions).ids
         }
-        return new Set()
+        if (typeof window === 'undefined') return new Set()
+        return parseStoredMarkedData(localStorage.getItem(`warehouse_marked_positions_${systemType || 'default'}`)).ids
+    })
+
+    const [markedNotes, setMarkedNotes] = useState<Record<string, string>>(() => {
+        if (initialModules?.marked_positions) {
+            return parseModulesMarkedData(initialModules.marked_positions).notes
+        }
+        if (typeof window === 'undefined') return {}
+        return parseStoredMarkedData(localStorage.getItem(`warehouse_marked_positions_${systemType || 'default'}`)).notes
     })
 
     // Filter toggle
     const [onlyShowMarked, setOnlyShowMarked] = useState<boolean>(false)
 
-    // Sync from localStorage when storageKey changes
-    useEffect(() => {
-        if (typeof window === 'undefined') return
-        try {
-            const raw = localStorage.getItem(storageKey)
-            if (raw) {
-                const arr = JSON.parse(raw)
-                if (Array.isArray(arr)) {
-                    setMarkedPositionIds(new Set(arr))
-                    return
-                }
+    // Save helper
+    const saveMarkedState = useCallback((newSet: Set<string>, newNotes: Record<string, string>) => {
+        setMarkedPositionIds(newSet)
+        setMarkedNotes(newNotes)
+        if (typeof window !== 'undefined') {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify({
+                    ids: Array.from(newSet),
+                    notes: newNotes
+                }))
+            } catch (e) {
+                console.error('Error saving marked positions:', e)
             }
-            setMarkedPositionIds(new Set())
-        } catch (e) {
-            console.error('Error loading marked positions on key change:', e)
         }
     }, [storageKey])
+
+    // Sync from backend API
+    const syncFromBackend = useCallback(async () => {
+        if (!systemType) return
+        try {
+            const res = await fetch(`/api/warehouses/positions/mark?systemCode=${encodeURIComponent(systemType)}`)
+            if (res.ok) {
+                const data = await res.json()
+                if (Array.isArray(data.markedPositionIds)) {
+                    saveMarkedState(new Set(data.markedPositionIds), data.markedNotes || {})
+                }
+            }
+        } catch (e) {
+            console.warn('Could not sync marked positions from API, using local cache:', e)
+        }
+    }, [systemType, saveMarkedState])
+
+    // Sync from localStorage on storageKey change
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const loaded = parseStoredMarkedData(localStorage.getItem(storageKey))
+        setMarkedPositionIds(loaded.ids)
+        setMarkedNotes(loaded.notes)
+        syncFromBackend()
+    }, [storageKey, syncFromBackend])
 
     // Listen to storage event to sync across browser tabs
     useEffect(() => {
         const handleStorage = (event: StorageEvent) => {
             if (event.key === storageKey) {
-                try {
-                    const arr = event.newValue ? JSON.parse(event.newValue) : []
-                    setMarkedPositionIds(new Set(Array.isArray(arr) ? arr : []))
-                } catch (e) {
-                    console.error('Error handling storage event for marked positions:', e)
-                }
+                const loaded = parseStoredMarkedData(event.newValue)
+                setMarkedPositionIds(loaded.ids)
+                setMarkedNotes(loaded.notes)
             }
         }
         window.addEventListener('storage', handleStorage)
         return () => window.removeEventListener('storage', handleStorage)
     }, [storageKey])
 
-    // Persist helper
-    const saveMarkedIds = useCallback((newSet: Set<string>) => {
-        setMarkedPositionIds(newSet)
-        try {
-            localStorage.setItem(storageKey, JSON.stringify(Array.from(newSet)))
-        } catch (e) {
-            console.error('Error saving marked positions:', e)
-        }
-    }, [storageKey])
+    // Background server call helper
+    const callBackendApi = useCallback((action: 'mark' | 'unmark' | 'update_note' | 'clear', positionIds?: string[], note?: string, notes?: Record<string, string>) => {
+        if (!systemType) return
+        fetch('/api/warehouses/positions/mark', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                systemCode: systemType,
+                positionIds,
+                action,
+                note,
+                notes
+            })
+        }).catch(e => console.error('Error syncing marked positions with server:', e))
+    }, [systemType])
 
     // Check if position is marked
     const isMarked = useCallback((idOrIds: string | string[]): boolean => {
@@ -83,52 +163,103 @@ export function useMarkedPositions({ systemType, systemName }: UseMarkedPosition
         return markedPositionIds.has(idOrIds)
     }, [markedPositionIds])
 
+    // Get note for a position
+    const getMarkNote = useCallback((id: string): string => {
+        return markedNotes[id] || ''
+    }, [markedNotes])
+
     // Toggle mark
-    const toggleMark = useCallback((idOrIds: string | string[]) => {
+    const toggleMark = useCallback((idOrIds: string | string[], note?: string) => {
         const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds]
         if (ids.length === 0) return
 
         const allMarked = ids.every(id => markedPositionIds.has(id))
-        const next = new Set(markedPositionIds)
+        const nextIds = new Set(markedPositionIds)
+        const nextNotes = { ...markedNotes }
 
         if (allMarked) {
-            ids.forEach(id => next.delete(id))
-            saveMarkedIds(next)
+            ids.forEach(id => {
+                nextIds.delete(id)
+                delete nextNotes[id]
+            })
+            saveMarkedState(nextIds, nextNotes)
+            callBackendApi('unmark', ids)
             showToast(`Đã bỏ đánh dấu ${ids.length} vị trí`, 'info')
         } else {
-            ids.forEach(id => next.add(id))
-            saveMarkedIds(next)
+            ids.forEach(id => {
+                nextIds.add(id)
+                if (note !== undefined) {
+                    nextNotes[id] = note
+                }
+            })
+            saveMarkedState(nextIds, nextNotes)
+            callBackendApi('mark', ids, note)
             showToast(`Đã đánh dấu ${ids.length} vị trí để kiểm tra`, 'success')
         }
-    }, [markedPositionIds, saveMarkedIds, showToast])
+    }, [markedPositionIds, markedNotes, saveMarkedState, callBackendApi, showToast])
 
-    // Explicit mark
-    const markPositions = useCallback((ids: string[]) => {
+    // Explicit mark with note
+    const markPositions = useCallback((ids: string[], note?: string) => {
         if (!ids.length) return
-        const next = new Set(markedPositionIds)
-        ids.forEach(id => next.add(id))
-        saveMarkedIds(next)
-        showToast(`Đã đánh dấu ${ids.length} vị trí`, 'success')
-    }, [markedPositionIds, saveMarkedIds, showToast])
+        const nextIds = new Set(markedPositionIds)
+        const nextNotes = { ...markedNotes }
+
+        ids.forEach(id => {
+            nextIds.add(id)
+            if (note !== undefined) {
+                nextNotes[id] = note
+            }
+        })
+
+        saveMarkedState(nextIds, nextNotes)
+        callBackendApi('mark', ids, note)
+        showToast(note ? `Đã đánh dấu ${ids.length} vị trí: "${note}"` : `Đã đánh dấu ${ids.length} vị trí`, 'success')
+    }, [markedPositionIds, markedNotes, saveMarkedState, callBackendApi, showToast])
 
     // Explicit unmark
     const unmarkPositions = useCallback((ids: string[]) => {
         if (!ids.length) return
-        const next = new Set(markedPositionIds)
-        ids.forEach(id => next.delete(id))
-        saveMarkedIds(next)
+        const nextIds = new Set(markedPositionIds)
+        const nextNotes = { ...markedNotes }
+
+        ids.forEach(id => {
+            nextIds.delete(id)
+            delete nextNotes[id]
+        })
+
+        saveMarkedState(nextIds, nextNotes)
+        callBackendApi('unmark', ids)
         showToast(`Đã bỏ đánh dấu ${ids.length} vị trí`, 'info')
-    }, [markedPositionIds, saveMarkedIds, showToast])
+    }, [markedPositionIds, markedNotes, saveMarkedState, callBackendApi, showToast])
+
+    // Update note for already marked positions
+    const updateMarkNote = useCallback((idOrIds: string | string[], note: string) => {
+        const ids = Array.isArray(idOrIds) ? idOrIds : [idOrIds]
+        if (!ids.length) return
+
+        const nextIds = new Set(markedPositionIds)
+        const nextNotes = { ...markedNotes }
+
+        ids.forEach(id => {
+            nextIds.add(id)
+            nextNotes[id] = note
+        })
+
+        saveMarkedState(nextIds, nextNotes)
+        callBackendApi('update_note', ids, note)
+        showToast(`Đã cập nhật ghi chú đánh dấu cho ${ids.length} vị trí`, 'success')
+    }, [markedPositionIds, markedNotes, saveMarkedState, callBackendApi, showToast])
 
     // Clear all marks
     const clearAllMarks = useCallback(async () => {
         if (markedPositionIds.size === 0) return
         if (await showConfirm(`Bạn có chắc chắn muốn xóa toàn bộ ${markedPositionIds.size} vị trí đã đánh dấu?`)) {
-            saveMarkedIds(new Set())
+            saveMarkedState(new Set(), {})
+            callBackendApi('clear')
             setOnlyShowMarked(false)
             showToast('Đã xóa toàn bộ đánh dấu', 'success')
         }
-    }, [markedPositionIds.size, saveMarkedIds, showConfirm, showToast])
+    }, [markedPositionIds.size, saveMarkedState, callBackendApi, showConfirm, showToast])
 
     // Toggle filter mode
     const toggleOnlyShowMarked = useCallback(() => {
@@ -139,7 +270,7 @@ export function useMarkedPositions({ systemType, systemName }: UseMarkedPosition
         setOnlyShowMarked(prev => !prev)
     }, [onlyShowMarked, markedPositionIds.size, showToast])
 
-    // Export marked positions to Excel
+    // Export marked positions to Excel with notes
     const exportMarkedExcel = useCallback(async (
         allPositions: any[],
         lotInfo: Record<string, any>,
@@ -166,14 +297,15 @@ export function useMarkedPositions({ systemType, systemName }: UseMarkedPosition
                 systemName: systemName || 'Kho',
                 positions: markedPositions,
                 lotInfo,
-                zones
+                zones,
+                markedNotes
             })
             showToast(`Đã xuất Excel thành công cho ${markedPositions.length} vị trí`, 'success')
         } catch (e: any) {
             console.error('Error exporting marked positions to Excel:', e)
             showToast('Lỗi khi xuất file Excel: ' + (e?.message || 'Không xác định'), 'error')
         }
-    }, [markedPositionIds, systemName, showToast])
+    }, [markedPositionIds, markedNotes, systemName, showToast])
 
     // Print marked diagram
     const printMarked = useCallback(() => {
@@ -189,16 +321,20 @@ export function useMarkedPositions({ systemType, systemName }: UseMarkedPosition
 
     return {
         markedPositionIds,
+        markedNotes,
         markedCount: markedPositionIds.size,
         isMarked,
+        getMarkNote,
         toggleMark,
         markPositions,
         unmarkPositions,
+        updateMarkNote,
         clearAllMarks,
         onlyShowMarked,
         setOnlyShowMarked,
         toggleOnlyShowMarked,
         exportMarkedExcel,
-        printMarked
+        printMarked,
+        refreshMarkedPositions: syncFromBackend
     }
 }

@@ -4,7 +4,7 @@ import { useState, useMemo, useEffect, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { ChevronUp, ChevronDown, Layers, X, Maximize2, Bookmark, FileSpreadsheet, Printer, Trash2, Eye } from 'lucide-react'
+import { ChevronUp, ChevronDown, Layers, X, Maximize2, Bookmark, FileSpreadsheet, Printer, Trash2, Eye, ListFilter } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import MultiSelectActionBar from '@/components/warehouse/map/MultiSelectActionBar'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
@@ -16,6 +16,8 @@ import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
+import { MarkPositionModal } from '@/components/warehouse/map/MarkPositionModal'
+import { MarkedPositionsListModal } from '@/components/warehouse/map/MarkedPositionsListModal'
 import { MapFilterBar } from '@/components/warehouse/map/MapFilterBar'
 import { useWarehouseData } from './_hooks/useWarehouseData'
 import { useMapFilters } from './_hooks/useMapFilters'
@@ -74,9 +76,14 @@ function WarehouseMapContent() {
     // 2. Marked Positions Hook
     const {
         markedPositionIds,
+        markedNotes,
         markedCount,
         isMarked,
+        getMarkNote,
         toggleMark,
+        markPositions,
+        unmarkPositions,
+        updateMarkNote,
         clearAllMarks,
         onlyShowMarked,
         setOnlyShowMarked,
@@ -85,8 +92,12 @@ function WarehouseMapContent() {
         printMarked
     } = useMarkedPositions({
         systemType,
-        systemName: currentSystem?.name
+        systemName: currentSystem?.name,
+        initialModules: currentSystem?.modules
     })
+
+    const [isMarkedListModalOpen, setIsMarkedListModalOpen] = useState(false)
+    const [bulkMarkTargetIds, setBulkMarkTargetIds] = useState<string[] | null>(null)
 
     // 2.5. Locked Positions Hook
     const {
@@ -121,7 +132,8 @@ function WarehouseMapContent() {
         isFifoEnabled: hasModule('fifo_priority'),
         pendingExportPosIds,
         onlyShowMarked,
-        markedPositionIds
+        markedPositionIds,
+        markedNotes
     })
 
     // Categories list for filter
@@ -431,15 +443,19 @@ function WarehouseMapContent() {
         setBulkCloningLot(lotObj)
     }
 
-    const { handlePositionMenu, PositionActionUI } = usePositionActionManager({
+    const { handlePositionMenu, openMarkModalForPosition, PositionActionUI } = usePositionActionManager({
         currentSystemCode: currentSystem?.code,
         onRefreshMap: fetchData,
         onRefreshLot: refreshLotInfo,
         onCloneLot: handleCloneLot,
         onToggleMark: (pos) => toggleMark(pos.id),
+        onMarkWithNote: (pos, note) => markPositions([pos.id], note),
+        onUnmarkPosition: (posId) => unmarkPositions([posId]),
         isMarked: (id) => isMarked(id),
+        getMarkNote: (id) => getMarkNote(id),
         onToggleLock: (ids) => toggleLock(ids),
-        isLocked: (id) => isLocked(id)
+        isLocked: (id) => isLocked(id),
+        lotInfo
     })
 
     async function fetchFullLotDetails(lotId: string) {
@@ -1113,6 +1129,15 @@ function WarehouseMapContent() {
 
                     <div className="flex items-center gap-2 flex-wrap shrink-0">
                         <button
+                            onClick={() => setIsMarkedListModalOpen(true)}
+                            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
+                            title="Xem danh sách và ghi chú các vị trí đánh dấu"
+                        >
+                            <ListFilter size={14} />
+                            <span>Danh sách & Ghi chú ({markedCount})</span>
+                        </button>
+
+                        <button
                             onClick={printMarked}
                             className="px-3 py-1.5 bg-white dark:bg-slate-800 border border-amber-300 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/30 text-amber-900 dark:text-amber-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-sm active:scale-95"
                             title="In sơ đồ các vị trí đánh dấu"
@@ -1212,6 +1237,7 @@ function WarehouseMapContent() {
                         onToggleFifo={toggleFifo}
                         isGrouped={isGrouped}
                         markedPositionIds={markedPositionIds}
+                        markedNotes={markedNotes}
                     />
                 )
             })()}
@@ -1262,6 +1288,8 @@ function WarehouseMapContent() {
                                     mergedZones={mergedZones}
                                     onToggleMergeZone={toggleMergeZone}
                                     markedPositionIds={markedPositionIds}
+                                    markedNotes={markedNotes}
+                                    onEditMarkNote={(pos) => openMarkModalForPosition(pos)}
                                     lockedPositionIds={lockedPositionIds}
                                     onPrintZone={(zoneId) => {
                                         const params = new URLSearchParams()
@@ -1419,6 +1447,8 @@ function WarehouseMapContent() {
                 onCloneLot={handleCloneLot}
                 onBulkChangeProduct={handleOpenBulkChangeProduct}
                 onToggleMark={(posIds) => toggleMark(posIds)}
+                onOpenMarkModal={(posIds) => setBulkMarkTargetIds(posIds)}
+                onUnmarkPositions={(posIds) => unmarkPositions(posIds)}
                 isMarked={(id) => isMarked(id)}
                 onToggleLock={(posIds) => toggleLock(posIds)}
                 isLocked={(id) => isLocked(id)}
@@ -1572,6 +1602,48 @@ function WarehouseMapContent() {
                     code: (p as any).code || (p as any).position_code || p.id,
                     lot_code: lotInfo[p.lot_id || '']?.lot_code || null
                 }))}
+            />
+
+            {/* Bulk Mark Position Modal */}
+            {bulkMarkTargetIds && (
+                <MarkPositionModal
+                    isOpen={true}
+                    onClose={() => setBulkMarkTargetIds(null)}
+                    positions={positions.filter(p => bulkMarkTargetIds.includes(p.id))}
+                    currentNote={bulkMarkTargetIds.length === 1 ? getMarkNote(bulkMarkTargetIds[0]) : ''}
+                    isAlreadyMarked={bulkMarkTargetIds.every(id => isMarked(id))}
+                    onConfirm={(note) => {
+                        markPositions(bulkMarkTargetIds, note)
+                        setBulkMarkTargetIds(null)
+                    }}
+                    onUnmark={() => {
+                        unmarkPositions(bulkMarkTargetIds)
+                        setBulkMarkTargetIds(null)
+                    }}
+                />
+            )}
+
+            {/* Marked Positions Manager Modal */}
+            <MarkedPositionsListModal
+                isOpen={isMarkedListModalOpen}
+                onClose={() => setIsMarkedListModalOpen(false)}
+                positions={positions}
+                lotInfo={lotInfo}
+                zones={zones}
+                markedPositionIds={markedPositionIds}
+                markedNotes={markedNotes}
+                onUpdateNote={(posIdOrIds, note) => updateMarkNote(posIdOrIds, note)}
+                onUnmark={(posIdOrIds) => unmarkPositions(Array.isArray(posIdOrIds) ? posIdOrIds : [posIdOrIds])}
+                onClearAll={clearAllMarks}
+                onExportExcel={() => exportMarkedExcel(positions, lotInfo, zones)}
+                onPrint={printMarked}
+                onSelectPosition={(posId) => {
+                    setSelectedPositionIds(new Set([posId]))
+                    if (typeof document !== 'undefined') {
+                        const el = document.getElementById(`pos-${posId}`) || document.getElementById(posId)
+                        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+                    }
+                }}
             />
         </div>
     )

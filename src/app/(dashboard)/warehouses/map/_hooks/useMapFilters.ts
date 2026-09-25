@@ -13,11 +13,12 @@ interface UseMapFiltersProps {
     pendingExportPosIds?: Set<string>
     onlyShowMarked?: boolean
     markedPositionIds?: Set<string>
+    markedNotes?: Record<string, string>
 }
 
 export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production' | 'stt' | 'box_count'
 
-export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds, onlyShowMarked, markedPositionIds }: UseMapFiltersProps) {
+export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds, onlyShowMarked, markedPositionIds, markedNotes }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
     const [searchTerm, setSearchTerm] = useState('')
@@ -173,6 +174,13 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (lot.warehouse_name) res.push(lot.warehouse_name)
                         }
                     }
+
+                    // Include mark notes when searching in 'all' mode
+                    if (mode === 'all' && markedNotes) {
+                        const markNote = markedNotes[p.id] || ((p as any).realIds && (p as any).realIds.map((id: string) => markedNotes[id]).filter(Boolean).join(' '))
+                        if (markNote) res.push(markNote)
+                    }
+
                     return res
                 }
 
@@ -247,7 +255,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         }
 
         return result
-    }, [positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, onlyShowMarked, markedPositionIds])
+    }, [positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, onlyShowMarked, markedPositionIds, markedNotes])
 
     const filteredZones = useMemo(() => {
         // If onlyShowMarked is active, filter zones containing marked positions

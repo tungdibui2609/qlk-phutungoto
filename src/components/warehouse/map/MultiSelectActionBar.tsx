@@ -31,6 +31,8 @@ interface MultiSelectActionBarProps {
     onCloneLot?: (lotId: string) => void
     onBulkChangeProduct?: (lotIds: string[]) => void
     onToggleMark?: (posIds: string[]) => void
+    onOpenMarkModal?: (posIds: string[]) => void
+    onUnmarkPositions?: (posIds: string[]) => void
     isMarked?: (posId: string) => boolean
     onToggleLock?: (posIds: string[]) => void
     isLocked?: (posId: string) => boolean
@@ -56,6 +58,8 @@ export default function MultiSelectActionBar({
     onCloneLot,
     onBulkChangeProduct,
     onToggleMark,
+    onOpenMarkModal,
+    onUnmarkPositions,
     isMarked,
     onToggleLock,
     isLocked,
@@ -407,24 +411,75 @@ export default function MultiSelectActionBar({
                                         <div className="h-px bg-gray-100 dark:bg-gray-700 my-1" />
 
                                         {/* Đánh dấu kiểm tra */}
-                                        {onToggleMark && (
-                                            <button
-                                                onClick={() => {
-                                                    onToggleMark(Array.from(selectedPositionIds))
-                                                    setIsLocationMenuOpen(false)
-                                                }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
-                                            >
-                                                <Bookmark size={16} className={allSelectedMarked ? "fill-amber-600 text-amber-600 group-hover:scale-110 transition-transform shrink-0" : "text-amber-500 group-hover:scale-110 transition-transform shrink-0"} />
-                                                <div className="flex flex-col min-w-0">
-                                                    <span className={`font-bold ${allSelectedMarked ? 'text-amber-600 dark:text-amber-400' : ''}`}>
-                                                        {allSelectedMarked ? `Bỏ đánh dấu (${selectedPositionIds.size})` : `Đánh dấu (${selectedPositionIds.size})`}
-                                                    </span>
-                                                    <span className="text-[10px] text-gray-400 font-normal">
-                                                        {allSelectedMarked ? "Bỏ đánh dấu kiểm tra vị trí" : "Đánh dấu kiểm tra các vị trí đã chọn"}
-                                                    </span>
-                                                </div>
-                                            </button>
+                                        {(onToggleMark || onOpenMarkModal) && (
+                                            <>
+                                                {allSelectedMarked ? (
+                                                    <>
+                                                        {onOpenMarkModal && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    onOpenMarkModal(Array.from(selectedPositionIds))
+                                                                    setIsLocationMenuOpen(false)
+                                                                }}
+                                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                            >
+                                                                <Bookmark size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                                <div className="flex flex-col min-w-0">
+                                                                    <span className="font-bold text-amber-600 dark:text-amber-400">
+                                                                        Sửa ghi chú ({selectedPositionIds.size} ô)
+                                                                    </span>
+                                                                    <span className="text-[10px] text-gray-400 font-normal">
+                                                                        Cập nhật lý do đánh dấu chung
+                                                                    </span>
+                                                                </div>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => {
+                                                                if (onUnmarkPositions) {
+                                                                    onUnmarkPositions(Array.from(selectedPositionIds))
+                                                                } else if (onToggleMark) {
+                                                                    onToggleMark(Array.from(selectedPositionIds))
+                                                                }
+                                                                setIsLocationMenuOpen(false)
+                                                            }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                        >
+                                                            <Bookmark size={16} className="fill-rose-500 text-rose-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                            <div className="flex flex-col min-w-0">
+                                                                <span className="font-bold">
+                                                                    Bỏ đánh dấu ({selectedPositionIds.size} ô)
+                                                                </span>
+                                                                <span className="text-[10px] text-gray-400 font-normal">
+                                                                    Hủy đánh dấu các vị trí đã chọn
+                                                                </span>
+                                                            </div>
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => {
+                                                            if (onOpenMarkModal) {
+                                                                onOpenMarkModal(Array.from(selectedPositionIds))
+                                                            } else if (onToggleMark) {
+                                                                onToggleMark(Array.from(selectedPositionIds))
+                                                            }
+                                                            setIsLocationMenuOpen(false)
+                                                        }}
+                                                        className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                                    >
+                                                        <Bookmark size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                        <div className="flex flex-col min-w-0">
+                                                            <span>
+                                                                Đánh dấu ({selectedPositionIds.size} ô)
+                                                            </span>
+                                                            <span className="text-[10px] text-gray-400 font-normal">
+                                                                Đánh dấu kiểm tra & nhập lý do
+                                                            </span>
+                                                        </div>
+                                                    </button>
+                                                )}
+                                            </>
                                         )}
 
                                         {/* Khóa / Mở khóa vị trí */}

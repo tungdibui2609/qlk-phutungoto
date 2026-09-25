@@ -25,6 +25,7 @@ interface MapSearchStatsProps {
     onToggleFifo?: () => void
     isGrouped?: boolean
     markedPositionIds?: Set<string>
+    markedNotes?: Record<string, string>
 }
 
 interface PositionCardProps {
@@ -32,6 +33,7 @@ interface PositionCardProps {
     lot: any
     isSelected: boolean
     isMarked?: boolean
+    markNote?: string
     onPositionSelect?: (positionId: string) => void
     onPositionMenu?: (pos: Position, e: React.MouseEvent) => void
     onViewDetails?: (lotId: string) => void
@@ -43,6 +45,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     lot,
     isSelected,
     isMarked,
+    markNote,
     onPositionSelect,
     onPositionMenu,
     onViewDetails,
@@ -164,7 +167,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
             <div className="font-bold text-center text-slate-700 dark:text-slate-200 mb-0.5 border-b border-slate-100 dark:border-slate-700/50 pb-0.5 truncate text-[10px] pt-1 px-5 flex items-center justify-center gap-1">
                 <span>{pos.code}</span>
                 {isMarked && (
-                    <span title="Vị trí đánh dấu kiểm tra" className="shrink-0 flex items-center">
+                    <span title={markNote ? `Vị trí đánh dấu kiểm tra: ${markNote}` : "Vị trí đánh dấu kiểm tra"} className="shrink-0 flex items-center">
                         <Bookmark size={11} className="fill-amber-500 text-amber-600" />
                     </span>
                 )}
@@ -271,6 +274,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
         prev.pos.lot_id === next.pos.lot_id &&
         prev.isSelected === next.isSelected &&
         prev.isMarked === next.isMarked &&
+        prev.markNote === next.markNote &&
         prev.searchTerm === next.searchTerm &&
         prev.lot === next.lot
 })
@@ -290,7 +294,8 @@ export function MapSearchStats({
     isFifoAvailable,
     onToggleFifo,
     isGrouped = false,
-    markedPositionIds = new Set()
+    markedPositionIds = new Set(),
+    markedNotes = {}
 }: MapSearchStatsProps) {
     // Helper to build full zone path
     const getZonePath = (zoneId: string) => {
@@ -412,6 +417,7 @@ export function MapSearchStats({
         const lot = hasLot ? lotInfo[pos.lot_id!] : null
         const isSelected = selectedPositionIds.has(pos.id)
         const isMarked = markedPositionIds ? (markedPositionIds.has(pos.id) || ((pos as any).realIds && (pos as any).realIds.some((id: string) => markedPositionIds.has(id)))) : false
+        const markNote = markedNotes ? (markedNotes[pos.id] || ((pos as any).realIds && (pos as any).realIds.map((id: string) => markedNotes[id]).filter(Boolean).join('; '))) : ''
 
         return (
             <MemoizedPositionCard
@@ -420,6 +426,7 @@ export function MapSearchStats({
                 lot={lot}
                 isSelected={isSelected}
                 isMarked={isMarked}
+                markNote={markNote}
                 onPositionSelect={onPositionSelect}
                 onPositionMenu={onPositionMenu}
                 onViewDetails={onViewDetails}

@@ -1,6 +1,6 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
-import { parsePositionCodeFallback, extractSubPosition } from './warehouseUtils';
+import { parsePositionCodeFallback, extractSubPosition, parseDetailedPositionInfo, sortPositionsByBinAndLevel, DetailedPositionInfo } from './warehouseUtils';
 
 /**
  * Chuẩn hóa đơn vị tính để tránh trùng lặp khi nhóm.
@@ -1197,124 +1197,261 @@ export interface ExportMarkedPositionsOptions {
     lotInfo: Record<string, any>;
     zones?: any[];
     title?: string;
+    markedNotes?: Record<string, string>;
 }
 
-export async function exportMarkedPositionsToExcel({ systemName, positions, lotInfo, zones = [], title }: ExportMarkedPositionsOptions) {
-    const excelPositions: ExcelPosition[] = [];
-
-    // Helper map zone hierarchy
+export async function exportMarkedPositionsToExcel({ systemName, positions, lotInfo, zones = [], title, markedNotes = {} }: ExportMarkedPositionsOptions) {
+    // 1. Helper map zone hierarchy
     const zoneMap = new Map<string, any>();
     zones.forEach(z => zoneMap.set(z.id, z));
 
-    positions.forEach(pos => {
-        if ((pos as any).isLocked || (pos as any).is_locked) return;
+    // 2. Lọc bỏ các vị trí đã bị khóa
+    const activePositions = positions.filter(p => !p.isLocked && !p.is_locked);
+    if (activePositions.length === 0) return;
+
+    // 3. Sắp xếp vị trí theo đúng thứ tự kho: Dãy -> Ô -> Tầng -> Hàng trên 02 -> Hàng dưới 01 -> Mặt A/B/C
+    const sortedPositions = sortPositionsByBinAndLevel(activePositions, zoneMap);
+
+    // 4. Gom nhóm theo Ô & Tầng (như Hình 2: DÃY 1 • Ô 11 • Tầng 2)
+    interface ExportGroupItem {
+        pos: any;
+        info: DetailedPositionInfo;
+        lot: any | null;
+        markNote: string;
+    }
+
+    const groupsMap = new Map<string, {
+        key: string;
+        label: string;
+        items: ExportGroupItem[];
+    }>();
+
+    sortedPositions.forEach(pos => {
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null;
 
-        // Extract hierarchy info
-        let warehouse = '';
-        let row = '';
-        let bin = '';
-        let level = '';
-        let subPosition = extractSubPosition(pos.code);
-
-        if (pos.zone_id && zoneMap.has(pos.zone_id)) {
-            let curr = zoneMap.get(pos.zone_id);
-            const chain: string[] = [];
-            const seen = new Set();
-            while (curr && !seen.has(curr.id)) {
-                seen.add(curr.id);
-                chain.unshift(curr.name);
-                curr = curr.parent_id ? zoneMap.get(curr.parent_id) : null;
-            }
-            if (chain.length > 0) warehouse = chain[0] || '';
-            if (chain.length > 1) row = chain[1] || '';
-            if (chain.length > 2) bin = chain[2] || '';
-            if (chain.length > 3) level = chain[3] || '';
+        let markNote = markedNotes[pos.id] || '';
+        if (!markNote && pos.realIds && Array.isArray(pos.realIds)) {
+            const foundNotes = pos.realIds.map((id: string) => markedNotes[id]).filter(Boolean);
+            if (foundNotes.length > 0) markNote = foundNotes.join('; ');
         }
 
-        // Fallback parse code if any hierarchy info or subPosition is missing
-        const parsed = parsePositionCodeFallback(pos.code);
-        if (parsed) {
-            warehouse = warehouse || parsed.warehouse;
-            row = row || parsed.row;
-            bin = bin || parsed.bin;
-            level = level || parsed.level;
-            if (!subPosition) {
-                subPosition = parsed.subPosition;
-            }
+        const info = parseDetailedPositionInfo(pos.code, pos.zone_id, zoneMap);
+        const groupKey = info.groupBinTierKey;
+        const groupLabel = info.groupBinTierLabel;
+
+        if (!groupsMap.has(groupKey)) {
+            groupsMap.set(groupKey, {
+                key: groupKey,
+                label: groupLabel,
+                items: []
+            });
         }
 
+        groupsMap.get(groupKey)!.items.push({
+            pos,
+            info,
+            lot,
+            markNote
+        });
+    });
 
-        if (lot && lot.items && lot.items.length > 0) {
-            lot.items.forEach((item: any) => {
-                const kgQty = item.unit?.toLowerCase().includes('kg')
-                    ? Number(item.quantity)
-                    : null;
+    const groups = Array.from(groupsMap.values());
 
-                excelPositions.push({
-                    code: pos.code,
-                    warehouse,
-                    row,
-                    bin,
-                    level,
-                    subPosition,
-                    lotCode: lot.code || '',
-                    productName: item.product_name || item.internal_name || '',
-                    sku: item.sku || item.internal_code || '',
-                    unit: item.unit || '',
-                    quantity: item.quantity || 0,
-                    kgQuantity: kgQty,
-                    tags: item.tags?.join(', ') || lot.tags?.join(', ') || '',
-                    notes: lot.notes || '',
-                    inboundDate: lot.inbound_date || lot.created_at || null
-                });
-            });
-        } else if (lot) {
-            excelPositions.push({
-                code: pos.code,
-                warehouse,
-                row,
-                bin,
-                level,
-                subPosition,
-                lotCode: lot.code || '',
-                productName: lot.product_name || '',
-                sku: lot.sku || '',
-                unit: lot.unit || '',
-                quantity: lot.quantity || 0,
-                kgQuantity: null,
-                tags: lot.tags?.join(', ') || '',
-                notes: lot.notes || '',
-                inboundDate: lot.inbound_date || lot.created_at || null
-            });
-        } else {
-            // Empty position marked for inspection
-            excelPositions.push({
-                code: pos.code,
-                warehouse,
-                row,
-                bin,
-                level,
-                subPosition,
-                lotCode: '(Trống)',
-                productName: '',
-                sku: '',
-                unit: '',
-                quantity: 0,
-                kgQuantity: null,
-                tags: '',
-                notes: title ? 'Vị trí trống' : 'Vị trí trống được đánh dấu kiểm tra',
-                inboundDate: null
-            });
+    // 5. Khởi tạo Workbook & Worksheet
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Chanh Thu Warehouse';
+    workbook.created = new Date();
+
+    const worksheet = workbook.addWorksheet('Phiếu kiểm tra vị trí', {
+        pageSetup: {
+            paperSize: 9, // A4
+            orientation: 'portrait',
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+            margins: {
+                left: 0.4,
+                right: 0.4,
+                top: 0.5,
+                bottom: 0.5,
+                header: 0.2,
+                footer: 0.2
+            }
         }
     });
 
-    await exportWarehouseToExcel({
-        systemName,
-        zoneName: title || `Vị trí đánh dấu kiểm tra (${positions.length} vị trí)`,
-        searchTerm: title ? '' : 'ĐÁNH DẤU KIỂM TRA',
-        positions: excelPositions
+    // Cấu hình 5 cột tinh gọn
+    worksheet.columns = [
+        { key: 'stt', width: 6 },        // A: STT
+        { key: 'code', width: 22 },       // B: Mã vị trí
+        { key: 'lot', width: 26 },        // C: Hiện trạng (LOT / Hàng)
+        { key: 'note', width: 38 },       // D: Ghi chú / Lý do đánh dấu
+        { key: 'result', width: 28 }      // E: Kết quả kiểm tra thực tế
+    ];
+
+    // Viền chuẩn
+    const thinBorder: Partial<ExcelJS.Borders> = {
+        top: { style: 'thin', color: { argb: 'CBD5E1' } },
+        left: { style: 'thin', color: { argb: 'CBD5E1' } },
+        bottom: { style: 'thin', color: { argb: 'CBD5E1' } },
+        right: { style: 'thin', color: { argb: 'CBD5E1' } }
+    };
+
+    // 6. Tiêu đề chung đầu trang
+    worksheet.mergeCells('A1:E1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = 'PHIẾU KIỂM TRA VỊ TRÍ ĐÁNH DẤU';
+    titleCell.font = { bold: true, size: 15, color: { argb: '1E3A8A' } };
+    titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(1).height = 28;
+
+    worksheet.mergeCells('A2:E2');
+    const infoCell = worksheet.getCell('A2');
+    infoCell.value = `Kho: ${systemName}   |   Ngày lập: ${new Date().toLocaleDateString('vi-VN')}   |   Tổng số: ${sortedPositions.length} vị trí (${groups.length} nhóm)`;
+    infoCell.font = { italic: true, size: 10, color: { argb: '64748B' } };
+    infoCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    worksheet.getRow(2).height = 18;
+
+    let currentRow = 4;
+
+    // 7. Đổ từng nhóm với tiêu đề vị trí lớn (Hình 2)
+    groups.forEach((group) => {
+        // Kiểm tra lý do chung của nhóm
+        const groupNotes = Array.from(new Set(group.items.map(it => it.markNote).filter(Boolean)));
+        const commonNote = groupNotes.length === 1 ? groupNotes[0] : null;
+
+        // Tiêu đề vị trí lớn (Merged A -> E) - Phong cách như Hình 2
+        worksheet.mergeCells(`A${currentRow}:E${currentRow}`);
+        const groupHeaderCell = worksheet.getCell(`A${currentRow}`);
+        const bannerText = `📍 ${group.label.toUpperCase()} (${group.items.length} VỊ TRÍ)${commonNote ? `   •   LÝ DO: ${commonNote}` : ''}`;
+        groupHeaderCell.value = bannerText;
+        groupHeaderCell.font = { bold: true, size: 11, color: { argb: '92400E' } }; // Amber 800
+        groupHeaderCell.fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: { argb: 'FEF3C7' } // Amber 100
+        };
+        groupHeaderCell.alignment = { horizontal: 'left', vertical: 'middle', indent: 1 };
+        groupHeaderCell.border = {
+            top: { style: 'thin', color: { argb: 'F59E0B' } },
+            left: { style: 'medium', color: { argb: 'D97706' } },
+            bottom: { style: 'thin', color: { argb: 'F59E0B' } },
+            right: { style: 'thin', color: { argb: 'F59E0B' } }
+        };
+        worksheet.getRow(currentRow).height = 25;
+        currentRow++;
+
+        // Tiêu đề các cột trong nhóm
+        const subHeaderRow = worksheet.getRow(currentRow);
+        const subHeaders = ['STT', 'MÃ VỊ TRÍ', 'HIỆN TRẠNG (LOT)', 'LÝ DO ĐÁNH DẤU', 'KẾT QUẢ KIỂM TRA THỰC TẾ (KÝ)'];
+        subHeaders.forEach((h, i) => {
+            const cell = subHeaderRow.getCell(i + 1);
+            cell.value = h;
+            cell.font = { bold: true, size: 9, color: { argb: '334155' } };
+            cell.fill = {
+                type: 'pattern',
+                pattern: 'solid',
+                fgColor: { argb: 'F1F5F9' } // Slate 100
+            };
+            cell.alignment = {
+                horizontal: i === 0 || i === 1 || i === 4 ? 'center' : 'left',
+                vertical: 'middle'
+            };
+            cell.border = thinBorder;
+        });
+        subHeaderRow.height = 20;
+        currentRow++;
+
+        // Dữ liệu các vị trí trong nhóm
+        group.items.forEach((item, itemIdx) => {
+            const dataRow = worksheet.getRow(currentRow);
+
+            // A: STT
+            const cellA = dataRow.getCell(1);
+            cellA.value = itemIdx + 1;
+            cellA.alignment = { horizontal: 'center', vertical: 'middle' };
+            cellA.border = thinBorder;
+            cellA.font = { size: 10, color: { argb: '475569' } };
+
+            // B: Mã vị trí (In đậm)
+            const cellB = dataRow.getCell(2);
+            cellB.value = item.pos.code;
+            cellB.alignment = { horizontal: 'center', vertical: 'middle' };
+            cellB.border = thinBorder;
+            cellB.font = { bold: true, size: 10, color: { argb: '0F172A' } };
+
+            // C: Hiện trạng (LOT)
+            const cellC = dataRow.getCell(3);
+            if (item.lot) {
+                const prodName = item.lot.product_name || (item.lot.items && item.lot.items[0]?.product_name) || '';
+                cellC.value = `${item.lot.code}${prodName ? ` - ${prodName}` : ''}`;
+                cellC.font = { size: 10, color: { argb: '1E293B' } };
+            } else {
+                cellC.value = '(Trống)';
+                cellC.font = { italic: true, size: 10, color: { argb: '94A3B8' } };
+            }
+            cellC.alignment = { horizontal: 'left', vertical: 'middle' };
+            cellC.border = thinBorder;
+
+            // D: Ghi chú / Lý do đánh dấu
+            const cellD = dataRow.getCell(4);
+            cellD.value = item.markNote || '—';
+            cellD.font = { size: 10, color: item.markNote ? { argb: '78350F' } : { argb: '94A3B8' } };
+            cellD.alignment = { horizontal: 'left', vertical: 'middle' };
+            cellD.border = thinBorder;
+
+            // E: Kết quả kiểm tra (để trống với viền để nhân viên viết tay)
+            const cellE = dataRow.getCell(5);
+            cellE.value = '';
+            cellE.alignment = { horizontal: 'center', vertical: 'middle' };
+            cellE.border = thinBorder;
+
+            dataRow.height = 22;
+            currentRow++;
+        });
+
+        // Dòng cách giữa các nhóm
+        worksheet.getRow(currentRow).height = 10;
+        currentRow++;
     });
+
+    // 8. Khối chữ ký ở chân phiếu
+    currentRow += 1;
+    const signTitleRow = worksheet.getRow(currentRow);
+    signTitleRow.getCell(2).value = 'NGƯỜI LẬP PHIẾU';
+    signTitleRow.getCell(2).font = { bold: true, size: 10 };
+    signTitleRow.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    worksheet.mergeCells(`D${currentRow}:E${currentRow}`);
+    const signCheckerCell = worksheet.getCell(`D${currentRow}`);
+    signCheckerCell.value = 'NHÂN VIÊN KIỂM TRA THỰC TẾ';
+    signCheckerCell.font = { bold: true, size: 10 };
+    signCheckerCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    signTitleRow.height = 20;
+
+    currentRow++;
+    const signSubRow = worksheet.getRow(currentRow);
+    signSubRow.getCell(2).value = '(Ký và ghi rõ họ tên)';
+    signSubRow.getCell(2).font = { italic: true, size: 9, color: { argb: '64748B' } };
+    signSubRow.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+
+    worksheet.mergeCells(`D${currentRow}:E${currentRow}`);
+    const signSubCheckerCell = worksheet.getCell(`D${currentRow}`);
+    signSubCheckerCell.value = '(Ký và ghi rõ họ tên)';
+    signSubCheckerCell.font = { italic: true, size: 9, color: { argb: '64748B' } };
+    signSubCheckerCell.alignment = { horizontal: 'center', vertical: 'middle' };
+    signSubRow.height = 16;
+
+    // Khoảng trống ký tên
+    currentRow += 3;
+    worksheet.getRow(currentRow).height = 20;
+
+    // 9. Xuất file
+    const buffer = await workbook.xlsx.writeBuffer();
+    const cleanSystemName = (systemName || 'KHO').replace(/[^a-zA-Z0-9\u00C0-\u1EF9]/g, '_');
+    const fileName = `Phieu_Kiem_Tra_Vi_Tri_${cleanSystemName}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    saveAs(new Blob([buffer]), fileName);
 }
+
 
 

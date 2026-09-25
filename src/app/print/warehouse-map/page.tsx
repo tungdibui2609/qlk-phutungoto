@@ -11,7 +11,7 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
-import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority, extractSubPosition } from '@/lib/warehouseUtils'
+import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority, extractSubPosition, comparePositionsByBinAndLevel } from '@/lib/warehouseUtils'
 import { exportWarehouseToExcel, exportWarehouseGridToExcel, exportWarehouseLobbyDetailToExcel, ExportWarehouseLobbyData, exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
@@ -102,6 +102,7 @@ export default function WarehouseMapPrintPage() {
     const [onlyShowChecked, setOnlyShowChecked] = useState(false)
     const [onlyMarked, setOnlyMarked] = useState(onlyMarkedParam)
     const [markedPositionIds, setMarkedPositionIds] = useState<Set<string>>(new Set())
+    const [markedNotes, setMarkedNotes] = useState<Record<string, string>>({})
     const [lockedPositionIds, setLockedPositionIds] = useState<Set<string>>(new Set())
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
 
@@ -115,6 +116,22 @@ export default function WarehouseMapPrintPage() {
                 const parsed = JSON.parse(raw)
                 if (Array.isArray(parsed)) {
                     setMarkedPositionIds(new Set(parsed))
+                    setMarkedNotes({})
+                } else if (parsed && typeof parsed === 'object') {
+                    if (Array.isArray(parsed.ids)) {
+                        setMarkedPositionIds(new Set(parsed.ids))
+                        setMarkedNotes(parsed.notes || {})
+                    } else {
+                        const ids = new Set<string>()
+                        const notes: Record<string, string> = {}
+                        Object.entries(parsed).forEach(([id, val]) => {
+                            ids.add(id)
+                            if (typeof val === 'string') notes[id] = val
+                            else if (val && typeof val === 'object' && 'note' in val) notes[id] = (val as any).note || ''
+                        })
+                        setMarkedPositionIds(ids)
+                        setMarkedNotes(notes)
+                    }
                 }
             }
         } catch (err) {
@@ -425,11 +442,13 @@ export default function WarehouseMapPrintPage() {
         }
 
         return [...result].sort((a, b) => {
+            if (onlyMarked) {
+                return comparePositionsByBinAndLevel(a, b)
+            }
             const zoneIdxA = a.zone_id ? (zoneOrderMap.get(a.zone_id) ?? 99999) : 99999
             const zoneIdxB = b.zone_id ? (zoneOrderMap.get(b.zone_id) ?? 99999) : 99999
             if (zoneIdxA !== zoneIdxB) return zoneIdxA - zoneIdxB
-            const sorted = sortPositionsByBinPriority([a, b])
-            return sorted[0] === a ? -1 : 1
+            return comparePositionsByBinAndLevel(a, b)
         })
     }, [displayPositions, descendantIdSet, occupancyFilter, selectedCategoryId, searchTerm, occupiedIds, lotInfo, displayZones, onlyShowChecked, checkedZoneIds, displayInternalCode, filterRows, onlyMarked, markedPositionIds, lockedPositionIds])
 
@@ -901,7 +920,8 @@ export default function WarehouseMapPrintPage() {
             systemName: systemType || 'KHO',
             positions: targetPositions,
             lotInfo,
-            zones
+            zones,
+            markedNotes
         })
     }
 
@@ -1395,6 +1415,7 @@ export default function WarehouseMapPrintPage() {
                                     checkedZoneIds={checkedZoneIds}
                                     onToggleCheckedZone={handleToggleCheckedZone}
                                     markedPositionIds={markedPositionIds}
+                                    markedNotes={markedNotes}
                                     lockedPositionIds={lockedPositionIds}
                                 />
                             </div>
@@ -1444,22 +1465,29 @@ export default function WarehouseMapPrintPage() {
                                                                 {item.quantity?.toLocaleString('vi-VN')}
                                                             </td>
                                                             <td className="px-3 py-2 italic text-gray-600 text-[11px]">
-                                                                {[item.tags?.join(', '), lot.batch_code ? `Lô: ${lot.batch_code}` : null]
-                                                                    .filter(Boolean)
-                                                                    .join(' | ') || '-'}
+                                                                {(() => {
+                                                                    const markNote = markedNotes[p.id]
+                                                                    const tagsList = [
+                                                                        markNote ? `Đánh dấu: ${markNote}` : (markedPositionIds.has(p.id) ? 'Đã đánh dấu kiểm tra' : null),
+                                                                        item.tags?.join(', '),
+                                                                        lot.batch_code ? `Lô: ${lot.batch_code}` : null
+                                                                    ].filter(Boolean)
+                                                                    return tagsList.length > 0 ? tagsList.join(' | ') : '-'
+                                                                })()}
                                                             </td>
                                                         </tr>
                                                     ))
                                                 }
 
                                                 // Case 2: Empty position
+                                                const markNote = markedNotes[p.id]
                                                 return (
                                                     <tr key={p.id} className="text-[12px] hover:bg-gray-50/50 transition-colors italic text-gray-400 bg-gray-50/5">
                                                         <td className="px-3 py-2 border-r border-gray-300 font-bold not-italic text-gray-600">
                                                             {p.code}
                                                         </td>
                                                         <td className="px-3 py-2 border-r border-gray-300" colSpan={6}>
-                                                            (Vị trí trống)
+                                                            (Vị trí trống){markNote ? ` - [Đánh dấu: ${markNote}]` : (markedPositionIds.has(p.id) ? ' - [Đã đánh dấu kiểm tra]' : '')}
                                                         </td>
                                                     </tr>
                                                 )

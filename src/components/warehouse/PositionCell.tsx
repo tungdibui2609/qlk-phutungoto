@@ -20,6 +20,7 @@ const PositionCell = React.memo<{
     isSelected: boolean,
     isTargetLot: boolean,
     isMarked?: boolean,
+    markNote?: string,
     isLocked?: boolean,
     lotDetail: any,
     isAssignmentMode: boolean,
@@ -29,14 +30,15 @@ const PositionCell = React.memo<{
     onPositionSelect?: (id: string | string[]) => void,
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
+    onEditMarkNote?: (pos: any) => void,
     isPrintPage?: boolean,
     isSanh?: boolean,
     isEmptyMode?: boolean,
     searchTerm?: string
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
-    isTargetLot, isMarked, isLocked, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
-    onPositionSelect, onViewDetails, onPositionMenu, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
+    isTargetLot, isMarked, markNote, isLocked, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
+    onPositionSelect, onViewDetails, onPositionMenu, onEditMarkNote, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
 }) => {
     const ids = (pos as any).realIds || [pos.id]
 
@@ -261,7 +263,16 @@ const PositionCell = React.memo<{
                         </div>
                     )}
                     {isMarked && (
-                        <div title="Vị trí đánh dấu kiểm tra" className="text-amber-500 animate-in zoom-in-50 duration-150">
+                        <div
+                            title={markNote ? `Đánh dấu kiểm tra: ${markNote}${onEditMarkNote ? ' (Bấm để sửa ghi chú)' : ''}` : `Vị trí đánh dấu kiểm tra${onEditMarkNote ? ' (Bấm để thêm ghi chú)' : ''}`}
+                            onClick={(e) => {
+                                if (onEditMarkNote) {
+                                    e.stopPropagation()
+                                    onEditMarkNote(pos)
+                                }
+                            }}
+                            className={`text-amber-500 animate-in zoom-in-50 duration-150 ${onEditMarkNote ? 'cursor-pointer hover:scale-125 transition-transform' : ''}`}
+                        >
                             <Bookmark size={12} className="fill-amber-500 text-amber-600" />
                         </div>
                     )}

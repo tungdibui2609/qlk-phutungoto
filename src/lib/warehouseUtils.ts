@@ -280,3 +280,248 @@ export function sortPositionsByBinPriority<T extends { code?: string | null }>(p
         return codeA.localeCompare(codeB, undefined, { numeric: true })
     })
 }
+
+export interface DetailedPositionInfo {
+    warehouse: string
+    row: string
+    rowNumber: number
+    bin: string
+    binNumber: number
+    level: string
+    levelNumber: number
+    side: string
+    subPosition: string
+    groupBinTierKey: string
+    groupBinTierLabel: string
+    groupBinKey: string
+    groupBinLabel: string
+    groupTierKey: string
+    groupTierLabel: string
+    slotLabel: string
+}
+
+/**
+ * Phân tích mã vị trí và zone thành thông tin chi tiết có cấu trúc
+ * Ví dụ: K1D1A11T201 -> Kho 1, Dãy 1, Ô 11, Tầng 2, Mặt A, Vị trí 01
+ */
+export function parseDetailedPositionInfo(
+    code: string,
+    zoneId?: string | null,
+    zoneMap?: Map<string, any> | Record<string, any>
+): DetailedPositionInfo {
+    let warehouse = ''
+    let row = ''
+    let rowNumber = 9999
+    let bin = ''
+    let binNumber = 9999
+    let level = ''
+    let levelNumber = 9999
+    let side = ''
+    let subPosition = ''
+
+    // 1. Phân tích phả hệ zone nếu có
+    if (zoneId && zoneMap) {
+        const getZone = (id: string) => zoneMap instanceof Map ? zoneMap.get(id) : zoneMap[id]
+        let curr = getZone(zoneId)
+        const chain: any[] = []
+        const seen = new Set<string>()
+        while (curr && !seen.has(curr.id)) {
+            seen.add(curr.id)
+            chain.unshift(curr)
+            curr = curr.parent_id ? getZone(curr.parent_id) : null
+        }
+        if (chain.length > 0) warehouse = chain[0]?.name || ''
+        if (chain.length > 1) {
+            row = chain[1]?.name || ''
+            const matchRow = row.match(/\d+/)
+            if (matchRow) rowNumber = parseInt(matchRow[0], 10)
+        }
+        // Tìm Tầng và Ô trong phả hệ zone
+        for (const z of chain) {
+            const zName = z?.name || ''
+            const matchTier = zName.match(/T[ẦAÀẢÃẠ]NG\s*(\d+)/i)
+            if (matchTier) {
+                levelNumber = parseInt(matchTier[1], 10)
+                level = `Tầng ${levelNumber}`
+            }
+            const matchBin = zName.match(/Ô\s*(\d+)/i)
+            if (matchBin) {
+                binNumber = parseInt(matchBin[1], 10)
+                bin = `Ô ${binNumber < 10 ? '0' + binNumber : binNumber}`
+            }
+        }
+    }
+
+    // 2. Phân tích mã vị trí
+    const cleanCode = (code || '').trim()
+
+    // Mẫu 1: K1D1A11T201 hoặc K1S1A01T101
+    const p1 = cleanCode.match(/^K(\d+)([DSds])(\d+)([A-Za-z]*)(\d+)T(\d+)/i)
+    if (p1) {
+        const [_, k, type, d, s, b, t] = p1
+        if (!warehouse) warehouse = `Kho ${k}`
+        const isSanh = type.toUpperCase() === 'S'
+        if (!row || row === 'Khu vực chung') {
+            row = isSanh ? `Sảnh ${d}` : `Dãy ${d}`
+        }
+        rowNumber = parseInt(d, 10)
+        binNumber = parseInt(b, 10)
+        bin = `Ô ${binNumber < 10 ? '0' + binNumber : binNumber}`
+        side = s ? s.toUpperCase() : ''
+
+        const tNum = parseInt(t, 10)
+        const parsedLvl = Math.floor(tNum / 100) || parseInt(t.charAt(0), 10)
+        if (levelNumber === 9999) {
+            levelNumber = parsedLvl
+            level = `Tầng ${levelNumber}`
+        }
+        const sub = tNum % 100
+        subPosition = String(sub).padStart(2, '0')
+    } else {
+        // Mẫu 2: D1A11T201 hoặc S1A11T201
+        const p2 = cleanCode.match(/^([DSds])(\d+)([A-Za-z]*)(\d+)T(\d+)/i)
+        if (p2) {
+            const [_, type, d, s, b, t] = p2
+            const isSanh = type.toUpperCase() === 'S'
+            if (!row || row === 'Khu vực chung') {
+                row = isSanh ? `Sảnh ${d}` : `Dãy ${d}`
+            }
+            rowNumber = parseInt(d, 10)
+            binNumber = parseInt(b, 10)
+            bin = `Ô ${binNumber < 10 ? '0' + binNumber : binNumber}`
+            side = s ? s.toUpperCase() : ''
+            const tNum = parseInt(t, 10)
+            const parsedLvl = Math.floor(tNum / 100) || parseInt(t.charAt(0), 10)
+            if (levelNumber === 9999) {
+                levelNumber = parsedLvl
+                level = `Tầng ${levelNumber}`
+            }
+            subPosition = String(tNum % 100).padStart(2, '0')
+        } else {
+            // Mẫu 3: A11T201
+            const p3 = cleanCode.match(/^([A-Za-z]+)(\d+)T(\d+)/i)
+            if (p3) {
+                const [_, s, b, t] = p3
+                side = s.toUpperCase()
+                binNumber = parseInt(b, 10)
+                bin = `Ô ${binNumber < 10 ? '0' + binNumber : binNumber}`
+                const tNum = parseInt(t, 10)
+                const parsedLvl = Math.floor(tNum / 100) || parseInt(t.charAt(0), 10)
+                if (levelNumber === 9999) {
+                    levelNumber = parsedLvl
+                    level = `Tầng ${levelNumber}`
+                }
+                subPosition = String(tNum % 100).padStart(2, '0')
+            } else {
+                // Fallback trích xuất subPosition và Tầng từ chuỗi
+                subPosition = extractSubPosition(cleanCode) || '01'
+                const matchLvl = cleanCode.match(/T(\d+)/i)
+                if (matchLvl && levelNumber === 9999) {
+                    levelNumber = parseInt(matchLvl[1].charAt(0), 10)
+                    level = `Tầng ${levelNumber}`
+                }
+            }
+        }
+    }
+
+    if (!row) row = 'Khu vực chung'
+    if (!bin) bin = cleanCode ? `Ô ${cleanCode.slice(0, 4)}` : 'Ô chung'
+    if (!level) level = levelNumber !== 9999 ? `Tầng ${levelNumber}` : 'Tầng 1'
+    if (levelNumber === 9999) levelNumber = 1
+
+    const slotLabelParts: string[] = []
+    if (side) slotLabelParts.push(`Mặt ${side}`)
+    if (subPosition) slotLabelParts.push(`Vị trí ${subPosition}`)
+    const slotLabel = slotLabelParts.join(' - ') || cleanCode
+
+    const rowPrefix = row && row !== 'Khu vực chung' ? `${row} • ` : ''
+    const groupBinTierKey = `${row}_Bin${binNumber}_Lvl${levelNumber}`
+    const groupBinTierLabel = `${rowPrefix}${bin} • ${level}`
+
+    const groupBinKey = `${row}_Bin${binNumber}`
+    const groupBinLabel = `${rowPrefix}${bin}`
+
+    const groupTierKey = `${level}`
+    const groupTierLabel = `${level}`
+
+    return {
+        warehouse,
+        row,
+        rowNumber,
+        bin,
+        binNumber,
+        level,
+        levelNumber,
+        side,
+        subPosition,
+        groupBinTierKey,
+        groupBinTierLabel,
+        groupBinKey,
+        groupBinLabel,
+        groupTierKey,
+        groupTierLabel,
+        slotLabel
+    }
+}
+
+/**
+ * Hàm so sánh 2 vị trí theo thứ tự tự nhiên của kho:
+ * Dãy -> Ô -> Tầng -> Mặt (A/B) -> Vị trí con (01, 02)
+ * Đảm bảo các ô trong cùng 1 Tầng của cùng 1 Ô luôn đứng liền kề nhau, không bị nhảy lung tung.
+ */
+export function comparePositionsByBinAndLevel(a: any, b: any, zoneMap?: any): number {
+    const infoA = parseDetailedPositionInfo(a?.code || '', a?.zone_id, zoneMap)
+    const infoB = parseDetailedPositionInfo(b?.code || '', b?.zone_id, zoneMap)
+
+    // 1. Dãy / Row (Dãy 1 trước Dãy 2)
+    if (infoA.rowNumber !== infoB.rowNumber) {
+        return infoA.rowNumber - infoB.rowNumber
+    }
+    if (infoA.row !== infoB.row) {
+        const rowCmp = infoA.row.localeCompare(infoB.row, undefined, { numeric: true })
+        if (rowCmp !== 0) return rowCmp
+    }
+
+    // 2. Ô / Bin (Ô 11 trước Ô 12)
+    if (infoA.binNumber !== infoB.binNumber) {
+        return infoA.binNumber - infoB.binNumber
+    }
+    if (infoA.bin !== infoB.bin) {
+        const binCmp = infoA.bin.localeCompare(infoB.bin, undefined, { numeric: true })
+        if (binCmp !== 0) return binCmp
+    }
+
+    // 3. Tầng / Level (Tầng 1 trước Tầng 2, Tầng 3)
+    if (infoA.levelNumber !== infoB.levelNumber) {
+        return infoA.levelNumber - infoB.levelNumber
+    }
+    if (infoA.level !== infoB.level) {
+        const lvlCmp = infoA.level.localeCompare(infoB.level, undefined, { numeric: true })
+        if (lvlCmp !== 0) return lvlCmp
+    }
+
+    // 4. Vị trí con / SubPosition (Hàng trên trước: 02 trước 01, khớp chính xác thứ tự hiển thị ô trên sơ đồ kho)
+    const subNumA = parseInt(infoA.subPosition, 10) || 0
+    const subNumB = parseInt(infoB.subPosition, 10) || 0
+    if (subNumA !== subNumB) {
+        return subNumB - subNumA // 02 trước, 01 sau (hàng trên -> hàng dưới)
+    }
+
+    // 5. Mặt / Cột con / Side (Từ trái qua phải: Mặt A -> Mặt B -> Mặt C)
+    if (infoA.side !== infoB.side) {
+        return infoA.side.localeCompare(infoB.side)
+    }
+
+    return (a?.code || '').localeCompare(b?.code || '', undefined, { numeric: true })
+}
+
+/**
+ * Sắp xếp danh sách vị trí theo thứ tự Ô và Tầng chuẩn xác
+ */
+export function sortPositionsByBinAndLevel<T extends { code?: string | null, zone_id?: string | null }>(
+    positions: T[],
+    zoneMap?: any
+): T[] {
+    return [...positions].sort((a, b) => comparePositionsByBinAndLevel(a, b, zoneMap))
+}
+

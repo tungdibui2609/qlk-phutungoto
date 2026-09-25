@@ -59,7 +59,9 @@ interface FlexibleZoneGridProps {
     searchTerm?: string
     selectedCategoryId?: string | null
     markedPositionIds?: Set<string>
+    markedNotes?: Record<string, string>
     lockedPositionIds?: Set<string>
+    onEditMarkNote?: (pos: any) => void
 }
 
 export default function FlexibleZoneGrid({
@@ -96,7 +98,9 @@ export default function FlexibleZoneGrid({
     searchTerm = '',
     selectedCategoryId = null,
     markedPositionIds = new Set(),
-    lockedPositionIds = new Set()
+    markedNotes = {},
+    lockedPositionIds = new Set(),
+    onEditMarkNote
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -483,6 +487,7 @@ export default function FlexibleZoneGrid({
         const isHighlightBlinking = realIds.some((id: string) => highlightingPositionIds.has(id))
         const isMarked = isPosMarked(pos)
         const isLocked = isPosLocked(pos)
+        const markNote = markedNotes ? (markedNotes[pos.id] || (realIds && realIds.map((id: string) => markedNotes[id]).filter(Boolean).join('; '))) : undefined
 
         // Render merged big cell for virtual positions
         if (pos.isVirtual && pos.mergedCount > 1) {
@@ -500,6 +505,7 @@ export default function FlexibleZoneGrid({
                     isSelected={isSelected}
                     isTargetLot={isTargetLot}
                     isMarked={isMarked}
+                    markNote={markNote}
                     isLocked={isLocked}
                     aggregatedItems={pos.lot_id && lotInfo[pos.lot_id]?.items ? lotInfo[pos.lot_id].items : []}
                     isAssignmentMode={isAssignmentMode}
@@ -508,6 +514,7 @@ export default function FlexibleZoneGrid({
                     onPositionSelect={onPositionSelect}
                     onViewDetails={onViewDetails}
                     onPositionMenu={onPositionMenu}
+                    onEditMarkNote={onEditMarkNote}
                     isPrintPage={isPrintPage}
                     isGrouped={isGrouped}
                     isSanh={isSanh}
@@ -529,6 +536,7 @@ export default function FlexibleZoneGrid({
                 isSelected={isSelected}
                 isTargetLot={isTargetLot}
                 isMarked={isMarked}
+                markNote={markNote}
                 isLocked={isLocked}
                 lotDetail={pos.lot_id ? lotInfo[pos.lot_id] : null}
                 isAssignmentMode={isAssignmentMode}
@@ -537,6 +545,7 @@ export default function FlexibleZoneGrid({
                 onPositionSelect={onPositionSelect}
                 onViewDetails={onViewDetails}
                 onPositionMenu={onPositionMenu}
+                onEditMarkNote={onEditMarkNote}
                 isPrintPage={isPrintPage}
                 isGrouped={isGrouped}
                 isSanh={isSanh}

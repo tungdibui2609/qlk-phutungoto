@@ -10,6 +10,7 @@ const MergedBigCell = React.memo<{
     isSelected: boolean,
     isTargetLot: boolean,
     isMarked?: boolean,
+    markNote?: string,
     isLocked?: boolean,
     aggregatedItems: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string, lotCodes?: string[] }>,
     isAssignmentMode: boolean,
@@ -19,6 +20,7 @@ const MergedBigCell = React.memo<{
     onPositionSelect?: (id: string | string[]) => void,
     onViewDetails?: (lotId: string) => void,
     onPositionMenu?: (pos: any, event: React.MouseEvent) => void,
+    onEditMarkNote?: (pos: any) => void,
     mergedLevels?: string[],
     levelGroups?: Array<{ name: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, internal_name?: string, internal_code?: string, production_name?: string, production_code?: string, production_lot_code?: string, lotCodes?: string[] }> }>,
     isPrintPage?: boolean,
@@ -28,7 +30,7 @@ const MergedBigCell = React.memo<{
     isEmptyMode?: boolean,
     searchTerm?: string,
     lots?: any[]
-}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, isMarked, isLocked, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
+}>(({ pos, isMobile, isOccupied, isSelected, isTargetLot, isMarked, markNote, isLocked, aggregatedItems, isAssignmentMode, isHighlightBlinking, displayInternalCode, zoneBreadcrumb, onPositionSelect, onViewDetails, onPositionMenu, onEditMarkNote, mergedLevels, levelGroups, isPrintPage, isGrouped, isSanh, isManualMerge, isEmptyMode, searchTerm = '', lots = [] }) => {
     const ids = pos.realIds || [pos.id]
     const mergedCount = pos.mergedCount || ids.length
     const originalCodes = pos.originalCodes || [pos.code]
@@ -238,9 +240,18 @@ const MergedBigCell = React.memo<{
                             </span>
                         )}
                         {isMarked && (
-                            <span className="flex items-center gap-1 text-[9px] bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap animate-in zoom-in-50">
+                            <span
+                                onClick={(e) => {
+                                    if (onEditMarkNote) {
+                                        e.stopPropagation()
+                                        onEditMarkNote(pos)
+                                    }
+                                }}
+                                className={`flex items-center gap-1 text-[9px] bg-amber-100 dark:bg-amber-900/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded-full font-bold shrink-0 whitespace-nowrap animate-in zoom-in-50 ${onEditMarkNote ? 'cursor-pointer hover:bg-amber-200 dark:hover:bg-amber-800 transition' : ''}`}
+                                title={markNote ? `Đã đánh dấu: ${markNote}${onEditMarkNote ? ' (Bấm để sửa ghi chú)' : ''}` : `Đã đánh dấu kiểm tra${onEditMarkNote ? ' (Bấm để thêm ghi chú)' : ''}`}
+                            >
                                 <Bookmark size={10} className="fill-amber-500 text-amber-600" />
-                                <span>Đã đánh dấu</span>
+                                <span>{markNote ? `Đánh dấu: ${markNote.length > 20 ? markNote.slice(0, 18) + '...' : markNote}` : 'Đã đánh dấu'}</span>
                             </span>
                         )}
                         {searchStatus.isMatch && (

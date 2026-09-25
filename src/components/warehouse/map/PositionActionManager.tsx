@@ -10,6 +10,7 @@ import { logActivity } from '@/lib/audit'
 
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
+import { MarkPositionModal } from './MarkPositionModal'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -19,12 +20,29 @@ interface UsePositionActionManagerProps {
     onRefreshLot: (lotId: string) => void
     onCloneLot?: (lotId: string) => void
     onToggleMark?: (pos: any) => void
+    onMarkWithNote?: (pos: any, note: string) => void
+    onUnmarkPosition?: (posId: string) => void
     isMarked?: (posId: string) => boolean
+    getMarkNote?: (posId: string) => string
     onToggleLock?: (posIds: string[]) => void
     isLocked?: (posId: string) => boolean
+    lotInfo?: Record<string, any>
 }
 
-export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRefreshLot, onCloneLot, onToggleMark, isMarked, onToggleLock, isLocked }: UsePositionActionManagerProps) {
+export function usePositionActionManager({
+    currentSystemCode,
+    onRefreshMap,
+    onRefreshLot,
+    onCloneLot,
+    onToggleMark,
+    onMarkWithNote,
+    onUnmarkPosition,
+    isMarked,
+    getMarkNote,
+    onToggleLock,
+    isLocked,
+    lotInfo
+}: UsePositionActionManagerProps) {
     const router = useRouter()
     // Context Menu State
     const [contextMenu, setContextMenu] = useState<{
@@ -33,6 +51,9 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
         position: any | null
     } | null>(null)
     const { showToast, showConfirm } = useToast()
+
+    // Mark Position Modal State
+    const [markingPosition, setMarkingPosition] = useState<any | null>(null)
 
     // Lot Form State
     const [showLotForm, setShowLotForm] = useState(false)
@@ -305,22 +326,59 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                     >
                         {onToggleMark && (
                             <>
-                                <button
-                                    onClick={() => {
-                                        const p = contextMenu.position
-                                        setContextMenu(null)
-                                        onToggleMark(p)
-                                    }}
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
-                                >
-                                    <Bookmark
-                                        size={16}
-                                        className={isMarked?.(contextMenu.position?.id) ? "text-amber-500 fill-amber-500" : "text-amber-500"}
-                                    />
-                                    <span className={isMarked?.(contextMenu.position?.id) ? "text-amber-600 dark:text-amber-400 font-semibold" : ""}>
-                                        {isMarked?.(contextMenu.position?.id) ? "Bỏ đánh dấu" : "Đánh dấu kiểm tra"}
-                                    </span>
-                                </button>
+                                {isMarked?.(contextMenu.position?.id) ? (
+                                    <>
+                                        {getMarkNote?.(contextMenu.position?.id) && (
+                                            <div
+                                                className="px-3 py-1.5 mx-1 mb-1 text-[11px] text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 rounded-md border border-amber-200 dark:border-amber-800/60 break-words"
+                                                title={getMarkNote(contextMenu.position.id)}
+                                            >
+                                                <span className="font-semibold block text-[10px] text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                                                    Lý do đánh dấu:
+                                                </span>
+                                                "{getMarkNote(contextMenu.position.id)}"
+                                            </div>
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                const p = contextMenu.position
+                                                setContextMenu(null)
+                                                setMarkingPosition(p)
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
+                                        >
+                                            <Edit size={15} className="text-amber-600" />
+                                            <span>Sửa ghi chú đánh dấu</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const p = contextMenu.position
+                                                setContextMenu(null)
+                                                if (onUnmarkPosition) onUnmarkPosition(p.id)
+                                                else onToggleMark(p)
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-md transition-colors text-left font-medium"
+                                        >
+                                            <Bookmark size={15} className="text-rose-500 fill-rose-500" />
+                                            <span>Bỏ đánh dấu</span>
+                                        </button>
+                                    </>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            const p = contextMenu.position
+                                            setContextMenu(null)
+                                            setMarkingPosition(p)
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
+                                    >
+                                        <Bookmark
+                                            size={16}
+                                            className="text-amber-500"
+                                        />
+                                        <span>Đánh dấu kiểm tra</span>
+                                    </button>
+                                )}
                                 <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
                             </>
                         )}
@@ -426,11 +484,42 @@ export function usePositionActionManager({ currentSystemCode, onRefreshMap, onRe
                 onSuccess={handleLotFormSuccess}
                 {...commonData}
             />
+
+            {/* Mark Position Modal */}
+            <MarkPositionModal
+                isOpen={!!markingPosition}
+                onClose={() => setMarkingPosition(null)}
+                positions={markingPosition ? [{
+                    id: markingPosition.id,
+                    code: markingPosition.code,
+                    lot_id: markingPosition.lot_id,
+                    lotDetail: markingPosition.lot_id ? lotInfo?.[markingPosition.lot_id] : null
+                }] : []}
+                currentNote={markingPosition ? (getMarkNote?.(markingPosition.id) || '') : ''}
+                isAlreadyMarked={markingPosition ? (isMarked?.(markingPosition.id) || false) : false}
+                onConfirm={(note) => {
+                    if (!markingPosition) return
+                    if (onMarkWithNote) {
+                        onMarkWithNote(markingPosition, note)
+                    } else if (onToggleMark) {
+                        onToggleMark(markingPosition)
+                    }
+                }}
+                onUnmark={() => {
+                    if (!markingPosition) return
+                    if (onUnmarkPosition) {
+                        onUnmarkPosition(markingPosition.id)
+                    } else if (onToggleMark) {
+                        onToggleMark(markingPosition)
+                    }
+                }}
+            />
         </>
     )
 
     return {
         handlePositionMenu,
+        openMarkModalForPosition: (pos: any) => setMarkingPosition(pos),
         PositionActionUI
     }
 }
