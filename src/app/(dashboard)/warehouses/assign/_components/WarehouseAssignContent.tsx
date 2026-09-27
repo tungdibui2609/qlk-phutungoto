@@ -253,111 +253,6 @@ export default function WarehouseAssignContent() {
         return Array.from(allRealIds)
     }
 
-    function suggestNextPosition(extraExcludeIds?: Set<string>) {
-        if (!effectiveZoneId) return
-        setLoading(true)
-        try {
-            const descendantIds = getDescendantZoneIds(effectiveZoneId)
-            const assignedPosIds = new Set(assignments.map((a: any) => a.positionId))
-            skippedIds.forEach(id => assignedPosIds.add(id))
-            if (extraExcludeIds) {
-                extraExcludeIds.forEach(id => assignedPosIds.add(id))
-            }
-
-            const candidates = localPositions.filter(p => !assignedPosIds.has(p.id) && p.zone_ids.some((zId: string) => descendantIds.includes(zId)))
-            const sortedCandidates = sortPositionsByBinPriority(candidates)
-            const nextPos = sortedCandidates[0]
-
-            if (nextPos) {
-                setSuggestedPos(nextPos)
-                setPosSearchTerm(nextPos.code)
-                updateSelection({ step: 'working' })
-                setTimeout(() => {
-                    if (sttInputRef.current) {
-                        sttInputRef.current.focus()
-                    }
-                }, 100)
-            } else {
-                showToast('Không còn vị trí trống trong khu vực này!', 'error')
-                updateSelection({ step: 'setup' })
-            }
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleSkip = () => {
-        if (suggestedPos) {
-            const currentId = suggestedPos.id
-            setSkippedIds(prev => new Set(prev).add(currentId))
-            setSuggestedPos(null)
-            setPosSearchTerm('')
-            setTimeout(() => suggestNextPosition(new Set([currentId])), 10)
-        }
-    }
-
-    // Keyboard navigation
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            if (step !== 'working') return
-
-            // Shift + Enter: Đưa con trỏ quay lại ô nhập STT từ bất kỳ đâu
-            if (e.key === 'Enter' && e.shiftKey) {
-                e.preventDefault()
-                if (sttInputRef.current) {
-                    sttInputRef.current.focus()
-                    sttInputRef.current.select()
-                }
-                return
-            }
-
-            const isInputFocused = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA'
-
-            // Phím mũi tên Trái / Phải để đổi vị trí (hoạt động khi đã bấm Esc thoát con trỏ ra ngoài)
-            if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-                if (!isInputFocused) {
-                    e.preventDefault()
-                    handleSkip()
-                }
-            }
-        }
-        window.addEventListener('keydown', handleKeyDown)
-        return () => window.removeEventListener('keydown', handleKeyDown)
-    }, [step, suggestedPos])
-
-    async function handleConfirmStt() {
-        if (!suggestedPos || !currentStt.trim()) return
-        const sttVal = currentStt.trim().toUpperCase()
-        setLoading(true)
-        try {
-            const newAssignment: PendingAssignment = {
-                lotId: null, // Gán mù theo STT
-                lotCode: `STT #${sttVal} (Gán mù)`,
-                productNames: ['Hàng chờ khớp'],
-                positionId: suggestedPos.id,
-                positionCode: suggestedPos.code,
-                stt: sttVal,
-                productionDate: selectedProductionDate || new Date().toISOString().split('T')[0],
-                timestamp: Date.now()
-            }
-
-            addAssignment(newAssignment)
-            setLastAssignedNotice({ stt: sttVal, positionCode: suggestedPos.code })
-            showToast(`Đã gán: #${newAssignment.stt} → ${suggestedPos.code}`, 'success')
-
-            const currentPositionId = suggestedPos.id
-            
-            // Xóa rỗng STT để sẵn sàng nhập / quét STT tiếp theo
-            setCurrentStt('')
-
-            // Tìm vị trí tiếp theo và focus vào ô nhập STT như bình thường
-            suggestNextPosition(new Set([currentPositionId]))
-        } catch (e: any) {
-            showToast('Lỗi khi lưu: ' + e.message, 'error')
-        } finally {
-            setLoading(false)
-        }
-    }
 
     async function syncAssignments() {
         if (assignments.length === 0 || !currentSystem?.code) return
@@ -610,20 +505,29 @@ export default function WarehouseAssignContent() {
             details: parsePosCode(p.code)
         }))
 
-        const allBays = Array.from(new Set(parsed.map(p => p.details.bay).filter(Boolean))).sort()
-        const allSubs = Array.from(new Set(parsed.map(p => p.details.subPos).filter(Boolean)))
-            .sort((a, b) => Number(b) - Number(a)) // Descending: 2 on top, 1 on bottom
-
-        const firstPos = parsed[0]?.details
+        // Prioritize the slot & tier of suggestedPos if available, so changing positions switches the visible sheet!
+        const targetDetails = parsed.find(p => p.id === suggestedPos?.id)?.details || parsed[0]?.details
         const warehouseRaw = getZoneName(selectedWarehouseId)
         const aisleRaw = getZoneName(selectedAisleId)
         const slotRaw = getZoneName(selectedSlotId)
         const tierRaw = getZoneName(selectedTierId)
 
-        const warehouseVal = firstPos?.warehouse || warehouseRaw.replace(/\D+/g, '') || warehouseRaw
-        const aisleVal = firstPos?.row || aisleRaw.replace(/\D+/g, '') || aisleRaw
-        const slotVal = firstPos?.bin || slotRaw.replace(/\D+/g, '') || slotRaw
-        const tierVal = firstPos?.tier || tierRaw.replace(/\D+/g, '') || tierRaw
+        const warehouseVal = targetDetails?.warehouse || warehouseRaw.replace(/\D+/g, '') || warehouseRaw
+        const aisleVal = targetDetails?.row || aisleRaw.replace(/\D+/g, '') || aisleRaw
+        const slotVal = targetDetails?.bin || slotRaw.replace(/\D+/g, '') || slotRaw
+        const tierVal = targetDetails?.tier || tierRaw.replace(/\D+/g, '') || tierRaw
+
+        // Filter parsed to only the items in this current unit/sheet (matching slot & tier)
+        const sheetItems = parsed.filter(p => {
+            if (slotVal && p.details.bin && p.details.bin !== slotVal) return false
+            if (tierVal && p.details.tier && p.details.tier !== tierVal) return false
+            return true
+        })
+        const itemsToUse = sheetItems.length > 0 ? sheetItems : parsed
+
+        const allBays = Array.from(new Set(itemsToUse.map(p => p.details.bay).filter(Boolean))).sort()
+        const allSubs = Array.from(new Set(itemsToUse.map(p => p.details.subPos).filter(Boolean)))
+            .sort((a, b) => Number(b) - Number(a)) // Descending: 2 on top, 1 on bottom
 
         return {
             bays: allBays.length > 0 ? allBays : ['A'],
@@ -632,9 +536,9 @@ export default function WarehouseAssignContent() {
             aisleVal,
             slotVal,
             tierVal,
-            items: parsed
+            items: itemsToUse
         }
-    }, [displaySiblingPositions, selectedWarehouseId, selectedAisleId, selectedSlotId, selectedTierId, activeZones])
+    }, [displaySiblingPositions, suggestedPos, selectedWarehouseId, selectedAisleId, selectedSlotId, selectedTierId, activeZones])
 
     const zoneParts = useMemo(() => {
         function formatZonePart(rawName: string, prefix: string) {
@@ -726,6 +630,248 @@ export default function WarehouseAssignContent() {
             })
         }
     }
+
+    // Ordered list of positions for navigation (row by row: 2A -> 2B -> 2C -> 1A -> 1B -> 1C)
+    const navigationPositions = useMemo(() => {
+        let list: any[] = []
+        if (sheetData?.items && sheetData.items.length > 0) {
+            const subOrder = sheetData.subPositions
+            const bayOrder = sheetData.bays
+            list = [...sheetData.items].sort((a: any, b: any) => {
+                const sA = subOrder.indexOf(a.details.subPos)
+                const sB = subOrder.indexOf(b.details.subPos)
+                if (sA !== sB) return sA - sB
+                const bA = bayOrder.indexOf(a.details.bay)
+                const bB = bayOrder.indexOf(b.details.bay)
+                if (bA !== bB) return bA - bB
+                return (a.code || '').localeCompare(b.code || '')
+            })
+        } else if (displaySiblingPositions && displaySiblingPositions.length > 0) {
+            list = sortPositionsByBinPriority(displaySiblingPositions)
+        } else if (effectiveZoneId) {
+            const descendantIds = getDescendantZoneIds(effectiveZoneId)
+            const source = (state.allPositions && state.allPositions.length > 0) ? state.allPositions : localPositions
+            const filtered = source.filter((p: any) =>
+                p.zone_ids && p.zone_ids.some((zId: string) => descendantIds.includes(zId))
+            )
+            list = sortPositionsByBinPriority(filtered)
+        }
+        return list
+    }, [sheetData, displaySiblingPositions, effectiveZoneId, state.allPositions, localPositions, virtualToRealMap, zones])
+
+    // Get current STT for a given position ID from session assignments or existing data
+    const getPositionStt = (posId: string): string => {
+        const localAss = assignments.find((a: any) => a.positionId === posId)
+        if (localAss?.stt) return localAss.stt
+
+        const sib = displaySiblingPositions.find((p: any) => p.id === posId)
+        if (sib?.stt) return sib.stt
+
+        const allP = state.allPositions?.find((p: any) => p.id === posId)
+        if (allP?.stt) return allP.stt
+
+        return ''
+    }
+
+    // Select a position and automatically populate/select STT input for instant editing
+    const selectPosition = (pos: any) => {
+        if (!pos) return
+        setSuggestedPos(pos)
+        setPosSearchTerm(pos.code || '')
+        const existingStt = getPositionStt(pos.id)
+        setCurrentStt(existingStt)
+        setShowPosSuggestions(false)
+        setTimeout(() => {
+            if (sttInputRef.current) {
+                sttInputRef.current.focus()
+                if (existingStt) {
+                    sttInputRef.current.select()
+                }
+            }
+        }, 50)
+    }
+
+    // Find the next empty position in navigation sequence
+    const findNextEmptyPosition = (fromPosId?: string) => {
+        if (!navigationPositions || navigationPositions.length === 0) return null
+        const assignedIds = new Set(assignments.map(a => a.positionId))
+        
+        const isEmpty = (p: any) => {
+            if (assignedIds.has(p.id)) return false
+            if (p.lot_id) return false
+            if (p.stt) return false
+            return true
+        }
+
+        const currentIndex = navigationPositions.findIndex((p: any) => p.id === fromPosId)
+        const n = navigationPositions.length
+
+        for (let i = 1; i <= n; i++) {
+            const checkIndex = (currentIndex + i) % n
+            const candidate = navigationPositions[checkIndex]
+            if (candidate && isEmpty(candidate)) {
+                return candidate
+            }
+        }
+        return null
+    }
+
+    // Move backward to previous position in sequence (looping around)
+    const handlePrevPosition = () => {
+        if (!navigationPositions || navigationPositions.length === 0) return
+        const currentIndex = navigationPositions.findIndex((p: any) => p.id === suggestedPos?.id)
+        let prevIndex: number
+        if (currentIndex <= 0) {
+            prevIndex = navigationPositions.length - 1
+        } else {
+            prevIndex = currentIndex - 1
+        }
+        const targetPos = navigationPositions[prevIndex]
+        if (targetPos) {
+            selectPosition(targetPos)
+        }
+    }
+
+    // Move forward to next position in sequence (looping around)
+    const handleNextPosition = () => {
+        if (!navigationPositions || navigationPositions.length === 0) return
+        const currentIndex = navigationPositions.findIndex((p: any) => p.id === suggestedPos?.id)
+        let nextIndex: number
+        if (currentIndex === -1 || currentIndex >= navigationPositions.length - 1) {
+            nextIndex = 0
+        } else {
+            nextIndex = currentIndex + 1
+        }
+        const targetPos = navigationPositions[nextIndex]
+        if (targetPos) {
+            selectPosition(targetPos)
+        }
+    }
+
+    const handleSkip = () => {
+        handleNextPosition()
+    }
+
+    // Start assigning or suggest first empty position
+    function suggestNextPosition() {
+        if (!effectiveZoneId) return
+        setLoading(true)
+        try {
+            const firstEmpty = findNextEmptyPosition(suggestedPos?.id)
+            if (firstEmpty) {
+                selectPosition(firstEmpty)
+                updateSelection({ step: 'working' })
+            } else if (navigationPositions.length > 0) {
+                selectPosition(navigationPositions[0])
+                updateSelection({ step: 'working' })
+            } else {
+                const descendantIds = getDescendantZoneIds(effectiveZoneId)
+                const candidates = localPositions.filter(p => p.zone_ids.some((zId: string) => descendantIds.includes(zId)))
+                const sorted = sortPositionsByBinPriority(candidates)
+                if (sorted[0]) {
+                    selectPosition(sorted[0])
+                    updateSelection({ step: 'working' })
+                } else {
+                    showToast('Không còn vị trí trống trong khu vực này!', 'error')
+                    updateSelection({ step: 'setup' })
+                }
+            }
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // Confirm or update assignment for currently selected position
+    async function handleConfirmStt() {
+        if (!suggestedPos || !currentStt.trim()) return
+        const sttVal = currentStt.trim().toUpperCase()
+        setLoading(true)
+        try {
+            const isEditingExisting = assignments.some((a: any) => a.positionId === suggestedPos.id)
+            const newAssignment: PendingAssignment = {
+                lotId: null, // Gán mù theo STT
+                lotCode: `STT #${sttVal} (Gán mù)`,
+                productNames: ['Hàng chờ khớp'],
+                positionId: suggestedPos.id,
+                positionCode: suggestedPos.code,
+                stt: sttVal,
+                productionDate: selectedProductionDate || new Date().toISOString().split('T')[0],
+                timestamp: Date.now()
+            }
+
+            addAssignment(newAssignment)
+            setLastAssignedNotice({ stt: sttVal, positionCode: suggestedPos.code })
+            showToast(
+                isEditingExisting 
+                    ? `Đã cập nhật: #${sttVal} → ${suggestedPos.code}` 
+                    : `Đã gán: #${sttVal} → ${suggestedPos.code}`, 
+                'success'
+            )
+
+            const currentPositionId = suggestedPos.id
+
+            // Tự động tìm ô trống tiếp theo trong khu vực để tiếp tục nhập nhanh
+            const nextEmpty = findNextEmptyPosition(currentPositionId)
+            if (nextEmpty) {
+                selectPosition(nextEmpty)
+            } else {
+                showToast('Đã gán xong tất cả vị trí trong khu vực này!', 'success')
+            }
+        } catch (e: any) {
+            showToast('Lỗi khi lưu: ' + e.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    // Remove staged assignment for currently selected position
+    const handleRemoveCurrentAssignment = () => {
+        if (!suggestedPos) return
+        removeAssignment(suggestedPos.id)
+        setCurrentStt('')
+        showToast(`Đã hủy gán ô ${suggestedPos.code}`, 'info')
+        if (sttInputRef.current) {
+            sttInputRef.current.focus()
+        }
+    }
+
+    const isCurrentPosAssignedThisSession = assignments.some((a: any) => a.positionId === suggestedPos?.id)
+
+    // Keyboard navigation
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (step !== 'working') return
+
+            // Shift + Enter: Đưa con trỏ quay lại ô nhập STT từ bất kỳ đâu
+            if (e.key === 'Enter' && e.shiftKey) {
+                e.preventDefault()
+                if (sttInputRef.current) {
+                    sttInputRef.current.focus()
+                    sttInputRef.current.select()
+                }
+                return
+            }
+
+            const isInputFocused = document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA'
+
+            // Phím mũi tên Trái / Phải để đổi vị trí:
+            // 1. Khi không focus ô nhập: bấm ← hoặc → để lùi / tiến ô
+            // 2. Khi đang focus ô nhập: bấm Alt + ← hoặc Alt + → để lùi / tiến ô
+            if (e.key === 'ArrowLeft') {
+                if (!isInputFocused || e.altKey) {
+                    e.preventDefault()
+                    handlePrevPosition()
+                }
+            } else if (e.key === 'ArrowRight') {
+                if (!isInputFocused || e.altKey) {
+                    e.preventDefault()
+                    handleNextPosition()
+                }
+            }
+        }
+        window.addEventListener('keydown', handleKeyDown)
+        return () => window.removeEventListener('keydown', handleKeyDown)
+    }, [step, suggestedPos, navigationPositions, assignments])
 
     return (
         <div className="space-y-6 pb-24 max-w-7xl mx-auto">
@@ -1206,6 +1352,19 @@ export default function WarehouseAssignContent() {
                                                     setShowPosSuggestions(true)
                                                 }}
                                                 onFocus={() => setShowPosSuggestions(true)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault()
+                                                        const code = posSearchTerm.trim().toUpperCase()
+                                                        const matched = navigationPositions.find(p => p.code?.toUpperCase() === code) 
+                                                            || localPositions.find(p => p.code?.toUpperCase() === code)
+                                                            || state.allPositions?.find((p: any) => p.code?.toUpperCase() === code)
+                                                        if (matched) {
+                                                            selectPosition(matched)
+                                                            setShowPosSuggestions(false)
+                                                        }
+                                                    }
+                                                }}
                                                 className="w-full bg-zinc-50 dark:bg-zinc-950 border-2 border-zinc-200 dark:border-zinc-800 focus:border-emerald-500 dark:focus:border-emerald-500 rounded-2xl py-5 pl-16 pr-6 text-2xl md:text-3xl font-black font-mono text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-300 dark:placeholder:text-zinc-700 shadow-inner uppercase"
                                                 placeholder="MÃ KỆ..."
                                             />
@@ -1221,9 +1380,7 @@ export default function WarehouseAssignContent() {
                                                             key={p.id}
                                                             type="button"
                                                             onClick={() => {
-                                                                setSuggestedPos(p)
-                                                                setPosSearchTerm(p.code)
-                                                                setShowPosSuggestions(false)
+                                                                selectPosition(p)
                                                             }}
                                                             className="w-full px-4 py-2.5 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 border-b border-zinc-50 dark:border-zinc-700 last:border-0 flex justify-between items-center text-xs"
                                                         >
@@ -1246,7 +1403,7 @@ export default function WarehouseAssignContent() {
                                             </span>
                                             <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
                                                 <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md font-mono font-bold">
-                                                    Phím &rarr;: Gợi ý tiếp
+                                                    Phím &larr; / &rarr;: Lùi / Tiến ô
                                                 </span>
                                                 <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md font-mono font-bold">
                                                     Click ô: Chọn trực tiếp
@@ -1257,15 +1414,30 @@ export default function WarehouseAssignContent() {
                                             </div>
                                         </div>
 
-                                        {/* Skip Button - Symmetrical height and style with right button */}
-                                        <button
-                                            onClick={handleSkip}
-                                            disabled={loading}
-                                            className="w-full py-5 rounded-2xl flex items-center justify-center gap-2.5 text-base font-black uppercase tracking-wider transition-all bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border-2 border-zinc-200 dark:border-zinc-700 shadow-sm active:scale-98"
-                                        >
-                                            <RotateCcw size={20} />
-                                            <span>Bỏ qua & gợi ý vị trí khác (Phím &rarr;)</span>
-                                        </button>
+                                        {/* Navigation Buttons: Previous (Left) and Next (Right) */}
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button
+                                                type="button"
+                                                onClick={handlePrevPosition}
+                                                disabled={loading || navigationPositions.length === 0}
+                                                title="Quay lại ô trước để xem, sửa STT hoặc chọn ô khác (Phím ←)"
+                                                className="w-full py-5 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-black uppercase tracking-wider transition-all bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border-2 border-zinc-200 dark:border-zinc-700 shadow-sm active:scale-98 disabled:opacity-50 cursor-pointer"
+                                            >
+                                                <ArrowLeft size={20} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                                <span>Lùi <span className="hidden sm:inline">ô trước</span> (←)</span>
+                                            </button>
+
+                                            <button
+                                                type="button"
+                                                onClick={handleNextPosition}
+                                                disabled={loading || navigationPositions.length === 0}
+                                                title="Chuyển tới ô tiếp theo (Phím →)"
+                                                className="w-full py-5 rounded-2xl flex items-center justify-center gap-2 text-sm sm:text-base font-black uppercase tracking-wider transition-all bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 border-2 border-zinc-200 dark:border-zinc-700 shadow-sm active:scale-98 disabled:opacity-50 cursor-pointer"
+                                            >
+                                                <span>Tiến <span className="hidden sm:inline">ô sau</span> (→)</span>
+                                                <ArrowRight size={20} className="shrink-0 text-emerald-600 dark:text-emerald-400" />
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* Left Bottom: Compact Warehouse Sheet Matrix */}
@@ -1353,35 +1525,40 @@ export default function WarehouseAssignContent() {
                                                                             <td
                                                                                 key={bay}
                                                                                 onClick={() => {
-                                                                                    if (pos && !isAssigned && !isSelected) {
-                                                                                        const found = localPositions.find(p => p.id === pos.id) || pos
-                                                                                        setSuggestedPos(found)
-                                                                                        setPosSearchTerm(found.code)
+                                                                                    if (pos && !isSelected) {
+                                                                                        selectPosition(pos)
                                                                                     }
                                                                                 }}
-                                                                                className={`py-1.5 px-2 text-center transition-all ${
+                                                                                title={pos ? (pos.stt ? `Ô ${pos.code}: STT #${pos.stt} (Bấm để xem/sửa)` : `Ô ${pos.code}: Trống (Bấm để chọn gán)`) : ''}
+                                                                                className={`py-1.5 px-2 text-center transition-all cursor-pointer ${
                                                                                     isBorderRight ? 'border-r border-zinc-700 dark:border-zinc-400' : ''
                                                                                 } ${
                                                                                     isSelected
                                                                                         ? 'bg-emerald-100/90 dark:bg-emerald-950/70 ring-2 ring-emerald-500 ring-inset shadow-inner'
                                                                                         : pos?.isLocal
-                                                                                            ? 'bg-amber-50 dark:bg-amber-950/40'
+                                                                                            ? 'bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100/60'
                                                                                             : isAssigned
-                                                                                                ? 'bg-white dark:bg-zinc-900'
-                                                                                                : 'bg-zinc-50/40 dark:bg-zinc-900/30 hover:bg-emerald-50/50 cursor-pointer'
+                                                                                                ? 'bg-white dark:bg-zinc-900 hover:bg-blue-50/50 dark:hover:bg-blue-950/30'
+                                                                                                : 'bg-zinc-50/40 dark:bg-zinc-900/30 hover:bg-emerald-50/50'
                                                                                 }`}
                                                                             >
                                                                                 {pos ? (
                                                                                     <div className="flex flex-col items-center justify-center min-h-[36px]">
-                                                                                        {/* STT Text in blue pen ink */}
-                                                                                        {pos.stt ? (
+                                                                                        {isSelected ? (
+                                                                                            <div className="inline-flex flex-col items-center">
+                                                                                                <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-200/90 dark:bg-emerald-900/80 px-2 py-0.5 rounded shadow-xs">
+                                                                                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
+                                                                                                    {currentStt.trim() ? `#${currentStt.trim()}` : 'Đang chọn'}
+                                                                                                </div>
+                                                                                                {pos.stt && currentStt.trim() !== pos.stt && (
+                                                                                                    <span className="text-[9px] text-zinc-400 line-through">
+                                                                                                        #{pos.stt}
+                                                                                                    </span>
+                                                                                                )}
+                                                                                            </div>
+                                                                                        ) : pos.stt ? (
                                                                                             <div className="font-mono font-bold text-sm sm:text-base text-blue-700 dark:text-blue-400 tracking-wide">
                                                                                                 {pos.stt}
-                                                                                            </div>
-                                                                                        ) : isSelected ? (
-                                                                                            <div className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-200/90 dark:bg-emerald-900/80 px-2 py-0.5 rounded">
-                                                                                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping" />
-                                                                                                {currentStt.trim() ? `#${currentStt.trim()}` : 'Đang gán'}
                                                                                             </div>
                                                                                         ) : (
                                                                                             <span className="text-[10px] font-medium text-zinc-400 italic">
@@ -1450,13 +1627,13 @@ export default function WarehouseAssignContent() {
                                             </span>
                                             <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
                                                 <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md font-mono font-bold">
-                                                    Enter: Gán
+                                                    Enter: Gán / Sửa
                                                 </span>
                                                 <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md font-mono font-bold">
                                                     Esc: Thoát con trỏ
                                                 </span>
                                                 <span className="bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 px-2 py-0.5 rounded-md font-mono font-bold">
-                                                    &larr; / &rarr;: Đổi vị trí
+                                                    &larr; / &rarr;: Lùi / Tiến
                                                 </span>
                                                 <span className="bg-emerald-50 dark:bg-emerald-950/50 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/60 px-2 py-0.5 rounded-md font-mono font-black">
                                                     Shift + Enter: Nhập STT
@@ -1464,18 +1641,31 @@ export default function WarehouseAssignContent() {
                                             </div>
                                         </div>
 
-                                        <button
-                                            onClick={handleConfirmStt}
-                                            disabled={!currentStt.trim() || loading}
-                                            className={`w-full py-5 rounded-2xl flex items-center justify-center gap-2.5 text-base font-black uppercase tracking-wider transition-all shadow-xl ${
-                                                !currentStt.trim() || loading
-                                                    ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed shadow-none border-2 border-zinc-200 dark:border-zinc-700'
-                                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 border-2 border-emerald-600 active:scale-98'
-                                            }`}
-                                        >
-                                            {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
-                                            <span>Xác nhận gán vị trí (Enter)</span>
-                                        </button>
+                                        <div className="space-y-2">
+                                            <button
+                                                onClick={handleConfirmStt}
+                                                disabled={!currentStt.trim() || loading}
+                                                className={`w-full py-5 rounded-2xl flex items-center justify-center gap-2.5 text-base font-black uppercase tracking-wider transition-all shadow-xl ${
+                                                    !currentStt.trim() || loading
+                                                        ? 'bg-zinc-100 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-600 cursor-not-allowed shadow-none border-2 border-zinc-200 dark:border-zinc-700'
+                                                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/30 border-2 border-emerald-600 active:scale-98 cursor-pointer'
+                                                }`}
+                                            >
+                                                {loading ? <Loader2 className="animate-spin" size={20} /> : <CheckCircle2 size={20} />}
+                                                <span>{isCurrentPosAssignedThisSession ? 'Cập nhật STT vị trí (Enter)' : 'Xác nhận gán vị trí (Enter)'}</span>
+                                            </button>
+
+                                            {isCurrentPosAssignedThisSession && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleRemoveCurrentAssignment}
+                                                    className="w-full py-2.5 px-3 text-xs font-bold text-red-600 hover:text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-xl transition-all flex items-center justify-center gap-1.5 border border-red-200/60 dark:border-red-900/40 cursor-pointer"
+                                                >
+                                                    <Trash2 size={13} />
+                                                    <span>Hủy gán cho ô này (trả về trống)</span>
+                                                </button>
+                                            )}
+                                        </div>
                                     </div>
 
                                     {/* Right Bottom: Symmetrical Information & Operations Card */}

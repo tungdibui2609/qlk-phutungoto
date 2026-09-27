@@ -102,7 +102,10 @@ export function MobileProvider({ children }: { children: React.ReactNode }) {
     const addAssignment = (assignment: any) => {
         setState(prev => ({
             ...prev,
-            assignments: [assignment, ...prev.assignments]
+            assignments: [
+                assignment,
+                ...prev.assignments.filter(a => a.positionId !== assignment.positionId)
+            ]
         }))
     }
 
