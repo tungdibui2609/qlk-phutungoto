@@ -6,6 +6,7 @@ interface MobileState {
     zones: any[]
     localLots: any[]
     localPositions: any[]
+    allPositions?: any[]
     selection: {
         warehouseId: string | null
         aisleId: string | null
@@ -21,7 +22,7 @@ interface MobileState {
 
 interface MobileContextType {
     state: MobileState
-    updateData: (data: Partial<Pick<MobileState, 'zones' | 'localLots' | 'localPositions' | 'assignments'>>) => void
+    updateData: (data: Partial<Pick<MobileState, 'zones' | 'localLots' | 'localPositions' | 'allPositions' | 'assignments'>>) => void
     updateSelection: (selection: Partial<MobileState['selection']>) => void
     addAssignment: (assignment: any) => void
     removeAssignment: (positionId: string) => void
@@ -35,6 +36,7 @@ const initialState: MobileState = {
     zones: [],
     localLots: [],
     localPositions: [],
+    allPositions: [],
     selection: {
         warehouseId: null,
         aisleId: null,

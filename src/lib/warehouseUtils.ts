@@ -60,7 +60,9 @@ export function groupWarehouseData(zones: Zone[] = [], positions: PositionWithZo
                     binGroups[suffix].push(c)
                 })
 
-                Object.entries(binGroups).forEach(([suffix, members]) => {
+                Object.entries(binGroups)
+                    .sort(([suffixA], [suffixB]) => suffixA.localeCompare(suffixB, undefined, { numeric: true }))
+                    .forEach(([suffix, members]) => {
                     // Modified: Group if multiple members OR if the name looks like a bin (Ô A01, etc.)
                     // This ensures "Ô A01" becomes "Ô 01" even if it's the only one for consistency
                     const firstMember = members[0]
@@ -98,7 +100,9 @@ export function groupWarehouseData(zones: Zone[] = [], positions: PositionWithZo
                         })
 
                         // Create Virtual Levels under the Virtual Bin
-                        Object.entries(levelGroups).forEach(([lvlName, lMembers]) => {
+                        Object.entries(levelGroups)
+                            .sort(([lvlA], [lvlB]) => lvlA.localeCompare(lvlB, undefined, { numeric: true }))
+                            .forEach(([lvlName, lMembers]) => {
                             const firstLvl = lMembers[0]
                             if (!firstLvl) return
 
@@ -123,12 +127,15 @@ export function groupWarehouseData(zones: Zone[] = [], positions: PositionWithZo
                 })
             } else {
                 // Not a grouping container -> process children normally
-                children.forEach(c => processZoneRecursively(c))
+                const sortedChildren = [...children].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+                sortedChildren.forEach(c => processZoneRecursively(c))
             }
         }
 
         // Process from roots
-        const roots = zones.filter(z => z && (!z.parent_id || z.parent_id === ''))
+        const roots = zones
+            .filter(z => z && (!z.parent_id || z.parent_id === ''))
+            .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
         roots.forEach(processZoneRecursively)
 
         // Safety: any zones missed by recursion

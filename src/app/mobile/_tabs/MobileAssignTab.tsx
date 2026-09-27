@@ -287,10 +287,11 @@ export default function MobileAssignTab() {
     }
 
     const activeZones: Zone[] = groupedZones.length > 0 ? groupedZones : zones
-    const warehouses: Zone[] = activeZones.filter(z => !z.parent_id)
-    const aisles: Zone[] = selectedWarehouseId ? activeZones.filter(z => z.parent_id === selectedWarehouseId) : []
-    const slots: Zone[] = selectedAisleId ? activeZones.filter(z => z.parent_id === selectedAisleId) : []
-    const tiers: Zone[] = selectedSlotId ? activeZones.filter(z => z.parent_id === selectedSlotId) : []
+    const sortZones = (list: Zone[]) => [...list].sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+    const warehouses: Zone[] = sortZones(activeZones.filter(z => !z.parent_id))
+    const aisles: Zone[] = selectedWarehouseId ? sortZones(activeZones.filter(z => z.parent_id === selectedWarehouseId)) : []
+    const slots: Zone[] = selectedAisleId ? sortZones(activeZones.filter(z => z.parent_id === selectedAisleId)) : []
+    const tiers: Zone[] = selectedSlotId ? sortZones(activeZones.filter(z => z.parent_id === selectedSlotId)) : []
 
     const emptyCounts = useMemo(() => {
         const counts = new Map<string, number>()
