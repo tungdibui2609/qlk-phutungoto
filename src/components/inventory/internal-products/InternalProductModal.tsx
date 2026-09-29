@@ -3,8 +3,9 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
-import { X, Save, Box, Info, AlertTriangle } from 'lucide-react'
+import { X, Save, Box, Info, AlertTriangle, Trash2 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 
 type Product = Database['public']['Tables']['products']['Row']
 type CodeRule = {
@@ -26,6 +27,8 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
     const { systemType } = useSystem()
     const [loading, setLoading] = useState(false)
     const [fetchingRules, setFetchingRules] = useState(false)
+    const [isConfirmDeleteOpen, setIsConfirmDeleteOpen] = useState(false)
+    const [deleting, setDeleting] = useState(false)
     
     // Form state
     const [internalCode, setInternalCode] = useState('')
@@ -109,7 +112,7 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
             
             // Check for duplicate internal_code
             if (normalizedCode) {
-                const { data: existing, error: checkError } = await supabase
+                const { data: existing, error: checkError } = await (supabase as any)
                     .from('products')
                     .select('id, name')
                     .eq('internal_code', normalizedCode)
@@ -117,13 +120,13 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
                     .maybeSingle()
 
                 if (existing) {
-                    showToast(`Mã "${normalizedCode}" đã được dùng cho sản phẩm: ${existing.name}`, 'error')
+                    showToast(`Mã "${normalizedCode}" đã được dùng cho sản phẩm: ${(existing as any).name}`, 'error')
                     setLoading(false)
                     return
                 }
             }
 
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('products')
                 .update({
                     internal_code: normalizedCode || null,
@@ -132,7 +135,7 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
                     internal_lvl2_id: lvl2Id || null,
                     internal_lvl3_id: lvl3Id || null,
                     internal_lvl4_id: lvl4Id || null
-                } as any)
+                })
                 .eq('id', product.id)
 
             if (error) throw error
@@ -148,6 +151,39 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
         }
     }
 
+    const hasExistingInternal = Boolean(product?.internal_code || product?.internal_name)
+
+    const executeDeleteInternal = async () => {
+        if (!product) return
+
+        setDeleting(true)
+        try {
+            const { error } = await (supabase as any)
+                .from('products')
+                .update({
+                    internal_code: null,
+                    internal_name: null,
+                    internal_lvl1_id: null,
+                    internal_lvl2_id: null,
+                    internal_lvl3_id: null,
+                    internal_lvl4_id: null
+                })
+                .eq('id', product.id)
+
+            if (error) throw error
+
+            showToast(`Đã xóa mã nội bộ của sản phẩm "${product.name}" thành công`, 'success')
+            onSuccess()
+            onOpenChange(false)
+        } catch (error: any) {
+            console.error('Delete internal error:', error)
+            showToast('Lỗi khi xóa mã nội bộ: ' + error.message, 'error')
+        } finally {
+            setDeleting(false)
+            setIsConfirmDeleteOpen(false)
+        }
+    }
+
     if (!open) return null
 
     const lvl1Options = rules.filter(r => r.level === 1)
@@ -156,161 +192,193 @@ export default function InternalProductModal({ open, onOpenChange, product, onSu
     const lvl4Options = rules.filter(r => r.level === 4)
 
     return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in text-left">
-            <div className="bg-white rounded-[24px] w-full max-w-6xl shadow-2xl flex flex-col overflow-hidden animate-slide-up border border-stone-100 max-h-[90vh]">
-                {/* Header */}
-                <div className="px-6 py-5 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
-                    <div className="flex items-center gap-3">
-                        <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl">
-                            <Box size={20} />
-                        </div>
-                        <div>
-                            <h2 className="text-xl font-black text-stone-800 tracking-tight">Thiết lập mã nội bộ</h2>
-                            <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">{product?.sku}</p>
-                        </div>
-                    </div>
-                    <button
-                        onClick={() => onOpenChange(false)}
-                        className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
-                        disabled={loading}
-                    >
-                        <X size={20} />
-                    </button>
-                </div>
-
-                {/* Body */}
-                <div className="p-8 space-y-8 flex-1 overflow-y-auto">
-                    <div className="bg-indigo-50/50 p-5 rounded-3xl border border-indigo-100">
-                        <div className="flex justify-between items-start gap-4">
+        <>
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in text-left">
+                <div className="bg-white rounded-[24px] w-full max-w-6xl shadow-2xl flex flex-col overflow-hidden animate-slide-up border border-stone-100 max-h-[90vh]">
+                    {/* Header */}
+                    <div className="px-6 py-5 border-b border-stone-100 flex justify-between items-center bg-stone-50/50">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-xl">
+                                <Box size={20} />
+                            </div>
                             <div>
-                                <p className="text-sm font-black text-indigo-900 leading-snug">{product?.name}</p>
-                                <p className="text-[11px] text-indigo-500 mt-1 font-bold">Mã NSX: {product?.part_number || '---'}</p>
-                            </div>
-                            <div className="text-right">
-                                <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-white text-indigo-600 border border-indigo-100 shadow-sm">
-                                    {product?.sku}
-                                </span>
+                                <h2 className="text-xl font-black text-stone-800 tracking-tight">Thiết lập mã nội bộ</h2>
+                                <p className="text-xs font-bold text-stone-500 uppercase tracking-widest">{product?.sku}</p>
                             </div>
                         </div>
+                        <button
+                            onClick={() => onOpenChange(false)}
+                            className="p-2 text-stone-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-colors"
+                            disabled={loading || deleting}
+                        >
+                            <X size={20} />
+                        </button>
                     </div>
 
-                    <div className="space-y-6">
-                        {/* 4 LEVELS SELECTION */}
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                            <div>
-                                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 1: Sản phẩm</label>
-                                <select
-                                    value={lvl1Id}
-                                    onChange={(e) => setLvl1Id(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
-                                >
-                                    <option value="">-- Chọn --</option>
-                                    {lvl1Options.map(opt => (
-                                        <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 2: Hình thức</label>
-                                <select
-                                    value={lvl2Id}
-                                    onChange={(e) => setLvl2Id(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
-                                >
-                                    <option value="">-- Chọn --</option>
-                                    {lvl2Options.map(opt => (
-                                        <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 3: Phân loại</label>
-                                <select
-                                    value={lvl3Id}
-                                    onChange={(e) => setLvl3Id(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
-                                >
-                                    <option value="">-- Chọn --</option>
-                                    {lvl3Options.map(opt => (
-                                        <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 4: Dự phòng</label>
-                                <select
-                                    value={lvl4Id}
-                                    onChange={(e) => setLvl4Id(e.target.value)}
-                                    className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
-                                >
-                                    <option value="">-- Chọn --</option>
-                                    {lvl4Options.map(opt => (
-                                        <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
-                                    ))}
-                                </select>
-                            </div>
-                        </div>
-
-                        {/* GENERATED CODE */}
-                        <div className="bg-stone-900 rounded-[28px] p-6 text-white shadow-xl shadow-stone-200">
-                            <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3">Mã nội bộ tự động sinh</label>
-                            <div className="flex items-center gap-3">
-                                <div className="text-3xl font-mono font-black tracking-tighter text-indigo-400">
-                                    {internalCode || '---'}
+                    {/* Body */}
+                    <div className="p-8 space-y-8 flex-1 overflow-y-auto">
+                        <div className="bg-indigo-50/50 p-5 rounded-3xl border border-indigo-100">
+                            <div className="flex justify-between items-start gap-4">
+                                <div>
+                                    <p className="text-sm font-black text-indigo-900 leading-snug">{product?.name}</p>
+                                    <p className="text-[11px] text-indigo-500 mt-1 font-bold">Mã NSX: {product?.part_number || '---'}</p>
                                 </div>
-                                {!internalCode && (
-                                    <div className="flex items-center gap-2 text-stone-500 animate-pulse">
-                                        <Info size={14} />
-                                        <span className="text-xs font-bold uppercase tracking-wider">Chưa có lựa chọn</span>
+                                <div className="text-right">
+                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-white text-indigo-600 border border-indigo-100 shadow-sm">
+                                        {product?.sku}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="space-y-6">
+                            {/* 4 LEVELS SELECTION */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div>
+                                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 1: Sản phẩm</label>
+                                    <select
+                                        value={lvl1Id}
+                                        onChange={(e) => setLvl1Id(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
+                                    >
+                                        <option value="">-- Chọn --</option>
+                                        {lvl1Options.map(opt => (
+                                            <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 2: Hình thức</label>
+                                    <select
+                                        value={lvl2Id}
+                                        onChange={(e) => setLvl2Id(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
+                                    >
+                                        <option value="">-- Chọn --</option>
+                                        {lvl2Options.map(opt => (
+                                            <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 3: Phân loại</label>
+                                    <select
+                                        value={lvl3Id}
+                                        onChange={(e) => setLvl3Id(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
+                                    >
+                                        <option value="">-- Chọn --</option>
+                                        {lvl3Options.map(opt => (
+                                            <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-[10px] font-black text-stone-400 uppercase tracking-widest mb-2 px-1">Cấp 4: Dự phòng</label>
+                                    <select
+                                        value={lvl4Id}
+                                        onChange={(e) => setLvl4Id(e.target.value)}
+                                        className="w-full px-4 py-3 rounded-xl bg-stone-50 border border-stone-100 focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-100 transition-all font-bold text-stone-700 text-sm appearance-none"
+                                    >
+                                        <option value="">-- Chọn --</option>
+                                        {lvl4Options.map(opt => (
+                                            <option key={opt.id} value={opt.id}>[{opt.prefix}] {opt.description}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* GENERATED CODE */}
+                            <div className="bg-stone-900 rounded-[28px] p-6 text-white shadow-xl shadow-stone-200">
+                                <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-3">Mã nội bộ tự động sinh</label>
+                                <div className="flex items-center gap-3">
+                                    <div className="text-3xl font-mono font-black tracking-tighter text-indigo-400">
+                                        {internalCode || '---'}
                                     </div>
-                                )}
-                            </div>
-                            <div className="mt-4 pt-4 border-t border-white/5 flex gap-4">
-                                <div className="flex-1">
-                                    <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5">Tên hiển thị nội bộ</label>
-                                    <input
-                                        type="text"
-                                        value={internalName}
-                                        onChange={(e) => setInternalName(e.target.value)}
-                                        placeholder="VD: Sầu Dona Má Loại A"
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm font-medium focus:outline-none focus:border-white/20 transition-all font-bold"
-                                    />
+                                    {!internalCode && (
+                                        <div className="flex items-center gap-2 text-stone-500 animate-pulse">
+                                            <Info size={14} />
+                                            <span className="text-xs font-bold uppercase tracking-wider">Chưa có lựa chọn</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="mt-4 pt-4 border-t border-white/5 flex gap-4">
+                                    <div className="flex-1">
+                                        <label className="block text-[10px] font-black text-stone-500 uppercase tracking-widest mb-1.5">Tên hiển thị nội bộ</label>
+                                        <input
+                                            type="text"
+                                            value={internalName}
+                                            onChange={(e) => setInternalName(e.target.value)}
+                                            placeholder="VD: Sầu Dona Má Loại A"
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm font-medium focus:outline-none focus:border-white/20 transition-all font-bold"
+                                        />
+                                    </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
-                            <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
-                            <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
-                                <strong>Lưu ý:</strong> Hệ thống sẽ tự động nối các mã (Prefix) của 3 cấp độ để tạo thành mã định danh duy nhất. Bạn có thể chỉnh sửa tên hiển thị cho phù hợp với cách gọi tại xưởng.
-                            </p>
+                            <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
+                                <AlertTriangle size={18} className="text-amber-500 shrink-0 mt-0.5" />
+                                <p className="text-[11px] text-amber-800 font-medium leading-relaxed">
+                                    <strong>Lưu ý:</strong> Hệ thống sẽ tự động nối các mã (Prefix) của 3 cấp độ để tạo thành mã định danh duy nhất. Bạn có thể chỉnh sửa tên hiển thị cho phù hợp với cách gọi tại xưởng.
+                                </p>
+                            </div>
                         </div>
                     </div>
-                </div>
 
-                {/* Footer */}
-                <div className="px-8 py-5 bg-stone-50 border-t border-stone-100 flex justify-end gap-3">
-                    <button
-                        onClick={() => onOpenChange(false)}
-                        className="px-6 py-3 rounded-2xl text-stone-400 font-black uppercase tracking-widest hover:bg-stone-200 transition-all text-[11px]"
-                        disabled={loading}
-                    >
-                        Hủy bỏ
-                    </button>
-                    <button
-                        onClick={handleSave}
-                        disabled={loading || fetchingRules}
-                        className="flex items-center gap-3 px-10 py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest hover:bg-indigo-700 active:scale-95 transition-all text-[11px] shadow-lg shadow-indigo-200 disabled:opacity-50"
-                    >
-                        {loading ? (
-                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                        ) : (
-                            <Save size={18} />
-                        )}
-                        Lưu cấu hình
-                    </button>
+                    {/* Footer */}
+                    <div className="px-8 py-5 bg-stone-50 border-t border-stone-100 flex justify-between items-center gap-3">
+                        <div>
+                            {hasExistingInternal && (
+                                <button
+                                    type="button"
+                                    onClick={() => setIsConfirmDeleteOpen(true)}
+                                    disabled={loading || deleting}
+                                    className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 border border-red-200 text-[11px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-50"
+                                >
+                                    {deleting ? (
+                                        <div className="w-4 h-4 border-2 border-red-600/30 border-t-red-600 rounded-full animate-spin" />
+                                    ) : (
+                                        <Trash2 size={16} />
+                                    )}
+                                    Xóa mã nội bộ
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => onOpenChange(false)}
+                                className="px-6 py-3 rounded-2xl text-stone-400 font-black uppercase tracking-widest hover:bg-stone-200 transition-all text-[11px]"
+                                disabled={loading || deleting}
+                            >
+                                Hủy bỏ
+                            </button>
+                            <button
+                                onClick={handleSave}
+                                disabled={loading || deleting || fetchingRules}
+                                className="flex items-center gap-3 px-10 py-3 rounded-2xl bg-indigo-600 text-white font-black uppercase tracking-widest hover:bg-indigo-700 active:scale-95 transition-all text-[11px] shadow-lg shadow-indigo-200 disabled:opacity-50"
+                            >
+                                {loading ? (
+                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                ) : (
+                                    <Save size={18} />
+                                )}
+                                Lưu cấu hình
+                            </button>
+                        </div>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <ConfirmDialog
+                isOpen={isConfirmDeleteOpen}
+                title="Xóa mã nội bộ"
+                message={`Bạn có chắc chắn muốn xóa mã nội bộ của sản phẩm "${product?.name}" không?\n\nSau khi xóa, sản phẩm này sẽ trở về trạng thái "Chưa thiết lập".`}
+                confirmText="Xóa mã nội bộ"
+                cancelText="Hủy bỏ"
+                variant="danger"
+                onConfirm={executeDeleteInternal}
+                onCancel={() => setIsConfirmDeleteOpen(false)}
+            />
+        </>
     )
 }

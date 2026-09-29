@@ -18,6 +18,7 @@ export interface SearchReportExcelItem {
     quantity: number;
     unit: string;
     lotCode: string;
+    lotStt?: string;
     productionName?: string;
     tags?: string;
     notes?: string;
@@ -76,13 +77,14 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         { header: 'Số lượng', key: 'quantity', width: 14 },
         { header: 'ĐVT', key: 'unit', width: 10 },
         { header: 'Mã LOT', key: 'lotCode', width: 18 },
+        { header: 'STT LOT', key: 'lotStt', width: 12 },
         { header: 'Lệnh sản xuất', key: 'productionName', width: 22 },
         { header: 'Mã phụ / Tags', key: 'tags', width: 20 },
         { header: 'Ghi chú', key: 'notes', width: 25 },
     ];
 
     // Banner & Metadata Header
-    wsDetail.mergeCells('A1:N1');
+    wsDetail.mergeCells('A1:O1');
     const titleCell = wsDetail.getCell('A1');
     titleCell.value = 'BÁO CÁO VỊ TRÍ HÀNG HÓA THEO NGÀY';
     titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
@@ -95,7 +97,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     wsDetail.getRow(1).height = 36;
 
     // Company & Warehouse
-    wsDetail.mergeCells('A2:N2');
+    wsDetail.mergeCells('A2:O2');
     const compCell = wsDetail.getCell('A2');
     compCell.value = `${companyName} | Kho: ${systemName || 'Tất cả kho'}`;
     compCell.font = { bold: true, size: 11, color: { argb: '065F46' } };
@@ -103,7 +105,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     wsDetail.getRow(2).height = 20;
 
     // Filter & Export Time
-    wsDetail.mergeCells('A3:N3');
+    wsDetail.mergeCells('A3:O3');
     const infoCell = wsDetail.getCell('A3');
     infoCell.value = `Tìm kiếm: "${filterLabel}" | Tiêu chuẩn ngày: ${dateFieldDescription} | Thời gian xuất: ${exportTimeStr}`;
     infoCell.font = { italic: true, size: 10, color: { argb: '334155' } };
@@ -111,7 +113,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     wsDetail.getRow(3).height = 18;
 
     // Sort & Summary stats
-    wsDetail.mergeCells('A4:N4');
+    wsDetail.mergeCells('A4:O4');
     const sortCell = wsDetail.getCell('A4');
     sortCell.value = `Sắp xếp: ${sortDescription} | Tổng vị trí: ${totalPositions.toLocaleString()} vị trí | Tổng số lượng: ${totalQuantity.toLocaleString()}`;
     sortCell.font = { bold: true, size: 10, color: { argb: '047857' } };
@@ -138,6 +140,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         'Số lượng',
         'ĐVT',
         'Mã LOT',
+        'STT LOT',
         'Lệnh sản xuất',
         'Mã phụ / Tags',
         'Ghi chú'
@@ -227,18 +230,25 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         row.getCell(11).value = item.lotCode || '';
         row.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 12. Lệnh sản xuất
-        row.getCell(12).value = item.productionName || '';
-        row.getCell(12).alignment = { horizontal: 'left', vertical: 'middle' };
+        // 12. STT LOT
+        row.getCell(12).value = item.lotStt || '-';
+        if (item.lotStt) {
+            row.getCell(12).font = { bold: true, color: { argb: '047857' } }; // Emerald 700
+        }
+        row.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 13. Mã phụ / Tags
-        row.getCell(13).value = item.tags || '';
-        row.getCell(13).font = { color: { argb: '7E22CE' } }; // Purple 700
+        // 13. Lệnh sản xuất
+        row.getCell(13).value = item.productionName || '';
         row.getCell(13).alignment = { horizontal: 'left', vertical: 'middle' };
 
-        // 14. Ghi chú
-        row.getCell(14).value = item.notes || '';
+        // 14. Mã phụ / Tags
+        row.getCell(14).value = item.tags || '';
+        row.getCell(14).font = { color: { argb: '7E22CE' } }; // Purple 700
         row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle' };
+
+        // 15. Ghi chú
+        row.getCell(15).value = item.notes || '';
+        row.getCell(15).alignment = { horizontal: 'left', vertical: 'middle' };
 
         // Borders & Background
         for (let c = 1; c <= columnHeaders.length; c++) {

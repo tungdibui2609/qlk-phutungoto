@@ -52,6 +52,29 @@ type Lot = Database['public']['Tables']['lots']['Row'] & {
     positions?: { code: string }[]
 }
 
+function safeFormatDate(dateVal: string | null | undefined, fmt: string = 'dd/MM/yyyy', fallback: string = '---'): string {
+    if (!dateVal) return fallback
+    try {
+        const d = new Date(dateVal)
+        if (isNaN(d.getTime())) return fallback
+        return format(d, fmt)
+    } catch {
+        return fallback
+    }
+}
+
+function getLotDateStr(l: any): string {
+    if (l?.inbound_date) return l.inbound_date.split('T')[0]
+    if (l?.created_at) {
+        try {
+            return format(new Date(l.created_at), 'yyyy-MM-dd')
+        } catch {
+            return l.created_at.split('T')[0]
+        }
+    }
+    return ''
+}
+
 export default function AssignmentApprovalPage() {
     const { currentSystem } = useSystem()
     const { profile } = useUser()
@@ -253,7 +276,7 @@ export default function AssignmentApprovalPage() {
 
             // 3. Keep allPositions updated for dropdowns and edits
             const { data: allPosData } = await (supabase.from('positions') as any)
-                .select('id, code, lot_id')
+                .select('id, code, lot_id, lots!fk_positions_lot_id(id, code, daily_seq)')
                 .eq('system_type', currentSystem.code)
                 .limit(10000) // Support up to 10k positions to avoid limit 1000 issue
             const safePosData = allPosData || []
@@ -554,7 +577,7 @@ export default function AssignmentApprovalPage() {
 
             const lotsMap: Record<string, any[]> = {}
             processedLots.forEach((l: any) => {
-                const date = l.inbound_date?.split('T')[0]
+                const date = getLotDateStr(l)
                 if (date) {
                     const key = `${date}_${l.daily_seq}`
                     if (!lotsMap[key]) lotsMap[key] = []
@@ -587,8 +610,11 @@ export default function AssignmentApprovalPage() {
                         matchedLots = processedLots
                             .filter(l => l.daily_seq === h.lot_stt)
                             .sort((a, b) => {
-                                const distA = Math.abs(new Date(a.inbound_date).getTime() - new Date(h.production_date).getTime());
-                                const distB = Math.abs(new Date(b.inbound_date).getTime() - new Date(h.production_date).getTime());
+                                const timeA = new Date(a.inbound_date || a.created_at || 0).getTime() || 0;
+                                const timeB = new Date(b.inbound_date || b.created_at || 0).getTime() || 0;
+                                const targetTime = new Date(h.production_date || 0).getTime() || 0;
+                                const distA = Math.abs(timeA - targetTime);
+                                const distB = Math.abs(timeB - targetTime);
                                 return distA - distB;
                             });
                     }
@@ -1194,8 +1220,8 @@ export default function AssignmentApprovalPage() {
         const unassignedLots = allMatchedLotsRaw.filter(l => getLotPositions(l).length === 0)
         const allMatchedLots = showOnlyUnassigned && unassignedLots.length > 0 ? unassignedLots : allMatchedLotsRaw
 
-        // Khớp chính xác ngày sản xuất (inbound_date) với ngày quét (production_date)
-        const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+        // Khớp chính xác ngày sản xuất (inbound_date hoặc created_at) với ngày quét (production_date)
+        const dateMatchedLots = allMatchedLots.filter(l => getLotDateStr(l) === ass.production_date)
         let perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
 
         // Khi người dùng chủ động tích chọn (allowMove = true) và không có lô khớp ngày hôm nay:
@@ -1782,7 +1808,7 @@ export default function AssignmentApprovalPage() {
                                 const unassignedLots = allMatchedLotsRaw.filter(l => getLotPositions(l).length === 0)
                                 // Nếu bật lọc và có lô chưa gán, ưu tiên các lô chưa gán; nếu không có lô chưa gán thì hiển thị toàn bộ để không ẩn vị trí
                                 const allMatchedLots = (showOnlyUnassigned && unassignedLots.length > 0) ? unassignedLots : allMatchedLotsRaw
-                                const dateMatchedLots = allMatchedLots.filter(l => l.inbound_date?.split('T')[0] === ass.production_date)
+                                const dateMatchedLots = allMatchedLots.filter(l => getLotDateStr(l) === ass.production_date)
                                 const perfectMatch = dateMatchedLots.length === 1 ? dateMatchedLots[0] : null
 
                                 // Danh sách lô trùng STT để hiển thị
@@ -1837,7 +1863,7 @@ export default function AssignmentApprovalPage() {
                                                                 {manualEdits[ass.id]?.position_code || ass.position?.code || '---'}
                                                             </span>
                                                             <span className="text-[8px] text-zinc-500 font-bold uppercase tracking-wider">
-                                                                SX: {format(new Date(ass.production_date), 'dd/MM/yyyy')}
+                                                                SX: {safeFormatDate(ass.production_date)}
                                                             </span>
                                                         </div>
                                                     </div>
@@ -1845,12 +1871,17 @@ export default function AssignmentApprovalPage() {
                                                     {/* Cảnh báo vị trí đích đang bị chiếm bởi lô khác */}
                                                     {(() => {
                                                         const targetPosCode = manualEdits[ass.id]?.position_code || ass.position?.code
+                                                        if (!targetPosCode || targetPosCode === '---') return null
                                                         const pos = allPositions.find(p => p.code === targetPosCode)
                                                         if (pos?.lot_id) {
-                                                            const occupant = lotsInDay.find(l => l.id === pos.lot_id)
+                                                            if (perfectMatch && pos.lot_id === perfectMatch.id) return null
+                                                            const occupant = lotsInDay.find(l => l.id === pos.lot_id) || (pos as any).lots
+                                                            const occupantStt = occupant?.daily_seq ? decodeSTT(occupant.daily_seq) : ''
+                                                            const occupantCode = occupant?.code || ''
                                                             return (
-                                                                <div className="px-2 py-0.5 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg text-[8px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1">
-                                                                    <AlertTriangle size={9} className="shrink-0" /> Đang chứa: #{decodeSTT(occupant?.daily_seq)} {occupant?.code}
+                                                                <div className="px-2 py-0.5 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/20 rounded-lg text-[8px] font-bold text-red-600 dark:text-red-400 flex items-center gap-1" title={occupantCode ? `Vị trí này đang chứa lô ${occupantCode}` : 'Vị trí này đang có hàng'}>
+                                                                    <AlertTriangle size={9} className="shrink-0" />
+                                                                    <span>Đang chứa: {occupantStt ? `STT #${occupantStt} ` : ''}{occupantCode ? `(${occupantCode})` : 'Có hàng'}</span>
                                                                 </div>
                                                             )
                                                         }
@@ -1950,7 +1981,7 @@ export default function AssignmentApprovalPage() {
                                                                         <div className="min-w-0 flex-1">
                                                                             <div className="flex items-center gap-2 flex-wrap">
                                                                                 <span className="text-[8px] font-bold px-1.5 py-0.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
-                                                                                    SX: {format(new Date(l.inbound_date||''), 'dd/MM/yyyy')}
+                                                                                    SX: {safeFormatDate(l.inbound_date || l.created_at)}
                                                                                 </span>
                                                                                 <span className="text-[10px] font-black text-zinc-900 dark:text-white truncate">
                                                                                     {l.code}
@@ -2138,7 +2169,7 @@ export default function AssignmentApprovalPage() {
                                                 onClick={() => {
                                                     exportAssignmentHistoryToExcel({
                                                         systemName: currentSystem?.name || 'Unknown System',
-                                                        dateRange: `${format(new Date(historyDateFrom), 'dd/MM/yyyy')} - ${format(new Date(historyDateTo), 'dd/MM/yyyy')}`,
+                                                        dateRange: `${safeFormatDate(historyDateFrom)} - ${safeFormatDate(historyDateTo)}`,
                                                         items: filteredHistory
                                                     });
                                                 }} 
@@ -2269,7 +2300,7 @@ export default function AssignmentApprovalPage() {
                                                             )}
                                                         </td>
                                                         <td className="px-4 py-3 text-zinc-500 font-medium">
-                                                            {format(new Date(h.production_date), 'dd/MM/yyyy')}
+                                                            {safeFormatDate(h.production_date)}
                                                         </td>
                                                         <td className="px-4 py-3">
                                                             <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase ${h.status.startsWith('approved') ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400'}`}>
@@ -2307,7 +2338,7 @@ export default function AssignmentApprovalPage() {
                                         <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center font-black text-xs text-zinc-900 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 shadow-sm group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">#{decodeSTT(lot.daily_seq)}</div>
                                         <div>
                                             <div className="text-sm font-black text-zinc-900 dark:text-zinc-100">{lot.code}</div>
-                                            <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-wider">{lot.inbound_date ? format(new Date(lot.inbound_date), 'dd/MM/yyyy') : '---'}</div>
+                                            <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-wider">{safeFormatDate(lot.inbound_date || lot.created_at)}</div>
                                         </div>
                                     </div>
                                     {lot.positions?.[0]?.code ? (

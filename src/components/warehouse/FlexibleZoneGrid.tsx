@@ -43,7 +43,7 @@ interface FlexibleZoneGridProps {
     onConfigureZone?: (zone: Zone) => void
     highlightLotId?: string | null
     highlightingPositionIds?: Set<string>
-    lotInfo?: Record<string, { id: string, code: string, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[], productions?: { code: string, name: string }, production_lot_code?: string }>
+    lotInfo?: Record<string, { id: string, code: string, daily_seq?: number | string | null, items: Array<{ product_name: string, sku: string, unit: string, quantity: number, tags?: string[] }>, inbound_date?: string, created_at?: string, packaging_date?: string, peeling_date?: string, tags?: string[], productions?: { code: string, name: string }, production_lot_code?: string }>
     pageBreakIds?: Set<string>
     onTogglePageBreak?: (zoneId: string) => void
     onPrintZone?: (zoneId: string) => void

@@ -71,7 +71,7 @@ export const LotMergeHistoryModal: React.FC<LotMergeHistoryModalProps> = ({ data
                             <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                 <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                     <Factory size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Bóc múi</span>
+                                    <span className="text-[10px] font-bold uppercase tracking-wider">Ngày sản xuất</span>
                                 </div>
                                 <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
                                     {data.peeling_date ? new Date(data.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}

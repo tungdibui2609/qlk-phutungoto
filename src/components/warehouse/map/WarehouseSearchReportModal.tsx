@@ -25,6 +25,7 @@ import {
     exportWarehouseSearchReportToExcel, 
     SearchReportExcelItem 
 } from '@/lib/warehouseSearchReportExcelExport'
+import { decodeSTT } from '@/lib/numberUtils'
 
 export type SortByField = 'date' | 'position' | 'product_name' | 'sku' | 'quantity'
 export type SortOrder = 'asc' | 'desc'
@@ -129,7 +130,7 @@ export function WarehouseSearchReportModal({
                     return { date: lot.packaging_date || null, type: 'Ngày đóng gói' }
                 }
                 if (dateField === 'peeling_date') {
-                    return { date: lot.peeling_date || null, type: 'Ngày bóc múi' }
+                    return { date: lot.peeling_date || null, type: 'Ngày sản xuất' }
                 }
                 if (dateField === 'created_at') {
                     return { date: lot.created_at || null, type: 'Ngày tạo' }
@@ -137,7 +138,7 @@ export function WarehouseSearchReportModal({
                 // 'auto': prioritize inbound -> packaging -> peeling -> created_at
                 if (lot.inbound_date) return { date: lot.inbound_date, type: 'Ngày nhập kho' }
                 if (lot.packaging_date) return { date: lot.packaging_date, type: 'Ngày đóng gói' }
-                if (lot.peeling_date) return { date: lot.peeling_date, type: 'Ngày bóc múi' }
+                if (lot.peeling_date) return { date: lot.peeling_date, type: 'Ngày sản xuất' }
                 if (lot.created_at) return { date: lot.created_at, type: 'Ngày tạo' }
                 return { date: null, type: 'Chưa có ngày' }
             }
@@ -148,6 +149,8 @@ export function WarehouseSearchReportModal({
             const peelingDateFormatted = lot.peeling_date ? formatDateDisplay(lot.peeling_date) : undefined
             const inboundDateFormatted = lot.inbound_date ? formatDateDisplay(lot.inbound_date) : undefined
             const prodName = lot.productions?.name || lot.production_code || undefined
+
+            const lotStt = lot.daily_seq ? decodeSTT(lot.daily_seq) : ''
 
             if (lot.items && lot.items.length > 0) {
                 lot.items.forEach((item: any) => {
@@ -166,6 +169,7 @@ export function WarehouseSearchReportModal({
                         quantity: Number(item.quantity) || 0,
                         unit: item.unit || lot.products?.unit || '',
                         lotCode: lot.code || '',
+                        lotStt: lotStt || undefined,
                         productionName: prodName,
                         tags: item.tags?.join(', ') || lot.tags?.join(', ') || undefined,
                         notes: lot.notes || undefined
@@ -187,6 +191,7 @@ export function WarehouseSearchReportModal({
                     quantity: Number(lot.quantity) || 0,
                     unit: lot.products.unit || '',
                     lotCode: lot.code || '',
+                    lotStt: lotStt || undefined,
                     productionName: prodName,
                     tags: lot.tags?.join(', ') || undefined,
                     notes: lot.notes || undefined
@@ -207,6 +212,7 @@ export function WarehouseSearchReportModal({
                 item.sku.toLowerCase().includes(q) ||
                 item.positionCode.toLowerCase().includes(q) ||
                 item.lotCode.toLowerCase().includes(q) ||
+                (item.lotStt && item.lotStt.toLowerCase().includes(q)) ||
                 (item.zonePath && item.zonePath.toLowerCase().includes(q)) ||
                 (item.productionName && item.productionName.toLowerCase().includes(q)) ||
                 (item.tags && item.tags.toLowerCase().includes(q))
@@ -393,7 +399,7 @@ export function WarehouseSearchReportModal({
                 auto: 'Tự động',
                 inbound_date: 'Ngày nhập kho',
                 packaging_date: 'Ngày đóng gói',
-                peeling_date: 'Ngày bóc múi',
+                peeling_date: 'Ngày sản xuất',
                 created_at: 'Ngày tạo'
             }
 
@@ -632,7 +638,7 @@ export function WarehouseSearchReportModal({
                                 <option value="auto" className="dark:bg-slate-800">Ngày: Tự động</option>
                                 <option value="inbound_date" className="dark:bg-slate-800">Ngày: Nhập kho</option>
                                 <option value="packaging_date" className="dark:bg-slate-800">Ngày: Đóng gói</option>
-                                <option value="peeling_date" className="dark:bg-slate-800">Ngày: Bóc múi</option>
+                                <option value="peeling_date" className="dark:bg-slate-800">Ngày: Sản xuất</option>
                                 <option value="created_at" className="dark:bg-slate-800">Ngày: Tạo lô</option>
                             </select>
                         </div>
@@ -764,7 +770,7 @@ export function WarehouseSearchReportModal({
                                         </th>
 
                                         <th className="py-2.5 px-3 text-center w-16">ĐVT</th>
-                                        <th className="py-2.5 px-3 text-center w-28">Mã LOT</th>
+                                        <th className="py-2.5 px-3 text-center w-32">Mã LOT / STT</th>
                                         <th className="py-2.5 px-3 w-32">Lệnh sản xuất</th>
                                         <th className="py-2.5 px-3 w-28">Ghi chú</th>
                                     </tr>
@@ -811,8 +817,17 @@ export function WarehouseSearchReportModal({
                                                 <td className="py-2 px-3 text-center text-slate-500">
                                                     {item.unit}
                                                 </td>
-                                                <td className="py-2 px-3 text-center font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                                                    {item.lotCode || '--'}
+                                                <td className="py-2 px-3 text-center">
+                                                    <div className="flex flex-col items-center justify-center gap-0.5">
+                                                        {item.lotStt && (
+                                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white shadow-2xs leading-none">
+                                                                STT: {item.lotStt}
+                                                            </span>
+                                                        )}
+                                                        <span className="font-mono text-[11px] text-slate-600 dark:text-slate-400">
+                                                            {item.lotCode || '--'}
+                                                        </span>
+                                                    </div>
                                                 </td>
                                                 <td className="py-2 px-3 text-[11px] text-rose-600 dark:text-rose-400 font-medium truncate max-w-[130px]" title={item.productionName}>
                                                     {item.productionName || '--'}

@@ -1177,27 +1177,8 @@ export function LotForm({
                         </div>
                     )}
 
-                    {/* Ngày bóc múi */}
+                    {/* Ngày sản xuất (trước đây là Ngày bóc múi) */}
                     {hasModule('peeling_date') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày bóc múi
-                            </label>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={peelingDate}
-                                    onChange={(e) => setPeelingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
-                                    style={{ colorScheme: 'light dark' }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Ngày đóng bao bì -> Ngày sản xuất */}
-                    {hasModule('packaging_date') && (
                         <div className="space-y-2">
                             <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                                 Ngày sản xuất
@@ -1206,10 +1187,29 @@ export function LotForm({
                                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                                 <input
                                     type="date"
-                                    value={packagingDate}
-                                    onChange={(e) => setPackagingDate(e.target.value)}
+                                    value={peelingDate}
+                                    onChange={(e) => setPeelingDate(e.target.value)}
                                     disabled={lotItems.some(item => !!item.productionLotId)}
                                     className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-zinc-900"
+                                    style={{ colorScheme: 'light dark' }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Ngày đóng bao bì */}
+                    {hasModule('packaging_date') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                Ngày đóng bao bì
+                            </label>
+                            <div className="relative">
+                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
+                                <input
+                                    type="date"
+                                    value={packagingDate}
+                                    onChange={(e) => setPackagingDate(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
                                     style={{ colorScheme: 'light dark' }}
                                 />
                             </div>
@@ -1375,7 +1375,7 @@ export function LotForm({
                                                         if (selectedProduction && selectedProduction.production_lots) {
                                                             const pLot = selectedProduction.production_lots.find((pl: any) => pl.id === lotId)
                                                             if (pLot && pLot.production_date) {
-                                                                setPackagingDate(pLot.production_date)
+                                                                setPeelingDate(pLot.production_date)
                                                             }
                                                         }
                                                     }

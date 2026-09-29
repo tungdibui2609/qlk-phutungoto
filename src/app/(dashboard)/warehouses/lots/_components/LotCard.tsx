@@ -487,7 +487,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             <div className="p-3 flex-1 flex flex-col">
                 {/* Dates Grid */}
                 <div className="grid grid-cols-2 gap-2 mb-2">
-                    {/* Hàng 1: Nguyên liệu & Bóc múi */}
+                    {/* Hàng 1: Nguyên liệu & Sản xuất */}
                     {isModuleEnabled('raw_material_date') && (
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
                             <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày nhập nguyên liệu</div>
@@ -499,7 +499,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
 
                     {isModuleEnabled('peeling_date') && (
                         <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
-                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày bóc múi</div>
+                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày sản xuất</div>
                             <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
                                 {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
                             </div>

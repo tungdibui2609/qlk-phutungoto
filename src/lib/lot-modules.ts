@@ -24,8 +24,8 @@ export const LOT_MODULES: LotModule[] = [
     },
     {
         id: 'peeling_date',
-        name: 'Ngày bóc múi',
-        description: 'Hiển thị trường ngày bóc múi.',
+        name: 'Ngày sản xuất',
+        description: 'Hiển thị trường ngày sản xuất / bóc múi.',
         icon: Calendar
     },
     {

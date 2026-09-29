@@ -8,6 +8,17 @@ interface AssignmentHistoryExportData {
     items: any[];
 }
 
+function safeFormatDate(dateVal: string | null | undefined, fmt: string = 'dd/MM/yyyy', fallback: string = '---'): string {
+    if (!dateVal) return fallback;
+    try {
+        const d = new Date(dateVal);
+        if (isNaN(d.getTime())) return fallback;
+        return format(d, fmt);
+    } catch {
+        return fallback;
+    }
+}
+
 export async function exportAssignmentHistoryToExcel(data: AssignmentHistoryExportData) {
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet('Lich Su Gan Vi Tri');
@@ -92,8 +103,8 @@ export async function exportAssignmentHistoryToExcel(data: AssignmentHistoryExpo
             targetPos: item.position?.code || '---',
             type: item.assignment_type === 'move' ? 'Di chuyển' : (item.assignment_type === 'new' ? 'Gán mới' : '---'),
             oldPos: item.old_position_code || (item.assignment_type === 'new' ? 'Sảnh' : '---'),
-            prodDate: format(new Date(item.production_date), 'dd/MM/yyyy'),
-            approveDate: format(new Date(item.created_at), 'dd/MM/yyyy HH:mm'),
+            prodDate: safeFormatDate(item.production_date, 'dd/MM/yyyy'),
+            approveDate: safeFormatDate(item.created_at, 'dd/MM/yyyy HH:mm'),
             status: item.status === 'approved' || item.status.startsWith('approved') ? 'Đã duyệt' : 'Đã hủy'
         });
 

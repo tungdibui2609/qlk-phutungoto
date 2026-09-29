@@ -3,6 +3,7 @@ import { ChevronDown, MoreHorizontal, CheckSquare, Square, Eye, ArrowUpDown, Boo
 import { Database } from '@/lib/database.types'
 import { PositionWithZone } from '../_hooks/useWarehouseData'
 import { advancedMatchSearch } from '@/lib/searchUtils'
+import { decodeSTT } from '@/lib/numberUtils'
 import { WarehouseSearchReportModal } from '@/components/warehouse/map/WarehouseSearchReportModal'
 
 
@@ -52,6 +53,7 @@ const MemoizedPositionCard = React.memo(function PositionCard({
     searchTerm
 }: PositionCardProps) {
     const hasLot = !!pos.lot_id
+    const lotStt = lot?.daily_seq ? decodeSTT(lot.daily_seq) : ''
 
     const searchStatus = React.useMemo(() => {
         if (!searchTerm || !lot || !lot.box_labels || lot.box_labels.length === 0) {
@@ -64,6 +66,10 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                 label.code,
                 label.semi_finished_lot_code || '',
                 label.finished_lot_code || '',
+                lot.code || '',
+                lotStt || '',
+                lotStt ? `STT: ${lotStt}` : '',
+                lotStt ? `#${lotStt}` : '',
                 lot.products?.name || '',
                 lot.products?.sku || '',
                 lot.products?.internal_code || '',
@@ -174,6 +180,25 @@ const MemoizedPositionCard = React.memo(function PositionCard({
             </div>
             {lot ? (
                 <div className="flex flex-col gap-1 flex-1 justify-start overflow-hidden pt-1">
+                    {/* Lot STT at the top */}
+                    <div className="flex items-center justify-center shrink-0 px-0.5 mb-1">
+                        {lotStt ? (
+                            <span 
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[8.5px] font-black bg-emerald-600 text-white shadow-2xs leading-none tracking-tight" 
+                                title={lot.code ? `Số thứ tự LOT: ${lotStt} (Mã LOT: ${lot.code})` : `Số thứ tự LOT: ${lotStt}`}
+                            >
+                                STT: {lotStt}
+                            </span>
+                        ) : (
+                            <span 
+                                className="inline-flex items-center px-1 py-0.2 rounded text-[7.5px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 leading-none" 
+                                title={lot.code ? `Lô hàng này chưa được gán STT (Mã LOT: ${lot.code})` : "Lô hàng này chưa được gán STT"}
+                            >
+                                Ko có STT
+                            </span>
+                        )}
+                    </div>
+
                     {/* Production Order Tag */}
                     {lot.productions?.name ? (
                         <div className="mb-1 shrink-0">
@@ -244,29 +269,47 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                             {lot.notes}
                         </div>
                     )}
+                    {/* Date info at bottom: Ngày sản xuất trên, Ngày nhập kho dưới */}
+                    {(() => {
+                        const formatDate = (dateStr: string) => {
+                            if (!dateStr) return '';
+                            const d = new Date(dateStr);
+                            const day = String(d.getDate()).padStart(2, '0');
+                            const month = String(d.getMonth() + 1).padStart(2, '0');
+                            const year = String(d.getFullYear()).slice(-2);
+                            return `${day}/${month}/${year}`;
+                        };
+
+                        const mfg = lot.peeling_date ? `SX:${formatDate(lot.peeling_date)}` : '';
+                        const inbound = lot.inbound_date ? `N:${formatDate(lot.inbound_date)}` : '';
+                        const packaging = (!mfg && !inbound && lot.packaging_date) ? `Đ:${formatDate(lot.packaging_date)}` : '';
+
+                        if (!mfg && !inbound && !packaging) return null;
+
+                        return (
+                            <div className="flex flex-col items-center justify-center w-full px-0.5 mt-auto pt-0.5 text-[8px] text-gray-500 dark:text-gray-400 font-mono shrink-0 leading-tight">
+                                {mfg && (
+                                    <span className="w-full text-center truncate" title={`Ngày sản xuất: ${formatDate(lot.peeling_date)}`}>
+                                        {mfg}
+                                    </span>
+                                )}
+                                {inbound && (
+                                    <span className="w-full text-center truncate" title={`Ngày nhập kho: ${formatDate(lot.inbound_date)}`}>
+                                        {inbound}
+                                    </span>
+                                )}
+                                {packaging && (
+                                    <span className="w-full text-center truncate" title={`Ngày đóng bao bì: ${formatDate(lot.packaging_date)}`}>
+                                        {packaging}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
             ) : (
                 <div className="text-slate-400 italic mt-auto text-[10px] text-center mb-auto pt-2">Trống</div>
             )}
-            {/* Date info - same logic as FlexibleZoneGrid */}
-            {lot && (() => {
-                const dates: string[] = []
-                if (lot.peeling_date) {
-                    dates.push(`B: ${new Date(lot.peeling_date).toLocaleDateString('vi-VN')}`)
-                }
-                if (lot.packaging_date) {
-                    dates.push(`Đ: ${new Date(lot.packaging_date).toLocaleDateString('vi-VN')}`)
-                }
-                if (lot.inbound_date && !lot.peeling_date && !lot.packaging_date) {
-                    dates.push(`N: ${new Date(lot.inbound_date).toLocaleDateString('vi-VN')}`)
-                }
-                if (dates.length === 0) return null
-                return (
-                    <div className="text-[8px] text-emerald-700 dark:text-emerald-300 font-bold text-center border-t border-slate-100 dark:border-slate-700/50 pt-0.5 mt-auto leading-tight">
-                        {dates.join(' | ')}
-                    </div>
-                )
-            })()}
         </div>
     )
 }, (prev, next) => {

@@ -4,6 +4,7 @@ import { Eye, MoreHorizontal, Package, Bookmark, Lock } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { advancedMatchSearch } from '@/lib/searchUtils'
+import { decodeSTT } from '@/lib/numberUtils'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -41,6 +42,7 @@ const PositionCell = React.memo<{
     onPositionSelect, onViewDetails, onPositionMenu, onEditMarkNote, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
 }) => {
     const ids = (pos as any).realIds || [pos.id]
+    const lotStt = lotDetail?.daily_seq ? decodeSTT(lotDetail.daily_seq) : ''
 
     const searchStatus = React.useMemo(() => {
         if (!searchTerm || !lotDetail || !lotDetail.box_labels || lotDetail.box_labels.length === 0) {
@@ -53,6 +55,10 @@ const PositionCell = React.memo<{
                 label.code,
                 label.semi_finished_lot_code || '',
                 label.finished_lot_code || '',
+                lotDetail.code || '',
+                lotStt || '',
+                lotStt ? `STT: ${lotStt}` : '',
+                lotStt ? `#${lotStt}` : '',
                 lotDetail.products?.name || '',
                 lotDetail.products?.sku || '',
                 lotDetail.products?.internal_code || '',
@@ -291,8 +297,31 @@ const PositionCell = React.memo<{
                             </div>
                         </div>
                     )}
-                    <div className={`${isGrouped ? 'text-[8px]' : 'text-[10px]'} font-bold leading-tight w-full text-center shrink-0 ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'line-clamp-1 text-ellipsis overflow-hidden'}`}>
-                        {lotDetail.code}
+                    {/* Lot STT / Code at top */}
+                    <div className="flex items-center justify-center gap-1 w-full shrink-0 px-0.5 flex-wrap">
+                        {lotStt ? (
+                            <span 
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-600 text-white shadow-2xs leading-none tracking-tight shrink-0" 
+                                title={lotDetail.code ? `Số thứ tự LOT: ${lotStt} (Mã LOT: ${lotDetail.code})` : `Số thứ tự LOT: ${lotStt}`}
+                            >
+                                STT: {lotStt}
+                            </span>
+                        ) : (
+                            <span 
+                                className="inline-flex items-center px-1 py-0.2 rounded text-[7.5px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 leading-none shrink-0" 
+                                title={lotDetail.code ? `Lô hàng này chưa được gán STT (Mã LOT: ${lotDetail.code})` : "Lô hàng này chưa được gán STT"}
+                            >
+                                Ko có STT
+                            </span>
+                        )}
+                        {!searchTerm && !lotStt && (
+                            <span 
+                                className={`${isGrouped ? 'text-[8px]' : 'text-[9.5px]'} font-bold leading-tight ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'truncate max-w-full'}`} 
+                                title={lotDetail.code}
+                            >
+                                {lotDetail.code}
+                            </span>
+                        )}
                     </div>
 
                     {lotDetail.productions?.name && (
@@ -340,37 +369,43 @@ const PositionCell = React.memo<{
                         })}
                     </div>
 
-                    <div className="flex justify-between items-center w-full px-0.5 pt-0.5 opacity-80 text-[8px] text-gray-500 dark:text-gray-400 mt-auto font-mono">
-                        {(() => {
-                            const formatDate = (dateStr: string) => {
-                                if (!dateStr) return '';
-                                const d = new Date(dateStr);
-                                const day = String(d.getDate()).padStart(2, '0');
-                                const month = String(d.getMonth() + 1).padStart(2, '0');
-                                const year = String(d.getFullYear()).slice(-2);
-                                return `${day}/${month}/${year}`;
-                            };
+                    {/* Date info at bottom: Ngày sản xuất trên, Ngày nhập kho dưới */}
+                    {(() => {
+                        const formatDate = (dateStr: string) => {
+                            if (!dateStr) return '';
+                            const d = new Date(dateStr);
+                            const day = String(d.getDate()).padStart(2, '0');
+                            const month = String(d.getMonth() + 1).padStart(2, '0');
+                            const year = String(d.getFullYear()).slice(-2);
+                            return `${day}/${month}/${year}`;
+                        };
 
-                            const peeling = lotDetail.peeling_date ? `B:${formatDate(lotDetail.peeling_date)}` : '';
-                            const packaging = lotDetail.packaging_date ? `Đ:${formatDate(lotDetail.packaging_date)}` : '';
-                            const inbound = lotDetail.inbound_date && !lotDetail.peeling_date && !lotDetail.packaging_date
-                                ? `N:${formatDate(lotDetail.inbound_date)}`
-                                : '';
+                        const mfg = lotDetail.peeling_date ? `SX:${formatDate(lotDetail.peeling_date)}` : '';
+                        const inbound = lotDetail.inbound_date ? `N:${formatDate(lotDetail.inbound_date)}` : '';
+                        const packaging = (!mfg && !inbound && lotDetail.packaging_date) ? `Đ:${formatDate(lotDetail.packaging_date)}` : '';
 
-                            if (peeling && packaging) {
-                                return (
-                                    <>
-                                        <span className="shrink-0">{peeling}</span>
-                                        <span className="text-gray-300 dark:text-gray-600">|</span>
-                                        <span className="shrink-0">{packaging}</span>
-                                    </>
-                                );
-                            }
+                        if (!mfg && !inbound && !packaging) return null;
 
-                            const display = peeling || packaging || inbound;
-                            return <span className="w-full text-center">{display}</span>;
-                        })()}
-                    </div>
+                        return (
+                            <div className="flex flex-col items-center justify-center w-full px-0.5 mt-auto pt-0.5 text-[8px] text-gray-500 dark:text-gray-400 font-mono shrink-0 leading-tight">
+                                {mfg && (
+                                    <span className="w-full text-center truncate" title={`Ngày sản xuất: ${formatDate(lotDetail.peeling_date)}`}>
+                                        {mfg}
+                                    </span>
+                                )}
+                                {inbound && (
+                                    <span className="w-full text-center truncate" title={`Ngày nhập kho: ${formatDate(lotDetail.inbound_date)}`}>
+                                        {inbound}
+                                    </span>
+                                )}
+                                {packaging && (
+                                    <span className="w-full text-center truncate" title={`Ngày đóng bao bì: ${formatDate(lotDetail.packaging_date)}`}>
+                                        {packaging}
+                                    </span>
+                                )}
+                            </div>
+                        );
+                    })()}
                 </div>
             ) : (
                 !isEmptyMode && (

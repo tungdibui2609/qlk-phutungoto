@@ -4,6 +4,7 @@ import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { PositionWithZone } from './useWarehouseData'
 import { matchSearch, advancedMatchSearch } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { decodeSTT } from '@/lib/numberUtils'
 
 interface UseMapFiltersProps {
     positions: PositionWithZone[]
@@ -145,7 +146,16 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
 
                         // Other fields
                         if (mode === 'all' || mode === 'stt') {
-                            if (lot.daily_seq) res.push(String(lot.daily_seq))
+                            if (lot.daily_seq) {
+                                res.push(String(lot.daily_seq))
+                                const decodedStt = decodeSTT(lot.daily_seq)
+                                if (decodedStt) {
+                                    res.push(decodedStt)
+                                    res.push(`STT: ${decodedStt}`)
+                                    res.push(`STT ${decodedStt}`)
+                                    res.push(`#${decodedStt}`)
+                                }
+                            }
                         }
 
                         // Box Labels

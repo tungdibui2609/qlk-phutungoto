@@ -73,9 +73,22 @@ export default function WarehouseAssignContent() {
     const [selectedProductionDate, setSelectedProductionDate] = useState(() => new Date().toISOString().split('T')[0])
     const [lastAssignedNotice, setLastAssignedNotice] = useState<{ stt: string, positionCode: string } | null>(null)
     const [zoneSiblingPositions, setZoneSiblingPositions] = useState<any[]>([])
+    const [siblingZoneId, setSiblingZoneId] = useState<string | null>(null)
     const [loadingSiblings, setLoadingSiblings] = useState(false)
 
     const sttInputRef = useRef<HTMLInputElement>(null)
+    const suggestedPosRef = useRef(suggestedPos)
+    suggestedPosRef.current = suggestedPos
+    const assignmentsRef = useRef(assignments)
+    assignmentsRef.current = assignments
+
+    const resetPositionSelection = () => {
+        setSuggestedPos(null)
+        setPosSearchTerm('')
+        setCurrentStt('')
+        setZoneSiblingPositions([])
+        setSiblingZoneId(null)
+    }
 
     // Re-calculate grouped data when zones/positions in context change
     useEffect(() => {
@@ -330,10 +343,10 @@ export default function WarehouseAssignContent() {
     }, [posSearchTerm, showPosSuggestions, localPositions, assignments])
 
     const breadcrumbs = [
-        { label: 'Kho', id: selectedWarehouseId, setStep: () => updateSelection({ selectionStep: 'warehouse', aisleId: null, slotId: null, tierId: null }) },
-        { label: 'Dãy', id: selectedAisleId, setStep: () => updateSelection({ selectionStep: 'aisle', slotId: null, tierId: null }) },
-        { label: 'Ô', id: selectedSlotId, setStep: () => updateSelection({ selectionStep: 'slot', tierId: null }) },
-        { label: 'Tầng', id: selectedTierId, setStep: () => updateSelection({ selectionStep: 'tier' }) }
+        { label: 'Kho', id: selectedWarehouseId, setStep: () => { updateSelection({ selectionStep: 'warehouse', aisleId: null, slotId: null, tierId: null }); resetPositionSelection() } },
+        { label: 'Dãy', id: selectedAisleId, setStep: () => { updateSelection({ selectionStep: 'aisle', slotId: null, tierId: null }); resetPositionSelection() } },
+        { label: 'Ô', id: selectedSlotId, setStep: () => { updateSelection({ selectionStep: 'slot', tierId: null }); resetPositionSelection() } },
+        { label: 'Tầng', id: selectedTierId, setStep: () => { updateSelection({ selectionStep: 'tier' }); resetPositionSelection() } }
     ].filter(b => b.id)
 
     const zoneBreadcrumbTitle = useMemo(() => {
@@ -345,6 +358,15 @@ export default function WarehouseAssignContent() {
         ].filter(Boolean)
         return parts.join(' > ')
     }, [selectedWarehouseId, selectedAisleId, selectedSlotId, selectedTierId, activeZones])
+
+    // Reset position selection whenever effectiveZoneId changes to avoid leaking positions across zones
+    const prevEffectiveZoneIdRef = useRef<string | null>(effectiveZoneId)
+    useEffect(() => {
+        if (prevEffectiveZoneIdRef.current && prevEffectiveZoneIdRef.current !== effectiveZoneId) {
+            resetPositionSelection()
+        }
+        prevEffectiveZoneIdRef.current = effectiveZoneId
+    }, [effectiveZoneId])
 
     // Load sibling positions in current zone with STTs
     useEffect(() => {
@@ -423,6 +445,19 @@ export default function WarehouseAssignContent() {
                     }).sort((a: any, b: any) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
 
                     setZoneSiblingPositions(formatted)
+                    setSiblingZoneId(currentTargetZoneId)
+
+                    // Ensure suggestedPos belongs to this zone
+                    const currentSuggested = suggestedPosRef.current
+                    const isCurrentValid = currentSuggested && formatted.some((p: any) => p.id === currentSuggested.id)
+                    if (!isCurrentValid && formatted.length > 0) {
+                        const assignedIds = new Set(assignmentsRef.current.map((a: any) => a.positionId))
+                        const sorted = sortPositionsByBinPriority(formatted)
+                        const firstEmpty = sorted.find((p: any) => !assignedIds.has(p.id) && !p.lot_id && !p.stt) || sorted[0]
+                        if (firstEmpty) {
+                            selectPosition(firstEmpty)
+                        }
+                    }
                 }
             } catch (err) {
                 console.error('Error fetching sibling positions:', err)
@@ -439,11 +474,16 @@ export default function WarehouseAssignContent() {
         if (!effectiveZoneId) return []
         
         let baseList: any[] = []
-        if (zoneSiblingPositions.length > 0) {
+        if (zoneSiblingPositions.length > 0 && siblingZoneId === effectiveZoneId) {
             baseList = zoneSiblingPositions
         } else if (state.allPositions && state.allPositions.length > 0) {
             const descendantIds = getDescendantZoneIds(effectiveZoneId)
             baseList = state.allPositions.filter((p: any) => 
+                p.zone_ids && p.zone_ids.some((zId: string) => descendantIds.includes(zId))
+            )
+        } else if (localPositions && localPositions.length > 0) {
+            const descendantIds = getDescendantZoneIds(effectiveZoneId)
+            baseList = localPositions.filter((p: any) => 
                 p.zone_ids && p.zone_ids.some((zId: string) => descendantIds.includes(zId))
             )
         }
@@ -466,7 +506,7 @@ export default function WarehouseAssignContent() {
                 isAssigned: !!finalStt || !!p.lot_id
             }
         }).sort((a: any, b: any) => (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }))
-    }, [zoneSiblingPositions, state.allPositions, effectiveZoneId, assignments, suggestedPos, virtualToRealMap, zones])
+    }, [zoneSiblingPositions, siblingZoneId, state.allPositions, localPositions, effectiveZoneId, assignments, suggestedPos, virtualToRealMap, zones])
 
     // Matrix parser for visual warehouse card (matching physical paper sheet)
     const sheetData = useMemo(() => {
@@ -600,6 +640,8 @@ export default function WarehouseAssignContent() {
             const found = activeZones.find(z => z.parent_id === aId && z.name.includes(sheetData.slotVal))
             if (found) sId = found.id
         }
+
+        resetPositionSelection()
 
         if (level === 'warehouse') {
             updateSelection({
@@ -757,7 +799,8 @@ export default function WarehouseAssignContent() {
         if (!effectiveZoneId) return
         setLoading(true)
         try {
-            const firstEmpty = findNextEmptyPosition(suggestedPos?.id)
+            const isCurrentPosInNav = suggestedPos && navigationPositions.some(p => p.id === suggestedPos.id)
+            const firstEmpty = findNextEmptyPosition(isCurrentPosInNav ? suggestedPos?.id : undefined)
             if (firstEmpty) {
                 selectPosition(firstEmpty)
                 updateSelection({ step: 'working' })
@@ -766,10 +809,13 @@ export default function WarehouseAssignContent() {
                 updateSelection({ step: 'working' })
             } else {
                 const descendantIds = getDescendantZoneIds(effectiveZoneId)
-                const candidates = localPositions.filter(p => p.zone_ids.some((zId: string) => descendantIds.includes(zId)))
+                const source = (state.allPositions && state.allPositions.length > 0) ? state.allPositions : localPositions
+                const candidates = source.filter((p: any) => p.zone_ids && p.zone_ids.some((zId: string) => descendantIds.includes(zId)))
                 const sorted = sortPositionsByBinPriority(candidates)
-                if (sorted[0]) {
-                    selectPosition(sorted[0])
+                const assignedIds = new Set(assignments.map((a: any) => a.positionId))
+                const emptyCandidate = sorted.find((p: any) => !assignedIds.has(p.id) && !p.lot_id && !p.stt) || sorted[0]
+                if (emptyCandidate) {
+                    selectPosition(emptyCandidate)
                     updateSelection({ step: 'working' })
                 } else {
                     showToast('Không còn vị trí trống trong khu vực này!', 'error')
@@ -789,8 +835,8 @@ export default function WarehouseAssignContent() {
         try {
             const isEditingExisting = assignments.some((a: any) => a.positionId === suggestedPos.id)
             const newAssignment: PendingAssignment = {
-                lotId: null, // Gán mù theo STT
-                lotCode: `STT #${sttVal} (Gán mù)`,
+                lotId: suggestedPos.lot_id || null, // Gán STT cho lot hiện có hoặc gán mù
+                lotCode: suggestedPos.lot_code || `STT #${sttVal} (Gán mù)`,
                 productNames: ['Hàng chờ khớp'],
                 positionId: suggestedPos.id,
                 positionCode: suggestedPos.code,
@@ -1319,7 +1365,10 @@ export default function WarehouseAssignContent() {
                                 </div>
 
                                 <button
-                                    onClick={() => updateSelection({ step: 'setup' })}
+                                    onClick={() => {
+                                        updateSelection({ step: 'setup' })
+                                        resetPositionSelection()
+                                    }}
                                     className="self-end sm:self-auto px-3.5 py-1.5 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 rounded-xl text-xs font-bold border border-zinc-200 dark:border-zinc-700 flex items-center gap-1.5 transition-all shadow-xs shrink-0"
                                 >
                                     <ArrowLeft size={14} />
@@ -1394,6 +1443,12 @@ export default function WarehouseAssignContent() {
 
                                         {showPosSuggestions && (
                                             <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowPosSuggestions(false)} />
+                                        )}
+
+                                        {suggestedPos?.lot_id && !suggestedPos.stt && (
+                                            <div className="flex items-center gap-2 text-xs text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-3.5 py-2 rounded-xl border border-amber-200/80 dark:border-amber-800/50 font-bold animate-in fade-in">
+                                                <span>📦 Vị trí này đang có hàng {suggestedPos.lot_code ? `(${suggestedPos.lot_code})` : ''} nhưng chưa có STT. Nhập STT bên phải để bổ sung.</span>
+                                            </div>
                                         )}
 
                                         {/* Tips / Shortcuts row matching the Right Column */}
@@ -1518,7 +1573,7 @@ export default function WarehouseAssignContent() {
                                                                         const pos = sheetData.items.find((p: any) => p.details.bay === bay && p.details.subPos === sub)
                                                                         const isSelected = pos?.isTarget
                                                                         const hasStt = !!pos?.stt
-                                                                        const isAssigned = hasStt || !!pos?.lot_id
+                                                                        const isOccupiedWithoutStt = !hasStt && !!pos?.lot_id
                                                                         const isBorderRight = bIdx < sheetData.bays.length - 1
 
                                                                         return (
@@ -1529,7 +1584,15 @@ export default function WarehouseAssignContent() {
                                                                                         selectPosition(pos)
                                                                                     }
                                                                                 }}
-                                                                                title={pos ? (pos.stt ? `Ô ${pos.code}: STT #${pos.stt} (Bấm để xem/sửa)` : `Ô ${pos.code}: Trống (Bấm để chọn gán)`) : ''}
+                                                                                title={
+                                                                                    pos
+                                                                                        ? pos.stt
+                                                                                            ? `Ô ${pos.code}: STT #${pos.stt} (Bấm để xem/sửa)`
+                                                                                            : pos.lot_id
+                                                                                                ? `Ô ${pos.code}: Có hàng (${pos.lot_code || 'Lô'}), Ko có STT (Bấm để gán)`
+                                                                                                : `Ô ${pos.code}: Trống (Bấm để chọn gán)`
+                                                                                        : ''
+                                                                                }
                                                                                 className={`py-1.5 px-2 text-center transition-all cursor-pointer ${
                                                                                     isBorderRight ? 'border-r border-zinc-700 dark:border-zinc-400' : ''
                                                                                 } ${
@@ -1537,9 +1600,11 @@ export default function WarehouseAssignContent() {
                                                                                         ? 'bg-emerald-100/90 dark:bg-emerald-950/70 ring-2 ring-emerald-500 ring-inset shadow-inner'
                                                                                         : pos?.isLocal
                                                                                             ? 'bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100/60'
-                                                                                            : isAssigned
+                                                                                            : hasStt
                                                                                                 ? 'bg-white dark:bg-zinc-900 hover:bg-blue-50/50 dark:hover:bg-blue-950/30'
-                                                                                                : 'bg-zinc-50/40 dark:bg-zinc-900/30 hover:bg-emerald-50/50'
+                                                                                                : isOccupiedWithoutStt
+                                                                                                    ? 'bg-amber-50/40 dark:bg-amber-950/20 hover:bg-amber-100/40'
+                                                                                                    : 'bg-zinc-50/40 dark:bg-zinc-900/30 hover:bg-emerald-50/50'
                                                                                 }`}
                                                                             >
                                                                                 {pos ? (
@@ -1555,10 +1620,26 @@ export default function WarehouseAssignContent() {
                                                                                                         #{pos.stt}
                                                                                                     </span>
                                                                                                 )}
+                                                                                                {isOccupiedWithoutStt && (
+                                                                                                    <span className="text-[9px] text-amber-700 dark:text-amber-400 font-bold mt-0.5">
+                                                                                                        Ko có STT
+                                                                                                    </span>
+                                                                                                )}
                                                                                             </div>
-                                                                                        ) : pos.stt ? (
+                                                                                        ) : hasStt ? (
                                                                                             <div className="font-mono font-bold text-sm sm:text-base text-blue-700 dark:text-blue-400 tracking-wide">
                                                                                                 {pos.stt}
+                                                                                            </div>
+                                                                                        ) : isOccupiedWithoutStt ? (
+                                                                                            <div className="flex flex-col items-center justify-center leading-tight">
+                                                                                                <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/50 px-1.5 py-0.5 rounded border border-amber-200/70 dark:border-amber-800/50">
+                                                                                                    Ko có STT
+                                                                                                </span>
+                                                                                                {pos.lot_code && (
+                                                                                                    <span className="text-[8px] font-mono text-zinc-400 dark:text-zinc-500 truncate max-w-[65px] mt-0.5" title={pos.lot_code}>
+                                                                                                        {pos.lot_code}
+                                                                                                    </span>
+                                                                                                )}
                                                                                             </div>
                                                                                         ) : (
                                                                                             <span className="text-[10px] font-medium text-zinc-400 italic">

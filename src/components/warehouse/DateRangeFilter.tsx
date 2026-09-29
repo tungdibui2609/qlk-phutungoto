@@ -31,7 +31,7 @@ export function DateRangeFilter({
             >
                 <option value="created_at" className="bg-white dark:bg-slate-900">Ngày tạo</option>
                 <option value="inbound_date" className="bg-white dark:bg-slate-900">Ngày nhập</option>
-                <option value="peeling_date" className="bg-white dark:bg-slate-900">Ngày bóc</option>
+                <option value="peeling_date" className="bg-white dark:bg-slate-900">Ngày sản xuất</option>
                 <option value="packaging_date" className="bg-white dark:bg-slate-900">Ngày đóng</option>
                 <option value="raw_material_date" className="bg-white dark:bg-slate-900">Ngày nguyên liệu</option>
             </select>
