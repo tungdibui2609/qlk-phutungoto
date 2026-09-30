@@ -1,10 +1,11 @@
 import os
+import sys
 import subprocess
 
+working_dir = os.path.dirname(os.path.abspath(__file__))
 desktop_dir = os.path.join(os.path.expanduser('~'), 'Desktop')
 shortcut_path = os.path.join(desktop_dir, 'Modular WMS Server.lnk')
-target_bat = r"d:\chanh thu\web\CHAY_SERVER.bat"
-working_dir = r"d:\chanh thu\web"
+target_bat = os.path.join(working_dir, 'CHAY_SERVER.bat')
 
 vbs_content = f'''Set oWS = WScript.CreateObject("WScript.Shell")
 Set oLink = oWS.CreateShortcut("{shortcut_path}")

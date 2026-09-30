@@ -1,7 +1,8 @@
 import { createBrowserClient } from '@supabase/ssr'
 import { Database } from './database.types'
+import { getActiveSupabaseUrl, AUTH_COOKIE_NAME } from './supabaseUrl'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+const supabaseUrl = getActiveSupabaseUrl()
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
 
 // Define the AuditLogs structure
@@ -925,7 +926,15 @@ export type TypedDatabase = Omit<Database, 'public'> & {
 }
 
 export const createClient = () =>
-    createBrowserClient<TypedDatabase>(supabaseUrl, supabaseKey)
+    createBrowserClient<TypedDatabase>(getActiveSupabaseUrl(), supabaseKey, {
+        cookieOptions: {
+            name: AUTH_COOKIE_NAME,
+        },
+    })
 
 // Export a typed client instance
-export const supabase = createBrowserClient<TypedDatabase>(supabaseUrl, supabaseKey)
+export const supabase = createBrowserClient<TypedDatabase>(getActiveSupabaseUrl(), supabaseKey, {
+    cookieOptions: {
+        name: AUTH_COOKIE_NAME,
+    },
+})

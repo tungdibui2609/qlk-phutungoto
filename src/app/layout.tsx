@@ -15,6 +15,7 @@ import { COMPANY_INFO } from "@/lib/constants";
 import { generateAppTitle } from "@/lib/utils";
 import { createClient } from "@supabase/supabase-js";
 import { Database } from "@/lib/database.types";
+import { getServerSupabaseUrl } from "@/lib/supabaseUrl";
 
 // Cached metadata to eliminate repeated DB requests on every page navigation
 let cachedCompanyTitle: string | null = null;
@@ -41,7 +42,7 @@ export async function generateMetadata(): Promise<Metadata> {
   }
 
   try {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const supabaseUrl = getServerSupabaseUrl();
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
     const supabase = createClient<Database>(supabaseUrl, supabaseKey, {

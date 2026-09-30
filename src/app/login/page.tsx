@@ -100,10 +100,8 @@ export default function LoginPage() {
             })
             if (error) throw error
 
-            router.refresh()
-            setTimeout(() => {
-                router.push('/select-system')
-            }, 400)
+            // Full window navigation ensures all newly set auth cookies are cleanly transmitted
+            window.location.href = '/select-system'
 
         } catch (error: any) {
             setMessage({ text: error.message || 'Đăng nhập thất bại, vui lòng kiểm tra lại.', type: 'error' })

@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hướng Dẫn Thêm Tên Miền Cloudflare Tunnel - Modular WMS</title>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #151d30;
+      --card-hover: #1c2640;
+      --border: #29354f;
+      --primary: #38bdf8;
+      --primary-hover: #0ea5e9;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --code-bg: #090d16;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 30px 20px 60px;
+    }
+
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    /* HEADER */
+    .header {
+      background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 32px 28px;
+      margin-bottom: 30px;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .header::after {
+      content: "";
+      position: absolute;
+      top: -50px;
+      right: -50px;
+      width: 150px;
+      height: 150px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.2) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .badge-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--primary);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 4px 12px;
+      border-radius: 9999px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      margin-bottom: 14px;
+    }
+
+    .title {
+      font-size: 1.85rem;
+      font-weight: 800;
+      color: #ffffff;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+    }
+
+    /* QUICK GENERATOR WIDGET */
+    .generator-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 35px;
+    }
+
+    .generator-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 12px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .input-box {
+      flex: 1;
+      min-width: 280px;
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      color: #ffffff;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .input-box:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+
+    /* STEP CARDS */
+    .step-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 26px;
+      margin-bottom: 25px;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .step-card:hover {
+      border-color: #3b82f6;
+    }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .step-number {
+      width: 34px;
+      height: 34px;
+      background: #2563eb;
+      color: #fff;
+      font-weight: 800;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+    }
+
+    .step-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    /* TABLE */
+    .table-container {
+      overflow-x: auto;
+      margin: 16px 0;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.92rem;
+    }
+
+    th {
+      background: #1e293b;
+      color: #cbd5e1;
+      padding: 12px 16px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+    }
+
+    td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(41, 53, 79, 0.5);
+      color: #e2e8f0;
+    }
+
+    tr:last-child td {
+      border-bottom: none;
+    }
+
+    .copy-btn {
+      background: #1e293b;
+      border: 1px solid #475569;
+      color: #38bdf8;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      font-weight: 600;
+      transition: all 0.2s;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .copy-btn:hover {
+      background: #334155;
+      color: #fff;
+    }
+
+    .copy-btn.copied {
+      background: #059669;
+      color: #fff;
+      border-color: #10b981;
+    }
+
+    /* CODE BOX */
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: Consolas, monospace;
+      font-size: 0.9rem;
+      color: #38bdf8;
+      margin: 12px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      overflow-x: auto;
+    }
+
+    .code-text {
+      user-select: all;
+    }
+
+    /* CALLOUT BOXES */
+    .callout {
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin: 14px 0;
+      font-size: 0.92rem;
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .callout-info {
+      background: rgba(56, 189, 248, 0.1);
+      border-left: 4px solid var(--primary);
+      color: #bae6fd;
+    }
+
+    .callout-success {
+      background: rgba(16, 185, 129, 0.1);
+      border-left: 4px solid var(--success);
+      color: #a7f3d0;
+    }
+
+    .callout-warning {
+      background: rgba(245, 158, 11, 0.1);
+      border-left: 4px solid var(--warning);
+      color: #fde68a;
+    }
+
+    .pill-orange {
+      background: rgba(249, 115, 22, 0.2);
+      color: #fb923c;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    /* FOOTER */
+    .footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-top: 40px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <!-- HEADER -->
+    <div class="header">
+      <div class="badge-pill">📖 TÀI LIỆU HƯỚNG DẪN CHẠY OFFLINE & ONLINE</div>
+      <h1 class="title">🌐 Hướng Dẫn Thêm Tên Miền Mới Vào Hệ Thống</h1>
+      <p class="subtitle">Chỉ mất 2 phút để liên kết tên miền riêng của bạn với chiếc laptop này thông qua Cloudflare Tunnel!</p>
+    </div>
+
+    <!-- CÔNG CỤ TẠO BẢN GHI DNS TỰ ĐỘNG -->
+    <div class="generator-card">
+      <div class="generator-title">⚡ Công cụ tạo cấu hình DNS nhanh</div>
+      <p style="color: var(--text-muted); font-size: 0.92rem;">
+        Nhập tên miền bạn muốn thêm vào ô bên dưới, bảng hướng dẫn sẽ tự động cập nhật chính xác các giá trị cần điền:
+      </p>
+
+      <div class="input-row">
+        <input type="text" id="domainInput" class="input-box" placeholder="Ví dụ: khohang247.com hoặc wms.tencongty.vn" value="khohangmoi.com">
+      </div>
+    </div>
+
+    <!-- BƯỚC 1: TRÊN CLOUDFLARE -->
+    <div class="step-card">
+      <div class="step-header">
+        <div class="step-number">1</div>
+        <div class="step-title">Thao tác trên trang quản trị Cloudflare Dashboard</div>
+      </div>
+
+      <p style="color: var(--text-muted);">
+        Đăng nhập vào tài khoản <a href="https://dash.cloudflare.com" target="_blank" style="color: #38bdf8; font-weight: 600;">dash.cloudflare.com</a> của bạn, chọn tên miền <strong id="lblDomain1" style="color: #fff;">khohangmoi.com</strong> &rarr; Vào mục <strong>DNS</strong> &rarr; <strong>Records</strong> &rarr; Nhấn <strong>Add record</strong> và thêm 3 bản ghi CNAME sau:
+      </p>
+
+      <div class="table-container">
+        <table>
+          <thead>
+            <tr>
+              <th>Loại (Type)</th>
+              <th>Tên (Name)</th>
+              <th>Giá Trị Trỏ Đến (Target)</th>
+              <th>Đám Mây (Proxy)</th>
+              <th>Mục Đích</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong style="color: #38bdf8;">CNAME</strong></td>
+              <td><code id="dnsRoot" style="background:#090d16; padding:2px 6px; border-radius:4px;">@</code></td>
+              <td>
+                <span id="targetTunnel">9df90c7f-63cf-4ac9-87f1-f615c0292e4d.cfargotunnel.com</span>
+                <button class="copy-btn" onclick="copyText('9df90c7f-63cf-4ac9-87f1-f615c0292e4d.cfargotunnel.com', this)">Sao chép</button>
+              </td>
+              <td><span class="pill-orange">🟠 Proxied</span></td>
+              <td>Trang chủ Web App</td>
+            </tr>
+            <tr>
+              <td><strong style="color: #38bdf8;">CNAME</strong></td>
+              <td><code style="background:#090d16; padding:2px 6px; border-radius:4px;">www</code></td>
+              <td>
+                <span>9df90c7f-63cf-4ac9-87f1-f615c0292e4d.cfargotunnel.com</span>
+                <button class="copy-btn" onclick="copyText('9df90c7f-63cf-4ac9-87f1-f615c0292e4d.cfargotunnel.com', this)">Sao chép</button>
+              </td>
+              <td><span class="pill-orange">🟠 Proxied</span></td>
+              <td>Hỗ trợ tiền tố www</td>
+            </tr>
+            <tr>
+              <td><strong style="color: #38bdf8;">CNAME</strong></td>
+              <td><code style="background:#090d16; padding:2px 6px; border-radius:4px;">api</code></td>
+              <td>
+                <span>9df90c7f-63cf-4ac9-87f1-f615c0292e4d.cfargotunnel.com</span>
+                <button class="copy-btn" onclick="copyText('9df90c7f-63cf-4ac9-87f1-f615c0292e4d.cfargotunnel.com', this)">Sao chép</button>
+              </td>
+              <td><span class="pill-orange">🟠 Proxied</span></td>
+              <td>Kết nối CSDL Supabase</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout callout-warning">
+        <span>⚠️</span>
+        <div>
+          <strong>LƯU Ý QUAN TRỌNG:</strong> Mục <strong>Proxy status</strong> bắt buộc phải chọn <strong>Proxied (Đám mây màu cam 🟠)</strong> thì Cloudflare mới tạo chứng chỉ bảo mật SSL HTTPS và bảo vệ IP laptop của bạn!
+        </div>
+      </div>
+    </div>
+
+    <!-- BƯỚC 2: TRÊN PHẦN MỀM LAPTOP -->
+    <div class="step-card">
+      <div class="step-header">
+        <div class="step-number">2</div>
+        <div class="step-title">Thao tác 1-Click trên Laptop (Trong phần mềm Server Launcher)</div>
+      </div>
+
+      <p style="color: var(--text-muted); margin-bottom: 12px;">
+        Trên laptop, bạn không cần phải sửa file cấu hình thủ công nữa. Hãy làm như sau:
+      </p>
+
+      <ol style="margin-left: 20px; color: #cbd5e1; line-height: 1.8;">
+        <li>Mở bảng điều khiển <strong>Modular WMS - Server Controller</strong>.</li>
+        <li>Bấm vào nút <strong>"🌐 QUẢN LÝ TÊN MIỀN"</strong>.</li>
+        <li>Nhập tên miền của bạn (ví dụ: <strong id="lblDomain2" style="color: #38bdf8;">khohangmoi.com</strong>) vào ô và bấm <strong>"Thêm Tên Miền Ngay"</strong>.</li>
+        <li>Hệ thống sẽ <strong>tự động ghi cấu hình</strong> và <strong>tự khởi động lại Cloudflare Tunnel</strong> chỉ sau 2 giây!</li>
+      </ol>
+
+      <div class="callout callout-success" style="margin-top: 18px;">
+        <span>🎉</span>
+        <div>
+          <strong>TỰ ĐỘNG 100%:</strong> Mã nguồn của hệ thống đã được tích hợp cơ chế <em>Smart Multi-Domain</em>. Khi nhân viên truy cập vào <code id="lblHttpsDomain" style="background:#064e3b; color:#6ee7b7; padding:1px 5px; border-radius:3px;">https://khohangmoi.com</code>, Web App sẽ tự động bắt tay với API cục bộ qua Tunnel mà bạn không cần phải cấu hình thêm bất kỳ thứ gì!
+        </div>
+      </div>
+    </div>
+
+    <!-- BƯỚC 3: HIỂU VỀ CHẾ ĐỘ OFFLINE LOCALHOST -->
+    <div class="step-card">
+      <div class="step-header">
+        <div class="step-number">3</div>
+        <div class="step-title">Chế độ Chạy Localhost Offline (Khi không có mạng)</div>
+      </div>
+
+      <p style="color: var(--text-muted); margin-bottom: 10px;">
+        Hệ thống được thiết kế để hoạt động hoàn hảo trong 2 trường hợp:
+      </p>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px;">
+        <div style="background: #0f172a; padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+          <div style="color: #38bdf8; font-weight: 700; margin-bottom: 6px;">💻 Bạn (Trên chiếc Laptop này):</div>
+          <p style="font-size: 0.88rem; color: #cbd5e1;">
+            Mở <strong>http://localhost:3000</strong>. Chạy trực tiếp qua mạng nội bộ máy tính. Tốc độ cực nhanh &lt; 1 mili-giây. <strong>Rút dây mạng, tắt WiFi vẫn chạy 100%!</strong>
+          </p>
+        </div>
+
+        <div style="background: #0f172a; padding: 16px; border-radius: 8px; border: 1px solid var(--border);">
+          <div style="color: #10b981; font-weight: 700; margin-bottom: 6px;">📱 Nhân viên (Quét mã từ xa):</div>
+          <p style="font-size: 0.88rem; color: #cbd5e1;">
+            Mở tên miền <strong>https://khohangmoi.com</strong> hoặc <strong>https://chanhthu.click</strong>. Đi qua Cloudflare Tunnel để kết nối vào máy chủ laptop này.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- FOOTER -->
+    <div class="footer">
+      Modular WMS System • Tài liệu hướng dẫn tích hợp Cloudflare Tunnel • Sẵn sàng chạy Offline & Online
+    </div>
+  </div>
+
+  <script>
+    const input = document.getElementById('domainInput');
+    const lblDomain1 = document.getElementById('lblDomain1');
+    const lblDomain2 = document.getElementById('lblDomain2');
+    const lblHttpsDomain = document.getElementById('lblHttpsDomain');
+
+    function cleanDomain(val) {
+      return val.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '').replace(/^www\./, '');
+    }
+
+    input.addEventListener('input', (e) => {
+      const d = cleanDomain(e.target.value) || 'khohangmoi.com';
+      lblDomain1.innerText = d;
+      lblDomain2.innerText = d;
+      lblHttpsDomain.innerText = 'https://' + d;
+    });
+
+    function copyText(text, btn) {
+      navigator.clipboard.writeText(text).then(() => {
+        const oldText = btn.innerText;
+        btn.innerText = '✓ Đã chép!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.innerText = oldText;
+          btn.classList.remove('copied');
+        }, 1800);
+      });
+    }
+  </script>
+</body>
+</html>

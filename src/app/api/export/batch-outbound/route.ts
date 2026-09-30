@@ -1,6 +1,7 @@
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
+import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSupabaseUrl, AUTH_COOKIE_NAME } from '@/lib/supabaseUrl'
 import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import fs from 'fs'
@@ -41,18 +42,22 @@ export async function POST(request: NextRequest) {
 
         // Create authenticated Supabase client
         const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            getServerSupabaseUrl(),
             process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
             {
+                cookieOptions: {
+                    name: AUTH_COOKIE_NAME,
+                },
                 cookies: {
-                    get(name: string) {
-                        return cookieStore.get(name)?.value
+                    getAll() {
+                        return cookieStore.getAll()
                     },
-                    set(name: string, value: string, options: CookieOptions) {
-                        cookieStore.set({ name, value, ...options })
-                    },
-                    remove(name: string, options: CookieOptions) {
-                        cookieStore.set({ name, value: '', ...options })
+                    setAll(cookiesToSet) {
+                        try {
+                            cookiesToSet.forEach(({ name, value, options }) =>
+                                cookieStore.set(name, value, options)
+                            )
+                        } catch {}
                     },
                 },
                 global: {

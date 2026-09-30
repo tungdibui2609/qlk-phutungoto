@@ -76,10 +76,7 @@ export default function SanxuatLoginPage() {
             })
             if (error) throw error
 
-            router.refresh()
-            setTimeout(() => {
-                router.push('/sanxuat/dashboard')
-            }, 500)
+            window.location.href = '/sanxuat/dashboard'
 
         } catch (error: any) {
             setMessage({ text: error.message, type: 'error' })

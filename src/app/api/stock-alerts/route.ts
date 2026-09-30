@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient, type CookieOptions } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
+import { getServerSupabaseUrl } from '@/lib/supabaseUrl'
 import nodemailer from 'nodemailer'
 
 export async function POST(req: NextRequest) {
@@ -12,23 +12,9 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: 'Missing parameters' }, { status: 400 })
         }
 
-        const cookieStore = await cookies()
-        const supabase = createServerClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.SUPABASE_SERVICE_ROLE_KEY!,
-            {
-                cookies: {
-                    get(name: string) {
-                        return cookieStore.get(name)?.value
-                    },
-                    set(name: string, value: string, options: CookieOptions) {
-                        cookieStore.set({ name, value, ...options })
-                    },
-                    remove(name: string, options: CookieOptions) {
-                        cookieStore.set({ name, value: '', ...options })
-                    },
-                },
-            }
+        const supabase = createClient(
+            getServerSupabaseUrl(),
+            process.env.SUPABASE_SERVICE_ROLE_KEY!
         )
 
         // 1. Fetch Products and their thresholds

@@ -3,7 +3,7 @@ title Modular WMS - Sao Luu Du Lieu CSDL Supabase
 chcp 65001 >nul
 cd /d "%~dp0"
 
-set BACKUP_DIR=D:\chanh thu\backups
+set BACKUP_DIR=%~dp0backups
 if not exist "%BACKUP_DIR%" mkdir "%BACKUP_DIR%"
 
 for /f "tokens=2 delims==" %%I in ('wmic os get localdatetime /value') do set datetime=%%I

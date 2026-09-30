@@ -1,6 +1,7 @@
 import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse, type NextRequest } from 'next/server'
+import { getServerSupabaseUrl, AUTH_COOKIE_NAME } from '@/lib/supabaseUrl'
 
 export async function proxy(request: NextRequest) {
     let response = NextResponse.next({
@@ -9,47 +10,41 @@ export async function proxy(request: NextRequest) {
         },
     })
 
+    // Bridge legacy cookies (sb-api-auth-token.*, sb-127-auth-token.*) to AUTH_COOKIE_NAME
+    const allCookies = request.cookies.getAll()
+    const hasTargetCookie = allCookies.some(c => c.name.startsWith(AUTH_COOKIE_NAME))
+    if (!hasTargetCookie) {
+        for (const c of allCookies) {
+            if (c.name.startsWith('sb-api-auth-token') || c.name.startsWith('sb-127-auth-token')) {
+                const suffix = c.name.replace(/^(sb-api-auth-token|sb-127-auth-token)/, '')
+                const targetName = `${AUTH_COOKIE_NAME}${suffix}`
+                request.cookies.set(targetName, c.value)
+                response.cookies.set(targetName, c.value, { path: '/', sameSite: 'lax' })
+            }
+        }
+    }
+
     const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        getServerSupabaseUrl(),
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
+            cookieOptions: {
+                name: AUTH_COOKIE_NAME,
+            },
             cookies: {
-                get(name: string) {
-                    return request.cookies.get(name)?.value
+                getAll() {
+                    return request.cookies.getAll()
                 },
-                set(name: string, value: string, options: CookieOptions) {
-                    request.cookies.set({
-                        name,
-                        value,
-                        ...options,
-                    })
+                setAll(cookiesToSet) {
+                    cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
                     response = NextResponse.next({
                         request: {
                             headers: request.headers,
                         },
                     })
-                    response.cookies.set({
-                        name,
-                        value,
-                        ...options,
-                    })
-                },
-                remove(name: string, options: CookieOptions) {
-                    request.cookies.set({
-                        name,
-                        value: '',
-                        ...options,
-                    })
-                    response = NextResponse.next({
-                        request: {
-                            headers: request.headers,
-                        },
-                    })
-                    response.cookies.set({
-                        name,
-                        value: '',
-                        ...options,
-                    })
+                    cookiesToSet.forEach(({ name, value, options }) =>
+                        response.cookies.set(name, value, options)
+                    )
                 },
             },
         }
@@ -60,6 +55,15 @@ export async function proxy(request: NextRequest) {
 
     const url = request.nextUrl.clone()
     const path = url.pathname
+
+    // Helper to return redirect while preserving newly set session cookies
+    const redirectWithCookies = (targetUrl: URL | string) => {
+        const redirectRes = NextResponse.redirect(targetUrl)
+        response.cookies.getAll().forEach(c => {
+            redirectRes.cookies.set(c.name, c.value, c)
+        })
+        return redirectRes
+    }
 
     // Constants
     const SUPER_ADMIN_EMAIL = process.env.NEXT_PUBLIC_SUPER_ADMIN_EMAIL || 'tungdibui2609@gmail.com'
@@ -101,7 +105,7 @@ export async function proxy(request: NextRequest) {
         } else {
             url.pathname = '/login'
         }
-        return NextResponse.redirect(url)
+        return redirectWithCookies(url)
     }
 
     // 2. Authenticated User Logic
@@ -117,23 +121,23 @@ export async function proxy(request: NextRequest) {
             } else {
                 url.pathname = '/select-system'
             }
-            return NextResponse.redirect(url)
+            return redirectWithCookies(url)
         }
 
         if (IS_SANXUAT_LOGIN_PAGE && !hasErrorParam) {
             url.pathname = '/sanxuat/dashboard'
-            return NextResponse.redirect(url)
+            return redirectWithCookies(url)
         }
 
         if (IS_ADMIN_LOGIN_PAGE) {
             if (isSuperAdmin) {
                 // If Super Admin, go to dashboard
                 url.pathname = '/admin/dashboard'
-                return NextResponse.redirect(url)
+                return redirectWithCookies(url)
             } else {
                 // If Normal User logic tries to access Admin Login, send them Home
                 url.pathname = '/'
-                return NextResponse.redirect(url)
+                return redirectWithCookies(url)
             }
         }
 
@@ -143,7 +147,7 @@ export async function proxy(request: NextRequest) {
                 // Tenant trying to access admin area -> Kick out
                 console.log(`[Proxy] Unauthorized Admin Access Attempt by: ${user.email}`)
                 url.pathname = '/'
-                return NextResponse.redirect(url)
+                return redirectWithCookies(url)
             }
             // Super Admin accessing /admin/* -> Allow (Fallthrough)
         }
@@ -154,7 +158,7 @@ export async function proxy(request: NextRequest) {
             // Redirect them back to Admin Dashboard
             console.log(`[Proxy] Super Admin redirected from App Route: ${path}`)
             url.pathname = '/admin/dashboard'
-            return NextResponse.redirect(url)
+            return redirectWithCookies(url)
         }
     }
 

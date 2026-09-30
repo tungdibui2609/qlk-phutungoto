@@ -29,8 +29,8 @@ export default function AdminLoginPage() {
             })
             if (error) throw error
 
-            // Force redirect to companies page
-            router.push('/admin/dashboard')
+            // Force redirect to admin dashboard
+            window.location.href = '/admin/dashboard'
         } catch (error: any) {
             setMessage({ text: error.message, type: 'error' })
         } finally {

@@ -42,3 +42,11 @@ next-env.d.ts
 
 # supabase
 supabase/.temp
+
+# Large Installers, Executable Packages & Backups
+dist_installer/
+dist/
+backups/
+ServerManager.exe
+__pycache__/
+*.lnk
