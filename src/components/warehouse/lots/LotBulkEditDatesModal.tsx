@@ -1,7 +1,25 @@
 'use client'
 
 import React, { useState, useMemo } from 'react'
-import { X, Calendar, Loader2, Save, AlertCircle, Info, Check, Sparkles, Box, Clock, CalendarDays, Lock, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { 
+    X, 
+    Calendar, 
+    Loader2, 
+    Save, 
+    AlertCircle, 
+    Info, 
+    Check, 
+    Sparkles, 
+    Box, 
+    Clock, 
+    CalendarDays, 
+    Lock, 
+    RefreshCw, 
+    ChevronDown, 
+    ChevronUp,
+    CalendarOff,
+    Trash2
+} from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -122,43 +140,103 @@ export function LotBulkEditDatesModal({
         }))
     }
 
-    // Set field date value
+    // Set field date value (if user clears the date, automatically mark as clear)
     const setFieldValue = (key: string, value: string) => {
         setFieldStates(prev => ({
             ...prev,
             [key]: {
                 ...prev[key],
                 value,
-                isClear: false,
+                isClear: !value,
                 enabled: true
             }
         }))
     }
 
-    // Set field clear flag (set to null in DB)
-    const toggleFieldClear = (key: string) => {
+    // Mark field as clear (set to null in DB)
+    const setFieldClear = (key: string) => {
         setFieldStates(prev => ({
             ...prev,
             [key]: {
                 ...prev[key],
-                isClear: !prev[key].isClear,
+                isClear: true,
+                value: '',
                 enabled: true
             }
         }))
     }
 
-    // Quick action: Apply master date to all currently enabled fields
-    const handleApplyMasterDate = () => {
-        if (!masterDate) {
-            showToast('Vui lòng chọn ngày để áp dụng', 'warning')
-            return
-        }
+    // Switch field to date picker mode
+    const setFieldPickDate = (key: string, defaultDate?: string) => {
+        setFieldStates(prev => ({
+            ...prev,
+            [key]: {
+                ...prev[key],
+                isClear: false,
+                value: defaultDate || prev[key].value || masterDate || todayStr,
+                enabled: true
+            }
+        }))
+    }
 
-        const anyEnabled = Object.values(fieldStates).some(f => f.enabled)
+    // Select all fields (either in date mode or clear mode)
+    const handleSelectAll = (clearMode: boolean = false) => {
         setFieldStates(prev => {
             const next = { ...prev }
             DATE_FIELDS.forEach(f => {
-                // If any are enabled, update enabled ones. Otherwise enable and update all.
+                next[f.key] = {
+                    enabled: true,
+                    value: clearMode ? '' : (prev[f.key].value || masterDate || todayStr),
+                    isClear: clearMode
+                }
+            })
+            return next
+        })
+        if (clearMode) {
+            showToast('Đã chọn xóa ngày (để trống) cho tất cả các trường', 'info')
+        }
+    }
+
+    // Deselect all fields
+    const handleDeselectAll = () => {
+        setFieldStates(prev => {
+            const next = { ...prev }
+            DATE_FIELDS.forEach(f => {
+                next[f.key] = {
+                    ...prev[f.key],
+                    enabled: false
+                }
+            })
+            return next
+        })
+    }
+
+    // Quick action: Apply master date to enabled fields (or all fields if none enabled)
+    const handleApplyMasterDate = () => {
+        const anyEnabled = Object.values(fieldStates).some(f => f.enabled)
+        
+        if (!masterDate) {
+            // Master date is empty -> Apply clear/blank
+            setFieldStates(prev => {
+                const next = { ...prev }
+                DATE_FIELDS.forEach(f => {
+                    if (anyEnabled ? prev[f.key].enabled : true) {
+                        next[f.key] = {
+                            enabled: true,
+                            value: '',
+                            isClear: true
+                        }
+                    }
+                })
+                return next
+            })
+            showToast('Đã áp dụng xóa ngày (để trống) cho các trường đã chọn', 'info')
+            return
+        }
+
+        setFieldStates(prev => {
+            const next = { ...prev }
+            DATE_FIELDS.forEach(f => {
                 if (anyEnabled ? prev[f.key].enabled : true) {
                     next[f.key] = {
                         enabled: true,
@@ -173,13 +251,44 @@ export function LotBulkEditDatesModal({
         showToast(`Đã áp dụng ngày ${masterDate.split('-').reverse().join('/')}`, 'info')
     }
 
-    // Quick action: Select today for a single field
-    const handleSetToday = (key: string) => {
-        setFieldValue(key, todayStr)
+    // Quick action: Direct batch clear
+    const handleApplyMasterClear = () => {
+        const anyEnabled = Object.values(fieldStates).some(f => f.enabled)
+        setFieldStates(prev => {
+            const next = { ...prev }
+            DATE_FIELDS.forEach(f => {
+                if (anyEnabled ? prev[f.key].enabled : true) {
+                    next[f.key] = {
+                        enabled: true,
+                        value: '',
+                        isClear: true
+                    }
+                }
+            })
+            return next
+        })
+        showToast('Đã chọn Xóa ngày (để trống) cho các trường đã chọn', 'info')
     }
 
-    // Check count of active updates
-    const enabledFieldsCount = Object.values(fieldStates).filter(f => f.enabled).length
+    // Count of active updates & cleared fields
+    const enabledFields = useMemo(() => {
+        return Object.entries(fieldStates).filter(([_, state]) => state.enabled)
+    }, [fieldStates])
+
+    const enabledFieldsCount = enabledFields.length
+
+    const { clearedCount, updatedCount } = useMemo(() => {
+        let cleared = 0
+        let updated = 0
+        enabledFields.forEach(([_, state]) => {
+            if (state.isClear || !state.value || state.value.trim() === '') {
+                cleared++
+            } else {
+                updated++
+            }
+        })
+        return { clearedCount: cleared, updatedCount: updated }
+    }, [enabledFields])
 
     // Handle submit
     const handleSubmit = async () => {
@@ -194,23 +303,24 @@ export function LotBulkEditDatesModal({
             return
         }
 
-        // Validate that fields with isClear = false have a non-empty date value
-        for (const f of DATE_FIELDS) {
-            const state = fieldStates[f.key]
-            if (state.enabled && !state.isClear && !state.value) {
-                showToast(`Vui lòng chọn ngày hợp lệ cho trường "${f.label}"`, 'warning')
-                return
-            }
-        }
-
         setLoading(true)
         try {
-            // Build update payload
+            // Build update payload - empty date or isClear means null
             const updatePayload: Record<string, any> = {}
+            let countCleared = 0
+            let countUpdated = 0
+
             DATE_FIELDS.forEach(f => {
                 const state = fieldStates[f.key]
                 if (state.enabled) {
-                    updatePayload[f.key] = state.isClear ? null : state.value
+                    const shouldClear = state.isClear || !state.value || state.value.trim() === ''
+                    if (shouldClear) {
+                        updatePayload[f.key] = null
+                        countCleared++
+                    } else {
+                        updatePayload[f.key] = state.value
+                        countUpdated++
+                    }
                 }
             })
 
@@ -263,8 +373,13 @@ export function LotBulkEditDatesModal({
                 console.warn('Audit log recording error:', auditErr)
             }
 
+            const details = []
+            if (countUpdated > 0) details.push(`${countUpdated} trường đặt ngày`)
+            if (countCleared > 0) details.push(`${countCleared} trường xóa về trống`)
+            const detailsStr = details.length > 0 ? ` (${details.join(', ')})` : ''
             const skipMsg = lockedLots.length > 0 ? ` (đã bỏ qua ${lockedLots.length} LOT bị khóa)` : ''
-            showToast(`Cập nhật ngày thành công cho ${targetIds.length} LOT${skipMsg}`, 'success')
+
+            showToast(`Cập nhật ngày thành công cho ${targetIds.length} LOT${detailsStr}${skipMsg}`, 'success')
             onSuccess()
         } catch (err: any) {
             console.error('Error updating lot dates:', err)
@@ -352,54 +467,120 @@ export function LotBulkEditDatesModal({
                     )}
 
                     {/* Master Date Quick Fill Bar */}
-                    <div className="bg-linear-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl p-3.5 space-y-2">
+                    <div className="bg-linear-to-r from-blue-50/80 to-indigo-50/80 dark:from-blue-950/20 dark:to-indigo-950/20 border border-blue-100 dark:border-blue-900/40 rounded-2xl p-3.5 space-y-2.5">
                         <div className="flex items-center justify-between text-xs font-bold text-slate-800 dark:text-slate-200">
                             <span className="flex items-center gap-1.5 text-blue-700 dark:text-blue-300">
                                 <Sparkles size={14} />
                                 Công cụ gán ngày nhanh:
                             </span>
-                            <button
-                                type="button"
-                                onClick={() => setMasterDate(todayStr)}
-                                className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
-                            >
-                                Chọn hôm nay
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setMasterDate(todayStr)}
+                                    className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline cursor-pointer"
+                                >
+                                    Chọn hôm nay
+                                </button>
+                                <span className="text-slate-300 dark:text-slate-700">|</span>
+                                <button
+                                    type="button"
+                                    onClick={() => setMasterDate('')}
+                                    className="text-[11px] font-semibold text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:underline cursor-pointer"
+                                >
+                                    Để trống
+                                </button>
+                            </div>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <input
-                                type="date"
-                                value={masterDate}
-                                onChange={(e) => setMasterDate(e.target.value)}
-                                className="flex-1 px-3 py-2 text-xs sm:text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
-                            />
+                        <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
+                            <div className="relative flex-1 min-w-[170px]">
+                                <input
+                                    type="date"
+                                    value={masterDate}
+                                    onChange={(e) => setMasterDate(e.target.value)}
+                                    className="w-full px-3 py-2 pr-8 text-xs sm:text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-xs"
+                                />
+                                {masterDate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setMasterDate('')}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                                        title="Xóa ngày trong ô"
+                                    >
+                                        <X size={14} />
+                                    </button>
+                                )}
+                            </div>
                             <button
                                 type="button"
                                 onClick={handleApplyMasterDate}
                                 className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:scale-95 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-                                title="Điền ngày này vào các mục ngày được tích chọn"
+                                title={masterDate ? "Điền ngày này vào các mục ngày được tích chọn" : "Áp dụng để trống ngày cho các mục được tích chọn"}
                             >
                                 <RefreshCw size={13} />
-                                <span>Áp dụng</span>
+                                <span>{masterDate ? 'Áp dụng ngày' : 'Áp dụng để trống'}</span>
+                            </button>
+                            <button
+                                type="button"
+                                onClick={handleApplyMasterClear}
+                                className="px-3 py-2 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 dark:hover:bg-rose-900/50 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80 active:scale-95 text-xs font-bold rounded-xl transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                                title="Đánh dấu Xóa ngày (để trống - NULL) cho các mục ngày được chọn"
+                            >
+                                <CalendarOff size={13} className="text-rose-500" />
+                                <span>Xóa ngày</span>
                             </button>
                         </div>
                     </div>
 
                     {/* Date Fields List */}
                     <div className="space-y-3 pt-1">
-                        <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 px-1">
-                            Chọn các trường ngày cần cập nhật:
+                        <div className="flex items-center justify-between px-1">
+                            <div className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+                                Chọn các trường ngày cần cập nhật:
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px]">
+                                <button
+                                    type="button"
+                                    onClick={() => handleSelectAll(false)}
+                                    className="text-blue-600 dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+                                >
+                                    Chọn tất cả
+                                </button>
+                                <span className="text-slate-300 dark:text-slate-700">·</span>
+                                <button
+                                    type="button"
+                                    onClick={() => handleSelectAll(true)}
+                                    className="text-rose-600 dark:text-rose-400 hover:underline font-semibold cursor-pointer"
+                                    title="Tích chọn tất cả các trường và đánh dấu Xóa ngày"
+                                >
+                                    Xóa tất cả
+                                </button>
+                                {enabledFieldsCount > 0 && (
+                                    <>
+                                        <span className="text-slate-300 dark:text-slate-700">·</span>
+                                        <button
+                                            type="button"
+                                            onClick={handleDeselectAll}
+                                            className="text-slate-500 hover:underline font-medium cursor-pointer"
+                                        >
+                                            Bỏ chọn
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
 
                         {DATE_FIELDS.map((field) => {
                             const state = fieldStates[field.key]
                             const IconComponent = field.icon
+                            const isFieldCleared = state.isClear || !state.value || state.value.trim() === ''
 
                             return (
                                 <div
                                     key={field.key}
                                     className={`p-3.5 rounded-2xl border transition-all duration-150 ${state.enabled
-                                        ? `${field.bgColor} ${field.borderColor} shadow-xs ring-1 ring-blue-500/20`
+                                        ? isFieldCleared
+                                            ? 'bg-rose-50/50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/60 shadow-xs ring-1 ring-rose-500/20'
+                                            : `${field.bgColor} ${field.borderColor} shadow-xs ring-1 ring-blue-500/20`
                                         : 'bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
                                         }`}
                                 >
@@ -427,45 +608,100 @@ export function LotBulkEditDatesModal({
                                             </div>
                                         </label>
 
-                                        {/* Quick Clear Toggle when enabled */}
-                                        {state.enabled && (
+                                        {/* Quick mode switches */}
+                                        {!state.enabled ? (
                                             <button
                                                 type="button"
-                                                onClick={() => toggleFieldClear(field.key)}
-                                                className={`px-2 py-1 text-[11px] font-semibold rounded-lg transition-colors cursor-pointer shrink-0 ${state.isClear
-                                                    ? 'bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                                                    : 'text-slate-500 hover:bg-slate-200/60 dark:hover:bg-slate-700/60'
-                                                    }`}
-                                                title={state.isClear ? 'Nhấn để hủy xóa ngày' : 'Nhấn để xóa ngày (để trống dữ liệu)'}
+                                                onClick={() => setFieldClear(field.key)}
+                                                className="px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-lg transition-colors cursor-pointer border border-transparent hover:border-rose-200 dark:hover:border-rose-900 shrink-0 flex items-center gap-1"
+                                                title="Tích chọn và xóa ngày (để trống dữ liệu)"
                                             >
-                                                {state.isClear ? '✓ Đang xóa (để trống)' : 'Xóa ngày'}
+                                                <CalendarOff size={12} />
+                                                <span>Xóa ngày</span>
                                             </button>
+                                        ) : (
+                                            <div className="flex items-center gap-1 bg-white dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 shrink-0 text-[11px]">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFieldPickDate(field.key)}
+                                                    className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer ${!isFieldCleared
+                                                        ? 'bg-blue-600 text-white shadow-xs'
+                                                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                                        }`}
+                                                >
+                                                    Đặt ngày
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFieldClear(field.key)}
+                                                    className={`px-2 py-0.5 rounded-md font-semibold transition-all cursor-pointer flex items-center gap-1 ${isFieldCleared
+                                                        ? 'bg-rose-600 text-white shadow-xs'
+                                                        : 'text-slate-500 hover:text-rose-600'
+                                                        }`}
+                                                    title="Xóa ngày về trống (null)"
+                                                >
+                                                    <CalendarOff size={11} />
+                                                    <span>Xóa ngày</span>
+                                                </button>
+                                            </div>
                                         )}
                                     </div>
 
-                                    {/* Date input (when enabled and not cleared) */}
-                                    {state.enabled && !state.isClear && (
-                                        <div className="mt-3 ml-7 flex items-center gap-2 animate-in fade-in duration-150">
-                                            <input
-                                                type="date"
-                                                value={state.value}
-                                                onChange={(e) => setFieldValue(field.key, e.target.value)}
-                                                className="flex-1 px-3 py-2 text-xs sm:text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-xs"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => handleSetToday(field.key)}
-                                                className="px-2.5 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors cursor-pointer shrink-0"
-                                            >
-                                                Hôm nay
-                                            </button>
+                                    {/* Date input (when enabled and not in cleared mode) */}
+                                    {state.enabled && !isFieldCleared && (
+                                        <div className="mt-3 ml-7 space-y-1.5 animate-in fade-in duration-150">
+                                            <div className="flex items-center gap-2">
+                                                <div className="relative flex-1">
+                                                    <input
+                                                        type="date"
+                                                        value={state.value}
+                                                        onChange={(e) => setFieldValue(field.key, e.target.value)}
+                                                        className="w-full px-3 py-2 pr-7 text-xs sm:text-sm bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl font-medium text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 shadow-xs"
+                                                    />
+                                                    {state.value && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setFieldClear(field.key)}
+                                                            className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 cursor-pointer"
+                                                            title="Xóa ngày"
+                                                        >
+                                                            <X size={13} />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFieldValue(field.key, todayStr)}
+                                                    className="px-2.5 py-2 text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl transition-colors cursor-pointer shrink-0"
+                                                >
+                                                    Hôm nay
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setFieldClear(field.key)}
+                                                    className="px-2.5 py-2 text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 rounded-xl transition-colors cursor-pointer shrink-0"
+                                                    title="Để trống ngày"
+                                                >
+                                                    Để trống
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
 
-                                    {/* Info if cleared */}
-                                    {state.enabled && state.isClear && (
-                                        <div className="mt-2.5 ml-7 text-[11px] text-rose-600 dark:text-rose-400 font-medium italic animate-in fade-in duration-150">
-                                            * Ngày này sẽ được xóa về trống (null) cho tất cả các LOT đã chọn.
+                                    {/* Notice when cleared / no date */}
+                                    {state.enabled && isFieldCleared && (
+                                        <div className="mt-2.5 ml-7 p-2 bg-rose-50 dark:bg-rose-950/30 border border-rose-200/80 dark:border-rose-900/60 rounded-xl flex items-center justify-between text-xs text-rose-700 dark:text-rose-300 animate-in fade-in duration-150">
+                                            <span className="flex items-center gap-1.5 font-medium">
+                                                <CalendarOff size={13} className="text-rose-500 shrink-0" />
+                                                <span>Sẽ xóa ngày (để trống - NULL) cho tất cả LOT</span>
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => setFieldPickDate(field.key)}
+                                                className="text-[11px] font-bold text-blue-600 dark:text-blue-400 hover:underline cursor-pointer ml-2 whitespace-nowrap"
+                                            >
+                                                + Chọn ngày
+                                            </button>
                                         </div>
                                     )}
                                 </div>
@@ -478,8 +714,13 @@ export function LotBulkEditDatesModal({
                 <div className="p-4 sm:p-5 bg-slate-50 dark:bg-slate-800/60 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-3">
                     <div className="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">
                         {enabledFieldsCount > 0 ? (
-                            <span className="text-blue-600 dark:text-blue-400 font-semibold">
-                                Đang chọn {enabledFieldsCount} trường ngày
+                            <span className="font-medium">
+                                Đang chọn <strong className="text-blue-600 dark:text-blue-400">{enabledFieldsCount}</strong> trường ngày
+                                {clearedCount > 0 && updatedCount > 0 ? (
+                                    <> ({updatedCount} đặt ngày mới, <span className="text-rose-600 dark:text-rose-400 font-semibold">{clearedCount} xóa ngày</span>)</>
+                                ) : clearedCount > 0 ? (
+                                    <> (<span className="text-rose-600 dark:text-rose-400 font-semibold">{clearedCount} trường sẽ xóa về trống</span>)</>
+                                ) : null}
                             </span>
                         ) : (
                             <span>Chưa chọn trường ngày nào</span>

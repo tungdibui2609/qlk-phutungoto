@@ -1142,9 +1142,21 @@ export function LotForm({
                     {/* Ngày nhập nguyên liệu */}
                     {hasModule('raw_material_date') && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày nhập nguyên liệu
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày nhập nguyên liệu
+                                </label>
+                                {rawMaterialDate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setRawMaterialDate('')}
+                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                        title="Xóa ngày nhập nguyên liệu (để trống)"
+                                    >
+                                        Xóa ngày
+                                    </button>
+                                )}
+                            </div>
                             <div className="relative">
                                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                                 <input
@@ -1161,9 +1173,21 @@ export function LotForm({
                     {/* Ngày nhập kho */}
                     {hasModule('inbound_date') && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày nhập kho
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày nhập kho
+                                </label>
+                                {inboundDate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setInboundDate('')}
+                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                        title="Xóa ngày nhập kho (để trống)"
+                                    >
+                                        Xóa ngày
+                                    </button>
+                                )}
+                            </div>
                             <div className="relative">
                                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                                 <input
@@ -1180,9 +1204,21 @@ export function LotForm({
                     {/* Ngày sản xuất (trước đây là Ngày bóc múi) */}
                     {hasModule('peeling_date') && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày sản xuất
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày sản xuất
+                                </label>
+                                {peelingDate && !lotItems.some(item => !!item.productionLotId) && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPeelingDate('')}
+                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                        title="Xóa ngày sản xuất (để trống)"
+                                    >
+                                        Xóa ngày
+                                    </button>
+                                )}
+                            </div>
                             <div className="relative">
                                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                                 <input
@@ -1200,9 +1236,21 @@ export function LotForm({
                     {/* Ngày đóng bao bì */}
                     {hasModule('packaging_date') && (
                         <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Ngày đóng bao bì
-                            </label>
+                            <div className="flex items-center justify-between">
+                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                    Ngày đóng bao bì
+                                </label>
+                                {packagingDate && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setPackagingDate('')}
+                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                        title="Xóa ngày đóng bao bì (để trống)"
+                                    >
+                                        Xóa ngày
+                                    </button>
+                                )}
+                            </div>
                             <div className="relative">
                                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
                                 <input

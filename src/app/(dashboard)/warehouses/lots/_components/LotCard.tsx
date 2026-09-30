@@ -299,153 +299,128 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             }`}></div>
 
             {/* Header - Colored */}
-            <div className={`px-4 pt-5 pb-4 bg-emerald-50/40 dark:bg-emerald-950/20 border-b border-emerald-100/50 dark:border-emerald-900/20 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
-                <div className="flex items-center justify-between">
-                    <div className="flex flex-wrap items-center gap-2">
-                        {onToggleSelect && (
+            <div className={`px-2.5 py-2 sm:px-3 sm:py-2.5 bg-slate-50/70 dark:bg-slate-900/40 border-b border-slate-200/60 dark:border-slate-800/60 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
+                {/* Main Row: Mã LOT, STT, Vị trí chia đều 3 phần bằng nhau (flex-1), khoảng cách đồng đều (gap-1.5), bo tròn mềm mại */}
+                <div className="flex items-center gap-1.5 min-w-0 w-full">
+                    {onToggleSelect && (
+                        <button
+                            type="button"
+                            onClick={(e) => {
+                                e.stopPropagation()
+                                onToggleSelect(lot.id)
+                            }}
+                            className={`w-4 h-4 rounded-full flex items-center justify-center transition-all cursor-pointer shrink-0 ${
+                                isSelected
+                                    ? 'bg-emerald-600 text-white shadow-xs ring-1.5 ring-emerald-500/30'
+                                    : 'border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-emerald-500'
+                            }`}
+                            title={isSelected ? 'Bỏ chọn LOT' : 'Chọn LOT'}
+                        >
+                            {isSelected && <Check size={10} className="stroke-[3]" />}
+                        </button>
+                    )}
+
+                    {/* 1. MÃ LOT - Xanh Dương (Bo tròn, chia đều flex-1, căn giữa) */}
+                    <div 
+                        className="h-6.5 flex-1 min-w-0 inline-flex items-center justify-center gap-1 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-tight bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800/80 shadow-2xs"
+                        title={`Mã LOT đầy đủ: ${lot.code}`}
+                    >
+                        <Tag size={10} className="text-blue-500 dark:text-blue-400 shrink-0" />
+                        <span className="truncate">{(lot.code || '').replace(/^DL-LOT-/i, '')}</span>
+                    </div>
+
+                    {/* 2. STT - Cam / Hổ Phách (Bo tròn, chia đều flex-1, căn giữa) */}
+                    {isEditingSTT ? (
+                        <div
+                            onClick={(e) => e.stopPropagation()}
+                            className="h-6.5 inline-flex items-center gap-1 bg-white dark:bg-slate-900 px-2 rounded-full border border-amber-500 shadow-xs animate-in fade-in zoom-in-95 duration-150 z-10 shrink-0"
+                        >
+                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-tight">STT:</span>
+                            <input
+                                ref={sttInputRef}
+                                type="text"
+                                value={editSttValue}
+                                onChange={(e) => setEditSttValue(e.target.value.toUpperCase())}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault()
+                                        handleSaveSTT()
+                                    } else if (e.key === 'Escape') {
+                                        e.preventDefault()
+                                        handleCancelEditSTT()
+                                    }
+                                }}
+                                placeholder="vd: F3174"
+                                disabled={isSavingSTT}
+                                className="w-14 sm:w-16 h-5 px-1 py-0 text-[11px] font-bold uppercase text-slate-900 dark:text-white bg-amber-50/50 dark:bg-amber-950/40 rounded-md border border-amber-300 dark:border-amber-700 outline-none focus:ring-1 focus:ring-amber-500 placeholder:text-slate-400 placeholder:font-normal placeholder:normal-case"
+                                autoFocus
+                            />
+                            {getLastUpdatedSTT() && getNextSTT(getLastUpdatedSTT()) !== editSttValue && (
+                                <button
+                                    type="button"
+                                    onClick={(e) => {
+                                        e.stopPropagation()
+                                        setEditSttValue(getNextSTT(getLastUpdatedSTT()))
+                                        sttInputRef.current?.focus()
+                                    }}
+                                    disabled={isSavingSTT}
+                                    className="h-5 px-1.5 rounded-full text-[9px] font-bold bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/50 dark:hover:bg-amber-800 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-700 transition-all cursor-pointer whitespace-nowrap"
+                                    title={`Điền STT tiếp theo: ${getNextSTT(getLastUpdatedSTT())}`}
+                                >
+                                    ⚡ {getNextSTT(getLastUpdatedSTT())}
+                                </button>
+                            )}
                             <button
                                 type="button"
-                                onClick={(e) => {
-                                    e.stopPropagation()
-                                    onToggleSelect(lot.id)
-                                }}
-                                className={`w-5 h-5 rounded-md flex items-center justify-center transition-all cursor-pointer ${
-                                    isSelected
-                                        ? 'bg-emerald-600 text-white shadow-xs ring-2 ring-emerald-500/30 scale-105'
-                                        : 'border-2 border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 hover:border-emerald-500'
-                                }`}
-                                title={isSelected ? 'Bỏ chọn LOT' : 'Chọn LOT'}
+                                onClick={handleSaveSTT}
+                                disabled={isSavingSTT}
+                                className="w-5 h-5 flex items-center justify-center rounded-full bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-50 transition-colors cursor-pointer"
+                                title="Lưu (Enter)"
                             >
-                                {isSelected && <Check size={13} className="stroke-[3]" />}
+                                {isSavingSTT ? <Loader2 size={11} className="animate-spin" /> : <Check size={11} className="stroke-[3]" />}
                             </button>
-                        )}
-                        <span className="text-sm font-black text-slate-900 dark:text-slate-100 uppercase tracking-tight">
-                            {lot.code}
-                        </span>
-                        {lot.is_locked && (
-                            <span className="px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200 dark:border-red-800 flex items-center gap-1">
-                                <Lock size={10} />
-                                ĐÃ KHÓA
-                            </span>
-                        )}
-                        {isEditingSTT ? (
-                            <div
-                                onClick={(e) => e.stopPropagation()}
-                                className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 p-0.5 pl-2 rounded-lg border-2 border-emerald-500 shadow-md animate-in fade-in zoom-in-95 duration-150 z-10"
-                            >
-                                <span className="text-[10px] font-black text-emerald-700 dark:text-emerald-400 uppercase tracking-tight">STT:</span>
-                                <input
-                                    ref={sttInputRef}
-                                    type="text"
-                                    value={editSttValue}
-                                    onChange={(e) => setEditSttValue(e.target.value.toUpperCase())}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            handleSaveSTT()
-                                        } else if (e.key === 'Escape') {
-                                            e.preventDefault()
-                                            handleCancelEditSTT()
-                                        }
-                                    }}
-                                    placeholder="vd: F3174"
-                                    disabled={isSavingSTT}
-                                    className="w-20 px-1.5 py-0.5 text-xs font-black uppercase text-slate-900 dark:text-white bg-emerald-50/50 dark:bg-emerald-950/40 rounded border border-emerald-300 dark:border-emerald-700 outline-none focus:ring-1 focus:ring-emerald-500 placeholder:text-slate-400 placeholder:font-normal placeholder:normal-case"
-                                    autoFocus
-                                />
-                                {getLastUpdatedSTT() && getNextSTT(getLastUpdatedSTT()) !== editSttValue && (
-                                    <button
-                                        type="button"
-                                        onClick={(e) => {
-                                            e.stopPropagation()
-                                            setEditSttValue(getNextSTT(getLastUpdatedSTT()))
-                                            sttInputRef.current?.focus()
-                                        }}
-                                        disabled={isSavingSTT}
-                                        className="px-1.5 py-0.5 rounded text-[10px] font-black bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/50 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 transition-all cursor-pointer whitespace-nowrap shadow-2xs"
-                                        title={`Bấm để điền nhanh STT tiếp theo: ${getNextSTT(getLastUpdatedSTT())}`}
-                                    >
-                                        ⚡ {getNextSTT(getLastUpdatedSTT())}
-                                    </button>
-                                )}
-                                <button
-                                    type="button"
-                                    onClick={handleSaveSTT}
-                                    disabled={isSavingSTT}
-                                    className="p-1 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition-colors cursor-pointer shadow-xs"
-                                    title="Lưu (Enter)"
-                                >
-                                    {isSavingSTT ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} className="stroke-[3]" />}
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleCancelEditSTT}
-                                    disabled={isSavingSTT}
-                                    className="p-1 rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors cursor-pointer shadow-xs"
-                                    title="Hủy (Esc)"
-                                >
-                                    <X size={12} />
-                                </button>
-                            </div>
-                        ) : (
-                            <div className={`group/stt inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-[10px] font-black uppercase tracking-wider shadow-sm border transition-all ${
-                                (lot as any).daily_seq
-                                    ? 'bg-emerald-700 text-white border-emerald-800'
-                                    : 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                            }`}>
-                                <span>STT: {decodeSTT((lot as any).daily_seq) || '--'}</span>
-                                {!lot.is_locked && (
-                                    <button
-                                        type="button"
-                                        onClick={handleStartEditSTT}
-                                        className={`p-0.5 rounded transition-all cursor-pointer ${
-                                            (lot as any).daily_seq
-                                                ? 'text-emerald-200 hover:text-white hover:bg-emerald-600/60'
-                                                : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
-                                        }`}
-                                        title="Bấm vào cây bút để sửa STT nhanh"
-                                    >
-                                        <Pencil size={11} className="stroke-[2.5]" />
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                        {searchStatus.isMatch && (
                             <button
-                                onClick={() => setShowBoxLabelsModal(true)}
-                                className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm border border-transparent cursor-pointer hover:opacity-90 active:scale-95 transition-all ${searchStatus.badgeClass}`}
-                                title="Bấm để xem danh sách tem khớp"
+                                type="button"
+                                onClick={handleCancelEditSTT}
+                                disabled={isSavingSTT}
+                                className="w-5 h-5 flex items-center justify-center rounded-full bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 transition-colors cursor-pointer"
+                                title="Hủy (Esc)"
                             >
-                                {searchStatus.badgeText}
+                                <X size={11} />
                             </button>
-                        )}
-                        {(lot.productions?.code || lot.production_code) && (
-                            <div className="flex flex-col gap-1">
-                                <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200/60 dark:border-emerald-800/50 w-fit">
-                                    LSX: {lot.productions?.code || lot.production_code}
-                                </span>
-                                {lot.productions && (lot.productions as any).production_lots && (lot.productions as any).production_lots.length > 0 && (
-                                    <div className="flex flex-wrap gap-1">
-                                        {(lot.productions as any).production_lots
-                                            .filter((pl: any) => {
-                                                const selectedLotId = (lot as any).production_lot_id;
-                                                const hasMatchingLot = (lot.productions as any).production_lots.some((p: any) => p.id === selectedLotId);
-                                                if (selectedLotId && hasMatchingLot) {
-                                                    return pl.id === selectedLotId;
-                                                }
-                                                // Fallback for legacy data or unmatched UUIDs after table recreation: match by product
-                                                return lot.lot_items?.some(i => i.product_id === pl.product_id);
-                                            })
-                                            .map((pl: any, idx: number) => (
-                                                <span key={idx} className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[9px] font-black border border-blue-100 dark:border-blue-800/50 uppercase tracking-tight">
-                                                    Lot SX: {pl.lot_code}
-                                                </span>
-                                            ))}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    ) : (
+                        <div className={`group/stt h-6.5 flex-1 min-w-0 inline-flex items-center justify-center gap-1 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-[11px] font-bold uppercase tracking-tight shadow-2xs border transition-all ${
+                            (lot as any).daily_seq
+                                ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800/80'
+                                : 'bg-slate-100/80 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                        }`}>
+                            <span className="truncate">STT: {decodeSTT((lot as any).daily_seq) || '--'}</span>
+                            {!lot.is_locked && (
+                                <button
+                                    type="button"
+                                    onClick={handleStartEditSTT}
+                                    className={`p-0.5 rounded-full transition-all cursor-pointer shrink-0 ${
+                                        (lot as any).daily_seq
+                                            ? 'text-amber-500 hover:text-amber-700 dark:hover:text-amber-100 hover:bg-amber-100 dark:hover:bg-amber-900/50'
+                                            : 'text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200 dark:hover:bg-slate-700'
+                                    }`}
+                                    title="Bấm vào cây bút để sửa STT nhanh"
+                                >
+                                    <Pencil size={10} className="stroke-[2.5]" />
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    {lot.is_locked && (
+                        <span className="h-6.5 inline-flex items-center gap-0.5 px-1.5 rounded-full text-[9px] font-bold uppercase tracking-wider border bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200 dark:border-red-800 shrink-0">
+                            <Lock size={9} />
+                            KHÓA
+                        </span>
+                    )}
+
+                    {/* 3. VỊ TRÍ - Xanh Lục (Bo tròn, chia đều flex-1, căn giữa, KHÔNG ml-auto) */}
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
                             onClick={() => {
@@ -457,11 +432,12 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                     onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
                                 }
                             }}
-                            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200 dark:border-emerald-800 ${!isSanxuat && !lot.is_locked ? 'hover:bg-emerald-200 dark:hover:bg-emerald-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
+                            className={`h-6.5 flex-1 min-w-0 inline-flex items-center justify-center gap-1 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-[11px] font-bold tracking-tight bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-800/80 ${!isSanxuat && !lot.is_locked ? 'hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-2xs`}
+                            title={`Vị trí: ${lot.positions.map((p: any) => p.code).join(', ')}`}
                         >
-                            <MapPin size={12} />
-                            {lot.positions[0].code}
-                            {lot.positions.length > 1 && <span className="ml-1 text-[10px] opacity-70">+{lot.positions.length - 1}</span>}
+                            <MapPin size={10} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                            <span className="truncate">{lot.positions[0].code}</span>
+                            {lot.positions.length > 1 && <span className="ml-0.5 text-[9px] opacity-75 font-normal shrink-0">+{lot.positions.length - 1}</span>}
                         </button>
                     ) : (
                         <button
@@ -474,13 +450,52 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                     onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
                                 }
                             }}
-                            className={`flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 text-[10px] font-bold border border-amber-200 dark:border-amber-800/50 ${!isSanxuat && !lot.is_locked ? 'hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-sm`}
+                            className={`h-6.5 flex-1 min-w-0 inline-flex items-center justify-center gap-1 px-1.5 sm:px-2 rounded-full text-[10px] sm:text-[11px] font-bold tracking-tight bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800/80 ${!isSanxuat && !lot.is_locked ? 'hover:bg-rose-100 dark:hover:bg-rose-900/50 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-2xs`}
+                            title="Chưa gán vị trí"
                         >
-                            <AlertCircle size={12} />
-                            Chưa gán
+                            <AlertCircle size={10} className="text-rose-500 shrink-0" />
+                            <span className="truncate">Chưa gán</span>
                         </button>
                     )}
                 </div>
+
+                {/* Sub-row for extra tags if any (Search match, LSX) */}
+                {(searchStatus.isMatch || lot.productions?.code || lot.production_code) && (
+                    <div className="mt-2 pt-2 border-t border-emerald-100/60 dark:border-emerald-900/20 flex flex-wrap items-center gap-1.5">
+                        {searchStatus.isMatch && (
+                            <button
+                                onClick={() => setShowBoxLabelsModal(true)}
+                                className={`px-2 py-0.5 rounded-lg text-[9px] font-black uppercase tracking-wider shadow-sm border border-transparent cursor-pointer hover:opacity-90 active:scale-95 transition-all ${searchStatus.badgeClass}`}
+                                title="Bấm để xem danh sách tem khớp"
+                            >
+                                {searchStatus.badgeText}
+                            </button>
+                        )}
+                        {(lot.productions?.code || lot.production_code) && (
+                            <div className="flex flex-wrap items-center gap-1">
+                                <span className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold border border-emerald-200/60 dark:border-emerald-800/50 w-fit">
+                                    LSX: {lot.productions?.code || lot.production_code}
+                                </span>
+                                {lot.productions && (lot.productions as any).production_lots && (lot.productions as any).production_lots.length > 0 && (
+                                    (lot.productions as any).production_lots
+                                        .filter((pl: any) => {
+                                            const selectedLotId = (lot as any).production_lot_id;
+                                            const hasMatchingLot = (lot.productions as any).production_lots.some((p: any) => p.id === selectedLotId);
+                                            if (selectedLotId && hasMatchingLot) {
+                                                return pl.id === selectedLotId;
+                                            }
+                                            return lot.lot_items?.some(i => i.product_id === pl.product_id);
+                                        })
+                                        .map((pl: any, idx: number) => (
+                                            <span key={idx} className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[9px] font-black border border-blue-100 dark:border-blue-800/50 uppercase tracking-tight">
+                                                Lot SX: {pl.lot_code}
+                                            </span>
+                                        ))
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
             </div>
 
             {/* Main Content */}
