@@ -1,9 +1,9 @@
 'use client'
 
 import React, { useEffect, useState, useRef, Suspense } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { Printer, Loader2, Hash, BarChart3, RotateCcw, Package, Building2, Calendar, ShieldAlert, AlertTriangle, CheckCircle2, X, Shuffle, Sparkles } from 'lucide-react'
+import { Printer, Loader2, Hash, BarChart3, RotateCcw, Package, Building2, Calendar, ShieldAlert, AlertTriangle, CheckCircle2, X, Shuffle, Sparkles, ArrowLeft, Search, Check, Boxes } from 'lucide-react'
 import { LotLabel } from '@/components/warehouse/lots/LotLabel'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { PrintHeader } from '@/components/print/PrintHeader'
@@ -36,6 +36,7 @@ export default function ProductionLotPrintPage() {
 }
 
 function ProductionLotPrintContent() {
+    const router = useRouter()
     const searchParams = useSearchParams()
     const lotId = searchParams.get('id')
     const type = searchParams.get('type') || 'label' // 'label' or 'sheet'
@@ -50,6 +51,12 @@ function ProductionLotPrintContent() {
 
     const [isDamagedMode, setIsDamagedMode] = useState(false)
     const [showDamagedModal, setShowDamagedModal] = useState(false)
+
+    // Lot Selector Modal States
+    const [showLotSelectModal, setShowLotSelectModal] = useState(false)
+    const [availableLots, setAvailableLots] = useState<any[]>([])
+    const [lotSearchQuery, setLotSearchQuery] = useState('')
+    const [loadingLots, setLoadingLots] = useState(false)
 
     // Custom Modal States
     const [showReasonModal, setShowReasonModal] = useState(false)
@@ -106,13 +113,97 @@ function ProductionLotPrintContent() {
         show_packing_date: true
     })
 
+    const applyLotData = (lotData: any) => {
+        setData(lotData)
+        if (lotData?.id && typeof window !== 'undefined') {
+            localStorage.setItem('last_printed_lot_id', lotData.id)
+        }
+
+        // Prioritize DB config
+        const dbConfig = lotData?.print_config || {}
+        const localConfigStr = lotData?.id ? localStorage.getItem(`print_config_${lotData.id}`) : null
+        const localConfig = localConfigStr ? JSON.parse(localConfigStr) : {}
+
+        const mergedConfig = {
+            ...printConfig,
+            ...localConfig,
+            ...dbConfig
+        }
+
+        const detectedPrefix = lotData?.lot_code?.match(/^[A-Za-z]+/)?.[0] || 'F'
+        const currentMonth = (new Date().getMonth() + 1).toString()
+
+        const initialTemplate = templateFromUrl 
+            ? (['2', 'template2', 'sanxuat'].includes(templateFromUrl) ? 'template2' : 'template1')
+            : (mergedConfig.template || 'template1')
+
+        const initialSheetTemplate = templateFromUrl
+            ? (['2', 'template2', 'sanxuat'].includes(templateFromUrl) ? 'template2' : 'template1')
+            : (mergedConfig.sheet_template || 'template1')
+
+        setPrintConfig(prev => ({
+            ...prev,
+            ...mergedConfig,
+            template: initialTemplate,
+            sheet_template: initialSheetTemplate,
+            code_prefix: mergedConfig.code_prefix !== undefined ? mergedConfig.code_prefix : detectedPrefix,
+            month_val: mergedConfig.month_val !== undefined ? mergedConfig.month_val : currentMonth,
+            custom_lot_code: mergedConfig.custom_lot_code !== undefined ? mergedConfig.custom_lot_code : (lotData?.lot_code || ''),
+            team_group: mergedConfig.team_group || 'Nguyên',
+            material_region: mergedConfig.material_region || 'Miền Tây',
+            start_index: type === 'sheet'
+                ? (lotData?.productions?.last_sheet_index || 0) + 1
+                : (lotData?.last_printed_index || 0) + 1,
+            specification: mergedConfig.specification || (initialTemplate === 'template2' ? (lotData?.weight_per_unit ? `Thùng/túi: ${lotData.weight_per_unit}kg` : 'Thùng/túi: 20kg') : (lotData?.products?.name?.match(/\((.*?)\)/)?.[1] || '')),
+            net_weight: mergedConfig.net_weight || (lotData?.weight_per_unit ? `${lotData.weight_per_unit}kg` : (initialTemplate === 'template2' ? '20kg' : '')),
+            production_date: lotData?.production_date ? new Date(lotData.production_date).toISOString().split('T')[0] : (mergedConfig.production_date || new Date().toISOString().split('T')[0]),
+            created_date: mergedConfig.created_date || (lotData?.created_at ? new Date(lotData.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
+        }))
+    }
+
+    const fetchAvailableLots = async () => {
+        setLoadingLots(true)
+        try {
+            const { data: lots, error } = await supabase
+                .from('production_lots')
+                .select(`
+                    *,
+                    products (name, sku, unit),
+                    productions (*, customers:customer_id(name))
+                `)
+                .order('created_at', { ascending: false })
+                .limit(50)
+
+            if (lots) {
+                setAvailableLots(lots)
+            }
+        } catch (e) {
+            console.error('Lỗi khi tải danh sách lô:', e)
+        } finally {
+            setLoadingLots(false)
+        }
+    }
+
+    const handleSelectLot = (newLot: any) => {
+        applyLotData(newLot)
+        setShowLotSelectModal(false)
+        router.replace(`/print/production-lot?id=${newLot.id}&type=${type}`)
+        showToast(`Đã chuyển sang Lô: ${newLot.lot_code}`, 'success')
+    }
+
+    const filteredAvailableLots = availableLots.filter((lot: any) => {
+        if (!lotSearchQuery.trim()) return true
+        const q = lotSearchQuery.toLowerCase()
+        return (
+            (lot.lot_code || '').toLowerCase().includes(q) ||
+            (lot.products?.name || '').toLowerCase().includes(q) ||
+            (lot.productions?.code || '').toLowerCase().includes(q)
+        )
+    })
+
     useEffect(() => {
         async function fetchData() {
-            if (!lotId) {
-                setLoading(false)
-                return
-            }
-
+            setLoading(true)
             if (token) {
                 await supabase.auth.setSession({
                     access_token: token,
@@ -120,63 +211,63 @@ function ProductionLotPrintContent() {
                 })
             }
 
-            const { data: rawData, error } = await supabase
-                .from('production_lots')
-                .select(`
-                    *,
-                    products (name, sku, unit),
-                    productions (*, customers:customer_id(name))
-                `)
-                .eq('id', lotId)
-                .single()
+            let lotData: any = null
+            let idToLoad = lotId
 
-            const lotData = rawData as any
-
-            if (lotData) {
-                setData(lotData)
-                
-                // Prioritize DB config
-                const dbConfig = lotData.print_config || {}
-                const localConfigStr = localStorage.getItem(`print_config_${lotId}`)
-                const localConfig = localConfigStr ? JSON.parse(localConfigStr) : {}
-
-                const mergedConfig = {
-                    ...printConfig,
-                    ...localConfig,
-                    ...dbConfig
-                }
-
-                const detectedPrefix = lotData.lot_code?.match(/^[A-Za-z]+/)?.[0] || 'F'
-                const currentMonth = (new Date().getMonth() + 1).toString()
-
-                const initialTemplate = templateFromUrl 
-                    ? (['2', 'template2', 'sanxuat'].includes(templateFromUrl) ? 'template2' : 'template1')
-                    : (mergedConfig.template || 'template1')
-
-                const initialSheetTemplate = templateFromUrl
-                    ? (['2', 'template2', 'sanxuat'].includes(templateFromUrl) ? 'template2' : 'template1')
-                    : (mergedConfig.sheet_template || 'template1')
-
-                setPrintConfig(prev => ({
-                    ...prev,
-                    ...mergedConfig,
-                    template: initialTemplate,
-                    sheet_template: initialSheetTemplate,
-                    code_prefix: mergedConfig.code_prefix !== undefined ? mergedConfig.code_prefix : detectedPrefix,
-                    month_val: mergedConfig.month_val !== undefined ? mergedConfig.month_val : currentMonth,
-                    custom_lot_code: mergedConfig.custom_lot_code !== undefined ? mergedConfig.custom_lot_code : (lotData.lot_code || ''),
-                    team_group: mergedConfig.team_group || 'Nguyên',
-                    material_region: mergedConfig.material_region || 'Miền Tây',
-                    // Default index logic: Shared sheet index if 'sheet', per-lot printed index if 'label'
-                    start_index: type === 'sheet'
-                        ? (lotData.productions?.last_sheet_index || 0) + 1
-                        : (lotData.last_printed_index || 0) + 1,
-                    specification: mergedConfig.specification || (initialTemplate === 'template2' ? (lotData.weight_per_unit ? `Thùng/túi: ${lotData.weight_per_unit}kg` : 'Thùng/túi: 20kg') : (lotData.products?.name?.match(/\((.*?)\)/)?.[1] || '')),
-                    net_weight: mergedConfig.net_weight || (lotData.weight_per_unit ? `${lotData.weight_per_unit}kg` : (initialTemplate === 'template2' ? '20kg' : '')),
-                    production_date: lotData.production_date ? new Date(lotData.production_date).toISOString().split('T')[0] : (mergedConfig.production_date || new Date().toISOString().split('T')[0]),
-                    created_date: mergedConfig.created_date || (lotData.created_at ? new Date(lotData.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0])
-                }))
+            // If no lotId in URL, check localStorage
+            if (!idToLoad && typeof window !== 'undefined') {
+                idToLoad = localStorage.getItem('last_printed_lot_id')
             }
+
+            if (idToLoad) {
+                const { data: rawData } = await supabase
+                    .from('production_lots')
+                    .select(`
+                        *,
+                        products (name, sku, unit),
+                        productions (*, customers:customer_id(name))
+                    `)
+                    .eq('id', idToLoad)
+                    .single()
+
+                if (rawData) {
+                    lotData = rawData
+                }
+            }
+
+            // Fallback: load the most recent production lot
+            if (!lotData) {
+                const { data: recentLots } = await supabase
+                    .from('production_lots')
+                    .select(`
+                        *,
+                        products (name, sku, unit),
+                        productions (*, customers:customer_id(name))
+                    `)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+
+                if (recentLots && recentLots.length > 0) {
+                    lotData = recentLots[0]
+                }
+            }
+
+            // Fallback default mock if database is empty
+            if (!lotData) {
+                lotData = {
+                    id: '',
+                    lot_code: 'F001',
+                    total_printed_sheets: 0,
+                    damaged_printed_sheets: 0,
+                    total_printed_labels: 0,
+                    damaged_printed_labels: 0,
+                    last_printed_index: 0,
+                    products: { name: 'SẢN PHẨM MẪU', sku: 'SKU-001', unit: 'kg' },
+                    productions: { id: '', code: 'LSX-001', name: 'Lệnh sản xuất mẫu', last_sheet_index: 0, customers: { name: 'CHANH THU GROUP' } }
+                }
+            }
+
+            applyLotData(lotData)
             setLoading(false)
         }
 
@@ -186,14 +277,15 @@ function ProductionLotPrintContent() {
     // Autosave config to DB whenever it changes
     useEffect(() => {
         const timer = setTimeout(async () => {
-            if (lotId && data && !loading) {
+            const currentId = data?.id || lotId
+            if (currentId && data && !loading) {
                 console.log('Autosaving config to DB...')
                 await ((supabase.from('production_lots') as any)
                     .update({ print_config: printConfig })
-                    .eq('id', lotId))
+                    .eq('id', currentId))
                 
                 // Also update local for redundancy
-                localStorage.setItem(`print_config_${lotId}`, JSON.stringify(printConfig))
+                localStorage.setItem(`print_config_${currentId}`, JSON.stringify(printConfig))
             }
         }, 1000) // Debounce 1s to avoid spamming DB
 
@@ -213,7 +305,7 @@ function ProductionLotPrintContent() {
     }
 
     const handlePrint = async () => {
-        if (!data || !lotId) return
+        if (!data) return
 
         const count = Number(printConfig.label_count) || 0
         const startIndex = Number(printConfig.start_index) || 1
@@ -229,7 +321,12 @@ function ProductionLotPrintContent() {
     }
 
     const navigateToCustomPrint = () => {
-        window.open('/print/custom-production-lot?id=' + lotId, '_blank')
+        const targetId = data?.id || lotId
+        if (targetId) {
+            window.open('/print/custom-production-lot?id=' + targetId, '_blank')
+        } else {
+            window.open('/print/custom-production-lot', '_blank')
+        }
     }
 
     const executePrint = async (reason: string, count: number, startIndex: number) => {
@@ -241,57 +338,74 @@ function ProductionLotPrintContent() {
         }
 
         try {
-            if (isDamagedMode) {
-                if (isSheet) {
-                    lotUpdates.damaged_printed_sheets = (Number(lot.damaged_printed_sheets) || 0) + count
-                } else {
-                    lotUpdates.damaged_printed_labels = (Number(lot.damaged_printed_labels) || 0) + count
-                }
-
-                const { data: { user } } = await supabase.auth.getUser()
-                
-                const logEntry = {
-                    timestamp: new Date().toISOString(),
-                    user_id: user?.id || 'unknown',
-                    user_email: user?.email || 'unknown',
-                    quantity: count,
-                    start_index: startIndex,
-                    reason: reason,
-                    type: type // 'label' or 'sheet'
-                }
-
-                const existingLogs = Array.isArray(lot.damaged_print_logs) ? lot.damaged_print_logs : []
-                lotUpdates.damaged_print_logs = [...existingLogs, logEntry]
-            } else {
-                if (isSheet) {
-                    // Cập nhật STT dùng chung cho Lệnh sản xuất (Productions)
-                    const productionUpdates = {
-                        last_sheet_index: startIndex + count - 1
+            if (lot?.id) {
+                if (isDamagedMode) {
+                    if (isSheet) {
+                        lotUpdates.damaged_printed_sheets = (Number(lot.damaged_printed_sheets) || 0) + count
+                    } else {
+                        lotUpdates.damaged_printed_labels = (Number(lot.damaged_printed_labels) || 0) + count
                     }
-                    const { error: prodError } = await ((supabase.from('productions') as any)
-                        .update(productionUpdates)
-                        .eq('id', lot.production_id))
+
+                    const { data: { user } } = await supabase.auth.getUser()
                     
-                    if (prodError) throw prodError
-                    
-                    lotUpdates.total_printed_sheets = (Number(lot.total_printed_sheets) || 0) + count
-                    // Cập nhật local data cho production
-                    if (data.productions) data.productions.last_sheet_index = productionUpdates.last_sheet_index
+                    const logEntry = {
+                        timestamp: new Date().toISOString(),
+                        user_id: user?.id || 'unknown',
+                        user_email: user?.email || 'unknown',
+                        quantity: count,
+                        start_index: startIndex,
+                        reason: reason,
+                        type: type // 'label' or 'sheet'
+                    }
+
+                    const existingLogs = Array.isArray(lot.damaged_print_logs) ? lot.damaged_print_logs : []
+                    lotUpdates.damaged_print_logs = [...existingLogs, logEntry]
                 } else {
-                    lotUpdates.total_printed_labels = (Number(lot.total_printed_labels) || 0) + count
+                    if (isSheet) {
+                        // Cập nhật STT dùng chung cho Lệnh sản xuất (Productions)
+                        if (lot.production_id) {
+                            const productionUpdates = {
+                                last_sheet_index: startIndex + count - 1
+                            }
+                            const { error: prodError } = await ((supabase.from('productions') as any)
+                                .update(productionUpdates)
+                                .eq('id', lot.production_id))
+                            
+                            if (prodError) throw prodError
+                            if (data.productions) data.productions.last_sheet_index = productionUpdates.last_sheet_index
+                        }
+                        
+                        lotUpdates.total_printed_sheets = (Number(lot.total_printed_sheets) || 0) + count
+                    } else {
+                        lotUpdates.total_printed_labels = (Number(lot.total_printed_labels) || 0) + count
+                        lotUpdates.last_printed_index = startIndex + count - 1
+                    }
+                }
+                
+                const { error: lotError } = await ((supabase.from('production_lots') as any)
+                    .update(lotUpdates)
+                    .eq('id', lot.id))
+
+                if (lotError) throw lotError
+
+                setData((prev: any) => prev ? { ...prev, ...lotUpdates } : null)
+            } else {
+                // In tự do không liên kết DB
+                if (isSheet) {
+                    if (data?.productions) {
+                        data.productions.last_sheet_index = startIndex + count - 1
+                    }
+                    lotUpdates.total_printed_sheets = (Number(lot?.total_printed_sheets) || 0) + count
+                } else {
+                    lotUpdates.total_printed_labels = (Number(lot?.total_printed_labels) || 0) + count
                     lotUpdates.last_printed_index = startIndex + count - 1
                 }
+                setData((prev: any) => prev ? { ...prev, ...lotUpdates } : null)
             }
-            
-            const { error: lotError } = await ((supabase.from('production_lots') as any)
-                .update(lotUpdates)
-                .eq('id', lotId))
 
-            if (lotError) throw lotError
-
-            setData((prev: any) => prev ? { ...prev, ...lotUpdates } : null)
-
-            const nextIndex = isDamagedMode ? undefined : (isSheet ? (data.productions?.last_sheet_index + 1) : (lotUpdates.last_printed_index + 1))
+            const nextIndex = isDamagedMode 
+                ? undefined 
+                : (isSheet ? ((data?.productions?.last_sheet_index || startIndex + count - 1) + 1) : ((lotUpdates.last_printed_index || startIndex + count - 1) + 1))
             
             setTimeout(() => {
                 window.print()
@@ -314,30 +428,157 @@ function ProductionLotPrintContent() {
     }
 
     const executeReset = async () => {
-        if (!lotId) return
         const updates = {
             total_printed_labels: 0,
             damaged_printed_labels: 0,
+            total_printed_sheets: 0,
+            damaged_printed_sheets: 0,
             last_printed_index: 0,
             last_printed_at: null,
             print_config: {},
             damaged_print_logs: []
         }
-        const { error } = await ((supabase.from('production_lots') as any).update(updates).eq('id', lotId))
-        if (!error) {
-            setData((prev: any) => prev ? { ...prev, ...updates } : null)
-            setPrintConfig(prev => ({ ...prev, start_index: 1 }))
-            setShowResetModal(false)
-            showToast('Reset thành công! Tất cả dữ liệu in đã được xóa trắng.', 'success')
-        } else {
-            showToast('Lỗi khi reset: ' + error.message, 'error')
+        if (data?.id) {
+            const { error } = await ((supabase.from('production_lots') as any).update(updates).eq('id', data.id))
+            if (error) {
+                showToast('Lỗi khi reset: ' + error.message, 'error')
+                return
+            }
         }
+        setData((prev: any) => prev ? { ...prev, ...updates } : null)
+        setPrintConfig(prev => ({ ...prev, start_index: 1 }))
+        setShowResetModal(false)
+        showToast('Reset thành công! Tất cả dữ liệu in đã được xóa trắng.', 'success')
     }
+
+    // Modal chọn Lô Sản Xuất
+    const renderLotSelectModal = () => (
+        showLotSelectModal && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm print:hidden" onClick={() => setShowLotSelectModal(false)}>
+                <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                    {/* Modal Header */}
+                    <div className="px-6 py-5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2.5 bg-white/20 rounded-xl backdrop-blur-md">
+                                <Boxes size={22} />
+                            </div>
+                            <div>
+                                <h2 className="text-lg font-black uppercase tracking-tight">Chọn Lô Sản Xuất</h2>
+                                <p className="text-blue-100 text-xs font-medium">Chọn lô để tải thông tin và tự động liên kết số thứ tự</p>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setShowLotSelectModal(false)}
+                            className="w-9 h-9 rounded-xl bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-lg font-black transition-colors"
+                        >
+                            ✕
+                        </button>
+                    </div>
+
+                    {/* Search bar */}
+                    <div className="p-4 border-b border-zinc-100 bg-zinc-50/50">
+                        <div className="relative">
+                            <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400" />
+                            <input
+                                type="text"
+                                value={lotSearchQuery}
+                                onChange={e => setLotSearchQuery(e.target.value)}
+                                placeholder="Tìm theo Mã Lô (VD: D009), Tên sản phẩm, Mã lệnh SX..."
+                                className="w-full pl-11 pr-4 py-3 rounded-2xl bg-white border border-zinc-200 focus:outline-none focus:ring-4 focus:ring-blue-100 font-medium text-sm text-zinc-800"
+                                autoFocus
+                            />
+                            {lotSearchQuery && (
+                                <button
+                                    onClick={() => setLotSearchQuery('')}
+                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 text-xs bg-zinc-100 px-2 py-1 rounded-md"
+                                >
+                                    Xoá
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Lots List */}
+                    <div className="overflow-y-auto flex-1 p-4 space-y-2">
+                        {loadingLots ? (
+                            <div className="py-12 flex flex-col items-center justify-center text-zinc-400">
+                                <Loader2 size={32} className="animate-spin text-blue-500 mb-2" />
+                                <span className="text-xs font-bold uppercase tracking-wider">Đang tải danh sách lô...</span>
+                            </div>
+                        ) : filteredAvailableLots.length === 0 ? (
+                            <div className="py-12 text-center text-zinc-400 font-bold">
+                                Không tìm thấy lô sản xuất phù hợp với từ khóa
+                            </div>
+                        ) : (
+                            filteredAvailableLots.map((lot: any) => {
+                                const isSelected = data?.id === lot.id
+                                return (
+                                    <div
+                                        key={lot.id}
+                                        onClick={() => handleSelectLot(lot)}
+                                        className={`p-4 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-4 ${
+                                            isSelected
+                                                ? 'bg-blue-50/80 border-blue-300 ring-2 ring-blue-500/20 shadow-sm'
+                                                : 'bg-white hover:bg-zinc-50 border-zinc-200 hover:border-zinc-300'
+                                        }`}
+                                    >
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <span className="font-black text-sm text-zinc-900 bg-zinc-100 px-2.5 py-0.5 rounded-lg border border-zinc-200">
+                                                    {lot.lot_code}
+                                                </span>
+                                                {lot.productions?.code && (
+                                                    <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
+                                                        LSX: {lot.productions.code}
+                                                    </span>
+                                                )}
+                                                {lot.created_at && (
+                                                    <span className="text-[11px] text-zinc-400 font-medium">
+                                                        {new Date(lot.created_at).toLocaleDateString('vi-VN')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div className="text-sm font-bold text-zinc-800 truncate">
+                                                {lot.products?.name || 'Chưa đặt tên'}
+                                            </div>
+                                            <div className="text-xs text-zinc-500 flex items-center gap-3 mt-1">
+                                                <span>SKU: {lot.products?.sku || '---'}</span>
+                                                {lot.weight_per_unit && <span>Quy cách: {lot.weight_per_unit}kg</span>}
+                                                {lot.productions?.customers?.name && (
+                                                    <span className="truncate max-w-[200px]">KH: {lot.productions.customers.name}</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {isSelected && (
+                                            <div className="flex items-center gap-1.5 text-blue-600 font-black text-xs bg-white px-3 py-1.5 rounded-xl border border-blue-200 shadow-xs flex-shrink-0">
+                                                <Check size={14} />
+                                                <span>Đang chọn</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            })
+                        )}
+                    </div>
+
+                    {/* Modal Footer */}
+                    <div className="p-4 border-t border-zinc-100 bg-zinc-50/50 flex justify-end">
+                        <button
+                            onClick={() => setShowLotSelectModal(false)}
+                            className="px-5 py-2.5 rounded-xl border border-zinc-200 text-zinc-600 font-bold text-xs hover:bg-zinc-100 transition-all"
+                        >
+                            Đóng
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )
+    )
 
     if (loading) {
         return (
             <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50">
-                <Loader2 className="w-10 h-10 animate-spin text-orange-500 mb-4" />
+                <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
                 <p className="text-zinc-500 font-bold uppercase tracking-widest text-xs">Đang tải dữ liệu lô hàng...</p>
             </div>
         )
@@ -346,9 +587,19 @@ function ProductionLotPrintContent() {
     if (!data) {
         return (
             <div className="min-h-screen flex items-center justify-center bg-zinc-50">
-                <div className="text-center p-8 bg-white rounded-3xl border border-zinc-200 shadow-sm">
+                <div className="text-center p-8 bg-white rounded-3xl border border-zinc-200 shadow-sm max-w-md">
                     <Hash className="w-12 h-12 text-zinc-300 mx-auto mb-4" />
-                    <p className="text-rose-500 font-bold">Không tìm thấy dữ liệu lô hàng</p>
+                    <p className="text-rose-500 font-bold mb-4">Chưa có thông tin lô hàng</p>
+                    <button
+                        onClick={() => {
+                            fetchAvailableLots()
+                            setShowLotSelectModal(true)
+                        }}
+                        className="px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl shadow-lg hover:bg-blue-700 transition-all text-sm uppercase tracking-wider flex items-center gap-2 mx-auto"
+                    >
+                        <Search size={16} />
+                        <span>Chọn Lô Sản Xuất để In</span>
+                    </button>
                 </div>
             </div>
         )
@@ -388,8 +639,16 @@ function ProductionLotPrintContent() {
             <div className="min-h-screen bg-zinc-100 p-8 flex flex-col items-center gap-6 print:bg-white print:p-0">
                 {/* Print Config Form */}
                 <div className="print:hidden bg-white p-8 rounded-[2.5rem] border border-zinc-200 shadow-2xl w-full max-w-4xl animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-                        <div className="flex items-center gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={() => router.back()}
+                                className="p-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-2xl transition-all border border-zinc-200 flex items-center justify-center flex-shrink-0 active:scale-95"
+                                title="Quay lại"
+                            >
+                                <ArrowLeft size={18} />
+                            </button>
                             <div className="p-4 bg-orange-500 rounded-2xl text-white shadow-lg shadow-orange-500/20">
                                 <Printer size={24} />
                             </div>
@@ -433,6 +692,52 @@ function ProductionLotPrintContent() {
                                 Mẫu 2: Tem Sản Xuất Mới
                             </button>
                         </div>
+                    </div>
+
+                    {/* Lot Info & Selector Banner */}
+                    <div className="mb-6 p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="p-2.5 bg-white text-orange-500 rounded-xl border border-zinc-200 shadow-xs flex-shrink-0">
+                                <Boxes size={18} />
+                            </div>
+                            <div className="min-w-0">
+                                <div className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                                    Lô Sản Xuất đang áp dụng
+                                </div>
+                                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                    {data?.id ? (
+                                        <>
+                                            <span className="font-black text-zinc-900 text-sm bg-white px-2.5 py-0.5 rounded-md border border-zinc-200">
+                                                {data.lot_code || '---'}
+                                            </span>
+                                            <span className="font-bold text-zinc-700 text-sm truncate max-w-[280px]">
+                                                {data.products?.name || '---'}
+                                            </span>
+                                            {data.productions?.code && (
+                                                <span className="text-xs font-semibold text-orange-600 bg-orange-50 px-2 py-0.5 rounded-md border border-orange-200/60">
+                                                    LSX: {data.productions.code}
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : (
+                                        <span className="text-xs font-bold text-zinc-500 italic">
+                                            Chế độ in tự do (Chưa chọn lô cụ thể)
+                                        </span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                fetchAvailableLots()
+                                setShowLotSelectModal(true)
+                            }}
+                            className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-orange-50 text-orange-600 rounded-xl border border-orange-200 shadow-xs text-xs font-black uppercase tracking-wider transition-all hover:scale-102 active:scale-98 flex-shrink-0"
+                        >
+                            <Search size={14} />
+                            <span>{data?.id ? 'Đổi Lô Sản Xuất' : 'Chọn Lô Sản Xuất'}</span>
+                        </button>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -979,6 +1284,8 @@ function ProductionLotPrintContent() {
                         </div>
                     </div>
                 )}
+                {/* Modal Chọn Lô Sản Xuất */}
+                {renderLotSelectModal()}
 
                 {/* Toast Notification */}
                 {toast.show && (
@@ -1194,17 +1501,25 @@ function ProductionLotPrintContent() {
         <div className="min-h-screen bg-zinc-100 py-12 px-6 flex flex-col items-center gap-8 print:bg-white print:p-0 print:block">
             {/* Print Config Form */}
             <div className="print:hidden bg-white p-8 rounded-[2.5rem] border border-zinc-200 shadow-2xl w-full max-w-4xl animate-in fade-in slide-in-from-top-4 duration-500">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-8">
-                    <div className="flex items-center gap-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                    <div className="flex items-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => router.back()}
+                            className="p-3 bg-zinc-100 hover:bg-zinc-200 text-zinc-700 rounded-2xl transition-all border border-zinc-200 flex items-center justify-center flex-shrink-0 active:scale-95"
+                            title="Quay lại"
+                        >
+                            <ArrowLeft size={18} />
+                        </button>
                         <div className="p-4 bg-blue-500 rounded-2xl text-white shadow-lg shadow-blue-500/20">
                             <Printer size={24} />
                         </div>
                         <div>
                             <h2 className="text-xl font-black text-zinc-900 uppercase tracking-tight">
-                                Cấu hình In Phiếu ({printConfig.paper_size === 'a4' ? 'Khổ A4' : 'Khổ A5'})
+                                Cấu hình In Số Thứ Tự / Phiếu ({printConfig.paper_size === 'a4' ? 'Khổ A4' : 'Khổ A5'})
                             </h2>
                             <p className="text-zinc-500 text-sm font-medium italic">
-                                Phiếu thông tin lô sản phẩm · {printConfig.paper_size === 'a4' ? 'Khổ A4 (297 x 210 mm)' : 'Khổ A5 (210 x 148 mm)'}
+                                Phiếu số thứ tự & thông tin lô sản phẩm · {printConfig.paper_size === 'a4' ? 'Khổ A4 (297 x 210 mm)' : 'Khổ A5 (210 x 148 mm)'}
                             </p>
                         </div>
                     </div>
@@ -1264,6 +1579,52 @@ function ProductionLotPrintContent() {
                             </button>
                         </div>
                     </div>
+                </div>
+
+                {/* Lot Info & Selector Banner */}
+                <div className="mb-6 p-4 rounded-2xl bg-zinc-50/80 border border-zinc-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-center gap-3 min-w-0">
+                        <div className="p-2.5 bg-white text-blue-600 rounded-xl border border-zinc-200 shadow-xs flex-shrink-0">
+                            <Boxes size={18} />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-[10px] font-black uppercase tracking-wider text-zinc-400">
+                                Lô Sản Xuất đang áp dụng
+                            </div>
+                            <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                                {data?.id ? (
+                                    <>
+                                        <span className="font-black text-zinc-900 text-sm bg-white px-2.5 py-0.5 rounded-md border border-zinc-200">
+                                            {data.lot_code || '---'}
+                                        </span>
+                                        <span className="font-bold text-zinc-700 text-sm truncate max-w-[280px]">
+                                            {data.products?.name || '---'}
+                                        </span>
+                                        {data.productions?.code && (
+                                            <span className="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200/60">
+                                                LSX: {data.productions.code}
+                                            </span>
+                                        )}
+                                    </>
+                                ) : (
+                                    <span className="text-xs font-bold text-zinc-500 italic">
+                                        Chế độ in tự do (Chưa chọn lô cụ thể)
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            fetchAvailableLots()
+                            setShowLotSelectModal(true)
+                        }}
+                        className="flex items-center gap-2 px-4 py-2.5 bg-white hover:bg-blue-50 text-blue-600 rounded-xl border border-blue-200 shadow-xs text-xs font-black uppercase tracking-wider transition-all hover:scale-102 active:scale-98 flex-shrink-0"
+                    >
+                        <Search size={14} />
+                        <span>{data?.id ? 'Đổi Lô Sản Xuất' : 'Chọn Lô Sản Xuất'}</span>
+                    </button>
                 </div>
 
                 {printConfig.sheet_template === 'template2' ? (

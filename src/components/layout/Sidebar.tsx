@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, Sparkles, CheckSquare } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, Sparkles, CheckSquare, Hash } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -158,6 +158,7 @@ const menuItems: MenuItem[] = [
         icon: Printer,
         children: [
             { id: 'print_bank_report', name: 'Phiếu ngân hàng', href: '/print/bank-report', icon: FileText },
+            { id: 'print_sequence_number', name: 'In số thứ tự', href: '/print/production-lot?type=sheet', icon: Hash },
         ]
     },
     {
@@ -322,12 +323,15 @@ export default function Sidebar() {
 
     const isMenuActive = (item: MenuItem) => {
         if (item.href) {
-            return pathname === item.href || (item.href !== '/' && pathname.startsWith(item.href))
+            const itemPath = item.href.split('?')[0]
+            return pathname === itemPath || (itemPath !== '/' && pathname.startsWith(itemPath))
         }
         if (item.children) {
-            return item.children.some(child =>
-                child.href ? (pathname === child.href || pathname.startsWith(child.href)) : false
-            )
+            return item.children.some(child => {
+                if (!child.href) return false
+                const childPath = child.href.split('?')[0]
+                return pathname === childPath || (childPath !== '/' && pathname.startsWith(childPath))
+            })
         }
         return false
     }
@@ -625,7 +629,10 @@ export default function Sidebar() {
                                                 // Ensure href exists before using it
                                                 if (!child.href) return null
 
-                                                const isChildActive = pathname === child.href || (child.href !== '/warehouses' && pathname.startsWith(child.href + '/'))
+                                                const childPath = child.href.split('?')[0]
+                                                const isChildActive = child.href.includes('?')
+                                                    ? pathname === childPath && (typeof window !== 'undefined' && window.location.search ? window.location.search.includes(child.href.split('?')[1]) : true)
+                                                    : pathname === child.href || (child.href !== '/warehouses' && pathname.startsWith(child.href + '/'))
 
                                                 return (
                                                     <Link
