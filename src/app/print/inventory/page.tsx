@@ -132,7 +132,7 @@ export default function PrintInventoryPage() {
     const token = searchParams.get('token')
     const viewMode = searchParams.get('viewMode') || 'lot'
     const lockFilter = searchParams.get('lockFilter') || 'unlocked'
-    const positionFilter = searchParams.get('positionFilter') || 'all'
+    const positionFilter = searchParams.get('positionFilter') || (type === 'lot' || type === 'category' ? 'has_position' : 'all')
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')

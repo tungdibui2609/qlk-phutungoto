@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone } from 'lucide-react'
 import { useState, useRef } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -11,6 +11,7 @@ import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import React from 'react'
 import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { LotBoxLabelsModal } from '@/components/warehouse/lots/LotBoxLabelsModal'
+import { LotOcrScanModal } from '@/components/warehouse/lots/LotOcrScanModal'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { useToast } from '@/components/ui/ToastProvider'
 
@@ -56,6 +57,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
     const [showMergeHistory, setShowMergeHistory] = useState(false)
     const [openImageItemId, setOpenImageItemId] = useState<string | null>(null)
     const [showBoxLabelsModal, setShowBoxLabelsModal] = useState(false)
+    const [showOcrScanModal, setShowOcrScanModal] = useState(false)
     const [isHighlighting, setIsHighlighting] = useState(false)
     const showInternal = isModuleEnabled('internal_products')
     const isSanxuat = pathname.startsWith('/sanxuat')
@@ -776,16 +778,16 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                     </div>
                 )}
 
-                {/* Xem tem thùng đã gắn */}
+                {/* Xem tem thùng / Dữ liệu OCR điện thoại đã gắn */}
                 <div className="mt-2 flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-850 text-xs">
                     <span className="font-semibold text-slate-700 dark:text-slate-350 flex items-center gap-1.5">
-                        <Layers size={14} className="text-emerald-500 shrink-0" />
-                        Xem tem thùng xếp Pallet
+                        <Smartphone size={14} className="text-indigo-500 shrink-0" />
+                        Dữ liệu quét OCR điện thoại
                     </span>
                     <button
-                        onClick={() => setShowBoxLabelsModal(true)}
-                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-zinc-800 text-emerald-655 dark:text-emerald-450 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-zinc-700 border border-emerald-500/10 shadow-sm transition-all active:scale-90 cursor-pointer shrink-0"
-                        title="Xem chi tiết các tem thùng đã gắn trên Pallet"
+                        onClick={() => setShowOcrScanModal(true)}
+                        className="w-7 h-7 flex items-center justify-center rounded-lg bg-white dark:bg-zinc-800 text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 hover:bg-indigo-50 dark:hover:bg-zinc-700 border border-indigo-500/10 shadow-sm transition-all active:scale-90 cursor-pointer shrink-0"
+                        title="Xem chi tiết các thùng quét OCR từ điện thoại đã đồng bộ theo STT"
                     >
                         <Eye size={14} />
                     </button>
@@ -839,6 +841,16 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
 
                 <div className="flex gap-2">
                     <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            setShowOcrScanModal(true);
+                        }}
+                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors"
+                        title="Xem thông tin quét OCR điện thoại (theo STT)"
+                    >
+                        <Smartphone size={16} />
+                    </button>
+                    <button
                         onClick={() => onView(lot)}
                         className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
                         title="Xem chi tiết"
@@ -884,7 +896,18 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                         className="fixed inset-0 z-30" 
                                         onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); }} 
                                     />
-                                    <div className="absolute bottom-11 right-0 z-45 w-44 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl py-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                                    <div className="absolute bottom-11 right-0 z-45 w-48 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl py-1.5 animate-in fade-in slide-in-from-bottom-2 duration-150">
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setIsMenuOpen(false);
+                                                setShowOcrScanModal(true);
+                                            }}
+                                            className="w-full px-3.5 py-2 flex items-center gap-2 text-left text-xs font-semibold text-slate-700 dark:text-slate-350 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
+                                        >
+                                            <Smartphone size={14} className="text-indigo-500 shrink-0" />
+                                            Quét OCR điện thoại
+                                        </button>
                                         <button
                                             onClick={(e) => {
                                                 setIsMenuOpen(false);
@@ -944,6 +967,16 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                     lotCode={lot.code}
                     searchTerm={searchTerm}
                     onClose={() => setShowBoxLabelsModal(false)}
+                />
+            )}
+            {showOcrScanModal && (
+                <LotOcrScanModal
+                    lotId={lot.id}
+                    lotCode={lot.code}
+                    dailySeq={(lot as any).daily_seq}
+                    lotName={lot.products?.name || (lot.lot_items?.[0] as any)?.products?.name}
+                    searchTerm={searchTerm}
+                    onClose={() => setShowOcrScanModal(false)}
                 />
             )}
         </div>

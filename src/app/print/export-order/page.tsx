@@ -362,27 +362,33 @@ function ExportOrderPrintContent() {
                     const occupied = new Set<string>()
 
                     finalPositions.forEach(p => {
-                        const exportItem = initialItemsData.find((item: any) => {
+                        const matchingItems = initialItemsData.filter((item: any) => {
                             if (item.lots?.positions && item.lots.positions.length > 0) {
                                 return item.lots.positions[0].id === p.id
                             }
                             return item.position_id === p.id
-                        }) as any
-                        if (exportItem && exportItem.lots) {
-                            p.lot_id = exportItem.lots.id
+                        })
+
+                        if (matchingItems.length > 0 && matchingItems[0].lots) {
+                            const firstItem = matchingItems[0]
+                            p.lot_id = firstItem.lots.id
                             occupied.add(p.id)
                             
-                            const tags = exportItem.lots.lot_tags
-                                ? exportItem.lots.lot_tags
-                                    .filter((t: any) => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
-                                    .map((t: any) => t.tag.replace(/@/g, exportItem.products?.sku || ''))
-                                : []
+                            const allItemsForLot: any[] = []
+                            const allTags: string[] = []
 
-                            lotInfoMap[exportItem.lots.id] = {
-                                code: exportItem.lots.code,
-                                inbound_date: exportItem.lots.inbound_date,
-                                tags: tags,
-                                items: [{
+                            matchingItems.forEach((exportItem: any) => {
+                                const tags = exportItem.lots?.lot_tags
+                                    ? exportItem.lots.lot_tags
+                                        .filter((t: any) => !t.tag.startsWith('SPLIT_TO:') && !t.tag.startsWith('MERGED_TO:'))
+                                        .map((t: any) => t.tag.replace(/@/g, exportItem.products?.sku || ''))
+                                    : []
+
+                                tags.forEach((t: string) => {
+                                    if (!allTags.includes(t)) allTags.push(t)
+                                })
+
+                                allItemsForLot.push({
                                     product_name: exportItem.products?.name,
                                     sku: exportItem.products?.sku,
                                     internal_code: exportItem.products?.internal_code,
@@ -390,7 +396,18 @@ function ExportOrderPrintContent() {
                                     unit: exportItem.unit,
                                     quantity: exportItem.quantity,
                                     tags: tags
-                                }]
+                                })
+                            })
+
+                            lotInfoMap[firstItem.lots.id] = {
+                                ...firstItem.lots,
+                                code: firstItem.lots.code,
+                                daily_seq: firstItem.lots.daily_seq,
+                                inbound_date: firstItem.lots.inbound_date,
+                                peeling_date: firstItem.lots.peeling_date,
+                                notes: firstItem.lots.notes,
+                                tags: allTags,
+                                items: allItemsForLot
                             }
                         } else {
                             p.lot_id = null
@@ -962,6 +979,13 @@ function ExportOrderPrintContent() {
                                     <td className="border border-black p-2 text-center">{idx + 1}</td>
                                     <td className="border border-black p-2 text-center">
                                         <div className="font-bold">{item.lots?.code}</div>
+                                        {item.lots?.daily_seq && (
+                                            <div className="mt-0.5">
+                                                <span className="inline-block px-1.5 py-0.5 bg-orange-600 text-white rounded text-[10px] font-bold leading-none">
+                                                    STT: {decodeSTT(item.lots.daily_seq)}
+                                                </span>
+                                            </div>
+                                        )}
                                         {item.lots?.lot_tags && item.lots.lot_tags.length > 0 && (
                                             <div className="mt-1 flex justify-center">
                                                 <TagDisplay

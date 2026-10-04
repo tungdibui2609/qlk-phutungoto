@@ -85,6 +85,7 @@ export async function proxy(request: NextRequest) {
         !path.startsWith('/api/auth/') && 
         !path.startsWith('/api/debug-perms') && 
         !path.startsWith('/api/notifications/') &&
+        !path.startsWith('/api/ocr') &&
         !path.startsWith('/api/public/')) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }

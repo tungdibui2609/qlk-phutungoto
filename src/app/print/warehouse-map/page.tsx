@@ -13,6 +13,7 @@ import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import { Database } from '@/lib/database.types'
 import { groupWarehouseData, parsePositionCodeFallback, sortPositionsByBinPriority, extractSubPosition, comparePositionsByBinAndLevel } from '@/lib/warehouseUtils'
 import { exportWarehouseToExcel, exportWarehouseGridToExcel, exportWarehouseLobbyDetailToExcel, ExportWarehouseLobbyData, exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 
@@ -354,21 +355,49 @@ export default function WarehouseMapPrintPage() {
         }
 
         if (searchTerm) {
-            const terms = searchTerm.split(',').map(t => t.toLowerCase().trim()).filter(Boolean)
-            if (terms.length > 0) {
+            const trimmed = searchTerm.trim()
+            if (trimmed) {
+                let finalSearchTerm = trimmed
+                if (!trimmed.includes(';') && !trimmed.includes(',') && !trimmed.includes('&')) {
+                    const words = trimmed.split(/\s+/)
+                    const isAllCodes = words.every(w => /^[A-Z0-9\-_]{4,}$/i.test(w))
+                    if (isAllCodes && words.length > 1) {
+                        finalSearchTerm = words.join(';')
+                    }
+                }
+
                 result = result.filter(p => {
-                    const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : {})
-                    return terms.some(lowTerm => 
-                        p.code.toLowerCase().includes(lowTerm) ||
-                        (pLot.items || []).some((item: any) =>
-                            item.product_name?.toLowerCase().includes(lowTerm) ||
-                            item.sku?.toLowerCase().includes(lowTerm) ||
-                            item.internal_code?.toLowerCase().includes(lowTerm) ||
-                            item.internal_name?.toLowerCase().includes(lowTerm)
-                        ) ||
-                        pLot.code?.toLowerCase().includes(lowTerm) ||
-                        pLot.batch_code?.toLowerCase().includes(lowTerm)
-                    )
+                    const pLot = lotInfo[p.id] || (p.lot_id ? lotInfo[p.lot_id] : null)
+                    const searchableVals: string[] = [p.code]
+
+                    if (pLot) {
+                        if (pLot.code) searchableVals.push(pLot.code)
+                        if (pLot.batch_code) searchableVals.push(pLot.batch_code)
+                        if (pLot.supplier_name) searchableVals.push(pLot.supplier_name)
+                        if (pLot.qc_name) searchableVals.push(pLot.qc_name)
+                        if (pLot.notes) searchableVals.push(pLot.notes)
+                        if (pLot.tags && Array.isArray(pLot.tags)) {
+                            pLot.tags.forEach((t: string) => searchableVals.push(t))
+                        }
+
+                        if (pLot.items && Array.isArray(pLot.items)) {
+                            pLot.items.forEach((item: any) => {
+                                if (item.product_name) searchableVals.push(item.product_name)
+                                if (item.internal_name) searchableVals.push(item.internal_name)
+                                if (item.sku) searchableVals.push(item.sku)
+                                if (item.internal_code) searchableVals.push(item.internal_code)
+                                if (item.aliases) searchableVals.push(item.aliases)
+                                if (item.categoryNames && Array.isArray(item.categoryNames)) {
+                                    item.categoryNames.forEach((cn: string) => searchableVals.push(cn))
+                                }
+                                if (item.tags && Array.isArray(item.tags)) {
+                                    item.tags.forEach((t: string) => searchableVals.push(t))
+                                }
+                            })
+                        }
+                    }
+
+                    return advancedMatchSearch(searchableVals, finalSearchTerm)
                 })
             }
         }
@@ -894,7 +923,7 @@ export default function WarehouseMapPrintPage() {
             })
             grids.push({ name: root.name, parentName, bins: binNames, levels: sortedLevels, cells })
         })
-        if (grids.length > 0) await exportWarehouseGridToExcel({ systemName: systemType || 'KHO', grids })
+        if (grids.length > 0) await exportWarehouseGridToExcel({ systemName: systemType || 'KHO', zoneName: displayZones.find(z => z.id === selectedZoneId)?.name, searchTerm, grids })
     }
 
     const handleExportExcelLobbyDetail = async () => {
@@ -961,7 +990,7 @@ export default function WarehouseMapPrintPage() {
                                                 router.replace(`${pathname}?${params.toString()}`);
                                             }
                                         }}
-                                        placeholder="Tên, mã SP, mã vị trí (ngăn cách bằng phẩy)" 
+                                        placeholder="Tên, mã SP, mã vị trí (ngăn cách bằng ; hoặc ,)" 
                                         className="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 text-xs outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
                                     />
                                     <button 

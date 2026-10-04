@@ -301,7 +301,7 @@ const PositionCell = React.memo<{
                     <div className="flex items-center justify-center gap-1 w-full shrink-0 px-0.5 flex-wrap">
                         {lotStt ? (
                             <span 
-                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-600 text-white shadow-2xs leading-none tracking-tight shrink-0" 
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black bg-orange-600 text-white shadow-2xs leading-none tracking-tight shrink-0" 
                                 title={lotDetail.code ? `Số thứ tự LOT: ${lotStt} (Mã LOT: ${lotDetail.code})` : `Số thứ tự LOT: ${lotStt}`}
                             >
                                 STT: {lotStt}
@@ -314,7 +314,7 @@ const PositionCell = React.memo<{
                                 Ko có STT
                             </span>
                         )}
-                        {!searchTerm && !lotStt && (
+                        {!searchTerm && (
                             <span 
                                 className={`${isGrouped ? 'text-[8px]' : 'text-[9.5px]'} font-bold leading-tight ${isTargetLot ? 'text-purple-700 dark:text-purple-300' : 'text-gray-900 dark:text-gray-100'} ${isGrouped ? 'break-all' : 'truncate max-w-full'}`} 
                                 title={lotDetail.code}

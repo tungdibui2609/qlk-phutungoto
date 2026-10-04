@@ -81,7 +81,7 @@ export function useInventoryByLot(
     const [internalSelectedZoneId, setInternalSelectedZoneId] = useState<string | null>(null)
     const [internalTargetUnitId, setInternalTargetUnitId] = useState<string | null>(null)
     const [internalLockFilter, setInternalLockFilter] = useState<'all' | 'unlocked' | 'locked'>('unlocked')
-    const [internalPositionFilter, setInternalPositionFilter] = useState<'all' | 'has_position' | 'no_position'>('all')
+    const [internalPositionFilter, setInternalPositionFilter] = useState<'all' | 'has_position' | 'no_position'>('has_position')
     const [internalViewMode, setInternalViewMode] = useState<'lot' | 'month'>('lot')
     
     // Sync with external filters if provided

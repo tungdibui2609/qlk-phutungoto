@@ -60,3 +60,18 @@ Hệ thống sẽ mở rộng thêm một bậc phân tầng nữa là **Khách 
 
 ---
 *Ghi chú: Luôn ưu tiên sự an toàn của dữ liệu và tính linh hoạt của hệ thống.*
+
+# 🛑 QUY TẮC BẮT BUỘC: ĐIỀU KIỆN BUILD FILE APK (EAS BUILD POLICY)
+
+**NGHIÊM CẤM TỰ ĐỘNG CHẠY LỆNH BUILD APK (eas build, eas-cli build) KHI CHƯA CÓ LỆNH RÕ RÀNG TỪ NGƯỜI DÙNG.**
+
+1. **CHỈ ĐƯỢC PHÉP CHẠY LỆNH BUILD KHI VÀ CHỈ KHI:**
+   - Người dùng trực tiếp đưa ra yêu cầu bằng câu lệnh rõ ràng trong tin nhắn (ví dụ: *"hãy build apk"*, *"xuất file apk"*, *"chạy build"*).
+   - Tuyệt đối KHÔNG tự ý suy đoán hoặc tự động chạy eas build sau khi sửa code, sau khi fix bug hoặc sau khi trả lời câu hỏi nếu người dùng không yêu cầu build.
+
+2. **KHI SỬA CODE HOẶC PHÁT TRIỂN TÍNH NĂNG MỚI:**
+   - Agent chỉ được phép:
+     - Viết mã nguồn, sửa code, refactor.
+     - Kiểm tra lỗi cú pháp và kiểu dữ liệu bằng 
+px tsc --noEmit.
+     - Báo cáo rõ ràng các thay đổi đã thực hiện và chờ lệnh từ người dùng.

@@ -1,19 +1,24 @@
-tunnel: 9df90c7f-63cf-4ac9-87f1-f615c0292e4d
+﻿tunnel: 9df90c7f-63cf-4ac9-87f1-f615c0292e4d
 credentials-file: C:\Users\tungd\.cloudflared\9df90c7f-63cf-4ac9-87f1-f615c0292e4d.json
 protocol: quic
 
 ingress:
-  # Tên miền cũ
+  # Ten mien cu
   - hostname: sarita.click
     service: http://localhost:3000
   - hostname: www.sarita.click
     service: http://localhost:3000
 
-  # Tên miền mới (chanhthu.click)
+  # Ten mien moi (chanhthu.click)
   - hostname: chanhthu.click
     service: http://localhost:3000
   - hostname: www.chanhthu.click
     service: http://localhost:3000
+
+  # OCR Microservice for Mobile Scanner App
+  - hostname: api.chanhthu.click
+    path: /api/ocr
+    service: http://localhost:8088
 
   # Subdomain cho Supabase Local API
   - hostname: api.chanhthu.click

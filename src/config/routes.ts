@@ -37,6 +37,7 @@ export const APP_ROUTES: RouteItem[] = [
             { name: 'Hạ tầng', path: '/warehouses' },
             { name: 'Sơ đồ kho', path: '/warehouses/map' },
             { name: 'Quản lý LOT', path: '/warehouses/lots' },
+            { name: 'Cấu hình Dấu Đóng', path: '/warehouses/stamp-rules' },
             { name: 'Nhập kho (KT)', path: '/inbound' },
             { name: 'Xuất kho (KT)', path: '/outbound' },
             { name: 'Tồn kho', path: '/inventory' },

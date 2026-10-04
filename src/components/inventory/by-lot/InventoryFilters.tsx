@@ -49,7 +49,7 @@ export function InventoryFilters({
         if (searchTerm) params.set('search', searchTerm)
         if (targetUnitId) params.set('targetUnitId', targetUnitId)
         if (selectedZoneId) params.set('zoneId', selectedZoneId)
-        if (positionFilter && positionFilter !== 'all') params.set('positionFilter', positionFilter)
+        if (positionFilter) params.set('positionFilter', positionFilter)
         params.set('to', new Date().toISOString().split('T')[0])
 
         // Pass auth token
@@ -81,7 +81,7 @@ export function InventoryFilters({
         if (searchTerm) params.set('search', searchTerm)
         if (targetUnitId) params.set('targetUnitId', targetUnitId)
         if (selectedZoneId) params.set('zoneId', selectedZoneId)
-        if (positionFilter && positionFilter !== 'all') params.set('positionFilter', positionFilter)
+        if (positionFilter) params.set('positionFilter', positionFilter)
         params.set('to', new Date().toISOString().split('T')[0])
 
         // Pass auth token
@@ -145,12 +145,12 @@ export function InventoryFilters({
                         <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block">Vị trí lưu kho</label>
                         <div className="relative">
                             <select
-                                value={positionFilter || 'all'}
+                                value={positionFilter || 'has_position'}
                                 onChange={e => setPositionFilter(e.target.value as any)}
                                 className="w-full pl-3 pr-8 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer font-medium"
                             >
-                                <option value="all">Tất cả LOT (Mặc định)</option>
-                                <option value="has_position">📍 Chỉ LOT đã có vị trí</option>
+                                <option value="has_position">📍 Chỉ LOT đã có vị trí (Mặc định)</option>
+                                <option value="all">Tất cả LOT</option>
                                 <option value="no_position">⚠️ Chỉ LOT chưa có vị trí</option>
                             </select>
                             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />

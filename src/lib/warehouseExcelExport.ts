@@ -382,6 +382,7 @@ interface GridCellData {
 interface ExportWarehouseGridData {
     systemName: string;
     zoneName?: string;
+    searchTerm?: string;
     grids: Array<{
         name: string;
         bins: string[];
@@ -437,7 +438,7 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
 
     worksheet.mergeCells('A4:Z4');
     const subTitle3 = worksheet.getCell('A4');
-    subTitle3.value = `Hệ thống: ${data.systemName} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
+    subTitle3.value = `Hệ thống: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''}${data.searchTerm ? ` | Lọc theo: "${data.searchTerm}"` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
     subTitle3.alignment = { horizontal: 'center' };
     subTitle3.font = { italic: true };
 
