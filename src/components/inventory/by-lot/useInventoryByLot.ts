@@ -67,6 +67,7 @@ export function useInventoryByLot(
         selectedZoneId?: string | null
         lockFilter?: 'all' | 'unlocked' | 'locked'
         positionFilter?: 'all' | 'has_position' | 'no_position'
+        includeClosedLoose?: boolean
         viewMode?: 'lot' | 'month'
         dateFrom?: string
         dateTo?: string
@@ -103,6 +104,11 @@ export function useInventoryByLot(
 
     const positionFilter = externalFilters?.positionFilter !== undefined ? externalFilters.positionFilter : internalPositionFilter
     const setPositionFilter = externalFilters?.positionFilter !== undefined ? (() => {}) : setInternalPositionFilter
+
+    const [loosePositionsMap, setLoosePositionsMap] = useState<Record<string, any>>({})
+    const [internalIncludeClosedLoose, setInternalIncludeClosedLoose] = useState<boolean>(false)
+    const includeClosedLoose = externalFilters?.includeClosedLoose !== undefined ? externalFilters.includeClosedLoose : internalIncludeClosedLoose
+    const setIncludeClosedLoose = externalFilters?.includeClosedLoose !== undefined ? (() => {}) : setInternalIncludeClosedLoose
 
     const viewMode = externalFilters?.viewMode !== undefined ? externalFilters.viewMode : internalViewMode
     const setViewMode = externalFilters?.viewMode !== undefined ? (() => {}) : setInternalViewMode
@@ -224,7 +230,8 @@ export function useInventoryByLot(
                 allCatRels,
                 allZonesData,
                 allCategories,
-                allProductionLots
+                allProductionLots,
+                sysRes
             ] = await Promise.all([
                 fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode).eq('status', 'active')),
                 fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, initial_quantity'),
@@ -236,8 +243,13 @@ export function useInventoryByLot(
                 fetchAll('product_category_rel', 'product_id, category_id'),
                 fetchAll('zones', '*', (q: any) => q.eq('system_type', sysCode)),
                 fetchAll('categories', 'id, name'),
-                fetchAll('production_lots', 'id, lot_code, production_date')
+                fetchAll('production_lots', 'id, lot_code, production_date'),
+                supabase.from('systems' as any).select('modules').eq('code', sysCode).single()
             ])
+
+            const lPos = ((((sysRes as any)?.data as any)?.modules as any)?.loose_positions || {}) as Record<string, any>
+            setLoosePositionsMap(lPos)
+
 
             const productionLotDateMap = new Map<string, string>()
             if (allProductionLots) {
@@ -447,6 +459,15 @@ export function useInventoryByLot(
                 if (hasPos) return false
             }
 
+            // Exclude lots in closed loose positions unless includeClosedLoose is true
+            if (!includeClosedLoose && Array.isArray(lot.positions) && lot.positions.length > 0) {
+                const hasClosedLoose = lot.positions.some((p: any) => {
+                    const cfg = loosePositionsMap[p.id]
+                    return cfg && cfg.isClosed
+                })
+                if (hasClosedLoose) return false
+            }
+
             if (fromTime || toTime) {
                 const lotDateRaw = lot.inbound_date || lot.created_at || lot.production_date || lot.packaging_date
                 if (!lotDateRaw) return false
@@ -644,7 +665,7 @@ export function useInventoryByLot(
 
         return Array.from(groups.values()).sort((a, b) => a.productSku.localeCompare(b.productSku))
 
-    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter, viewMode, dateFrom, dateTo])
+    }, [lots, searchTerm, searchMode, targetUnitId, unitNameMap, conversionMap, units, convertUnit, selectedZoneId, posToZoneMap, zoneHierarchy, categoryMap, selectedCategoryIds, rawZones, rawPositions, lockFilter, positionFilter, includeClosedLoose, loosePositionsMap, viewMode, dateFrom, dateTo])
 
     const toggleExpand = (key: string) => {
         const newSet = new Set(expandedProducts)
@@ -667,6 +688,9 @@ export function useInventoryByLot(
         setLockFilter,
         positionFilter,
         setPositionFilter,
+        includeClosedLoose,
+        setIncludeClosedLoose,
+        loosePositionsMap,
         viewMode,
         setViewMode,
         allZones,

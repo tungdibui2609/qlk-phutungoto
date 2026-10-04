@@ -20,6 +20,8 @@ interface InventoryFiltersProps {
     allZones: any[]
     positionFilter?: 'all' | 'has_position' | 'no_position'
     setPositionFilter?: (value: 'all' | 'has_position' | 'no_position') => void
+    includeClosedLoose?: boolean
+    setIncludeClosedLoose?: (value: boolean) => void
 }
 
 export function InventoryFilters({
@@ -38,7 +40,9 @@ export function InventoryFilters({
     setSelectedZoneId,
     allZones,
     positionFilter,
-    setPositionFilter
+    setPositionFilter,
+    includeClosedLoose,
+    setIncludeClosedLoose
 }: InventoryFiltersProps) {
 
     const handlePrint = async () => {
@@ -175,6 +179,21 @@ export function InventoryFilters({
                             <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
                         </div>
                     </div>
+
+                    {setIncludeClosedLoose && (
+                        <label 
+                            className="flex items-center gap-1.5 mt-6 px-2.5 py-2 rounded-md border border-stone-300 dark:border-stone-700 bg-white dark:bg-stone-800 text-xs font-semibold text-stone-700 dark:text-stone-300 cursor-pointer hover:bg-stone-50 dark:hover:bg-stone-750 transition-colors select-none shrink-0"
+                            title="Tích vào đây nếu bạn muốn đối soát cả các ô hàng lẻ đang ĐÓNG (tạm ẩn) trong tháng"
+                        >
+                            <input
+                                type="checkbox"
+                                checked={!!includeClosedLoose}
+                                onChange={(e) => setIncludeClosedLoose(e.target.checked)}
+                                className="rounded border-stone-300 text-amber-600 focus:ring-amber-500 w-3.5 h-3.5 cursor-pointer"
+                            />
+                            <span>Xem cả ô lẻ đang đóng</span>
+                        </label>
+                    )}
 
                     <button
                         onClick={handleExportExcel}

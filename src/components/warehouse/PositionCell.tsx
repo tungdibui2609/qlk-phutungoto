@@ -1,10 +1,11 @@
 'use client'
 import React from 'react'
-import { Eye, MoreHorizontal, Package, Bookmark, Lock } from 'lucide-react'
+import { Eye, MoreHorizontal, Package, Bookmark, Lock, PackageOpen } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { decodeSTT } from '@/lib/numberUtils'
+import { LoosePositionConfig } from '@/app/api/warehouses/positions/loose/route'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -23,6 +24,7 @@ const PositionCell = React.memo<{
     isMarked?: boolean,
     markNote?: string,
     isLocked?: boolean,
+    looseConfig?: LoosePositionConfig | null,
     lotDetail: any,
     isAssignmentMode: boolean,
     isHighlightBlinking: boolean,
@@ -38,7 +40,7 @@ const PositionCell = React.memo<{
     searchTerm?: string
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
-    isTargetLot, isMarked, markNote, isLocked, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
+    isTargetLot, isMarked, markNote, isLocked, looseConfig, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
     onPositionSelect, onViewDetails, onPositionMenu, onEditMarkNote, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
 }) => {
     const ids = (pos as any).realIds || [pos.id]
@@ -124,6 +126,19 @@ const PositionCell = React.memo<{
             bgClass = isOccupied 
                 ? 'bg-amber-100/60 dark:bg-amber-950/40' 
                 : 'bg-amber-50/90 dark:bg-amber-950/30'
+        }
+    }
+
+    if (looseConfig) {
+        if (!isLocked && !isMarked) {
+            borderClass = looseConfig.isClosed
+                ? 'border-amber-400/90 dark:border-amber-500/90 shadow-xs'
+                : 'border-emerald-500 dark:border-emerald-400 ring-1 ring-emerald-400/50 shadow-xs'
+            if (!searchTerm || searchStatus.isMatch) {
+                bgClass = looseConfig.isClosed
+                    ? (isOccupied ? 'bg-amber-50/90 dark:bg-amber-950/40' : 'bg-amber-50/50 dark:bg-amber-950/20')
+                    : (isOccupied ? 'bg-emerald-50/90 dark:bg-emerald-950/40' : 'bg-emerald-50/50 dark:bg-emerald-950/20')
+            }
         }
     }
 
@@ -290,6 +305,29 @@ const PositionCell = React.memo<{
 
             {lotDetail && isOccupied && !isEmptyMode ? (
                 <div className="flex flex-col items-center w-full flex-1 min-h-0 gap-0.5 mt-0.5">
+                    {/* Loose Position Header if configured */}
+                    {looseConfig && (
+                        <div
+                            className={`w-full px-1 py-0.5 mb-0.5 rounded text-[8px] font-bold flex items-center justify-between gap-1 shadow-2xs shrink-0 select-none ${
+                                looseConfig.isClosed
+                                    ? 'bg-amber-500/15 dark:bg-amber-500/25 text-amber-900 dark:text-amber-200 border border-amber-400/50'
+                                    : 'bg-emerald-500/15 dark:bg-emerald-500/25 text-emerald-900 dark:text-emerald-200 border border-emerald-500/50'
+                            }`}
+                            title={`Ô Hàng Lẻ: ${looseConfig.productName} (${looseConfig.isClosed ? 'Đang Đóng - Không tính tồn kho' : 'Đang Mở - Tính vào tồn kho chốt sổ'})`}
+                        >
+                            <div className="flex items-center gap-1 min-w-0">
+                                <PackageOpen size={9} className={looseConfig.isClosed ? 'text-amber-600 shrink-0' : 'text-emerald-600 shrink-0'} />
+                                <span className="truncate font-black uppercase text-[7.5px] tracking-tight">{looseConfig.productName}</span>
+                            </div>
+                            <span className={`px-1 py-0.2 rounded text-[6.5px] font-extrabold uppercase shrink-0 ${
+                                looseConfig.isClosed
+                                    ? 'bg-amber-600/20 text-amber-800 dark:text-amber-300'
+                                    : 'bg-emerald-600/20 text-emerald-800 dark:text-emerald-300'
+                            }`}>
+                                {looseConfig.isClosed ? '⏸️ ĐÓNG' : '🟢 MỞ'}
+                            </span>
+                        </div>
+                    )}
                     {searchStatus.isMatch && (
                         <div className="mb-0.5 shrink-0">
                             <div className={`text-[8px] font-black px-1 rounded leading-tight text-center w-fit mx-auto border border-transparent uppercase tracking-wider ${searchStatus.badgeClass}`}>
@@ -409,9 +447,30 @@ const PositionCell = React.memo<{
                 </div>
             ) : (
                 !isEmptyMode && (
-                    <div className={`flex-1 shrink-0 flex items-center justify-center ${isPrintPage ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}>
-                        <span className="text-[10px] text-gray-400 font-medium font-mono uppercase">Trống</span>
-                    </div>
+                    looseConfig ? (
+                        <div className="flex-1 shrink-0 flex flex-col items-center justify-center p-1 text-center w-full min-h-[50px]">
+                            <div className="text-[8.5px] font-black text-amber-800 dark:text-amber-300 uppercase tracking-tight flex items-center gap-1">
+                                <PackageOpen size={11} className="text-amber-600" />
+                                <span>HÀNG LẺ</span>
+                            </div>
+                            <div className="text-[8.5px] font-bold text-slate-800 dark:text-slate-100 truncate max-w-full px-0.5 mt-0.5" title={looseConfig.productName}>
+                                {looseConfig.productName}
+                            </div>
+                            <div className="mt-1">
+                                <span className={`text-[7px] font-extrabold px-1.5 py-0.5 rounded-full border ${
+                                    looseConfig.isClosed
+                                        ? 'bg-amber-100 dark:bg-amber-950 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                                        : 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                                }`}>
+                                    {looseConfig.isClosed ? '⏸️ Tồn tạm ẩn' : '🟢 Đang tính tồn'}
+                                </span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className={`flex-1 shrink-0 flex items-center justify-center ${isPrintPage ? 'opacity-100' : 'opacity-0 hover:opacity-100'} transition-opacity`}>
+                            <span className="text-[10px] text-gray-400 font-medium font-mono uppercase">Trống</span>
+                        </div>
+                    )
                 )
             )}
         </div>
@@ -427,6 +486,7 @@ const PositionCell = React.memo<{
         prev.isTargetLot === next.isTargetLot &&
         prev.isMarked === next.isMarked &&
         prev.isLocked === next.isLocked &&
+        prev.looseConfig === next.looseConfig &&
         prev.lotDetail === next.lotDetail &&
         prev.isAssignmentMode === next.isAssignmentMode &&
         prev.isHighlightBlinking === next.isHighlightBlinking &&

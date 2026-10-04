@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock, Calendar } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock, Calendar, PackageOpen } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 
 type Position = Database['public']['Tables']['positions']['Row']
@@ -36,6 +36,7 @@ interface MultiSelectActionBarProps {
     isMarked?: (posId: string) => boolean
     onToggleLock?: (posIds: string[]) => void
     isLocked?: (posId: string) => boolean
+    onOpenLooseModal?: (posIds: string[]) => void
     onExportExcel?: (selectedPositions: Position[]) => void
     onBulkEditDates?: (lotIds: string[]) => void
 }
@@ -63,6 +64,7 @@ export default function MultiSelectActionBar({
     isMarked,
     onToggleLock,
     isLocked,
+    onOpenLooseModal,
     onExportExcel,
     onBulkEditDates
 }: MultiSelectActionBarProps) {
@@ -502,6 +504,27 @@ export default function MultiSelectActionBar({
                                                     </span>
                                                     <span className="text-[10px] text-gray-400 font-normal">
                                                         {allSelectedLocked ? "Mở khóa các vị trí đã chọn" : "Khóa vị trí (ngăn gán hàng, xuất kho)"}
+                                                    </span>
+                                                </div>
+                                            </button>
+                                        )}
+
+                                        {/* Thiết lập Ô Hàng Lẻ */}
+                                        {onOpenLooseModal && (
+                                            <button
+                                                onClick={() => {
+                                                    onOpenLooseModal(Array.from(selectedPositionIds))
+                                                    setIsLocationMenuOpen(false)
+                                                }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group cursor-pointer"
+                                            >
+                                                <PackageOpen size={16} className="text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="font-bold text-amber-700 dark:text-amber-300">
+                                                        Thiết lập Ô Hàng Lẻ ({selectedPositionIds.size} ô)
+                                                    </span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">
+                                                        Gán chủng loại & đóng/mở tính tồn
                                                     </span>
                                                 </div>
                                             </button>

@@ -23,6 +23,9 @@ import { useWarehouseData } from './_hooks/useWarehouseData'
 import { useMapFilters } from './_hooks/useMapFilters'
 import { useMarkedPositions } from './_hooks/useMarkedPositions'
 import { useLockedPositions } from './_hooks/useLockedPositions'
+import { useLoosePositions } from './_hooks/useLoosePositions'
+import { LoosePositionModal } from '@/components/warehouse/map/LoosePositionModal'
+import { PackageOpen } from 'lucide-react'
 import { MapHeader } from './_components/MapHeader'
 import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
@@ -109,6 +112,38 @@ function WarehouseMapContent() {
         systemType,
         initialModules: currentSystem?.modules
     })
+
+    // 2.6. Loose Positions Hook (Ô Hàng Lẻ)
+    const {
+        loosePositions,
+        isLoose,
+        getLooseConfig,
+        setLoose,
+        toggleLooseStatus,
+        setAllLooseStatus,
+        removeLoose
+    } = useLoosePositions({
+        systemType,
+        initialModules: currentSystem?.modules
+    })
+
+    const [looseModalTargetPositions, setLooseModalTargetPositions] = useState<any[] | null>(null)
+
+    const handleOpenLooseModal = (posOrPosIds: any) => {
+        let targetList: any[] = []
+        if (Array.isArray(posOrPosIds)) {
+            targetList = posOrPosIds.map(id => {
+                const found = positions.find(p => p.id === id)
+                return found || { id, code: id }
+            })
+        } else if (typeof posOrPosIds === 'string') {
+            const found = positions.find(p => p.id === posOrPosIds)
+            targetList = [found || { id: posOrPosIds, code: posOrPosIds }]
+        } else if (posOrPosIds && posOrPosIds.id) {
+            targetList = [posOrPosIds]
+        }
+        setLooseModalTargetPositions(targetList)
+    }
 
     // 3. Filter Hook
     const {
@@ -456,6 +491,11 @@ function WarehouseMapContent() {
         getMarkNote: (id) => getMarkNote(id),
         onToggleLock: (ids) => toggleLock(ids),
         isLocked: (id) => isLocked(id),
+        onOpenLooseModal: (pos) => handleOpenLooseModal(pos),
+        onToggleLooseStatus: (posId) => toggleLooseStatus(posId),
+        onRemoveLoosePosition: (posId) => removeLoose([posId]),
+        isLoose: (id) => isLoose(id),
+        getLooseConfig: (id) => getLooseConfig(id),
         lotInfo
     })
 
@@ -1295,6 +1335,7 @@ function WarehouseMapContent() {
                                     markedNotes={markedNotes}
                                     onEditMarkNote={(pos) => openMarkModalForPosition(pos)}
                                     lockedPositionIds={lockedPositionIds}
+                                    loosePositions={loosePositions}
                                     onPrintZone={(zoneId) => {
                                         const params = new URLSearchParams()
                                         params.set('systemType', systemType)
@@ -1390,6 +1431,41 @@ function WarehouseMapContent() {
                             )}
                         </div>
 
+                        {/* Quản lý Ô Hàng Lẻ (Đầu tháng chốt sổ / Trong tháng vận hành) */}
+                        {Object.keys(loosePositions).length > 0 && (
+                            <div className="flex relative items-center ml-1 pl-2 border-l border-slate-300 dark:border-slate-600">
+                                <button
+                                    onClick={() => {
+                                        const total = Object.keys(loosePositions).length
+                                        const closedCount = Object.values(loosePositions).filter(c => c.isClosed).length
+                                        const allClosed = closedCount === total
+                                        if (allClosed) {
+                                            if (confirm(`Đầu tháng chốt sổ:\nBạn có muốn MỞ toàn bộ ${total} ô hàng lẻ để tính vào báo cáo tồn kho?`)) {
+                                                setAllLooseStatus(false)
+                                            }
+                                        } else {
+                                            if (confirm(`Trong tháng vận hành:\nBạn có muốn ĐÓNG toàn bộ ${total} ô hàng lẻ (tạm ẩn khỏi báo cáo tồn kho)?`)) {
+                                                setAllLooseStatus(true)
+                                            }
+                                        }
+                                    }}
+                                    className={`px-3 py-2 rounded-full text-xs transition flex items-center gap-1.5 font-bold cursor-pointer shadow-xs ${
+                                        Object.values(loosePositions).some(c => !c.isClosed)
+                                            ? 'bg-emerald-600 text-white hover:bg-emerald-700'
+                                            : 'bg-amber-500/20 text-amber-900 dark:text-amber-200 border border-amber-400 hover:bg-amber-500/30'
+                                    }`}
+                                    title="Đầu tháng: Bấm để Mở toàn bộ ô lẻ tính tồn kho chốt sổ. Trong tháng: Bấm để Đóng toàn bộ ô lẻ."
+                                >
+                                    <PackageOpen size={14} />
+                                    <span>
+                                        {Object.values(loosePositions).some(c => !c.isClosed)
+                                            ? `Ô Lẻ: Đang MỞ (${Object.values(loosePositions).filter(c => !c.isClosed).length}/${Object.keys(loosePositions).length})`
+                                            : `Ô Lẻ: Đang ĐÓNG (${Object.keys(loosePositions).length})`}
+                                    </span>
+                                </button>
+                            </div>
+                        )}
+
                         {/* Thu gọn Group */}
                         <div className="flex relative items-center">
                             <span className="text-[10px] text-slate-500 font-bold px-3 uppercase tracking-wider">Thu</span>
@@ -1456,6 +1532,7 @@ function WarehouseMapContent() {
                 isMarked={(id) => isMarked(id)}
                 onToggleLock={(posIds) => toggleLock(posIds)}
                 isLocked={(id) => isLocked(id)}
+                onOpenLooseModal={(posIds) => handleOpenLooseModal(posIds)}
                 onExportExcel={handleExportSelectedExcel}
             />
 
@@ -1623,6 +1700,28 @@ function WarehouseMapContent() {
                     onUnmark={() => {
                         unmarkPositions(bulkMarkTargetIds)
                         setBulkMarkTargetIds(null)
+                    }}
+                />
+            )}
+
+            {/* Loose Position Modal */}
+            {looseModalTargetPositions && (
+                <LoosePositionModal
+                    isOpen={true}
+                    onClose={() => setLooseModalTargetPositions(null)}
+                    positions={looseModalTargetPositions}
+                    currentConfig={looseModalTargetPositions.length === 1 ? getLooseConfig(looseModalTargetPositions[0].id) : null}
+                    isAlreadyLoose={looseModalTargetPositions.some(p => isLoose(p.id))}
+                    products={products}
+                    onConfirm={(config) => {
+                        setLoose(looseModalTargetPositions.map(p => p.id), config)
+                        setLooseModalTargetPositions(null)
+                        setSelectedPositionIds(new Set())
+                    }}
+                    onRemoveLoose={() => {
+                        removeLoose(looseModalTargetPositions.map(p => p.id))
+                        setLooseModalTargetPositions(null)
+                        setSelectedPositionIds(new Set())
                     }}
                 />
             )}

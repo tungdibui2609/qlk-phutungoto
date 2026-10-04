@@ -3,10 +3,11 @@
 import React, { useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
-import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy, Bookmark, Lock, Unlock } from 'lucide-react'
+import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput, Trash2, MapPinOff, Copy, Bookmark, Lock, Unlock, PackageOpen, Eye, EyeOff } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 import { logActivity } from '@/lib/audit'
+import { LoosePositionConfig } from '@/app/api/warehouses/positions/loose/route'
 
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
@@ -26,6 +27,11 @@ interface UsePositionActionManagerProps {
     getMarkNote?: (posId: string) => string
     onToggleLock?: (posIds: string[]) => void
     isLocked?: (posId: string) => boolean
+    onOpenLooseModal?: (pos: any) => void
+    onToggleLooseStatus?: (posId: string) => void
+    onRemoveLoosePosition?: (posId: string) => void
+    isLoose?: (posId: string) => boolean
+    getLooseConfig?: (posId: string) => LoosePositionConfig | undefined
     lotInfo?: Record<string, any>
 }
 
@@ -41,6 +47,11 @@ export function usePositionActionManager({
     getMarkNote,
     onToggleLock,
     isLocked,
+    onOpenLooseModal,
+    onToggleLooseStatus,
+    onRemoveLoosePosition,
+    isLoose,
+    getLooseConfig,
     lotInfo
 }: UsePositionActionManagerProps) {
     const router = useRouter()
@@ -405,6 +416,69 @@ export function usePositionActionManager({
                                         </>
                                     )}
                                 </button>
+                                <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
+                            </>
+                        )}
+                        {onOpenLooseModal && contextMenu.position && (
+                            <>
+                                {isLoose?.(contextMenu.position.id) ? (
+                                    <>
+                                        <button
+                                            onClick={() => {
+                                                const p = contextMenu.position
+                                                setContextMenu(null)
+                                                onToggleLooseStatus?.(p.id)
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
+                                        >
+                                            {getLooseConfig?.(contextMenu.position.id)?.isClosed ? (
+                                                <>
+                                                    <Eye size={16} className="text-emerald-600" />
+                                                    <span className="text-emerald-700 dark:text-emerald-400 font-semibold">Mở tính tồn (Chốt sổ)</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <EyeOff size={16} className="text-amber-600" />
+                                                    <span className="text-amber-700 dark:text-amber-400 font-semibold">Đóng tính tồn (Ẩn khỏi tồn)</span>
+                                                </>
+                                            )}
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const p = contextMenu.position
+                                                setContextMenu(null)
+                                                onOpenLooseModal(p)
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
+                                        >
+                                            <PackageOpen size={16} className="text-amber-600" />
+                                            <span>Sửa ô hàng lẻ</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const p = contextMenu.position
+                                                setContextMenu(null)
+                                                onRemoveLoosePosition?.(p.id)
+                                            }}
+                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-md transition-colors text-left font-medium"
+                                        >
+                                            <Trash2 size={15} className="text-rose-500" />
+                                            <span>Bỏ ô hàng lẻ</span>
+                                        </button>
+                                    </>
+                                ) : (
+                                    <button
+                                        onClick={() => {
+                                            const p = contextMenu.position
+                                            setContextMenu(null)
+                                            onOpenLooseModal(p)
+                                        }}
+                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-950/40 rounded-md transition-colors text-left font-medium"
+                                    >
+                                        <PackageOpen size={16} className="text-amber-500" />
+                                        <span>Thiết lập Ô Hàng Lẻ</span>
+                                    </button>
+                                )}
                                 <div className="my-1 border-t border-gray-100 dark:border-gray-700" />
                             </>
                         )}

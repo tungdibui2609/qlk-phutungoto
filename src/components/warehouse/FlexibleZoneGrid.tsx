@@ -61,6 +61,7 @@ interface FlexibleZoneGridProps {
     markedPositionIds?: Set<string>
     markedNotes?: Record<string, string>
     lockedPositionIds?: Set<string>
+    loosePositions?: Record<string, any>
     onEditMarkNote?: (pos: any) => void
 }
 
@@ -100,6 +101,7 @@ export default function FlexibleZoneGrid({
     markedPositionIds = new Set(),
     markedNotes = {},
     lockedPositionIds = new Set(),
+    loosePositions = {},
     onEditMarkNote
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
@@ -525,6 +527,8 @@ export default function FlexibleZoneGrid({
             )
         }
 
+        const looseConfig = loosePositions ? (loosePositions[pos.id] || (realIds && realIds.map((id: string) => loosePositions[id]).find(Boolean))) : null
+
         return (
             <PositionCell
                 key={pos.id}
@@ -538,6 +542,7 @@ export default function FlexibleZoneGrid({
                 isMarked={isMarked}
                 markNote={markNote}
                 isLocked={isLocked}
+                looseConfig={looseConfig}
                 lotDetail={pos.lot_id ? lotInfo[pos.lot_id] : null}
                 isAssignmentMode={isAssignmentMode}
                 isHighlightBlinking={isHighlightBlinking}
