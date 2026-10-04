@@ -9,6 +9,7 @@ import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 import { encodeSTT, decodeSTT, setLastUpdatedSTT, getLastUpdatedSTT, getNextSTT } from '@/lib/numberUtils'
+import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -1569,7 +1570,10 @@ export function useLotManagement() {
     async function handleDeleteLot(id: string): Promise<boolean> {
         if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này? Thao tác này sẽ giải phóng vị trí kho và tem thùng liên quan.')) return false
 
-        // Dọn dẹp quan hệ khóa ngoại trước khi xóa
+        // 1. Lưu snapshot vào audit_logs với action = 'DELETE' để bảo toàn lịch sử tra cứu & khôi phục
+        await logLotsDeletion(supabase, [id])
+
+        // 2. Dọn dẹp quan hệ khóa ngoại trước khi xóa
         await cleanupLotRelations([id])
 
         const { error } = await (supabase
@@ -1627,10 +1631,13 @@ export function useLotManagement() {
         if (!ids || ids.length === 0) return false
         if (!await showConfirm(`Bạn có chắc chắn muốn xóa ${ids.length} LOT đã chọn? Thao tác này sẽ giải phóng vị trí kho, tem thùng liên quan và không thể hoàn tác.`)) return false
 
-        // Dọn dẹp quan hệ khóa ngoại trước khi xóa
+        // 1. Lưu snapshot vào audit_logs với action = 'DELETE' để bảo toàn lịch sử tra cứu & khôi phục
+        await logLotsDeletion(supabase, ids)
+
+        // 2. Dọn dẹp quan hệ khóa ngoại trước khi xóa
         await cleanupLotRelations(ids)
 
-        // 2. Xóa các lot trong bảng lots
+        // 3. Xóa các lot trong bảng lots
         const { error } = await (supabase
             .from('lots') as any)
             .delete()

@@ -28,6 +28,7 @@ import { MapBanners } from './_components/MapBanners'
 import { ZoneCollapseControls } from './_components/ZoneCollapseControls'
 import { MapSearchStats } from './_components/MapSearchStats'
 import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
+import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 import { WarehouseHistoryModal } from './_components/WarehouseHistoryModal'
 import { SelectWarehouseModal } from '@/components/warehouse/map/SelectWarehouseModal'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
@@ -583,6 +584,9 @@ function WarehouseMapContent() {
             const chunkSize = 500;
             for (let i = 0; i < lotIds.length; i += chunkSize) {
                 const chunk = lotIds.slice(i, i + chunkSize);
+
+                // 0. Lưu snapshot vào audit_logs với action = 'DELETE' để bảo toàn lịch sử tra cứu & khôi phục
+                await logLotsDeletion(supabase, chunk);
 
                 // 1. Clear lot_id in positions (Reference)
                 const { error: posError } = await ((supabase as any)
