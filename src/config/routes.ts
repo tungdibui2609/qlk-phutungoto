@@ -19,6 +19,7 @@ export const APP_ROUTES: RouteItem[] = [
             { name: 'Danh mục', path: '/categories' },
             { name: 'Đơn vị', path: '/units' },
             { name: 'Xuất xứ', path: '/origins' },
+            { name: 'Cấu hình Dấu Đóng', path: '/warehouses/stamp-rules' },
         ]
     },
     {
@@ -37,11 +38,25 @@ export const APP_ROUTES: RouteItem[] = [
             { name: 'Hạ tầng', path: '/warehouses' },
             { name: 'Sơ đồ kho', path: '/warehouses/map' },
             { name: 'Quản lý LOT', path: '/warehouses/lots' },
-            { name: 'Cấu hình Dấu Đóng', path: '/warehouses/stamp-rules' },
             { name: 'Nhập kho (KT)', path: '/inbound' },
             { name: 'Xuất kho (KT)', path: '/outbound' },
             { name: 'Tồn kho', path: '/inventory' },
             { name: 'Kiểm kê', path: '/operations/audit' },
+        ]
+    },
+    {
+        name: 'Quét mã QR',
+        path: '/scan-management',
+        children: [
+            { name: 'Quản lý Pallet Quét', path: '/warehouses/pallets' },
+            { name: 'Liên kết Tem Thùng', path: '/warehouses/lot-labels' },
+            { name: 'Liên kết Tem (Mobile)', path: '/mobile/lot-labels' },
+            { name: 'Gán vị trí', path: '/warehouses/scan/assign' },
+            { name: 'Xuất kho', path: '/warehouses/scan/export' },
+            { name: 'Lệnh xuất', path: '/warehouses/scan/export-order' },
+            { name: 'Máy in trạm', path: '/print/station' },
+            { name: 'Mobile', path: '/mobile' },
+            { name: 'LOT Sản Xuất', path: '/production-lot' },
         ]
     },
     {

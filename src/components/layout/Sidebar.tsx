@@ -34,6 +34,7 @@ const menuItems: MenuItem[] = [
             { id: 'units', name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
             { id: 'origins', name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
             { id: 'lot_codes', name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag, requiredPermission: 'product.view' },
+            { id: 'stamp_rules', name: 'Cấu hình Dấu Đóng', href: '/warehouses/stamp-rules', icon: Stamp, requiredPermission: 'product.view' },
         ]
     },
     {
@@ -59,10 +60,6 @@ const menuItems: MenuItem[] = [
             { id: 'infrastructure', name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
             { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'warehouse_lot.view' },
-            { id: 'pallets', name: 'Quản lý Pallet Quét', href: '/warehouses/pallets', icon: Layers, requiredPermission: 'warehouse_lot.view' },
-            { id: 'lot_labels', name: 'Liên kết Tem Thùng', href: '/warehouses/lot-labels', icon: Tags, requiredPermission: 'warehouse_lot.view' },
-            { id: 'stamp_rules', name: 'Cấu hình Dấu Đóng', href: '/warehouses/stamp-rules', icon: Stamp, requiredPermission: 'warehouse_lot.view' },
-            { id: 'lot_labels_mobile', name: 'Liên kết Tem (Mobile)', href: '/mobile/lot-labels', icon: Smartphone, requiredPermission: 'warehouse_lot.view' },
             { id: 'warehouse_assign', name: 'Gán vị trí', href: '/warehouses/assign', icon: MapPin, requiredPermission: 'warehouse.view' },
             { id: 'assignment_approval', name: 'Duyệt gán vị trí', href: '/production-lot/assignments', icon: ClipboardCheck, requiredPermission: 'warehouse.view' },
             { id: 'requisitions', name: 'Phiếu xuất SX', href: '/warehouses/requisitions', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },
@@ -74,9 +71,11 @@ const menuItems: MenuItem[] = [
         id: 'qr_scan_parent',
         name: 'Quét mã QR',
         icon: QrCode,
-        requiredModule: 'utility_qr_assign',
         children: [
-            { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view' },
+            { id: 'pallets', name: 'Quản lý Pallet Quét', href: '/warehouses/pallets', icon: Layers, requiredPermission: 'warehouse_lot.view' },
+            { id: 'lot_labels', name: 'Liên kết Tem Thùng', href: '/warehouses/lot-labels', icon: Tags, requiredPermission: 'warehouse_lot.view' },
+            { id: 'lot_labels_mobile', name: 'Liên kết Tem (Mobile)', href: '/mobile/lot-labels', icon: Smartphone, requiredPermission: 'warehouse_lot.view' },
+            { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view', requiredModule: 'utility_qr_assign' },
             { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
             { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredPermission: 'utility.view' },
             { id: 'print_station', name: 'Máy in trạm', href: '/print/station', icon: Printer, requiredPermission: 'utility.view' },
