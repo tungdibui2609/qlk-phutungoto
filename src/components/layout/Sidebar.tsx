@@ -75,6 +75,7 @@ const menuItems: MenuItem[] = [
             { id: 'pallets', name: 'Quản lý Pallet Quét', href: '/warehouses/pallets', icon: Layers, requiredPermission: 'warehouse_lot.view' },
             { id: 'lot_labels', name: 'Liên kết Tem Thùng', href: '/warehouses/lot-labels', icon: Tags, requiredPermission: 'warehouse_lot.view' },
             { id: 'lot_labels_mobile', name: 'Liên kết Tem (Mobile)', href: '/mobile/lot-labels', icon: Smartphone, requiredPermission: 'warehouse_lot.view' },
+            { id: 'stamp_lookup', name: 'Tra cứu tem', href: '/tra-cuu-tem', icon: Stamp },
             { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view', requiredModule: 'utility_qr_assign' },
             { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
             { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredPermission: 'utility.view' },

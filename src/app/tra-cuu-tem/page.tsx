@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { 
     Stamp, 
@@ -21,6 +22,7 @@ import {
     User, 
     AlertCircle, 
     ArrowRight,
+    ArrowLeft,
     QrCode,
     RotateCcw
 } from 'lucide-react'
@@ -369,6 +371,14 @@ function StampCheckerContent() {
             <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-30">
                 <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
+                        <Link 
+                            href="/warehouses/pallets"
+                            className="p-1.5 -ml-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-1 text-xs"
+                            title="Quay lại Hệ thống WMS"
+                        >
+                            <ArrowLeft size={16} />
+                            <span className="hidden sm:inline">Quay lại</span>
+                        </Link>
                         <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center text-white shadow-md shadow-indigo-600/30">
                             <Stamp size={17} />
                         </div>

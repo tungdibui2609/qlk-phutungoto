@@ -51,6 +51,7 @@ export const APP_ROUTES: RouteItem[] = [
             { name: 'Quản lý Pallet Quét', path: '/warehouses/pallets' },
             { name: 'Liên kết Tem Thùng', path: '/warehouses/lot-labels' },
             { name: 'Liên kết Tem (Mobile)', path: '/mobile/lot-labels' },
+            { name: 'Tra cứu tem', path: '/tra-cuu-tem' },
             { name: 'Gán vị trí', path: '/warehouses/scan/assign' },
             { name: 'Xuất kho', path: '/warehouses/scan/export' },
             { name: 'Lệnh xuất', path: '/warehouses/scan/export-order' },
