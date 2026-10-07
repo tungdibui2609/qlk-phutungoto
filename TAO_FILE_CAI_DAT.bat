@@ -16,13 +16,16 @@ if not exist "%ISCC_PATH%" (
     exit /b 1
 )
 
-echo [1/3] Kiem tra va bien dich ServerManager.exe...
-if not exist "ServerManager.exe" (
-    echo Dang tao file ServerManager.exe bang PyInstaller...
-    python -m PyInstaller --onefile --noconsole --name "ServerManager" --clean server_launcher.py
+echo [1/3] Bien dich ServerManager.exe moi nhat tu server_launcher.py...
+taskkill /F /IM ServerManager.exe 2>nul
+timeout /t 2 /nobreak >nul
+powershell -Command "Remove-Item -Recurse -Force 'build', 'dist' -ErrorAction SilentlyContinue"
+python -m PyInstaller --noconfirm ServerManager.spec
+if exist "dist\ServerManager.exe" (
     copy /y "dist\ServerManager.exe" "ServerManager.exe" >nul
+    echo Da cap nhat ServerManager.exe moi nhat.
 ) else (
-    echo Da co ServerManager.exe san sang.
+    echo [CANH BAO] Khong the tao file exe moi, su dung file hien co.
 )
 
 echo.

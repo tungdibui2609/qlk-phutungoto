@@ -106,28 +106,187 @@ def get_cloudflared_bin() -> str:
     return "cloudflared.exe"
 
 
-def get_configured_domains() -> list[str]:
-    """Đọc danh sách các tên miền đang được cấu hình trong Cloudflare Tunnel"""
-    domains = set()
-    cf_config = Path(os.path.expanduser(r"~\.cloudflared\config.yml"))
-    if not cf_config.exists():
-        cf_config = TUNNEL_SETUP_DIR / "config.yml"
-    if cf_config.exists():
+def extract_base_domain(hostname: str) -> str:
+    """Rút gọn hostname về tên miền gốc (loại bỏ www. và api.)"""
+    h = hostname.strip().lower()
+    if h.startswith("www."):
+        h = h[4:]
+    elif h.startswith("api."):
+        h = h[4:]
+    return h
+
+
+def get_tunnel_config_targets() -> list[Path]:
+    """Lấy danh sách các file cấu hình config.yml cần đồng bộ"""
+    targets = []
+    user_cfg = Path(os.path.expanduser(r"~\.cloudflared\config.yml"))
+    if user_cfg.exists():
+        targets.append(user_cfg)
+    setup_cfg = TUNNEL_SETUP_DIR / "config.yml"
+    if setup_cfg.exists() and setup_cfg not in targets:
+        targets.append(setup_cfg)
+    return targets
+
+
+def get_all_domains_with_status() -> list[dict]:
+    """
+    Đọc tất cả tên miền trong config.yml cùng trạng thái Bật/Tắt (enabled).
+    Trả về: [{'domain': 'chanhthu.click', 'enabled': True}, ...]
+    """
+    domain_map = {}
+    targets = get_tunnel_config_targets()
+    cfg_file = targets[0] if targets else (TUNNEL_SETUP_DIR / "config.yml")
+
+    if cfg_file.exists():
         try:
-            content = cf_config.read_text(encoding="utf-8")
+            content = cfg_file.read_text(encoding="utf-8-sig")
             for line in content.splitlines():
-                line = line.strip()
-                if line.startswith("- hostname:"):
-                    h = line.replace("- hostname:", "").strip()
-                    if not h.startswith("api.") and not h.startswith("www."):
-                        domains.add(h)
+                line_clean = line.strip()
+                is_disabled = "[DISABLED]" in line_clean or "[TAT]" in line_clean
+                if "hostname:" in line_clean:
+                    parts = line_clean.split("hostname:", 1)
+                    raw_host = parts[1].strip()
+                    base = extract_base_domain(raw_host)
+                    if base and "." in base:
+                        if base not in domain_map:
+                            domain_map[base] = {"has_active": False, "has_disabled": False}
+                        if is_disabled:
+                            domain_map[base]["has_disabled"] = True
+                        else:
+                            domain_map[base]["has_active"] = True
         except Exception:
             pass
-    return sorted(list(domains)) if domains else ["chanhthu.click", "sarita.click"]
+
+    if not domain_map:
+        return [
+            {"domain": "chanhthu.click", "enabled": True},
+            {"domain": "sarita.click", "enabled": True},
+        ]
+
+    result = []
+    for d, info in sorted(domain_map.items()):
+        result.append({
+            "domain": d,
+            "enabled": info["has_active"]
+        })
+    return result
+
+
+def get_configured_domains() -> list[str]:
+    """Đọc danh sách các tên miền ĐANG BẬT (active) trong Cloudflare Tunnel"""
+    doms = get_all_domains_with_status()
+    active = [d["domain"] for d in doms if d["enabled"]]
+    return active if active else ["chanhthu.click", "sarita.click"]
+
+
+def toggle_domain_status(target_domain: str, enable: bool) -> tuple[bool, str]:
+    """Bật hoặc Tắt một tên miền trong cấu hình Cloudflare Tunnel"""
+    target_clean = target_domain.strip().lower()
+    targets = get_tunnel_config_targets()
+    if not targets:
+        return False, "Không tìm thấy file cấu hình config.yml của Cloudflare Tunnel!"
+
+    updated_any = False
+    for p in targets:
+        try:
+            content = p.read_text(encoding="utf-8-sig")
+            lines = content.splitlines()
+            new_lines = []
+            current_rule_matches = False
+
+            for line in lines:
+                line_clean = line.strip()
+                if "hostname:" in line_clean:
+                    parts = line_clean.split("hostname:", 1)
+                    raw_host = parts[1].strip()
+                    if raw_host == target_clean or raw_host.endswith("." + target_clean):
+                        current_rule_matches = True
+                    else:
+                        current_rule_matches = False
+                elif line_clean.startswith("- service:") or (line_clean.startswith("#") and "- service:" in line_clean):
+                    current_rule_matches = False
+                elif not line_clean:
+                    current_rule_matches = False
+
+                if current_rule_matches and line_clean:
+                    if enable:
+                        if "# [DISABLED] " in line:
+                            line = line.replace("# [DISABLED] ", "")
+                        elif "# [DISABLED]" in line:
+                            line = line.replace("# [DISABLED]", "")
+                    else:
+                        if "[DISABLED]" not in line:
+                            stripped = line.lstrip()
+                            indent = line[:len(line) - len(stripped)]
+                            line = f"{indent}# [DISABLED] {stripped}"
+
+                new_lines.append(line)
+
+            new_content = "\n".join(new_lines) + ("\n" if content.endswith("\n") else "")
+            p.write_text(new_content, encoding="utf-8")
+            updated_any = True
+        except Exception as e:
+            return False, f"Lỗi cập nhật file {p.name}: {e}"
+
+    if not updated_any:
+        return False, f"Không thể cập nhật trạng thái cho tên miền '{target_domain}'."
+
+    state_str = "BẬT" if enable else "TẮT"
+    return True, f"Đã {state_str} tên miền '{target_clean}' thành công!"
+
+
+def delete_domain_from_tunnel(target_domain: str) -> tuple[bool, str]:
+    """Xóa hoàn toàn một tên miền khỏi cấu hình Cloudflare Tunnel"""
+    target_clean = target_domain.strip().lower()
+    targets = get_tunnel_config_targets()
+    if not targets:
+        return False, "Không tìm thấy file cấu hình config.yml!"
+
+    updated_any = False
+    for p in targets:
+        try:
+            content = p.read_text(encoding="utf-8-sig")
+            lines = content.splitlines()
+            new_lines = []
+            current_rule_matches = False
+
+            for line in lines:
+                line_clean = line.strip()
+                # Bỏ qua dòng chú thích tiêu đề liên quan đến domain này
+                if line_clean.startswith("#") and target_clean in line_clean.lower() and "hostname:" not in line_clean:
+                    continue
+
+                if "hostname:" in line_clean:
+                    parts = line_clean.split("hostname:", 1)
+                    raw_host = parts[1].strip()
+                    if raw_host == target_clean or raw_host.endswith("." + target_clean):
+                        current_rule_matches = True
+                    else:
+                        current_rule_matches = False
+                elif line_clean.startswith("- service:") or (line_clean.startswith("#") and "- service:" in line_clean):
+                    current_rule_matches = False
+                elif not line_clean:
+                    current_rule_matches = False
+
+                if current_rule_matches:
+                    continue
+
+                new_lines.append(line)
+
+            new_content = "\n".join(new_lines) + ("\n" if content.endswith("\n") else "")
+            p.write_text(new_content, encoding="utf-8")
+            updated_any = True
+        except Exception as e:
+            return False, f"Lỗi xóa tên miền trong {p.name}: {e}"
+
+    if not updated_any:
+        return False, f"Không thể xóa tên miền '{target_domain}'."
+
+    return True, f"Đã xóa hoàn toàn tên miền '{target_clean}' khỏi hệ thống!"
 
 
 def add_domain_to_tunnel(new_domain: str):
-    """Thêm tên miền mới vào config.yml của Cloudflare Tunnel"""
+    """Thêm tên miền mới vào config.yml của Cloudflare Tunnel hoặc kích hoạt lại nếu đang tắt"""
     domain = new_domain.strip().lower()
     domain = domain.replace("https://", "").replace("http://", "").split("/")[0]
     if domain.startswith("www."):
@@ -135,6 +294,19 @@ def add_domain_to_tunnel(new_domain: str):
 
     if not domain or "." not in domain or len(domain) < 4:
         return False, "Tên miền không hợp lệ! Ví dụ đúng: khohangmoi.com hoặc wms.tencongty.vn"
+
+    # Kiểm tra xem tên miền đã có chưa
+    existing_domains = get_all_domains_with_status()
+    for item in existing_domains:
+        if item["domain"] == domain:
+            if not item["enabled"]:
+                # Tên miền đã có nhưng đang tắt -> Bật lại
+                ok, msg = toggle_domain_status(domain, True)
+                if ok:
+                    return True, f"Tên miền '{domain}' đã tồn tại và vừa được BẬT lại thành công!"
+                return False, msg
+            else:
+                return False, f"Tên miền '{domain}' đã tồn tại và đang BẬT sẵn!"
 
     targets = [
         Path(os.path.expanduser(r"~\.cloudflared\config.yml")),
@@ -146,10 +318,7 @@ def add_domain_to_tunnel(new_domain: str):
         if not p.exists():
             continue
         try:
-            content = p.read_text(encoding="utf-8")
-            if f"hostname: {domain}" in content:
-                continue
-
+            content = p.read_text(encoding="utf-8-sig")
             new_rules = f"""  # Tên miền bổ sung: {domain}
   - hostname: {domain}
     service: http://localhost:3000
@@ -171,9 +340,9 @@ def add_domain_to_tunnel(new_domain: str):
             return False, f"Lỗi ghi file {p.name}: {e}"
 
     if not updated_any:
-        return False, f"Tên miền '{domain}' đã tồn tại trong cấu hình hoặc chưa tìm thấy file config.yml!"
+        return False, f"Chưa tìm thấy file config.yml để ghi cấu hình!"
 
-    return True, domain
+    return True, f"Đã thêm mới và kích hoạt tên miền '{domain}' thành công!"
 
 
 class ServerManagerGUI:
@@ -296,6 +465,36 @@ class ServerManagerGUI:
             borderwidth=0
         )
         style.map("Switch.TButton", background=[("active", "#7c3aed"), ("disabled", "#475569")])
+
+        style.configure(
+            "ToggleOff.TButton",
+            background="#dc2626",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("ToggleOff.TButton", background=[("active", "#b91c1c"), ("disabled", "#475569")])
+
+        style.configure(
+            "ToggleOn.TButton",
+            background="#16a34a",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("ToggleOn.TButton", background=[("active", "#15803d"), ("disabled", "#475569")])
+
+        style.configure(
+            "Delete.TButton",
+            background="#334155",
+            foreground="#f87171",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("Delete.TButton", background=[("active", "#7f1d1d"), ("disabled", "#475569")])
 
     def _build_ui(self):
         # 1. HEADER
@@ -865,6 +1064,29 @@ class ServerManagerGUI:
         self.is_stopping_all = False
         self.root.after(0, lambda: self.btn_stop_all.configure(state="normal"))
 
+    def _restart_tunnel_if_running(self, reason: str = ""):
+        """Tự động reload / restart Tunnel nếu đang chạy để áp dụng cấu hình mới"""
+        if self.proc_tunnel and self.proc_tunnel.poll() is None:
+            self.log(f"🔄 Đang khởi động lại Cloudflare Tunnel ({reason})...")
+            try:
+                subprocess.run("taskkill /F /IM cloudflared.exe /T", shell=True, capture_output=True)
+                self.proc_tunnel = None
+                time.sleep(1)
+                cf_bin = get_cloudflared_bin()
+                self.proc_tunnel = subprocess.Popen(
+                    f'"{cf_bin}" tunnel run {TUNNEL_ID}',
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                )
+                threading.Thread(target=self._stream_proc_logs, args=(self.proc_tunnel, "[Tunnel]"), daemon=True).start()
+                self.log(f"✅ Cloudflare Tunnel đã tự động kết nối lại thành công với cấu hình mới ({reason})!")
+            except Exception as e:
+                self.log(f"⚠️ Lỗi khởi động lại tunnel: {e}")
+
     # ====================================================================
     # BÁC SĨ MÔI TRƯỜNG & KIỂM TRA PHẦN MỀM (ENVIRONMENT DOCTOR)
     # ====================================================================
@@ -1069,11 +1291,11 @@ oLink.Save
             messagebox.showinfo("Tài Liệu Hướng Dẫn", "Chưa tìm thấy file hướng dẫn.")
 
     def open_domain_manager(self):
-        """Mở cửa sổ quản lý tên miền và cấu hình Cloudflare Tunnel"""
+        """Mở cửa sổ quản lý tên miền và cấu hình Cloudflare Tunnel với tính năng Bật/Tắt và Xóa"""
         dm_win = tk.Toplevel(self.root)
         dm_win.title("🌐 QUẢN LÝ TÊN MIỀN & CLOUDFLARE TUNNEL")
-        dm_win.geometry("720x620")
-        dm_win.minsize(680, 540)
+        dm_win.geometry("780x660")
+        dm_win.minsize(720, 560)
         dm_win.configure(bg="#0f172a")
 
         header = tk.Frame(dm_win, bg="#1e293b", padx=16, pady=12)
@@ -1087,7 +1309,7 @@ oLink.Save
         ).pack(anchor="w")
         tk.Label(
             header,
-            text="Thêm tên miền riêng chỉ với 1 click. Hệ thống sẽ tự động cập nhật cấu hình và khởi động lại Tunnel!",
+            text="Quản lý, Bật/Tắt hoặc Thêm tên miền riêng chỉ với 1 click. Hệ thống sẽ tự động cập nhật cấu hình và nạp lại Tunnel!",
             font=("Segoe UI", 9),
             fg="#94a3b8",
             bg="#1e293b"
@@ -1138,13 +1360,14 @@ oLink.Save
             bg="#1e293b"
         ).pack(anchor="w", pady=(4, 0))
 
-        # 3. DANH SÁCH TÊN MIỀN HIỆN TẠI
+        # 3. KHUNG QUẢN LÝ DANH SÁCH TÊN MIỀN (BẬT / TẮT / XÓA)
         list_card = tk.Frame(content, bg="#1e293b", padx=14, pady=12, highlightthickness=1, highlightbackground="#334155")
         list_card.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
 
         list_head = tk.Frame(list_card, bg="#1e293b")
-        list_head.pack(fill=tk.X, pady=(0, 6))
-        tk.Label(list_head, text="🌍 CÁC TÊN MIỀN ĐANG HOẠT ĐỘNG", font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#1e293b").pack(side=tk.LEFT)
+        list_head.pack(fill=tk.X, pady=(0, 8))
+        lbl_list_title = tk.Label(list_head, text="🌍 QUẢN LÝ TRẠNG THÁI TÊN MIỀN", font=("Segoe UI", 10, "bold"), fg="#f8fafc", bg="#1e293b")
+        lbl_list_title.pack(side=tk.LEFT)
 
         ttk.Button(
             list_head,
@@ -1153,23 +1376,186 @@ oLink.Save
             command=self.open_docs_guide
         ).pack(side=tk.RIGHT)
 
-        domains_box = tk.Frame(list_card, bg="#0f172a", padx=8, pady=8)
-        domains_box.pack(fill=tk.BOTH, expand=True)
+        # Danh sách dạng cuộn
+        list_scroll_frame = tk.Frame(list_card, bg="#0f172a")
+        list_scroll_frame.pack(fill=tk.BOTH, expand=True)
+
+        canvas = tk.Canvas(list_scroll_frame, bg="#0f172a", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_scroll_frame, orient="vertical", command=canvas.yview)
+        domains_box = tk.Frame(canvas, bg="#0f172a")
+
+        domains_box.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        canvas_win_id = canvas.create_window((0, 0), window=domains_box, anchor="nw")
+        canvas.bind('<Configure>', lambda e: canvas.itemconfig(canvas_win_id, width=e.width))
+
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        def _on_mousewheel(event):
+            try:
+                if canvas.winfo_exists():
+                    canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            except Exception:
+                pass
+
+        dm_win.bind("<MouseWheel>", _on_mousewheel)
 
         def refresh_domain_list():
             for child in domains_box.winfo_children():
                 child.destroy()
-            d_list = get_configured_domains()
-            for d in d_list:
-                r = tk.Frame(domains_box, bg="#1e293b", padx=8, pady=5, highlightthickness=1, highlightbackground="#334155")
-                r.pack(fill=tk.X, pady=2)
-                tk.Label(r, text=f"🌐 {d}", font=("Segoe UI", 9, "bold"), fg="#38bdf8", bg="#1e293b").pack(side=tk.LEFT)
-                tk.Label(r, text="● Sẵn sàng", font=("Segoe UI", 8), fg="#22c55e", bg="#1e293b").pack(side=tk.LEFT, padx=10)
-                ttk.Button(r, text="Mở Web", style="Link.TButton", command=lambda url=f"https://{d}": webbrowser.open(url)).pack(side=tk.RIGHT)
+            d_list = get_all_domains_with_status()
 
-        refresh_domain_list()
+            active_cnt = sum(1 for d in d_list if d["enabled"])
+            disabled_cnt = len(d_list) - active_cnt
+            lbl_list_title.config(
+                text=f"🌍 QUẢN LÝ TRẠNG THÁI TÊN MIỀN ({active_cnt} Đang Bật | {disabled_cnt} Đang Tắt)"
+            )
 
-        # Xử lý khi nhấn nút Thêm Tên Miền
+            if not d_list:
+                empty_lbl = tk.Label(
+                    domains_box,
+                    text="Chưa có tên miền nào trong hệ thống. Hãy nhập tên miền ở khung trên để thêm!",
+                    font=("Segoe UI", 9, "italic"),
+                    fg="#94a3b8",
+                    bg="#0f172a",
+                    pady=16
+                )
+                empty_lbl.pack(fill=tk.X)
+                return
+
+            for item in d_list:
+                domain_name = item["domain"]
+                is_enabled = item["enabled"]
+
+                r = tk.Frame(domains_box, bg="#1e293b", padx=10, pady=8, highlightthickness=1, highlightbackground="#334155")
+                r.pack(fill=tk.X, pady=3, padx=2)
+
+                left_col = tk.Frame(r, bg="#1e293b")
+                left_col.pack(side=tk.LEFT, fill=tk.X, expand=True)
+
+                lbl_name = tk.Label(
+                    left_col,
+                    text=f"🌐 {domain_name}",
+                    font=("Segoe UI", 10, "bold"),
+                    fg="#38bdf8" if is_enabled else "#94a3b8",
+                    bg="#1e293b"
+                )
+                lbl_name.pack(side=tk.LEFT)
+
+                if is_enabled:
+                    lbl_badge = tk.Label(
+                        left_col,
+                        text="● Đang BẬT",
+                        font=("Segoe UI", 8, "bold"),
+                        fg="#22c55e",
+                        bg="#1e293b"
+                    )
+                else:
+                    lbl_badge = tk.Label(
+                        left_col,
+                        text="○ Đang TẮT",
+                        font=("Segoe UI", 8, "bold"),
+                        fg="#ef4444",
+                        bg="#1e293b"
+                    )
+                lbl_badge.pack(side=tk.LEFT, padx=12)
+
+                btn_group = tk.Frame(r, bg="#1e293b")
+                btn_group.pack(side=tk.RIGHT)
+
+                # Nút Bật/Tắt
+                if is_enabled:
+                    btn_toggle = ttk.Button(
+                        btn_group,
+                        text="⏸️ Tắt Tên Miền",
+                        style="ToggleOff.TButton",
+                        command=lambda dom=domain_name: handle_toggle(dom, False)
+                    )
+                else:
+                    btn_toggle = ttk.Button(
+                        btn_group,
+                        text="▶️ Bật Tên Miền",
+                        style="ToggleOn.TButton",
+                        command=lambda dom=domain_name: handle_toggle(dom, True)
+                    )
+                btn_toggle.pack(side=tk.LEFT, padx=(0, 6))
+
+                # Nút Mở Web
+                if is_enabled:
+                    btn_web = ttk.Button(
+                        btn_group,
+                        text="🌐 Mở Web",
+                        style="Link.TButton",
+                        command=lambda url=f"https://{domain_name}": webbrowser.open(url)
+                    )
+                else:
+                    btn_web = ttk.Button(
+                        btn_group,
+                        text="🌐 Mở Web",
+                        style="Link.TButton",
+                        state="disabled"
+                    )
+                btn_web.pack(side=tk.LEFT, padx=(0, 6))
+
+                # Nút Xóa
+                btn_del = ttk.Button(
+                    btn_group,
+                    text="🗑️ Xóa",
+                    style="Delete.TButton",
+                    command=lambda dom=domain_name: handle_delete(dom)
+                )
+                btn_del.pack(side=tk.LEFT)
+
+        def handle_toggle(domain: str, enable: bool):
+            action_text = "BẬT" if enable else "TẮT"
+            if not enable:
+                confirm = messagebox.askyesno(
+                    "Xác Nhận Tắt Tên Miền",
+                    f"Bạn có chắc chắn muốn TẮT tên miền '{domain}' không?\n\n"
+                    f"- Khi tắt, Cloudflare Tunnel sẽ ngưng trỏ traffic cho tên miền này.\n"
+                    f"- Người dùng truy cập tên miền này sẽ nhận phản hồi 404 (Không tìm thấy).\n"
+                    f"- Bạn có thể bấm 'Bật Tên Miền' để kích hoạt lại bất kỳ lúc nào!"
+                )
+                if not confirm:
+                    return
+
+            ok, msg = toggle_domain_status(domain, enable)
+            if not ok:
+                messagebox.showerror("Lỗi", msg)
+                return
+
+            self.log(f"🌐 Đã {action_text} tên miền: {domain} trong cấu hình Cloudflare Tunnel!")
+            self._restart_tunnel_if_running(f"{action_text} tên miền {domain}")
+            refresh_domain_list()
+            messagebox.showinfo(
+                f"Đã {action_text} Tên Miền",
+                f"Đã {action_text.lower()} tên miền '{domain}' thành công!\n\nCấu hình Tunnel đã được cập nhật tự động."
+            )
+
+        def handle_delete(domain: str):
+            confirm = messagebox.askyesno(
+                "Xác Nhận Xóa Tên Miền",
+                f"Bạn có chắc chắn muốn XÓA VĨNH VIỄN tên miền '{domain}' khỏi cấu hình Tunnel không?\n\n"
+                f"- Toàn bộ cấu hình của '{domain}', 'www.{domain}', 'api.{domain}' sẽ bị gỡ bỏ.\n"
+                f"- Bạn vẫn có thể thêm lại tên miền này sau nếu muốn."
+            )
+            if not confirm:
+                return
+
+            ok, msg = delete_domain_from_tunnel(domain)
+            if not ok:
+                messagebox.showerror("Lỗi", msg)
+                return
+
+            self.log(f"🗑️ Đã xóa tên miền: {domain} khỏi cấu hình Cloudflare Tunnel!")
+            self._restart_tunnel_if_running(f"Xóa tên miền {domain}")
+            refresh_domain_list()
+            messagebox.showinfo("Đã Xóa Tên Miền", f"Đã xóa hoàn toàn tên miền '{domain}' khỏi hệ thống!")
+
         def handle_add():
             domain = ent_domain.get().strip()
             if not domain:
@@ -1180,41 +1566,22 @@ oLink.Save
                 messagebox.showerror("Lỗi", res)
                 return
 
-            self.log(f"🌐 Đã thêm tên miền mới: {res} vào cấu hình Cloudflare Tunnel!")
-
-            # Tự động reload / restart Tunnel nếu đang chạy
-            if self.proc_tunnel and self.proc_tunnel.poll() is None:
-                self.log("🔄 Đang khởi động lại Cloudflare Tunnel để áp dụng tên miền mới...")
-                try:
-                    subprocess.run("taskkill /F /IM cloudflared.exe /T", shell=True, capture_output=True)
-                    self.proc_tunnel = None
-                    time.sleep(1)
-                    cf_bin = get_cloudflared_bin()
-                    self.proc_tunnel = subprocess.Popen(
-                        f'"{cf_bin}" tunnel run {TUNNEL_ID}',
-                        shell=True,
-                        stdout=subprocess.PIPE,
-                        stderr=subprocess.STDOUT,
-                        text=True,
-                        bufsize=1,
-                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-                    )
-                    threading.Thread(target=self._stream_proc_logs, args=(self.proc_tunnel, "[Tunnel]"), daemon=True).start()
-                    self.log(f"✅ Cloudflare Tunnel đã chạy lại với tên miền mới: {res}!")
-                except Exception as e:
-                    self.log(f"⚠️ Lỗi khởi động lại tunnel: {e}")
-
+            self.log(f"🌐 {res}")
+            self._restart_tunnel_if_running(f"Thêm/Bật tên miền {domain}")
             ent_domain.delete(0, tk.END)
             refresh_domain_list()
             messagebox.showinfo(
-                "Thêm Tên Miền Thành Công",
-                f"Đã thêm tên miền: {res} vào hệ thống thành công!\n\n"
-                f"Bây giờ bạn chỉ cần vào Cloudflare Dashboard trỏ 3 bản ghi CNAME (@, www, api) là nhân viên có thể truy cập được ngay!\n\n"
+                "Thành Công",
+                f"{res}\n\n"
+                f"Bây giờ bạn chỉ cần vào Cloudflare Dashboard trỏ 3 bản ghi CNAME (@, www, api) về Target trên là nhân viên có thể truy cập được ngay!\n\n"
                 f"Bấm '📖 Mở Hướng Dẫn' nếu bạn muốn xem chi tiết từng bước."
             )
 
         btn_add = ttk.Button(input_row, text="➕ Thêm Tên Miền Ngay", style="Success.TButton", command=handle_add)
         btn_add.pack(side=tk.RIGHT)
+
+        # Tải danh sách lần đầu
+        refresh_domain_list()
 
     def _on_close(self):
         if (self.proc_nextjs and self.proc_nextjs.poll() is None) or (self.proc_tunnel and self.proc_tunnel.poll() is None):
