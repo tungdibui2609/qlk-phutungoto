@@ -246,6 +246,12 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                 label.code,
                 label.semi_finished_lot_code || '',
                 label.finished_lot_code || '',
+                label.metadata?.stamp_line1 || '',
+                label.metadata?.stamp_line2 || '',
+                label.metadata?.product_name || '',
+                label.metadata?.region || '',
+                label.metadata?.shift_group || '',
+                label.metadata?.packaging_date || '',
                 lot.products?.name || '',
                 lot.products?.sku || '',
                 lot.products?.internal_code || '',
@@ -845,10 +851,19 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                             e.stopPropagation();
                             setShowOcrScanModal(true);
                         }}
-                        className="w-9 h-9 flex items-center justify-center rounded-full text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-colors"
-                        title="Xem thông tin quét OCR điện thoại (theo STT)"
+                        className={`relative w-9 h-9 flex items-center justify-center rounded-full transition-colors ${
+                            lot.box_labels && lot.box_labels.length > 0 
+                                ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50' 
+                                : 'text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30'
+                        }`}
+                        title={lot.box_labels && lot.box_labels.length > 0 ? `Xem thông tin quét OCR điện thoại (${lot.box_labels.length} thùng)` : "Xem thông tin quét OCR điện thoại (theo STT)"}
                     >
                         <Smartphone size={16} />
+                        {lot.box_labels && lot.box_labels.length > 0 && (
+                            <span className="absolute -top-1 -right-1 px-1 min-w-[16px] h-4 rounded-full bg-indigo-600 text-white text-[9px] font-black flex items-center justify-center shadow-xs">
+                                {lot.box_labels.length}
+                            </span>
+                        )}
                     </button>
                     <button
                         onClick={() => onView(lot)}

@@ -5,6 +5,7 @@ import { PositionWithZone } from './useWarehouseData'
 import { matchSearch, advancedMatchSearch } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { decodeSTT } from '@/lib/numberUtils'
+import { decodeStampBox, matchBoxDeepCriteria, parseDateToComparable } from '@/lib/stampDecoder'
 
 interface UseMapFiltersProps {
     positions: PositionWithZone[]
@@ -17,7 +18,8 @@ interface UseMapFiltersProps {
     markedNotes?: Record<string, string>
 }
 
-export type SearchMode = 'all' | 'name' | 'code' | 'tag' | 'position' | 'category' | 'production' | 'stt' | 'box_count'
+export type SearchMode = 'all' | 'name' | 'code' | 'stamp' | 'tag' | 'position' | 'category' | 'production' | 'stt' | 'box_count'
+export type DeepDateField = 'packaging_date' | 'peeling_date' | 'raw_material_date' | 'inbound_date'
 
 export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendingExportPosIds, onlyShowMarked, markedPositionIds, markedNotes }: UseMapFiltersProps) {
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
@@ -25,10 +27,35 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
     const [searchTerm, setSearchTerm] = useState('')
     const [searchMode, setSearchMode] = useState<SearchMode>('all')
 
-    // Date Filters
+    // Date Filters (Chế độ Cơ bản)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
+
+    // Deep Scan States (Chế độ Tìm kiếm Chuyên sâu OCR / Tem)
+    const [isDeepScanMode, setIsDeepScanMode] = useState(false)
+    const [deepScanTerm, setDeepScanTerm] = useState('')
+    const [deepDateField, setDeepDateField] = useState<DeepDateField>('packaging_date')
+    const [deepStartDate, setDeepStartDate] = useState('')
+    const [deepEndDate, setDeepEndDate] = useState('')
+    const [deepRegion, setDeepRegion] = useState('all')
+    const [deepFactory, setDeepFactory] = useState('all')
+    const [deepGrade, setDeepGrade] = useState('all')
+    const [deepVariety, setDeepVariety] = useState('all')
+    const [deepPackageSpec, setDeepPackageSpec] = useState('all')
+
+    const resetDeepScanFilters = () => {
+        setSearchTerm('')
+        setDeepScanTerm('')
+        setDeepDateField('packaging_date')
+        setDeepStartDate('')
+        setDeepEndDate('')
+        setDeepRegion('all')
+        setDeepFactory('all')
+        setDeepGrade('all')
+        setDeepVariety('all')
+        setDeepPackageSpec('all')
+    }
 
     // Hide Export Pending
     const [hidePendingExport, setHidePendingExport] = useState(false)
@@ -64,16 +91,13 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
             })
         }
 
-        // Filter by search term
-        // Supports:
-        //   - Space: multiple position codes (OR) e.g. "K1D1A01T301 K1D1B02T401"
-        //   - Semicolon (;): multiple product/SKU queries (OR) e.g. "xoài;chanh"
-        //   - Ampersand (&): product + tag condition (AND) e.g. "xoài&keo vàng"
+        // ==========================================
+        // 1. TÌM KIẾM THEO TỪ KHÓA (SEARCH TERM)
+        // Áp dụng chung cho cả chế độ Thường và Chuyên sâu
+        // ==========================================
         if (searchTerm) {
             const trimmed = searchTerm.trim()
             if (trimmed) {
-                // Tự động tối ưu hóa tìm kiếm: nếu người dùng nhập danh sách các mã vị trí hoặc mã code viết liền ngăn cách bởi khoảng trắng
-                // (ví dụ: "K1D1A01T301 K1D1B02T401"), ta tự động chuyển đổi khoảng trắng thành dấu ";" đại diện cho phép OR.
                 let finalSearchTerm = trimmed
                 if (!trimmed.includes(';') && !trimmed.includes(',') && !trimmed.includes('&')) {
                     if (searchMode === 'position') {
@@ -91,16 +115,13 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
                     const res: string[] = []
 
-                    // Luôn cho phép tìm mã vị trí
                     if (mode === 'all' || mode === 'position') res.push(p.code)
 
                     if (lot) {
-                        // Lot code
                         if (mode === 'all' || mode === 'code') {
                             if (lot.code) res.push(lot.code)
                         }
 
-                        // Items data (Already contains product name, sku, internal codes, categories, aliases)
                         lot.items?.forEach((it: any) => {
                             if (mode === 'all' || mode === 'name') {
                                 if (it.product_name) res.push(it.product_name)
@@ -117,23 +138,19 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             }
                         })
 
-                        // Tags
                         if (mode === 'all' || mode === 'tag') {
                             lot.tags?.forEach((t: string) => res.push(t))
-                            // Fallback to lot_tags if tags array is empty but raw lot_tags exist
                             if (!lot.tags?.length && lot.lot_tags) {
                                 lot.lot_tags.forEach((t: any) => res.push(t.tag))
                             }
                         }
 
-                        // Production Order
                         if (mode === 'all' || mode === 'production') {
                             if (lot.production_code) res.push(lot.production_code)
                             if (lot.productions?.code) res.push(lot.productions.code)
                             if (lot.productions?.name) res.push(lot.productions.name)
                             lot.production_lot_codes?.forEach((code: string) => res.push(code))
                             
-                            // Include item product info directly so advanced combo search (e.g. LSX & Product) works
                             if (mode === 'production') {
                                 lot.items?.forEach((it: any) => {
                                     if (it.product_name) res.push(it.product_name)
@@ -144,7 +161,6 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             }
                         }
 
-                        // Other fields
                         if (mode === 'all' || mode === 'stt') {
                             if (lot.daily_seq) {
                                 res.push(String(lot.daily_seq))
@@ -158,7 +174,6 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             }
                         }
 
-                        // Box Labels
                         if (lot.box_labels && lot.box_labels.length > 0) {
                             if (mode === 'all' || mode === 'box_count') {
                                 res.push(String(lot.box_labels.length))
@@ -171,6 +186,26 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                                 }
                                 if (mode === 'all' || mode === 'stt') {
                                     if (label.code) res.push(label.code)
+                                }
+                                if (mode === 'all' || mode === 'stamp') {
+                                    if (label.code) res.push(label.code)
+                                    if (label.semi_finished_lot_code) res.push(label.semi_finished_lot_code)
+                                    if (label.finished_lot_code) res.push(label.finished_lot_code)
+                                    const meta = label.metadata || {}
+                                    if (meta.stamp_line1) res.push(meta.stamp_line1)
+                                    if (meta.stamp_line2) res.push(meta.stamp_line2)
+                                    if (meta.pallet_stt) res.push(meta.pallet_stt)
+                                    if (meta.product_name) res.push(meta.product_name)
+                                }
+                                // Bổ sung toàn bộ từ khóa giải mã tem OCR để tìm kiếm siêu nhạy
+                                if (mode === 'all' || mode === 'stamp') {
+                                    const decoded = decodeStampBox(label)
+                                    res.push(...decoded.searchableTokens)
+                                } else if (mode === 'name') {
+                                    const decoded = decodeStampBox(label)
+                                    if (decoded.productTitle) res.push(decoded.productTitle)
+                                    if (decoded.varietyName) res.push(decoded.varietyName)
+                                    if (decoded.productGradeName) res.push(decoded.productGradeName)
                                 }
                             })
                         } else if (mode === 'all' || mode === 'box_count') {
@@ -185,7 +220,6 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                         }
                     }
 
-                    // Include mark notes when searching in 'all' mode
                     if (mode === 'all' && markedNotes) {
                         const markNote = markedNotes[p.id] || ((p as any).realIds && (p as any).realIds.map((id: string) => markedNotes[id]).filter(Boolean).join(' '))
                         if (markNote) res.push(markNote)
@@ -201,13 +235,72 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
             }
         }
 
-        // Filter by date range
-        if (startDate || endDate) {
-            result = result.filter(p => {
-                const lot = p.lot_id ? lotInfo[p.lot_id] : null
-                if (!lot) return false
-                return matchDateRange(lot[dateFilterField], startDate, endDate)
-            })
+        // ==========================================
+        // 2. BỘ LỌC CHUYÊN SÂU (DEEP SCAN FILTERS)
+        // Kết hợp cùng từ khóa tìm kiếm khi bật Chuyên Sâu OCR
+        // ==========================================
+        if (isDeepScanMode) {
+            const hasDeepFilters = !!(
+                deepStartDate || deepEndDate ||
+                (deepRegion && deepRegion !== 'all') ||
+                (deepFactory && deepFactory !== 'all') ||
+                (deepGrade && deepGrade !== 'all') ||
+                (deepVariety && deepVariety !== 'all') ||
+                (deepPackageSpec && deepPackageSpec !== 'all')
+            )
+
+            if (hasDeepFilters) {
+                const criteria = {
+                    dateField: deepDateField,
+                    startDate: deepStartDate,
+                    endDate: deepEndDate,
+                    region: deepRegion,
+                    factory: deepFactory,
+                    grade: deepGrade,
+                    variety: deepVariety,
+                    packageSpec: deepPackageSpec
+                }
+
+                result = result.filter(p => {
+                    if (!p.lot_id) return false
+                    const lot = lotInfo[p.lot_id]
+                    if (!lot) return false
+                    const boxes = lot.box_labels || []
+
+                    // Nếu Lô có thùng quét OCR: đối soát chính xác theo từng thùng
+                    if (boxes.length > 0) {
+                        return boxes.some((b: any) => matchBoxDeepCriteria(decodeStampBox(b), criteria))
+                    }
+
+                    // Nếu đang lọc theo thuộc tính dập mực con dấu (phẩm cấp, giống, quy cách): chỉ chấp nhận thùng đã quét OCR
+                    if (deepGrade !== 'all' || deepVariety !== 'all' || deepPackageSpec !== 'all') {
+                        return false
+                    }
+
+                    // Nếu chỉ lọc theo ngày hoặc vùng miền/nhà máy: đối soát cấp Lot
+                    const dummyBox = {
+                        code: lot.code,
+                        metadata: {
+                            packaging_date: lot.packaging_date,
+                            peeling_date: lot.peeling_date,
+                            raw_material_date: lot.raw_material_date,
+                            inbound_date: lot.inbound_date,
+                            shift_group: lot.warehouse_name,
+                            region: lot.supplier_name
+                        }
+                    }
+                    return matchBoxDeepCriteria(decodeStampBox(dummyBox), criteria)
+                })
+            }
+        } else {
+            // Lọc ngày ở chế độ cơ bản
+            if (startDate || endDate) {
+                result = result.filter(p => {
+                    const lot = p.lot_id ? lotInfo[p.lot_id] : null
+                    if (!lot) return false
+                    return matchDateRange(lot[dateFilterField], startDate, endDate)
+                })
+            }
         }
 
         // Filter by zone
@@ -265,7 +358,56 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         }
 
         return result
-    }, [positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, onlyShowMarked, markedPositionIds, markedNotes])
+    }, [
+        positions, selectedZoneId, selectedCategoryId, searchTerm, searchMode, zones, lotInfo, 
+        startDate, endDate, dateFilterField, isFifoActive, hidePendingExport, pendingExportPosIds, 
+        onlyShowMarked, markedPositionIds, markedNotes,
+        isDeepScanMode, deepScanTerm, deepDateField, deepStartDate, deepEndDate, 
+        deepRegion, deepFactory, deepGrade, deepVariety, deepPackageSpec
+    ])
+
+    // Số lượng bộ lọc chuyên sâu đang kích hoạt
+    const deepScanActiveCount = useMemo(() => {
+        let count = 0
+        const activeTerm = searchTerm || deepScanTerm
+        if (activeTerm.trim()) count++
+        if (deepStartDate || deepEndDate) count++
+        if (deepRegion !== 'all') count++
+        if (deepFactory !== 'all') count++
+        if (deepGrade !== 'all') count++
+        if (deepVariety !== 'all') count++
+        if (deepPackageSpec !== 'all') count++
+        return count
+    }, [searchTerm, deepScanTerm, deepStartDate, deepEndDate, deepRegion, deepFactory, deepGrade, deepVariety, deepPackageSpec])
+
+    // Tổng số lượng thùng khớp trong các vị trí tìm được khi ở chế độ chuyên sâu
+    const deepScanMatchingBoxesCount = useMemo(() => {
+        if (!isDeepScanMode) return 0
+        let count = 0
+        const criteria = {
+            term: (searchMode === 'stamp' ? (searchTerm || deepScanTerm) : deepScanTerm),
+            dateField: deepDateField,
+            startDate: deepStartDate,
+            endDate: deepEndDate,
+            region: deepRegion,
+            factory: deepFactory,
+            grade: deepGrade,
+            variety: deepVariety,
+            packageSpec: deepPackageSpec
+        }
+
+        filteredPositions.forEach(p => {
+            if (!p.lot_id) return
+            const lot = lotInfo[p.lot_id]
+            if (!lot) return
+            const boxes = lot.box_labels || []
+            if (boxes.length > 0) {
+                const matchingBoxes = boxes.filter((b: any) => matchBoxDeepCriteria(decodeStampBox(b), criteria))
+                count += matchingBoxes.length
+            }
+        })
+        return count
+    }, [filteredPositions, isDeepScanMode, lotInfo, searchTerm, searchMode, deepScanTerm, deepDateField, deepStartDate, deepEndDate, deepRegion, deepFactory, deepGrade, deepVariety, deepPackageSpec])
 
     const filteredZones = useMemo(() => {
         // If onlyShowMarked is active, filter zones containing marked positions
@@ -355,6 +497,31 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         toggleFifo: () => setFifoActive(prev => !prev),
         // Export Filter
         hidePendingExport,
-        setHidePendingExport
+        setHidePendingExport,
+        // Deep Scan (Tìm kiếm chuyên sâu OCR / Tem con dấu)
+        isDeepScanMode,
+        setIsDeepScanMode,
+        toggleDeepScanMode: () => setIsDeepScanMode(prev => !prev),
+        deepScanTerm,
+        setDeepScanTerm,
+        deepDateField,
+        setDeepDateField,
+        deepStartDate,
+        setDeepStartDate,
+        deepEndDate,
+        setDeepEndDate,
+        deepRegion,
+        setDeepRegion,
+        deepFactory,
+        setDeepFactory,
+        deepGrade,
+        setDeepGrade,
+        deepVariety,
+        setDeepVariety,
+        deepPackageSpec,
+        setDeepPackageSpec,
+        resetDeepScanFilters,
+        deepScanActiveCount,
+        deepScanMatchingBoxesCount
     }
 }

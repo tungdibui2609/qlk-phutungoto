@@ -160,7 +160,32 @@ function WarehouseMapContent() {
         isFifoActive,
         toggleFifo,
         hidePendingExport,
-        setHidePendingExport
+        setHidePendingExport,
+        // Deep Scan (OCR / Tem con dấu)
+        isDeepScanMode,
+        setIsDeepScanMode,
+        toggleDeepScanMode,
+        deepScanTerm,
+        setDeepScanTerm,
+        deepDateField,
+        setDeepDateField,
+        deepStartDate,
+        setDeepStartDate,
+        deepEndDate,
+        setDeepEndDate,
+        deepRegion,
+        setDeepRegion,
+        deepFactory,
+        setDeepFactory,
+        deepGrade,
+        setDeepGrade,
+        deepVariety,
+        setDeepVariety,
+        deepPackageSpec,
+        setDeepPackageSpec,
+        resetDeepScanFilters,
+        deepScanActiveCount,
+        deepScanMatchingBoxesCount
     } = useMapFilters({
         positions,
         zones,
@@ -171,6 +196,23 @@ function WarehouseMapContent() {
         markedPositionIds,
         markedNotes
     })
+
+    // Đánh dấu nhanh tất cả các vị trí đang được lọc (hỗ trợ chế độ chuyên sâu và kiểm kê)
+    const handleBulkMarkFilteredPositions = () => {
+        if (!filteredPositions || filteredPositions.length === 0) return
+        const idsToMark: string[] = []
+        filteredPositions.forEach(p => {
+            if ((p as any).realIds && Array.isArray((p as any).realIds)) {
+                idsToMark.push(...(p as any).realIds)
+            } else if (p.id) {
+                idsToMark.push(p.id)
+            }
+        })
+        if (idsToMark.length > 0) {
+            markPositions(idsToMark)
+            showToast(`Đã đánh dấu ${idsToMark.length} vị trí tìm thấy vào danh sách kiểm tra / xuất kho`, 'success')
+        }
+    }
 
     // Categories list for filter
     const [categories, setCategories] = useState<any[]>([])
@@ -1253,6 +1295,30 @@ function WarehouseMapContent() {
                         onlyShowMarked={onlyShowMarked}
                         onToggleOnlyShowMarked={toggleOnlyShowMarked}
                         markedCount={markedCount}
+                        // Deep Scan props
+                        isDeepScanMode={isDeepScanMode}
+                        onToggleDeepScanMode={toggleDeepScanMode}
+                        deepScanTerm={deepScanTerm}
+                        onDeepScanTermChange={setDeepScanTerm}
+                        deepDateField={deepDateField}
+                        onDeepDateFieldChange={setDeepDateField}
+                        deepStartDate={deepStartDate}
+                        onDeepStartDateChange={setDeepStartDate}
+                        deepEndDate={deepEndDate}
+                        onDeepEndDateChange={setDeepEndDate}
+                        deepRegion={deepRegion}
+                        onDeepRegionChange={setDeepRegion}
+                        deepFactory={deepFactory}
+                        onDeepFactoryChange={setDeepFactory}
+                        deepGrade={deepGrade}
+                        onDeepGradeChange={setDeepGrade}
+                        deepVariety={deepVariety}
+                        onDeepVarietyChange={setDeepVariety}
+                        deepPackageSpec={deepPackageSpec}
+                        onDeepPackageSpecChange={setDeepPackageSpec}
+                        onResetDeepScan={resetDeepScanFilters}
+                        deepScanStats={{ totalPositions: filteredPositions.length, matchingBoxes: deepScanMatchingBoxesCount }}
+                        onBulkMarkFilteredPositions={handleBulkMarkFilteredPositions}
                     />
                 );
             })()}
@@ -1263,13 +1329,36 @@ function WarehouseMapContent() {
                     : { zones: filteredZones, positions: filteredPositions }
 
                 const selectedCatName = categories.find(c => c.id === selectedCategoryId)?.name
+                const effectiveSearchTerm = isDeepScanMode 
+                    ? (() => {
+                        const parts: string[] = []
+                        const activeSearch = searchTerm || deepScanTerm
+                        if (activeSearch.trim()) parts.push(`"${activeSearch.trim()}"`)
+                        if (deepStartDate || deepEndDate) {
+                            const dateLabel = deepDateField === 'packaging_date' ? 'Ngày ĐG' : deepDateField === 'peeling_date' ? 'Ngày bóc múi' : deepDateField === 'raw_material_date' ? 'Ngày nhập NL' : 'Ngày nhập kho'
+                            parts.push(`${dateLabel}: ${deepStartDate || '...'} → ${deepEndDate || '...'}`)
+                        }
+                        if (deepFactory !== 'all') {
+                            const fNames: Record<string, string> = { '1': 'Nhà máy 1 (Bến Tre)', '2': 'Nhà máy 2 (Đắk Lắk)', '3': 'Cơ sở 3 (Phước An)' }
+                            parts.push(`Nhà máy: ${fNames[deepFactory] || deepFactory}`)
+                        }
+                        if (deepRegion !== 'all') {
+                            const rNames: Record<string, string> = { '66': 'Đắk Lắk (66)', '71': 'Bến Tre (71)', '09': 'Tỉnh mã 09', '67': 'Đắk Nông (67)', '68': 'Lâm Đồng (68)', '64': 'Gia Lai (64)', '63': 'Tiền Giang (63)' }
+                            parts.push(`Vùng: ${rNames[deepRegion] || deepRegion}`)
+                        }
+                        if (deepGrade !== 'all') parts.push(`Hạng: ${deepGrade}`)
+                        if (deepVariety !== 'all') parts.push(`Giống: ${deepVariety}`)
+                        if (deepPackageSpec !== 'all') parts.push(`Quy cách: ${deepPackageSpec}`)
+                        return parts.length > 0 ? parts.join(' • ') : 'Tất cả vị trí quét tem OCR'
+                    })()
+                    : searchTerm
 
                 return (
                     <MapSearchStats
                         filteredPositions={displayPositions}
                         zones={displayZones}
                         lotInfo={lotInfo}
-                        searchTerm={searchTerm}
+                        searchTerm={effectiveSearchTerm}
                         categoryName={selectedCatName}
                         onPositionSelect={handlePositionSelect}
                         onPositionMenu={(pos, e) => handlePositionMenu(pos, e)}
@@ -1310,7 +1399,7 @@ function WarehouseMapContent() {
                                     positions={displayPositions}
                                     layouts={layoutRecord}
                                     lotInfo={lotInfo}
-                                    searchTerm={searchTerm}
+                                    searchTerm={isDeepScanMode ? (deepScanTerm || 'deep_scan') : searchTerm}
                                     selectedCategoryId={selectedCategoryId}
                                     occupiedIds={occupiedIds}
                                     selectedPositionIds={selectedPositionIds}

@@ -48,6 +48,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
         semi_finished_lot_code: string | null
         finished_lot_code: string | null
         status: string
+        metadata?: any
     }[] | null
 }
 
@@ -369,7 +370,7 @@ export function useLotManagement() {
     qc_info(name),
     lot_tags(tag, lot_item_id),
     products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, aliases, product_category_rel(categories(name))),
-    box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status)
+    box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status, metadata)
         `
 
             let query: any;
