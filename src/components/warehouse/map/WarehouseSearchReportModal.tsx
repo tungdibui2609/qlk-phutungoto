@@ -29,7 +29,16 @@ import { decodeSTT } from '@/lib/numberUtils'
 
 export type SortByField = 'date' | 'position' | 'product_name' | 'sku' | 'quantity'
 export type SortOrder = 'asc' | 'desc'
-export type DateFieldOption = 'auto' | 'inbound_date' | 'packaging_date' | 'peeling_date' | 'created_at'
+export type DateFieldOption = 'auto' | 'inbound_date' | 'packaging_date' | 'peeling_date' | 'raw_material_date' | 'created_at'
+
+export const dateFieldDescMap: Record<DateFieldOption, string> = {
+    auto: 'Tự động',
+    peeling_date: 'Ngày sản xuất',
+    inbound_date: 'Ngày nhập kho',
+    raw_material_date: 'Ngày nguyên liệu',
+    packaging_date: 'Ngày đóng gói',
+    created_at: 'Ngày tạo lô'
+}
 
 interface WarehouseSearchReportModalProps {
     isOpen: boolean
@@ -56,7 +65,7 @@ export function WarehouseSearchReportModal({
     const { showToast } = useToast()
     const { companyInfo } = usePrintCompanyInfo()
 
-    const [activeTab, setActiveTab] = useState<'detail' | 'date_summary' | 'product_summary'>('detail')
+    const [activeTab, setActiveTab] = useState<'product_summary' | 'detail' | 'date_summary'>('product_summary')
     const [sortBy, setSortBy] = useState<SortByField>('date')
     const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
     const [dateField, setDateField] = useState<DateFieldOption>('auto')
@@ -95,6 +104,28 @@ export function WarehouseSearchReportModal({
         }
     }
 
+    // Helper: Trích xuất toàn bộ các ngày sản xuất của LOT (bao gồm metadata.peeling_dates & peeling_date)
+    const getLotPeelingDates = (l: any): string[] => {
+        if (!l) return []
+        const fromMeta = Array.isArray(l.metadata?.peeling_dates)
+            ? l.metadata.peeling_dates
+            : (Array.isArray(l.metadata?.production_dates) ? l.metadata.production_dates : [])
+        const set = new Set<string>()
+        fromMeta.forEach((d: any) => {
+            if (typeof d === 'string' && d.trim()) {
+                set.add(d.split('T')[0])
+            }
+        })
+        if (l.peeling_date) {
+            try {
+                set.add(new Date(l.peeling_date).toISOString().split('T')[0])
+            } catch {
+                // ignore
+            }
+        }
+        return Array.from(set).filter(Boolean).sort()
+    }
+
     // Filter positions by scope
     const targetPositions = useMemo(() => {
         if (scope === 'selected' && selectedPositionIds.size > 0) {
@@ -121,35 +152,46 @@ export function WarehouseSearchReportModal({
                 return
             }
 
+            const peelingDates = getLotPeelingDates(lot)
+            const peelingDateFormatted = peelingDates.length > 0
+                ? peelingDates.map(d => formatDateDisplay(d)).join(', ')
+                : (lot.peeling_date ? formatDateDisplay(lot.peeling_date) : undefined)
+            const packagingDateFormatted = lot.packaging_date ? formatDateDisplay(lot.packaging_date) : undefined
+            const rawMaterialDateFormatted = lot.raw_material_date ? formatDateDisplay(lot.raw_material_date) : undefined
+            const inboundDateFormatted = lot.inbound_date ? formatDateDisplay(lot.inbound_date) : undefined
+
             // Determine effective date and its type based on dateField option
             const resolveDate = () => {
                 if (dateField === 'inbound_date') {
-                    return { date: lot.inbound_date || null, type: 'Ngày nhập kho' }
+                    return { date: lot.inbound_date || null, formatted: inboundDateFormatted || '-', type: 'Ngày nhập kho' }
                 }
                 if (dateField === 'packaging_date') {
-                    return { date: lot.packaging_date || null, type: 'Ngày đóng gói' }
+                    return { date: lot.packaging_date || null, formatted: packagingDateFormatted || '-', type: 'Ngày đóng gói' }
                 }
                 if (dateField === 'peeling_date') {
-                    return { date: lot.peeling_date || null, type: 'Ngày sản xuất' }
+                    const primary = peelingDates[0] || (lot.peeling_date ? new Date(lot.peeling_date).toISOString().split('T')[0] : null)
+                    return { date: primary, formatted: peelingDateFormatted || '-', type: 'Ngày sản xuất' }
+                }
+                if (dateField === 'raw_material_date') {
+                    return { date: lot.raw_material_date || null, formatted: rawMaterialDateFormatted || '-', type: 'Ngày nguyên liệu' }
                 }
                 if (dateField === 'created_at') {
-                    return { date: lot.created_at || null, type: 'Ngày tạo' }
+                    return { date: lot.created_at || null, formatted: formatDateDisplay(lot.created_at), type: 'Ngày tạo' }
                 }
-                // 'auto': prioritize inbound -> packaging -> peeling -> created_at
-                if (lot.inbound_date) return { date: lot.inbound_date, type: 'Ngày nhập kho' }
-                if (lot.packaging_date) return { date: lot.packaging_date, type: 'Ngày đóng gói' }
-                if (lot.peeling_date) return { date: lot.peeling_date, type: 'Ngày sản xuất' }
-                if (lot.created_at) return { date: lot.created_at, type: 'Ngày tạo' }
-                return { date: null, type: 'Chưa có ngày' }
+                // 'auto': prioritize inbound -> packaging -> peeling -> raw_material -> created_at
+                if (lot.inbound_date) return { date: lot.inbound_date, formatted: inboundDateFormatted || '-', type: 'Ngày nhập kho' }
+                if (lot.packaging_date) return { date: lot.packaging_date, formatted: packagingDateFormatted || '-', type: 'Ngày đóng gói' }
+                if (peelingDates.length > 0 || lot.peeling_date) {
+                    const primary = peelingDates[0] || (lot.peeling_date ? new Date(lot.peeling_date).toISOString().split('T')[0] : null)
+                    return { date: primary, formatted: peelingDateFormatted || '-', type: 'Ngày sản xuất' }
+                }
+                if (lot.raw_material_date) return { date: lot.raw_material_date, formatted: rawMaterialDateFormatted || '-', type: 'Ngày nguyên liệu' }
+                if (lot.created_at) return { date: lot.created_at, formatted: formatDateDisplay(lot.created_at), type: 'Ngày tạo' }
+                return { date: null, formatted: '-', type: 'Chưa có ngày' }
             }
 
-            const { date: chosenDate, type: chosenDateType } = resolveDate()
-
-            const packagingDateFormatted = lot.packaging_date ? formatDateDisplay(lot.packaging_date) : undefined
-            const peelingDateFormatted = lot.peeling_date ? formatDateDisplay(lot.peeling_date) : undefined
-            const inboundDateFormatted = lot.inbound_date ? formatDateDisplay(lot.inbound_date) : undefined
+            const chosen = resolveDate()
             const prodName = lot.productions?.name || lot.production_code || undefined
-
             const lotStt = lot.daily_seq ? decodeSTT(lot.daily_seq) : ''
 
             if (lot.items && lot.items.length > 0) {
@@ -160,11 +202,12 @@ export function WarehouseSearchReportModal({
                         positionCode: pos.code,
                         zonePath,
                         warehouse: warehouseName,
-                        date: chosenDate,
-                        dateFormatted: formatDateDisplay(chosenDate),
-                        dateType: chosenDateType,
+                        date: chosen.date,
+                        dateFormatted: chosen.formatted,
+                        dateType: chosen.type,
                         packagingDateFormatted,
                         peelingDateFormatted,
+                        rawMaterialDateFormatted,
                         inboundDateFormatted,
                         quantity: Number(item.quantity) || 0,
                         unit: item.unit || lot.products?.unit || '',
@@ -182,11 +225,12 @@ export function WarehouseSearchReportModal({
                     positionCode: pos.code,
                     zonePath,
                     warehouse: warehouseName,
-                    date: chosenDate,
-                    dateFormatted: formatDateDisplay(chosenDate),
-                    dateType: chosenDateType,
+                    date: chosen.date,
+                    dateFormatted: chosen.formatted,
+                    dateType: chosen.type,
                     packagingDateFormatted,
                     peelingDateFormatted,
+                    rawMaterialDateFormatted,
                     inboundDateFormatted,
                     quantity: Number(lot.quantity) || 0,
                     unit: lot.products.unit || '',
@@ -329,11 +373,13 @@ export function WarehouseSearchReportModal({
         return arr
     }, [rawItems, sortOrder])
 
-    // Groups by product
+    // Groups by product & peeling dates (tách riêng theo ngày sản xuất)
     const productGroups = useMemo(() => {
         const map = new Map<string, {
             sku: string;
             name: string;
+            peelingDateFormatted: string;
+            inboundDateFormatted: string;
             positions: Set<string>;
             totalQty: number;
             unit: string;
@@ -342,11 +388,14 @@ export function WarehouseSearchReportModal({
         }>()
 
         rawItems.forEach(it => {
-            const key = `${it.sku || ''}_${it.productName}`
+            const peelingKey = it.peelingDateFormatted || '-'
+            const key = `${it.sku || ''}_${it.productName}_${peelingKey}`
             if (!map.has(key)) {
                 map.set(key, {
                     sku: it.sku || '',
                     name: it.productName,
+                    peelingDateFormatted: peelingKey,
+                    inboundDateFormatted: it.inboundDateFormatted || it.dateFormatted || '-',
                     positions: new Set(),
                     totalQty: 0,
                     unit: it.unit,
@@ -363,7 +412,11 @@ export function WarehouseSearchReportModal({
             }
         })
 
-        return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+        return Array.from(map.values()).sort((a, b) => {
+            const cmp = a.name.localeCompare(b.name, 'vi')
+            if (cmp !== 0) return cmp
+            return a.peelingDateFormatted.localeCompare(b.peelingDateFormatted)
+        })
     }, [rawItems])
 
     // Handle column click sorting
@@ -386,7 +439,7 @@ export function WarehouseSearchReportModal({
         setIsExporting(true)
         try {
             const sortLabelMap: Record<SortByField, string> = {
-                date: 'Ngày nhập kho',
+                date: `Ngày (${dateFieldDescMap[dateField]})`,
                 position: 'Vị trí',
                 product_name: 'Tên sản phẩm',
                 sku: 'Mã sản phẩm (SKU)',
@@ -394,14 +447,6 @@ export function WarehouseSearchReportModal({
             }
             const orderLabel = sortOrder === 'asc' ? 'Từ nhỏ đến lớn / Cũ đến mới' : 'Từ lớn đến nhỏ / Mới đến cũ'
             const sortDesc = `${sortLabelMap[sortBy]} (${orderLabel})`
-
-            const dateFieldDescMap: Record<DateFieldOption, string> = {
-                auto: 'Tự động',
-                inbound_date: 'Ngày nhập kho',
-                packaging_date: 'Ngày đóng gói',
-                peeling_date: 'Ngày sản xuất',
-                created_at: 'Ngày tạo'
-            }
 
             const fileName = await exportWarehouseSearchReportToExcel({
                 items: sortedItems,
@@ -559,6 +604,16 @@ export function WarehouseSearchReportModal({
                     {/* Left: View Tabs */}
                     <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-xl">
                         <button
+                            onClick={() => setActiveTab('product_summary')}
+                            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
+                                activeTab === 'product_summary'
+                                    ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-400 shadow-xs'
+                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
+                            }`}
+                        >
+                            Tổng hợp theo SP ({productGroups.length})
+                        </button>
+                        <button
                             onClick={() => setActiveTab('detail')}
                             className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
                                 activeTab === 'detail'
@@ -578,16 +633,6 @@ export function WarehouseSearchReportModal({
                         >
                             Tổng hợp theo ngày ({dateGroups.length})
                         </button>
-                        <button
-                            onClick={() => setActiveTab('product_summary')}
-                            className={`px-3 py-1.5 rounded-lg font-bold transition-all ${
-                                activeTab === 'product_summary'
-                                    ? 'bg-white dark:bg-slate-700 text-emerald-700 dark:text-emerald-400 shadow-xs'
-                                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900'
-                            }`}
-                        >
-                            Tổng hợp theo SP ({productGroups.length})
-                        </button>
                     </div>
 
                     {/* Center: Sorting & Date controls */}
@@ -600,7 +645,7 @@ export function WarehouseSearchReportModal({
                                 onChange={(e) => setSortBy(e.target.value as SortByField)}
                                 className="bg-transparent font-bold text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
                             >
-                                <option value="date" className="dark:bg-slate-800">Theo ngày nhập kho</option>
+                                <option value="date" className="dark:bg-slate-800">Theo ngày ({dateFieldDescMap[dateField]})</option>
                                 <option value="position" className="dark:bg-slate-800">Theo vị trí</option>
                                 <option value="product_name" className="dark:bg-slate-800">Theo tên sản phẩm</option>
                                 <option value="sku" className="dark:bg-slate-800">Theo mã SP (SKU)</option>
@@ -636,9 +681,10 @@ export function WarehouseSearchReportModal({
                                 className="bg-transparent font-medium text-slate-700 dark:text-slate-300 focus:outline-none cursor-pointer"
                             >
                                 <option value="auto" className="dark:bg-slate-800">Ngày: Tự động</option>
-                                <option value="inbound_date" className="dark:bg-slate-800">Ngày: Nhập kho</option>
-                                <option value="packaging_date" className="dark:bg-slate-800">Ngày: Đóng gói</option>
                                 <option value="peeling_date" className="dark:bg-slate-800">Ngày: Sản xuất</option>
+                                <option value="inbound_date" className="dark:bg-slate-800">Ngày: Nhập kho</option>
+                                <option value="raw_material_date" className="dark:bg-slate-800">Ngày: Nguyên liệu</option>
+                                <option value="packaging_date" className="dark:bg-slate-800">Ngày: Đóng gói</option>
                                 <option value="created_at" className="dark:bg-slate-800">Ngày: Tạo lô</option>
                             </select>
                         </div>
@@ -651,7 +697,7 @@ export function WarehouseSearchReportModal({
                                     className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
                                         scope === 'all'
                                             ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 shadow-xs'
-                                            : 'text-slate-500'
+                                             : 'text-slate-500'
                                     }`}
                                 >
                                     Tất cả ({positions.length})
@@ -730,7 +776,7 @@ export function WarehouseSearchReportModal({
 
                                         {/* Sortable Header: Vị trí */}
                                         <th 
-                                            className="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-600/50 transition-colors w-32"
+                                            className="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-600/50 transition-colors w-28"
                                             onClick={() => handleColumnSort('position')}
                                         >
                                             <div className="flex items-center justify-center gap-1">
@@ -743,18 +789,11 @@ export function WarehouseSearchReportModal({
 
                                         <th className="py-2.5 px-3">Khu vực / Dãy - Ô</th>
 
-                                        {/* Sortable Header: Ngày nhập kho */}
-                                        <th 
-                                            className="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-600/50 transition-colors w-36"
-                                            onClick={() => handleColumnSort('date')}
-                                        >
-                                            <div className="flex items-center justify-center gap-1">
-                                                <span>Ngày nhập kho</span>
-                                                {sortBy === 'date' ? (
-                                                    sortOrder === 'asc' ? <ArrowUp size={13} className="text-emerald-600" /> : <ArrowDown size={13} className="text-emerald-600" />
-                                                ) : <ArrowUpDown size={12} className="text-slate-400" />}
-                                            </div>
-                                        </th>
+                                        {/* Các cột thông tin ngày đầy đủ */}
+                                        <th className="py-2.5 px-3 text-center min-w-[130px]">Ngày sản xuất</th>
+                                        <th className="py-2.5 px-3 text-center w-28">Ngày nhập kho</th>
+                                        <th className="py-2.5 px-3 text-center w-28">Ngày nguyên liệu</th>
+                                        <th className="py-2.5 px-3 text-center w-28">Ngày đóng gói</th>
 
                                         {/* Sortable Header: Số lượng */}
                                         <th 
@@ -778,7 +817,7 @@ export function WarehouseSearchReportModal({
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
                                     {sortedItems.length === 0 ? (
                                         <tr>
-                                            <td colSpan={11} className="py-12 text-center text-slate-400">
+                                            <td colSpan={14} className="py-12 text-center text-slate-400">
                                                 Không có dữ liệu phù hợp với điều kiện tìm kiếm.
                                             </td>
                                         </tr>
@@ -805,12 +844,35 @@ export function WarehouseSearchReportModal({
                                                 <td className="py-2 px-3 text-slate-500 dark:text-slate-400 text-[11px] truncate max-w-[200px]" title={item.zonePath}>
                                                     {item.zonePath}
                                                 </td>
+                                                {/* Ngày sản xuất (hiển thị đủ cả 2 ngày nếu có) */}
                                                 <td className="py-2 px-3 text-center">
-                                                    <div className="font-bold text-amber-700 dark:text-amber-400 flex items-center justify-center gap-1">
-                                                        <Calendar size={12} className="text-amber-500" />
-                                                        {item.dateFormatted}
-                                                    </div>
+                                                    {item.peelingDateFormatted && item.peelingDateFormatted !== '-' ? (
+                                                        <div className="flex flex-wrap items-center justify-center gap-1">
+                                                            {item.peelingDateFormatted.split(', ').map((d, i) => (
+                                                                <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
+                                                                    {d}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-slate-400">--</span>
+                                                    )}
                                                 </td>
+                                                {/* Ngày nhập kho */}
+                                                <td className="py-2 px-3 text-center">
+                                                    <span className="font-bold text-amber-700 dark:text-amber-400 text-[11px] whitespace-nowrap">
+                                                        {item.inboundDateFormatted || item.dateFormatted || '--'}
+                                                    </span>
+                                                </td>
+                                                {/* Ngày nguyên liệu */}
+                                                <td className="py-2 px-3 text-center text-[11px] text-slate-600 dark:text-slate-300 whitespace-nowrap">
+                                                    {item.rawMaterialDateFormatted || '--'}
+                                                </td>
+                                                {/* Ngày đóng gói */}
+                                                <td className="py-2 px-3 text-center text-[11px] text-blue-600 dark:text-blue-400 font-medium whitespace-nowrap">
+                                                    {item.packagingDateFormatted || '--'}
+                                                </td>
+                                                {/* Số lượng */}
                                                 <td className="py-2 px-3 text-right font-mono font-bold text-blue-600 dark:text-blue-400">
                                                     {item.quantity.toLocaleString()}
                                                 </td>
@@ -841,7 +903,7 @@ export function WarehouseSearchReportModal({
                                 </tbody>
                                 <tfoot>
                                     <tr className="bg-emerald-50/80 dark:bg-emerald-950/40 border-t-2 border-emerald-500 font-bold text-slate-800 dark:text-slate-100">
-                                        <td colSpan={6} className="py-2.5 px-3 text-center text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
+                                        <td colSpan={9} className="py-2.5 px-3 text-center text-emerald-800 dark:text-emerald-300 uppercase tracking-wider">
                                             TỔNG CỘNG ({sortedItems.length} dòng hàng / {stats.totalPositions} vị trí)
                                         </td>
                                         <td className="py-2.5 px-3 text-right font-mono text-sm text-blue-700 dark:text-blue-300">
@@ -863,7 +925,7 @@ export function WarehouseSearchReportModal({
                                 <thead>
                                     <tr className="bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
                                         <th className="py-2.5 px-3 text-center w-12">STT</th>
-                                        <th className="py-2.5 px-3 text-center w-36">Ngày nhập kho</th>
+                                        <th className="py-2.5 px-3 text-center min-w-[140px]">Ngày ({dateFieldDescMap[dateField]})</th>
                                         <th className="py-2.5 px-3 text-center w-28">Số lượng vị trí</th>
                                         <th className="py-2.5 px-3 text-right w-32">Tổng số lượng</th>
                                         <th className="py-2.5 px-3 text-center w-24">Đơn vị tính</th>
@@ -877,7 +939,7 @@ export function WarehouseSearchReportModal({
                                                 {idx + 1}
                                             </td>
                                             <td className="py-2.5 px-3 text-center font-bold text-amber-700 dark:text-amber-400">
-                                                <div className="flex items-center justify-center gap-1.5">
+                                                <div className="flex flex-wrap items-center justify-center gap-1.5">
                                                     <Calendar size={13} className="text-amber-500" />
                                                     <span>{g.dateFormatted}</span>
                                                 </div>
@@ -916,20 +978,20 @@ export function WarehouseSearchReportModal({
                         </div>
                     )}
 
-                    {/* TAB 3: TỔNG HỢP THEO SẢN PHẨM */}
+                    {/* TAB 3: TỔNG HỢP THEO SẢN PHẨM & NGÀY SẢN XUẤT */}
                     {activeTab === 'product_summary' && (
                         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xs overflow-hidden">
                             <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                     <tr className="bg-slate-100 dark:bg-slate-700/60 text-slate-600 dark:text-slate-300 font-bold border-b border-slate-200 dark:border-slate-700">
                                         <th className="py-2.5 px-3 text-center w-12">STT</th>
-                                        <th className="py-2.5 px-3 text-center w-32">Mã SP (SKU)</th>
+                                        <th className="py-2.5 px-3 text-center w-28">Mã SP (SKU)</th>
                                         <th className="py-2.5 px-3">Tên sản phẩm</th>
+                                        <th className="py-2.5 px-3 text-center min-w-[140px]">Ngày sản xuất</th>
+                                        <th className="py-2.5 px-3 text-center w-28">Ngày nhập kho</th>
                                         <th className="py-2.5 px-3 text-center w-28">Số lượng vị trí</th>
                                         <th className="py-2.5 px-3 text-right w-32">Tổng số lượng</th>
                                         <th className="py-2.5 px-3 text-center w-24">Đơn vị tính</th>
-                                        <th className="py-2.5 px-3 text-center w-28">Ngày cũ nhất</th>
-                                        <th className="py-2.5 px-3 text-center w-28">Ngày mới nhất</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100 dark:divide-slate-700/50">
@@ -944,6 +1006,22 @@ export function WarehouseSearchReportModal({
                                             <td className="py-2.5 px-3 font-semibold text-slate-800 dark:text-slate-100">
                                                 {g.name}
                                             </td>
+                                            <td className="py-2.5 px-3 text-center">
+                                                {g.peelingDateFormatted && g.peelingDateFormatted !== '-' ? (
+                                                    <div className="flex flex-wrap items-center justify-center gap-1">
+                                                        {g.peelingDateFormatted.split(', ').map((d, i) => (
+                                                            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 whitespace-nowrap">
+                                                                {d}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <span className="text-slate-400">--</span>
+                                                )}
+                                            </td>
+                                            <td className="py-2.5 px-3 text-center font-medium text-amber-700 dark:text-amber-400">
+                                                {g.inboundDateFormatted || '--'}
+                                            </td>
                                             <td className="py-2.5 px-3 text-center font-semibold text-slate-700 dark:text-slate-300">
                                                 <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700">
                                                     {g.positions.size} vị trí
@@ -955,24 +1033,21 @@ export function WarehouseSearchReportModal({
                                             <td className="py-2.5 px-3 text-center text-slate-500">
                                                 {g.unit}
                                             </td>
-                                            <td className="py-2.5 px-3 text-center text-amber-700 dark:text-amber-400 font-medium">
-                                                {g.oldestDate ? formatDateDisplay(g.oldestDate) : '--'}
-                                            </td>
-                                            <td className="py-2.5 px-3 text-center text-emerald-700 dark:text-emerald-400 font-medium">
-                                                {g.newestDate ? formatDateDisplay(g.newestDate) : '--'}
-                                            </td>
                                         </tr>
                                     ))}
                                 </tbody>
                                 <tfoot>
                                     <tr className="bg-emerald-50/80 dark:bg-emerald-950/40 border-t-2 border-emerald-500 font-bold">
-                                        <td colSpan={4} className="py-2.5 px-3 text-center text-emerald-800 dark:text-emerald-300">
+                                        <td colSpan={5} className="py-2.5 px-3 text-center text-emerald-800 dark:text-emerald-300">
                                             TỔNG CỘNG
+                                        </td>
+                                        <td className="py-2.5 px-3 text-center font-semibold text-slate-700 dark:text-slate-300">
+                                            {stats.totalPositions} vị trí
                                         </td>
                                         <td className="py-2.5 px-3 text-right font-mono text-sm text-blue-700 dark:text-blue-300">
                                             {stats.totalQuantity.toLocaleString()}
                                         </td>
-                                        <td colSpan={3} className="py-2.5 px-3 text-slate-500">
+                                        <td className="py-2.5 px-3 text-slate-500">
                                             {stats.unitsSummary}
                                         </td>
                                     </tr>

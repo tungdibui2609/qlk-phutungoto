@@ -8,8 +8,8 @@ import { normalizeSearchString } from '@/lib/searchUtils'
 import { saveAs } from 'file-saver'
 import { decodeSTT } from '@/lib/numberUtils'
 
-// Fetch data in chunks to avoid URL size limit
-async function fetchInChunks(table: string, field: string, values: string[], select = '*', chunkSize = 500) {
+// Fetch data in chunks to avoid URL size limit (an toàn dưới 2KB URI)
+async function fetchInChunks(table: string, field: string, values: string[], select = '*', chunkSize = 60) {
     if (!values.length) return [];
     let allResults: any[] = [];
     
@@ -84,18 +84,12 @@ export default function HallSummaryPage() {
         async function loadData() {
             setLoading(true)
             try {
-                // 1. Fetch zones + positions based on current system
-                const [rawZonesData, rawPosData] = await Promise.all([
-                    fetchAll(supabase.from('zones').select('id, name, code, parent_id, level, display_order, is_hall, system_type').eq('system_type', systemType)),
-                    fetchAll(supabase.from('positions').select('id, code, lot_id, system_type').eq('system_type', systemType).not('lot_id', 'is', null))
-                ])
-
-                const posIds = rawPosData.map((p: any) => p.id)
-                // Need zone_positions to get which zone each position belongs to
-                const zpData = await fetchInChunks('zone_positions', 'position_id', posIds, 'zone_id, position_id')
-                
-                const rawZPMap: Record<string, string> = {}
-                zpData.forEach((rp: any) => { rawZPMap[rp.position_id] = rp.zone_id })
+                // 1. Fetch zones based on current system
+                const rawZonesData = await fetchAll(
+                    supabase.from('zones')
+                        .select('id, name, code, parent_id, level, display_order, is_hall, system_type')
+                        .eq('system_type', systemType)
+                )
 
                 const zones = rawZonesData as any[]
                 
@@ -107,42 +101,53 @@ export default function HallSummaryPage() {
                 }
 
                 // 2. Locate Warehouses and Halls
-                const warehouseZones = zones.filter(z => z.parent_id === null || z.level === 0).sort((a,b) => {
+                const warehouseZones = zones.filter(z => z.parent_id === null || z.level === 0).sort((a, b) => {
                     if ((a.display_order ?? 0) !== (b.display_order ?? 0)) return (a.display_order ?? 0) - (b.display_order ?? 0)
                     return (a.name || '').localeCompare(b.name || '', 'vi', { numeric: true })
                 })
                 setWarehouseZonesList(warehouseZones)
 
-                const hallZones = zones.filter(z => z.is_hall).sort((a,b) => {
+                // Nhận diện Sảnh: kiểm tra cả cờ is_hall và regex tên Sảnh để không bỏ sót
+                const isHall = (z: any) => Boolean(z.is_hall || /s[ảàa]nh|lobby/i.test(z.name || ''))
+                const hallZones = zones.filter(isHall).sort((a, b) => {
                     if ((a.display_order ?? 0) !== (b.display_order ?? 0)) return (a.display_order ?? 0) - (b.display_order ?? 0)
                     return (a.name || '').localeCompare(b.name || '', 'vi', { numeric: true })
                 })
                 setHallZonesList(hallZones)
 
-                const posToHallMap: Record<string, string> = {}
+                // Map từng zone con cháu của Sảnh về ID Sảnh gốc
+                const zoneToHallMap: Record<string, string> = {}
                 hallZones.forEach(hall => {
                     const descendantIds = [hall.id, ...getDescendantIds(hall.id)]
-                    rawPosData.forEach((p: any) => {
-                        const zid = rawZPMap[p.id]
-                        if (zid && descendantIds.includes(zid)) {
-                            posToHallMap[p.id] = hall.id
-                        }
+                    descendantIds.forEach(zid => {
+                        zoneToHallMap[zid] = hall.id
                     })
                 })
+                const allHallZoneIds = Object.keys(zoneToHallMap)
+
+                // 3. Lấy zone_positions của các khu vực Sảnh (tránh quét 2500+ vị trí gây lỗi URI Too Long)
+                const hallZPData = await fetchInChunks('zone_positions', 'zone_id', allHallZoneIds, 'zone_id, position_id', 50)
                 
+                const posToHallMap: Record<string, string> = {}
+                hallZPData.forEach((zp: any) => {
+                    if (zp.position_id && zoneToHallMap[zp.zone_id]) {
+                        posToHallMap[zp.position_id] = zoneToHallMap[zp.zone_id]
+                    }
+                })
+                const hallPosIds = Object.keys(posToHallMap)
+
                 // Map Hall to Warehouse
                 const tempHallToWMap: Record<string, string> = {}
                 hallZones.forEach(hall => {
-                    let curr = hall.id
+                    let curr: any = hall.id
                     let wId = null
-                    while(curr) {
-                        const z = zones.find(z => z.id === curr)
+                    while (curr) {
+                        const z = zones.find(zn => zn.id === curr)
                         if (!z) break
                         if (z.parent_id === null || z.level === 0) {
                             wId = z.id
                             break
                         }
-                        // Break if no parent (in case level>0 but no parent_id due to partial data)
                         if (!z.parent_id) break 
                         curr = z.parent_id
                     }
@@ -150,10 +155,16 @@ export default function HallSummaryPage() {
                 })
                 setHallToWarehouseMap(tempHallToWMap)
 
-                // 3. Filter positions sitting in those halls
-                const dPositions = rawPosData.filter((p: any) => !!posToHallMap[p.id])
+                // 4. Lấy các vị trí trong Sảnh đang có LOT
+                const dPositions = await fetchInChunks(
+                    'positions',
+                    'id',
+                    hallPosIds,
+                    'id, code, lot_id, system_type',
+                    60
+                ).then(posList => posList.filter((p: any) => Boolean(p.lot_id)))
 
-                // 4. Fetch the lots corresponding to these positions
+                // 5. Fetch thông tin các lot (hỗ trợ cả lot_items lẫn products trực tiếp trên lots)
                 const lotIds = [...new Set(dPositions.map((p: any) => p.lot_id).filter(Boolean))] as string[]
                 let lotInfo: Record<string, any> = {}
 
@@ -162,26 +173,38 @@ export default function HallSummaryPage() {
                         'lots', 
                         'id', 
                         lotIds, 
-                        'id, code, daily_seq, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)'
+                        'id, code, daily_seq, quantity, products(id, name, sku, unit), lot_items(id, quantity, unit, products(id, name, sku, unit)), lot_tags(tag)',
+                        50
                     )
 
                     lots?.forEach((l: any) => {
+                        let items: any[] = []
+                        if (l.lot_items && l.lot_items.length > 0) {
+                            items = l.lot_items.map((li: any) => ({
+                                name: li.products?.name || '',
+                                sku: li.products?.sku || '',
+                                quantity: li.quantity,
+                                unit: li.unit || li.products?.unit || '',
+                            }))
+                        } else if (l.products) {
+                            items = [{
+                                name: l.products.name || '',
+                                sku: l.products.sku || '',
+                                quantity: l.quantity,
+                                unit: l.products.unit || '',
+                            }]
+                        }
+
                         lotInfo[l.id] = {
                             code: l.code,
                             daily_seq: decodeSTT(l.daily_seq),
                             tags: l.lot_tags?.map((t: any) => t.tag) || [],
-                            items: l.lot_items?.map((li: any) => ({
-                                name: li.products?.name,
-                                sku: li.products?.sku,
-                                product_color: li.products?.color,
-                                quantity: li.quantity,
-                                unit: li.unit || li.products?.unit,
-                            })) || []
+                            items
                         }
                     })
                 }
 
-                // 5. Group products together
+                // 6. Nhóm và tính tổng hợp sản phẩm theo chuẩn Sảnh
                 const hallGroups: Record<string, Record<string, any>> = {}
                 const warehouseGroups: Record<string, Record<string, any>> = {}
                 const grandTotalGroups: Record<string, any> = {}
@@ -196,11 +219,10 @@ export default function HallSummaryPage() {
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
                     if (!lot || !lot.items || lot.items.length === 0) return
 
-                    // Sort items by SKU to ensure consistent key for identical lots
+                    // Sắp xếp items theo SKU để key nhất quán
                     const sortedItems = [...lot.items].sort((a, b) => (a.sku || '').trim().localeCompare((b.sku || '').trim()))
                     
-                    // Create a composite key based on all items in the lot + tags
-                    // Normalize by removing all internal whitespaces for key generation
+                    // Tạo composite key dựa trên tất cả items trong lot + tags
                     const itemsKey = sortedItems.map(it => {
                         const s = (it.sku || '').replace(/\s+/g, '').toUpperCase();
                         const q = Number(it.quantity || 0);
@@ -208,14 +230,13 @@ export default function HallSummaryPage() {
                         return `${s}:${q}:${u}`;
                     }).join('|')
                     
-                    // Normalize tags: sort and join them, also remove internal spaces for comparison
                     const tag = (lot.tags || []).map((t: string) => t.trim()).filter(Boolean).sort().join(',')
                     const groupKey = `${itemsKey}#${tag.replace(/\s+/g, '').toUpperCase()}`
 
                     const itemData = {
                         groupKey,
                         items: sortedItems,
-                        tag: tag, // Use the normalized joined tags
+                        tag: tag,
                         count: 1,
                         lots: lot ? [{ code: lot.code, daily_seq: lot.daily_seq }] : []
                     }
@@ -229,15 +250,17 @@ export default function HallSummaryPage() {
                     }
 
                     // Per Hall Merge
-                    if (!hallGroups[hallId][groupKey]) {
-                        hallGroups[hallId][groupKey] = { ...itemData }
-                    } else {
-                        hallGroups[hallId][groupKey].count++
-                        if (lot) hallGroups[hallId][groupKey].lots.push({ code: lot.code, daily_seq: lot.daily_seq })
+                    if (hallGroups[hallId]) {
+                        if (!hallGroups[hallId][groupKey]) {
+                            hallGroups[hallId][groupKey] = { ...itemData }
+                        } else {
+                            hallGroups[hallId][groupKey].count++
+                            if (lot) hallGroups[hallId][groupKey].lots.push({ code: lot.code, daily_seq: lot.daily_seq })
+                        }
                     }
 
                     // Per Warehouse Merge
-                    if (wId) {
+                    if (wId && warehouseGroups[wId]) {
                         if (!warehouseGroups[wId][groupKey]) {
                             warehouseGroups[wId][groupKey] = { ...itemData }
                         } else {
@@ -251,13 +274,13 @@ export default function HallSummaryPage() {
                 
                 const finalWhSummaries: Record<string, any[]> = {}
                 warehouseZones.forEach(w => {
-                    finalWhSummaries[w.id] = Object.values(warehouseGroups[w.id]).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || ''))
+                    finalWhSummaries[w.id] = Object.values(warehouseGroups[w.id] || {}).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || ''))
                 })
                 setWarehouseSummaries(finalWhSummaries)
                 
                 const finalHallSummaries: Record<string, any[]> = {}
                 hallZones.forEach(h => {
-                    finalHallSummaries[h.id] = Object.values(hallGroups[h.id]).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || ''))
+                    finalHallSummaries[h.id] = Object.values(hallGroups[h.id] || {}).sort((a: any, b: any) => (a.items[0]?.sku || '').localeCompare(b.items[0]?.sku || ''))
                 })
                 setHallSummaries(finalHallSummaries)
 

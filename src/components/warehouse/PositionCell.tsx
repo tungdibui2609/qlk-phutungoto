@@ -1,6 +1,6 @@
 'use client'
 import React from 'react'
-import { Eye, MoreHorizontal, Package, Bookmark, Lock, PackageOpen } from 'lucide-react'
+import { Eye, MoreHorizontal, Package, Bookmark, Lock, PackageOpen, Plus, Calendar, X } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { advancedMatchSearch } from '@/lib/searchUtils'
@@ -45,6 +45,34 @@ const PositionCell = React.memo<{
 }) => {
     const ids = (pos as any).realIds || [pos.id]
     const lotStt = lotDetail?.daily_seq ? decodeSTT(lotDetail.daily_seq) : ''
+
+    const [showPeelingDatesModal, setShowPeelingDatesModal] = React.useState(false)
+
+    const peelingDatesList: string[] = React.useMemo(() => {
+        if (!lotDetail) return []
+        const fromMeta = Array.isArray(lotDetail.metadata?.peeling_dates)
+            ? lotDetail.metadata.peeling_dates
+            : (Array.isArray(lotDetail.metadata?.production_dates) ? lotDetail.metadata.production_dates : [])
+        const set = new Set<string>()
+        if (lotDetail.peeling_date) {
+            try {
+                const s = new Date(lotDetail.peeling_date).toISOString().split('T')[0]
+                if (s) set.add(s)
+            } catch {
+                set.add(String(lotDetail.peeling_date).split('T')[0])
+            }
+        }
+        fromMeta.forEach((d: any) => {
+            if (!d) return
+            try {
+                const s = new Date(d).toISOString().split('T')[0]
+                if (s) set.add(s)
+            } catch {
+                set.add(String(d).split('T')[0])
+            }
+        })
+        return Array.from(set).filter(Boolean).sort()
+    }, [lotDetail])
 
     const searchStatus = React.useMemo(() => {
         if (!searchTerm || !lotDetail || !lotDetail.box_labels || lotDetail.box_labels.length === 0) {
@@ -411,33 +439,81 @@ const PositionCell = React.memo<{
                     {(() => {
                         const formatDate = (dateStr: string) => {
                             if (!dateStr) return '';
-                            const d = new Date(dateStr);
-                            const day = String(d.getDate()).padStart(2, '0');
-                            const month = String(d.getMonth() + 1).padStart(2, '0');
-                            const year = String(d.getFullYear()).slice(-2);
-                            return `${day}/${month}/${year}`;
+                            try {
+                                const d = new Date(dateStr);
+                                if (isNaN(d.getTime())) {
+                                    const parts = String(dateStr).split('T')[0].split('-');
+                                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0].slice(-2)}`;
+                                    return dateStr;
+                                }
+                                const day = String(d.getDate()).padStart(2, '0');
+                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                const year = String(d.getFullYear()).slice(-2);
+                                return `${day}/${month}/${year}`;
+                            } catch {
+                                return dateStr;
+                            }
                         };
 
-                        const mfg = lotDetail.peeling_date ? `SX:${formatDate(lotDetail.peeling_date)}` : '';
+                        const formatFullDate = (dateStr: string) => {
+                            if (!dateStr) return '';
+                            try {
+                                const d = new Date(dateStr);
+                                if (isNaN(d.getTime())) {
+                                    const parts = String(dateStr).split('T')[0].split('-');
+                                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                                    return dateStr;
+                                }
+                                const day = String(d.getDate()).padStart(2, '0');
+                                const month = String(d.getMonth() + 1).padStart(2, '0');
+                                const year = String(d.getFullYear());
+                                return `${day}/${month}/${year}`;
+                            } catch {
+                                return dateStr;
+                            }
+                        };
+
+                        const primaryMfgDate = peelingDatesList.length > 0 ? peelingDatesList[0] : lotDetail.peeling_date;
+                        const mfg = primaryMfgDate ? `SX:${formatDate(primaryMfgDate)}` : '';
                         const inbound = lotDetail.inbound_date ? `N:${formatDate(lotDetail.inbound_date)}` : '';
                         const packaging = (!mfg && !inbound && lotDetail.packaging_date) ? `Đ:${formatDate(lotDetail.packaging_date)}` : '';
 
                         if (!mfg && !inbound && !packaging) return null;
 
+                        const hasMultipleMfg = peelingDatesList.length > 1;
+                        const allMfgTooltip = hasMultipleMfg
+                            ? `Tất cả ngày sản xuất (${peelingDatesList.length} ngày):\n${peelingDatesList.map((d, i) => `${i + 1}. ${formatFullDate(d)}`).join('\n')}`
+                            : (primaryMfgDate ? `Ngày sản xuất: ${formatFullDate(primaryMfgDate)}` : '');
+
                         return (
                             <div className="flex flex-col items-center justify-center w-full px-0.5 mt-auto pt-0.5 text-[8px] text-gray-500 dark:text-gray-400 font-mono shrink-0 leading-tight">
                                 {mfg && (
-                                    <span className="w-full text-center truncate" title={`Ngày sản xuất: ${formatDate(lotDetail.peeling_date)}`}>
-                                        {mfg}
-                                    </span>
+                                    <div className="w-full flex items-center justify-center gap-0.5 truncate">
+                                        <span className="truncate" title={allMfgTooltip}>
+                                            {mfg}
+                                        </span>
+                                        {hasMultipleMfg && (
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setShowPeelingDatesModal(true);
+                                                }}
+                                                className="inline-flex items-center justify-center px-1 py-0 rounded bg-orange-100 hover:bg-orange-200 dark:bg-orange-950/70 dark:hover:bg-orange-900 text-orange-700 dark:text-orange-300 text-[7.5px] font-black border border-orange-300 dark:border-orange-800 shadow-2xs transition-transform active:scale-95 cursor-pointer leading-none shrink-0"
+                                                title={`${allMfgTooltip}\n\n👉 Bấm để xem chi tiết!`}
+                                            >
+                                                +{peelingDatesList.length - 1}
+                                            </button>
+                                        )}
+                                    </div>
                                 )}
                                 {inbound && (
-                                    <span className="w-full text-center truncate" title={`Ngày nhập kho: ${formatDate(lotDetail.inbound_date)}`}>
+                                    <span className="w-full text-center truncate" title={`Ngày nhập kho: ${formatFullDate(lotDetail.inbound_date)}`}>
                                         {inbound}
                                     </span>
                                 )}
                                 {packaging && (
-                                    <span className="w-full text-center truncate" title={`Ngày đóng bao bì: ${formatDate(lotDetail.packaging_date)}`}>
+                                    <span className="w-full text-center truncate" title={`Ngày đóng bao bì: ${formatFullDate(lotDetail.packaging_date)}`}>
                                         {packaging}
                                     </span>
                                 )}
@@ -472,6 +548,91 @@ const PositionCell = React.memo<{
                         </div>
                     )
                 )
+            )}
+
+            {/* Modal danh sách tất cả ngày sản xuất */}
+            {showPeelingDatesModal && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setShowPeelingDatesModal(false);
+                    }}
+                >
+                    <div 
+                        className="w-full max-w-xs bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3 animate-in zoom-in-95 duration-150 text-left font-sans normal-case"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2">
+                                <div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-lg shrink-0">
+                                    <Calendar size={16} />
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase">Ngày sản xuất</h4>
+                                    <p className="text-[10px] text-slate-400 font-mono">LOT: {lotDetail?.code || 'N/A'}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowPeelingDatesModal(false);
+                                }}
+                                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                            {peelingDatesList.map((dStr, idx) => (
+                                <div 
+                                    key={idx}
+                                    className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800/80 text-xs"
+                                >
+                                    <div className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-200">
+                                        <span className="w-5 h-5 flex items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/40 text-[10px] font-bold text-orange-600 dark:text-orange-400 shrink-0">
+                                            {idx + 1}
+                                        </span>
+                                        <span>{(() => {
+                                            try {
+                                                const d = new Date(dStr);
+                                                if (isNaN(d.getTime())) {
+                                                    const parts = String(dStr).split('T')[0].split('-');
+                                                    if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
+                                                    return dStr;
+                                                }
+                                                return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                                            } catch {
+                                                return dStr;
+                                            }
+                                        })()}</span>
+                                    </div>
+                                    {idx === 0 && (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                                            Chính
+                                        </span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                            <span>Tổng cộng: <strong className="text-slate-900 dark:text-white font-bold">{peelingDatesList.length}</strong> ngày</span>
+                            <button
+                                type="button"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowPeelingDatesModal(false);
+                                }}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-bold text-[10px] transition-colors cursor-pointer"
+                            >
+                                Đóng
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )

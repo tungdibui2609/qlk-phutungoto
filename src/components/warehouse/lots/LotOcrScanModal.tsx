@@ -39,6 +39,7 @@ import {
     ShieldCheck
 } from 'lucide-react'
 import { decodeSTT } from '@/lib/numberUtils'
+import { syncDatesFromBoxesToLot } from '@/lib/lotDateSync'
 
 // Color theme system matching stamp rules
 const COLOR_THEMES: Record<string, { label: string; hexPreview: string; bgClass: string; textClass: string; borderClass: string }> = {
@@ -527,6 +528,9 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                 .in('id', ids)
 
             if (error) throw error
+
+            // Đồng bộ ngày sản xuất và ngày nguyên liệu từ thùng vào Lô
+            await syncDatesFromBoxesToLot(lotId, unlinkedMatchingBoxes)
 
             showToast(`Đã kết nối thành công ${ids.length} thùng vào Lô này theo STT ${sttDisplay}`, 'success')
             await fetchBoxData()

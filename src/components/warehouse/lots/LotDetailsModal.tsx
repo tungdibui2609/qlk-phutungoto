@@ -277,17 +277,47 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     </p>
                                 </div>
                             )}
-                            {isModuleEnabled('peeling_date') && (
-                                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
-                                    <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                        <Factory size={14} />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider">Ngày sản xuất</span>
+                            {isModuleEnabled('peeling_date') && (() => {
+                                const rawDates: string[] = Array.isArray((lot.metadata as any)?.peeling_dates)
+                                    ? (lot.metadata as any).peeling_dates
+                                    : (Array.isArray((lot.metadata as any)?.production_dates) ? (lot.metadata as any).production_dates : [])
+                                const allDates = Array.from(new Set([
+                                    ...rawDates.map((d: any) => d ? (typeof d === 'string' && d.includes('T') ? d.split('T')[0] : String(d).split('T')[0]) : '').filter(Boolean),
+                                    ...(lot.peeling_date ? [new Date(lot.peeling_date).toISOString().split('T')[0]] : [])
+                                ])).sort()
+
+                                return (
+                                    <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                                        <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                                            <div className="flex items-center gap-2">
+                                                <Factory size={14} />
+                                                <span className="text-[10px] font-bold uppercase tracking-wider">Ngày sản xuất</span>
+                                            </div>
+                                            {allDates.length > 1 && (
+                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
+                                                    {allDates.length} ngày
+                                                </span>
+                                            )}
+                                        </div>
+                                        {allDates.length > 1 ? (
+                                            <div className="flex flex-wrap gap-1 mt-1">
+                                                {allDates.map((dStr, idx) => (
+                                                    <span key={idx} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 text-xs font-bold text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 shadow-xs">
+                                                        <span className="text-[10px] text-orange-500 font-mono">#{idx + 1}</span>
+                                                        {new Date(dStr).toLocaleDateString('vi-VN')}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                                {allDates.length === 1 
+                                                    ? new Date(allDates[0]).toLocaleDateString('vi-VN') 
+                                                    : (lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----')}
+                                            </p>
+                                        )}
                                     </div>
-                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                                        {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
-                                    </p>
-                                </div>
-                            )}
+                                )
+                            })()}
                             {isModuleEnabled('packaging_date') && (
                                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 text-slate-400 mb-1.5">

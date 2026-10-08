@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone, Calendar, Plus } from 'lucide-react'
 import { useState, useRef } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -53,6 +53,34 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
     }
     const [isExpanded, setIsExpanded] = useState(false)
     const [isMenuOpen, setIsMenuOpen] = useState(false)
+    const [showPeelingDatesModal, setShowPeelingDatesModal] = useState(false)
+
+    const lotPeelingDates: string[] = React.useMemo(() => {
+        const fromMeta = Array.isArray((lot.metadata as any)?.peeling_dates)
+            ? (lot.metadata as any).peeling_dates
+            : (Array.isArray((lot.metadata as any)?.production_dates) ? (lot.metadata as any).production_dates : [])
+
+        const set = new Set<string>()
+        fromMeta.forEach((d: any) => {
+            if (d) {
+                try {
+                    const s = typeof d === 'string' && d.includes('T') ? d.split('T')[0] : String(d).split('T')[0]
+                    set.add(s)
+                } catch {
+                    set.add(String(d))
+                }
+            }
+        })
+        if (lot.peeling_date) {
+            try {
+                const s = new Date(lot.peeling_date).toISOString().split('T')[0]
+                set.add(s)
+            } catch {
+                set.add(String(lot.peeling_date))
+            }
+        }
+        return Array.from(set).filter(Boolean).sort()
+    }, [lot.metadata, lot.peeling_date])
     const [historyData, setHistoryData] = useState<any>(null)
     const [showMergeHistory, setShowMergeHistory] = useState(false)
     const [openImageItemId, setOpenImageItemId] = useState<string | null>(null)
@@ -521,10 +549,28 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                     )}
 
                     {isModuleEnabled('peeling_date') && (
-                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800">
-                            <div className="text-[9px] font-bold text-slate-400 uppercase mb-1">Ngày sản xuất</div>
+                        <div className="bg-slate-50 dark:bg-slate-800/30 rounded-xl p-2 border border-slate-100 dark:border-slate-800 relative">
+                            <div className="flex items-center justify-between mb-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase">Ngày sản xuất</span>
+                                {lotPeelingDates.length > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            setShowPeelingDatesModal(true)
+                                        }}
+                                        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-orange-100 hover:bg-orange-200 dark:bg-orange-950/60 dark:hover:bg-orange-900/80 text-orange-700 dark:text-orange-300 text-[10px] font-black rounded-md border border-orange-200 dark:border-orange-800/50 shadow-xs transition-transform active:scale-95 cursor-pointer"
+                                        title={`Lô này có ${lotPeelingDates.length} ngày sản xuất. Bấm để xem chi tiết`}
+                                    >
+                                        <Plus size={10} strokeWidth={3} />
+                                        <span>{lotPeelingDates.length}</span>
+                                    </button>
+                                )}
+                            </div>
                             <div className="text-sm font-semibold text-slate-700 dark:text-zinc-300">
-                                {lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                {lotPeelingDates.length > 0 
+                                    ? new Date(lotPeelingDates[0]).toLocaleDateString('vi-VN') 
+                                    : (lot.peeling_date ? new Date(lot.peeling_date).toLocaleDateString('vi-VN') : '--/--/----')}
                             </div>
                         </div>
                     )}
@@ -993,6 +1039,73 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                     searchTerm={searchTerm}
                     onClose={() => setShowOcrScanModal(false)}
                 />
+            )}
+
+            {/* Modal nhỏ hiển thị danh sách Ngày sản xuất của LOT */}
+            {showPeelingDatesModal && (
+                <div 
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-150"
+                    onClick={(e) => {
+                        e.stopPropagation()
+                        setShowPeelingDatesModal(false)
+                    }}
+                >
+                    <div 
+                        className="w-full max-w-xs bg-white dark:bg-slate-900 rounded-2xl shadow-2xl border border-slate-200 dark:border-slate-800 p-4 space-y-3 animate-in zoom-in-95 duration-150"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-800">
+                            <div className="flex items-center gap-2">
+                                <div className="p-1.5 bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400 rounded-lg">
+                                    <Calendar size={16} />
+                                </div>
+                                <div>
+                                    <h4 className="text-xs font-black text-slate-900 dark:text-white uppercase">Ngày sản xuất</h4>
+                                    <p className="text-[10px] text-slate-400 font-mono">LOT: {lot.code}</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setShowPeelingDatesModal(false)}
+                                className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                            >
+                                <X size={16} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+                            {lotPeelingDates.map((dStr, idx) => (
+                                <div 
+                                    key={idx}
+                                    className="flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800/80 text-xs"
+                                >
+                                    <div className="flex items-center gap-2 font-semibold text-slate-700 dark:text-slate-200">
+                                        <span className="w-5 h-5 flex items-center justify-center rounded-full bg-orange-100 dark:bg-orange-900/40 text-[10px] font-bold text-orange-600 dark:text-orange-400">
+                                            {idx + 1}
+                                        </span>
+                                        <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                    </div>
+                                    {idx === 0 && (
+                                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400">
+                                            Chính
+                                        </span>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="pt-2 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400 font-medium">
+                            <span>Tổng cộng: <strong className="text-slate-900 dark:text-white font-bold">{lotPeelingDates.length}</strong> ngày</span>
+                            <button
+                                type="button"
+                                onClick={() => setShowPeelingDatesModal(false)}
+                                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-lg text-slate-700 dark:text-slate-300 font-bold text-[10px] transition-colors cursor-pointer"
+                            >
+                                Đóng
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )

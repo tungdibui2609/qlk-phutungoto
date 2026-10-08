@@ -214,6 +214,36 @@ export function useLotManagement() {
                 console.warn('[applyDateFilterToSubQuery] Invalid date values detected:', startDate, endDate);
                 return q;
             }
+
+            // Xử lý riêng cho 'peeling_date' (Ngày sản xuất): hỗ trợ cả peeling_date chính và các ngày trong metadata.peeling_dates
+            if (dateFilterField === 'peeling_date') {
+                const dStart = new Date(startDate);
+                const dEnd = new Date(endDate);
+                const dateStrings: string[] = [];
+                if (!isNaN(dStart.getTime()) && !isNaN(dEnd.getTime()) && dStart <= dEnd) {
+                    const maxDays = 90;
+                    let count = 0;
+                    for (let d = new Date(dStart); d <= dEnd && count < maxDays; d.setDate(d.getDate() + 1)) {
+                        dateStrings.push(d.toISOString().split('T')[0]);
+                        count++;
+                    }
+                }
+
+                const metaConds: string[] = [];
+                dateStrings.forEach(ds => {
+                    metaConds.push(`metadata.cs.{"peeling_dates":["${ds}"]}`);
+                    metaConds.push(`metadata.cs.{"production_dates":["${ds}"]}`);
+                });
+
+                const orCond = `and(peeling_date.gte.${startLocal.toISOString()},peeling_date.lte.${endLocal.toISOString()})${metaConds.length > 0 ? ',' + metaConds.join(',') : ''}`;
+
+                if (fieldPrefix) {
+                    return q.or(orCond, { referencedTable: fieldPrefix });
+                } else {
+                    return q.or(orCond);
+                }
+            }
+
             return q.gte(field, startLocal.toISOString()).lte(field, endLocal.toISOString());
         } else {
             return q.gte(field, startDate).lte(field, endDate);

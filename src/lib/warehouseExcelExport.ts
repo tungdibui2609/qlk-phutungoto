@@ -379,64 +379,84 @@ interface GridCellData {
     rowSpan?: number;
 }
 
-interface ExportWarehouseGridData {
+export interface ExportWarehouseGridData {
     systemName: string;
     zoneName?: string;
     searchTerm?: string;
     grids: Array<{
         name: string;
+        parentName?: string;
         bins: string[];
         levels: string[];
         cells: GridCellData[];
     }>;
 }
 
-export interface ExportWarehouseLobbyData {
-    systemName: string;
-    lobbies: Array<{
-        name: string;
-        parentName?: string;
-        columns: number;
-        positions: Array<{
-            x: number;
-            y: number;
-            code: string;
-            items: Array<{
-                productName: string;
-                sku: string;
-                unit: string;
-                quantity: number;
-                lotCode?: string;
-                batchCode?: string;
-                lotTags?: string[];
-            }>;
-        }>;
-    }>;
+function getExcelColumnLetter(colIndex: number): string {
+    let temp = colIndex;
+    let letter = '';
+    while (temp > 0) {
+        const mod = (temp - 1) % 26;
+        letter = String.fromCharCode(65 + mod) + letter;
+        temp = Math.floor((temp - mod) / 26);
+    }
+    return letter;
 }
 
 export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) {
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('Sơ đồ mặt bằng');
 
-    // 1. Header Tiêu đề chung
-    worksheet.mergeCells('A1:Z1');
+    // 1. Tính toán số cột thực tế tối đa để bảng vừa khít khổ giấy và không sinh cột rỗng thừa
+    let maxBins = 1;
+    data.grids.forEach((g: any) => {
+        if (g.bins && g.bins.length > maxBins) {
+            maxBins = g.bins.length;
+        }
+    });
+    // Cột 1 là Tên Tầng / Dãy, các cột tiếp theo là các Ô (Bins)
+    const totalCols = Math.max(maxBins + 1, 6);
+    const lastColLetter = getExcelColumnLetter(totalCols);
+
+    const worksheet = workbook.addWorksheet('Sơ đồ mặt bằng', {
+        pageSetup: {
+            paperSize: 8 as any, // 8 = Khổ A3 (297 mm x 420 mm)
+            orientation: 'landscape', // Khổ ngang
+            fitToPage: true, // Kích hoạt chế độ Fit to page
+            fitToWidth: 1, // Chiều rộng vừa khít đúng 1 trang giấy
+            fitToHeight: 2, // Chiều cao không vượt quá 2 trang giấy
+            horizontalCentered: true, // Căn giữa nội dung trên khổ in
+            verticalCentered: false,
+            margins: {
+                left: 0.1, // Bỏ qua lề (sát mép in tối đa diện tích)
+                right: 0.1,
+                top: 0.15,
+                bottom: 0.15,
+                header: 0,
+                footer: 0
+            }
+        },
+        views: [{ showGridLines: true }]
+    });
+
+    // 1. Header Tiêu đề chung (merge chuẩn xác theo số cột thực tế)
+    worksheet.mergeCells(`A1:${lastColLetter}1`);
     const titleCell = worksheet.getCell('A1');
     titleCell.value = 'MẪU XUẤT FILE EXCEL SƠ ĐỒ';
     titleCell.font = { bold: true, size: 16 };
     titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
-    worksheet.getRow(1).height = 30;
+    worksheet.getRow(1).height = 28;
 
-    worksheet.mergeCells('A2:Z2');
+    worksheet.mergeCells(`A2:${lastColLetter}2`);
     const subTitle1 = worksheet.getCell('A2');
     subTitle1.value = 'DÃY : XẾP DỌC';
     subTitle1.alignment = { horizontal: 'center' };
 
-    worksheet.mergeCells('A3:Z3');
+    worksheet.mergeCells(`A3:${lastColLetter}3`);
     const subTitle2 = worksheet.getCell('A3');
     subTitle2.value = 'Ô : XẾP NGANG';
     subTitle2.alignment = { horizontal: 'center' };
 
-    worksheet.mergeCells('A4:Z4');
+    worksheet.mergeCells(`A4:${lastColLetter}4`);
     const subTitle3 = worksheet.getCell('A4');
     subTitle3.value = `Hệ thống: ${data.systemName}${data.zoneName ? ` | Khu vực: ${data.zoneName}` : ''}${data.searchTerm ? ` | Lọc theo: "${data.searchTerm}"` : ''} | Ngày xuất: ${new Date().toLocaleDateString('vi-VN')}`;
     subTitle3.alignment = { horizontal: 'center' };
@@ -464,14 +484,14 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
 
     parents.forEach(pName => {
         // Render Group Header (KHO 1, KHO 2...)
-        worksheet.mergeCells(`A${currentRowIdx}:Z${currentRowIdx}`);
+        worksheet.mergeCells(`A${currentRowIdx}:${lastColLetter}${currentRowIdx}`);
         const groupCell = worksheet.getCell(`A${currentRowIdx}`);
         groupCell.value = `KHU VỰC: ${pName.toUpperCase()}`;
         groupCell.font = { bold: true, size: 12 };
         groupCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD700' } }; // Gold/Darker Yellow
         groupCell.alignment = { horizontal: 'left' };
         groupCell.border = { bottom: { style: 'medium' } };
-        currentRowIdx += 2; // Spacer
+        currentRowIdx++; // Spacer gọn gàng
 
         const groupGrids = gridsByParent[pName];
         let dayGrids = groupGrids.filter(g => dayRegex.test(g.name))
@@ -517,7 +537,7 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                     cell.font = { bold: true };
                     cell.alignment = { horizontal: 'center' };
                     cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
-                    worksheet.getColumn(bIdx + 2).width = 25;
+                    worksheet.getColumn(bIdx + 2).width = 24;
                 });
                 const dãyStartRowIdx = currentRowIdx;
                 currentRowIdx++;
@@ -575,14 +595,14 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                         cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
                     });
                     
-                    // Tự động chỉnh độ cao cho dòng Tầng
+                    // Tự động chỉnh độ cao hợp lý cho dòng Tầng để không bị quá dài
                     let maxItems = 1;
                     grid.bins.forEach((_: string, bIdx: number) => {
                         const levelIdxInOriginal = grid.levels.indexOf(lvlName);
                         const cellData = grid.cells.find((c: any) => c.binIndex === bIdx && c.levelIndex === levelIdxInOriginal);
                         if (cellData && cellData.items.length > maxItems) maxItems = cellData.items.length;
                     });
-                    row.height = Math.max(30, maxItems * 25);
+                    row.height = Math.max(26, maxItems * 22);
                     
                     currentRowIdx++;
                 });
@@ -598,6 +618,15 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                 const allSanhItems: any[] = [];
                 grid.cells.forEach((c: any) => allSanhItems.push(...c.items));
 
+                // Merge từ cột 2 đến cột cuối cùng để trải dài đẹp mắt trên khổ A3
+                if (totalCols >= 2) {
+                    try {
+                        worksheet.mergeCells(currentRowIdx, 2, currentRowIdx, totalCols);
+                    } catch (e) {
+                        // ignore overlap
+                    }
+                }
+
                 if (allSanhItems.length > 0) {
                     const richText: any[] = [];
                     const summary: Record<string, { name: string, qty: number, unit: string, lotCodes: Set<string> }> = {};
@@ -610,7 +639,8 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                         if (it.lotCodes) it.lotCodes.forEach((code: string) => summary[key].lotCodes.add(code));
                     });
 
-                    Object.values(summary).forEach((v: any, idx) => {
+                    const summaryEntries = Object.values(summary);
+                    summaryEntries.forEach((v: any, idx) => {
                         const roundedQty = Math.round(v.qty * 1000) / 1000;
                         
                         let plSuffix = '';
@@ -619,30 +649,47 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                             plSuffix = ` (${uniquePLs.length} PL)`;
                         }
 
-                        richText.push({ text: `• ${v.name} : `, font: { size: 10, bold: true } });
-                        richText.push({ text: `${roundedQty} ${v.unit}${plSuffix}`, font: { size: 10, bold: true, color: { argb: '0000FF' } } });
-                        if (idx < Object.values(summary).length - 1) richText.push({ text: '\n' });
+                        richText.push({ text: `• ${v.name} : `, font: { size: 9, bold: true } });
+                        richText.push({ text: `${roundedQty} ${v.unit}${plSuffix}`, font: { size: 9, bold: true, color: { argb: '0000FF' } } });
+                        if (idx < summaryEntries.length - 1) richText.push({ text: '    |    ', font: { size: 9, color: { argb: '888888' } } });
                     });
 
                     row.getCell(2).value = { richText };
-                    row.getCell(2).alignment = { wrapText: true, vertical: 'middle' };
+                    row.getCell(2).alignment = { wrapText: true, vertical: 'middle', horizontal: 'left' };
                 } else {
                     row.getCell(2).value = 'TRỐNG';
-                    row.getCell(2).alignment = { horizontal: 'left' };
+                    row.getCell(2).alignment = { horizontal: 'left', vertical: 'middle' };
                 }
-                row.height = Math.max(30, (Object.keys(allSanhItems).length || 1) * 20);
+
+                // Kẻ border cho toàn bộ hàng sảnh
+                for (let c = 2; c <= totalCols; c++) {
+                    row.getCell(c).border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                }
+
+                row.height = 26;
                 currentRowIdx++;
             }
-            currentRowIdx++; // Spacer between blocks
+            currentRowIdx++; // Spacer nhẹ giữa các khối Dãy / Sảnh
         });
         
-        currentRowIdx += 2; // Extra spacer between groups (KHOs)
+        currentRowIdx++; // Spacer giữa các khu vực
     });
 
-    worksheet.getColumn(1).width = 15;
+    worksheet.getColumn(1).width = 14;
+    // Đặt vùng in chính xác theo dữ liệu thực tế
+    worksheet.pageSetup.printArea = `A1:${lastColLetter}${Math.max(currentRowIdx - 1, 1)}`;
 
     // --- SHEET 2: THỐNG KÊ KHU VỰC ---
-    const sheet2 = workbook.addWorksheet('Thống kê Khu vực');
+    const sheet2 = workbook.addWorksheet('Thống kê Khu vực', {
+        pageSetup: {
+            paperSize: 8 as any,
+            orientation: 'landscape',
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+            margins: { left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0, footer: 0 }
+        }
+    });
     sheet2.columns = [
         { header: 'Khu vực (KHO)', key: 'parent', width: 20 },
         { header: 'Dãy / Sảnh', key: 'group', width: 15 },
@@ -689,7 +736,16 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
     });
 
     // --- SHEET 3: THỐNG KÊ TỔNG HỢP ---
-    const sheet3 = workbook.addWorksheet('Thống kê Tổng hợp');
+    const sheet3 = workbook.addWorksheet('Thống kê Tổng hợp', {
+        pageSetup: {
+            paperSize: 8 as any,
+            orientation: 'landscape',
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+            margins: { left: 0.2, right: 0.2, top: 0.2, bottom: 0.2, header: 0, footer: 0 }
+        }
+    });
     sheet3.columns = [
         { header: 'STT', key: 'stt', width: 6 },
         { header: 'Mã sản phẩm', key: 'sku', width: 15 },
@@ -733,6 +789,29 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
     const buffer = await workbook.xlsx.writeBuffer();
     const fileName = `So_do_kho_Custom_${data.systemName.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.xlsx`;
     saveAs(new Blob([buffer]), fileName);
+}
+
+export interface ExportWarehouseLobbyData {
+    systemName: string;
+    lobbies: Array<{
+        name: string;
+        parentName?: string;
+        columns: number;
+        positions: Array<{
+            x: number;
+            y: number;
+            code: string;
+            items: Array<{
+                productName: string;
+                sku: string;
+                unit: string;
+                quantity: number;
+                lotCode?: string;
+                batchCode?: string;
+                lotTags?: string[];
+            }>;
+        }>;
+    }>;
 }
 
 export async function exportWarehouseLobbyDetailToExcel(data: ExportWarehouseLobbyData) {

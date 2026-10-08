@@ -80,6 +80,8 @@ export function LotForm({
     const [inboundDate, setInboundDate] = useState('')
     const [rawMaterialDate, setRawMaterialDate] = useState('')
     const [peelingDate, setPeelingDate] = useState('')
+    const [peelingDates, setPeelingDates] = useState<string[]>([])
+    const [newPeelingDateInput, setNewPeelingDateInput] = useState('')
     const [packagingDate, setPackagingDate] = useState('')
     const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
@@ -267,7 +269,23 @@ export function LotForm({
                 setSelectedQCId(editingLot.qc_id || '')
                 setInboundDate(editingLot.inbound_date ? new Date(editingLot.inbound_date).toISOString().split('T')[0] : '')
                 setRawMaterialDate(editingLot.raw_material_date ? new Date(editingLot.raw_material_date).toISOString().split('T')[0] : '')
-                setPeelingDate(editingLot.peeling_date ? new Date(editingLot.peeling_date).toISOString().split('T')[0] : '')
+                const editPDate = editingLot.peeling_date ? new Date(editingLot.peeling_date).toISOString().split('T')[0] : ''
+                setPeelingDate(editPDate)
+                let initialPeelingDates: string[] = []
+                const metaDates = (editingLot.metadata as any)?.peeling_dates || (editingLot.metadata as any)?.production_dates
+                if (Array.isArray(metaDates) && metaDates.length > 0) {
+                    initialPeelingDates = metaDates.map((d: any) => {
+                        try {
+                            return typeof d === 'string' && d.includes('T') ? d.split('T')[0] : String(d).split('T')[0]
+                        } catch {
+                            return String(d)
+                        }
+                    }).filter(Boolean)
+                } else if (editPDate) {
+                    initialPeelingDates = [editPDate]
+                }
+                setPeelingDates(initialPeelingDates)
+                setNewPeelingDateInput('')
                 setPackagingDate(editingLot.packaging_date ? new Date(editingLot.packaging_date).toISOString().split('T')[0] : '')
                 setWarehouseName(editingLot.warehouse_name || '')
                 setBatchCode(editingLot.batch_code || '')
@@ -314,7 +332,17 @@ export function LotForm({
                                 setSelectedQCId(parsed.qcId)
                             }
 
-                            if (parsed.peelingDate) setPeelingDate(parsed.peelingDate)
+                            if (parsed.peelingDates && Array.isArray(parsed.peelingDates) && parsed.peelingDates.length > 0) {
+                                setPeelingDates(parsed.peelingDates)
+                                setPeelingDate(parsed.peelingDates[0] || parsed.peelingDate || '')
+                            } else if (parsed.peelingDate) {
+                                setPeelingDate(parsed.peelingDate)
+                                setPeelingDates([parsed.peelingDate])
+                            } else {
+                                setPeelingDate('')
+                                setPeelingDates([])
+                            }
+                            setNewPeelingDateInput('')
                             if (parsed.rawMaterialDate) setRawMaterialDate(parsed.rawMaterialDate)
                             if (parsed.packagingDate) setPackagingDate(parsed.packagingDate)
 
@@ -349,6 +377,7 @@ export function LotForm({
                             resetForm()
                             setInboundDate(initialDate)
                             setPeelingDate(initialDate)
+                            setPeelingDates([initialDate])
                             setPackagingDate(initialDate)
 
                             if (branches && branches.length > 0) {
@@ -365,6 +394,7 @@ export function LotForm({
                     resetForm()
                     setInboundDate(initialDate)
                     setPeelingDate(initialDate)
+                    setPeelingDates([initialDate])
                     setPackagingDate(initialDate)
 
                     if (branches && branches.length > 0) {
@@ -406,7 +436,8 @@ export function LotForm({
                 isPersistent,
                 supplierId: isPersistent ? selectedSupplierId : '',
                 qcId: isPersistent ? selectedQCId : '',
-                peelingDate: isPersistent ? peelingDate : '',
+                peelingDate: isPersistent ? (peelingDates[0] || peelingDate) : '',
+                peelingDates: isPersistent ? peelingDates : [],
                 packagingDate: isPersistent ? packagingDate : '',
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
@@ -429,6 +460,7 @@ export function LotForm({
         selectedSupplierId,
         selectedQCId,
         peelingDate,
+        peelingDates,
         packagingDate,
         warehouseName,
         batchCode,
@@ -460,6 +492,8 @@ export function LotForm({
         setInboundDate('')
         setRawMaterialDate('')
         setPeelingDate('')
+        setPeelingDates([])
+        setNewPeelingDateInput('')
         setPackagingDate('')
         setWarehouseName('')
         setBatchCode('')
@@ -516,6 +550,23 @@ export function LotForm({
             }
         }
         setDailySeq(decodeSTT(nextDailySeq))
+    }
+
+    const handleAddPeelingDate = (dateToAdd?: string) => {
+        const target = (dateToAdd || newPeelingDateInput || '').trim()
+        if (!target) return
+        if (!peelingDates.includes(target)) {
+            const next = [...peelingDates, target].sort()
+            setPeelingDates(next)
+            setPeelingDate(next[0] || '')
+        }
+        setNewPeelingDateInput('')
+    }
+
+    const handleRemovePeelingDate = (dateToRemove: string) => {
+        const next = peelingDates.filter(d => d !== dateToRemove)
+        setPeelingDates(next)
+        setPeelingDate(next[0] || '')
     }
 
     async function handleSubmit() {
@@ -711,6 +762,8 @@ export function LotForm({
             }
         }
 
+        const primaryPeelingDate = peelingDates.length > 0 ? peelingDates[0] : (peelingDate || null)
+
         const lotData = {
             code: newLotCode,
             notes: newLotNotes,
@@ -718,7 +771,7 @@ export function LotForm({
             qc_id: selectedQCId || null,
             inbound_date: inboundDate || null,
             raw_material_date: rawMaterialDate || null,
-            peeling_date: peelingDate || null,
+            peeling_date: primaryPeelingDate,
             packaging_date: packagingDate || null,
             warehouse_name: warehouseName || null,
             batch_code: batchCode || null,
@@ -732,8 +785,11 @@ export function LotForm({
             company_id: profile?.company_id,
             images: images,
             metadata: {
+                ...(editingLot?.metadata && typeof editingLot.metadata === 'object' ? editingLot.metadata : {}),
                 extra_info: extraInfo,
-                system_history: systemHistory
+                system_history: systemHistory,
+                manual_peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
+                peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : [])
             }
         }
 
@@ -1201,34 +1257,86 @@ export function LotForm({
                         </div>
                     )}
 
-                    {/* Ngày sản xuất (trước đây là Ngày bóc múi) */}
+                    {/* Ngày sản xuất */}
                     {hasModule('peeling_date') && (
                         <div className="space-y-2">
                             <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Ngày sản xuất
-                                </label>
-                                {peelingDate && !lotItems.some(item => !!item.productionLotId) && (
+                                <div className="flex items-center gap-1.5">
+                                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                                        Ngày sản xuất
+                                    </label>
+                                    {peelingDates.length > 0 && (
+                                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
+                                            {peelingDates.length} ngày
+                                        </span>
+                                    )}
+                                </div>
+                                {peelingDates.length > 0 && (
                                     <button
                                         type="button"
-                                        onClick={() => setPeelingDate('')}
+                                        onClick={() => {
+                                            setPeelingDates([])
+                                            setPeelingDate('')
+                                        }}
                                         className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                        title="Xóa ngày sản xuất (để trống)"
+                                        title="Xóa tất cả ngày sản xuất"
                                     >
                                         Xóa ngày
                                     </button>
                                 )}
                             </div>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={peelingDate}
-                                    onChange={(e) => setPeelingDate(e.target.value)}
-                                    disabled={lotItems.some(item => !!item.productionLotId)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:disabled:bg-zinc-900"
-                                    style={{ colorScheme: 'light dark' }}
-                                />
+
+                            {/* Danh sách các ngày sản xuất đã thêm */}
+                            {peelingDates.length > 0 && (
+                                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto">
+                                    {peelingDates.map((dStr) => (
+                                        <div
+                                            key={dStr}
+                                            className="inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-800 border border-orange-200 dark:border-orange-800/60 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-200 shadow-xs"
+                                        >
+                                            <Calendar size={12} className="text-orange-500 shrink-0" />
+                                            <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleRemovePeelingDate(dStr)}
+                                                className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                            >
+                                                <X size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Ô chọn và nút thêm ngày sản xuất */}
+                            <div className="flex items-center gap-1.5">
+                                <div className="relative flex-1">
+                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                    <input
+                                        type="date"
+                                        value={newPeelingDateInput}
+                                        onChange={(e) => setNewPeelingDateInput(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                handleAddPeelingDate()
+                                            }
+                                        }}
+                                        className="w-full pl-9 pr-2 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-xs transition-all"
+                                        style={{ colorScheme: 'light dark' }}
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => handleAddPeelingDate()}
+                                    disabled={!newPeelingDateInput}
+                                    className="px-2.5 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
+                                    title="Thêm ngày sản xuất"
+                                >
+                                    <Plus size={14} />
+                                    <span>Thêm</span>
+                                </button>
                             </div>
                         </div>
                     )}
@@ -1423,7 +1531,11 @@ export function LotForm({
                                                         if (selectedProduction && selectedProduction.production_lots) {
                                                             const pLot = selectedProduction.production_lots.find((pl: any) => pl.id === lotId)
                                                             if (pLot && pLot.production_date) {
-                                                                setPeelingDate(pLot.production_date)
+                                                                const formatted = pLot.production_date.includes('T')
+                                                                    ? pLot.production_date.split('T')[0]
+                                                                    : pLot.production_date
+                                                                setPeelingDates(prev => prev.includes(formatted) ? prev : [...prev, formatted].sort())
+                                                                setPeelingDate(prev => prev || formatted)
                                                             }
                                                         }
                                                     }

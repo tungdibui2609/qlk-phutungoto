@@ -280,17 +280,32 @@ const MemoizedPositionCard = React.memo(function PositionCard({
                             return `${day}/${month}/${year}`;
                         };
 
-                        const mfg = lot.peeling_date ? `SX:${formatDate(lot.peeling_date)}` : '';
-                        const inbound = lot.inbound_date ? `N:${formatDate(lot.inbound_date)}` : '';
-                        const packaging = (!mfg && !inbound && lot.packaging_date) ? `Đ:${formatDate(lot.packaging_date)}` : '';
+                        const fromMeta = Array.isArray(lot.metadata?.peeling_dates)
+                            ? lot.metadata.peeling_dates
+                            : (Array.isArray(lot.metadata?.production_dates) ? lot.metadata.production_dates : []);
+                        const peelingDatesList = Array.from(new Set([
+                            ...(fromMeta || []),
+                            ...(lot.peeling_date ? [String(lot.peeling_date).split('T')[0]] : [])
+                        ])).filter(Boolean);
 
-                        if (!mfg && !inbound && !packaging) return null;
+                        const mfgText = peelingDatesList.length > 1
+                            ? `SX:${formatDate(peelingDatesList[0])} (+${peelingDatesList.length - 1})`
+                            : (peelingDatesList.length === 1 ? `SX:${formatDate(peelingDatesList[0])}` : (lot.peeling_date ? `SX:${formatDate(lot.peeling_date)}` : ''));
+
+                        const mfgTitle = peelingDatesList.length > 1
+                            ? `Ngày sản xuất: ${peelingDatesList.map(d => formatDate(d)).join(', ')}`
+                            : (lot.peeling_date ? `Ngày sản xuất: ${formatDate(lot.peeling_date)}` : '');
+
+                        const inbound = lot.inbound_date ? `N:${formatDate(lot.inbound_date)}` : '';
+                        const packaging = (!mfgText && !inbound && lot.packaging_date) ? `Đ:${formatDate(lot.packaging_date)}` : '';
+
+                        if (!mfgText && !inbound && !packaging) return null;
 
                         return (
                             <div className="flex flex-col items-center justify-center w-full px-0.5 mt-auto pt-0.5 text-[8px] text-gray-500 dark:text-gray-400 font-mono shrink-0 leading-tight">
-                                {mfg && (
-                                    <span className="w-full text-center truncate" title={`Ngày sản xuất: ${formatDate(lot.peeling_date)}`}>
-                                        {mfg}
+                                {mfgText && (
+                                    <span className="w-full text-center truncate font-bold text-emerald-600 dark:text-emerald-400" title={mfgTitle}>
+                                        {mfgText}
                                     </span>
                                 )}
                                 {inbound && (

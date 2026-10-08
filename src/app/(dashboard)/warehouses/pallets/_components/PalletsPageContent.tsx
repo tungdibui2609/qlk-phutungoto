@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
+import { syncDatesFromBoxesToLot } from '@/lib/lotDateSync'
 
 interface BoxLabelItem {
     id: string
@@ -368,6 +369,9 @@ export default function PalletsPageContent() {
 
             if (boxErr) throw boxErr
 
+            // Tự động đồng bộ ngày sản xuất / ngày nguyên liệu vào Lô
+            await syncDatesFromBoxesToLot(targetLot.id, group.boxes)
+
             showToast(`✅ Đã kết nối ${group.boxes.length} thùng (STT: ${group.pallet_stt}) vào Lô "${targetLot.code}"!`, 'success')
             setGroupToLink(null)
             setSelectedLotForLink(null)
@@ -404,6 +408,7 @@ export default function PalletsPageContent() {
                     .in('id', boxIds)
 
                 if (!error) {
+                    await syncDatesFromBoxesToLot(targetLot.id, group.boxes)
                     successCount++
                 }
             }

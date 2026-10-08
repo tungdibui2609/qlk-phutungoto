@@ -14,6 +14,7 @@ export interface SearchReportExcelItem {
     dateType?: string;
     packagingDateFormatted?: string;
     peelingDateFormatted?: string;
+    rawMaterialDateFormatted?: string;
     inboundDateFormatted?: string;
     quantity: number;
     unit: string;
@@ -71,9 +72,10 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         { header: 'Mã SP (SKU)', key: 'sku', width: 18 },
         { header: 'Mã vị trí', key: 'positionCode', width: 16 },
         { header: 'Khu vực / Dãy - Ô - Tầng', key: 'zonePath', width: 28 },
-        { header: 'Ngày nhập kho', key: 'dateFormatted', width: 16 },
+        { header: 'Ngày sản xuất', key: 'peelingDateFormatted', width: 22 },
+        { header: 'Ngày nhập kho', key: 'inboundDateFormatted', width: 16 },
+        { header: 'Ngày nguyên liệu', key: 'rawMaterialDateFormatted', width: 16 },
         { header: 'Ngày đóng gói', key: 'packagingDateFormatted', width: 14 },
-        { header: 'Ngày bóc múi', key: 'peelingDateFormatted', width: 14 },
         { header: 'Số lượng', key: 'quantity', width: 14 },
         { header: 'ĐVT', key: 'unit', width: 10 },
         { header: 'Mã LOT', key: 'lotCode', width: 18 },
@@ -84,7 +86,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     ];
 
     // Banner & Metadata Header
-    wsDetail.mergeCells('A1:O1');
+    wsDetail.mergeCells('A1:P1');
     const titleCell = wsDetail.getCell('A1');
     titleCell.value = 'BÁO CÁO VỊ TRÍ HÀNG HÓA THEO NGÀY';
     titleCell.font = { bold: true, size: 16, color: { argb: 'FFFFFF' } };
@@ -97,7 +99,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     wsDetail.getRow(1).height = 36;
 
     // Company & Warehouse
-    wsDetail.mergeCells('A2:O2');
+    wsDetail.mergeCells('A2:P2');
     const compCell = wsDetail.getCell('A2');
     compCell.value = `${companyName} | Kho: ${systemName || 'Tất cả kho'}`;
     compCell.font = { bold: true, size: 11, color: { argb: '065F46' } };
@@ -105,7 +107,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     wsDetail.getRow(2).height = 20;
 
     // Filter & Export Time
-    wsDetail.mergeCells('A3:O3');
+    wsDetail.mergeCells('A3:P3');
     const infoCell = wsDetail.getCell('A3');
     infoCell.value = `Tìm kiếm: "${filterLabel}" | Tiêu chuẩn ngày: ${dateFieldDescription} | Thời gian xuất: ${exportTimeStr}`;
     infoCell.font = { italic: true, size: 10, color: { argb: '334155' } };
@@ -113,7 +115,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     wsDetail.getRow(3).height = 18;
 
     // Sort & Summary stats
-    wsDetail.mergeCells('A4:O4');
+    wsDetail.mergeCells('A4:P4');
     const sortCell = wsDetail.getCell('A4');
     sortCell.value = `Sắp xếp: ${sortDescription} | Tổng vị trí: ${totalPositions.toLocaleString()} vị trí | Tổng số lượng: ${totalQuantity.toLocaleString()}`;
     sortCell.font = { bold: true, size: 10, color: { argb: '047857' } };
@@ -134,9 +136,10 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         'Mã SP (SKU)',
         'Mã vị trí',
         'Khu vực / Dãy - Ô - Tầng',
+        'Ngày sản xuất',
         'Ngày nhập kho',
+        'Ngày nguyên liệu',
         'Ngày đóng gói',
-        'Ngày bóc múi',
         'Số lượng',
         'ĐVT',
         'Mã LOT',
@@ -202,53 +205,58 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         row.getCell(5).value = item.zonePath || item.warehouse || '';
         row.getCell(5).alignment = { horizontal: 'left', vertical: 'middle' };
 
-        // 6. Ngày nhập kho
-        row.getCell(6).value = item.dateFormatted || '';
-        row.getCell(6).font = { bold: true, color: { argb: 'B45309' } }; // Amber 700
+        // 6. Ngày sản xuất
+        row.getCell(6).value = item.peelingDateFormatted || '-';
+        row.getCell(6).font = { bold: true, color: { argb: 'C2410C' } }; // Orange 700
         row.getCell(6).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 7. Ngày đóng gói
-        row.getCell(7).value = item.packagingDateFormatted || '-';
+        // 7. Ngày nhập kho
+        row.getCell(7).value = item.inboundDateFormatted || item.dateFormatted || '-';
+        row.getCell(7).font = { bold: true, color: { argb: 'B45309' } }; // Amber 700
         row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 8. Ngày bóc múi
-        row.getCell(8).value = item.peelingDateFormatted || '-';
+        // 8. Ngày nguyên liệu
+        row.getCell(8).value = item.rawMaterialDateFormatted || '-';
         row.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 9. Số lượng
+        // 9. Ngày đóng gói
+        row.getCell(9).value = item.packagingDateFormatted || '-';
+        row.getCell(9).alignment = { horizontal: 'center', vertical: 'middle' };
+
+        // 10. Số lượng
         const qtyNum = Number(item.quantity) || 0;
-        row.getCell(9).value = Math.round(qtyNum * 1000) / 1000;
-        row.getCell(9).font = { bold: true, color: { argb: '1D4ED8' } }; // Blue 700
-        row.getCell(9).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(9).numFmt = Math.floor(qtyNum) === qtyNum ? '#,##0' : '#,##0.###';
+        row.getCell(10).value = Math.round(qtyNum * 1000) / 1000;
+        row.getCell(10).font = { bold: true, color: { argb: '1D4ED8' } }; // Blue 700
+        row.getCell(10).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(10).numFmt = Math.floor(qtyNum) === qtyNum ? '#,##0' : '#,##0.###';
 
-        // 10. ĐVT
-        row.getCell(10).value = item.unit || '';
-        row.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
-
-        // 11. Mã LOT
-        row.getCell(11).value = item.lotCode || '';
+        // 11. ĐVT
+        row.getCell(11).value = item.unit || '';
         row.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 12. STT LOT
-        row.getCell(12).value = item.lotStt || '-';
-        if (item.lotStt) {
-            row.getCell(12).font = { bold: true, color: { argb: '047857' } }; // Emerald 700
-        }
+        // 12. Mã LOT
+        row.getCell(12).value = item.lotCode || '';
         row.getCell(12).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 13. Lệnh sản xuất
-        row.getCell(13).value = item.productionName || '';
-        row.getCell(13).alignment = { horizontal: 'left', vertical: 'middle' };
+        // 13. STT LOT
+        row.getCell(13).value = item.lotStt || '-';
+        if (item.lotStt) {
+            row.getCell(13).font = { bold: true, color: { argb: '047857' } }; // Emerald 700
+        }
+        row.getCell(13).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        // 14. Mã phụ / Tags
-        row.getCell(14).value = item.tags || '';
-        row.getCell(14).font = { color: { argb: '7E22CE' } }; // Purple 700
+        // 14. Lệnh sản xuất
+        row.getCell(14).value = item.productionName || '';
         row.getCell(14).alignment = { horizontal: 'left', vertical: 'middle' };
 
-        // 15. Ghi chú
-        row.getCell(15).value = item.notes || '';
+        // 15. Mã phụ / Tags
+        row.getCell(15).value = item.tags || '';
+        row.getCell(15).font = { color: { argb: '7E22CE' } }; // Purple 700
         row.getCell(15).alignment = { horizontal: 'left', vertical: 'middle' };
+
+        // 16. Ghi chú
+        row.getCell(16).value = item.notes || '';
+        row.getCell(16).alignment = { horizontal: 'left', vertical: 'middle' };
 
         // Borders & Background
         for (let c = 1; c <= columnHeaders.length; c++) {
@@ -273,15 +281,15 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     const totalRow = wsDetail.getRow(currentIdx);
     totalRow.height = 28;
 
-    // Merge A..H (1..8)
-    wsDetail.mergeCells(`A${currentIdx}:H${currentIdx}`);
+    // Merge A..I (1..9)
+    wsDetail.mergeCells(`A${currentIdx}:I${currentIdx}`);
     const tCell = totalRow.getCell(1);
     tCell.value = 'TỔNG CỘNG';
     tCell.font = { bold: true, size: 11, color: { argb: '065F46' } };
     tCell.alignment = { horizontal: 'center', vertical: 'middle' };
 
-    // Total quantity (column 9)
-    const totalQtyCell = totalRow.getCell(9);
+    // Total quantity (column 10)
+    const totalQtyCell = totalRow.getCell(10);
     const sumQty = items.reduce((acc, it) => acc + (Number(it.quantity) || 0), 0);
     const roundedSum = Math.round(sumQty * 1000) / 1000;
     totalQtyCell.value = roundedSum;
@@ -289,12 +297,12 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     totalQtyCell.alignment = { horizontal: 'right', vertical: 'middle' };
     totalQtyCell.numFmt = Math.floor(roundedSum) === roundedSum ? '#,##0' : '#,##0.###';
 
-    // ĐVT (column 10, nếu tất cả cùng 1 ĐVT)
+    // ĐVT (column 11, nếu tất cả cùng 1 ĐVT)
     const uniqueUnits = Array.from(new Set(items.map(it => it.unit).filter(Boolean)));
     if (uniqueUnits.length === 1) {
-        totalRow.getCell(10).value = uniqueUnits[0];
-        totalRow.getCell(10).font = { bold: true };
-        totalRow.getCell(10).alignment = { horizontal: 'center', vertical: 'middle' };
+        totalRow.getCell(11).value = uniqueUnits[0];
+        totalRow.getCell(11).font = { bold: true };
+        totalRow.getCell(11).alignment = { horizontal: 'center', vertical: 'middle' };
     }
 
     for (let c = 1; c <= columnHeaders.length; c++) {
@@ -440,23 +448,23 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     });
 
     // ==========================================
-    // SHEET 3: TỔNG HỢP THEO SẢN PHẨM
+    // SHEET 3: TỔNG HỢP THEO SẢN PHẨM & NGÀY SẢN XUẤT
     // ==========================================
     const wsByProduct = workbook.addWorksheet('Tổng hợp theo sản phẩm');
     wsByProduct.columns = [
         { header: 'STT', key: 'stt', width: 6 },
         { header: 'Mã SP (SKU)', key: 'sku', width: 18 },
         { header: 'Tên sản phẩm', key: 'productName', width: 40 },
+        { header: 'Ngày sản xuất', key: 'peelingDate', width: 22 },
+        { header: 'Ngày nhập kho', key: 'inboundDate', width: 16 },
         { header: 'Số lượng vị trí', key: 'positionCount', width: 16 },
         { header: 'Tổng số lượng', key: 'totalQuantity', width: 16 },
         { header: 'Đơn vị tính', key: 'unit', width: 12 },
-        { header: 'Ngày cũ nhất', key: 'oldestDate', width: 14 },
-        { header: 'Ngày mới nhất', key: 'newestDate', width: 14 },
     ];
 
     wsByProduct.mergeCells('A1:H1');
     const pTitle = wsByProduct.getCell('A1');
-    pTitle.value = 'BÁO CÁO TỔNG HỢP THEO SẢN PHẨM';
+    pTitle.value = 'BÁO CÁO TỔNG HỢP THEO SẢN PHẨM & NGÀY SẢN XUẤT';
     pTitle.font = { bold: true, size: 14, color: { argb: 'FFFFFF' } };
     pTitle.fill = {
         type: 'pattern',
@@ -474,7 +482,7 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
 
     const pHeaderRow = wsByProduct.getRow(4);
     pHeaderRow.height = 26;
-    ['STT', 'Mã SP (SKU)', 'Tên sản phẩm', 'Số lượng vị trí', 'Tổng số lượng', 'Đơn vị tính', 'Ngày cũ nhất', 'Ngày mới nhất'].forEach((h, i) => {
+    ['STT', 'Mã SP (SKU)', 'Tên sản phẩm', 'Ngày sản xuất', 'Ngày nhập kho', 'Số lượng vị trí', 'Tổng số lượng', 'Đơn vị tính'].forEach((h, i) => {
         const cell = pHeaderRow.getCell(i + 1);
         cell.value = h;
         cell.font = { bold: true, color: { argb: 'FFFFFF' } };
@@ -495,34 +503,29 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
     const prodMap = new Map<string, {
         sku: string;
         name: string;
+        peelingDateFormatted: string;
+        inboundDateFormatted: string;
         positions: Set<string>;
         totalQty: number;
         unit: string;
-        oldestDate: string | null;
-        newestDate: string | null;
     }>();
 
     items.forEach(it => {
-        const pKey = `${it.sku || ''}_${it.productName}`;
+        const pKey = `${it.sku || ''}_${it.productName}_${it.peelingDateFormatted || '-'}`;
         if (!prodMap.has(pKey)) {
             prodMap.set(pKey, {
                 sku: it.sku || '',
                 name: it.productName,
+                peelingDateFormatted: it.peelingDateFormatted || '-',
+                inboundDateFormatted: it.inboundDateFormatted || it.dateFormatted || '-',
                 positions: new Set(),
                 totalQty: 0,
-                unit: it.unit || '',
-                oldestDate: null,
-                newestDate: null
+                unit: it.unit || ''
             });
         }
         const g = prodMap.get(pKey)!;
         if (it.positionCode) g.positions.add(it.positionCode);
         g.totalQty += (Number(it.quantity) || 0);
-
-        if (it.date) {
-            if (!g.oldestDate || it.date < g.oldestDate) g.oldestDate = it.date;
-            if (!g.newestDate || it.date > g.newestDate) g.newestDate = it.date;
-        }
     });
 
     let pCurrentIdx = 5;
@@ -541,22 +544,23 @@ export async function exportWarehouseSearchReportToExcel(options: ExportWarehous
         row.getCell(3).font = { bold: true };
         row.getCell(3).alignment = { horizontal: 'left', vertical: 'middle' };
 
-        row.getCell(4).value = g.positions.size;
+        row.getCell(4).value = g.peelingDateFormatted;
+        row.getCell(4).font = { bold: true, color: { argb: 'C2410C' } };
         row.getCell(4).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        const roundedQ = Math.round(g.totalQty * 1000) / 1000;
-        row.getCell(5).value = roundedQ;
-        row.getCell(5).font = { bold: true, color: { argb: '1D4ED8' } };
-        row.getCell(5).alignment = { horizontal: 'right', vertical: 'middle' };
-        row.getCell(5).numFmt = Math.floor(roundedQ) === roundedQ ? '#,##0' : '#,##0.###';
+        row.getCell(5).value = g.inboundDateFormatted;
+        row.getCell(5).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        row.getCell(6).value = g.unit;
+        row.getCell(6).value = g.positions.size;
         row.getCell(6).alignment = { horizontal: 'center', vertical: 'middle' };
 
-        row.getCell(7).value = g.oldestDate ? format(new Date(g.oldestDate), 'dd/MM/yyyy') : '-';
-        row.getCell(7).alignment = { horizontal: 'center', vertical: 'middle' };
+        const roundedQ = Math.round(g.totalQty * 1000) / 1000;
+        row.getCell(7).value = roundedQ;
+        row.getCell(7).font = { bold: true, color: { argb: '1D4ED8' } };
+        row.getCell(7).alignment = { horizontal: 'right', vertical: 'middle' };
+        row.getCell(7).numFmt = Math.floor(roundedQ) === roundedQ ? '#,##0' : '#,##0.###';
 
-        row.getCell(8).value = g.newestDate ? format(new Date(g.newestDate), 'dd/MM/yyyy') : '-';
+        row.getCell(8).value = g.unit;
         row.getCell(8).alignment = { horizontal: 'center', vertical: 'middle' };
 
         for (let c = 1; c <= 8; c++) {

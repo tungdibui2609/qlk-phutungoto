@@ -235,6 +235,30 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
             }
         }
 
+        // Helper lọc ngày đối soát cấp Lot: hỗ trợ cả lot[field] và nhiều ngày trong metadata.peeling_dates
+        const matchLotDateRange = (lot: any, field: string, start: string, end: string): boolean => {
+            if (!lot) return false
+            if (!start && !end) return true
+
+            if (field === 'peeling_date') {
+                const datesSet = new Set<string>()
+                if (lot.peeling_date) {
+                    datesSet.add(String(lot.peeling_date))
+                }
+                const fromMeta = Array.isArray(lot.metadata?.peeling_dates)
+                    ? lot.metadata.peeling_dates
+                    : (Array.isArray(lot.metadata?.production_dates) ? lot.metadata.production_dates : [])
+                fromMeta.forEach((d: any) => {
+                    if (d && typeof d === 'string') datesSet.add(d)
+                })
+
+                if (datesSet.size === 0) return false
+                return Array.from(datesSet).some(d => matchDateRange(d, start, end))
+            }
+
+            return matchDateRange(lot[field], start, end)
+        }
+
         // ==========================================
         // 2. BỘ LỌC CHUYÊN SÂU (DEEP SCAN FILTERS)
         // Kết hợp cùng từ khóa tìm kiếm khi bật Chuyên Sâu OCR
@@ -277,6 +301,11 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                         return false
                     }
 
+                    // Nếu lọc theo ngày sản xuất: đối soát hỗ trợ nhiều ngày sản xuất của Lot
+                    if (criteria.dateField === 'peeling_date' && (criteria.startDate || criteria.endDate)) {
+                        return matchLotDateRange(lot, 'peeling_date', criteria.startDate || '', criteria.endDate || '')
+                    }
+
                     // Nếu chỉ lọc theo ngày hoặc vùng miền/nhà máy: đối soát cấp Lot
                     const dummyBox = {
                         code: lot.code,
@@ -293,12 +322,12 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                 })
             }
         } else {
-            // Lọc ngày ở chế độ cơ bản
+            // Lọc ngày ở chế độ cơ bản (hỗ trợ nhiều ngày sản xuất)
             if (startDate || endDate) {
                 result = result.filter(p => {
                     const lot = p.lot_id ? lotInfo[p.lot_id] : null
                     if (!lot) return false
-                    return matchDateRange(lot[dateFilterField], startDate, endDate)
+                    return matchLotDateRange(lot, dateFilterField, startDate, endDate)
                 })
             }
         }
