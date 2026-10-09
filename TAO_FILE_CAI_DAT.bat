@@ -16,16 +16,31 @@ if not exist "%ISCC_PATH%" (
     exit /b 1
 )
 
-echo [1/3] Bien dich ServerManager.exe moi nhat tu server_launcher.py...
-taskkill /F /IM ServerManager.exe 2>nul
-timeout /t 2 /nobreak >nul
-powershell -Command "Remove-Item -Recurse -Force 'build', 'dist' -ErrorAction SilentlyContinue"
-python -m PyInstaller --noconfirm ServerManager.spec
-if exist "dist\ServerManager.exe" (
-    copy /y "dist\ServerManager.exe" "ServerManager.exe" >nul
-    echo Da cap nhat ServerManager.exe moi nhat.
+set "DO_REBUILD=0"
+if not exist "ServerManager.exe" (
+    set "DO_REBUILD=1"
 ) else (
-    echo [CANH BAO] Khong the tao file exe moi, su dung file hien co.
+    echo [1/3] File ServerManager.exe da co san trong thu muc.
+    echo (Luu y: Bien dich lai se tao ma hash EXE moi, co the kich hoat Windows Smart App Control chan file)
+    choice /C YN /T 5 /D N /M "Ban co muon bien dich lai ServerManager.exe khong? (Y: Co, N: Dung file san co - Tu dong N sau 5s)"
+    if errorlevel 2 set "DO_REBUILD=0"
+    if errorlevel 1 if not errorlevel 2 set "DO_REBUILD=1"
+)
+
+if "%DO_REBUILD%"=="1" (
+    echo Dang bien dich ServerManager.exe tu server_launcher.py...
+    taskkill /F /IM ServerManager.exe 2>nul
+    timeout /t 2 /nobreak >nul
+    powershell -Command "Remove-Item -Recurse -Force 'build', 'dist' -ErrorAction SilentlyContinue"
+    python -m PyInstaller --noconfirm ServerManager.spec
+    if exist "dist\ServerManager.exe" (
+        copy /y "dist\ServerManager.exe" "ServerManager.exe" >nul
+        echo Da cap nhat ServerManager.exe moi nhat.
+    ) else (
+        echo [CANH BAO] Khong the tao file exe moi, su dung file hien co.
+    )
+) else (
+    echo [1/3] Su dung file ServerManager.exe hien tai (bo qua bien dich lai).
 )
 
 echo.
