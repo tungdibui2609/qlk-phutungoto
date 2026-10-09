@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { getOrderTypeBadgeColor } from '@/lib/orderTypeUtils'
 
 interface InboundOrder {
     id: string
@@ -304,17 +305,15 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
 
                             {/* Column 1 */}
                             {(() => {
-                                const typeName = Array.isArray(orderDetails?.order_types)
+                                const typeName = (Array.isArray(orderDetails?.order_types)
                                     ? orderDetails.order_types[0]?.name
-                                    : orderDetails?.order_types?.name
-
-                                if (!typeName) return null
+                                    : orderDetails?.order_types?.name) || 'Nhập Mới'
 
                                 return (
                                     <div>
                                         <label className="text-xs font-semibold text-stone-400 uppercase">Loại phiếu</label>
                                         <p className="font-medium text-stone-900 dark:text-gray-200 mt-1">
-                                            <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-100">
+                                            <span className={`px-2.5 py-1 rounded-lg text-sm font-semibold border ${getOrderTypeBadgeColor(typeName)}`}>
                                                 {typeName}
                                             </span>
                                         </p>

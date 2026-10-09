@@ -274,6 +274,11 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             if (initialData) {
                 if (initialData.items) setItems(initialData.items)
                 if (initialData.customerName) setCustomerName(initialData.customerName)
+                if (initialData.orderTypeId) setOrderTypeId(initialData.orderTypeId)
+            }
+            if (!editOrderId && !duplicateOrderId && !initialData?.orderTypeId) {
+                const defaultType = typeRes.data?.find((t: any) => t.name?.toLowerCase().includes('bán')) || typeRes.data?.[0]
+                if (defaultType) setOrderTypeId(defaultType.id)
             }
             generateOrderCode('PXK', systemCode).then(setCode)
         } catch (error) {

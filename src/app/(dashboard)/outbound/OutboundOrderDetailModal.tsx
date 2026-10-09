@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/compone
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { getOrderTypeBadgeColor } from '@/lib/orderTypeUtils'
 
 interface OutboundOrder {
     id: string
@@ -294,16 +295,19 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                             </div>
 
                             {/* Column 1 */}
-                            {order.order_types?.name && (
-                                <div>
-                                    <label className="text-xs font-semibold text-stone-400 uppercase">Loại phiếu</label>
-                                    <p className="font-medium text-stone-900 dark:text-gray-200 mt-1">
-                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-sm font-semibold border border-blue-100">
-                                            {order.order_types.name}
-                                        </span>
-                                    </p>
-                                </div>
-                            )}
+                            {(() => {
+                                const typeName = (Array.isArray(order?.order_types) ? order.order_types[0]?.name : order?.order_types?.name) || 'Bán'
+                                return (
+                                    <div>
+                                        <label className="text-xs font-semibold text-stone-400 uppercase">Loại phiếu</label>
+                                        <p className="font-medium text-stone-900 dark:text-gray-200 mt-1">
+                                            <span className={`px-2.5 py-1 rounded-lg text-sm font-semibold border ${getOrderTypeBadgeColor(typeName)}`}>
+                                                {typeName}
+                                            </span>
+                                        </p>
+                                    </div>
+                                )
+                            })()}
 
                             {/* Column 2 */}
                             <div>

@@ -202,7 +202,11 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
 
                 generateOrderCode('PNK', systemCode).then(setCode)
             } else {
-                if (!editOrderId) generateOrderCode('PNK', systemCode).then(setCode)
+                if (!editOrderId) {
+                    generateOrderCode('PNK', systemCode).then(setCode)
+                    const defaultType = typeRes.data?.find((t: any) => t.name?.toLowerCase().includes('nhập mới')) || typeRes.data?.[0]
+                    if (defaultType) setOrderTypeId(defaultType.id)
+                }
             }
         } catch (error) {
             console.error(error)
@@ -386,7 +390,7 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
 
             if (error) throw error
 
-            const filteredLots = (lots || []).filter(lot => {
+            const filteredLots = ((lots as any[]) || []).filter((lot: any) => {
                 const effectiveDateStr = lot.inbound_date || lot.created_at
                 const effectiveDate = new Date(effectiveDateStr)
                 return effectiveDate >= start && effectiveDate <= end

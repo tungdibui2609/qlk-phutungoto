@@ -19,7 +19,7 @@ interface MobileReconciliationListProps {
     onSelectLotDetail?: (item: ItemReconciliation) => void
 }
 
-export default function MobileReconciliationList({ items, positionFilter = 'all', onSelectLotDetail }: MobileReconciliationListProps) {
+export default function MobileReconciliationList({ items, positionFilter = 'has_position', onSelectLotDetail }: MobileReconciliationListProps) {
     if (items.length === 0) {
         return (
             <div className="p-8 text-center text-stone-500 bg-white dark:bg-stone-900 rounded-xl border border-stone-200 dark:border-stone-800">

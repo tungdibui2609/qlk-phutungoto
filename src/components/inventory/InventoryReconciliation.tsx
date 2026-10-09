@@ -51,7 +51,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
     const [items, setItems] = useState<ItemReconciliation[]>([])
     const [showOnlyDiff, setShowOnlyDiff] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
-    const [positionFilter, setPositionFilter] = useState<'all' | 'has_position' | 'no_position'>('all')
+    const [positionFilter, setPositionFilter] = useState<'all' | 'has_position' | 'no_position'>('has_position')
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
     const [dateTo, setDateTo] = useState(new Date().toISOString().split('T')[0])
     const [selectedBranch, setSelectedBranch] = useState('Tất cả')
@@ -360,8 +360,8 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                             onChange={e => setPositionFilter(e.target.value as any)}
                             className="w-full pr-10 pl-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 hover:bg-stone-100 dark:hover:bg-stone-800 transition-colors focus:outline-none focus:ring-2 focus:ring-orange-500 appearance-none cursor-pointer font-medium text-stone-800 dark:text-stone-200"
                         >
-                            <option value="all">Tất cả LOT (Mặc định)</option>
-                            <option value="has_position">📍 Chỉ LOT đã có vị trí</option>
+                            <option value="has_position">📍 Chỉ LOT đã có vị trí (Mặc định)</option>
+                            <option value="all">Tất cả LOT</option>
                             <option value="no_position">⚠️ Chỉ LOT chưa có vị trí</option>
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400 pointer-events-none" />
@@ -434,7 +434,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                             if (dateTo) params.set('to', dateTo)
                             if (targetUnitId) params.set('targetUnitId', targetUnitId)
                             if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
-                            if (positionFilter && positionFilter !== 'all') params.set('positionFilter', positionFilter)
+                            if (positionFilter) params.set('positionFilter', positionFilter)
 
                             // Pass auth token
                             let accessToken = ''
@@ -499,7 +499,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                             if (dateTo) params.set('to', dateTo)
                             if (targetUnitId) params.set('targetUnitId', targetUnitId)
                             if (selectedBranch && selectedBranch !== 'Tất cả') params.set('warehouse', selectedBranch)
-                            if (positionFilter && positionFilter !== 'all') params.set('positionFilter', positionFilter)
+                            if (positionFilter) params.set('positionFilter', positionFilter)
 
                             // Pass auth token
                             let accessToken = ''

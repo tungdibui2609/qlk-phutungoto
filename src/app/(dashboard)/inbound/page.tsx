@@ -11,6 +11,7 @@ import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
 import { format } from 'date-fns'
 import { vi } from 'date-fns/locale'
 import DailyExportModal from '@/components/inventory/shared/DailyExportModal'
+import { getOrderTypeBadgeColor } from '@/lib/orderTypeUtils'
 
 export default function InboundPage() {
     const { showToast } = useToast()
@@ -22,11 +23,48 @@ export default function InboundPage() {
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
     const [statusFilter, setStatusFilter] = useState('all')
+    const [orderTypeFilter, setOrderTypeFilter] = useState('all')
+    const [orderTypes, setOrderTypes] = useState<any[]>([])
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const [currentPage, setCurrentPage] = useState(0)
     const [totalCount, setTotalCount] = useState(0)
     const PAGE_SIZE = 20
+
+    // Helper to get order type name accurately
+    const getOrderTypeName = (order: any) => {
+        const rawName = Array.isArray(order.order_types) ? order.order_types[0]?.name : order.order_types?.name;
+        if (rawName) return rawName;
+
+        if (order.order_type_id && orderTypes.length > 0) {
+            const found = orderTypes.find((t: any) => t.id === order.order_type_id);
+            if (found) return found.name;
+        }
+
+        const desc = (order.description || '').toLowerCase();
+        const meta = order.metadata || {};
+        const rawType = (order.type || '').toLowerCase();
+
+        if (desc.includes('điều chỉnh') || desc.includes('kiểm kê') || meta.is_adjustment || rawType.includes('adjust')) {
+            return 'Điều Chỉnh';
+        }
+        if (desc.includes('sản xuất') || desc.includes('lệnh sx') || meta.production_order_id || meta.production_order_code || meta.production_lot || meta.source === 'production' || rawType.includes('product')) {
+            return 'Sản Xuất';
+        }
+        if (desc.includes('phân loại') || desc.includes('rework') || rawType.includes('classif')) {
+            return 'Phân Loại';
+        }
+        if (desc.includes('chuyển đổi') || desc.includes('unbundle') || rawType.includes('conver') || order.code?.includes('-AUTO')) {
+            return 'Chuyển Đổi';
+        }
+        if (desc.includes('nhập trả') || desc.includes('trả hàng') || rawType.includes('return')) {
+            return 'Nhập Trả';
+        }
+        if (desc.includes('mượn') || desc.includes('nội bộ') || rawType.includes('internal')) {
+            return 'Xuất Mượn/Dùng';
+        }
+        return 'Nhập Mới';
+    }
 
     // Buffer Stats
     const [bufferCount, setBufferCount] = useState(0)
@@ -48,6 +86,20 @@ export default function InboundPage() {
             : (currentSystem as any).modules
         return Array.isArray(modules?.utility_modules) && modules.utility_modules.includes(utilityId)
     }
+
+    useEffect(() => {
+        async function loadOrderTypes() {
+            if (!systemType) return
+            const { data } = await (supabase.from('order_types') as any)
+                .select('*')
+                .or('scope.eq.inbound,scope.eq.both')
+                .or(`system_code.eq.${systemType},system_code.is.null`)
+                .eq('is_active', true)
+                .order('name')
+            if (data) setOrderTypes(data)
+        }
+        loadOrderTypes()
+    }, [systemType])
 
     useEffect(() => {
         fetchOrders()
@@ -133,11 +185,12 @@ export default function InboundPage() {
         setBufferCount(count)
     }
 
-    async function fetchOrders(page?: number, overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string) {
+    async function fetchOrders(page?: number, overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string, overrideOrderType?: string) {
         let activePage = page ?? currentPage
         const _startDate = overrideStartDate !== undefined ? overrideStartDate : startDate;
         const _endDate = overrideEndDate !== undefined ? overrideEndDate : endDate;
         const _statusFilter = overrideStatus !== undefined ? overrideStatus : statusFilter;
+        const _orderTypeFilter = overrideOrderType !== undefined ? overrideOrderType : orderTypeFilter;
         
         setLoading(true)
         try {
@@ -149,6 +202,9 @@ export default function InboundPage() {
 
             if (_statusFilter !== 'all') {
                 countQuery = countQuery.eq('status', _statusFilter)
+            }
+            if (_orderTypeFilter !== 'all') {
+                countQuery = countQuery.eq('order_type_id', _orderTypeFilter)
             }
             if (_startDate) {
                 countQuery = countQuery.gte('created_at', new Date(`${_startDate}T00:00:00`).toISOString())
@@ -193,6 +249,9 @@ export default function InboundPage() {
             if (_statusFilter !== 'all') {
                 query = query.eq('status', _statusFilter)
             }
+            if (_orderTypeFilter !== 'all') {
+                query = query.eq('order_type_id', _orderTypeFilter)
+            }
             if (_startDate) {
                 query = query.gte('created_at', new Date(`${_startDate}T00:00:00`).toISOString())
             }
@@ -210,15 +269,16 @@ export default function InboundPage() {
         }
     }
 
-    const handleSearch = async (overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string) => {
+    const handleSearch = async (overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string, overrideOrderType?: string) => {
         const cleanQuery = searchQuery.trim()
         const _startDate = overrideStartDate !== undefined ? overrideStartDate : startDate;
         const _endDate = overrideEndDate !== undefined ? overrideEndDate : endDate;
         const _statusFilter = overrideStatus !== undefined ? overrideStatus : statusFilter;
+        const _orderTypeFilter = overrideOrderType !== undefined ? overrideOrderType : orderTypeFilter;
 
         if (!cleanQuery) {
             setCurrentPage(0)
-            fetchOrders(0, _startDate, _endDate, _statusFilter)
+            fetchOrders(0, _startDate, _endDate, _statusFilter, _orderTypeFilter)
             return
         }
         setLoading(true)
@@ -260,6 +320,9 @@ export default function InboundPage() {
 
             if (_statusFilter !== 'all') {
                 query = query.eq('status', _statusFilter)
+            }
+            if (_orderTypeFilter !== 'all') {
+                query = query.eq('order_type_id', _orderTypeFilter)
             }
             if (_startDate) {
                 query = query.gte('created_at', new Date(`${_startDate}T00:00:00`).toISOString())
@@ -587,14 +650,30 @@ export default function InboundPage() {
                                     />
                                 </div>
                                 <select 
+                                    className="w-full md:w-[150px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center] text-sm text-gray-700 bg-white"
+                                    value={orderTypeFilter} 
+                                    onChange={(e) => {
+                                        const newVal = e.target.value;
+                                        setOrderTypeFilter(newVal);
+                                        setCurrentPage(0);
+                                        if (searchQuery.trim()) handleSearch(startDate, endDate, statusFilter, newVal);
+                                        else fetchOrders(0, startDate, endDate, statusFilter, newVal);
+                                    }}
+                                >
+                                    <option value="all">Tất cả loại phiếu</option>
+                                    {orderTypes.map((t: any) => (
+                                        <option key={t.id} value={t.id}>{t.name}</option>
+                                    ))}
+                                </select>
+                                <select 
                                     className="w-full md:w-[160px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center]"
                                     value={statusFilter} 
                                     onChange={(e) => {
                                         const newVal = e.target.value;
                                         setStatusFilter(newVal);
                                         setCurrentPage(0);
-                                        if (searchQuery.trim()) handleSearch(startDate, endDate, newVal);
-                                        else fetchOrders(0, startDate, endDate, newVal);
+                                        if (searchQuery.trim()) handleSearch(startDate, endDate, newVal, orderTypeFilter);
+                                        else fetchOrders(0, startDate, endDate, newVal, orderTypeFilter);
                                     }}
                                 >
                                     <option value="all">Tất cả trạng thái</option>
@@ -670,11 +749,18 @@ export default function InboundPage() {
                                                         </button>
                                                     </td>
                                                     <td className="px-3 py-3 whitespace-nowrap border-b-2 border-stone-300 dark:border-zinc-700" rowSpan={2}>
-                                                        <div className="flex flex-col">
-                                                            <span className="text-sm font-semibold text-indigo-600 cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
+                                                        <div className="flex flex-col items-start gap-1">
+                                                            <span className="text-sm font-semibold text-indigo-600 hover:text-indigo-700 hover:underline cursor-pointer" onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}>
                                                                 {order.code}
                                                             </span>
-                                                            <span className="text-[11px] text-gray-400 mt-0.5">{order.order_types?.name || 'Nhập kho'}</span>
+                                                            {(() => {
+                                                                const typeName = getOrderTypeName(order);
+                                                                return (
+                                                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-semibold border shadow-xs ${getOrderTypeBadgeColor(typeName)}`}>
+                                                                        {typeName}
+                                                                    </span>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </td>
                                                     <td className="px-3 py-3">
