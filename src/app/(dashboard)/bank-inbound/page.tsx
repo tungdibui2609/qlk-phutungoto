@@ -27,7 +27,8 @@ import {
     Inbox,
     Eye,
     MoreHorizontal,
-    X
+    X,
+    ChevronDown
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -51,6 +52,7 @@ export default function BankInboundPage() {
 
     // Filters
     const [searchQuery, setSearchQuery] = useState('')
+    const [searchType, setSearchType] = useState<'all' | 'product' | 'description' | 'code' | 'partner'>('all')
     const [startDate, setStartDate] = useState('')
     const [endDate, setEndDate] = useState('')
     const [warehouseFilter, setWarehouseFilter] = useState('all')
@@ -88,9 +90,86 @@ export default function BankInboundPage() {
         fetchOrders(0)
     }, [systemType])
 
-    async function fetchOrders(page = currentPage) {
+    async function fetchOrders(page = currentPage, overrideSearchType?: string) {
         setLoading(true)
+        const _searchType = overrideSearchType !== undefined ? overrideSearchType : searchType
         try {
+            let orQueryString = ''
+            if (searchQuery.trim()) {
+                const sanitizedQuery = searchQuery.trim().replace(/[,()"]/g, '')
+
+                if (_searchType === 'code') {
+                    orQueryString = `code.ilike.%${sanitizedQuery}%`
+                } else if (_searchType === 'description') {
+                    orQueryString = `description.ilike.%${sanitizedQuery}%`
+                } else if (_searchType === 'partner') {
+                    orQueryString = `supplier_name.ilike.%${sanitizedQuery}%`
+                } else if (_searchType === 'product') {
+                    let prodQuery = supabase
+                        .from('products')
+                        .select('id')
+                        .or(`sku.ilike.%${sanitizedQuery}%,internal_name.ilike.%${sanitizedQuery}%,name.ilike.%${sanitizedQuery}%`)
+                        .limit(100)
+                    if (systemType) prodQuery = prodQuery.eq('system_type', systemType)
+                    const { data: prodData } = await prodQuery
+                    const matchedProductIds: string[] = (prodData as any[])?.map((p: any) => p.id) || []
+
+                    let itemQuery = (supabase
+                        .from('bank_inbound_order_items' as any)
+                        .select('order_id')
+                        .limit(200) as any)
+
+                    if (matchedProductIds.length > 0) {
+                        itemQuery = itemQuery.or(`product_name.ilike.%${sanitizedQuery}%,product_id.in.(${matchedProductIds.map(id => `"${id}"`).join(',')})`)
+                    } else {
+                        itemQuery = itemQuery.ilike('product_name', `%${sanitizedQuery}%`)
+                    }
+
+                    const { data: itemData } = await itemQuery
+                    const matchingOrderIds = Array.from(new Set((itemData as any[])?.map((it: any) => it.order_id).filter(Boolean))).slice(0, 100)
+
+                    if (matchingOrderIds.length > 0) {
+                        orQueryString = `id.in.(${matchingOrderIds.map(id => `"${id}"`).join(',')})`
+                    } else {
+                        orQueryString = `code.eq.__NO_MATCH__`
+                    }
+                } else {
+                    // 'all': Match across all fields
+                    let prodQuery = supabase
+                        .from('products')
+                        .select('id')
+                        .or(`sku.ilike.%${sanitizedQuery}%,internal_name.ilike.%${sanitizedQuery}%,name.ilike.%${sanitizedQuery}%`)
+                        .limit(100)
+                    if (systemType) prodQuery = prodQuery.eq('system_type', systemType)
+                    const { data: prodData } = await prodQuery
+                    const matchedProductIds: string[] = (prodData as any[])?.map((p: any) => p.id) || []
+
+                    let itemQuery = (supabase
+                        .from('bank_inbound_order_items' as any)
+                        .select('order_id')
+                        .limit(200) as any)
+
+                    if (matchedProductIds.length > 0) {
+                        itemQuery = itemQuery.or(`product_name.ilike.%${sanitizedQuery}%,product_id.in.(${matchedProductIds.map(id => `"${id}"`).join(',')})`)
+                    } else {
+                        itemQuery = itemQuery.ilike('product_name', `%${sanitizedQuery}%`)
+                    }
+
+                    const { data: itemData } = await itemQuery
+                    const matchingOrderIds = Array.from(new Set((itemData as any[])?.map((it: any) => it.order_id).filter(Boolean))).slice(0, 100)
+
+                    const orConditions: string[] = [
+                        `code.ilike.%${sanitizedQuery}%`,
+                        `supplier_name.ilike.%${sanitizedQuery}%`,
+                        `description.ilike.%${sanitizedQuery}%`
+                    ]
+                    if (matchingOrderIds.length > 0) {
+                        orConditions.push(`id.in.(${matchingOrderIds.map(id => `"${id}"`).join(',')})`)
+                    }
+                    orQueryString = orConditions.join(',')
+                }
+            }
+
             let countQuery = supabase
                 .from('bank_inbound_orders' as any)
                 .select('*', { count: 'exact', head: true })
@@ -99,8 +178,8 @@ export default function BankInboundPage() {
             if (warehouseFilter !== 'all') countQuery = countQuery.eq('warehouse_name', warehouseFilter)
             if (startDate) countQuery = countQuery.gte('created_at', new Date(`${startDate}T00:00:00`).toISOString())
             if (endDate) countQuery = countQuery.lte('created_at', new Date(`${endDate}T23:59:59.999`).toISOString())
-            if (searchQuery.trim()) {
-                countQuery = countQuery.or(`code.ilike.%${searchQuery.trim()}%,supplier_name.ilike.%${searchQuery.trim()}%,description.ilike.%${searchQuery.trim()}%`)
+            if (orQueryString) {
+                countQuery = countQuery.or(orQueryString)
             }
 
             const { count } = await countQuery
@@ -130,8 +209,8 @@ export default function BankInboundPage() {
             if (warehouseFilter !== 'all') query = query.eq('warehouse_name', warehouseFilter)
             if (startDate) query = query.gte('created_at', new Date(`${startDate}T00:00:00`).toISOString())
             if (endDate) query = query.lte('created_at', new Date(`${endDate}T23:59:59.999`).toISOString())
-            if (searchQuery.trim()) {
-                query = query.or(`code.ilike.%${searchQuery.trim()}%,supplier_name.ilike.%${searchQuery.trim()}%,description.ilike.%${searchQuery.trim()}%`)
+            if (orQueryString) {
+                query = query.or(orQueryString)
             }
 
             const { data, error } = await query
@@ -293,23 +372,79 @@ export default function BankInboundPage() {
                 {/* Left: Orders Table */}
                 <div className="md:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
                     {/* Filter bar */}
-                    <div className="p-4 border-b border-gray-100">
-                        <div className="flex flex-col md:flex-row md:items-center gap-3">
+                    <div className="p-3.5 border-b border-gray-100 bg-stone-50/40 space-y-2.5">
+                        {/* Row 1: Search Bar with Criteria Selector */}
+                        <div className="flex items-center gap-2 w-full">
+                            {/* Scope Selector */}
+                            <div className="relative shrink-0">
+                                <select
+                                    value={searchType}
+                                    onChange={(e) => {
+                                        const newType = e.target.value as any;
+                                        setSearchType(newType);
+                                        if (searchQuery.trim()) {
+                                            fetchOrders(0, newType);
+                                        }
+                                    }}
+                                    className="h-9.5 pl-3 pr-7 bg-stone-100 hover:bg-stone-200/70 border border-gray-200 rounded-lg text-xs font-semibold text-stone-700 outline-none focus:border-emerald-500 transition-colors cursor-pointer appearance-none"
+                                >
+                                    <option value="all">🔍 Tất cả</option>
+                                    <option value="product">📦 Sản phẩm (tên, mã)</option>
+                                    <option value="description">📝 Diễn giải, ghi chú</option>
+                                    <option value="code">🏷️ Mã phiếu</option>
+                                    <option value="partner">👥 Nhà cung cấp</option>
+                                </select>
+                                <ChevronDown className="w-3.5 h-3.5 text-stone-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+
+                            {/* Search Input Box */}
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
-                                    placeholder="Tìm theo mã phiếu, ghi chú..."
-                                    className="w-full pl-9 h-10 border border-gray-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all text-xs"
+                                    placeholder={
+                                        searchType === 'product' ? 'Nhập mã hoặc tên sản phẩm...' :
+                                        searchType === 'description' ? 'Nhập nội dung diễn giải, ghi chú...' :
+                                        searchType === 'code' ? 'Nhập mã số phiếu...' :
+                                        searchType === 'partner' ? 'Nhập tên nhà cung cấp...' :
+                                        'Tìm theo mã phiếu, sản phẩm, diễn giải, nhà cung cấp... (Nhấn Enter để tìm)'
+                                    }
+                                    className="w-full pl-9 pr-9 h-9.5 bg-white border border-gray-200 rounded-lg focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none transition-all text-xs text-stone-800"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && fetchOrders(0)}
                                 />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchQuery('')
+                                            setCurrentPage(0)
+                                            setTimeout(() => fetchOrders(0), 0)
+                                        }}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full cursor-pointer"
+                                        title="Xóa tìm kiếm"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
+
+                            {/* Search Action Button */}
+                            <button
+                                onClick={() => fetchOrders(0)}
+                                className="h-9.5 px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+                            >
+                                <Search className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Tìm</span>
+                            </button>
+                        </div>
+
+                        {/* Row 2: Filters Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
                             <div className="flex flex-wrap items-center gap-2">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 bg-white border border-gray-200 rounded-lg px-2 h-9">
                                     <input
                                         type="date"
-                                        className="h-10 border border-gray-200 rounded-lg px-2.5 outline-none focus:border-emerald-500 w-[130px] text-xs text-gray-600"
+                                        className="bg-transparent outline-none text-xs text-gray-600 w-[125px]"
                                         value={startDate}
                                         onChange={(e) => {
                                             setStartDate(e.target.value)
@@ -317,10 +452,10 @@ export default function BankInboundPage() {
                                         }}
                                         title="Từ ngày"
                                     />
-                                    <span className="text-gray-400">-</span>
+                                    <span className="text-gray-400 text-xs">-</span>
                                     <input
                                         type="date"
-                                        className="h-10 border border-gray-200 rounded-lg px-2.5 outline-none focus:border-emerald-500 w-[130px] text-xs text-gray-600"
+                                        className="bg-transparent outline-none text-xs text-gray-600 w-[125px]"
                                         value={endDate}
                                         onChange={(e) => {
                                             setEndDate(e.target.value)
@@ -330,7 +465,7 @@ export default function BankInboundPage() {
                                     />
                                 </div>
                                 <select
-                                    className="h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-emerald-500 text-xs text-gray-700 bg-white"
+                                    className="h-9 border border-gray-200 rounded-lg px-2.5 outline-none focus:border-emerald-500 text-xs text-gray-700 bg-white"
                                     value={warehouseFilter}
                                     onChange={(e) => {
                                         setWarehouseFilter(e.target.value)
@@ -344,10 +479,31 @@ export default function BankInboundPage() {
                                 </select>
                                 <button
                                     onClick={() => fetchOrders(0)}
-                                    className="h-10 px-3 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors"
+                                    className="h-9 px-3 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
                                 >
                                     Lọc
                                 </button>
+                                {(startDate || endDate || warehouseFilter !== 'all' || searchQuery || searchType !== 'all') && (
+                                    <button
+                                        onClick={() => {
+                                            setStartDate('')
+                                            setEndDate('')
+                                            setWarehouseFilter('all')
+                                            setSearchQuery('')
+                                            setSearchType('all')
+                                            setCurrentPage(0)
+                                            setTimeout(() => fetchOrders(0, 'all'), 0)
+                                        }}
+                                        className="h-9 px-2.5 text-xs text-stone-500 hover:text-stone-800 hover:bg-stone-100 rounded-lg transition-colors cursor-pointer"
+                                        title="Đặt lại bộ lọc"
+                                    >
+                                        Đặt lại
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="text-xs text-stone-500 hidden sm:block">
+                                Tìm thấy: <strong className="text-stone-800">{totalCount}</strong> phiếu
                             </div>
                         </div>
                     </div>

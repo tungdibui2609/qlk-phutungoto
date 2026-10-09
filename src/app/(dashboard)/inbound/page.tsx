@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
-import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy } from 'lucide-react'
+import { Plus, Search, FileDown, Inbox, Package, Filter, MoreHorizontal, ArrowRight, ExternalLink, Edit2, Trash2, RotateCcw, FileText, FileSpreadsheet, CheckSquare, Square, Download, ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight, Copy, Printer, Eye, X, ChevronDown } from 'lucide-react'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import InboundOrderDetailModal from './InboundOrderDetailModal'
 import { LotInboundBuffer } from '@/components/warehouse/lots/LotInboundBuffer'
@@ -22,6 +22,7 @@ export default function InboundPage() {
     const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null)
     const [isDetailModalOpen, setIsDetailModalOpen] = useState(false)
     const [searchQuery, setSearchQuery] = useState('')
+    const [searchType, setSearchType] = useState<'all' | 'product' | 'description' | 'code' | 'partner'>('all')
     const [statusFilter, setStatusFilter] = useState('all')
     const [orderTypeFilter, setOrderTypeFilter] = useState('all')
     const [orderTypes, setOrderTypes] = useState<any[]>([])
@@ -30,6 +31,15 @@ export default function InboundPage() {
     const [currentPage, setCurrentPage] = useState(0)
     const [totalCount, setTotalCount] = useState(0)
     const PAGE_SIZE = 20
+    const [actionMenu, setActionMenu] = useState<{ id: string; top?: number; bottom?: number; right: number } | null>(null)
+
+    useEffect(() => {
+        const handleScroll = () => {
+            if (actionMenu) setActionMenu(null)
+        }
+        window.addEventListener('scroll', handleScroll, true)
+        return () => window.removeEventListener('scroll', handleScroll, true)
+    }, [actionMenu])
 
     // Helper to get order type name accurately
     const getOrderTypeName = (order: any) => {
@@ -75,7 +85,7 @@ export default function InboundPage() {
     // Batch download state
     const [selectedOrderIds, setSelectedOrderIds] = useState<Set<string>>(new Set())
     const [isBatchDownloading, setIsBatchDownloading] = useState(false)
-    const [activeTooltipOrderId, setActiveTooltipOrderId] = useState<string | null>(null)
+    const [previewItemsOrder, setPreviewItemsOrder] = useState<any | null>(null)
     const [duplicateOrderId, setDuplicateOrderId] = useState<string | null>(null)
 
     // Helper: Utility Check
@@ -269,12 +279,19 @@ export default function InboundPage() {
         }
     }
 
-    const handleSearch = async (overrideStartDate?: string, overrideEndDate?: string, overrideStatus?: string, overrideOrderType?: string) => {
+    const handleSearch = async (
+        overrideStartDate?: string, 
+        overrideEndDate?: string, 
+        overrideStatus?: string, 
+        overrideOrderType?: string,
+        overrideSearchType?: string
+    ) => {
         const cleanQuery = searchQuery.trim()
         const _startDate = overrideStartDate !== undefined ? overrideStartDate : startDate;
         const _endDate = overrideEndDate !== undefined ? overrideEndDate : endDate;
         const _statusFilter = overrideStatus !== undefined ? overrideStatus : statusFilter;
         const _orderTypeFilter = overrideOrderType !== undefined ? overrideOrderType : orderTypeFilter;
+        const _searchType = overrideSearchType !== undefined ? overrideSearchType : searchType;
 
         if (!cleanQuery) {
             setCurrentPage(0)
@@ -283,22 +300,100 @@ export default function InboundPage() {
         }
         setLoading(true)
         try {
-            // 1. Query matching supplier IDs
-            let supplierIds: string[] = []
-            const { data: suppData } = await supabase
-                .from('suppliers')
-                .select('id')
-                .eq('system_code', systemType)
-                .ilike('name', `%${cleanQuery}%`)
+            const sanitizedQuery = cleanQuery.replace(/[,()"]/g, '').trim()
+            let orConditions: string[] = []
 
-            if (suppData) {
-                supplierIds = suppData.map((s: any) => s.id)
-            }
+            if (_searchType === 'code') {
+                orConditions = [`code.ilike.%${sanitizedQuery}%`]
+            } else if (_searchType === 'description') {
+                orConditions = [`description.ilike.%${sanitizedQuery}%`]
+            } else if (_searchType === 'partner') {
+                const { data: suppData } = await supabase
+                    .from('suppliers')
+                    .select('id')
+                    .eq('system_code', systemType)
+                    .ilike('name', `%${sanitizedQuery}%`)
+                const supplierIds = suppData?.map((s: any) => s.id) || []
+                if (supplierIds.length > 0) {
+                    orConditions = [`supplier_id.in.(${supplierIds.map(id => `"${id}"`).join(',')})`]
+                } else {
+                    orConditions = [`code.eq.__NO_MATCH__`]
+                }
+            } else if (_searchType === 'product') {
+                let prodQuery = supabase
+                    .from('products')
+                    .select('id')
+                    .or(`sku.ilike.%${sanitizedQuery}%,internal_name.ilike.%${sanitizedQuery}%,name.ilike.%${sanitizedQuery}%`)
+                    .limit(100)
+                if (systemType) prodQuery = prodQuery.eq('system_type', systemType)
+                const { data: prodData } = await prodQuery
+                const matchedProductIds: string[] = (prodData as any[])?.map((p: any) => p.id) || []
 
-            // 2. Build the search query
-            let orQuery = `code.ilike.%${cleanQuery}%`
-            if (supplierIds.length > 0) {
-                orQuery += `,supplier_id.in.(${supplierIds.map(id => `"${id}"`).join(',')})`
+                let itemQuery = supabase
+                    .from('inbound_order_items')
+                    .select('order_id')
+                    .limit(200)
+
+                if (matchedProductIds.length > 0) {
+                    itemQuery = itemQuery.or(`product_name.ilike.%${sanitizedQuery}%,product_id.in.(${matchedProductIds.map(id => `"${id}"`).join(',')})`)
+                } else {
+                    itemQuery = itemQuery.ilike('product_name', `%${sanitizedQuery}%`)
+                }
+
+                const { data: itemData } = await itemQuery
+                const matchingOrderIds = Array.from(new Set((itemData as any[])?.map((it: any) => it.order_id).filter(Boolean))).slice(0, 100)
+
+                if (matchingOrderIds.length > 0) {
+                    orConditions = [`id.in.(${matchingOrderIds.map(id => `"${id}"`).join(',')})`]
+                } else {
+                    orConditions = [`code.eq.__NO_MATCH__`]
+                }
+            } else {
+                // 'all': Match across all fields
+                let supplierIds: string[] = []
+                const { data: suppData } = await supabase
+                    .from('suppliers')
+                    .select('id')
+                    .eq('system_code', systemType)
+                    .ilike('name', `%${sanitizedQuery}%`)
+
+                if (suppData) {
+                    supplierIds = suppData.map((s: any) => s.id)
+                }
+
+                let prodQuery = supabase
+                    .from('products')
+                    .select('id')
+                    .or(`sku.ilike.%${sanitizedQuery}%,internal_name.ilike.%${sanitizedQuery}%,name.ilike.%${sanitizedQuery}%`)
+                    .limit(100)
+                if (systemType) prodQuery = prodQuery.eq('system_type', systemType)
+                const { data: prodData } = await prodQuery
+                const matchedProductIds: string[] = (prodData as any[])?.map((p: any) => p.id) || []
+
+                let itemQuery = supabase
+                    .from('inbound_order_items')
+                    .select('order_id')
+                    .limit(200)
+
+                if (matchedProductIds.length > 0) {
+                    itemQuery = itemQuery.or(`product_name.ilike.%${sanitizedQuery}%,product_id.in.(${matchedProductIds.map(id => `"${id}"`).join(',')})`)
+                } else {
+                    itemQuery = itemQuery.ilike('product_name', `%${sanitizedQuery}%`)
+                }
+
+                const { data: itemData } = await itemQuery
+                const matchingOrderIds = Array.from(new Set((itemData as any[])?.map((it: any) => it.order_id).filter(Boolean))).slice(0, 100)
+
+                orConditions = [
+                    `code.ilike.%${sanitizedQuery}%`,
+                    `description.ilike.%${sanitizedQuery}%`
+                ]
+                if (supplierIds.length > 0) {
+                    orConditions.push(`supplier_id.in.(${supplierIds.map(id => `"${id}"`).join(',')})`)
+                }
+                if (matchingOrderIds.length > 0) {
+                    orConditions.push(`id.in.(${matchingOrderIds.map(id => `"${id}"`).join(',')})`)
+                }
             }
 
             let query = supabase
@@ -316,7 +411,7 @@ export default function InboundPage() {
                     supplier:suppliers(name)
                 `)
                 .eq('system_code', systemType)
-                .or(orQuery)
+                .or(orConditions.join(','))
 
             if (_statusFilter !== 'all') {
                 query = query.eq('status', _statusFilter)
@@ -484,54 +579,19 @@ export default function InboundPage() {
         const items = order.items || []
         if (items.length === 0) return <span className="text-gray-400 italic text-[11px]">Không có hàng hóa</span>
         
-        const isOpen = activeTooltipOrderId === order.id
-        
+        const totalQty = items.reduce((sum: number, it: any) => sum + (Number(it.quantity) || 0), 0)
+
         return (
-            <div className="relative inline-block">
-                <button
-                    onClick={() => setActiveTooltipOrderId(isOpen ? null : order.id)}
-                    className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[10px] font-bold uppercase tracking-wider bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-400 transition-all border border-indigo-100 dark:border-indigo-800 relative z-10"
-                >
-                    Hàng hóa ({items.length})
-                </button>
-                
-                {isOpen && (
-                    <>
-                        <div className="absolute left-0 top-full mt-2 w-80 bg-white dark:bg-zinc-800 p-4 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 z-50 animate-in fade-in slide-in-from-top-2 zoom-in-95 duration-200 pointer-events-auto">
-                            <h4 className="text-[10px] uppercase tracking-wider font-bold text-stone-400 mb-3 border-b border-stone-100 dark:border-zinc-700 pb-1.5 flex justify-between items-center">
-                                <span>Chi tiết hàng hóa ({items.length})</span>
-                                <span className="text-[9px] font-normal text-stone-400 lowercase italic">(bấm ra ngoài để đóng)</span>
-                            </h4>
-                            <div className="flex flex-col gap-2 max-h-60 overflow-y-auto pr-1">
-                                {items.map((item: any, idx: number) => {
-                                    const name = item.products?.internal_name || item.product_name || 'N/A'
-                                    const qty = item.quantity
-                                    const unit = item.unit || ''
-                                    return (
-                                        <div key={item.id || idx} className="text-xs leading-normal flex items-center justify-between gap-4 py-2 border-b border-stone-100 dark:border-zinc-700 last:border-0">
-                                            <div className="flex items-start gap-1.5 flex-1 min-w-0">
-                                                <span className="text-indigo-500 mt-0.5">•</span>
-                                                <span className="font-semibold text-stone-800 dark:text-stone-200 text-left break-words">{name}</span>
-                                            </div>
-                                            <div className="flex items-center whitespace-nowrap">
-                                                <span className="px-2.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 font-bold text-[11px] border border-indigo-100/50 dark:border-indigo-900/30">
-                                                     {Number(qty).toLocaleString('vi-VN')} {unit}
-                                                </span>
-                                            </div>
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                            <div className="absolute -top-1.5 left-6 w-3 h-3 bg-white dark:bg-zinc-800 transform rotate-45 border-t border-l border-stone-200 dark:border-zinc-700"></div>
-                        </div>
-                        
-                        <div
-                            className="fixed inset-0 z-0 bg-transparent cursor-default"
-                            onClick={() => setActiveTooltipOrderId(null)}
-                        />
-                    </>
-                )}
-            </div>
+            <button
+                type="button"
+                onClick={() => setPreviewItemsOrder(order)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                title="Bấm để xem danh sách mặt hàng"
+            >
+                <Package size={13} />
+                <span>{items.length} mặt hàng</span>
+                <span className="text-[11px] opacity-80">({totalQty.toLocaleString('vi-VN')})</span>
+            </button>
         )
     }
 
@@ -539,91 +599,153 @@ export default function InboundPage() {
         <div className="p-6 space-y-6">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-2xl font-bold text-gray-900">Quản lý Nhập kho</h1>
-                    <p className="text-gray-500">Xem và quản lý các phiếu nhập kho trong hệ thống</p>
+                    <h1 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">Quản lý Nhập kho</h1>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Xem và quản lý các phiếu nhập kho trong hệ thống</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+                    {/* Hàng chờ button */}
                     <button
-                        className="relative flex items-center h-10 px-4 bg-white border border-amber-200 rounded-lg hover:bg-amber-50 transition-all font-medium text-amber-700"
+                        className="relative flex items-center h-9 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
                         onClick={() => setIsBufferOpen(true)}
                     >
-                        <Inbox className="w-4 h-4 mr-2 text-amber-500" />
+                        <Inbox className="w-4 h-4 mr-1.5 text-amber-600 dark:text-amber-400" />
                         <span>Hàng chờ</span>
                         {bufferCount > 0 && (
-                            <span className="absolute -top-2 -right-2 flex h-5 min-w-[20px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white shadow-lg">
+                            <span className="ml-1.5 px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-bold rounded-full shadow-xs leading-none">
                                 {bufferCount}
                             </span>
                         )}
                     </button>
+
+                    {/* Grouped Reports */}
+                    <div className="flex items-center rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-0.5 shadow-xs">
+                        <button
+                            onClick={() => setIsAllExportModalOpen(true)}
+                            className="h-8 px-2.5 hover:bg-stone-100 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-200 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                            title="Báo cáo Tổng hợp"
+                        >
+                            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Báo cáo Tổng hợp</span>
+                        </button>
+                        <div className="h-4 w-px bg-gray-200 dark:bg-zinc-700 my-auto" />
+                        <button
+                            onClick={() => setIsExportModalOpen(true)}
+                            className="h-8 px-2.5 hover:bg-stone-100 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-200 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                            title="Báo cáo Nhập"
+                        >
+                            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                            <span>Báo cáo Nhập</span>
+                        </button>
+                    </div>
+
+                    {/* Download selected orders (Only when orders selected) */}
+                    {selectedOrderIds.size > 0 && (
+                        <button
+                            onClick={handleBatchDownload}
+                            disabled={isBatchDownloading}
+                            className="flex items-center h-9 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                        >
+                            {isBatchDownloading ? (
+                                <>
+                                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin mr-1.5"></div>
+                                    <span>Đang tải...</span>
+                                </>
+                            ) : (
+                                <>
+                                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                                    <span>Tải {selectedOrderIds.size} phiếu Excel</span>
+                                </>
+                            )}
+                        </button>
+                    )}
+
+                    {/* Primary Action Button */}
                     <button
-                        onClick={() => setIsAllExportModalOpen(true)}
-                        className="flex items-center gap-2 h-10 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors shadow-sm font-medium"
-                    >
-                        <FileText size={16} />
-                        Báo cáo Tổng hợp
-                    </button>
-                    <button
-                        onClick={() => setIsExportModalOpen(true)}
-                        className="flex items-center gap-2 h-10 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors shadow-sm font-medium"
-                    >
-                        <FileSpreadsheet size={16} />
-                        Báo cáo Nhập
-                    </button>
-                    <button
-                        className="flex items-center h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-md transition-all active:scale-95 font-medium"
+                        className="flex items-center h-9 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold shadow-sm transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                         onClick={() => setIsCreateModalOpen(true)}
                     >
-                        <Plus className="w-4 h-4 mr-2" />
-                        Tạo phiếu mới
-                    </button>
-                    <button
-                        disabled={selectedOrderIds.size === 0 || isBatchDownloading}
-                        onClick={handleBatchDownload}
-                        className={`flex items-center h-10 px-4 rounded-lg shadow-md transition-all active:scale-95 font-medium ${
-                            selectedOrderIds.size === 0
-                                ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                        }`}
-                    >
-                        {isBatchDownloading ? (
-                            <>
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
-                                Đang tải...
-                            </>
-                        ) : (
-                            <>
-                                <Download className="w-4 h-4 mr-2" />
-                                Tải về hàng loạt
-                                {selectedOrderIds.size > 0 && (
-                                    <span className="ml-2 bg-white/20 text-white text-xs px-1.5 py-0.5 rounded-full">
-                                        {selectedOrderIds.size}
-                                    </span>
-                                )}
-                            </>
-                        )}
+                        <Plus className="w-4 h-4 mr-1.5" />
+                        <span>Tạo phiếu mới</span>
                     </button>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="md:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-                    <div className="p-4 border-b border-gray-100">
-                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                    <div className="p-3.5 border-b border-gray-100 bg-stone-50/40 dark:bg-zinc-800/20 space-y-2.5">
+                        {/* Row 1: Search Bar with Criteria Selector */}
+                        <div className="flex items-center gap-2 w-full">
+                            {/* Scope Selector */}
+                            <div className="relative shrink-0">
+                                <select
+                                    value={searchType}
+                                    onChange={(e) => {
+                                        const newType = e.target.value as any;
+                                        setSearchType(newType);
+                                        if (searchQuery.trim()) {
+                                            handleSearch(startDate, endDate, statusFilter, orderTypeFilter, newType);
+                                        }
+                                    }}
+                                    className="h-9.5 pl-3 pr-7 bg-stone-100 hover:bg-stone-200/70 dark:bg-zinc-800 dark:hover:bg-zinc-700/70 border border-gray-200 dark:border-zinc-700 rounded-lg text-xs font-semibold text-stone-700 dark:text-stone-200 outline-none focus:border-indigo-500 transition-colors cursor-pointer appearance-none"
+                                >
+                                    <option value="all">🔍 Tất cả</option>
+                                    <option value="product">📦 Sản phẩm (tên, mã)</option>
+                                    <option value="description">📝 Diễn giải, ghi chú</option>
+                                    <option value="code">🏷️ Mã phiếu</option>
+                                    <option value="partner">👥 Nhà cung cấp</option>
+                                </select>
+                                <ChevronDown className="w-3.5 h-3.5 text-stone-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+
+                            {/* Search Input Box */}
                             <div className="relative flex-1">
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
                                 <input
-                                    placeholder="Tìm theo mã phiếu, nhà cung cấp..."
-                                    className="w-full pl-10 h-10 border border-gray-200 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all"
+                                    placeholder={
+                                        searchType === 'product' ? 'Nhập mã hoặc tên sản phẩm...' :
+                                        searchType === 'description' ? 'Nhập nội dung diễn giải, ghi chú...' :
+                                        searchType === 'code' ? 'Nhập mã số phiếu...' :
+                                        searchType === 'partner' ? 'Nhập tên nhà cung cấp...' :
+                                        'Tìm theo mã phiếu, sản phẩm, diễn giải, nhà cung cấp... (Nhấn Enter để tìm)'
+                                    }
+                                    className="w-full pl-9 pr-9 h-9.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all text-xs text-stone-800 dark:text-stone-200"
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                     onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                 />
+                                {searchQuery && (
+                                    <button
+                                        onClick={() => {
+                                            setSearchQuery('')
+                                            setCurrentPage(0)
+                                            fetchOrders(0)
+                                        }}
+                                        className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 rounded-full cursor-pointer"
+                                        title="Xóa tìm kiếm"
+                                    >
+                                        <X className="w-3.5 h-3.5" />
+                                    </button>
+                                )}
                             </div>
-                            <div className="flex flex-col md:flex-row items-center gap-2 w-full md:w-auto">
-                                <div className="flex items-center gap-2 w-full md:w-auto">
+
+                            {/* Search Action Button */}
+                            <button
+                                onClick={() => handleSearch()}
+                                className="h-9.5 px-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 shadow-xs"
+                            >
+                                <Search className="w-3.5 h-3.5" />
+                                <span className="hidden sm:inline">Tìm</span>
+                            </button>
+                        </div>
+
+                        {/* Row 2: Filters Toolbar */}
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                                {/* Date Range */}
+                                <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-lg px-2 h-9">
                                     <input
                                         type="date"
-                                        className="h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 w-full md:w-[130px] text-sm text-gray-600"
+                                        className="bg-transparent outline-none text-xs text-gray-600 dark:text-gray-300 w-[125px]"
                                         value={startDate}
                                         onChange={(e) => {
                                             const newVal = e.target.value;
@@ -634,10 +756,10 @@ export default function InboundPage() {
                                         }}
                                         title="Từ ngày"
                                     />
-                                    <span className="text-gray-400">-</span>
+                                    <span className="text-gray-400 text-xs">-</span>
                                     <input
                                         type="date"
-                                        className="h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 w-full md:w-[130px] text-sm text-gray-600"
+                                        className="bg-transparent outline-none text-xs text-gray-600 dark:text-gray-300 w-[125px]"
                                         value={endDate}
                                         onChange={(e) => {
                                             const newVal = e.target.value;
@@ -649,8 +771,10 @@ export default function InboundPage() {
                                         title="Đến ngày"
                                     />
                                 </div>
+
+                                {/* Order Type */}
                                 <select 
-                                    className="w-full md:w-[150px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center] text-sm text-gray-700 bg-white"
+                                    className="h-9 border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 outline-none focus:border-indigo-500 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-zinc-800"
                                     value={orderTypeFilter} 
                                     onChange={(e) => {
                                         const newVal = e.target.value;
@@ -665,8 +789,10 @@ export default function InboundPage() {
                                         <option key={t.id} value={t.id}>{t.name}</option>
                                     ))}
                                 </select>
+
+                                {/* Status */}
                                 <select 
-                                    className="w-full md:w-[160px] h-10 border border-gray-200 rounded-lg px-3 outline-none focus:border-indigo-500 appearance-none bg-no-repeat bg-[right_0.75rem_center]"
+                                    className="h-9 border border-gray-200 dark:border-zinc-700 rounded-lg px-2.5 outline-none focus:border-indigo-500 text-xs text-gray-700 dark:text-gray-200 bg-white dark:bg-zinc-800"
                                     value={statusFilter} 
                                     onChange={(e) => {
                                         const newVal = e.target.value;
@@ -682,14 +808,43 @@ export default function InboundPage() {
                                     <option value="Completed">Đã hoàn tất</option>
                                     <option value="Cancelled">Đã hủy</option>
                                 </select>
-                                <button 
-                                    id="search-trigger-inbound"
-                                    className="hidden" 
+
+                                {/* Filter Submit Button */}
+                                <button
                                     onClick={() => {
-                                        if (searchQuery.trim()) handleSearch();
-                                        else fetchOrders(0);
+                                        if (searchQuery.trim()) handleSearch()
+                                        else fetchOrders(0)
                                     }}
-                                />
+                                    className="h-9 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                >
+                                    <Filter className="w-3.5 h-3.5" />
+                                    <span>Lọc</span>
+                                </button>
+
+                                {/* Reset Filter Button if active */}
+                                {(startDate || endDate || statusFilter !== 'all' || orderTypeFilter !== 'all' || searchQuery || searchType !== 'all') && (
+                                    <button
+                                        onClick={() => {
+                                            setStartDate('')
+                                            setEndDate('')
+                                            setStatusFilter('all')
+                                            setOrderTypeFilter('all')
+                                            setSearchQuery('')
+                                            setSearchType('all')
+                                            setCurrentPage(0)
+                                            fetchOrders(0, '', '', 'all', 'all')
+                                        }}
+                                        className="h-9 px-2.5 text-xs text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                                        title="Đặt lại bộ lọc"
+                                    >
+                                        Đặt lại
+                                    </button>
+                                )}
+                            </div>
+
+                            {/* Result stats */}
+                            <div className="text-xs text-stone-500 hidden sm:block">
+                                Tìm thấy: <strong className="text-stone-800 dark:text-stone-200">{totalCount}</strong> phiếu
                             </div>
                         </div>
                     </div>
@@ -783,47 +938,39 @@ export default function InboundPage() {
                                                         </span>
                                                     </td>
                                                     <td className="px-3 py-3 whitespace-nowrap text-right">
-                                                        <div className="flex justify-end items-center gap-2">
+                                                        <div className="inline-flex items-center justify-end gap-1">
+                                                            {/* Quick Print Button */}
                                                             <button 
-                                                                className="p-1.5 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
-                                                                onClick={() => { setSelectedOrderId(order.id); setIsDetailModalOpen(true); }}
-                                                                title="Xem chi tiết"
+                                                                onClick={() => window.open(`/print/inbound?id=${order.id}`, '_blank')}
+                                                                className="p-1.5 text-stone-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-colors cursor-pointer"
+                                                                title="In phiếu nhập"
                                                             >
-                                                                <ExternalLink className="w-4 h-4" />
+                                                                <Printer className="w-4 h-4" />
                                                             </button>
-                                                            {order.status !== 'Cancelled' && (
-                                                                <button 
-                                                                    className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                                                    onClick={() => { setSelectedOrderId(order.id); setIsCreateModalOpen(true); }}
-                                                                    title="Sửa phiếu"
-                                                                >
-                                                                    <Edit2 className="w-4 h-4" />
-                                                                 </button>
-                                                            )}
-                                                            {(order.status === 'Pending' || order.status === 'Cancelled') && (
-                                                                <button 
-                                                                    className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
-                                                                    onClick={() => handleDeleteOrder(order.id, order.code)}
-                                                                    title="Xóa phiếu"
-                                                                >
-                                                                    <Trash2 className="w-4 h-4" />
-                                                                </button>
-                                                            )}
-                                                            {order.status === 'Completed' && (
-                                                                <button 
-                                                                    className="p-1.5 text-gray-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors"
-                                                                    onClick={() => handleResetToPending(order.id, order.code)}
-                                                                    title="Quay lại Chờ duyệt"
-                                                                >
-                                                                    <RotateCcw className="w-4 h-4" />
-                                                                </button>
-                                                            )}
+
+                                                            {/* More Actions Toggle */}
                                                             <button 
-                                                                className="p-1.5 text-gray-400 hover:text-cyan-600 hover:bg-cyan-50 rounded transition-colors"
-                                                                onClick={() => { setDuplicateOrderId(order.id); setSelectedOrderId(null); setIsCreateModalOpen(true); }}
-                                                                title="Nhân bản phiếu"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation()
+                                                                    if (actionMenu?.id === order.id) {
+                                                                        setActionMenu(null)
+                                                                    } else {
+                                                                        const rect = e.currentTarget.getBoundingClientRect()
+                                                                        const spaceBelow = window.innerHeight - rect.bottom
+                                                                        const spaceAbove = rect.top
+                                                                        const openUp = spaceBelow < 200 && spaceAbove > spaceBelow
+                                                                        setActionMenu({
+                                                                            id: order.id,
+                                                                            top: openUp ? undefined : rect.bottom + 4,
+                                                                            bottom: openUp ? window.innerHeight - rect.top + 4 : undefined,
+                                                                            right: Math.max(8, window.innerWidth - rect.right)
+                                                                        })
+                                                                    }
+                                                                }}
+                                                                className="p-1.5 text-stone-500 hover:text-stone-800 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                                                                title="Thao tác khác"
                                                             >
-                                                                <Copy className="w-4 h-4" />
+                                                                <MoreHorizontal className="w-4 h-4" />
                                                             </button>
                                                         </div>
                                                     </td>
@@ -846,6 +993,180 @@ export default function InboundPage() {
                                 </table>
                             </div>
                         )}
+
+                        {/* Fixed Action Menu Dropdown */}
+                        {actionMenu && (() => {
+                            const currentActionOrder = orders.find(o => o.id === actionMenu.id)
+                            if (!currentActionOrder) return null
+
+                            return (
+                                <>
+                                    <div
+                                        className="fixed z-50 w-44 bg-white dark:bg-zinc-800 rounded-xl shadow-2xl border border-stone-200 dark:border-zinc-700 py-1 text-left animate-in fade-in zoom-in-95 duration-100"
+                                        style={{
+                                            ...(actionMenu.top !== undefined ? { top: `${actionMenu.top}px` } : {}),
+                                            ...(actionMenu.bottom !== undefined ? { bottom: `${actionMenu.bottom}px` } : {}),
+                                            right: `${actionMenu.right}px`
+                                        }}
+                                    >
+                                        <button
+                                            onClick={() => {
+                                                const id = actionMenu.id
+                                                setActionMenu(null)
+                                                setSelectedOrderId(id)
+                                                setIsDetailModalOpen(true)
+                                            }}
+                                            className="w-full px-3 py-1.5 text-xs text-stone-700 dark:text-gray-200 hover:bg-emerald-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                            <Eye size={13} className="text-emerald-600" />
+                                            <span>Xem chi tiết</span>
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                const id = actionMenu.id
+                                                setActionMenu(null)
+                                                window.open(`/print/inbound?id=${id}`, '_blank')
+                                            }}
+                                            className="w-full px-3 py-1.5 text-xs text-stone-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                            <Printer size={13} className="text-blue-600" />
+                                            <span>In phiếu</span>
+                                        </button>
+                                        {currentActionOrder.status !== 'Cancelled' && (
+                                            <button
+                                                onClick={() => {
+                                                    const id = actionMenu.id
+                                                    setActionMenu(null)
+                                                    setSelectedOrderId(id)
+                                                    setIsCreateModalOpen(true)
+                                                }}
+                                                className="w-full px-3 py-1.5 text-xs text-stone-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer"
+                                            >
+                                                <Edit2 size={13} className="text-amber-600" />
+                                                <span>Sửa phiếu</span>
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={() => {
+                                                const id = actionMenu.id
+                                                setActionMenu(null)
+                                                setDuplicateOrderId(id)
+                                                setSelectedOrderId(null)
+                                                setIsCreateModalOpen(true)
+                                            }}
+                                            className="w-full px-3 py-1.5 text-xs text-stone-700 dark:text-gray-200 hover:bg-purple-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                            <Copy size={13} className="text-purple-600" />
+                                            <span>Nhân bản</span>
+                                        </button>
+                                        {currentActionOrder.status === 'Completed' && (
+                                            <button
+                                                onClick={() => {
+                                                    const id = actionMenu.id
+                                                    const code = currentActionOrder.code
+                                                    setActionMenu(null)
+                                                    handleResetToPending(id, code)
+                                                }}
+                                                className="w-full px-3 py-1.5 text-xs text-stone-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer"
+                                            >
+                                                <RotateCcw size={13} className="text-amber-600" />
+                                                <span>Quay lại Chờ duyệt</span>
+                                            </button>
+                                        )}
+                                        {(currentActionOrder.status === 'Pending' || currentActionOrder.status === 'Cancelled') && (
+                                            <>
+                                                <div className="my-1 border-t border-stone-100 dark:border-zinc-700" />
+                                                <button
+                                                    onClick={() => {
+                                                        const id = actionMenu.id
+                                                        const code = currentActionOrder.code
+                                                        setActionMenu(null)
+                                                        handleDeleteOrder(id, code)
+                                                    }}
+                                                    className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                                >
+                                                    <Trash2 size={13} />
+                                                    <span>Xóa phiếu</span>
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                    <div
+                                        className="fixed inset-0 z-40 bg-transparent cursor-default"
+                                        onClick={() => setActionMenu(null)}
+                                    />
+                                </>
+                            )
+                        })()}
+
+                        {/* Modal Quick Preview Items */}
+                        {previewItemsOrder && (
+                            <div
+                                className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-150"
+                                onClick={() => setPreviewItemsOrder(null)}
+                            >
+                                <div
+                                    className="bg-white dark:bg-zinc-800 rounded-2xl shadow-2xl border border-stone-200 dark:border-zinc-700 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-150"
+                                    onClick={(e) => e.stopPropagation()}
+                                >
+                                    <div className="px-5 py-3.5 border-b border-stone-100 dark:border-zinc-700 flex items-center justify-between bg-stone-50/70 dark:bg-zinc-800/70">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-2 bg-indigo-100 text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-400 rounded-lg">
+                                                <Package size={16} />
+                                            </div>
+                                            <div>
+                                                <h3 className="font-bold text-sm text-stone-900 dark:text-white">
+                                                    Danh sách mặt hàng - {previewItemsOrder.code}
+                                                </h3>
+                                                <p className="text-[11px] text-stone-500">
+                                                    {previewItemsOrder.supplier?.name ? `NCC: ${previewItemsOrder.supplier.name} • ` : ''}{previewItemsOrder.items?.length || 0} mặt hàng
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setPreviewItemsOrder(null)}
+                                            className="p-1.5 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-lg transition-colors cursor-pointer"
+                                        >
+                                            <X size={16} />
+                                        </button>
+                                    </div>
+                                    <div className="p-4 max-h-[55vh] overflow-y-auto">
+                                        <table className="w-full text-xs">
+                                            <thead>
+                                                <tr className="border-b border-stone-100 dark:border-zinc-700 text-stone-500 text-[11px] font-semibold uppercase">
+                                                    <th className="pb-2 text-left">Tên hàng hóa</th>
+                                                    <th className="pb-2 text-right">Số lượng</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-100 dark:divide-zinc-700">
+                                                {(previewItemsOrder.items || []).map((it: any, idx: number) => (
+                                                    <tr key={idx} className="hover:bg-stone-50/50 dark:hover:bg-zinc-700/30">
+                                                        <td className="py-2.5 font-medium text-stone-800 dark:text-stone-200">
+                                                            {it.products?.internal_name || it.product_name}
+                                                        </td>
+                                                        <td className="py-2.5 text-right font-bold text-indigo-600 dark:text-indigo-400 whitespace-nowrap">
+                                                            {Number(it.quantity).toLocaleString('vi-VN')} {it.unit || ''}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div className="px-5 py-3 border-t border-stone-100 dark:border-zinc-700 bg-stone-50/50 dark:bg-zinc-800/50 flex items-center justify-between">
+                                        <span className="text-xs text-stone-500">
+                                            Tổng số lượng: <strong className="text-stone-800 dark:text-stone-200">{(previewItemsOrder.items || []).reduce((s: number, i: any) => s + (Number(i.quantity) || 0), 0).toLocaleString('vi-VN')}</strong>
+                                        </span>
+                                        <button
+                                            onClick={() => setPreviewItemsOrder(null)}
+                                            className="px-4 py-1.5 text-xs font-semibold bg-stone-100 hover:bg-stone-200 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-stone-700 dark:text-stone-200 rounded-lg transition-colors cursor-pointer"
+                                        >
+                                            Đóng
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         <div className="px-4 py-3 border-t border-gray-100 bg-gray-50/30">
                             <div className="flex items-center justify-between">
                                 <p className="text-sm text-gray-500">
