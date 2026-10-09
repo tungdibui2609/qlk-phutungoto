@@ -160,6 +160,8 @@ const menuItems: MenuItem[] = [
         icon: Printer,
         children: [
             { id: 'print_bank_report', name: 'Phiếu ngân hàng', href: '/print/bank-report', icon: FileText },
+            { id: 'bank_inbound', name: 'Nhập ngân hàng', href: '/bank-inbound', icon: ArrowDownToLine },
+            { id: 'bank_outbound', name: 'Xuất ngân hàng', href: '/bank-outbound', icon: ArrowUpFromLine },
             { id: 'print_sequence_number', name: 'In số thứ tự', href: '/print/production-lot?type=sheet', icon: Hash },
         ]
     },

@@ -139,6 +139,11 @@ export function PrintBankInbound({
     useEffect(() => {
         if (order.code) {
             setBasisNum(order.code)
+            const parts = order.code.split('/')
+            if (parts.length >= 2) {
+                setDocNumber(parts[0])
+                if (parts[2]) setDocSuffix(parts[2])
+            }
         }
     }, [order.code])
 

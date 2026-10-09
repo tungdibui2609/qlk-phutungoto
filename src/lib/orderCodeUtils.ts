@@ -57,3 +57,38 @@ export async function generateOrderCode(type: 'PNK' | 'PXK' | 'SITE' | 'PROD', s
     const xxxx = String(nextStt).padStart(4, '0')
     return `${prefix}${xxxx}/${mmyy}/${suffix}`
 }
+
+/**
+ * Generates sequential code for Bank orders:
+ * xxxx/mmyy/LNK (Inbound / Lệnh Nhập Kho) or xxxx/mmyy/LXK (Outbound / Lệnh Xuất Kho)
+ */
+export async function generateBankOrderCode(type: 'BANK_INBOUND' | 'BANK_OUTBOUND') {
+    const today = new Date()
+    const month = String(today.getMonth() + 1).padStart(2, '0')
+    const year = String(today.getFullYear()).slice(-2)
+    const mmyy = `${month}${year}`
+
+    const suffix = type === 'BANK_INBOUND' ? 'LNK' : 'LXK'
+    const tableName = type === 'BANK_INBOUND' ? 'bank_inbound_orders' : 'bank_outbound_orders'
+    const pattern = `%/${mmyy}/${suffix}`
+
+    const { data } = await supabase
+        .from(tableName as any)
+        .select('code')
+        .like('code', pattern)
+        .order('code', { ascending: false })
+        .limit(1)
+
+    let nextStt = 1
+    if (data && (data as any[]).length > 0) {
+        const lastCode = (data as any[])[0].code
+        const parts = lastCode.split('/')
+        const lastStt = parseInt(parts[0], 10)
+        if (!isNaN(lastStt)) {
+            nextStt = lastStt + 1
+        }
+    }
+
+    const xxxx = String(nextStt).padStart(4, '0')
+    return `${xxxx}/${mmyy}/${suffix}`
+}

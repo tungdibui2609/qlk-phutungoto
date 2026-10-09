@@ -223,13 +223,35 @@ function OutboundPrintContent() {
 
                 // Fetch order FIRST if not passed (to get company_id)
                 let orderData = passedOrderData
+                const isBankSource = searchParams.get('source') === 'bank'
+
                 if (!orderData) {
-                    const { data } = await supabase
-                        .from('outbound_orders')
-                        .select('*, company_id')
-                        .eq('id', orderId)
-                        .single()
-                    orderData = data
+                    if (isBankSource) {
+                        const { data } = await supabase
+                            .from('bank_outbound_orders' as any)
+                            .select('*, company_id')
+                            .eq('id', orderId)
+                            .single()
+                        orderData = data
+                    } else {
+                        const { data, error } = await supabase
+                            .from('outbound_orders')
+                            .select('*, company_id')
+                            .eq('id', orderId)
+                            .single()
+                        
+                        if (data) {
+                            orderData = data
+                        } else {
+                            // Fallback to bank_outbound_orders if not found
+                            const { data: bankData } = await supabase
+                                .from('bank_outbound_orders' as any)
+                                .select('*, company_id')
+                                .eq('id', orderId)
+                                .single()
+                            orderData = bankData
+                        }
+                    }
                 }
 
                 if (orderData) {
@@ -317,8 +339,9 @@ function OutboundPrintContent() {
                     }
 
                     if (!itemsData) {
+                        const itemsTable = isBankSource ? 'bank_outbound_order_items' : 'outbound_order_items'
                         const { data } = await supabase
-                            .from('outbound_order_items')
+                            .from(itemsTable as any)
                             .select(`
                                 *,
                                 products (
@@ -333,7 +356,31 @@ function OutboundPrintContent() {
                                 )
                             `)
                             .eq('order_id', orderId)
-                        itemsData = data
+                        
+                        if (data && data.length > 0) {
+                            itemsData = data
+                        } else if (!isBankSource) {
+                            // Fallback check bank_outbound_order_items
+                            const { data: bankItems } = await supabase
+                                .from('bank_outbound_order_items' as any)
+                                .select(`
+                                    *,
+                                    products (
+                                        sku,
+                                        internal_code,
+                                        internal_name,
+                                        unit,
+                                        product_units (
+                                            unit_id,
+                                            conversion_rate
+                                        )
+                                    )
+                                `)
+                                .eq('order_id', orderId)
+                            if (bankItems && bankItems.length > 0) {
+                                itemsData = bankItems
+                            }
+                        }
                     }
 
                     if (itemsData) {
