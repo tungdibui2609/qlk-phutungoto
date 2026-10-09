@@ -60,6 +60,7 @@ DECLARE
     raw_date text;
     clean_l2 text;
     dd text; mm text; yy text;
+    is_stamp boolean;
 BEGIN
     IF target_lot_id IS NULL THEN
         RETURN;
@@ -89,10 +90,19 @@ BEGIN
         FROM public.box_labels 
         WHERE lot_id = target_lot_id
     LOOP
-        -- Kiểm tra tem dấu mực
-        IF (rec.metadata->>'scan_type' = 'stamp' OR rec.metadata ? 'stamp_line1' OR rec.metadata ? 'stamp_line2' OR rec.code LIKE 'STAMP-%') THEN
-            raw_date := COALESCE(rec.metadata->>'production_date', rec.metadata->>'raw_material_date', rec.metadata->>'inbound_date');
-            IF (raw_date IS NULL OR raw_date = '' OR raw_date = '---') AND rec.metadata ? 'stamp_line2' THEN
+        -- Kiểm tra chính xác xem có phải tem đóng dấu mực không
+        -- Chú ý: Tránh dùng operator '?' vì nếu 'stamp_line1': null thì operator '?' vẫn trả về TRUE
+        is_stamp := (
+            COALESCE(rec.metadata->>'scan_type', '') = 'stamp' 
+            OR rec.code LIKE 'STAMP-%'
+            OR (rec.metadata->>'stamp_line1' IS NOT NULL AND trim(rec.metadata->>'stamp_line1') <> '')
+            OR (rec.metadata->>'stamp_line2' IS NOT NULL AND trim(rec.metadata->>'stamp_line2') <> '')
+        );
+
+        IF is_stamp THEN
+            -- Tem dấu mực: Bóc tách ngày nhập nguyên liệu từ dòng 2
+            raw_date := COALESCE(rec.metadata->>'raw_material_date', rec.metadata->>'inbound_date', rec.metadata->>'production_date');
+            IF (raw_date IS NULL OR raw_date = '' OR raw_date = '---') AND (rec.metadata->>'stamp_line2' IS NOT NULL) THEN
                 clean_l2 := regexp_replace(rec.metadata->>'stamp_line2', '[^0-9]', '', 'g');
                 IF length(clean_l2) >= 11 THEN
                     dd := substr(clean_l2, 6, 2);
@@ -107,7 +117,7 @@ BEGIN
                 detected_raw_material_date := parsed_date;
             END IF;
         ELSE
-            -- Tem nhãn: Trích xuất Ngày sản xuất
+            -- Tem nhãn thành phẩm: Trích xuất Ngày sản xuất (production_date)
             parsed_date := public.parse_date_to_iso(rec.metadata->>'production_date');
             IF parsed_date IS NOT NULL THEN
                 scanned_dates := array_append(scanned_dates, parsed_date);

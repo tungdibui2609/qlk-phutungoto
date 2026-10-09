@@ -894,8 +894,8 @@ export default function PalletsPageContent() {
                                                                     <span className="font-bold text-stone-700 dark:text-zinc-300 truncate block">{meta.shift_group || '---'}</span>
                                                                 </div>
                                                                 <div>
-                                                                    <span className="text-stone-400 block">Vùng NL:</span>
-                                                                    <span className="font-bold text-stone-700 dark:text-zinc-300 truncate block">{meta.region || '---'}</span>
+                                                                    <span className="text-stone-400 block">Ngày SX:</span>
+                                                                    <span className="font-bold text-amber-600 dark:text-amber-400 truncate block">{meta.production_date || '---'}</span>
                                                                 </div>
                                                                 <div>
                                                                     <span className="text-stone-400 block">Ngày ĐG:</span>
@@ -1231,6 +1231,7 @@ export default function PalletsPageContent() {
                                                 <p>Lô tem: <strong className="text-stone-700 dark:text-zinc-300">{box.finished_lot_code || box.semi_finished_lot_code || '---'}</strong></p>
                                                 <p>Quy cách: <strong className="text-stone-700 dark:text-zinc-300">{meta.spec || '---'}</strong></p>
                                                 <p>Tổ: <strong className="text-stone-700 dark:text-zinc-300">{meta.shift_group || '---'}</strong></p>
+                                                <p>Ngày SX: <strong className="text-amber-600 dark:text-amber-400">{meta.production_date || '---'}</strong></p>
                                                 <p>Ngày ĐG: <strong className="text-stone-700 dark:text-zinc-300">{meta.packaging_date || '---'}</strong></p>
                                             </div>
                                         )}
