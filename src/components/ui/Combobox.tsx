@@ -13,6 +13,7 @@ export interface ComboboxOption {
 
 interface ComboboxProps {
     options: ComboboxOption[]
+    optionsMap?: Map<string, ComboboxOption>
     value?: string | null
     onChange: (value: string | null) => void
     onSearchChange?: (value: string) => void
@@ -30,6 +31,7 @@ interface ComboboxProps {
 
 export function Combobox({
     options,
+    optionsMap,
     value,
     onChange,
     onSearchChange,
@@ -92,10 +94,10 @@ export function Combobox({
     }, [])
 
     // Find selected option object
-    const selectedOption = useMemo(() =>
-        options.find(option => option.value === value),
-        [options, value]
-    )
+    const selectedOption = useMemo(() => {
+        if (optionsMap && value) return optionsMap.get(value) || null
+        return options.find(option => option.value === value)
+    }, [options, optionsMap, value])
 
     // Filter options based on search term
     // Filter and Sort options based on search term

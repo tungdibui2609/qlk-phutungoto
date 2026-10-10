@@ -56,6 +56,14 @@ function OutboundItemsTableComponent({
         return map
     }, [products])
 
+    const productOptionMap = useMemo(() => {
+        const map = new Map<string, any>()
+        for (const opt of productOptions) {
+            map.set(opt.value, opt)
+        }
+        return map
+    }, [productOptions])
+
     const productBaseQtyMap = useMemo(() => {
         const map = new Map<string, number>()
         for (const i of items) {
@@ -206,6 +214,7 @@ function OutboundItemsTableComponent({
                                     <td className="px-4 py-3 align-top">
                                         <Combobox
                                             options={productOptions}
+                                            optionsMap={productOptionMap}
                                             value={item.productId}
                                             onChange={(val) => updateItem(item.id, 'productId', val)}
                                             onPaste={(e) => handleProductPaste(index, e)}
@@ -385,6 +394,7 @@ function OutboundItemsTableComponent({
                                 <label className="text-xs text-stone-500">Sản phẩm</label>
                                 <Combobox
                                     options={productOptions}
+                                    optionsMap={productOptionMap}
                                     value={item.productId}
                                     onChange={(val) => updateItem(item.id, 'productId', val)}
                                     onPaste={(e) => handleProductPaste(index, e)}
@@ -554,4 +564,15 @@ function OutboundItemsTableComponent({
     )
 }
 
-export const OutboundItemsTable = React.memo(OutboundItemsTableComponent)
+export const OutboundItemsTable = React.memo(OutboundItemsTableComponent, (prevProps, nextProps) => {
+    // Only re-render if items data or relevant configuration changed
+    if (prevProps.items !== nextProps.items) return false
+    if (prevProps.products !== nextProps.products) return false
+    if (prevProps.units !== nextProps.units) return false
+    if (prevProps.categories !== nextProps.categories) return false
+    if (prevProps.targetUnit !== nextProps.targetUnit) return false
+    if (prevProps.compact !== nextProps.compact) return false
+    if (prevProps.displayInternalCode !== nextProps.displayInternalCode) return false
+    // Skip re-rendering when parent modal re-renders due to description/header changes!
+    return true
+})

@@ -57,6 +57,14 @@ function InboundItemsTableComponent({
         return map
     }, [products])
 
+    const productOptionMap = useMemo(() => {
+        const map = new Map<string, any>()
+        for (const opt of productOptions) {
+            map.set(opt.value, opt)
+        }
+        return map
+    }, [productOptions])
+
     const handleInputFocus = (id: string, field: string, currentVal: number | string | null | undefined) => {
         const displayVal = currentVal?.toString().replace('.', ',') || ''
         setEditingValue({ id, field, value: displayVal })
@@ -180,6 +188,7 @@ function InboundItemsTableComponent({
                                 <td className="px-4 py-3 align-top">
                                     <Combobox
                                         options={productOptions}
+                                        optionsMap={productOptionMap}
                                         value={item.productId}
                                         onChange={(val) => updateItem(item.id, 'productId', val)}
                                         onPaste={(e) => handleProductPaste(index, e)}
@@ -258,7 +267,7 @@ function InboundItemsTableComponent({
                                     <td className="px-4 py-3 text-center font-medium text-orange-600">
                                         {(() => {
                                             if (!item.quantity || !item.unit || !item.productId) return '-'
-                                            const product = products.find(p => p.id === item.productId)
+                                            const product = productMap.get(item.productId)
                                             if (!product) return '-'
 
                                             const val = convertUnit(
@@ -334,6 +343,7 @@ function InboundItemsTableComponent({
                             <label className="text-xs text-stone-500">Sản phẩm</label>
                             <Combobox
                                 options={productOptions}
+                                optionsMap={productOptionMap}
                                 value={item.productId}
                                 onChange={(val) => updateItem(item.id, 'productId', val)}
                                 onPaste={(e) => handleProductPaste(index, e)}
@@ -417,7 +427,7 @@ function InboundItemsTableComponent({
                                 <span className="font-bold">
                                     {(() => {
                                         if (!item.quantity || !item.unit || !item.productId) return '-'
-                                        const product = products.find(p => p.id === item.productId)
+                                        const product = productMap.get(item.productId)
                                         if (!product) return '-'
 
                                         const val = convertUnit(
@@ -484,4 +494,15 @@ function InboundItemsTableComponent({
     )
 }
 
-export const InboundItemsTable = React.memo(InboundItemsTableComponent)
+export const InboundItemsTable = React.memo(InboundItemsTableComponent, (prevProps, nextProps) => {
+    // Only re-render if items data or relevant configuration changed
+    if (prevProps.items !== nextProps.items) return false
+    if (prevProps.products !== nextProps.products) return false
+    if (prevProps.units !== nextProps.units) return false
+    if (prevProps.categories !== nextProps.categories) return false
+    if (prevProps.targetUnit !== nextProps.targetUnit) return false
+    if (prevProps.compact !== nextProps.compact) return false
+    if (prevProps.displayInternalCode !== nextProps.displayInternalCode) return false
+    // Skip re-rendering when parent modal re-renders due to description/header changes!
+    return true
+})

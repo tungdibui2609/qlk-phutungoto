@@ -6,6 +6,7 @@ import { format } from 'date-fns'
 import { OrderFormLayout } from '@/components/inventory/shared/OrderFormLayout'
 import { OutboundItemsTable } from '@/components/inventory/outbound/OutboundItemsTable'
 import { Combobox } from '@/components/ui/Combobox'
+import { FastTextInput } from '@/components/ui/FastTextInput'
 import { Product, Unit, OrderItem } from '@/components/inventory/types'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -500,10 +501,9 @@ export default function BankOutboundOrderModal({
                             placeholder="Số điện thoại..."
                             className="w-full h-8 px-3 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-stone-700 dark:text-gray-300 placeholder:text-stone-400"
                         />
-                        <input
-                            type="text"
+                        <FastTextInput
                             value={description}
-                            onChange={(e) => setDescription(e.target.value)}
+                            onChange={setDescription}
                             placeholder="Diễn giải / Ghi chú thêm trên phiếu..."
                             className="w-full h-8 px-3 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-stone-700 dark:text-gray-300 placeholder:text-stone-400"
                         />

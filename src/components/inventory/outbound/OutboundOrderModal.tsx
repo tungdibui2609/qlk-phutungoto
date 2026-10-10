@@ -7,6 +7,7 @@ import { LogisticsSection } from '../shared/LogisticsSection'
 import { OrderImagesSection } from '../shared/OrderImagesSection'
 import { OutboundItemsTable } from './OutboundItemsTable'
 import { Combobox } from '@/components/ui/Combobox'
+import { FastTextInput } from '@/components/ui/FastTextInput'
 import { useOutboundOrder } from './useOutboundOrder'
 import { OrderFormProps } from '@/components/inventory/types'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -100,10 +101,9 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                             <label className="block text-[11px] font-semibold text-stone-600 dark:text-gray-300 mb-1">
                                 Mã phiếu
                             </label>
-                            <input
-                                type="text"
+                            <FastTextInput
                                 value={code}
-                                onChange={(e) => setCode(e.target.value)}
+                                onChange={setCode}
                                 className="w-full h-9 px-3 text-xs font-mono font-bold bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 text-stone-900 dark:text-white"
                             />
                         </div>
@@ -202,26 +202,23 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-0.5">
                         {hasModule('outbound_customer') && (
                             <>
-                                <input
-                                    type="text"
+                                <FastTextInput
                                     value={customerAddress}
-                                    onChange={(e) => setCustomerAddress(e.target.value)}
+                                    onChange={setCustomerAddress}
                                     placeholder="Địa chỉ khách hàng..."
                                     className="w-full h-8 px-3 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 text-stone-700 dark:text-gray-300 placeholder:text-stone-400"
                                 />
-                                <input
-                                    type="text"
+                                <FastTextInput
                                     value={customerPhone}
-                                    onChange={(e) => setCustomerPhone(e.target.value)}
+                                    onChange={setCustomerPhone}
                                     placeholder="Số điện thoại khách hàng..."
                                     className="w-full h-8 px-3 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 text-stone-700 dark:text-gray-300 placeholder:text-stone-400"
                                 />
                             </>
                         )}
-                        <input
-                            type="text"
+                        <FastTextInput
                             value={description}
-                            onChange={(e) => setDescription(e.target.value)}
+                            onChange={setDescription}
                             placeholder="Diễn giải / Ghi chú trên phiếu..."
                             className={`w-full h-8 px-3 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-orange-500 text-stone-700 dark:text-gray-300 placeholder:text-stone-400 ${!hasModule('outbound_customer') ? 'sm:col-span-3' : ''}`}
                         />
