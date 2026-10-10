@@ -20,7 +20,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         customerPhone, setCustomerPhone,
         warehouseName, setWarehouseName,
         description, setDescription,
-        items, addItem, updateItem, removeItem,
+        items, setItems, addItem, updateItem, removeItem,
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
@@ -32,7 +32,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
         products, customers, branches, units, orderTypes, categories,
         loadingData, submitting, handleSubmit,
         hasModule, confirmDialog, setConfirmDialog, handleCustomerSelect,
-        convertUnit
+        convertUnit, checkUnbundle
     } = useOutboundOrder({ ...props, editOrderId: props.editOrderId, duplicateOrderId: props.duplicateOrderId })
 
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
@@ -246,6 +246,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                 <div className="space-y-3">
                     <OutboundItemsTable
                         items={items}
+                        setItems={setItems}
                         products={products}
                         units={units}
                         categories={categories}
@@ -256,6 +257,7 @@ export default function OutboundOrderModal(props: OrderFormProps<any> & { editOr
                         compact={hasModule('outbound_ui_compact')}
                         displayInternalCode={displayInternalCode}
                         convertUnit={convertUnit}
+                        checkUnbundle={checkUnbundle}
                     />
 
                     <button

@@ -16,6 +16,7 @@ interface ComboboxProps {
     value?: string | null
     onChange: (value: string | null) => void
     onSearchChange?: (value: string) => void
+    onPaste?: (e: React.ClipboardEvent<any>) => void
     placeholder?: string
     className?: string
     disabled?: boolean
@@ -32,6 +33,7 @@ export function Combobox({
     value,
     onChange,
     onSearchChange,
+    onPaste,
     placeholder = 'Select option...',
     className = '',
     disabled = false,
@@ -146,6 +148,8 @@ export function Combobox({
                     ${disabled ? 'opacity-60 cursor-not-allowed' : 'cursor-text'}
                     transition-all duration-200
                 `}
+                tabIndex={disabled ? -1 : 0}
+                onPaste={onPaste}
                 onClick={() => {
                     if (!disabled) {
                         setIsOpen(true)
@@ -176,6 +180,7 @@ export function Combobox({
                             if (onSearchChange) onSearchChange(e.target.value)
                         }}
                         onFocus={() => setIsOpen(true)}
+                        onPaste={onPaste}
                         disabled={disabled}
                     />
                 )}

@@ -19,7 +19,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
         supplierPhone, setSupplierPhone,
         warehouseName, setWarehouseName,
         description, setDescription,
-        items, addItem, updateItem, removeItem,
+        items, setItems, addItem, updateItem, removeItem,
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
@@ -258,6 +258,7 @@ export default function InboundOrderModal(props: OrderFormProps<any>) {
             <div className="space-y-3">
                 <InboundItemsTable
                     items={items}
+                    setItems={setItems}
                     products={products}
                     units={units}
                     categories={categories}

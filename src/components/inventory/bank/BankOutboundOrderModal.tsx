@@ -514,6 +514,7 @@ export default function BankOutboundOrderModal({
                 <div className="space-y-3">
                     <OutboundItemsTable
                         items={items}
+                        setItems={setItems}
                         products={products}
                         units={units}
                         categories={categories}

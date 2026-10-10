@@ -500,7 +500,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         customerPhone, setCustomerPhone,
         warehouseName, setWarehouseName,
         description, setDescription,
-        items, addItem, updateItem, removeItem,
+        items, setItems, addItem, updateItem, removeItem,
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,
@@ -514,6 +514,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         handleCustomerSelect,
         confirmDialog, setConfirmDialog,
         hasModule,
-        convertUnit
+        convertUnit,
+        checkUnbundle
     }
 }

@@ -11,6 +11,8 @@ interface MobileProductListProps {
     onView: (product: ProductWithCategory) => void;
     onDelete: (id: string) => void;
     showActions?: boolean;
+    selectedIds?: Set<string>;
+    onToggleSelect?: (id: string) => void;
 }
 
 export default function MobileProductList({
@@ -18,7 +20,9 @@ export default function MobileProductList({
     unitsMap,
     onView,
     onDelete,
-    showActions = true
+    showActions = true,
+    selectedIds,
+    onToggleSelect
 }: MobileProductListProps) {
     if (products.length === 0) {
         return (
@@ -34,9 +38,30 @@ export default function MobileProductList({
             {products.map((item) => (
                 <div
                     key={item.id}
-                    className="bg-white border rounded-xl border-stone-200 shadow-sm overflow-hidden active:scale-[0.99] transition-transform"
+                    className={`bg-white border rounded-xl shadow-sm overflow-hidden active:scale-[0.99] transition-all ${
+                        selectedIds?.has(item.id)
+                            ? 'border-orange-500 ring-2 ring-orange-400/30 bg-orange-50/20'
+                            : 'border-stone-200'
+                    }`}
                     onClick={() => onView(item)}
                 >
+                    {onToggleSelect && (
+                        <div
+                            className="px-4 py-2 border-b border-stone-100 flex items-center justify-between bg-stone-50/60"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-stone-700">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedIds?.has(item.id) || false}
+                                    onChange={() => onToggleSelect(item.id)}
+                                    className="w-4 h-4 rounded text-orange-500 focus:ring-orange-400 cursor-pointer accent-orange-500"
+                                />
+                                <span>Chọn xóa</span>
+                            </label>
+                            <span className="text-[10px] font-mono text-stone-400">{item.sku}</span>
+                        </div>
+                    )}
                     <div className="flex p-4 gap-4">
                         {/* Image */}
                         <div className="w-20 h-20 rounded-lg bg-stone-100 flex-shrink-0 flex items-center justify-center overflow-hidden border border-stone-100">

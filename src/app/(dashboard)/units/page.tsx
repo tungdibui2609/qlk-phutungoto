@@ -166,9 +166,43 @@ export default function UnitsPage() {
                                     value={newName}
                                     onChange={(e) => setNewName(e.target.value)}
                                     className="w-full p-3 rounded-xl bg-white border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-2 focus:ring-orange-100"
-                                    placeholder="VD: Cái, Hộp, Bộ..."
+                                    placeholder="VD: m², Cái, Hộp, Bộ, Cuộn, Tấm..."
                                     autoFocus
                                 />
+                                <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                                    <span className="text-xs text-stone-500 font-medium">Gợi ý nhanh:</span>
+                                    {[
+                                        { label: 'm²', desc: 'Mét vuông (Diện tích)' },
+                                        { label: 'm³', desc: 'Mét khối (Thể tích)' },
+                                        { label: 'm', desc: 'Mét (Chiều dài)' },
+                                        { label: 'Cuộn', desc: 'Cuộn' },
+                                        { label: 'Tấm', desc: 'Tấm' },
+                                        { label: 'Cái', desc: 'Cái' },
+                                        { label: 'Hộp', desc: 'Hộp' },
+                                        { label: 'Bộ', desc: 'Bộ' },
+                                        { label: 'Kg', desc: 'Kilogram' },
+                                    ].map(s => (
+                                        <button
+                                            key={s.label}
+                                            type="button"
+                                            onClick={() => {
+                                                setNewName(s.label)
+                                                if (!newDescription) setNewDescription(s.desc)
+                                            }}
+                                            className="px-2 py-0.5 text-xs font-semibold rounded-lg bg-white hover:bg-orange-100 hover:text-orange-700 text-stone-600 border border-stone-200 transition-colors"
+                                        >
+                                            {s.label}
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => setNewName(prev => prev + '²')}
+                                        className="px-2 py-0.5 text-xs font-bold rounded-lg bg-orange-100 text-orange-700 hover:bg-orange-200 border border-orange-200 transition-colors"
+                                        title="Chèn nhanh ký tự số 2 mũ (²)"
+                                    >
+                                        + ²
+                                    </button>
+                                </div>
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-stone-700 mb-2">Mô tả</label>
@@ -241,12 +275,22 @@ export default function UnitsPage() {
                                 <tr key={unit.id} className="hover:bg-stone-50 transition-colors group">
                                     <td className="px-5 py-4">
                                         {editingId === unit.id ? (
-                                            <input
-                                                value={editName}
-                                                onChange={(e) => setEditName(e.target.value)}
-                                                className="w-full p-2 rounded-lg border border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
-                                                autoFocus
-                                            />
+                                            <div className="flex items-center gap-1.5">
+                                                <input
+                                                    value={editName}
+                                                    onChange={(e) => setEditName(e.target.value)}
+                                                    className="w-full p-2 rounded-lg border border-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-100"
+                                                    autoFocus
+                                                />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setEditName(prev => prev + '²')}
+                                                    className="px-2 py-1.5 text-xs font-bold rounded-lg bg-orange-50 text-orange-700 hover:bg-orange-100 border border-orange-200 transition-colors whitespace-nowrap"
+                                                    title="Chèn ký tự số 2 mũ (²)"
+                                                >
+                                                    + ²
+                                                </button>
+                                            </div>
                                         ) : (
                                             <div className="flex items-center gap-3">
                                                 <div className="w-8 h-8 rounded-full bg-orange-100 flex items-center justify-center text-orange-600">

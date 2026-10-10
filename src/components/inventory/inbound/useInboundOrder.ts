@@ -466,7 +466,7 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
         supplierPhone, setSupplierPhone,
         warehouseName, setWarehouseName,
         description, setDescription,
-        items, addItem, updateItem, removeItem,
+        items, setItems, addItem, updateItem, removeItem,
         vehicleNumber, setVehicleNumber,
         driverName, setDriverName,
         containerNumber, setContainerNumber,

@@ -1,10 +1,13 @@
 import React, { useState } from 'react'
-import { Trash2, ChevronDown } from 'lucide-react'
+import { Trash2, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { Product, Unit, OrderItem } from '@/components/inventory/types'
 import { ItemUnitSelect } from '../shared/ItemUnitSelect'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { useToast } from '@/components/ui/ToastProvider'
+import { parseClipboardText, parseClipboardQuantities, applyProductPaste, applyQuantityPaste } from '@/lib/orderPasteUtils'
+import { ExcelPasteModal } from '../shared/ExcelPasteModal'
 
 interface InboundItemsTableProps {
     items: OrderItem[]
@@ -18,11 +21,15 @@ interface InboundItemsTableProps {
     compact?: boolean
     displayInternalCode?: boolean
     convertUnit: (productId: string | null, fromUnit: string | null, toUnit: string | null, qty: number, baseUnit: string | null) => number
+    setItems?: React.Dispatch<React.SetStateAction<OrderItem[]>>
 }
 
 export function InboundItemsTable({
-    items, products, units, categories, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit
+    items, products, units, categories, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit,
+    setItems
 }: InboundItemsTableProps) {
+    const { showToast } = useToast()
+    const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
     const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
 
     const handleInputFocus = (id: string, field: string, currentVal: number | string | null | undefined) => {
@@ -40,9 +47,81 @@ export function InboundItemsTable({
             updateItem(id, field, 0)
         }
     }
+
+    const handleProductPaste = (startIndex: number, e: React.ClipboardEvent) => {
+        if (!setItems) return
+        const text = e.clipboardData?.getData('text')
+        if (!text) return
+
+        if (text.includes('\n') || text.includes('\r') || text.includes('\t')) {
+            e.preventDefault()
+            e.stopPropagation()
+
+            const parsedRows = parseClipboardText(text)
+            if (parsedRows.length === 0) return
+
+            const { newItems, matchedCount, unmatchedCodes } = applyProductPaste({
+                currentItems: items,
+                startIndex,
+                parsedRows,
+                products
+            })
+
+            setItems(newItems)
+
+            if (unmatchedCodes.length === 0) {
+                showToast(`Đã dán thành công ${parsedRows.length} dòng sản phẩm từ Excel!`, 'success')
+            } else {
+                showToast(`Đã dán ${parsedRows.length} dòng (${matchedCount} khớp kho, ${unmatchedCodes.length} mã chưa có trong danh mục).`, 'warning')
+            }
+        }
+    }
+
+    const handleQuantityPaste = (startIndex: number, e: React.ClipboardEvent) => {
+        if (!setItems) return
+        const text = e.clipboardData?.getData('text')
+        if (!text) return
+
+        if (text.includes('\n') || text.includes('\r') || text.includes('\t')) {
+            e.preventDefault()
+            e.stopPropagation()
+
+            const quantities = parseClipboardQuantities(text)
+            if (quantities.length === 0) return
+
+            const { newItems, updatedCount } = applyQuantityPaste({
+                currentItems: items,
+                startIndex,
+                quantities,
+                products
+            })
+
+            setItems(newItems)
+            showToast(`Đã gán số lượng cho ${updatedCount} dòng từ Excel!`, 'success')
+        }
+    }
+
     return (
         <div className="space-y-4">
-            <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-stone-900 dark:text-white">Chi tiết hàng hóa</h3>
+                    <span className="text-[11px] text-stone-400 font-normal">
+                        ({items.length} dòng)
+                    </span>
+                </div>
+                {setItems && (
+                    <button
+                        type="button"
+                        onClick={() => setIsExcelModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-emerald-700 bg-emerald-50 dark:bg-emerald-950/40 dark:text-emerald-400 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 rounded-lg border border-emerald-200/60 dark:border-emerald-800/60 transition-colors cursor-pointer"
+                        title="Dán nhanh danh sách mã sản phẩm và số lượng từ Excel"
+                    >
+                        <FileSpreadsheet size={14} />
+                        <span>Dán từ Excel</span>
+                    </button>
+                )}
+            </div>
 
             {/* Desktop Table View */}
             <div className="hidden md:block border border-stone-200 dark:border-zinc-700 rounded-xl overflow-visible">
@@ -90,6 +169,7 @@ export function InboundItemsTable({
                                         })}
                                         value={item.productId}
                                         onChange={(val) => updateItem(item.id, 'productId', val)}
+                                        onPaste={(e) => handleProductPaste(index, e)}
                                         placeholder="-- Chọn SP --"
                                         className="w-full"
                                         renderValue={(option) => (
@@ -130,6 +210,7 @@ export function InboundItemsTable({
                                             <QuantityInput
                                                 value={item.quantity}
                                                 onChange={(val) => updateItem(item.id, 'quantity', val)}
+                                                onPaste={(e) => handleQuantityPaste(index, e)}
                                                 className="bg-transparent border-none text-right font-bold pr-2 focus:text-orange-600 focus:ring-0"
                                                 placeholder="0"
                                             />
@@ -254,6 +335,7 @@ export function InboundItemsTable({
                                 })}
                                 value={item.productId}
                                 onChange={(val) => updateItem(item.id, 'productId', val)}
+                                onPaste={(e) => handleProductPaste(index, e)}
                                 placeholder="-- Chọn SP --"
                                 className="w-full"
                                 renderValue={(option) => (
@@ -298,6 +380,7 @@ export function InboundItemsTable({
                                         <QuantityInput
                                             value={item.quantity}
                                             onChange={(val) => updateItem(item.id, 'quantity', val)}
+                                            onPaste={(e) => handleQuantityPaste(index, e)}
                                             className="bg-transparent border-none text-right font-bold pr-2 border-b border-stone-200 dark:border-zinc-700 py-1 focus:text-orange-600 focus:ring-0"
                                             placeholder="0"
                                         />
@@ -385,6 +468,17 @@ export function InboundItemsTable({
                     </div>
                 ))}
             </div>
+
+            <ExcelPasteModal
+                isOpen={isExcelModalOpen}
+                onClose={() => setIsExcelModalOpen(false)}
+                products={products}
+                currentItems={items}
+                onApply={(newItems) => {
+                    if (setItems) setItems(newItems)
+                    showToast(`Đã cập nhật ${newItems.length} dòng sản phẩm vào phiếu!`, 'success')
+                }}
+            />
         </div>
     )
 }
