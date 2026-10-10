@@ -3,25 +3,15 @@ import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { 
-    LogIn, 
     Mail, 
     Lock, 
     Loader2, 
-    Info, 
     Eye, 
     EyeOff, 
-    ShieldCheck, 
-    ThermometerSnowflake, 
-    QrCode, 
-    Warehouse, 
-    CheckCircle2, 
-    Sparkles,
-    Boxes,
     ArrowRight,
-    Phone
+    Phone,
+    Coffee
 } from 'lucide-react'
-import Image from 'next/image'
-import { COMPANY_INFO } from '@/lib/constants'
 
 export default function LoginPage() {
     const router = useRouter()
@@ -31,40 +21,45 @@ export default function LoginPage() {
     const [showPassword, setShowPassword] = useState(false)
     const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null)
-    const [companyName, setCompanyName] = useState(COMPANY_INFO.name)
-    const [logoUrl, setLogoUrl] = useState<string | null>(null)
     const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState(false)
+    
+    // Boy awake state: false = sleeping, true = awake with blinking eyes
+    const [isAwake, setIsAwake] = useState(false)
+
+    // Real-time desk clock state
+    const [currentTime, setCurrentTime] = useState<Date | null>(null)
 
     useEffect(() => {
-        // Check for error param
+        setCurrentTime(new Date())
+        const timer = setInterval(() => {
+            setCurrentTime(new Date())
+        }, 1000)
+        return () => clearInterval(timer)
+    }, [])
+
+    const sec = currentTime ? currentTime.getSeconds() : 0
+    const min = currentTime ? currentTime.getMinutes() : 0
+    const hr = currentTime ? currentTime.getHours() : 0
+
+    const secDeg = sec * 6
+    const minDeg = (min + sec / 60) * 6
+    const hourDeg = ((hr % 12) + min / 60) * 30
+
+    useEffect(() => {
         const errorType = searchParams.get('error')
         if (errorType === 'unauthorized_domain') {
             setIsUnauthorizedDomain(true)
             setMessage({
-                text: 'Tài khoản của bạn không thuộc công ty/tên miền này. Vui lòng đăng xuất hoặc truy cập đúng địa chỉ.',
+                text: 'Tài khoản không thuộc công ty/tên miền này. Vui lòng đăng xuất hoặc truy cập đúng địa chỉ.',
                 type: 'error'
             })
         }
     }, [searchParams])
 
-    useEffect(() => {
-        async function fetchCompanySettings() {
-            const { data } = await supabase
-                .from('company_settings')
-                .select('name, logo_url')
-                .maybeSingle()
-
-            if (data) {
-                const settings = data as any
-                if (settings.name) setCompanyName(settings.name)
-                if (settings.logo_url) setLogoUrl(settings.logo_url)
-            }
-        }
-        fetchCompanySettings()
-    }, [])
-
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault()
+        // Wake the boy up immediately on submit / Enter!
+        setIsAwake(true)
         setLoading(true)
         setMessage(null)
 
@@ -79,32 +74,39 @@ export default function LoginPage() {
                 const prefixMatch = signInEmail.match(/^([a-z0-9]+)\.([a-z0-9_.-]+)$/i)
 
                 if (prefixMatch) {
-                    // Looks like a prefixed username! Try standard system email.
                     signInEmail = `${signInEmail}@system.local`
                 } else {
-                    // Legacy logic: Username only -> Use RPC or assume default
-                    const { data: userEmail, error: userError } = await supabase
-                        .rpc('get_user_email_by_username', { p_username: signInEmail })
+                    // Fallback RPC username lookup
+                    const { data: userEmail, error: userError } = await (supabase.rpc as any)(
+                        'get_user_email_by_username',
+                        { p_username: signInEmail }
+                    )
 
                     if (userError || !userEmail) {
                         throw new Error('Tài khoản không tồn tại hoặc sai thông tin.')
                     }
-                    signInEmail = userEmail
+                    signInEmail = userEmail as string
                 }
             }
 
-            // 3. Sign in with the resolved email
+            // 2. Sign in with password
             const { error } = await supabase.auth.signInWithPassword({
                 email: signInEmail,
                 password,
             })
             if (error) throw error
 
-            // Full window navigation ensures all newly set auth cookies are cleanly transmitted
+            // Cho load 3.5s để người dùng chiêm ngưỡng trọn vẹn chuyển động cậu bé tỉnh dậy & chớp mắt!
+            await new Promise((resolve) => setTimeout(resolve, 3500))
+
             window.location.href = '/select-system'
 
         } catch (error: any) {
             setMessage({ text: error.message || 'Đăng nhập thất bại, vui lòng kiểm tra lại.', type: 'error' })
+            // Keep awake briefly to show reaction, then gently sleep if error
+            setTimeout(() => {
+                if (!loading) setIsAwake(false)
+            }, 3500)
         } finally {
             setLoading(false)
         }
@@ -115,182 +117,377 @@ export default function LoginPage() {
         window.location.href = '/login'
     }
 
+
     return (
-        <div className="min-h-screen w-full flex flex-col items-center justify-center p-3 sm:p-6 lg:p-10 relative overflow-hidden bg-emerald-950 font-sans selection:bg-emerald-500 selection:text-white">
-            {/* Ambient Background Lights & Mesh Gradients */}
-            <div className="absolute inset-0 pointer-events-none overflow-hidden">
-                <div className="absolute -top-[25%] -left-[10%] w-[60vw] h-[60vw] rounded-full bg-gradient-to-br from-emerald-600/25 via-teal-500/15 to-transparent blur-3xl animate-pulse duration-[8000ms]" />
-                <div className="absolute -bottom-[20%] -right-[10%] w-[55vw] h-[55vw] rounded-full bg-gradient-to-tl from-amber-500/20 via-emerald-600/15 to-transparent blur-3xl" />
-                <div className="absolute top-1/2 left-1/3 -translate-x-1/2 -translate-y-1/2 w-[40vw] h-[40vw] rounded-full bg-emerald-400/10 blur-[120px] pointer-events-none" />
+        <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 bg-[#f7f4ed] text-[#2d251e] font-sans selection:bg-[#857463] selection:text-white relative overflow-x-hidden">
+            
+            {/* Custom Embedded CSS for Single-Line Doodle Animations */}
+            <style jsx global>{`
+                @keyframes floatZzz {
+                    0% { transform: translate(0, 0) scale(0.8); opacity: 0; }
+                    25% { opacity: 0.9; }
+                    75% { opacity: 0.6; }
+                    100% { transform: translate(12px, -24px) scale(1.2); opacity: 0; }
+                }
+                .zzz-1 { animation: floatZzz 3s infinite ease-out 0s; }
+                .zzz-2 { animation: floatZzz 3s infinite ease-out 1s; }
+                .zzz-3 { animation: floatZzz 3s infinite ease-out 2s; }
+
+                @keyframes gentleBreathe {
+                    0%, 100% { transform: translateY(0); }
+                    50% { transform: translateY(-2px); }
+                }
+                .breathe-motion {
+                    animation: gentleBreathe 3.5s infinite ease-in-out;
+                }
+
+                /* Rapid cute eye blinking animation */
+                @keyframes eyeBlink {
+                    0%, 70%, 82%, 100% {
+                        transform: scaleY(1);
+                    }
+                    76%, 88% {
+                        transform: scaleY(0.08);
+                    }
+                }
+                .blinking-eyes {
+                    transform-origin: center center;
+                    animation: eyeBlink 3s infinite ease-in-out;
+                }
+
+                @keyframes steamWiggle {
+                    0%, 100% { transform: translateY(0) scaleX(1); opacity: 0.3; }
+                    50% { transform: translateY(-4px) scaleX(1.15) translateX(1px); opacity: 0.7; }
+                }
+                .steam-line {
+                    animation: steamWiggle 2.5s infinite ease-in-out;
+                }
+
+                @keyframes sparklePop {
+                    0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.7; }
+                    50% { transform: scale(1.25) rotate(15deg); opacity: 1; }
+                }
+                .sparkle-pop {
+                    animation: sparklePop 2s infinite ease-in-out;
+                }
+
+                @keyframes alarmRing {
+                    0%, 100% { transform: rotate(0deg); }
+                    20% { transform: rotate(-6deg); }
+                    40% { transform: rotate(6deg); }
+                    60% { transform: rotate(-4deg); }
+                    80% { transform: rotate(4deg); }
+                }
+                .alarm-ringing {
+                    transform-origin: 355px 148px;
+                    animation: alarmRing 0.35s infinite ease-in-out;
+                }
+            `}</style>
+
+            {/* Subtle Minimalist Notebook Sketch Grid Background */}
+            <div 
+                className="fixed inset-0 pointer-events-none opacity-[0.4]"
+                style={{
+                    backgroundImage: `radial-gradient(#cfc5b6 1px, transparent 1px)`,
+                    backgroundSize: '24px 24px'
+                }}
+            />
+
+            {/* THE ENTIRE WORKSTATION & DESK CONTAINER */}
+            <div className="w-full max-w-[440px] relative z-10 flex flex-col items-center">
                 
-                {/* Subtle Geometric Overlay */}
+                {/* 1. TOP INTERACTIVE DOODLE: The Boy Resting / Sleeping / Waking on top of the Desk */}
                 <div 
-                    className="absolute inset-0 opacity-[0.07]" 
-                    style={{
-                        backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.4) 1px, transparent 0)`,
-                        backgroundSize: '36px 36px'
-                    }}
-                />
-            </div>
+                    className="w-full h-[155px] relative select-none pointer-events-none"
+                >
+                    <svg 
+                        viewBox="0 0 420 155" 
+                        fill="none" 
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="w-full h-full overflow-visible"
+                    >
+                        {/* DECOR: Minimalist Single-Line Desk Lamp on Left */}
+                        <g opacity="0.85">
+                            {/* Lamp base */}
+                            <ellipse cx="65" cy="148" rx="16" ry="3.5" stroke="#3c3127" strokeWidth="2.5" strokeLinecap="round" />
+                            {/* Lamp stem */}
+                            <path d="M 65 146 L 52 110 L 72 82" stroke="#3c3127" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                            {/* Lamp head shade */}
+                            <path d="M 62 88 L 84 76 L 94 94 L 72 104 Z" stroke="#3c3127" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" fill="#fffdfa" />
+                            {/* Lamp bulb glow when awake */}
+                            {isAwake && (
+                                <g className="sparkle-pop">
+                                    <path d="M 88 100 L 98 114" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeDasharray="3 3" />
+                                    <path d="M 80 106 L 86 122" stroke="#eab308" strokeWidth="2" strokeLinecap="round" strokeDasharray="3 3" />
+                                    <circle cx="82" cy="94" r="5" fill="#fef08a" opacity="0.8" />
+                                </g>
+                            )}
+                        </g>
 
-            {/* Main Container */}
-            <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 rounded-[2.5rem] bg-emerald-900/40 backdrop-blur-2xl border border-emerald-500/20 shadow-[0_30px_100px_rgba(0,0,0,0.5),0_0_50px_rgba(16,185,129,0.15)] overflow-hidden relative z-10 transition-all duration-300">
-                
-                {/* Left Column: Visual Showcase (Durian Warehouse Theme) */}
-                <div className="lg:col-span-7 relative p-8 sm:p-12 lg:p-14 flex flex-col justify-between overflow-hidden bg-gradient-to-br from-emerald-900/90 via-emerald-950/80 to-teal-950/95 border-b lg:border-b-0 lg:border-r border-emerald-500/20">
-                    {/* Background Hero Image with Blend Mode */}
-                    <div className="absolute inset-0 z-0">
-                        <Image
-                            src="/durian-bg.png"
-                            alt="Kho Sầu Riêng Thông Minh"
-                            fill
-                            priority
-                            className="object-cover object-center opacity-30 mix-blend-luminosity scale-105 hover:scale-100 transition-transform duration-1000 ease-out"
+                        {/* DECOR: Cute Coffee Mug on Left */}
+                        <g opacity="0.85">
+                            <rect x="110" y="124" width="20" height="24" rx="4" stroke="#3c3127" strokeWidth="2.5" fill="#fffdfa" />
+                            {/* Handle */}
+                            <path d="M 130 130 C 137 130, 137 142, 130 142" stroke="#3c3127" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                            {/* Steam lines */}
+                            <path d="M 116 118 Q 119 113, 116 108" stroke="#a89a8c" strokeWidth="2" strokeLinecap="round" className="steam-line" />
+                            <path d="M 124 116 Q 127 111, 124 106" stroke="#a89a8c" strokeWidth="2" strokeLinecap="round" className="steam-line" />
+                        </g>
+
+                        {/* THE BOY: Single-Line Drawing Character */}
+                        <g 
+                            className={`transition-transform duration-700 ease-out ${!isAwake ? 'breathe-motion' : ''}`}
+                            style={{
+                                transform: isAwake ? 'translateY(-10px)' : 'translateY(0)'
+                            }}
+                        >
+                            {/* Boy's Torso & Back hunched softly over the desk */}
+                            <path 
+                                d={isAwake 
+                                    ? "M 150 148 C 160 115, 195 110, 235 112 C 275 110, 310 120, 320 148"
+                                    : "M 140 148 C 150 125, 185 120, 225 125 C 265 122, 305 130, 320 148"
+                                }
+                                stroke="#2e251d" 
+                                strokeWidth="2.8" 
+                                strokeLinecap="round" 
+                                fill="#fffdfa"
+                                className="transition-all duration-700 ease-out"
+                            />
+
+                            {/* Folded Arms on the desk edge */}
+                            <path 
+                                d="M 165 148 C 175 134, 225 132, 255 148" 
+                                stroke="#2e251d" 
+                                strokeWidth="2.8" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                fill="#faf6f0"
+                            />
+                            <path 
+                                d="M 220 148 C 245 134, 285 135, 305 148" 
+                                stroke="#2e251d" 
+                                strokeWidth="2.8" 
+                                strokeLinecap="round" 
+                                strokeLinejoin="round" 
+                                fill="#faf6f0"
+                            />
+                            {/* Sleeve wrinkles */}
+                            <path d="M 185 142 L 192 147" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+                            <path d="M 275 142 L 270 147" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+
+                            {/* HEAD CONTAINER: Rests right on arms when sleeping, lifts up high when awake */}
+                            <g 
+                                className="transition-all duration-700 ease-out"
+                                style={{
+                                    transform: isAwake 
+                                        ? 'translate(235px, 80px) rotate(0deg)' 
+                                        : 'translate(235px, 126px) rotate(14deg)'
+                                }}
+                            >
+                                {/* Head Outline */}
+                                <ellipse cx="0" cy="0" rx="27" ry="22" stroke="#2e251d" strokeWidth="2.8" fill="#fffdfa" />
+                                
+                                {/* Ear */}
+                                <path d="M -27 -1 C -33 -3, -33 7, -27 7" stroke="#2e251d" strokeWidth="2.8" strokeLinecap="round" fill="#fffdfa" />
+
+                                {/* Cute Tousled Hair (1-line doodle style) */}
+                                <path 
+                                    d="M -25 -8 C -27 -20, -17 -30, 0 -30 C 17 -30, 27 -20, 27 -6 C 23 -12, 17 -16, 11 -14 C 7 -22, -3 -22, -9 -16 C -15 -20, -21 -16, -25 -8 Z" 
+                                    stroke="#2e251d" 
+                                    strokeWidth="2.8" 
+                                    strokeLinecap="round" 
+                                    strokeLinejoin="round" 
+                                    fill="#2e251d"
+                                />
+                                {/* Hair tuft on top */}
+                                <path d="M 2 -30 Q 6 -37, 12 -33" stroke="#2e251d" strokeWidth="2.8" strokeLinecap="round" />
+                                <path d="M -8 -28 Q -14 -35, -10 -38" stroke="#2e251d" strokeWidth="2.8" strokeLinecap="round" />
+
+                                {/* ================= STATE 1: SLEEPING FACE (NẰM NGỦ TRÊN BÀN) ================= */}
+                                {!isAwake && (
+                                    <g opacity="0.95">
+                                        {/* Sleepy curved closed eyes */}
+                                        <path d="M -12 1 Q -6 6, 0 1" stroke="#2e251d" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                                        <path d="M 8 1 Q 14 6, 20 1" stroke="#2e251d" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                                        
+                                        {/* Sweet sleeping mouth */}
+                                        <path d="M 2 10 Q 6 13, 10 10" stroke="#2e251d" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+
+                                        {/* Rosy sleeping cheeks */}
+                                        <path d="M -15 6 L -11 9" stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+                                        <path d="M 16 6 L 20 9" stroke="#f43f5e" strokeWidth="2" strokeLinecap="round" opacity="0.6" />
+                                    </g>
+                                )}
+
+                                {/* ================= STATE 2: AWAKE & BLINKING FACE (TỈNH DẬY MẮT CHỚP CHỚP) ================= */}
+                                {isAwake && (
+                                    <g>
+                                        {/* Raised surprised eyebrows */}
+                                        <path d="M -15 -8 Q -8 -13, -1 -9" stroke="#2e251d" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+                                        <path d="M 7 -9 Q 14 -13, 21 -8" stroke="#2e251d" strokeWidth="2.5" strokeLinecap="round" fill="none" />
+
+                                        {/* BLINKING EYES (Mắt chớp chớp liên tục) */}
+                                        <g className="blinking-eyes">
+                                            {/* Left Eye */}
+                                            <ellipse cx="-7" cy="0" rx="5" ry="6.5" fill="#2e251d" />
+                                            <circle cx="-9" cy="-2.5" r="2" fill="#ffffff" />
+                                            <circle cx="-5.5" cy="2" r="1" fill="#ffffff" />
+
+                                            {/* Right Eye */}
+                                            <ellipse cx="13" cy="0" rx="5" ry="6.5" fill="#2e251d" />
+                                            <circle cx="11" cy="-2.5" r="2" fill="#ffffff" />
+                                            <circle cx="14.5" cy="2" r="1" fill="#ffffff" />
+                                        </g>
+
+                                        {/* Cheerful smiling mouth */}
+                                        <path d="M -1 11 Q 4 19, 9 11 Z" stroke="#2e251d" strokeWidth="2.5" strokeLinecap="round" fill="#f43f5e" />
+
+                                        {/* Blushing cheeks */}
+                                        <ellipse cx="-16" cy="8" rx="4.5" ry="2.5" fill="#fca5a5" opacity="0.8" />
+                                        <ellipse cx="21" cy="8" rx="4.5" ry="2.5" fill="#fca5a5" opacity="0.8" />
+                                    </g>
+                                )}
+                            </g>
+                        </g>
+
+                        {/* FLOATING "Zzz" ONLY WHEN SLEEPING */}
+                        {!isAwake && (
+                            <g fill="#786c5e" fontWeight="bold" fontFamily="monospace">
+                                <text x="270" y="75" fontSize="13" className="zzz-1">Z</text>
+                                <text x="282" y="60" fontSize="17" className="zzz-2">z</text>
+                                <text x="296" y="42" fontSize="21" className="zzz-3">z</text>
+                            </g>
+                        )}
+
+                        {/* WAKE UP SPARKLES ONLY WHEN AWAKE */}
+                        {isAwake && (
+                            <g className="sparkle-pop" stroke="#eab308" fill="#eab308">
+                                <path d="M 288 38 L 292 48 L 302 52 L 292 56 L 288 66 L 284 56 L 274 52 L 284 48 Z" />
+                                <circle cx="316" cy="62" r="3" />
+                                <circle cx="266" cy="42" r="2.5" />
+                            </g>
+                        )}
+
+                        {/* DECOR: Cute Minimalist Classic Desk Alarm Clock (Real-Time Running) */}
+                        <g 
+                            opacity="0.95" 
+                            className={`select-none ${isAwake ? 'alarm-ringing' : ''}`}
+                        >
+                            <title>{currentTime ? `Thời gian hiện tại: ${currentTime.toLocaleTimeString('vi-VN')}` : 'Đồng hồ để bàn'}</title>
+
+                            {/* Stand legs touching desk */}
+                            <path d="M 347 143 L 343 148" stroke="#3c3127" strokeWidth="2.5" strokeLinecap="round" />
+                            <path d="M 363 143 L 367 148" stroke="#3c3127" strokeWidth="2.5" strokeLinecap="round" />
+
+                            {/* Twin top bells & hammer */}
+                            <path d="M 343 124 C 340 118, 347 115, 350 120 Z" stroke="#3c3127" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="#fffdfa" />
+                            <path d="M 360 120 C 363 115, 370 118, 367 124 Z" stroke="#3c3127" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" fill="#fffdfa" />
+                            <path d="M 353 119 L 357 119" stroke="#3c3127" strokeWidth="2" strokeLinecap="round" />
+                            <path d="M 355 119 L 355 116" stroke="#3c3127" strokeWidth="2" strokeLinecap="round" />
+
+                            {/* Clock main circle body */}
+                            <circle cx="355" cy="132" r="13" stroke="#3c3127" strokeWidth="2.5" fill="#fffdfa" />
+
+                            {/* Clock hour marks (12, 3, 6, 9) */}
+                            <line x1="355" y1="121" x2="355" y2="123" stroke="#8c7f70" strokeWidth="1.5" strokeLinecap="round" />
+                            <line x1="366" y1="132" x2="364" y2="132" stroke="#8c7f70" strokeWidth="1.5" strokeLinecap="round" />
+                            <line x1="355" y1="143" x2="355" y2="141" stroke="#8c7f70" strokeWidth="1.5" strokeLinecap="round" />
+                            <line x1="344" y1="132" x2="346" y2="132" stroke="#8c7f70" strokeWidth="1.5" strokeLinecap="round" />
+
+                            {/* Hour Hand (Kim giờ chạy thực tế) */}
+                            <line 
+                                x1="355" y1="132" x2="355" y2="126" 
+                                stroke="#2e251d" strokeWidth="2.4" strokeLinecap="round" 
+                                transform={`rotate(${hourDeg} 355 132)`} 
+                            />
+
+                            {/* Minute Hand (Kim phút chạy thực tế) */}
+                            <line 
+                                x1="355" y1="132" x2="355" y2="123" 
+                                stroke="#2e251d" strokeWidth="1.8" strokeLinecap="round" 
+                                transform={`rotate(${minDeg} 355 132)`} 
+                            />
+
+                            {/* Red Second Hand (Kim giây đỏ nhảy tích tắc theo từng giây!) */}
+                            <line 
+                                x1="355" y1="134" x2="355" y2="122" 
+                                stroke="#e11d48" strokeWidth="1.2" strokeLinecap="round" 
+                                transform={`rotate(${secDeg} 355 132)`} 
+                            />
+
+                            {/* Center pivot */}
+                            <circle cx="355" cy="132" r="1.6" fill="#2e251d" />
+                            <circle cx="355" cy="132" r="0.7" fill="#e11d48" />
+
+                            {/* Ringing sound waves when awake */}
+                            {isAwake && (
+                                <g stroke="#eab308" fill="none">
+                                    <path d="M 338 118 Q 335 121, 338 124" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M 372 118 Q 375 121, 372 124" strokeWidth="1.8" strokeLinecap="round" />
+                                    <path d="M 334 115 Q 329 121, 334 127" strokeWidth="1.5" strokeLinecap="round" />
+                                    <path d="M 376 115 Q 381 121, 376 127" strokeWidth="1.5" strokeLinecap="round" />
+                                </g>
+                            )}
+                        </g>
+
+                        {/* DESK TOP SURFACE LINE: Coordinates right at the boundary */}
+                        <path 
+                            d="M 10 148 L 410 148" 
+                            stroke="#3c3127" 
+                            strokeWidth="3.2" 
+                            strokeLinecap="round" 
                         />
-                        <div className="absolute inset-0 bg-gradient-to-t from-emerald-950 via-emerald-950/75 to-transparent" />
-                        <div className="absolute inset-0 bg-gradient-to-r from-emerald-950/90 via-transparent to-emerald-950/80" />
-                    </div>
-
-                    {/* Top Branding Tag */}
-                    <div className="relative z-10 space-y-6">
-                        <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/30 backdrop-blur-md text-emerald-300 text-xs font-semibold tracking-wide uppercase shadow-inner">
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                            Hệ Thống Quản Lý Kho Sầu Riêng
-                        </div>
-
-                        <div className="space-y-3">
-                            <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight leading-[1.15]">
-                                Quản Trị Kho Lạnh <br />
-                                <span className="bg-gradient-to-r from-emerald-300 via-yellow-300 to-amber-400 bg-clip-text text-transparent drop-shadow-sm">
-                                    Sầu Riêng Xuất Khẩu
-                                </span>
-                            </h1>
-                            <p className="text-emerald-100/80 text-sm sm:text-base font-normal max-w-lg leading-relaxed">
-                                Giải pháp WMS tối ưu cho kho bãi & vựa sầu riêng: Quản lý nhập - xuất - tồn theo mã Lô (Lot), theo dõi vị trí Pallet kho lạnh, quản lý cân nặng và in tem nhãn thùng QR.
-                            </p>
-                        </div>
-                    </div>
-
-                    {/* Middle: Feature Highlights Badges */}
-                    <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-3.5 my-8">
-                        <div className="p-4 rounded-2xl bg-emerald-800/30 border border-emerald-400/20 backdrop-blur-md hover:bg-emerald-800/45 transition-colors group">
-                            <div className="flex items-start gap-3.5">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-amber-500/20 text-yellow-300 border border-emerald-400/30 group-hover:scale-110 transition-transform">
-                                    <Boxes className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-sm tracking-wide">Quản Lý Mã Lô (Lot)</h4>
-                                    <p className="text-emerald-200/70 text-xs mt-0.5 leading-snug">Theo dõi lô thu hoạch, vườn cắt & ngày nhập</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-4 rounded-2xl bg-emerald-800/30 border border-emerald-400/20 backdrop-blur-md hover:bg-emerald-800/45 transition-colors group">
-                            <div className="flex items-start gap-3.5">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-400/30 group-hover:scale-110 transition-transform">
-                                    <ThermometerSnowflake className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-sm tracking-wide">Kiểm Soát Kho Lạnh</h4>
-                                    <p className="text-emerald-200/70 text-xs mt-0.5 leading-snug">Sơ đồ vị trí Pallet & khu vực bảo quản</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-4 rounded-2xl bg-emerald-800/30 border border-emerald-400/20 backdrop-blur-md hover:bg-emerald-800/45 transition-colors group">
-                            <div className="flex items-start gap-3.5">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-yellow-500/20 to-amber-500/20 text-amber-300 border border-yellow-400/30 group-hover:scale-110 transition-transform">
-                                    <QrCode className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-sm tracking-wide">In Tem Nhãn QR</h4>
-                                    <p className="text-emerald-200/70 text-xs mt-0.5 leading-snug">Tem mã vạch pallet & thùng hàng xuất khẩu</p>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div className="p-4 rounded-2xl bg-emerald-800/30 border border-emerald-400/20 backdrop-blur-md hover:bg-emerald-800/45 transition-colors group">
-                            <div className="flex items-start gap-3.5">
-                                <div className="p-2.5 rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 text-teal-300 border border-teal-400/30 group-hover:scale-110 transition-transform">
-                                    <ShieldCheck className="w-5 h-5" />
-                                </div>
-                                <div>
-                                    <h4 className="text-white font-bold text-sm tracking-wide">Nhập - Xuất - Tồn Kho</h4>
-                                    <p className="text-emerald-200/70 text-xs mt-0.5 leading-snug">Báo cáo cân nặng thực tế, tồn kho & phân hạng</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Bottom Status / Certifications */}
-                    <div className="relative z-10 pt-4 border-t border-emerald-500/20 flex flex-wrap items-center justify-between gap-4 text-xs text-emerald-200/70">
-                        <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                            <span>Vận hành đa phân hệ kho & chuỗi cung ứng</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 font-medium text-amber-300/90">
-                            <span>Sầu riêng Ri6 • Monthong • Dona</span>
-                        </div>
-                    </div>
+                    </svg>
                 </div>
 
-                {/* Right Column: Modern Authentication Form */}
-                <div className="lg:col-span-5 p-8 sm:p-12 lg:p-12 bg-white/95 backdrop-blur-3xl flex flex-col justify-between relative shadow-xl">
-                    <div>
-                        {/* Header with Logo */}
-                        <div className="flex items-center gap-3.5 mb-8">
-                            <div className="w-13 h-13 rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-800 p-2.5 shadow-lg shadow-emerald-700/20 flex items-center justify-center flex-shrink-0 text-white">
-                                {logoUrl ? (
-                                    <div className="relative w-full h-full">
-                                        <Image
-                                            src={logoUrl}
-                                            alt={companyName}
-                                            fill
-                                            className="object-contain"
-                                        />
-                                    </div>
-                                ) : (
-                                    <Warehouse className="w-7 h-7 text-amber-300" />
-                                )}
-                            </div>
-                            <div>
-                                <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-                                    Đăng Nhập Kho
-                                    <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                        WMS v2.5
-                                    </span>
-                                </h2>
-                                <p className="text-xs text-slate-500 font-medium truncate max-w-[220px]">
-                                    {companyName || 'Hệ Thống Kho Sầu Riêng Chánh Thu'}
-                                </p>
-                            </div>
-                        </div>
+                {/* 2. THE DESK ITSELF (Khung đăng nhập được thiết kế thành một chiếc bàn) */}
+                <div className="w-full relative bg-[#faf7f0] rounded-b-3xl border-2 border-[#3c3127] shadow-[0_20px_45px_rgba(45,35,25,0.1)] overflow-hidden transition-all duration-300 -mt-2">
+                    
+                    {/* Top Desk Wooden Trim / Gờ Mép Bàn */}
+                    <div className="w-full h-4 bg-[#e6dcce] border-b-2 border-[#3c3127] flex items-center justify-between px-6">
+                        <div className="w-20 h-0.5 bg-[#cfc2b1] rounded-full" />
+                        <div className="w-32 h-0.5 bg-[#cfc2b1] rounded-full" />
+                        <div className="w-16 h-0.5 bg-[#cfc2b1] rounded-full" />
+                    </div>
 
-                        {/* Welcome Heading */}
-                        <div className="mb-6">
-                            <h3 className="text-2xl font-extrabold text-slate-900 tracking-tight">
-                                Chào mừng trở lại! 👋
-                            </h3>
-                            <p className="text-slate-500 text-sm mt-1">
-                                Nhập tài khoản quản trị hoặc nhân viên kho để tiếp tục
+                    {/* Desk Drawer Seam & Handle (Rãnh ngăn kéo bàn học sinh) */}
+                    <div className="pt-3 pb-1 px-8 flex items-center justify-center relative">
+                        <div className="w-full h-0.5 bg-[#ded5c6] rounded" />
+                        {/* Minimalist Wooden Drawer Pull / Núm kéo ngăn bàn */}
+                        <div className="absolute w-12 h-3 rounded-full border border-[#3c3127] bg-[#ede5d8] flex items-center justify-center shadow-inner">
+                            <span className="w-4 h-0.5 bg-[#8c7f70] rounded-full" />
+                        </div>
+                    </div>
+
+                    {/* Desk Inner Body: The Login Form Content */}
+                    <div className="p-6 sm:p-8 pt-5">
+                        
+                        {/* Desk Branding Header */}
+                        <div className="text-center mb-6">
+                            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#ede5d8] border border-[#d5c7b3] text-[11px] font-bold tracking-wider uppercase text-[#615243] mb-1.5">
+                                <Coffee size={12} className="text-[#726150]" />
+                                <span>AnyWarehouse</span>
+                            </div>
+                            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#2c231b]">
+                                {isAwake ? "Tôi Đã Dậy Rồi Đây! ☀️" : "Bàn Làm Việc Mr. Tùng"}
+                            </h1>
+                            <p className="text-xs text-[#7d6f60] mt-1 font-medium">
+                                {isAwake 
+                                    ? "Cảm ơn bạn đã đánh thức tôi! Đang mở bàn làm việc..." 
+                                    : "Đăng nhập để đánh thức tôi"}
                             </p>
                         </div>
 
-                        {/* Error / Alert Message */}
+                        {/* Alert Message */}
                         {message && (
                             <div
-                                className={`p-4 mb-6 rounded-2xl text-sm flex items-start gap-3 transition-all animate-fadeIn ${
+                                className={`p-3.5 mb-5 rounded-2xl text-xs flex items-start gap-2.5 transition-all animate-in fade-in ${
                                     message.type === 'error'
-                                        ? 'bg-rose-50 border border-rose-200 text-rose-800 shadow-sm'
-                                        : 'bg-emerald-50 border border-emerald-200 text-emerald-800 shadow-sm'
+                                        ? 'bg-[#faecea] border-2 border-[#e8a59f] text-[#9c2b23]'
+                                        : 'bg-[#eef6ed] border-2 border-[#abdcb3] text-[#246b21]'
                                 }`}
                             >
-                                <div
-                                    className={`w-2.5 h-2.5 rounded-full mt-1.5 flex-shrink-0 ${
-                                        message.type === 'error' ? 'bg-rose-500 animate-ping' : 'bg-emerald-500'
-                                    }`}
-                                />
+                                <span className="w-2 h-2 rounded-full mt-1 flex-shrink-0 bg-current" />
                                 <div className="flex-1 font-medium leading-relaxed">
                                     {message.text}
                                 </div>
@@ -299,112 +496,122 @@ export default function LoginPage() {
 
                         {/* Login Form */}
                         <form onSubmit={handleAuth} className="space-y-4">
-                            {/* Email / Username Input */}
+                            {/* Email or Username */}
                             <div className="space-y-1.5">
-                                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                                    Email / Tài khoản kho
+                                <label className="block text-xs font-bold text-[#45382c]">
+                                    Email hoặc tài khoản kho
                                 </label>
                                 <div className="relative group">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
-                                        <Mail size={19} />
+                                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8c7f70] group-focus-within:text-[#2c231b] transition-colors">
+                                        <Mail size={17} />
                                     </div>
                                     <input
                                         type="text"
                                         value={email}
                                         onChange={(e) => setEmail(e.target.value)}
                                         required
-                                        autoFocus
-                                        className="w-full pl-12 pr-4 py-3.5 rounded-xl bg-slate-50 text-slate-900 border border-slate-200 placeholder:text-slate-400 text-sm font-medium transition-all duration-200 outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15"
+                                        className="w-full pl-10 pr-4 py-3.5 rounded-2xl bg-[#ffffff] text-[#2c231b] border-2 border-[#3c3127] placeholder:text-[#b0a394] text-sm font-semibold transition-all duration-200 outline-none focus:ring-4 focus:ring-[#3c3127]/10"
                                         placeholder="user@example.com hoặc tenkho.user"
                                     />
                                 </div>
                             </div>
 
-                            {/* Password Input */}
+                            {/* Password */}
                             <div className="space-y-1.5">
-                                <div className="flex items-center justify-between">
-                                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                                        Mật khẩu truy cập
-                                    </label>
-                                </div>
+                                <label className="block text-xs font-bold text-[#45382c]">
+                                    Mật khẩu
+                                </label>
                                 <div className="relative group">
-                                    <div className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-emerald-600 transition-colors">
-                                        <Lock size={19} />
+                                    <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8c7f70] group-focus-within:text-[#2c231b] transition-colors">
+                                        <Lock size={17} />
                                     </div>
                                     <input
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
                                         required
-                                        className="w-full pl-12 pr-12 py-3.5 rounded-xl bg-slate-50 text-slate-900 border border-slate-200 placeholder:text-slate-400 text-sm font-medium transition-all duration-200 outline-none focus:bg-white focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/15"
+                                        className="w-full pl-10 pr-11 py-3.5 rounded-2xl bg-[#ffffff] text-[#2c231b] border-2 border-[#3c3127] placeholder:text-[#b0a394] text-sm font-semibold transition-all duration-200 outline-none focus:ring-4 focus:ring-[#3c3127]/10"
                                         placeholder="••••••••"
                                     />
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
-                                        className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 text-slate-400 hover:text-slate-600 transition-colors rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                                        className="absolute right-3.5 top-1/2 -translate-y-1/2 p-1 text-[#8c7f70] hover:text-[#2c231b] transition-colors rounded-lg focus:outline-none"
                                         tabIndex={-1}
                                         title={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                                     >
-                                        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                                     </button>
                                 </div>
                             </div>
 
-                            {/* Submit Button */}
+                            {/* Submit Button (Enter) */}
                             <div className="pt-2">
                                 <button
                                     type="submit"
                                     disabled={loading}
-                                    className="w-full py-4 px-6 font-bold text-sm tracking-wide rounded-xl flex items-center justify-center gap-2.5 transition-all duration-200 text-white bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-700 hover:from-emerald-500 hover:to-teal-600 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-700/25 hover:shadow-xl hover:shadow-emerald-700/30 cursor-pointer"
+                                    className="w-full py-4 px-5 font-bold text-sm tracking-wide rounded-2xl flex items-center justify-center gap-2 transition-all duration-200 text-[#faf7f0] bg-[#3c3127] hover:bg-[#282019] active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_6px_20px_rgba(60,49,39,0.25)] cursor-pointer"
                                 >
                                     {loading ? (
                                         <>
-                                            <Loader2 className="animate-spin" size={19} />
-                                            <span>Đang xác thực bảo mật...</span>
+                                            <Loader2 className="animate-spin" size={18} />
+                                            <span>Tôi đã tỉnh dậy & đang vào hệ thống...</span>
                                         </>
                                     ) : (
                                         <>
-                                            <span>Đăng Nhập Vào Hệ Thống</span>
-                                            <ArrowRight size={18} className="transition-transform group-hover:translate-x-1" />
+                                            <span>Đăng Nhập</span>
+                                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-[#54463a] text-[#ded5c8] font-mono font-medium">Enter ↵</span>
+                                            <ArrowRight size={16} />
                                         </>
                                     )}
                                 </button>
                             </div>
                         </form>
 
-                        {/* Unauthorized domain special action */}
+                        {/* Unauthorized domain error action */}
                         {isUnauthorizedDomain && (
-                            <div className="mt-4 pt-4 border-t border-slate-100">
+                            <div className="mt-4 pt-4 border-t border-[#ded5c6]">
                                 <button
                                     type="button"
                                     onClick={handleLogout}
-                                    className="w-full py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all duration-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-semibold text-xs border border-rose-200"
+                                    className="w-full py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all duration-200 bg-[#faecea] text-[#9c2b23] hover:bg-[#f6dedb] font-medium text-xs border border-[#f0c2bd]"
                                 >
                                     Đăng xuất tài khoản hiện tại & Thử lại
                                 </button>
                             </div>
                         )}
-                    </div>
 
-                    {/* Bottom Helper Info */}
-                    <div className="mt-8 pt-6 border-t border-slate-100 flex flex-col items-center justify-center gap-2">
-                        <div className="text-[11px] text-slate-400 font-medium">
-                            Bảo mật dữ liệu tiêu chuẩn theo từng Phân Hệ Kho
-                        </div>
-                        <div className="flex items-center gap-1.5 text-slate-600 text-xs font-medium">
-                            <Phone size={13} className="text-emerald-600 flex-shrink-0" />
-                            <span>Hỗ trợ kỹ thuật:</span>
-                            <span className="font-bold text-slate-800">Nguyễn Đình Tùng</span>
-                            <span className="text-slate-400">-</span>
-                            <a 
-                                href="tel:0374944792" 
-                                className="font-bold text-emerald-700 hover:text-emerald-800 hover:underline tracking-wide transition-colors"
-                            >
-                                0374944792
-                            </a>
+                        {/* Footer Branding & Contact */}
+                        <div className="mt-6 pt-4 border-t-2 border-dashed border-[#e3d8c8] flex flex-col gap-1.5">
+                            <div className="flex items-center justify-between text-xs text-[#7d6f60]">
+                                <div className="flex items-center gap-1.5 font-medium">
+                                    <span className="text-[11px] text-[#8c7f70]">A Product of</span>
+                                    <strong className="text-[#2c231b] font-bold tracking-tight">AnyWarehouse</strong>
+                                </div>
+                                <a 
+                                    href="tel:0374944792" 
+                                    className="inline-flex items-center gap-1.5 font-bold text-[#3c3127] hover:underline font-mono tracking-wider transition-colors"
+                                    title="Hotline liên hệ"
+                                >
+                                    <Phone size={12} className="text-[#3c3127]" />
+                                    <span>0374944792</span>
+                                </a>
+                            </div>
+                            <div className="text-[11px] text-center text-[#8f8171] font-medium tracking-wider italic">
+                                "Anytime, Anywhere"
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                {/* 3. DESK LEGS (Chân bàn tối giản vươn xuống đất) */}
+                <div className="w-full px-6 flex items-center justify-between pointer-events-none">
+                    {/* Left desk leg */}
+                    <div className="w-3.5 h-8 bg-[#cbbdac] border-2 border-[#3c3127] border-t-0 rounded-b-md shadow-sm" />
+                    {/* Subtle desk floor shadow */}
+                    <div className="w-48 h-1.5 bg-[#45382c]/10 rounded-full blur-[1px]" />
+                    {/* Right desk leg */}
+                    <div className="w-3.5 h-8 bg-[#cbbdac] border-2 border-[#3c3127] border-t-0 rounded-b-md shadow-sm" />
                 </div>
             </div>
         </div>

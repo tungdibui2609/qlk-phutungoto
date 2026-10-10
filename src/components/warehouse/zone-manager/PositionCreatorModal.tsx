@@ -1,8 +1,16 @@
 import { useState, useMemo, useEffect } from 'react'
-import { Package, X, Zap, Copy, Check, Star, List } from 'lucide-react'
+import { Package, X, Zap, Copy, Check, Star, List, ArrowRight, Sparkles, AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { LocalZone, LocalPosition } from './types'
 import { useSystem } from '@/contexts/SystemContext'
+import {
+    getFullAncestorChain,
+    deducePrefixReplacement,
+    transformPositionCode,
+    previewClonePositions,
+    getRelativeSubzoneMap,
+    ClonePositionSummary
+} from './positionCloneUtils'
 
 interface PositionCreatorModalProps {
     zoneId: string
@@ -23,7 +31,7 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
     const leafZones = findLeafZones(zoneId)
     const hasChildren = zones.some(z => z.parent_id === zoneId && z._status !== 'deleted')
 
-    // Modes: manual, auto, clone
+    // Modes: manual, auto, clone, bulk
     const [mode, setMode] = useState<'manual' | 'auto' | 'clone' | 'bulk'>('manual')
 
     // Local State for Form
@@ -38,11 +46,41 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
     // Clone mode state
     const [sourceId, setSourceId] = useState('')
     const [searchSource, setSearchSource] = useState('')
+    const [cloneSearchPrefix, setCloneSearchPrefix] = useState('')
+    const [cloneReplacePrefix, setCloneReplacePrefix] = useState('')
     const [pinnedIds, setPinnedIds] = useState<string[]>(() => {
         if (typeof window === 'undefined') return []
         const saved = localStorage.getItem('warehouse_clone_pins')
         return saved ? JSON.parse(saved) : []
     })
+
+    const selectedSourceZone = useMemo(() => zones.find(z => z.id === sourceId), [zones, sourceId])
+    const sourceChain = useMemo(() => sourceId ? getFullAncestorChain(sourceId, zones) : [], [sourceId, zones])
+    const targetChain = useMemo(() => getFullAncestorChain(zoneId, zones), [zoneId, zones])
+
+    const { defaultSearch, defaultReplace, suggestions: cloneSuggestions } = useMemo(
+        () => deducePrefixReplacement(sourceChain, targetChain),
+        [sourceChain, targetChain]
+    )
+
+    useEffect(() => {
+        if (sourceId && selectedSourceZone) {
+            setCloneSearchPrefix(defaultSearch)
+            setCloneReplacePrefix(defaultReplace)
+        }
+    }, [sourceId, selectedSourceZone, defaultSearch, defaultReplace])
+
+    const cloneSummary: ClonePositionSummary | null = useMemo(() => {
+        if (!sourceId || !selectedSourceZone) return null
+        return previewClonePositions(
+            sourceId,
+            zoneId,
+            cloneSearchPrefix,
+            cloneReplacePrefix,
+            zones,
+            positionsMap
+        )
+    }, [sourceId, zoneId, cloneSearchPrefix, cloneReplacePrefix, zones, positionsMap, selectedSourceZone])
 
     const togglePin = (e: React.MouseEvent, id: string) => {
         e.stopPropagation()
@@ -166,97 +204,58 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
         await new Promise(resolve => setTimeout(resolve, 50))
 
         try {
-            // 1. Helper to map all sub-zones by relative path (code chain)
-            const getRelativeMap = (rootId: string) => {
-                const map = new Map<string, string>() // relativePath -> zoneId
-                const traverse = (parentId: string, currentPath: string) => {
-                    const children = zones.filter(z => z.parent_id === parentId && z._status !== 'deleted')
-                    children.forEach(child => {
-                        const path = currentPath ? `${currentPath}.${child.code}` : child.code
-                        map.set(path.toUpperCase(), child.id)
-                        traverse(child.id, path)
-                    })
-                }
-                map.set("", rootId) // Root itself is the empty path
-                traverse(rootId, "")
-                return map
-            }
-
-            const sourceMap = getRelativeMap(sourceId)
-            const targetMap = getRelativeMap(zoneId)
-
-
-            // Calculate Full Prefixes for Root Zones
-            const getFullPrefix = (zId: string) => {
-                const parts: string[] = []
-                let curr: LocalZone | undefined = zones.find(z => z.id === zId)
-                while (curr) {
-                    if (curr.code) parts.unshift(curr.code)
-                    const parentId = curr.parent_id
-                    curr = zones.find(z => z.id === parentId)
-                }
-                return parts.join('.')
-            }
-
-            const sourceFullPrefix = getFullPrefix(sourceId)
-            const targetFullPrefix = getFullPrefix(zoneId)
+            const sourceRelative = getRelativeSubzoneMap(sourceId, zones)
+            const targetRelative = getRelativeSubzoneMap(zoneId, zones)
 
             const updates: Record<string, LocalPosition[]> = {}
             let totalCloned = 0
 
-            // 2. Pair zones and clone positions
-            sourceMap.forEach((_, path) => {
-                // Note: we iterate sourceMap keys (paths) to find if target has same path
-                // path is relative like "" or "D1" or "D1.T1"
-
-                // Get actual IDs from maps
-                const sId = sourceMap.get(path) // Should exist since we iterating sourceMap
-                const tId = targetMap.get(path)
-
-                if (!sId || !tId) return
-
-                const sPositions = positionsMap[sId] || []
+            sourceRelative.allSubzones.forEach(sZone => {
+                const sPositions = (positionsMap[sZone.id] || []).filter(p => p._status !== 'deleted')
                 if (sPositions.length === 0) return
 
-                const cloned = sPositions.map(p => {
-                    let newCode = p.code
-
-                    // Robust Prefix Replacement
-                    // Create regex for source prefix logic
-                    // We escape dots to ensure accurate matching
-                    const escapedSource = sourceFullPrefix.replace(/\./g, '\\.')
-                    const regex = new RegExp(`^${escapedSource}`, 'i')
-
-                    if (regex.test(newCode)) {
-                        newCode = newCode.replace(regex, targetFullPrefix)
-                    } else {
-                        // If strict prefix match fails, try replacing just the segment
-                        // e.g. if code was manually named but contains sourceZone.code
-                        const sCodeEscaped = sourceZone.code.replace(/\./g, '\\.')
-                        const subRegex = new RegExp(sCodeEscaped, 'i')
-                        if (subRegex.test(newCode)) {
-                            newCode = newCode.replace(subRegex, currentZone.code)
-                        } else {
-                            // Fallback: Code did not match anything, avoiding exact collision
-                            newCode = `${targetFullPrefix}.${newCode}`
-                        }
+                let sCodePath = ''
+                let sNamePath = ''
+                if (sZone.id !== sourceId) {
+                    const chain: string[] = []
+                    const nameChain: string[] = []
+                    let curr: LocalZone | undefined = sZone
+                    while (curr && curr.id !== sourceId) {
+                        if (curr.code) chain.unshift(curr.code.trim().toUpperCase())
+                        if (curr.name) nameChain.unshift(curr.name.trim().toUpperCase())
+                        curr = curr.parent_id ? zones.find(z => z.id === curr?.parent_id) : undefined
                     }
+                    sCodePath = chain.join('/')
+                    sNamePath = nameChain.join('/')
+                }
 
+                let tZone: LocalZone | undefined = undefined
+                if (sZone.id === sourceId) {
+                    tZone = zones.find(z => z.id === zoneId)
+                } else {
+                    tZone = targetRelative.byPath.get(sCodePath) || targetRelative.byNamePath.get(sNamePath)
+                }
+
+                if (!tZone) return
+
+                const cloned: LocalPosition[] = sPositions.map(p => {
+                    const newCode = transformPositionCode(p.code, cloneSearchPrefix, cloneReplacePrefix)
                     return {
                         ...p,
                         id: generateId(),
                         code: newCode.toUpperCase(),
                         display_order: p.display_order,
-                        batch_name: `Cloned from ${sourceZone.name}`,
+                        batch_name: `Sao chép từ ${sourceZone.name}`,
                         created_at: new Date().toISOString(),
                         status: 'active',
-                        lot_id: null, // Clear lots on clone
+                        lot_id: null,
                         _status: 'new',
-                        system_type: systemType
-                    } as any
+                        system_type: systemType,
+                        company_id: null
+                    } as unknown as LocalPosition
                 })
 
-                updates[tId] = cloned
+                updates[tZone.id] = cloned
                 totalCloned += cloned.length
             })
 
@@ -270,7 +269,11 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                 const next = { ...prev }
                 Object.entries(updates).forEach(([zId, posList]) => {
                     const currentList = next[zId] || []
-                    next[zId] = [...currentList, ...posList].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+                    const existingCodes = new Set(currentList.map(p => p.code))
+                    const filteredNew = posList.filter(p => !existingCodes.has(p.code))
+                    next[zId] = [...currentList, ...filteredNew].sort((a, b) =>
+                        a.code.localeCompare(b.code, undefined, { numeric: true })
+                    )
                 })
                 return next
             })
@@ -596,21 +599,105 @@ export function PositionCreatorModal({ zoneId, zones, onClose, findLeafZones, se
                                 </div>
                             </div>
 
-                            {sourceId && (
-                                <div className="p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-900/50">
-                                    <p className="text-xs text-emerald-800 dark:text-emerald-300">
-                                        💡 Hệ thống sẽ copy toàn bộ vị trí từ <b>{zones.find(z => z.id === sourceId)?.name}</b> và đổi tiền tố mã
-                                        từ <code className="bg-emerald-100 px-1 rounded">{zones.find(z => z.id === sourceId)?.code}</code> thành <code className="bg-emerald-100 px-1 rounded">{currentZone?.code}</code>.
-                                    </p>
+                            {sourceId && selectedSourceZone && (
+                                <div className="space-y-3 pt-1">
+                                    <div className="p-3 bg-emerald-50/50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800/60 rounded-xl space-y-2.5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+                                                <Sparkles size={14} className="text-emerald-600" />
+                                                Đổi tiền tố mã vị trí
+                                            </span>
+                                            {cloneSummary && (
+                                                <span className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                                                    {cloneSummary.totalPositionsToClone} vị trí ({cloneSummary.matchedSubzonesCount} zone con)
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <span className="block text-[10px] text-gray-500 mb-0.5">Tìm tiền tố cũ:</span>
+                                                <input
+                                                    type="text"
+                                                    value={cloneSearchPrefix}
+                                                    onChange={e => setCloneSearchPrefix(e.target.value.toUpperCase())}
+                                                    placeholder="VD: K2"
+                                                    className="w-full px-2 py-1.5 border rounded-lg text-xs font-mono uppercase bg-white dark:bg-gray-800 focus:ring-1 focus:ring-emerald-500 outline-none"
+                                                />
+                                            </div>
+                                            <div>
+                                                <span className="block text-[10px] text-gray-500 mb-0.5">Thay bằng tiền tố mới:</span>
+                                                <input
+                                                    type="text"
+                                                    value={cloneReplacePrefix}
+                                                    onChange={e => setCloneReplacePrefix(e.target.value.toUpperCase())}
+                                                    placeholder="VD: K5"
+                                                    className="w-full px-2 py-1.5 border rounded-lg text-xs font-mono uppercase bg-white dark:bg-gray-800 focus:ring-1 focus:ring-emerald-500 outline-none"
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* Suggestions */}
+                                        {cloneSuggestions.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                {cloneSuggestions.map((s, idx) => (
+                                                    <button
+                                                        key={idx}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCloneSearchPrefix(s.search)
+                                                            setCloneReplacePrefix(s.replace)
+                                                        }}
+                                                        className={`text-[11px] px-2 py-0.5 rounded border font-mono transition-all ${
+                                                            cloneSearchPrefix === s.search && cloneReplacePrefix === s.replace
+                                                                ? 'bg-emerald-600 text-white border-emerald-600 font-bold'
+                                                                : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:border-emerald-300'
+                                                        }`}
+                                                    >
+                                                        {s.label}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Mini preview */}
+                                        {cloneSummary && cloneSummary.previewItems.length > 0 && (
+                                            <div className="pt-1 border-t border-emerald-100 dark:border-emerald-900/40 space-y-1">
+                                                <span className="text-[10px] text-gray-400 block font-medium">Xem trước mã mẫu:</span>
+                                                <div className="space-y-1 max-h-24 overflow-y-auto">
+                                                    {cloneSummary.previewItems.slice(0, 4).map((item, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between text-[11px] bg-white/70 dark:bg-gray-800/70 px-2 py-1 rounded border border-emerald-100/60 dark:border-gray-700">
+                                                            <span className="text-gray-400 font-mono text-[10px]">{item.originalCode}</span>
+                                                            <ArrowRight size={10} className="text-gray-400 mx-1" />
+                                                            <span className="font-bold font-mono text-emerald-700 dark:text-emerald-400">{item.newCode}</span>
+                                                            <span className="text-[10px] text-gray-400 ml-auto truncate max-w-[100px]">{item.targetZoneName}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {cloneSummary && cloneSummary.duplicateCount > 0 && (
+                                            <div className="p-2 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/50 rounded-lg flex items-center gap-2 text-[11px] text-red-600 dark:text-red-400 font-medium">
+                                                <AlertTriangle size={14} className="shrink-0" />
+                                                Có {cloneSummary.duplicateCount} vị trí bị trùng mã! Vui lòng đổi tiền tố.
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
 
                             <button
                                 onClick={handleClonePositions}
-                                disabled={isCreatingPositions || !sourceId}
+                                disabled={isCreatingPositions || !sourceId || (cloneSummary ? cloneSummary.duplicateCount > 0 || cloneSummary.totalPositionsToClone === 0 : false)}
                                 className="w-full py-3 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg flex items-center justify-center gap-2 transition-all active:scale-95"
                             >
-                                {isCreatingPositions ? 'Đang sao chép...' : <><Copy size={18} /> Sao chép Ngay</>}
+                                {isCreatingPositions ? 'Đang sao chép...' : (
+                                    <>
+                                        <Copy size={18} />
+                                        Sao chép {cloneSummary ? `${cloneSummary.totalPositionsToClone} Vị trí` : 'Ngay'}
+                                    </>
+                                )}
                             </button>
                         </div>
                     )}

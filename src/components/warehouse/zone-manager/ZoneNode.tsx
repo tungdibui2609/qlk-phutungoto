@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, CopyPlus, Package, Trash2, Flag } from 'lucide-react'
+import { ChevronDown, ChevronRight, Layers, Check, X, Edit2, Plus, Save, Copy, CopyPlus, Package, Trash2, Flag, ClipboardCopy, ClipboardPaste } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import { LocalZone, LocalPosition } from './types'
 import { QuickAddForm } from './QuickAddForm'
@@ -17,7 +17,8 @@ interface ZoneNodeProps {
 }
 
 export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNodes, toggleExpand, ui, handlers, renderZoneNode }: ZoneNodeProps) {
-    const hasChildren = childrenZones.length > 0 || positions.length > 0
+    const totalTreePositions = handlers.countPositionsInTree ? handlers.countPositionsInTree(zone.id) : 0
+    const hasChildren = childrenZones.length > 0 || positions.length > 0 || totalTreePositions > 0
     const isExpanded = expandedNodes.has(zone.id)
     const isEditing = ui.editingZone === zone.id
     const isSavingTemplate = ui.savingTemplate === zone.id
@@ -129,7 +130,11 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                             <span className="text-sm text-gray-900 dark:text-white font-medium">{zone.name}</span>
                             <span className="text-xs text-gray-400">(L{zone.level})</span>
                             {childCount > 0 && <span className="text-xs text-blue-500">• {childCount} zone con</span>}
-                            {posCount > 0 && <span className="text-xs text-green-600 font-medium">• {posCount} vị trí</span>}
+                            {posCount > 0 ? (
+                                <span className="text-xs text-green-600 font-medium">• {posCount} vị trí</span>
+                            ) : totalTreePositions > 0 ? (
+                                <span className="text-xs text-emerald-600 font-medium">• {totalTreePositions} vị trí</span>
+                            ) : null}
                             {zone.is_hall && <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1 rounded flex items-center gap-0.5"><Flag size={10} /> Sảnh</span>}
                             {isNew && <span className="text-[10px] bg-green-100 text-green-700 px-1 rounded">Mới</span>}
                             {isModified && <span className="text-[10px] bg-yellow-100 text-yellow-700 px-1 rounded">Sửa</span>}
@@ -182,12 +187,34 @@ export function ZoneNode({ zone, depth = 0, positions, childrenZones, expandedNo
                                     <CopyPlus size={14} />
                                 </button>
                                 <button
-                                    onClick={() => { ui.setAddingPositionsTo(zone.id) }} // Missing default prefix logic here, handled in Modal or effect?
+                                    onClick={() => { ui.setAddingPositionsTo(zone.id) }}
                                     className="p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded"
                                     title="Tạo vị trí hàng loạt"
                                 >
                                     <Package size={14} />
                                 </button>
+                                {totalTreePositions > 0 && (
+                                    <button
+                                        onClick={() => handlers.handleCopyPositions(zone)}
+                                        className={`p-1.5 rounded transition-colors ${
+                                            ui.copiedSourceZone?.id === zone.id
+                                                ? 'text-emerald-700 bg-emerald-100 dark:bg-emerald-900/60 ring-1 ring-emerald-400'
+                                                : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                        }`}
+                                        title={`Sao chép ${totalTreePositions} vị trí của zone này & zone con`}
+                                    >
+                                        <ClipboardCopy size={14} />
+                                    </button>
+                                )}
+                                {ui.copiedSourceZone && ui.copiedSourceZone.id !== zone.id && (
+                                    <button
+                                        onClick={() => handlers.handleOpenPasteModal(zone)}
+                                        className="p-1.5 rounded text-orange-600 bg-orange-50 hover:bg-orange-100 dark:bg-orange-950/50 dark:text-orange-400 border border-orange-200 dark:border-orange-800 transition-colors"
+                                        title={`Dán vị trí từ [${ui.copiedSourceZone.name}] vào zone này`}
+                                    >
+                                        <ClipboardPaste size={14} />
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => handlers.handleDelete(zone.id)}
                                     className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded"

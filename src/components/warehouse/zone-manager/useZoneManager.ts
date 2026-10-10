@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { LocalZone, LocalPosition, ZoneTemplate, DBZone, TemplateNode } from './types'
+import { countPositionsInTree, getRelativeSubzoneMap, transformPositionCode } from './positionCloneUtils'
 
 export function useZoneManager() {
     const { showToast, showConfirm } = useToast()
@@ -33,6 +34,8 @@ export function useZoneManager() {
     const [addingPositionsTo, setAddingPositionsTo] = useState<string | null>(null)
     const [editingPosition, setEditingPosition] = useState<{ id: string, code: string } | null>(null)
     const [bulkCloningZone, setBulkCloningZone] = useState<LocalZone | null>(null)
+    const [copiedSourceZone, setCopiedSourceZone] = useState<LocalZone | null>(null)
+    const [pastingTargetZone, setPastingTargetZone] = useState<LocalZone | null>(null)
 
 
     // Computed dirty state
@@ -400,6 +403,134 @@ export function useZoneManager() {
         })
     }
 
+    // --- COPY / PASTE POSITIONS ---
+    function handleCopyPositions(zone: LocalZone) {
+        const count = countPositionsInTree(zone.id, zones, positionsMap)
+        if (count === 0) {
+            showToast(`Zone "${zone.name}" và các zone con chưa có vị trí nào để sao chép!`, 'warning')
+            return
+        }
+        setCopiedSourceZone(zone)
+        showToast(`Đã sao chép ${count} vị trí từ "${zone.name}". Chọn zone đích và bấm "Dán vị trí".`, 'success')
+    }
+
+    function handleClearCopiedPositions() {
+        setCopiedSourceZone(null)
+    }
+
+    function handleOpenPasteModal(targetZone: LocalZone) {
+        if (!copiedSourceZone) {
+            showToast('Vui lòng sao chép vị trí từ zone nguồn trước!', 'warning')
+            return
+        }
+        if (copiedSourceZone.id === targetZone.id) {
+            showToast('Zone đích không thể trùng với zone nguồn!', 'warning')
+            return
+        }
+        setPastingTargetZone(targetZone)
+    }
+
+    function handleClosePasteModal() {
+        setPastingTargetZone(null)
+    }
+
+    function handleConfirmPastePositions(
+        sourceZone: LocalZone,
+        targetZone: LocalZone,
+        searchPrefix: string,
+        replacePrefix: string
+    ) {
+        const sourceRelative = getRelativeSubzoneMap(sourceZone.id, zones)
+        const targetRelative = getRelativeSubzoneMap(targetZone.id, zones)
+
+        const updates: Record<string, LocalPosition[]> = {}
+        const affectedZoneIds = new Set<string>()
+        let totalCloned = 0
+
+        sourceRelative.allSubzones.forEach(sZone => {
+            const sPositions = (positionsMap[sZone.id] || []).filter(p => p._status !== 'deleted')
+            if (sPositions.length === 0) return
+
+            let sCodePath = ''
+            let sNamePath = ''
+            if (sZone.id !== sourceZone.id) {
+                const chain: string[] = []
+                const nameChain: string[] = []
+                let curr: LocalZone | undefined = sZone
+                while (curr && curr.id !== sourceZone.id) {
+                    if (curr.code) chain.unshift(curr.code.trim().toUpperCase())
+                    if (curr.name) nameChain.unshift(curr.name.trim().toUpperCase())
+                    curr = curr.parent_id ? zones.find(z => z.id === curr?.parent_id) : undefined
+                }
+                sCodePath = chain.join('/')
+                sNamePath = nameChain.join('/')
+            }
+
+            let tZone: LocalZone | undefined = undefined
+            if (sZone.id === sourceZone.id) {
+                tZone = zones.find(z => z.id === targetZone.id)
+            } else {
+                tZone = targetRelative.byPath.get(sCodePath) || targetRelative.byNamePath.get(sNamePath)
+            }
+
+            if (!tZone) return
+
+            affectedZoneIds.add(tZone.id)
+            const clonedList: LocalPosition[] = sPositions.map(p => {
+                const newCode = transformPositionCode(p.code, searchPrefix, replacePrefix)
+                return {
+                    id: generateId(),
+                    code: newCode.toUpperCase(),
+                    display_order: p.display_order,
+                    batch_name: `Dán từ ${sourceZone.name}`,
+                    created_at: new Date().toISOString(),
+                    status: 'active',
+                    lot_id: null,
+                    _status: 'new',
+                    system_type: systemType,
+                    company_id: null
+                } as unknown as LocalPosition
+            })
+
+            updates[tZone.id] = clonedList
+            totalCloned += clonedList.length
+        })
+
+        if (totalCloned === 0) {
+            showToast('Không tìm thấy vị trí nào để sao chép!', 'warning')
+            return
+        }
+
+        setPositionsMap(prev => {
+            const next = { ...prev }
+            Object.entries(updates).forEach(([zId, posList]) => {
+                const currentList = next[zId] || []
+                const existingCodes = new Set(currentList.map(p => p.code))
+                const filteredNew = posList.filter(p => !existingCodes.has(p.code))
+                next[zId] = [...currentList, ...filteredNew].sort((a, b) =>
+                    a.code.localeCompare(b.code, undefined, { numeric: true })
+                )
+            })
+            return next
+        })
+
+        // Auto-expand target zone and affected zones
+        setExpandedNodes(prev => {
+            const next = new Set(prev)
+            next.add(targetZone.id)
+            affectedZoneIds.forEach(id => {
+                let curr: LocalZone | undefined = zones.find(z => z.id === id)
+                while (curr) {
+                    next.add(curr.id)
+                    curr = curr.parent_id ? zones.find(z => z.id === curr?.parent_id) : undefined
+                }
+            })
+            return next
+        })
+
+        showToast(`Đã dán thành công ${totalCloned} vị trí vào ${targetZone.name}! Nhớ bấm "Lưu Thay Đổi".`, 'success')
+    }
+
     // --- TEMPLATES ---
     function buildTemplateFromZone(zoneId: string): TemplateNode {
         const zone = zones.find(z => z.id === zoneId)!
@@ -760,7 +891,9 @@ export function useZoneManager() {
             templateName, setTemplateName,
             addingPositionsTo, setAddingPositionsTo,
             editingPosition, setEditingPosition,
-            bulkCloningZone, setBulkCloningZone
+            bulkCloningZone, setBulkCloningZone,
+            copiedSourceZone, setCopiedSourceZone,
+            pastingTargetZone, setPastingTargetZone
         },
 
         // Actions
@@ -785,6 +918,12 @@ export function useZoneManager() {
         handleDeletePosition,
         handleRenamePosition,
         generateId,
+        handleCopyPositions,
+        handleClearCopiedPositions,
+        handleOpenPasteModal,
+        handleClosePasteModal,
+        handleConfirmPastePositions,
+        countPositionsInTree: (zoneId: string) => countPositionsInTree(zoneId, zones, positionsMap),
 
         // Helpers
         buildTree: (parentId: string | null) => zones
