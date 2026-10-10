@@ -23,8 +23,18 @@ export default function LoginPage() {
     const [message, setMessage] = useState<{ text: string, type: 'error' | 'success' } | null>(null)
     const [isUnauthorizedDomain, setIsUnauthorizedDomain] = useState(false)
     
-    // Boy awake state: false = sleeping, true = awake with blinking eyes
+    // Boy awake state: false = sleeping, true = awake with blinking eyes & greeting banner
     const [isAwake, setIsAwake] = useState(false)
+    const [accountGreetingName, setAccountGreetingName] = useState('')
+
+    const extractAccountName = (val: string) => {
+        const clean = val.trim()
+        if (!clean) return 'Đồng Chí'
+        if (clean.includes('@')) {
+            return clean.split('@')[0]
+        }
+        return clean
+    }
 
     // Real-time desk clock state
     const [currentTime, setCurrentTime] = useState<Date | null>(null)
@@ -58,6 +68,10 @@ export default function LoginPage() {
 
     const handleAuth = async (e: React.FormEvent) => {
         e.preventDefault()
+        // Extract greeting name immediately from input
+        const initialGreeting = extractAccountName(email)
+        setAccountGreetingName(initialGreeting)
+
         // Wake the boy up immediately on submit / Enter!
         setIsAwake(true)
         setLoading(true)
@@ -90,13 +104,35 @@ export default function LoginPage() {
             }
 
             // 2. Sign in with password
-            const { error } = await supabase.auth.signInWithPassword({
+            const { data: authData, error } = await supabase.auth.signInWithPassword({
                 email: signInEmail,
                 password,
             })
             if (error) throw error
 
-            // Cho load 3.5s để người dùng chiêm ngưỡng trọn vẹn chuyển động cậu bé tỉnh dậy & chớp mắt!
+            // Try to resolve full name from user metadata or user_profiles
+            if (authData?.user) {
+                let resolvedName = authData.user.user_metadata?.full_name || authData.user.user_metadata?.name
+                if (!resolvedName) {
+                    try {
+                        const { data: profile } = await supabase
+                            .from('user_profiles')
+                            .select('full_name')
+                            .eq('id', authData.user.id)
+                            .maybeSingle()
+                        if (profile?.full_name) {
+                            resolvedName = profile.full_name
+                        }
+                    } catch (err) {
+                        console.error('Error fetching profile name:', err)
+                    }
+                }
+                if (resolvedName) {
+                    setAccountGreetingName(resolvedName)
+                }
+            }
+
+            // Cho load 3.5s để người dùng chiêm ngưỡng trọn vẹn chuyển động cậu bé tỉnh dậy & dơ băng rôn chào đón!
             await new Promise((resolve) => setTimeout(resolve, 3500))
 
             window.location.href = '/select-system'
@@ -182,6 +218,33 @@ export default function LoginPage() {
                     transform-origin: 355px 148px;
                     animation: alarmRing 0.35s infinite ease-in-out;
                 }
+
+                /* Banner popup and waving animation */
+                @keyframes bannerPop {
+                    0% { transform: translateY(22px) scale(0.65); opacity: 0; }
+                    65% { transform: translateY(-4px) scale(1.03); opacity: 1; }
+                    85% { transform: translateY(2px) scale(0.99); opacity: 1; }
+                    100% { transform: translateY(0) scale(1); opacity: 1; }
+                }
+
+                @keyframes bannerWave {
+                    0%, 100% { transform: rotate(-1.5deg) translateY(0); }
+                    50% { transform: rotate(1.5deg) translateY(-2px); }
+                }
+
+                .banner-animated {
+                    transform-origin: 235px 20px;
+                    animation: bannerPop 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) forwards, bannerWave 3s ease-in-out 0.65s infinite;
+                }
+
+                @keyframes confettiFloat {
+                    0%, 100% { transform: translateY(0) rotate(0deg); }
+                    50% { transform: translateY(-4px) rotate(8deg); }
+                }
+
+                .confetti-item {
+                    animation: confettiFloat 2.5s ease-in-out infinite;
+                }
             `}</style>
 
             {/* Subtle Minimalist Notebook Sketch Grid Background */}
@@ -198,14 +261,30 @@ export default function LoginPage() {
                 
                 {/* 1. TOP INTERACTIVE DOODLE: The Boy Resting / Sleeping / Waking on top of the Desk */}
                 <div 
-                    className="w-full h-[155px] relative select-none pointer-events-none"
+                    className="w-full h-[185px] relative select-none pointer-events-none"
                 >
                     <svg 
-                        viewBox="0 0 420 155" 
+                        viewBox="0 -35 420 185" 
                         fill="none" 
                         xmlns="http://www.w3.org/2000/svg"
                         className="w-full h-full overflow-visible"
                     >
+                        {/* DEFINITIONS FOR CURVED TEXT PATHS ON THE BANNER */}
+                        <defs>
+                            {/* Upper arc for "★ XIN CHÀO ★" */}
+                            <path 
+                                id="banner-slogan-path" 
+                                d="M 125 13 C 175 1, 295 1, 345 13" 
+                                fill="none" 
+                            />
+                            {/* Lower arc for Account Name Greeting */}
+                            <path 
+                                id="banner-name-path" 
+                                d="M 125 28 C 175 16, 295 16, 345 28" 
+                                fill="none" 
+                            />
+                        </defs>
+
                         {/* DECOR: Minimalist Single-Line Desk Lamp on Left */}
                         <g opacity="0.85">
                             {/* Lamp base */}
@@ -254,26 +333,73 @@ export default function LoginPage() {
                                 className="transition-all duration-700 ease-out"
                             />
 
-                            {/* Folded Arms on the desk edge */}
-                            <path 
-                                d="M 165 148 C 175 134, 225 132, 255 148" 
-                                stroke="#2e251d" 
-                                strokeWidth="2.8" 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
-                                fill="#faf6f0"
-                            />
-                            <path 
-                                d="M 220 148 C 245 134, 285 135, 305 148" 
-                                stroke="#2e251d" 
-                                strokeWidth="2.8" 
-                                strokeLinecap="round" 
-                                strokeLinejoin="round" 
-                                fill="#faf6f0"
-                            />
-                            {/* Sleeve wrinkles */}
-                            <path d="M 185 142 L 192 147" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
-                            <path d="M 275 142 L 270 147" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+                            {/* Folded Arms on desk ONLY when sleeping */}
+                            {!isAwake && (
+                                <g>
+                                    <path 
+                                        d="M 165 148 C 175 134, 225 132, 255 148" 
+                                        stroke="#2e251d" 
+                                        strokeWidth="2.8" 
+                                        strokeLinecap="round" 
+                                        strokeLinejoin="round" 
+                                        fill="#faf6f0"
+                                    />
+                                    <path 
+                                        d="M 220 148 C 245 134, 285 135, 305 148" 
+                                        stroke="#2e251d" 
+                                        strokeWidth="2.8" 
+                                        strokeLinecap="round" 
+                                        strokeLinejoin="round" 
+                                        fill="#faf6f0"
+                                    />
+                                    {/* Sleeve wrinkles */}
+                                    <path d="M 185 142 L 192 147" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+                                    <path d="M 275 142 L 270 147" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+                                </g>
+                            )}
+
+                            {/* Raised Arms raising the Banner when Awake */}
+                            {isAwake && (
+                                <g className="transition-all duration-700 ease-out">
+                                    {/* Left Arm reaching up to left pole */}
+                                    <path 
+                                        d="M 168 122 C 145 106, 126 75, 134 38" 
+                                        stroke="#2e251d" 
+                                        strokeWidth="2.8" 
+                                        strokeLinecap="round" 
+                                        fill="none" 
+                                    />
+                                    <path 
+                                        d="M 182 126 C 160 110, 142 82, 146 44" 
+                                        stroke="#2e251d" 
+                                        strokeWidth="2.8" 
+                                        strokeLinecap="round" 
+                                        fill="none" 
+                                    />
+                                    {/* Left Hand gripping left pole */}
+                                    <ellipse cx="138" cy="36" rx="5.5" ry="6.5" fill="#fffdfa" stroke="#2e251d" strokeWidth="2.4" />
+                                    <path d="M 134 33 C 141 33, 142 40, 136 41" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+
+                                    {/* Right Arm reaching up to right pole */}
+                                    <path 
+                                        d="M 302 122 C 325 106, 344 75, 336 38" 
+                                        stroke="#2e251d" 
+                                        strokeWidth="2.8" 
+                                        strokeLinecap="round" 
+                                        fill="none" 
+                                    />
+                                    <path 
+                                        d="M 288 126 C 310 110, 328 82, 324 44" 
+                                        stroke="#2e251d" 
+                                        strokeWidth="2.8" 
+                                        strokeLinecap="round" 
+                                        fill="none" 
+                                    />
+                                    {/* Right Hand gripping right pole */}
+                                    <ellipse cx="332" cy="36" rx="5.5" ry="6.5" fill="#fffdfa" stroke="#2e251d" strokeWidth="2.4" />
+                                    <path d="M 336 33 C 329 33, 328 40, 334 41" stroke="#2e251d" strokeWidth="2.2" strokeLinecap="round" />
+                                </g>
+                            )}
 
                             {/* HEAD CONTAINER: Rests right on arms when sleeping, lifts up high when awake */}
                             <g 
@@ -349,6 +475,112 @@ export default function LoginPage() {
                                 )}
                             </g>
                         </g>
+
+                        {/* ================= GREETING BANNER HELD BY THE BOY WHEN AWAKE ================= */}
+                        {isAwake && (
+                            <g className="banner-animated select-none">
+                                {/* Left Pole */}
+                                <line x1="138" y1="-20" x2="138" y2="48" stroke="#3c3127" strokeWidth="3" strokeLinecap="round" />
+                                <circle cx="138" cy="-21" r="3.5" fill="#eab308" stroke="#3c3127" strokeWidth="2" />
+
+                                {/* Right Pole */}
+                                <line x1="332" y1="-20" x2="332" y2="48" stroke="#3c3127" strokeWidth="3" strokeLinecap="round" />
+                                <circle cx="332" cy="-21" r="3.5" fill="#eab308" stroke="#3c3127" strokeWidth="2" />
+
+                                {/* Left Ribbon Tail (back fold & swallowtail) */}
+                                <path d="M 125 36 L 125 16 L 110 26 Z" fill="#dfd5c6" stroke="#2e251d" strokeWidth="2" strokeLinejoin="round" />
+                                <path d="M 110 26 L 78 20 L 90 35 L 78 50 L 125 36 Z" fill="#fef3c7" stroke="#2e251d" strokeWidth="2.5" strokeLinejoin="round" />
+                                <path d="M 86 28 L 102 33" stroke="#d5c3ab" strokeWidth="1.5" strokeLinecap="round" />
+
+                                {/* Right Ribbon Tail (back fold & swallowtail) */}
+                                <path d="M 345 36 L 345 16 L 360 26 Z" fill="#dfd5c6" stroke="#2e251d" strokeWidth="2" strokeLinejoin="round" />
+                                <path d="M 360 26 L 392 20 L 380 35 L 392 50 L 345 36 Z" fill="#fef3c7" stroke="#2e251d" strokeWidth="2.5" strokeLinejoin="round" />
+                                <path d="M 384 28 L 368 33" stroke="#d5c3ab" strokeWidth="1.5" strokeLinecap="round" />
+
+                                {/* Main Ribbon Body (Front banner) */}
+                                <path 
+                                    d="M 122 3 C 175 -9, 295 -9, 348 3 L 348 38 C 295 26, 175 26, 122 38 Z" 
+                                    fill="#fffdf5" 
+                                    stroke="#2e251d" 
+                                    strokeWidth="2.8" 
+                                    strokeLinejoin="round" 
+                                />
+
+                                {/* Decorative Stitch Lines */}
+                                <path 
+                                    d="M 126 8 C 176 -4, 294 -4, 344 8" 
+                                    stroke="#f59e0b" 
+                                    strokeWidth="1.2" 
+                                    strokeDasharray="3 3" 
+                                    strokeLinecap="round" 
+                                    fill="none" 
+                                />
+                                <path 
+                                    d="M 126 33 C 176 21, 294 21, 344 33" 
+                                    stroke="#f59e0b" 
+                                    strokeWidth="1.2" 
+                                    strokeDasharray="3 3" 
+                                    strokeLinecap="round" 
+                                    fill="none" 
+                                />
+
+                                {/* Ribbon Slogan: ★ XIN CHÀO ★ (Uốn cong mềm mại theo dải băng rôn) */}
+                                <text 
+                                    fontSize="8.5" 
+                                    fontWeight="bold" 
+                                    fill="#c2410c" 
+                                    letterSpacing="2"
+                                    fontFamily="monospace, sans-serif"
+                                >
+                                    <textPath 
+                                        href="#banner-slogan-path" 
+                                        startOffset="50%" 
+                                        textAnchor="middle"
+                                    >
+                                        ★ XIN CHÀO ★
+                                    </textPath>
+                                </text>
+
+                                {/* Ribbon Account Name Greeting (Uốn cong khớp hoàn toàn theo băng rôn) */}
+                                <text 
+                                    fontSize={(accountGreetingName || extractAccountName(email)).length > 16 
+                                        ? ((accountGreetingName || extractAccountName(email)).length > 22 ? "9.5" : "11") 
+                                        : "13"
+                                    } 
+                                    fontWeight="900" 
+                                    fill="#261d15" 
+                                    letterSpacing="0.5"
+                                    fontFamily="system-ui, sans-serif"
+                                >
+                                    <textPath 
+                                        href="#banner-name-path" 
+                                        startOffset="50%" 
+                                        textAnchor="middle"
+                                    >
+                                        {(accountGreetingName || extractAccountName(email))}!
+                                    </textPath>
+                                </text>
+
+                                {/* Sparkles & Confetti surrounding the Banner */}
+                                <g className="confetti-item">
+                                    {/* Golden Stars */}
+                                    <path d="M 112 -12 L 114 -7 L 119 -5 L 114 -3 L 112 2 L 110 -3 L 105 -5 L 110 -7 Z" fill="#eab308" />
+                                    <path d="M 358 -10 L 360 -5 L 365 -3 L 360 -1 L 358 4 L 356 -1 L 351 -3 L 356 -5 Z" fill="#eab308" />
+                                    <path d="M 235 -24 L 237 -19 L 242 -17 L 237 -15 L 235 -10 L 233 -15 L 228 -17 L 233 -19 Z" fill="#f59e0b" />
+
+                                    {/* Colorful confetti dots */}
+                                    <circle cx="102" cy="8" r="2.5" fill="#ef4444" />
+                                    <circle cx="368" cy="10" r="2.5" fill="#3b82f6" />
+                                    <circle cx="120" cy="-22" r="2" fill="#10b981" />
+                                    <circle cx="350" cy="-20" r="2" fill="#ec4899" />
+                                    <circle cx="180" cy="-18" r="2.2" fill="#f97316" />
+                                    <circle cx="290" cy="-18" r="2.2" fill="#8b5cf6" />
+                                    
+                                    {/* Cute floating heart */}
+                                    <path d="M 235 -30 C 232 -33, 227 -31, 227 -27 C 227 -23, 235 -18, 235 -18 C 235 -18, 243 -23, 243 -27 C 243 -31, 238 -33, 235 -30 Z" fill="#f43f5e" opacity="0.85" />
+                                </g>
+                            </g>
+                        )}
 
                         {/* FLOATING "Zzz" ONLY WHEN SLEEPING */}
                         {!isAwake && (
@@ -469,12 +701,12 @@ export default function LoginPage() {
                                 <span>AnyWarehouse</span>
                             </div>
                             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#2c231b]">
-                                {isAwake ? "Tôi Đã Dậy Rồi Đây! ☀️" : "Bàn Làm Việc Mr. Tùng"}
+                                Góc Làm Việc Phân Đội Kho
                             </h1>
                             <p className="text-xs text-[#7d6f60] mt-1 font-medium">
                                 {isAwake 
-                                    ? "Cảm ơn bạn đã đánh thức tôi! Đang mở bàn làm việc..." 
-                                    : "Đăng nhập để đánh thức tôi"}
+                                    ? `Chú lính chì đã thức giấc chào đón ${accountGreetingName || extractAccountName(email)}!` 
+                                    : "Đăng nhập để đánh thức chú lính chì"}
                             </p>
                         </div>
 
@@ -508,7 +740,12 @@ export default function LoginPage() {
                                     <input
                                         type="text"
                                         value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
+                                        onChange={(e) => {
+                                            setEmail(e.target.value)
+                                            if (!isAwake) {
+                                                setAccountGreetingName(extractAccountName(e.target.value))
+                                            }
+                                        }}
                                         required
                                         className="w-full pl-10 pr-4 py-3.5 rounded-2xl bg-[#ffffff] text-[#2c231b] border-2 border-[#3c3127] placeholder:text-[#b0a394] text-sm font-semibold transition-all duration-200 outline-none focus:ring-4 focus:ring-[#3c3127]/10"
                                         placeholder="user@example.com hoặc tenkho.user"
@@ -555,7 +792,7 @@ export default function LoginPage() {
                                     {loading ? (
                                         <>
                                             <Loader2 className="animate-spin" size={18} />
-                                            <span>Tôi đã tỉnh dậy & đang vào hệ thống...</span>
+                                            <span>Chú lính chì đang mở hệ thống vào ca...</span>
                                         </>
                                     ) : (
                                         <>
