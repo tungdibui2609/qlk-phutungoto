@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
@@ -298,13 +298,13 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         }
     }
 
-    const addItem = () => {
-        setItems([...items, {
+    const addItem = useCallback(() => {
+        setItems(prev => [...prev, {
             id: crypto.randomUUID(), productId: '', productName: '', unit: '', quantity: 1, document_quantity: 1, price: 0, note: '', categoryId: null
         }])
-    }
+    }, [])
 
-    const checkUnbundle = (productId: string, unit: string, qty: number): { needsUnbundle: boolean, unbundleInfo?: string, sourceUnit?: string, rate?: number } => {
+    const checkUnbundle = useCallback((productId: string, unit: string, qty: number): { needsUnbundle: boolean, unbundleInfo?: string, sourceUnit?: string, rate?: number } => {
         return unbundleService.checkUnbundle({
             productId,
             unit,
@@ -316,9 +316,9 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             conversionMap,
             unitStockMap
         })
-    }
+    }, [products, units, unitNameMap, unitIdMap, conversionMap, unitStockMap])
 
-    const updateItem = (id: string, field: keyof OrderItem, value: any) => {
+    const updateItem = useCallback((id: string, field: keyof OrderItem, value: any) => {
         setItems(prev => prev.map(item => {
             if (item.id !== id) return item
             if (field === 'productId') {
@@ -379,9 +379,9 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             }
             return { ...item, [field]: value }
         }))
-    }
+    }, [products, convertUnit, currentSystem, checkUnbundle])
 
-    const removeItem = (id: string) => setItems(prev => prev.filter(i => i.id !== id))
+    const removeItem = useCallback((id: string) => setItems(prev => prev.filter(i => i.id !== id)), [])
 
     const handleSubmit = async () => {
         if (items.length === 0) return showToast('Vui lòng thêm ít nhất 1 sản phẩm', 'warning')

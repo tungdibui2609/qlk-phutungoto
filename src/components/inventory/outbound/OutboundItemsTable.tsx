@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Trash2, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { Product, Unit, OrderItem } from '@/components/inventory/types'
@@ -25,13 +25,49 @@ interface OutboundItemsTableProps {
     checkUnbundle?: (productId: string, unit: string, qty: number) => { needsUnbundle: boolean, unbundleInfo?: string }
 }
 
-export function OutboundItemsTable({
+function OutboundItemsTableComponent({
     items, products, units, categories, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit,
     setItems, checkUnbundle
 }: OutboundItemsTableProps) {
     const { showToast } = useToast()
     const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
     const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
+
+    // Performance: Memoize options, product lookup, and accumulated stock quantity
+    const productOptions = useMemo(() => {
+        return products.map(p => {
+            const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
+            const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
+            return {
+                value: p.id,
+                label: `${displaySku} - ${displayName}`,
+                sku: displaySku || '',
+                name: displayName || '',
+                aliases: (p as any).aliases || ''
+            }
+        })
+    }, [products, displayInternalCode])
+
+    const productMap = useMemo(() => {
+        const map = new Map<string, Product>()
+        for (const p of products) {
+            map.set(p.id, p)
+        }
+        return map
+    }, [products])
+
+    const productBaseQtyMap = useMemo(() => {
+        const map = new Map<string, number>()
+        for (const i of items) {
+            if (!i.productId) continue
+            const rowProd = productMap.get(i.productId)
+            const rowBaseQty = (rowProd && i.unit && i.quantity)
+                ? convertUnit(i.productId, i.unit, rowProd.unit || null, Number(i.quantity) || 0, rowProd.unit || null)
+                : (Number(i.quantity) || 0)
+            map.set(i.productId, (map.get(i.productId) || 0) + rowBaseQty)
+        }
+        return map
+    }, [items, productMap, convertUnit])
 
     const handleInputFocus = (id: string, field: string, currentVal: number | string | null | undefined) => {
         const displayVal = currentVal?.toString().replace('.', ',') || ''
@@ -158,21 +194,9 @@ export function OutboundItemsTable({
                     </thead>
                     <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
                         {items.map((item, index) => {
-                            const product = products.find(p => p.id === item.productId)
-                            // Basic stock validation display
+                            const product = productMap.get(item.productId)
                             const stockAvailable = product?.stock_quantity ?? 0
-                            
-                            // Convert item quantity to base unit to compare with stockAvailable
-                            const totalProductBaseQty = items
-                                .filter(i => i.productId === item.productId)
-                                .reduce((sum, i) => {
-                                    const rowProd = products.find(p => p.id === i.productId)
-                                    const rowBaseQty = (rowProd && i.unit && i.quantity)
-                                        ? convertUnit(i.productId, i.unit, rowProd.unit || null, Number(i.quantity) || 0, rowProd.unit || null)
-                                        : (Number(i.quantity) || 0)
-                                    return sum + rowBaseQty
-                                }, 0)
-
+                            const totalProductBaseQty = productBaseQtyMap.get(item.productId) || 0
                             const isOverStock = Boolean(product && (totalProductBaseQty > stockAvailable + 0.0001))
                             const isStockZero = Boolean(product && stockAvailable <= 0)
 
@@ -181,17 +205,7 @@ export function OutboundItemsTable({
                                     <td className="px-4 py-3 text-stone-400">{index + 1}</td>
                                     <td className="px-4 py-3 align-top">
                                         <Combobox
-                                            options={products.map(p => {
-                                                const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
-                                                const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
-                                                return {
-                                                    value: p.id,
-                                                    label: `${displaySku} - ${displayName}`,
-                                                    sku: displaySku || '',
-                                                    name: displayName || '',
-                                                    aliases: (p as any).aliases || ''
-                                                }
-                                            })}
+                                            options={productOptions}
                                             value={item.productId}
                                             onChange={(val) => updateItem(item.id, 'productId', val)}
                                             onPaste={(e) => handleProductPaste(index, e)}
@@ -350,21 +364,9 @@ export function OutboundItemsTable({
             {/* Mobile Card View */}
             <div className="md:hidden space-y-4">
                 {items.map((item, index) => {
-                    const product = products.find(p => p.id === item.productId)
-                    // Basic stock validation display
+                    const product = productMap.get(item.productId)
                     const stockAvailable = product?.stock_quantity ?? 0
-
-                    // Convert item quantity to base unit to compare with stockAvailable
-                    const totalProductBaseQty = items
-                        .filter(i => i.productId === item.productId)
-                        .reduce((sum, i) => {
-                            const rowProd = products.find(p => p.id === i.productId)
-                            const rowBaseQty = (rowProd && i.unit && i.quantity)
-                                ? convertUnit(i.productId, i.unit, rowProd.unit || null, Number(i.quantity) || 0, rowProd.unit || null)
-                                : (Number(i.quantity) || 0)
-                            return sum + rowBaseQty
-                        }, 0)
-
+                    const totalProductBaseQty = productBaseQtyMap.get(item.productId) || 0
                     const isOverStock = Boolean(product && (totalProductBaseQty > stockAvailable + 0.0001))
 
                     return (
@@ -382,17 +384,7 @@ export function OutboundItemsTable({
                             <div className="space-y-1">
                                 <label className="text-xs text-stone-500">Sản phẩm</label>
                                 <Combobox
-                                    options={products.map(p => {
-                                        const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
-                                        const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
-                                        return {
-                                            value: p.id,
-                                            label: `${displaySku} - ${displayName}`,
-                                            sku: displaySku || '',
-                                            name: displayName || '',
-                                            aliases: (p as any).aliases || ''
-                                        }
-                                    })}
+                                    options={productOptions}
                                     value={item.productId}
                                     onChange={(val) => updateItem(item.id, 'productId', val)}
                                     onPaste={(e) => handleProductPaste(index, e)}
@@ -561,3 +553,5 @@ export function OutboundItemsTable({
         </div>
     )
 }
+
+export const OutboundItemsTable = React.memo(OutboundItemsTableComponent)

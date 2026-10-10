@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { Trash2, ChevronDown, FileSpreadsheet } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { Product, Unit, OrderItem } from '@/components/inventory/types'
@@ -24,13 +24,38 @@ interface InboundItemsTableProps {
     setItems?: React.Dispatch<React.SetStateAction<OrderItem[]>>
 }
 
-export function InboundItemsTable({
+function InboundItemsTableComponent({
     items, products, units, categories, updateItem, removeItem, targetUnit, hasModule, compact, displayInternalCode, convertUnit,
     setItems
 }: InboundItemsTableProps) {
     const { showToast } = useToast()
     const [isExcelModalOpen, setIsExcelModalOpen] = useState(false)
     const [editingValue, setEditingValue] = useState<{ id: string, field: string, value: string } | null>(null)
+
+    // Performance: Memoize options and map to avoid O(N*M) allocations on every keystroke
+    const productOptions = useMemo(() => {
+        return products.map(p => {
+            const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
+            const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
+            return {
+                value: p.id,
+                label: `${displaySku} - ${displayName}`,
+                sku: displaySku || '',
+                name: displayName || '',
+                aliases: (p as any).aliases || '',
+                originalSku: p.sku || '',
+                originalName: p.name || ''
+            }
+        })
+    }, [products, displayInternalCode])
+
+    const productMap = useMemo(() => {
+        const map = new Map<string, Product>()
+        for (const p of products) {
+            map.set(p.id, p)
+        }
+        return map
+    }, [products])
 
     const handleInputFocus = (id: string, field: string, currentVal: number | string | null | undefined) => {
         const displayVal = currentVal?.toString().replace('.', ',') || ''
@@ -154,19 +179,7 @@ export function InboundItemsTable({
                                 <td className="px-4 py-3 text-stone-400">{index + 1}</td>
                                 <td className="px-4 py-3 align-top">
                                     <Combobox
-                                        options={products.map(p => {
-                                            const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
-                                            const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
-                                            return {
-                                                value: p.id,
-                                                label: `${displaySku} - ${displayName}`,
-                                                sku: displaySku || '',
-                                                name: displayName || '',
-                                                aliases: (p as any).aliases || '',
-                                                originalSku: p.sku || '',
-                                                originalName: p.name || ''
-                                            }
-                                        })}
+                                        options={productOptions}
                                         value={item.productId}
                                         onChange={(val) => updateItem(item.id, 'productId', val)}
                                         onPaste={(e) => handleProductPaste(index, e)}
@@ -198,7 +211,7 @@ export function InboundItemsTable({
                                 </td>
                                 <td className="px-4 py-3 text-center">
                                     <ItemUnitSelect
-                                        product={products.find(p => p.id === item.productId)}
+                                        product={productMap.get(item.productId)}
                                         units={units}
                                         value={item.unit}
                                         onChange={(val) => updateItem(item.id, 'unit', val)}
@@ -320,19 +333,7 @@ export function InboundItemsTable({
                         <div className="space-y-1">
                             <label className="text-xs text-stone-500">Sản phẩm</label>
                             <Combobox
-                                options={products.map(p => {
-                                    const displaySku = displayInternalCode && p.internal_code ? p.internal_code : p.sku
-                                    const displayName = displayInternalCode && p.internal_name ? p.internal_name : p.name
-                                    return {
-                                        value: p.id,
-                                        label: `${displaySku} - ${displayName}`,
-                                        sku: displaySku || '',
-                                        name: displayName || '',
-                                        aliases: (p as any).aliases || '',
-                                        originalSku: p.sku || '',
-                                        originalName: p.name || ''
-                                    }
-                                })}
+                                options={productOptions}
                                 value={item.productId}
                                 onChange={(val) => updateItem(item.id, 'productId', val)}
                                 onPaste={(e) => handleProductPaste(index, e)}
@@ -367,7 +368,7 @@ export function InboundItemsTable({
                             <div className="space-y-1">
                                 <label className="text-xs text-stone-500">ĐVT</label>
                                 <ItemUnitSelect
-                                    product={products.find(p => p.id === item.productId)}
+                                    product={productMap.get(item.productId)}
                                     units={units}
                                     value={item.unit}
                                     onChange={(val) => updateItem(item.id, 'unit', val)}
@@ -482,3 +483,5 @@ export function InboundItemsTable({
         </div>
     )
 }
+
+export const InboundItemsTable = React.memo(InboundItemsTableComponent)
