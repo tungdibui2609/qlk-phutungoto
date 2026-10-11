@@ -842,6 +842,7 @@ export function LotForm({
                 oem_brand: customerName || null,
                 material_zone: materialZones.length > 0 ? materialZones.join(', ') : null,
                 material_zones: materialZones.length > 0 ? materialZones : [],
+                manual_material_zones: materialZones.length > 0 ? materialZones : [],
                 system_history: systemHistory,
                 manual_peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
                 peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : [])
