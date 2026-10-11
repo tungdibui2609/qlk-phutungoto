@@ -86,7 +86,9 @@ export function LotForm({
     const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
     const [customerName, setCustomerName] = useState('')
-    const [materialZone, setMaterialZone] = useState('')
+    const [materialZones, setMaterialZones] = useState<string[]>([])
+    const [newMaterialZoneInput, setNewMaterialZoneInput] = useState('')
+    const [materialZonesList, setMaterialZonesList] = useState<any[]>([])
     const [productionCode, setProductionCode] = useState(initialProductionCode || '')
     const [images, setImages] = useState<string[]>([])
     const [extraInfo, setExtraInfo] = useState('')
@@ -126,6 +128,33 @@ export function LotForm({
 
         fetchCurrentProduction()
     }, [selectedProductionId])
+
+    // Load material zones for quick selection & traceability
+    useEffect(() => {
+        if (isVisible) {
+            const fetchZones = async () => {
+                const { data } = await (supabase.from('material_zones' as any) as any)
+                    .select('id, code, name, province, location, certification')
+                    .eq('is_active', true)
+                    .order('code')
+                if (data) setMaterialZonesList(data)
+            }
+            fetchZones()
+        }
+    }, [isVisible])
+
+    const handleAddMaterialZone = (zoneVal?: string) => {
+        const val = (zoneVal || newMaterialZoneInput).trim()
+        if (!val) return
+        if (!materialZones.includes(val)) {
+            setMaterialZones(prev => [...prev, val])
+        }
+        setNewMaterialZoneInput('')
+    }
+
+    const handleRemoveMaterialZone = (zoneToRemove: string) => {
+        setMaterialZones(prev => prev.filter(z => z !== zoneToRemove))
+    }
 
     const [dailySeq, setDailySeq] = useState<number | string>('')
     const [isSubmitting, setIsSubmitting] = useState(false)
@@ -309,7 +338,9 @@ export function LotForm({
                 }
                 setExtraInfo(meta.extra_info || '')
                 setCustomerName(meta.customer_name || meta.oem_brand || '')
-                setMaterialZone(meta.material_zone || '')
+                const rawMz = meta.material_zones || (meta.material_zone ? meta.material_zone.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+                setMaterialZones(Array.isArray(rawMz) ? rawMz : [])
+                setNewMaterialZoneInput('')
 
             } else {
                 let initialDate = new Date().toISOString().split('T')[0]
@@ -369,7 +400,12 @@ export function LotForm({
                             }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.customerName) setCustomerName(parsed.customerName)
-                            if (parsed.materialZone) setMaterialZone(parsed.materialZone)
+                            if (parsed.materialZones && Array.isArray(parsed.materialZones)) {
+                                setMaterialZones(parsed.materialZones)
+                            } else if (parsed.materialZone) {
+                                const arr = parsed.materialZone.split(',').map((s: string) => s.trim()).filter(Boolean)
+                                setMaterialZones(arr)
+                            }
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
                             if (parsed.inboundDate) {
                                 setInboundDate(parsed.inboundDate)
@@ -448,7 +484,8 @@ export function LotForm({
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
                 customerName: isPersistent ? customerName : '',
-                materialZone: isPersistent ? materialZone : '',
+                materialZones: isPersistent ? materialZones : [],
+                materialZone: isPersistent ? materialZones.join(', ') : '',
                 productionCode: isPersistent ? productionCode : '',
                 selectedProductionId: isPersistent ? selectedProductionId : '',
                 extraInfo: isPersistent ? extraInfo : '',
@@ -507,7 +544,8 @@ export function LotForm({
         setWarehouseName('')
         setBatchCode('')
         setCustomerName('')
-        setMaterialZone('')
+        setMaterialZones([])
+        setNewMaterialZoneInput('')
         setProductionCode('')
         setImages([])
         setExtraInfo('')
@@ -802,7 +840,8 @@ export function LotForm({
                 extra_info: extraInfo,
                 customer_name: customerName || null,
                 oem_brand: customerName || null,
-                material_zone: materialZone || null,
+                material_zone: materialZones.length > 0 ? materialZones.join(', ') : null,
+                material_zones: materialZones.length > 0 ? materialZones : [],
                 system_history: systemHistory,
                 manual_peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
                 peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : [])
@@ -1085,446 +1124,652 @@ export function LotForm({
                     </div>
                 )}
 
-                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[1500px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                        {/* Hàng 1: Định danh & Phân loại chính */}
-                        {/* Mã LOT */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Mã LOT Nội bộ <span className="text-red-500">*</span>
-                            </label>
-                            <div className="relative">
-                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={newLotCode}
-                                    readOnly
-                                    className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-500 cursor-not-allowed outline-none font-mono"
-                                />
-                            </div>
-                        </div>
+                {/* Vùng thông tin chi tiết lô hàng - Bố cục phân nhóm thông minh & thích ứng với các module */}
+                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[3000px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
+                    {(() => {
+                        // Tính toán số lượng & trạng thái module cho các nhóm bố cục thích ứng
+                        const hasWarehouse = hasModule('warehouse_name')
+                        const hasQC = hasModule('qc_info')
+                        const hasSupplier = hasModule('supplier_info')
+                        const generalFieldsCount = 1 + (hasWarehouse ? 1 : 0) + (hasSupplier ? 1 : 0) + (hasQC ? 1 : 0)
 
+                        const hasRawDate = hasModule('raw_material_date')
+                        const hasInboundDate = hasModule('inbound_date')
+                        const hasPeelingDate = hasModule('peeling_date')
+                        const hasPackagingDate = hasModule('packaging_date')
+                        const hasAnyDateModule = hasRawDate || hasInboundDate || hasPeelingDate || hasPackagingDate
+                        const dateModulesCount = [hasRawDate, hasInboundDate, hasPeelingDate, hasPackagingDate].filter(Boolean).length
 
-                        {/* Kho nhập hàng */}
-                        {hasModule('warehouse_name') && (
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Kho nhập hàng
-                                </label>
-                                <div className="relative">
-                                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                    <select
-                                        value={warehouseName}
-                                        onChange={(e) => setWarehouseName(e.target.value)}
-                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
-                                    >
-                                        <option value="">-- Chọn kho hàng --</option>
-                                        {branches.map(b => (
-                                            <option key={b.id} value={b.name}>{b.name}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
-                                </div>
-                            </div>
-                        )}
+                        const hasMaterialZone = hasModule('material_zone')
+                        const hasOemInfo = hasModule('oem_info')
+                        const hasBatchCode = hasModule('batch_code')
+                        const hasAnyTraceModule = hasMaterialZone || hasOemInfo || hasBatchCode
+                        const traceModulesCount = [hasMaterialZone, hasOemInfo, hasBatchCode].filter(Boolean).length
 
-                        {/* QC Selection */}
-                        {hasModule('qc_info') && (
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Nhân viên QC
-                                </label>
-                                <div className="relative">
-                                    <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                    <select
-                                        value={selectedQCId}
-                                        onChange={(e) => setSelectedQCId(e.target.value)}
-                                        className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
-                                    >
-                                        <option value="">-- Chọn QC --</option>
-                                        {qcList.map(qc => (
-                                            <option key={qc.id} value={qc.id}>{qc.name}</option>
-                                        ))}
-                                    </select>
-                                    <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
-                                </div>
-                            </div>
-                        )}
-                    </div>
+                        const hasImages = hasModule('lot_images')
+                        const hasExtraInfo = hasModule('extra_info')
 
-                    {/* Hàng 2: Thông tin sản xuất (Tách riêng 1 hàng) */}
-                    <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-orange-50/30 dark:bg-orange-900/5 rounded-2xl border border-orange-100 dark:border-orange-900/20">
-                        <div className="space-y-2 col-span-1 md:col-span-2">
-                             <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold text-xs uppercase tracking-wider mb-1">
-                                 <Factory size={14} />
-                                 Thông tin sản xuất
-                             </div>
-                        </div>
+                        return (
+                            <div className="space-y-5">
+                                {/* 1. Thông tin định danh & Quản lý kho */}
+                                <div className={`grid gap-4 ${
+                                    generalFieldsCount === 1 ? 'grid-cols-1 md:max-w-md' :
+                                    generalFieldsCount === 2 ? 'grid-cols-1 md:grid-cols-2' :
+                                    generalFieldsCount === 3 ? 'grid-cols-1 md:grid-cols-3' :
+                                    'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+                                }`}>
+                                    {/* Mã LOT Nội bộ */}
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                                            <span className="flex items-center gap-1.5">
+                                                <Hash size={13} className="text-slate-400" />
+                                                Mã LOT Nội bộ <span className="text-rose-500">*</span>
+                                            </span>
+                                            <span className="text-[10px] font-semibold text-slate-400">Tự động</span>
+                                        </label>
+                                        <div className="relative">
+                                            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
+                                            <input
+                                                type="text"
+                                                value={newLotCode}
+                                                readOnly
+                                                className="w-full pl-10 pr-4 py-2.5 bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-400 cursor-not-allowed outline-none font-mono text-sm font-bold"
+                                            />
+                                        </div>
+                                    </div>
 
-                        {/* LSX Nội bộ */}
-                        <div className="space-y-2">
-                            <label className="text-[11px] font-bold text-orange-600/70 dark:text-orange-400/70 uppercase flex items-center gap-1">
-                                <Plus size={10} />
-                                Lệnh sản xuất nội bộ
-                            </label>
-                            <div className="relative">
-                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
-                                <select
-                                    value={selectedProductionId}
-                                    onChange={(e) => {
-                                        const val = e.target.value
-                                        setSelectedProductionId(val)
-                                    }}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all font-bold text-sm"
-                                >
-                                    <option value="">-- Chọn lệnh SX --</option>
-                                    {(productions as any[])
-                                        .filter(p => (p.status !== 'DONE' && p.status !== 'CANCELED') || p.id === selectedProductionId)
-                                        .map(p => (
-                                            <option key={p.id} value={p.id}>{p.name} - {p.code}</option>
-                                        ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
-                            </div>
-                        </div>
+                                    {/* Kho nhập hàng */}
+                                    {hasWarehouse && (
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                <MapPin size={13} className="text-blue-500" />
+                                                Kho nhập hàng
+                                            </label>
+                                            <div className="relative">
+                                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                <select
+                                                    value={warehouseName}
+                                                    onChange={(e) => setWarehouseName(e.target.value)}
+                                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all text-sm font-medium"
+                                                >
+                                                    <option value="">-- Chọn kho hàng --</option>
+                                                    {branches.map(b => (
+                                                        <option key={b.id} value={b.name}>{b.name}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                            </div>
+                                        </div>
+                                    )}
 
+                                    {/* Nhà cung cấp */}
+                                    {hasSupplier && (
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                <Factory size={13} className="text-amber-500" />
+                                                Nhà cung cấp
+                                            </label>
+                                            <div className="relative">
+                                                <Factory className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                <select
+                                                    value={selectedSupplierId}
+                                                    onChange={(e) => setSelectedSupplierId(e.target.value)}
+                                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all text-sm font-medium"
+                                                >
+                                                    <option value="">-- Chọn nhà cung cấp --</option>
+                                                    {suppliers.map(s => (
+                                                        <option key={s.id} value={s.id}>{s.name}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                            </div>
+                                        </div>
+                                    )}
 
-
-                        {/* Mã sản xuất (MSX) */}
-                        <div className="space-y-2">
-                            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">
-                                Mã sản xuất (Tùy chỉnh)
-                            </label>
-                            <div className="relative">
-                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-                                <input
-                                    type="text"
-                                    value={productionCode}
-                                    onChange={(e) => setProductionCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-zinc-100 transition-all text-sm font-bold"
-                                    placeholder="Nhập mã SX..."
-                                />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-
-                    {/* Hàng 2: Các mốc thời gian */}
-                    {/* Ngày nhập nguyên liệu */}
-                    {hasModule('raw_material_date') && (
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Ngày nhập nguyên liệu
-                                </label>
-                                {rawMaterialDate && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setRawMaterialDate('')}
-                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                        title="Xóa ngày nhập nguyên liệu (để trống)"
-                                    >
-                                        Xóa ngày
-                                    </button>
-                                )}
-                            </div>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={rawMaterialDate}
-                                    onChange={(e) => setRawMaterialDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
-                                    style={{ colorScheme: 'light dark' }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Ngày nhập kho */}
-                    {hasModule('inbound_date') && (
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Ngày nhập kho
-                                </label>
-                                {inboundDate && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setInboundDate('')}
-                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                        title="Xóa ngày nhập kho (để trống)"
-                                    >
-                                        Xóa ngày
-                                    </button>
-                                )}
-                            </div>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={inboundDate}
-                                    onChange={(e) => setInboundDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
-                                    style={{ colorScheme: 'light dark' }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Ngày sản xuất */}
-                    {hasModule('peeling_date') && (
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
-                                    <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                        Ngày sản xuất
-                                    </label>
-                                    {peelingDates.length > 0 && (
-                                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
-                                            {peelingDates.length} ngày
-                                        </span>
+                                    {/* Nhân viên QC */}
+                                    {hasQC && (
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                <ShieldCheck size={13} className="text-purple-500" />
+                                                Nhân viên QC
+                                            </label>
+                                            <div className="relative">
+                                                <ShieldCheck className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                <select
+                                                    value={selectedQCId}
+                                                    onChange={(e) => setSelectedQCId(e.target.value)}
+                                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all text-sm font-medium"
+                                                >
+                                                    <option value="">-- Chọn QC --</option>
+                                                    {qcList.map(qc => (
+                                                        <option key={qc.id} value={qc.id}>{qc.name}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                            </div>
+                                        </div>
                                     )}
                                 </div>
-                                {peelingDates.length > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            setPeelingDates([])
-                                            setPeelingDate('')
-                                        }}
-                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                        title="Xóa tất cả ngày sản xuất"
-                                    >
-                                        Xóa ngày
-                                    </button>
-                                )}
-                            </div>
 
-                            {/* Danh sách các ngày sản xuất đã thêm */}
-                            {peelingDates.length > 0 && (
-                                <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto">
-                                    {peelingDates.map((dStr) => (
-                                        <div
-                                            key={dStr}
-                                            className="inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-800 border border-orange-200 dark:border-orange-800/60 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-200 shadow-xs"
-                                        >
-                                            <Calendar size={12} className="text-orange-500 shrink-0" />
-                                            <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
-                                            <button
-                                                type="button"
-                                                onClick={() => handleRemovePeelingDate(dStr)}
-                                                className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
-                                                title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
-                                            >
-                                                <X size={12} />
-                                            </button>
+                                {/* 2. Thông tin sản xuất */}
+                                <div className="p-4 bg-orange-50/40 dark:bg-orange-950/10 rounded-2xl border border-orange-200/80 dark:border-orange-900/30">
+                                    <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold text-xs uppercase tracking-wider mb-3">
+                                        <Factory size={14} />
+                                        <span>Thông tin sản xuất</span>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {/* LSX Nội bộ */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[11px] font-bold text-orange-600/80 dark:text-orange-400/80 uppercase flex items-center gap-1">
+                                                <Plus size={10} />
+                                                Lệnh sản xuất nội bộ
+                                            </label>
+                                            <div className="relative">
+                                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-orange-400" size={16} />
+                                                <select
+                                                    value={selectedProductionId}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value
+                                                        setSelectedProductionId(val)
+                                                    }}
+                                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-900 border border-orange-200 dark:border-orange-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all font-bold text-sm"
+                                                >
+                                                    <option value="">-- Chọn lệnh SX --</option>
+                                                    {(productions as any[])
+                                                        .filter(p => (p.status !== 'DONE' && p.status !== 'CANCELED') || p.id === selectedProductionId)
+                                                        .map(p => (
+                                                            <option key={p.id} value={p.id}>{p.name} - {p.code}</option>
+                                                        ))}
+                                                </select>
+                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 pointer-events-none" size={16} />
+                                            </div>
                                         </div>
-                                    ))}
-                                </div>
-                            )}
 
-                            {/* Ô chọn và nút thêm ngày sản xuất */}
-                            <div className="flex items-center gap-1.5">
-                                <div className="relative flex-1">
-                                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
-                                    <input
-                                        type="date"
-                                        value={newPeelingDateInput}
-                                        onChange={(e) => setNewPeelingDateInput(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault()
-                                                handleAddPeelingDate()
-                                            }
-                                        }}
-                                        className="w-full pl-9 pr-2 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-xs transition-all"
-                                        style={{ colorScheme: 'light dark' }}
+                                        {/* Mã sản xuất (MSX) */}
+                                        <div className="space-y-1.5">
+                                            <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase">
+                                                Mã sản xuất (Tùy chỉnh)
+                                            </label>
+                                            <div className="relative">
+                                                <Hash className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+                                                <input
+                                                    type="text"
+                                                    value={productionCode}
+                                                    onChange={(e) => setProductionCode(e.target.value)}
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-slate-200 dark:border-slate-800 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-zinc-100 transition-all text-sm font-bold placeholder:text-zinc-400"
+                                                    placeholder="Nhập mã SX..."
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* 3. Tiến trình & Các mốc thời gian */}
+                                {hasAnyDateModule && (
+                                    <div className="p-4 bg-slate-50/70 dark:bg-zinc-800/30 rounded-2xl border border-slate-200/70 dark:border-zinc-700/60">
+                                        <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-300 font-bold text-xs uppercase tracking-wider mb-3">
+                                            <Calendar size={14} className="text-amber-500" />
+                                            <span>Tiến trình & Mốc thời gian</span>
+                                        </div>
+
+                                        <div className={`grid gap-4 ${
+                                            dateModulesCount === 1 ? 'grid-cols-1 md:max-w-md' :
+                                            dateModulesCount === 2 ? 'grid-cols-1 sm:grid-cols-2' :
+                                            dateModulesCount === 3 ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3' :
+                                            'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+                                        }`}>
+                                            {/* Ngày nhập nguyên liệu */}
+                                            {hasRawDate && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                            <Calendar size={13} className="text-emerald-500" />
+                                                            Ngày nhập nguyên liệu
+                                                        </label>
+                                                        {rawMaterialDate && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setRawMaterialDate('')}
+                                                                className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                title="Xóa ngày nhập nguyên liệu (để trống)"
+                                                            >
+                                                                Xóa ngày
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                        <input
+                                                            type="date"
+                                                            value={rawMaterialDate}
+                                                            onChange={(e) => setRawMaterialDate(e.target.value)}
+                                                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
+                                                            style={{ colorScheme: 'light dark' }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Ngày sản xuất */}
+                                            {hasPeelingDate && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                                <Calendar size={13} className="text-orange-500" />
+                                                                Ngày sản xuất
+                                                            </label>
+                                                            {peelingDates.length > 0 && (
+                                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
+                                                                    {peelingDates.length} ngày
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {peelingDates.length > 0 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPeelingDates([])
+                                                                    setPeelingDate('')
+                                                                }}
+                                                                className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                title="Xóa tất cả ngày sản xuất"
+                                                            >
+                                                                Xóa ngày
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Danh sách các ngày sản xuất đã thêm */}
+                                                    {peelingDates.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto">
+                                                            {peelingDates.map((dStr) => (
+                                                                <div
+                                                                    key={dStr}
+                                                                    className="inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-800 border border-orange-200 dark:border-orange-800/60 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-200 shadow-xs"
+                                                                >
+                                                                    <Calendar size={12} className="text-orange-500 shrink-0" />
+                                                                    <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemovePeelingDate(dStr)}
+                                                                        className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                                        title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Ô chọn và nút thêm ngày sản xuất */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="relative flex-1">
+                                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                                            <input
+                                                                type="date"
+                                                                value={newPeelingDateInput}
+                                                                onChange={(e) => setNewPeelingDateInput(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault()
+                                                                        handleAddPeelingDate()
+                                                                    }
+                                                                }}
+                                                                className="w-full pl-9 pr-2 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-xs transition-all"
+                                                                style={{ colorScheme: 'light dark' }}
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddPeelingDate()}
+                                                            disabled={!newPeelingDateInput}
+                                                            className="px-2.5 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
+                                                            title="Thêm ngày sản xuất"
+                                                        >
+                                                            <Plus size={14} />
+                                                            <span>Thêm</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Ngày đóng bao bì */}
+                                            {hasPackagingDate && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                            <Calendar size={13} className="text-blue-500" />
+                                                            Ngày đóng bao bì
+                                                        </label>
+                                                        {packagingDate && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setPackagingDate('')}
+                                                                className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                title="Xóa ngày đóng bao bì (để trống)"
+                                                            >
+                                                                Xóa ngày
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                        <input
+                                                            type="date"
+                                                            value={packagingDate}
+                                                            onChange={(e) => setPackagingDate(e.target.value)}
+                                                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
+                                                            style={{ colorScheme: 'light dark' }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Ngày nhập kho */}
+                                            {hasInboundDate && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                            <Calendar size={13} className="text-amber-500" />
+                                                            Ngày nhập kho
+                                                        </label>
+                                                        {inboundDate && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setInboundDate('')}
+                                                                className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                title="Xóa ngày nhập kho (để trống)"
+                                                            >
+                                                                Xóa ngày
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    <div className="relative">
+                                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                        <input
+                                                            type="date"
+                                                            value={inboundDate}
+                                                            onChange={(e) => setInboundDate(e.target.value)}
+                                                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
+                                                            style={{ colorScheme: 'light dark' }}
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 4. Truy xuất nguồn gốc & Thuộc tính mở rộng */}
+                                {hasAnyTraceModule && (
+                                    <div className="p-4 bg-emerald-50/40 dark:bg-emerald-950/15 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 shadow-xs">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-xs uppercase tracking-wider">
+                                                <MapPin size={14} className="text-emerald-600 dark:text-emerald-400" />
+                                                <span>Truy xuất nguồn gốc & Thông tin mở rộng</span>
+                                            </div>
+                                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                                {traceModulesCount} trường kích hoạt
+                                            </span>
+                                        </div>
+
+                                        <div className={`grid gap-4 ${
+                                            traceModulesCount === 1 ? 'grid-cols-1 md:grid-cols-2' :
+                                            traceModulesCount === 2 ? 'grid-cols-1 md:grid-cols-2' :
+                                            'grid-cols-1 sm:grid-cols-2 lg:grid-cols-3'
+                                        }`}>
+                                            {/* Vùng nguyên liệu */}
+                                            {hasMaterialZone && (
+                                                <div className={`space-y-2 ${traceModulesCount === 1 ? 'md:col-span-2' : ''}`}>
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                                <MapPin size={13} className="text-emerald-600" />
+                                                                <span>Vùng nguyên liệu / Vùng trồng</span>
+                                                            </label>
+                                                            {materialZones.length > 0 && (
+                                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                    {materialZones.length} vùng
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <a
+                                                                href="/material-zones"
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="text-[11px] font-bold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
+                                                                title="Mở trang Quản lý & Khai báo Vùng trồng"
+                                                            >
+                                                                <Plus size={12} />
+                                                                Khai báo vùng
+                                                            </a>
+                                                            {materialZones.length > 0 && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setMaterialZones([])}
+                                                                    className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                    title="Xóa tất cả vùng nguyên liệu đã chọn"
+                                                                >
+                                                                    Xóa tất cả
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Danh sách các vùng nguyên liệu đã chọn (Hiển thị thẻ chip) */}
+                                                    {materialZones.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 p-2 bg-emerald-50/40 dark:bg-zinc-800/40 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 max-h-28 overflow-y-auto">
+                                                            {materialZones.map((mzStr) => {
+                                                                const matched = materialZonesList.find(m => m.code === mzStr || m.name === mzStr || `${m.code} - ${m.name}` === mzStr)
+                                                                const label = matched ? `${matched.code} - ${matched.name}` : mzStr
+                                                                return (
+                                                                    <div
+                                                                        key={mzStr}
+                                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-zinc-900 border border-emerald-300/90 dark:border-emerald-700/80 rounded-lg text-xs font-bold text-zinc-900 dark:text-zinc-100 shadow-2xs group"
+                                                                    >
+                                                                        <MapPin size={12} className="text-emerald-600 shrink-0" />
+                                                                        <span>{label}</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleRemoveMaterialZone(mzStr)}
+                                                                            className="p-0.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                                            title={`Gỡ bỏ ${label}`}
+                                                                        >
+                                                                            <X size={12} />
+                                                                        </button>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Ô nhập / chọn thêm vùng nguyên liệu */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="relative flex-1">
+                                                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600/70" size={16} />
+                                                            <input
+                                                                type="text"
+                                                                list="material-zones-datalist"
+                                                                value={newMaterialZoneInput}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value
+                                                                    const found = materialZonesList.find(m => {
+                                                                        const lbl = m.code ? `${m.code} - ${m.name}` : m.name
+                                                                        return val === lbl || val === m.code || val === m.name
+                                                                    })
+                                                                    if (found) {
+                                                                        const itemVal = found.code ? `${found.code} - ${found.name}` : found.name
+                                                                        handleAddMaterialZone(itemVal)
+                                                                    } else {
+                                                                        setNewMaterialZoneInput(val)
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault()
+                                                                        handleAddMaterialZone()
+                                                                    }
+                                                                }}
+                                                                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-emerald-200/90 dark:border-emerald-800/70 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all text-xs font-medium placeholder:text-zinc-400 shadow-xs"
+                                                                placeholder="Chọn từ 25 tỉnh hoặc gõ thêm (nhấn Enter hoặc bấm Thêm)..."
+                                                            />
+                                                            <datalist id="material-zones-datalist">
+                                                                {materialZonesList
+                                                                    .filter(mz => {
+                                                                        const itemVal = mz.code ? `${mz.code} - ${mz.name}` : mz.name
+                                                                        return !materialZones.includes(itemVal) && !materialZones.includes(mz.code)
+                                                                    })
+                                                                    .map((mz) => {
+                                                                        const label = mz.code ? `${mz.code} - ${mz.name}` : mz.name
+                                                                        return (
+                                                                            <option key={mz.id} value={label}>
+                                                                                {mz.province || mz.name}
+                                                                            </option>
+                                                                        )
+                                                                    })}
+                                                            </datalist>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddMaterialZone()}
+                                                            disabled={!newMaterialZoneInput.trim()}
+                                                            className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
+                                                            title="Thêm vùng nguyên liệu này vào LOT"
+                                                        >
+                                                            <Plus size={14} />
+                                                            <span>Thêm</span>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Thương hiệu & Khách OEM */}
+                                            {hasOemInfo && (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <Tag size={13} className="text-purple-600" />
+                                                            Thương hiệu & Khách OEM
+                                                        </span>
+                                                        {customerName && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setCustomerName('')}
+                                                                className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                            >
+                                                                Xóa
+                                                            </button>
+                                                        )}
+                                                    </label>
+                                                    <div className="relative">
+                                                        <Tag className="absolute left-3.5 top-1/2 -translate-y-1/2 text-purple-500" size={17} />
+                                                        <input
+                                                            type="text"
+                                                            value={customerName}
+                                                            onChange={(e) => setCustomerName(e.target.value)}
+                                                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-purple-200/90 dark:border-purple-800/70 rounded-xl focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all text-sm font-medium placeholder:text-zinc-400 shadow-xs"
+                                                            placeholder="VD: Nhãn OEM, Khách hàng, Nhãn riêng..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Số Batch / Lô NCC */}
+                                            {hasBatchCode && (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                                                        <span className="flex items-center gap-1.5">
+                                                            <Layers size={13} className="text-amber-600" />
+                                                            Số Batch / Lô NCC
+                                                        </span>
+                                                        {batchCode && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setBatchCode('')}
+                                                                className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                            >
+                                                                Xóa
+                                                            </button>
+                                                        )}
+                                                    </label>
+                                                    <div className="relative">
+                                                        <Layers className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-500" size={17} />
+                                                        <input
+                                                            type="text"
+                                                            value={batchCode}
+                                                            onChange={(e) => setBatchCode(e.target.value)}
+                                                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-amber-200/90 dark:border-amber-800/70 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all text-sm font-medium placeholder:text-zinc-400 shadow-xs"
+                                                            placeholder="VD: BATCH-01, LOT-NCC..."
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 5. Hình ảnh & Thông tin bổ sung */}
+                                {(hasImages || hasExtraInfo) && (
+                                    <div className="p-4 bg-slate-50/50 dark:bg-zinc-800/20 rounded-2xl border border-slate-200/60 dark:border-zinc-700/50">
+                                        <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-300 font-bold text-xs uppercase tracking-wider mb-3">
+                                            <Package size={14} className="text-blue-500" />
+                                            <span>Hình ảnh & Thông tin phụ</span>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {hasImages && (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                                        Hình ảnh chứng từ / LOT
+                                                    </label>
+                                                    <ImageUpload
+                                                        value={images}
+                                                        onChange={setImages}
+                                                        maxFiles={5}
+                                                        folder="img-lot"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {hasExtraInfo && (
+                                                <div className="space-y-1.5">
+                                                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                                        Thông tin bổ sung
+                                                    </label>
+                                                    <textarea
+                                                        value={extraInfo}
+                                                        onChange={(e) => setExtraInfo(e.target.value.toUpperCase())}
+                                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm uppercase placeholder:text-zinc-400"
+                                                        rows={hasImages ? 5 : 3}
+                                                        placeholder="NHẬP CÁC THÔNG TIN PHỤ KHÁC..."
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* 6. Ghi chú chung của lô hàng */}
+                                <div className="space-y-1.5">
+                                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                                        Ghi chú lô hàng
+                                    </label>
+                                    <textarea
+                                        value={newLotNotes}
+                                        onChange={(e) => setNewLotNotes(e.target.value)}
+                                        className="w-full px-4 py-2.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none text-sm placeholder:text-zinc-400"
+                                        rows={2}
+                                        placeholder="Ghi chú thêm về lô hàng..."
                                     />
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => handleAddPeelingDate()}
-                                    disabled={!newPeelingDateInput}
-                                    className="px-2.5 py-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
-                                    title="Thêm ngày sản xuất"
-                                >
-                                    <Plus size={14} />
-                                    <span>Thêm</span>
-                                </button>
                             </div>
-                        </div>
-                    )}
-
-                    {/* Ngày đóng bao bì */}
-                    {hasModule('packaging_date') && (
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                    Ngày đóng bao bì
-                                </label>
-                                {packagingDate && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setPackagingDate('')}
-                                        className="text-xs text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                        title="Xóa ngày đóng bao bì (để trống)"
-                                    >
-                                        Xóa ngày
-                                    </button>
-                                )}
-                            </div>
-                            <div className="relative">
-                                <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <input
-                                    type="date"
-                                    value={packagingDate}
-                                    onChange={(e) => setPackagingDate(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all"
-                                    style={{ colorScheme: 'light dark' }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Hàng 3: Các thông tin bổ trợ */}
-                    {/* Batch NCC */}
-                    {hasModule('batch_code') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Số Batch/Lô (NCC)
-                            </label>
-                            <div className="relative">
-                                <Layers className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={batchCode}
-                                    onChange={(e) => setBatchCode(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
-                                    placeholder="VD: BATCH-01"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Thương hiệu & Khách OEM */}
-                    {hasModule('oem_info') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Thương hiệu & Khách OEM
-                            </label>
-                            <div className="relative">
-                                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={customerName}
-                                    onChange={(e) => setCustomerName(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
-                                    placeholder="VD: Nhãn OEM, Khách hàng..."
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Vùng nguyên liệu */}
-                    {hasModule('material_zone') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                                Vùng nguyên liệu
-                            </label>
-                            <div className="relative">
-                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
-                                <input
-                                    type="text"
-                                    value={materialZone}
-                                    onChange={(e) => setMaterialZone(e.target.value)}
-                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
-                                    placeholder="VD: Vùng trồng Tiền Giang, VNL-01..."
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Nhà cung cấp */}
-                    {hasModule('supplier_info') && (
-                        <div className="space-y-2">
-                            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                Nhà cung cấp
-                            </label>
-                            <div className="relative">
-                                <Factory className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={18} />
-                                <select
-                                    value={selectedSupplierId}
-                                    onChange={(e) => setSelectedSupplierId(e.target.value)}
-                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all"
-                                >
-                                    <option value="">-- Chọn nhà cung cấp --</option>
-                                    {suppliers.map(s => (
-                                        <option key={s.id} value={s.id}>{s.name}</option>
-                                    ))}
-                                </select>
-                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Media & Extra Info */}
-                    {(hasModule('lot_images') || hasModule('extra_info')) && (
-                        <div className="md:col-span-2 lg:col-span-4 space-y-4 border-b border-zinc-100 dark:border-zinc-800 pb-4 mb-4">
-                            <h4 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                                <Package size={16} className="text-orange-600" />
-                                Hình ảnh & Thông tin phụ
-                            </h4>
-
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                {hasModule('lot_images') && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                            Hình ảnh chứng từ / lot
-                                        </label>
-                                        <ImageUpload
-                                            value={images}
-                                            onChange={setImages}
-                                            maxFiles={5}
-                                            folder="img-lot"
-                                        />
-                                    </div>
-                                )}
-
-                                {hasModule('extra_info') && (
-                                    <div className="space-y-2">
-                                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                                            Thông tin bổ sung
-                                        </label>
-                                        <textarea
-                                            value={extraInfo}
-                                            onChange={(e) => setExtraInfo(e.target.value.toUpperCase())}
-                                            className="w-full px-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none font-mono text-sm uppercase"
-                                            rows={5}
-                                            placeholder="NHẬP CÁC THÔNG TIN PHỤ KHÁC..."
-                                        />
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Ghi chú */}
-                    <div className="space-y-2 lg:col-span-4 mb-4">
-                        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                            Ghi chú
-                        </label>
-                        <textarea
-                            value={newLotNotes}
-                            onChange={(e) => setNewLotNotes(e.target.value)}
-                            className="w-full px-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none transition-all resize-none"
-                            rows={2}
-                            placeholder="Ghi chú thêm..."
-                        />
-                    </div>
+                        )
+                    })()}
                 </div>
-            </div>
 
             {/* Danh sách sản phẩm */}
             <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">

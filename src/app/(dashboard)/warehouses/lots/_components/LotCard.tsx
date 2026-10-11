@@ -215,7 +215,8 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             });
         }
 
-        const matZone = (lot.metadata as any)?.material_zone;
+        const rawMz = (lot.metadata as any)?.material_zones;
+        const matZone = Array.isArray(rawMz) && rawMz.length > 0 ? rawMz.join(', ') : (lot.metadata as any)?.material_zone;
         if (matZone && isModuleEnabled('material_zone')) {
             infoItems.push({
                 key: 'material_zone',

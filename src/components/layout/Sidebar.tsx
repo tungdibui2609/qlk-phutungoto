@@ -48,6 +48,7 @@ const menuItems: MenuItem[] = [
             { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
             { id: 'work_areas', name: 'Khu vực', href: '/work-areas', icon: MapPin, requiredPermission: 'warehouse.manage' },
+            { id: 'material_zones', name: 'Vùng trồng / Nguyên liệu', href: '/material-zones', icon: MapPin, requiredModule: 'material_zone' },
             { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'production.view' },
             { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
         ]

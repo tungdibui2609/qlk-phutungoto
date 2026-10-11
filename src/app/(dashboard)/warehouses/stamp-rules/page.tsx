@@ -297,7 +297,7 @@ export const STAMP_CATEGORIES: Record<string, {
         line: 'line2', 
         position: 'Ký tự 15, 16 (ZZ)', 
         length: '2 ký tự', 
-        description: 'Mã hóa các đơn vị hành chính cấp tỉnh (66: Đắk Lắk, 71: Bến Tre...)',
+        description: 'Mã hóa các đơn vị hành chính cấp tỉnh (66: Đắk Lắk, 83: Bến Tre...)',
         colorBadge: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:text-violet-300 dark:border-violet-800'
     }
 }
