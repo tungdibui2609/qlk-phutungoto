@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock } from 'lucide-react'
+import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock, Tag } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
@@ -85,6 +85,8 @@ export function LotForm({
     const [packagingDate, setPackagingDate] = useState('')
     const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
+    const [customerName, setCustomerName] = useState('')
+    const [materialZone, setMaterialZone] = useState('')
     const [productionCode, setProductionCode] = useState(initialProductionCode || '')
     const [images, setImages] = useState<string[]>([])
     const [extraInfo, setExtraInfo] = useState('')
@@ -306,6 +308,8 @@ export function LotForm({
                     try { meta = JSON.parse(editingLot.metadata) } catch (e) { meta = {} }
                 }
                 setExtraInfo(meta.extra_info || '')
+                setCustomerName(meta.customer_name || meta.oem_brand || '')
+                setMaterialZone(meta.material_zone || '')
 
             } else {
                 let initialDate = new Date().toISOString().split('T')[0]
@@ -364,6 +368,8 @@ export function LotForm({
                                 setSelectedProductionId(parsed.selectedProductionId)
                             }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
+                            if (parsed.customerName) setCustomerName(parsed.customerName)
+                            if (parsed.materialZone) setMaterialZone(parsed.materialZone)
                             if (parsed.extraInfo) setExtraInfo(parsed.extraInfo.toUpperCase())
                             if (parsed.inboundDate) {
                                 setInboundDate(parsed.inboundDate)
@@ -441,6 +447,8 @@ export function LotForm({
                 packagingDate: isPersistent ? packagingDate : '',
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
+                customerName: isPersistent ? customerName : '',
+                materialZone: isPersistent ? materialZone : '',
                 productionCode: isPersistent ? productionCode : '',
                 selectedProductionId: isPersistent ? selectedProductionId : '',
                 extraInfo: isPersistent ? extraInfo : '',
@@ -464,6 +472,7 @@ export function LotForm({
         packagingDate,
         warehouseName,
         batchCode,
+        customerName,
         productionCode,
         selectedProductionId,
         extraInfo,
@@ -497,6 +506,8 @@ export function LotForm({
         setPackagingDate('')
         setWarehouseName('')
         setBatchCode('')
+        setCustomerName('')
+        setMaterialZone('')
         setProductionCode('')
         setImages([])
         setExtraInfo('')
@@ -628,6 +639,8 @@ export function LotForm({
                 }
                 if (editingLot.warehouse_name !== warehouseName) changes.push(`Kho: ${editingLot.warehouse_name || 'N/A'} → ${warehouseName || 'N/A'}`)
                 if (editingLot.batch_code !== batchCode) changes.push(`Batch NCC: ${editingLot.batch_code || 'N/A'} → ${batchCode || 'N/A'}`)
+                const oldCust = (editingLot.metadata as any)?.customer_name || ''
+                if (oldCust !== customerName) changes.push(`Khách OEM: ${oldCust || 'N/A'} → ${customerName || 'N/A'}`)
                 if (editingLot.quantity !== totalQuantity) changes.push(`Tổng SL: ${editingLot.quantity} → ${totalQuantity}`)
             }
 
@@ -787,6 +800,9 @@ export function LotForm({
             metadata: {
                 ...(editingLot?.metadata && typeof editingLot.metadata === 'object' ? editingLot.metadata : {}),
                 extra_info: extraInfo,
+                customer_name: customerName || null,
+                oem_brand: customerName || null,
+                material_zone: materialZone || null,
                 system_history: systemHistory,
                 manual_peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
                 peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : [])
@@ -1387,6 +1403,44 @@ export function LotForm({
                                     onChange={(e) => setBatchCode(e.target.value)}
                                     className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
                                     placeholder="VD: BATCH-01"
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Thương hiệu & Khách OEM */}
+                    {hasModule('oem_info') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Thương hiệu & Khách OEM
+                            </label>
+                            <div className="relative">
+                                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={customerName}
+                                    onChange={(e) => setCustomerName(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
+                                    placeholder="VD: Nhãn OEM, Khách hàng..."
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Vùng nguyên liệu */}
+                    {hasModule('material_zone') && (
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                                Vùng nguyên liệu
+                            </label>
+                            <div className="relative">
+                                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
+                                <input
+                                    type="text"
+                                    value={materialZone}
+                                    onChange={(e) => setMaterialZone(e.target.value)}
+                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-slate-900 dark:text-slate-100 transition-all"
+                                    placeholder="VD: Vùng trồng Tiền Giang, VNL-01..."
                                 />
                             </div>
                         </div>

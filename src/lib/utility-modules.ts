@@ -153,6 +153,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         category: 'core',
         is_basic: true,
         default_enabled: true
+    },
+    {
+        id: 'packaging_auto_sync_accounting',
+        name: 'Tự động tạo Phiếu Kế toán (PNK) khi nhập cấp phát',
+        description: 'Khi nhập hàng trực tiếp tại module Cấp phát/Bao bì, tự động tạo Phiếu Nhập Kho Kế toán và LOT mới tương ứng.',
+        icon: ArrowRightLeft,
+        category: 'automation',
+        is_basic: true,
+        default_enabled: false
     }
 ]
 

@@ -114,6 +114,16 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             if (order.items) {
                 const formattedItems = order.items.map((i: any) => {
+                    let rawNote = i.note || ''
+                    let batch_code = ''
+                    let customer_name = ''
+                    if (rawNote) {
+                        const lotMatch = rawNote.match(/Lô:\s*([^•\]]+)/)
+                        if (lotMatch) batch_code = lotMatch[1].trim()
+                        const oemMatch = rawNote.match(/OEM:\s*([^•\]]+)/)
+                        if (oemMatch) customer_name = oemMatch[1].trim()
+                        rawNote = rawNote.replace(/\[\s*(?:Lô:[^•\]]+)?(?:\s*•\s*)?(?:OEM:[^•\]]+)?\s*\]/g, '').trim()
+                    }
                     const item = {
                         id: crypto.randomUUID(),
                         productId: i.product_id,
@@ -122,7 +132,9 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         quantity: i.quantity,
                         document_quantity: i.document_quantity,
                         price: i.price,
-                        note: i.note,
+                        note: rawNote,
+                        batch_code: batch_code || undefined,
+                        customer_name: customer_name || undefined,
                         categoryId: i.category_id || null,
                         isDocQtyVisible: i.document_quantity !== i.quantity
                     }
@@ -469,17 +481,29 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
 
             if (!orderId) throw new Error('No Order ID')
 
-            const orderItems = processedItems.map(item => ({
-                order_id: orderId,
-                product_id: item.productId,
-                product_name: item.productName,
-                unit: item.unit,
-                quantity: item.quantity,
-                document_quantity: item.document_quantity || item.quantity,
-                price: item.price,
-                note: item.note,
-                category_id: item.categoryId || null
-            }))
+            const orderItems = processedItems.map(item => {
+                let note = item.note || ''
+                const tags: string[] = []
+                if (item.batch_code) tags.push(`Lô: ${item.batch_code}`)
+                if (item.customer_name) tags.push(`OEM: ${item.customer_name}`)
+                if (tags.length > 0) {
+                    const tagStr = `[${tags.join(' • ')}]`
+                    if (!note.includes(tagStr)) {
+                        note = note ? `${note} ${tagStr}` : tagStr
+                    }
+                }
+                return {
+                    order_id: orderId,
+                    product_id: item.productId,
+                    product_name: item.productName,
+                    unit: item.unit,
+                    quantity: item.quantity,
+                    document_quantity: item.document_quantity || item.quantity,
+                    price: item.price,
+                    note: note || null,
+                    category_id: item.categoryId || null
+                }
+            })
 
             const { error: itemsError } = await (supabase.from('outbound_order_items') as any).insert(orderItems)
             if (itemsError) throw itemsError

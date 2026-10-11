@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useRef } from 'react'
-import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash, Lock, Pencil, Loader2, Check } from 'lucide-react'
+import { Boxes, X, Calendar, Package, Factory, MapPin, Truck, ShieldCheck, Layers, Info, Maximize2, QrCode as QrIcon, History, Trash2, Edit, Hash, Lock, Pencil, Loader2, Check, Tag } from 'lucide-react'
 import { useRouter, usePathname } from 'next/navigation'
 import { LotMergeHistoryModal } from './LotMergeHistoryModal'
 import { TagDisplay } from '@/components/lots/TagDisplay'
@@ -465,6 +465,32 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     <div className="min-w-0">
                                         <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Số Batch/Lô</p>
                                         <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">{lot.batch_code || '---'}</p>
+                                    </div>
+                                </div>
+                            )}
+                            {isModuleEnabled('oem_info') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
+                                        <Tag size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Thương hiệu / Khách OEM</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                                            {(lot.metadata as any)?.customer_name || (lot.metadata as any)?.oem_brand || '---'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+                            {isModuleEnabled('material_zone') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                                        <MapPin size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Vùng nguyên liệu</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                                            {(lot.metadata as any)?.material_zone || '---'}
+                                        </p>
                                     </div>
                                 </div>
                             )}

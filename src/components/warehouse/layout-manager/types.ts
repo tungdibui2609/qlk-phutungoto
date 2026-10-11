@@ -9,8 +9,30 @@ export interface GridCell {
     zone_id?: string;
 }
 
-// New AutoCAD-style shapes format
-export type ShapeType = 'ZONE' | 'WALL' | 'PATH' | 'DOOR' | 'RACK' | 'ROOM' | 'PILLAR';
+// New AutoCAD-style shapes format - Extended with Industrial & Warehouse elements
+export type ShapeType = 
+    | 'ZONE'          // Khu vực / Bãi chứa hàng (hỗ trợ Đa Lô)
+    | 'RACK'          // Kệ hàng (chia ô)
+    | 'ROOM'          // Phòng / Văn phòng / Kho lạnh nhỏ
+    | 'WALL'          // Tường chịu lực / tường bao
+    | 'PARTITION'     // Vách ngăn nhẹ / Tấm panel
+    | 'FENCE'         // Hàng rào / Lan can bảo vệ
+    | 'PATH'          // Hành lang / Lối đi xe nâng
+    | 'DOOR'          // Cửa ra vào / Cửa cuốn
+    | 'DOCK'          // Cửa xuất nhập hàng (Loading Dock)
+    | 'PILLAR'        // Cột trụ
+    | 'DESK'          // Bàn làm việc / Bàn kiểm đếm thủ kho
+    | 'PACK_STATION'  // Trạm đóng gói / Bàn dập nhiệt
+    | 'SCALE'         // Trạm cân điện tử
+    | 'STAGING'       // Khu tập kết hàng / Đệm hàng chờ xuất nhập
+    | 'QC_AREA'       // Khu kiểm tra chất lượng (KCS)
+    | 'SCRAP'         // Khu hàng hỏng / Phế phẩm bao bì
+    | 'FORKLIFT_PARK' // Bãi đỗ xe nâng / Trạm sạc pin
+    | 'STAIRS'        // Cầu thang bộ
+    | 'FIRE_EXT'      // Bình PCCC / Trạm an toàn
+    | 'FIRST_AID'     // Tủ thuốc y tế / Trạm sơ cứu
+    | 'ARROW'         // Mũi tên chỉ hướng di chuyển / Luồng xe
+    | 'TEXT_NOTE';    // Nhãn chữ / Chú thích bản vẽ
 
 export interface LayoutShape {
     id: string;
@@ -24,10 +46,22 @@ export interface LayoutShape {
     rotation?: number;
     rx?: number; // border radius chung
     customRadii?: [number, number, number, number]; // [TL, TR, BR, BL] bo góc tuỳ chỉnh
+    
+    // Customization & Appearance
+    color?: string;         // Màu nền tùy chỉnh (HEX)
+    strokeColor?: string;   // Màu viền tùy chỉnh (HEX)
+    opacity?: number;       // Độ trong suốt (0.1 -> 1)
+    isLocked?: boolean;     // Khóa vị trí (không cho kéo nhầm)
+    
+    // Multi-Lot & Warehouse Capacity
+    isMultiLot?: boolean;   // Bãi chứa đa Lô (nhiều LOT trong 1 Zone)
+    capacity?: number;      // Sức chứa tối đa
+    capacityUnit?: string;  // Đơn vị sức chứa (Pallet, Thùng, Kiện...)
+
     // For RACK type: grid of positions inside
     rows?: number;
     cols?: number;
-    positions?: string[]; // generated position codes
+    positions?: string[];   // generated position codes
 }
 
 export interface WarehouseLayout {

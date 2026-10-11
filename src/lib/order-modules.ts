@@ -1,5 +1,5 @@
 
-import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image, Minimize, ArrowRightLeft } from 'lucide-react'
+import { DollarSign, FileText, Truck, Calendar, User, ShoppingCart, ShieldCheck, MapPin, Image, Minimize, ArrowRightLeft, Hash } from 'lucide-react'
 
 export interface OrderModule {
     id: string
@@ -82,6 +82,22 @@ export const INBOUND_MODULES: OrderModule[] = [
         icon: ArrowRightLeft,
         type: 'inbound',
         is_basic: true
+    },
+    {
+        id: 'inbound_batch_lot',
+        name: 'Số Lô & Số Batch (NCC)',
+        description: 'Nhập và quản lý Số Lô NCC, Số Batch sản xuất cho từng dòng hàng hóa',
+        icon: Hash,
+        type: 'inbound',
+        is_basic: true
+    },
+    {
+        id: 'inbound_oem',
+        name: 'Thương hiệu & Khách OEM',
+        description: 'Theo dõi khách hàng OEM, thương hiệu đặt hàng bao bì/vật tư',
+        icon: ShieldCheck,
+        type: 'inbound',
+        is_basic: true
     }
 ]
 
@@ -155,6 +171,22 @@ export const OUTBOUND_MODULES: OrderModule[] = [
         name: 'Quy đổi đơn vị',
         description: 'Hiển thị cột quy đổi số lượng theo đơn vị đích (VD: Thùng -> Kg)',
         icon: ArrowRightLeft,
+        type: 'outbound',
+        is_basic: true
+    },
+    {
+        id: 'outbound_batch_lot',
+        name: 'Số Lô & Số Batch',
+        description: 'Xuất kho đích danh theo Số Lô hoặc Batch sản xuất',
+        icon: Hash,
+        type: 'outbound',
+        is_basic: true
+    },
+    {
+        id: 'outbound_oem',
+        name: 'Thương hiệu & Khách OEM',
+        description: 'Xuất hàng phân loại theo khách hàng/thương hiệu OEM',
+        icon: ShieldCheck,
         type: 'outbound',
         is_basic: true
     }

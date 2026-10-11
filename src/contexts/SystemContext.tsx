@@ -67,7 +67,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       // Fetch dynamic definition of "Basic" modules from DB
       const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
       if (data) {
-        setBasicModuleIds((data as any[]).map(m => m.id))
+        setBasicModuleIds(Array.from(new Set([...BASIC_MODULE_IDS, ...(data as any[]).map(m => m.id)])))
       }
     }
     fetchBasicModules()
@@ -298,6 +298,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     getArr(currentSystem.outbound_modules).forEach((m: any) => outboundSet.add(m))
     getArr(currentSystem.lot_modules).forEach((m: any) => otherSet.add(m))
     getArr(currentSystem.dashboard_modules).forEach((m: any) => otherSet.add(m))
+    getArr(currentSystem.utility_modules).forEach((m: any) => otherSet.add(m))
 
     const rawModules = currentSystem.modules
     let productModules: string[] = []
@@ -353,6 +354,12 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     if (moduleId.startsWith('outbound_')) {
       if (!isBasic && !unlockedModules.includes(moduleId)) return false
       return outboundSet.has(moduleId)
+    }
+
+    // 4. Utility Modules: Kiểm tra cấu hình tiện ích bật/tắt của kho hiện tại
+    const isUtility = UTILITY_MODULES.some(m => m.id === moduleId)
+    if (isUtility) {
+      return otherSet.has(moduleId)
     }
 
     if (!isBasic && !unlockedModules.includes(moduleId)) return false

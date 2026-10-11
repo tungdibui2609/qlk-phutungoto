@@ -1383,6 +1383,7 @@ function WarehouseMapContent() {
                             positions={filteredPositions}
                             onPositionClick={handlePositionSelect}
                             selectedZone={zones.find(z => z.id === selectedZoneId)}
+                            lotInfo={lotInfo}
                         />
                     </div>
                 ) : (

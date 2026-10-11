@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
-import { X, Check, Search, Package, Plus, Building2 } from 'lucide-react'
+import { X, Check, Search, Package, Plus, Building2, Sparkles } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { QuantityInput } from '@/components/ui/QuantityInput'
@@ -17,7 +17,7 @@ interface SiteDirectInboundModalProps {
 }
 
 export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ isOpen, onClose, onSuccess }) => {
-    const { systemType } = useSystem()
+    const { systemType, hasModule } = useSystem()
     const { showToast } = useToast()
     const [step, setStep] = useState<1 | 2>(1)
     const [selectedProduct, setSelectedProduct] = useState<any>(null)
@@ -32,10 +32,23 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
     const [warehouseName, setWarehouseName] = useState('')
     const [supplierId, setSupplierId] = useState('')
     const [suppliers, setSuppliers] = useState<any[]>([])
+    const [customers, setCustomers] = useState<any[]>([])
     const [invoiceFile, setInvoiceFile] = useState<File | null>(null)
     const [notes, setNotes] = useState('')
     const [inboundDate, setInboundDate] = useState(new Date().toISOString().split('T')[0])
     const [submitting, setSubmitting] = useState(false)
+
+    // Extended Packaging & Accounting Fields
+    const [batchCode, setBatchCode] = useState('')
+    const [invoiceNo, setInvoiceNo] = useState('')
+    const [customerId, setCustomerId] = useState('')
+    const [customOemName, setCustomOemName] = useState('')
+
+    // Kiểm tra cờ Module Bật/Tắt (100% dựa vào Module cấu hình, TUYỆT ĐỐI KHÔNG hardcode mã phân hệ)
+    const isSyncEnabled = hasModule('packaging_auto_sync_accounting')
+    const showBatchField = hasModule('batch_code') || hasModule('inbound_batch_lot') || isSyncEnabled
+    const showOemField = hasModule('oem_info') || hasModule('inbound_oem') || isSyncEnabled
+    const showDocField = hasModule('inbound_attached_docs') || hasModule('inbound_invoice_images') || isSyncEnabled
 
     useEffect(() => {
         if (isOpen) {
@@ -46,19 +59,25 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
             setUnit('')
             setNotes('')
             setSupplierId('')
+            setBatchCode('')
+            setInvoiceNo('')
+            setCustomerId('')
+            setCustomOemName('')
             setInvoiceFile(null)
             setInboundDate(new Date().toISOString().split('T')[0])
         }
-    }, [isOpen, systemType])
+    }, [isOpen, systemType, isSyncEnabled])
 
     async function fetchData() {
         setLoading(true)
         try {
-            const [prodRes, branchRes, suppRes] = await Promise.all([
-                supabase.from('products').select('*').eq('system_type', systemType).eq('is_active', true).order('name'),
-                supabase.from('branches').select('*').order('name'),
-                supabase.from('suppliers').select('*').eq('is_active', true).order('name')
-            ])
+            const prodPromise = (supabase.from('products') as any).select('*').eq('system_type', systemType).eq('is_active', true).order('name')
+            const branchPromise = (supabase.from('branches') as any).select('*').order('name')
+            const suppPromise = (supabase.from('suppliers') as any).select('*').eq('is_active', true).order('name')
+            const shouldFetchCust = showOemField || isSyncEnabled
+            const custPromise = shouldFetchCust ? (supabase.from('customers') as any).select('*').order('name') : Promise.resolve({ data: [] })
+
+            const [prodRes, branchRes, suppRes, custRes] = await Promise.all([prodPromise, branchPromise, suppPromise, custPromise])
 
             if (prodRes.data) setProducts(prodRes.data)
             if (branchRes.data) {
@@ -69,6 +88,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                 }
             }
             if (suppRes.data) setSuppliers(suppRes.data)
+            if (custRes && custRes.data) setCustomers(custRes.data)
         } catch (err) {
             console.error('Error fetching data:', err)
         } finally {
@@ -102,7 +122,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                 const formData = new FormData()
                 formData.append('file', invoiceFile)
                 formData.append('warehouseName', warehouseName)
-                formData.append('category', 'Hóa đơn Sản xuất')
+                formData.append('category', 'Hóa đơn Cấp phát')
 
                 const uploadRes = await fetch('/api/google-drive-upload', {
                     method: 'POST',
@@ -120,62 +140,184 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                 }
             }
 
-            // 1. Generate LOT Code
-            const lotCode = await generateOrderCode('PROD', systemType || 'KHO')
+            const oemBrandName = customOemName.trim() || customers.find((c: any) => c.id === customerId)?.name || null
 
-            // 2. Create LOT
-            const { data: lot, error: lotError } = await supabase
-                .from('lots')
-                .insert({
-                    code: lotCode,
-                    warehouse_name: warehouseName,
-                    system_code: systemType,
-                    supplier_id: supplierId || null,
-                    inbound_date: inboundDate,
-                    status: 'active',
-                    metadata: {
-                        source: 'Direct Site Inbound',
-                        notes: notes,
-                        invoice_url: invoiceUrl,
-                        invoice_view_link: invoiceViewLink,
-                        created_at: new Date().toISOString(),
-                        system_history: {
-                            inbound: [{
-                                date: inboundDate || new Date().toISOString(),
-                                type: 'PROD_DIRECT',
-                                description: notes || 'Nhập kho trực tiếp tại xưởng sản xuất',
-                                supplier_id: supplierId || null,
-                                invoice_link: invoiceViewLink || null
-                            }],
-                            exports: []
+            if (isSyncEnabled) {
+                // ==========================================
+                // LUỒNG MỞ RỘNG: TẠO CẢ PHIẾU KẾ TOÁN VÀ LOT MỚI
+                // ==========================================
+                const pnkCode = await generateOrderCode('PNK', systemType || 'KHO')
+                const lotCode = await generateOrderCode('SITE', systemType || 'KHO')
+
+                // 1. Tạo Phiếu Nhập Kho Kế toán (Inbound Order)
+                const { data: inboundOrder, error: pnkError } = await (supabase.from('inbound_orders') as any)
+                    .insert({
+                        code: pnkCode,
+                        status: 'Completed',
+                        type: 'Purchase',
+                        warehouse_name: warehouseName,
+                        supplier_id: supplierId || null,
+                        system_code: systemType,
+                        system_type: systemType,
+                        created_at: inboundDate ? new Date(`${inboundDate}T12:00:00Z`).toISOString() : new Date().toISOString(),
+                        description: notes || null,
+                        metadata: {
+                            batch_code: batchCode || null,
+                            invoice_no: invoiceNo || null,
+                            customer_id: customerId || null,
+                            customer_name: oemBrandName,
+                            oem_brand: oemBrandName,
+                            invoice_url: invoiceUrl,
+                            invoice_view_link: invoiceViewLink
                         }
-                    }
+                    })
+                    .select()
+                    .single()
+
+                if (pnkError) throw pnkError
+
+                // 2. Tạo Inbound Order Item
+                const { error: pnkItemError } = await (supabase.from('inbound_order_items') as any)
+                    .insert({
+                        order_id: inboundOrder.id,
+                        product_id: selectedProduct.id,
+                        product_name: selectedProduct.name,
+                        quantity: quantity,
+                        document_quantity: quantity,
+                        unit: unit || selectedProduct.unit,
+                        note: notes || null
+                    })
+
+                if (pnkItemError) throw pnkItemError
+
+                // 3. Tạo LOT mới độc lập
+                const { data: lot, error: lotError } = await (supabase.from('lots') as any)
+                    .insert({
+                        code: lotCode,
+                        warehouse_name: warehouseName,
+                        system_code: systemType,
+                        supplier_id: supplierId || null,
+                        batch_code: batchCode || null,
+                        inbound_date: inboundDate,
+                        status: 'active',
+                        notes: notes || null,
+                        metadata: {
+                            source: 'Direct Site/Packaging Inbound',
+                            batch_code: batchCode || null,
+                            invoice_no: invoiceNo || null,
+                            customer_id: customerId || null,
+                            customer_name: oemBrandName,
+                            oem_brand: oemBrandName,
+                            inbound_order_id: inboundOrder.id,
+                            inbound_order_code: pnkCode,
+                            invoice_url: invoiceUrl,
+                            invoice_view_link: invoiceViewLink,
+                            created_at: new Date().toISOString(),
+                            system_history: {
+                                inbound: [{
+                                    date: inboundDate || new Date().toISOString(),
+                                    type: 'SITE_DIRECT_SYNC',
+                                    order_id: inboundOrder.id,
+                                    order_code: pnkCode,
+                                    batch_code: batchCode || null,
+                                    invoice_no: invoiceNo || null,
+                                    customer_name: oemBrandName,
+                                    description: notes || 'Nhập kho đồng bộ kế toán',
+                                    supplier_id: supplierId || null,
+                                    invoice_link: invoiceViewLink || null
+                                }],
+                                exports: []
+                            }
+                        }
+                    })
+                    .select()
+                    .single()
+
+                if (lotError) throw lotError
+
+                // 4. Tạo Lot Item
+                const { error: itemError } = await (supabase.from('lot_items') as any)
+                    .insert({
+                        lot_id: lot.id,
+                        product_id: selectedProduct.id,
+                        quantity: quantity,
+                        unit: unit || selectedProduct.unit
+                    })
+
+                if (itemError) throw itemError
+
+                // 5. Đồng bộ trạng thái Lot
+                await lotService.syncLotStatus({
+                    supabase,
+                    lotId: lot.id,
+                    isSiteIssuance: false
                 })
-                .select()
-                .single()
 
-            if (lotError) throw lotError
+                showToast(`Đã nhập kho thành công! PNK: ${pnkCode} • Lô: ${lotCode}`, 'success')
+            } else {
+                // ==========================================
+                // LUỒNG CŨ BẢO TOÀN CHO KHO ĐÔNG / MẶC ĐỊNH
+                // ==========================================
+                const lotCode = await generateOrderCode('SITE', systemType || 'KHO')
 
-            // 3. Create Lot Item
-            const { error: itemError } = await supabase
-                .from('lot_items')
-                .insert({
-                    lot_id: lot.id,
-                    product_id: selectedProduct.id,
-                    quantity: quantity,
-                    unit: unit || selectedProduct.unit
+                const { data: lot, error: lotError } = await (supabase.from('lots') as any)
+                    .insert({
+                        code: lotCode,
+                        warehouse_name: warehouseName,
+                        system_code: systemType,
+                        supplier_id: supplierId || null,
+                        batch_code: batchCode || null,
+                        inbound_date: inboundDate,
+                        status: 'active',
+                        notes: notes || null,
+                        metadata: {
+                            source: 'Direct Site Inbound',
+                            batch_code: batchCode || null,
+                            invoice_no: invoiceNo || null,
+                            customer_id: customerId || null,
+                            customer_name: oemBrandName,
+                            oem_brand: oemBrandName,
+                            invoice_url: invoiceUrl,
+                            invoice_view_link: invoiceViewLink,
+                            created_at: new Date().toISOString(),
+                            system_history: {
+                                inbound: [{
+                                    date: inboundDate || new Date().toISOString(),
+                                    type: 'SITE_DIRECT',
+                                    batch_code: batchCode || null,
+                                    customer_name: oemBrandName,
+                                    description: notes || 'Nhập kho trực tiếp tại công trình',
+                                    supplier_id: supplierId || null,
+                                    invoice_link: invoiceViewLink || null
+                                }],
+                                exports: []
+                            }
+                        }
+                    })
+                    .select()
+                    .single()
+
+                if (lotError) throw lotError
+
+                const { error: itemError } = await (supabase.from('lot_items') as any)
+                    .insert({
+                        lot_id: lot.id,
+                        product_id: selectedProduct.id,
+                        quantity: quantity,
+                        unit: unit || selectedProduct.unit
+                    })
+
+                if (itemError) throw itemError
+
+                await lotService.syncLotStatus({
+                    supabase,
+                    lotId: lot.id,
+                    isSiteIssuance: false
                 })
 
-            if (itemError) throw itemError
+                showToast('Nhập hàng thành công', 'success')
+            }
 
-            // 4. Final Sync
-            await lotService.syncLotStatus({
-                supabase,
-                lotId: lot.id,
-                isSiteIssuance: false
-            })
-
-            showToast('Nhập hàng thành công', 'success')
             onSuccess()
             onClose()
         } catch (e: any) {
@@ -207,7 +349,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={18} />
                                 <input
                                     className="w-full pl-10 p-3 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 outline-none font-medium focus:ring-2 focus:ring-emerald-500/20 transition-all"
-                                    placeholder="Tìm sản phẩm, linh kiện..."
+                                    placeholder="Tìm sản phẩm, vật tư..."
                                     value={searchTerm}
                                     onChange={e => setSearchTerm(e.target.value)}
                                     autoFocus
@@ -273,6 +415,89 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                                     </select>
                                 </div>
 
+                                {(showBatchField || showOemField || showDocField) && (
+                                    <div className="p-4 bg-emerald-500/10 border border-emerald-500/30 rounded-2xl space-y-3.5">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 dark:text-emerald-400 flex items-center gap-1.5">
+                                                <Sparkles size={14} className="text-emerald-600 dark:text-emerald-400" /> Thông tin Lô & Đối Tác
+                                            </span>
+                                            {isSyncEnabled && (
+                                                <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold">
+                                                    Tự tạo PNK & LOT mới
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {showBatchField && (
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-stone-600 dark:text-stone-300">
+                                                        Số Lô / Batch NCC
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={batchCode}
+                                                        onChange={e => setBatchCode(e.target.value)}
+                                                        placeholder="VD: L2610-01, Đợt in T10..."
+                                                        className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                                    />
+                                                </div>
+                                            )}
+
+                                            {showDocField && (
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-stone-600 dark:text-stone-300">
+                                                        Số Hóa Đơn / Phiếu Giao NCC
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={invoiceNo}
+                                                        onChange={e => setInvoiceNo(e.target.value)}
+                                                        placeholder="VD: HD-00129 / PX-88..."
+                                                        className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {showOemField && (
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-stone-600 dark:text-stone-300">
+                                                        Khách hàng OEM (Danh mục)
+                                                    </label>
+                                                    <select
+                                                        value={customerId}
+                                                        onChange={e => {
+                                                            setCustomerId(e.target.value)
+                                                            const cust = customers.find(c => c.id === e.target.value)
+                                                            if (cust) setCustomOemName(cust.name)
+                                                        }}
+                                                        className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all appearance-none"
+                                                    >
+                                                        <option value="">-- Mặc định / Dùng chung --</option>
+                                                        {customers.map(c => (
+                                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                                        ))}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-xs font-bold text-stone-600 dark:text-stone-300">
+                                                        Thương hiệu / Nhãn OEM
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={customOemName}
+                                                        onChange={e => setCustomOemName(e.target.value)}
+                                                        placeholder="VD: Nhãn hiệu ABC, OEM Brand..."
+                                                        className="w-full p-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm font-semibold outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 transition-all"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-2">
                                         <label className="text-sm font-bold text-stone-500">Số lượng nhập</label>
@@ -300,7 +525,7 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                                         value={notes}
                                         onChange={e => setNotes(e.target.value)}
                                         className="w-full p-4 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 h-24 resize-none transition-all"
-                                        placeholder="Nhập ghi chú ví dụ: Nhập từ nhà cung cấp A, Hàng lẻ sản xuất..."
+                                        placeholder="Nhập ghi chú ví dụ: Nhập từ nhà cung cấp A, Hàng lẻ công trình..."
                                     />
                                 </div>
 
@@ -328,13 +553,13 @@ export const SiteDirectInboundModal: React.FC<SiteDirectInboundModalProps> = ({ 
                                         <div className="relative group">
                                             <input
                                                 type="file"
-                                                id="invoice-upload"
+                                                id="invoice-upload-prod"
                                                 className="hidden"
                                                 onChange={e => setInvoiceFile(e.target.files?.[0] || null)}
                                                 accept="image/*,application/pdf"
                                             />
                                             <label
-                                                htmlFor="invoice-upload"
+                                                htmlFor="invoice-upload-prod"
                                                 className={`flex items-center gap-2 w-full p-3 rounded-xl border border-dashed transition-all cursor-pointer font-bold text-sm ${
                                                     invoiceFile 
                                                     ? 'border-emerald-500 bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400' 

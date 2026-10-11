@@ -178,6 +178,18 @@ function OutboundItemsTableComponent({
                             <th className="px-4 py-3 w-10">#</th>
                             <th className="px-4 py-3 min-w-[370px] text-left">Sản phẩm</th>
                             <th className="px-4 py-3 w-32">ĐVT</th>
+                            {hasModule('outbound_batch_lot') && (
+                                <th className="px-4 py-3 w-36 text-center text-purple-700 dark:text-purple-400">
+                                    <div>Số Lô / Batch</div>
+                                    <div className="text-[10px] font-normal text-stone-400">(Xuất theo Lô)</div>
+                                </th>
+                            )}
+                            {hasModule('outbound_oem') && (
+                                <th className="px-4 py-3 w-36 text-center text-blue-700 dark:text-blue-400">
+                                    <div>Khách hàng OEM</div>
+                                    <div className="text-[10px] font-normal text-stone-400">(Thương hiệu)</div>
+                                </th>
+                            )}
                             <th className="px-4 py-3 w-48 text-right">
                                 <div className="flex flex-col items-center w-fit ml-auto">
                                     <span>SL</span>
@@ -268,6 +280,29 @@ function OutboundItemsTableComponent({
                                             onChange={(val) => updateItem(item.id, 'unit', val)}
                                         />
                                     </td>
+
+                                    {hasModule('outbound_batch_lot') && (
+                                        <td className="px-4 py-3 text-center">
+                                            <input
+                                                type="text"
+                                                value={item.batch_code || ''}
+                                                onChange={e => updateItem(item.id, 'batch_code', e.target.value)}
+                                                placeholder="Lô/Batch..."
+                                                className="w-full bg-stone-50 dark:bg-zinc-800/50 border border-stone-200 dark:border-zinc-700 rounded px-2.5 py-1.5 text-xs text-stone-700 dark:text-stone-200 outline-none focus:border-purple-500 text-center font-medium"
+                                            />
+                                        </td>
+                                    )}
+                                    {hasModule('outbound_oem') && (
+                                        <td className="px-4 py-3 text-center">
+                                            <input
+                                                type="text"
+                                                value={item.customer_name || ''}
+                                                onChange={e => updateItem(item.id, 'customer_name', e.target.value)}
+                                                placeholder="Khách OEM..."
+                                                className="w-full bg-stone-50 dark:bg-zinc-800/50 border border-stone-200 dark:border-zinc-700 rounded px-2.5 py-1.5 text-xs text-stone-700 dark:text-stone-200 outline-none focus:border-blue-500 text-center font-medium"
+                                            />
+                                        </td>
+                                    )}
 
                                     <td className="px-4 py-3">
                                         <div className="flex flex-col gap-2">
@@ -497,6 +532,35 @@ function OutboundItemsTableComponent({
                                     </div>
                                 </div>
                             </div>
+
+                            {(hasModule('outbound_batch_lot') || hasModule('outbound_oem')) && (
+                                <div className="grid grid-cols-2 gap-3 pt-1">
+                                    {hasModule('outbound_batch_lot') && (
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] text-purple-700 dark:text-purple-400 font-semibold">Số Lô / Batch</label>
+                                            <input
+                                                type="text"
+                                                value={item.batch_code || ''}
+                                                onChange={e => updateItem(item.id, 'batch_code', e.target.value)}
+                                                placeholder="Lô/Batch..."
+                                                className="w-full bg-stone-50 dark:bg-zinc-800/50 border border-stone-200 dark:border-zinc-700 rounded px-2.5 py-1 text-xs outline-none focus:border-purple-500 font-medium"
+                                            />
+                                        </div>
+                                    )}
+                                    {hasModule('outbound_oem') && (
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] text-blue-700 dark:text-blue-400 font-semibold">Khách OEM</label>
+                                            <input
+                                                type="text"
+                                                value={item.customer_name || ''}
+                                                onChange={e => updateItem(item.id, 'customer_name', e.target.value)}
+                                                placeholder="Khách OEM..."
+                                                className="w-full bg-stone-50 dark:bg-zinc-800/50 border border-stone-200 dark:border-zinc-700 rounded px-2.5 py-1 text-xs outline-none focus:border-blue-500 font-medium"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+                            )}
 
                             {hasModule('outbound_conversion') && targetUnit && (
                                 <div className="flex justify-between items-center text-xs bg-orange-50 dark:bg-orange-900/10 p-2 rounded text-orange-700">

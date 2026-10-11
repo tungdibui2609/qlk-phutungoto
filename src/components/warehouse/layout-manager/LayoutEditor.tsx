@@ -3,7 +3,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { LayoutShape, ShapeType, WarehouseLayout, LayoutInput, isShapesFormat } from './types';
 import { useToast } from '@/components/ui/ToastProvider';
-import { Save, X, MousePointer, Square, Minus, MoveRight, DoorOpen, Trash2, ZoomIn, ZoomOut, Grid3X3, Box, Circle, RotateCw, Tag } from 'lucide-react';
+import { 
+    Save, X, MousePointer, Square, Minus, MoveRight, DoorOpen, Trash2, 
+    ZoomIn, ZoomOut, Grid3X3, Box, Circle, RotateCw, Tag, Copy, Undo2, 
+    Redo2, Lock, Unlock, ArrowUp, ArrowDown, Scale, Flame, AlertTriangle, 
+    Layers, Sparkles, Check, ChevronRight, Sliders, Palette, Truck, 
+    CheckCircle2, BatteryCharging, HeartPulse, ArrowRight, Type
+} from 'lucide-react';
 import { layoutService } from '@/services/warehouse/layoutService';
 import { useSystem } from '@/contexts/SystemContext';
 import { useUser } from '@/contexts/UserContext';
@@ -19,29 +25,95 @@ const MIN_SIZE = GRID * 2;
 
 type ToolId = 'SELECT' | ShapeType;
 
-const TOOLS: { id: ToolId; label: string; icon: React.ComponentType<any> }[] = [
-    { id: 'SELECT', label: 'Chọn / Di chuyển', icon: MousePointer },
-    { id: 'ZONE', label: 'Khu vực để hàng', icon: Square },
-    { id: 'RACK', label: 'Kệ hàng (nhiều ô)', icon: Grid3X3 },
-    { id: 'ROOM', label: 'Phòng / Kho nhỏ', icon: Box },
-    { id: 'WALL', label: 'Tường ngăn', icon: Minus },
-    { id: 'PATH', label: 'Hành lang / Lối đi', icon: MoveRight },
-    { id: 'DOOR', label: 'Cửa ra vào', icon: DoorOpen },
-    { id: 'PILLAR', label: 'Cột trụ', icon: Circle },
+// Danh mục công cụ chuyên nghiệp phân theo nhóm kiến trúc & vận hành kho
+const TOOL_GROUPS: {
+    name: string;
+    tools: { id: ToolId; label: string; icon: React.ComponentType<any> }[];
+}[] = [
+    {
+        name: 'Thao tác & Ký hiệu',
+        tools: [
+            { id: 'SELECT', label: 'Chọn / Di chuyển', icon: MousePointer },
+            { id: 'TEXT_NOTE', label: 'Văn bản / Ghi chú', icon: Type },
+            { id: 'ARROW', label: 'Mũi tên luồng di chuyển', icon: ArrowRight },
+        ]
+    },
+    {
+        name: 'Khu vực lưu trữ',
+        tools: [
+            { id: 'ZONE', label: 'Bãi chứa hàng (Đa Lô)', icon: Square },
+            { id: 'RACK', label: 'Kệ hàng (Chia ô)', icon: Grid3X3 },
+            { id: 'STAGING', label: 'Khu tập kết / Đệm hàng', icon: Layers },
+            { id: 'QC_AREA', label: 'Khu kiểm hàng (KCS)', icon: CheckCircle2 },
+            { id: 'SCRAP', label: 'Khu phế phẩm / Hàng lỗi', icon: AlertTriangle },
+            { id: 'ROOM', label: 'Phòng / Kho biệt lập', icon: Box },
+        ]
+    },
+    {
+        name: 'Kiến trúc & Ngăn cách',
+        tools: [
+            { id: 'WALL', label: 'Tường chịu lực', icon: Minus },
+            { id: 'PARTITION', label: 'Vách ngăn / Panel', icon: Minus },
+            { id: 'FENCE', label: 'Hàng rào / Lan can', icon: Grid3X3 },
+            { id: 'DOOR', label: 'Cửa đi / Cửa cuốn', icon: DoorOpen },
+            { id: 'DOCK', label: 'Cửa xuất nhập (Dock xe tải)', icon: Truck },
+            { id: 'PILLAR', label: 'Cột trụ nhà xưởng', icon: Circle },
+            { id: 'STAIRS', label: 'Cầu thang bộ', icon: MoveRight },
+            { id: 'PATH', label: 'Lối đi / Hành lang', icon: MoveRight },
+        ]
+    },
+    {
+        name: 'Bàn thao tác & Thiết bị',
+        tools: [
+            { id: 'DESK', label: 'Bàn làm việc / Thủ kho', icon: Box },
+            { id: 'PACK_STATION', label: 'Trạm đóng gói / Máy dán', icon: Sparkles },
+            { id: 'SCALE', label: 'Trạm cân điện tử', icon: Scale },
+            { id: 'FORKLIFT_PARK', label: 'Bãi đỗ / Sạc xe nâng', icon: BatteryCharging },
+        ]
+    },
+    {
+        name: 'An toàn lao động & PCCC',
+        tools: [
+            { id: 'FIRE_EXT', label: 'Bình PCCC / An toàn', icon: Flame },
+            { id: 'FIRST_AID', label: 'Tủ y tế / Sơ cứu', icon: HeartPulse },
+        ]
+    }
 ];
 
-const SHAPE_FILL: Record<ShapeType, string> = {
-    ZONE: '#fed7aa', WALL: '#475569', PATH: '#dbeafe', DOOR: '#bbf7d0',
-    RACK: '#fef3c7', ROOM: '#ede9fe', PILLAR: '#cbd5e1',
+const SHAPE_DEFAULTS: Record<ShapeType, { fill: string; stroke: string; label: string }> = {
+    ZONE: { fill: '#fed7aa', stroke: '#ea580c', label: 'Khu vực' },
+    RACK: { fill: '#fef3c7', stroke: '#d97706', label: 'Kệ hàng' },
+    ROOM: { fill: '#ede9fe', stroke: '#7c3aed', label: 'Phòng' },
+    WALL: { fill: '#475569', stroke: '#1e293b', label: 'Tường' },
+    PARTITION: { fill: '#cbd5e1', stroke: '#64748b', label: 'Vách ngăn' },
+    FENCE: { fill: '#f1f5f9', stroke: '#64748b', label: 'Hàng rào' },
+    PATH: { fill: '#dbeafe', stroke: '#93c5fd', label: 'Lối đi' },
+    DOOR: { fill: '#bbf7d0', stroke: '#16a34a', label: 'Cửa' },
+    DOCK: { fill: '#e0e7ff', stroke: '#4338ca', label: 'Cửa Dock xe tải' },
+    PILLAR: { fill: '#94a3b8', stroke: '#475569', label: 'Cột' },
+    DESK: { fill: '#e0f2fe', stroke: '#0284c7', label: 'Bàn kiểm' },
+    PACK_STATION: { fill: '#fef08a', stroke: '#ca8a04', label: 'Đóng gói' },
+    SCALE: { fill: '#ccfbf1', stroke: '#0d9488', label: 'Trạm cân' },
+    STAGING: { fill: '#fef9c3', stroke: '#eab308', label: 'Khu tập kết' },
+    QC_AREA: { fill: '#d1fae5', stroke: '#059669', label: 'KCS / Kiểm hàng' },
+    SCRAP: { fill: '#fee2e2', stroke: '#dc2626', label: 'Phế phẩm' },
+    FORKLIFT_PARK: { fill: '#fef3c7', stroke: '#d97706', label: 'Đỗ xe nâng' },
+    STAIRS: { fill: '#f1f5f9', stroke: '#475569', label: 'Cầu thang' },
+    FIRE_EXT: { fill: '#fee2e2', stroke: '#ef4444', label: 'PCCC' },
+    FIRST_AID: { fill: '#dcfce7', stroke: '#16a34a', label: 'Tủ y tế' },
+    ARROW: { fill: '#3b82f6', stroke: '#1d4ed8', label: 'Hướng đi' },
+    TEXT_NOTE: { fill: 'transparent', stroke: 'transparent', label: 'Ghi chú' },
 };
-const SHAPE_STROKE: Record<ShapeType, string> = {
-    ZONE: '#ea580c', WALL: '#1e293b', PATH: '#93c5fd', DOOR: '#16a34a',
-    RACK: '#d97706', ROOM: '#7c3aed', PILLAR: '#64748b',
-};
-const SHAPE_LABELS: Record<ShapeType, string> = {
-    ZONE: 'Khu vực', WALL: 'Tường', PATH: 'Lối đi', DOOR: 'Cửa',
-    RACK: 'Kệ hàng', ROOM: 'Phòng', PILLAR: 'Cột',
-};
+
+const COLOR_PRESETS = [
+    { fill: '#fed7aa', stroke: '#ea580c', name: 'Cam (Thùng carton)' },
+    { fill: '#dbeafe', stroke: '#2563eb', name: 'Xanh dương (Túi PA / Nilon)' },
+    { fill: '#bbf7d0', stroke: '#16a34a', name: 'Xanh lá (Vật tư sạch)' },
+    { fill: '#fef08a', stroke: '#ca8a04', name: 'Vàng (Đệm hàng)' },
+    { fill: '#fee2e2', stroke: '#dc2626', name: 'Đỏ (Hàng lỗi / Phế)' },
+    { fill: '#ede9fe', stroke: '#7c3aed', name: 'Tím (Khu biệt lập)' },
+    { fill: '#f1f5f9', stroke: '#64748b', name: 'Xám (Hạ tầng)' },
+];
 
 const snap = (v: number) => Math.round(v / GRID) * GRID;
 
@@ -58,20 +130,48 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const svgRef = useRef<SVGSVGElement>(null);
 
     const [name, setName] = useState(layout?.name || 'Sơ đồ mới');
-    const [canvasW, setCanvasW] = useState(layout?.width || 1200);
-    const [canvasH, setCanvasH] = useState(layout?.height || 800);
+    const [canvasW, setCanvasW] = useState(layout?.width || 1400);
+    const [canvasH, setCanvasH] = useState(layout?.height || 900);
     const [activeTool, setActiveTool] = useState<ToolId>('ZONE');
     const [shapes, setShapes] = useState<LayoutShape[]>(() => initShapes(layout));
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
     const [zoom, setZoom] = useState(1);
 
-    // Drawing state (refs to avoid stale closures)
+    // History stack cho Undo / Redo
+    const [history, setHistory] = useState<LayoutShape[][]>([initShapes(layout)]);
+    const [historyIndex, setHistoryIndex] = useState(0);
+
+    const pushHistory = useCallback((newShapes: LayoutShape[]) => {
+        setHistory(prev => {
+            const next = prev.slice(0, historyIndex + 1);
+            return [...next, newShapes];
+        });
+        setHistoryIndex(prev => prev + 1);
+    }, [historyIndex]);
+
+    const handleUndo = useCallback(() => {
+        if (historyIndex > 0) {
+            setHistoryIndex(prev => prev - 1);
+            setShapes(history[historyIndex - 1]);
+            setSelectedId(null);
+        }
+    }, [history, historyIndex]);
+
+    const handleRedo = useCallback(() => {
+        if (historyIndex < history.length - 1) {
+            setHistoryIndex(prev => prev + 1);
+            setShapes(history[historyIndex + 1]);
+            setSelectedId(null);
+        }
+    }, [history, historyIndex]);
+
+    // Drawing state
     const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
     const drawingRef = useRef(false);
     const drawStartRef = useRef({ x: 0, y: 0 });
 
-    // Dragging state
+    // Dragging / Resizing state
     const draggingRef = useRef<{ 
         id: string; 
         offsetX: number; 
@@ -85,34 +185,111 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     } | null>(null);
     const [dragPos, setDragPos] = useState<{ id: string; x: number; y: number; w?: number; h?: number } | null>(null);
 
-    // Label popup
-    const [labelPopup, setLabelPopup] = useState<{ shapeId: string; value: string; code?: string } | null>(null);
-    // Rack config popup
+    // Popups
     const [rackPopup, setRackPopup] = useState<{ shapeId: string; prefix: string; rows: number; cols: number } | null>(null);
-    // Radius popup
-    const [radiusPopup, setRadiusPopup] = useState<{ shapeId: string; radii: [number, number, number, number] } | null>(null);
 
-    const createRoundedRectPath = (x: number, y: number, w: number, h: number, radii: [number, number, number, number]) => {
-        let [rTL, rTR, rBR, rBL] = radii;
-        const minD = Math.min(w, h) / 2;
-        rTL = Math.min(rTL, minD);
-        rTR = Math.min(rTR, minD);
-        rBR = Math.min(rBR, minD);
-        rBL = Math.min(rBL, minD);
+    const selectedShape = shapes.find(s => s.id === selectedId);
 
-        const path = [];
-        path.push(`M ${x + rTL} ${y}`);
-        path.push(`L ${x + w - rTR} ${y}`);
-        if (rTR > 0) path.push(`A ${rTR} ${rTR} 0 0 1 ${x + w} ${y + rTR}`);
-        path.push(`L ${x + w} ${y + h - rBR}`);
-        if (rBR > 0) path.push(`A ${rBR} ${rBR} 0 0 1 ${x + w - rBR} ${y + h}`);
-        path.push(`L ${x + rBL} ${y + h}`);
-        if (rBL > 0) path.push(`A ${rBL} ${rBL} 0 0 1 ${x} ${y + h - rBL}`);
-        path.push(`L ${x} ${y + rTL}`);
-        if (rTL > 0) path.push(`A ${rTL} ${rTL} 0 0 1 ${x + rTL} ${y}`);
-        path.push('Z');
-        return path.join(' ');
-    };
+    // Update 1 shape helper
+    const updateSelectedShape = useCallback((updater: Partial<LayoutShape>) => {
+        if (!selectedId) return;
+        setShapes(prev => {
+            const next = prev.map(s => s.id === selectedId ? { ...s, ...updater } : s);
+            pushHistory(next);
+            return next;
+        });
+    }, [selectedId, pushHistory]);
+
+    // Duplicate shape
+    const handleDuplicate = useCallback(() => {
+        if (!selectedShape) return;
+        const newShape: LayoutShape = {
+            ...selectedShape,
+            id: crypto.randomUUID(),
+            x: selectedShape.x + GRID * 2,
+            y: selectedShape.y + GRID * 2,
+            code: selectedShape.code ? `${selectedShape.code}-COPY` : undefined,
+            label: selectedShape.label ? `${selectedShape.label} (Sao chép)` : undefined
+        };
+        const next = [...shapes, newShape];
+        setShapes(next);
+        setSelectedId(newShape.id);
+        pushHistory(next);
+        showToast('Đã nhân bản đối tượng', 'info');
+    }, [selectedShape, shapes, pushHistory, showToast]);
+
+    // Delete shape
+    const handleDeleteSelected = useCallback(() => {
+        if (!selectedId) return;
+        const next = shapes.filter(s => s.id !== selectedId);
+        setShapes(next);
+        setSelectedId(null);
+        pushHistory(next);
+    }, [selectedId, shapes, pushHistory]);
+
+    // Layer ordering
+    const handleBringToFront = useCallback(() => {
+        if (!selectedId) return;
+        const target = shapes.find(s => s.id === selectedId);
+        if (!target) return;
+        const next = [...shapes.filter(s => s.id !== selectedId), target];
+        setShapes(next);
+        pushHistory(next);
+    }, [selectedId, shapes, pushHistory]);
+
+    const handleSendToBack = useCallback(() => {
+        if (!selectedId) return;
+        const target = shapes.find(s => s.id === selectedId);
+        if (!target) return;
+        const next = [target, ...shapes.filter(s => s.id !== selectedId)];
+        setShapes(next);
+        pushHistory(next);
+    }, [selectedId, shapes, pushHistory]);
+
+    // Nudge (Phím mũi tên)
+    const handleNudge = useCallback((dx: number, dy: number) => {
+        if (!selectedId || selectedShape?.isLocked) return;
+        setShapes(prev => {
+            const next = prev.map(s => s.id === selectedId ? { ...s, x: Math.max(0, s.x + dx), y: Math.max(0, s.y + dy) } : s);
+            pushHistory(next);
+            return next;
+        });
+    }, [selectedId, selectedShape, pushHistory]);
+
+    // Keyboard Shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') {
+                return;
+            }
+            if (e.key === 'Delete' || e.key === 'Backspace') {
+                if (selectedId && !selectedShape?.isLocked) {
+                    e.preventDefault();
+                    handleDeleteSelected();
+                }
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+                e.preventDefault();
+                if (e.shiftKey) handleRedo();
+                else handleUndo();
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+                e.preventDefault();
+                handleRedo();
+            } else if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                e.preventDefault();
+                handleDuplicate();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault(); handleNudge(-GRID, 0);
+            } else if (e.key === 'ArrowRight') {
+                e.preventDefault(); handleNudge(GRID, 0);
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault(); handleNudge(0, -GRID);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault(); handleNudge(0, GRID);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedId, selectedShape, handleDeleteSelected, handleUndo, handleRedo, handleDuplicate, handleNudge]);
 
     const getSvgPoint = useCallback((e: React.MouseEvent): { x: number; y: number } => {
         const svg = svgRef.current;
@@ -128,13 +305,12 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
     // ---- Mouse Handlers ----
     const onMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-        if (labelPopup || rackPopup || radiusPopup) return;
+        if (rackPopup) return;
         if (e.button !== 0) return;
         e.preventDefault();
         const pt = getSvgPoint(e);
 
         if (activeTool === 'SELECT') {
-            // Hit test (reverse for z-order)
             const hit = [...shapes].reverse().find(s => {
                 const sx = dragPos?.id === s.id ? dragPos.x : s.x;
                 const sy = dragPos?.id === s.id ? dragPos.y : s.y;
@@ -142,30 +318,35 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             });
             if (hit) {
                 setSelectedId(hit.id);
-                draggingRef.current = { id: hit.id, offsetX: pt.x - hit.x, offsetY: pt.y - hit.y };
+                if (!hit.isLocked) {
+                    draggingRef.current = { id: hit.id, offsetX: pt.x - hit.x, offsetY: pt.y - hit.y };
+                }
             } else {
                 setSelectedId(null);
             }
-        } else if (activeTool === 'DOOR' || activeTool === 'PILLAR') {
+        } else if (activeTool === 'DOOR' || activeTool === 'PILLAR' || activeTool === 'FIRE_EXT') {
             const isPillar = activeTool === 'PILLAR';
+            const isFire = activeTool === 'FIRE_EXT';
             const newShape: LayoutShape = {
                 id: crypto.randomUUID(),
                 type: activeTool,
                 x: pt.x,
                 y: pt.y,
-                width: isPillar ? GRID * 2 : GRID * 3,
-                height: isPillar ? GRID * 2 : GRID,
+                width: isPillar || isFire ? GRID * 2 : GRID * 3,
+                height: isPillar || isFire ? GRID * 2 : GRID,
                 rotation: 0,
+                label: isFire ? 'PCCC' : isPillar ? 'Cột' : 'Cửa',
             };
-            setShapes(prev => [...prev, newShape]);
+            const next = [...shapes, newShape];
+            setShapes(next);
             setSelectedId(newShape.id);
-            setLabelPopup({ shapeId: newShape.id, value: '', code: '' });
+            pushHistory(next);
         } else {
             drawingRef.current = true;
             drawStartRef.current = pt;
             setDrawPreview({ x: pt.x, y: pt.y, w: 0, h: 0 });
         }
-    }, [activeTool, shapes, labelPopup, rackPopup, getSvgPoint, dragPos]);
+    }, [activeTool, shapes, rackPopup, getSvgPoint, dragPos, pushHistory]);
 
     const onMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
         const pt = getSvgPoint(e);
@@ -187,12 +368,8 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 let nw = d.origW!;
                 let nh = d.origH!;
 
-                if (d.handle?.includes('e')) {
-                    nw = snap(Math.max(MIN_SIZE, pt.x - nx));
-                }
-                if (d.handle?.includes('s')) {
-                    nh = snap(Math.max(MIN_SIZE, pt.y - ny));
-                }
+                if (d.handle?.includes('e')) nw = snap(Math.max(MIN_SIZE, pt.x - nx));
+                if (d.handle?.includes('s')) nh = snap(Math.max(MIN_SIZE, pt.y - ny));
                 if (d.handle?.includes('w')) {
                     const newX = snap(Math.min(d.origX! + d.origW! - MIN_SIZE, pt.x));
                     nw = d.origX! + d.origW! - newX;
@@ -226,18 +403,21 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 y: drawPreview.y,
                 width: w,
                 height: h,
+                label: SHAPE_DEFAULTS[activeTool as ShapeType]?.label || 'Khu vực',
+                code: activeTool === 'ZONE' ? `ZONE-${Math.floor(100 + Math.random() * 900)}` : undefined,
+                isMultiLot: activeTool === 'ZONE' ? true : undefined,
             };
-            setShapes(prev => [...prev, newShape]);
+            const next = [...shapes, newShape];
+            setShapes(next);
             setSelectedId(newShape.id);
             setDrawPreview(null);
+            pushHistory(next);
 
             if (activeTool === 'RACK') {
-                setRackPopup({ shapeId: newShape.id, prefix: '', rows: 2, cols: 3 });
-            } else {
-                setLabelPopup({ shapeId: newShape.id, value: '', code: '' });
+                setRackPopup({ shapeId: newShape.id, prefix: 'K', rows: 2, cols: 3 });
             }
         } else if (draggingRef.current && dragPos) {
-            setShapes(prev => prev.map(s =>
+            const next = shapes.map(s =>
                 s.id === dragPos.id ? { 
                     ...s, 
                     x: dragPos.x, 
@@ -245,518 +425,642 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                     width: dragPos.w ?? s.width,
                     height: dragPos.h ?? s.height
                 } : s
-            ));
+            );
+            setShapes(next);
+            pushHistory(next);
             draggingRef.current = null;
             setDragPos(null);
-        } else {
-            drawingRef.current = false;
-            draggingRef.current = null;
-            setDrawPreview(null);
         }
-    }, [activeTool, drawPreview, dragPos]);
+    }, [activeTool, drawPreview, dragPos, shapes, pushHistory]);
 
-    // Global mouseup handles all drag/draw commits, even if released outside SVG
-    useEffect(() => {
-        window.addEventListener('mouseup', onMouseUp);
-        return () => window.removeEventListener('mouseup', onMouseUp);
-    }, [onMouseUp]);
-
-    // Delete with keyboard
-    useEffect(() => {
-        const handler = (e: KeyboardEvent) => {
-            if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId && !labelPopup) {
-                setShapes(prev => prev.filter(s => s.id !== selectedId));
-                setSelectedId(null);
-            }
+    // Handle Resize
+    const onResizeStart = useCallback((e: React.MouseEvent, shapeId: string, handle: string) => {
+        e.stopPropagation();
+        e.preventDefault();
+        const shape = shapes.find(s => s.id === shapeId);
+        if (!shape || shape.isLocked) return;
+        const pt = getSvgPoint(e);
+        draggingRef.current = {
+            id: shapeId,
+            offsetX: pt.x,
+            offsetY: pt.y,
+            isResize: true,
+            handle,
+            origX: shape.x,
+            origY: shape.y,
+            origW: shape.width,
+            origH: shape.height
         };
-        window.addEventListener('keydown', handler);
-        return () => window.removeEventListener('keydown', handler);
-    }, [selectedId, labelPopup]);
+    }, [shapes, getSvgPoint]);
 
-    const handleLabelConfirm = () => {
-        if (!labelPopup) return;
-        const codeVal = (labelPopup.code || '').trim().toUpperCase();
-        const labelVal = (labelPopup.value || '').trim();
-        setShapes(prev => prev.map(s =>
-            s.id === labelPopup.shapeId ? { ...s, label: labelVal || undefined, code: codeVal || undefined } : s
-        ));
-        setLabelPopup(null);
-    };
-
-    const handleLabelCancel = () => {
-        setLabelPopup(null);
-    };
-
-    const handleRackConfirm = () => {
-        if (!rackPopup) return;
-        const { shapeId, prefix, rows, cols } = rackPopup;
-        const p = prefix.trim().toUpperCase() || 'R';
-        const codes: string[] = [];
-        for (let r = 1; r <= rows; r++) {
-            for (let c = 1; c <= cols; c++) {
-                codes.push(`${p}-${String(r).padStart(2,'0')}${String(c).padStart(2,'0')}`);
-            }
-        }
-        setShapes(prev => prev.map(s =>
-            s.id === shapeId ? { ...s, label: p, rows, cols, positions: codes } : s
-        ));
-        setRackPopup(null);
-    };
-
-    const handleRackCancel = () => {
-        setRackPopup(null);
-    };
-
-    const handleRadiusConfirm = () => {
-        if (!radiusPopup) return;
-        setShapes(prev => prev.map(s => 
-            s.id === radiusPopup.shapeId ? { ...s, customRadii: radiusPopup.radii } : s
-        ));
-        setRadiusPopup(null);
-    };
-
-    const handleRadiusCancel = () => {
-        setRadiusPopup(null);
-    };
-
-    const handleDeleteSelected = () => {
-        if (!selectedId) return;
-        setShapes(prev => prev.filter(s => s.id !== selectedId));
-        setSelectedId(null);
-    };
-
+    // Handle Save
     const handleSave = async () => {
-        if (!name.trim()) { showToast('Vui lòng nhập tên sơ đồ', 'warning'); return; }
+        if (!name.trim()) return showToast('Vui lòng nhập tên sơ đồ', 'error');
         setIsSaving(true);
         try {
             const layoutData: LayoutInput = {
-                system_type: systemType,
-                name: name.trim(),
+                name,
                 width: canvasW,
                 height: canvasH,
+                system_type: systemType,
+                company_id: (layout as any)?.company_id || profile?.company_id || undefined,
                 grid_data: shapes,
-                is_active: true,
-                company_id: profile?.company_id || undefined,
+                is_active: layout?.is_active ?? true,
             };
-            if (layout?.id) {
-                await layoutService.saveLayout({ ...layoutData, id: layout.id } as WarehouseLayout);
-            } else {
-                await layoutService.saveLayout(layoutData);
+
+            const payload = layout?.id ? { ...layoutData, id: layout.id } : layoutData;
+            const saved = await layoutService.saveLayout(payload);
+            if (saved) {
+                showToast('Lưu sơ đồ và đồng bộ vị trí thành công', 'success');
+                onSaveSuccess();
             }
-            showToast('Đã lưu sơ đồ thành công!', 'success');
-            onSaveSuccess();
-        } catch (err: any) {
-            showToast(err.message || 'Lỗi khi lưu', 'error');
+        } catch (error: any) {
+            console.error('Save failed:', error);
+            showToast(`Lỗi khi lưu sơ đồ: ${error.message}`, 'error');
         } finally {
             setIsSaving(false);
         }
     };
 
-    const selectedShape = shapes.find(s => s.id === selectedId);
-
-    // ---- Render ----
     return (
-        <div className="flex flex-col h-full bg-white dark:bg-gray-900 rounded-lg shadow-sm border border-gray-200 dark:border-gray-800">
+        <div className="flex flex-col h-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
             {/* Top Toolbar */}
-            <div className="p-3 border-b border-gray-200 dark:border-gray-800 flex flex-wrap gap-3 items-center justify-between">
+            <div className="px-5 py-3 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between bg-gray-50/80 dark:bg-zinc-900/80 backdrop-blur-md">
                 <div className="flex items-center gap-3">
-                    <input
-                        type="text" value={name} onChange={e => setName(e.target.value)}
-                        placeholder="Tên sơ đồ..."
-                        className="px-3 py-1.5 border rounded-md dark:bg-gray-800 dark:border-gray-700 font-medium w-48"
+                    <input 
+                        type="text" 
+                        value={name} 
+                        onChange={e => setName(e.target.value)}
+                        className="px-3 py-1.5 font-black text-lg bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
+                        placeholder="Tên sơ đồ mặt bằng..."
                     />
-                    <div className="flex items-center gap-1 text-xs text-gray-500">
-                        <span>Canvas:</span>
-                        <input type="number" min={400} max={3000} step={100} value={canvasW}
-                            onChange={e => setCanvasW(parseInt(e.target.value) || 1200)}
-                            className="w-16 px-1 py-1 border rounded text-center dark:bg-gray-800 dark:border-gray-700 text-xs"
-                        />
-                        <span>×</span>
-                        <input type="number" min={300} max={2000} step={100} value={canvasH}
-                            onChange={e => setCanvasH(parseInt(e.target.value) || 800)}
-                            className="w-16 px-1 py-1 border rounded text-center dark:bg-gray-800 dark:border-gray-700 text-xs"
-                        />
-                    </div>
-                    <div className="flex items-center gap-1 border-l pl-3 dark:border-gray-700">
-                        <button type="button" onClick={() => setZoom(z => Math.max(0.3, z - 0.1))}
-                            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><ZoomOut className="w-4 h-4" /></button>
-                        <span className="text-xs text-gray-500 w-10 text-center">{Math.round(zoom * 100)}%</span>
-                        <button type="button" onClick={() => setZoom(z => Math.min(2, z + 0.1))}
-                            className="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-800"><ZoomIn className="w-4 h-4" /></button>
+                    <div className="flex items-center gap-1.5 text-xs text-gray-500 font-semibold bg-gray-200/50 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
+                        <span>W:</span>
+                        <input type="number" step={100} value={canvasW} onChange={e => setCanvasW(Number(e.target.value))} className="w-16 bg-transparent text-center font-bold outline-none" />
+                        <span>H:</span>
+                        <input type="number" step={100} value={canvasH} onChange={e => setCanvasH(Number(e.target.value))} className="w-16 bg-transparent text-center font-bold outline-none" />
+                        <span>px</span>
                     </div>
                 </div>
+
+                {/* Actions Toolbar */}
                 <div className="flex items-center gap-2">
-                    {selectedId && (
-                        <button type="button" onClick={handleDeleteSelected}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 flex items-center gap-1">
-                            <Trash2 className="w-4 h-4" /> Xóa
+                    {/* Undo / Redo */}
+                    <div className="flex items-center border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
+                        <button 
+                            type="button" 
+                            onClick={handleUndo} 
+                            disabled={historyIndex === 0} 
+                            title="Hoàn tác (Ctrl+Z)"
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors"
+                        >
+                            <Undo2 size={16} />
                         </button>
-                    )}
-                    {selectedShape && selectedShape.type !== 'RACK' && (
-                        <button type="button"
-                            onClick={() => setLabelPopup({ shapeId: selectedShape.id, value: selectedShape.label || '', code: selectedShape.code || '' })}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md bg-orange-50 text-orange-700 hover:bg-orange-100 dark:bg-orange-900/30 dark:text-orange-400 flex items-center gap-1">
-                            <Tag className="w-3.5 h-3.5" /> {selectedShape.label ? `Tên: ${selectedShape.label}` : 'Đặt tên / Mã'}
+                        <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700" />
+                        <button 
+                            type="button" 
+                            onClick={handleRedo} 
+                            disabled={historyIndex >= history.length - 1} 
+                            title="Làm lại (Ctrl+Y)"
+                            className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors"
+                        >
+                            <Redo2 size={16} />
                         </button>
-                    )}
-                    {selectedShape?.type === 'RACK' && (
-                        <button type="button"
-                            onClick={() => setRackPopup({ shapeId: selectedShape.id, prefix: selectedShape.label || '', rows: selectedShape.rows || 2, cols: selectedShape.cols || 3 })}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md bg-amber-50 text-amber-700 hover:bg-amber-100 dark:bg-amber-900/30 dark:text-amber-400">
-                            {selectedShape.positions?.length ? `Sửa kệ (${selectedShape.positions.length} ô)` : 'Cấu hình Kệ hàng'}
+                    </div>
+
+                    {/* Zoom */}
+                    <div className="flex items-center border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
+                        <button type="button" onClick={() => setZoom(z => Math.max(0.4, z - 0.1))} className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700">
+                            <ZoomOut size={16} />
                         </button>
-                    )}
-                    {selectedShape && (selectedShape.type === 'ZONE' || selectedShape.type === 'ROOM') && (
-                        <button type="button"
-                            onClick={() => setRadiusPopup({ shapeId: selectedShape.id, radii: selectedShape.customRadii || (selectedShape.type === 'ROOM' ? [8,8,8,8] : [4,4,4,4]) })}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md bg-teal-50 text-teal-700 hover:bg-teal-100 dark:bg-teal-900/30 dark:text-teal-400 flex items-center gap-1">
-                            Bo góc
+                        <span className="text-xs font-bold px-2">{Math.round(zoom * 100)}%</span>
+                        <button type="button" onClick={() => setZoom(z => Math.min(2.0, z + 0.1))} className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700">
+                            <ZoomIn size={16} />
                         </button>
-                    )}
+                    </div>
+
                     {selectedShape && (
-                        <button type="button"
-                            onClick={() => setShapes(prev => prev.map(s => s.id === selectedId ? { ...s, rotation: ((s.rotation || 0) + 90) % 360 } : s))}
-                            className="px-3 py-1.5 text-sm font-medium rounded-md bg-indigo-50 text-indigo-700 hover:bg-indigo-100 dark:bg-indigo-900/30 dark:text-indigo-400 flex items-center gap-1">
-                            <RotateCw className="w-3.5 h-3.5" /> Xoay {((selectedShape.rotation || 0) + 90) % 360}°
-                        </button>
+                        <>
+                            <button 
+                                type="button" 
+                                onClick={handleDuplicate}
+                                title="Nhân bản (Ctrl+D)"
+                                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 flex items-center gap-1.5 transition-all"
+                            >
+                                <Copy size={14} /> Nhân bản
+                            </button>
+                            <button 
+                                type="button" 
+                                onClick={handleDeleteSelected}
+                                title="Xóa (Delete)"
+                                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 flex items-center gap-1.5 transition-all"
+                            >
+                                <Trash2 size={14} /> Xóa
+                            </button>
+                        </>
                     )}
-                    <button type="button" onClick={onClose}
-                        className="px-3 py-1.5 text-sm font-medium border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-1">
-                        <X className="w-4 h-4" /> Hủy
+
+                    <div className="w-px h-6 bg-gray-200 dark:border-zinc-700 mx-1" />
+
+                    <button 
+                        type="button" 
+                        onClick={onClose}
+                        className="px-4 py-2 text-sm font-bold border border-gray-200 dark:border-zinc-700 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-700 dark:text-gray-300"
+                    >
+                        Hủy
                     </button>
-                    <button type="button" onClick={handleSave} disabled={isSaving}
-                        className="px-4 py-1.5 text-sm font-medium rounded-md bg-blue-600 hover:bg-blue-700 text-white disabled:opacity-50 flex items-center gap-1">
-                        <Save className="w-4 h-4" /> {isSaving ? 'Đang lưu...' : 'Lưu Sơ Đồ'}
+                    <button 
+                        type="button" 
+                        onClick={handleSave} 
+                        disabled={isSaving}
+                        className="px-5 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 disabled:opacity-50 transition-all"
+                    >
+                        <Save size={16} /> {isSaving ? 'Đang lưu...' : 'Lưu Sơ Đồ'}
                     </button>
                 </div>
             </div>
 
-            <div className="flex flex-1 min-h-0">
-                {/* Left Tools Panel */}
-                <div className="w-48 p-3 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-y-auto flex flex-col gap-1">
-                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Công cụ</h3>
-                    {TOOLS.map(tool => (
-                        <button key={tool.id} onClick={() => { setActiveTool(tool.id as ToolId); setSelectedId(null); }}
-                            className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-left text-sm font-medium transition-colors ${
-                                activeTool === tool.id
-                                    ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 ring-1 ring-blue-400'
-                                    : 'hover:bg-gray-200 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300'
-                            }`}>
-                            <tool.icon className="w-4 h-4" />
-                            {tool.label}
-                        </button>
-                    ))}
-
-                    <div className="mt-6">
-                        <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Chú thích</h3>
-                        <div className="space-y-1.5">
-                            {(['ZONE', 'RACK', 'ROOM', 'WALL', 'PATH', 'DOOR', 'PILLAR'] as ShapeType[]).map(type => (
-                                <div key={type} className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
-                                    <div className={`w-4 h-4 border ${type === 'PILLAR' ? 'rounded-full' : 'rounded'}`} style={{ backgroundColor: SHAPE_FILL[type], borderColor: SHAPE_STROKE[type] }} />
-                                    {SHAPE_LABELS[type]}
-                                </div>
-                            ))}
+            {/* Main Area: Left Tools + Canvas + Right Inspector */}
+            <div className="flex flex-1 min-h-0 overflow-hidden">
+                {/* Left Tool Palette */}
+                <div className="w-56 p-3 border-r border-gray-200 dark:border-zinc-800 bg-gray-50/50 dark:bg-zinc-900 overflow-y-auto custom-scrollbar flex flex-col gap-4">
+                    {TOOL_GROUPS.map((group, gIdx) => (
+                        <div key={gIdx} className="space-y-1">
+                            <h4 className="text-[10px] font-black uppercase tracking-wider text-gray-400 dark:text-zinc-500 px-2">
+                                {group.name}
+                            </h4>
+                            <div className="space-y-0.5">
+                                {group.tools.map(tool => {
+                                    const Icon = tool.icon;
+                                    const isActive = activeTool === tool.id;
+                                    return (
+                                        <button
+                                            key={tool.id}
+                                            onClick={() => { setActiveTool(tool.id); }}
+                                            className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-bold transition-all ${
+                                                isActive
+                                                    ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30'
+                                                    : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-200/60 dark:hover:bg-zinc-800'
+                                            }`}
+                                        >
+                                            <Icon size={16} className={isActive ? 'text-white' : 'text-gray-500'} />
+                                            <span className="truncate">{tool.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
                         </div>
-                    </div>
-
-                    <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg text-xs leading-relaxed">
-                        <p><strong>Vẽ:</strong> Chọn công cụ → kéo thả trên canvas.</p>
-                        <p className="mt-1"><strong>Di chuyển:</strong> Dùng công cụ &quot;Chọn&quot; → kéo thả hình.</p>
-                        <p className="mt-1"><strong>Xóa:</strong> Chọn hình → nhấn Delete hoặc nút Xóa.</p>
-                        <p className="mt-1"><strong>Mã vị trí:</strong> Vẽ xong Khu vực → nhập mã ngay.</p>
-                    </div>
+                    ))}
                 </div>
 
-                {/* SVG Canvas */}
-                <div className="flex-1 overflow-auto bg-gray-200 dark:bg-gray-950 relative">
-                    {/* Label Popup */}
-                    {labelPopup && (
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 p-5 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80">
-                            <h4 className="font-bold mb-1 text-gray-900 dark:text-white text-base">Thông tin Vị Trí</h4>
-                            <p className="text-xs text-gray-500 mb-4">Tên hiển thị và Mã vị trí (dùng để đồng bộ).</p>
-                            
-                            <label className="block mb-3">
-                                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">Tên hiển thị (tuỳ chọn)</span>
-                                <input
-                                    autoFocus type="text" value={labelPopup.value}
-                                    onChange={e => setLabelPopup(prev => prev ? { ...prev, value: e.target.value } : null)}
-                                    placeholder="VD: Khu Lạnh"
-                                    className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white text-sm"
-                                    onKeyDown={e => e.key === 'Enter' && handleLabelConfirm()}
-                                />
-                            </label>
-
-                            <label className="block mb-4">
-                                <span className="text-xs font-semibold text-gray-600 dark:text-gray-400 block mb-1">Mã hệ thống (System Code)</span>
-                                <input
-                                    type="text" value={labelPopup.code || ''}
-                                    onChange={e => setLabelPopup(prev => prev ? { ...prev, code: e.target.value } : null)}
-                                    placeholder="VD: KHO-LANH-01"
-                                    className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white uppercase text-sm"
-                                    onKeyDown={e => e.key === 'Enter' && handleLabelConfirm()}
-                                />
-                            </label>
-
-                            <div className="flex justify-end gap-2">
-                                <button type="button" onClick={handleLabelCancel} className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600">Bỏ qua</button>
-                                <button type="button" onClick={handleLabelConfirm} className="px-4 py-1.5 text-sm rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium">Xác nhận</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Rack Config Popup */}
-                    {rackPopup && (
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 p-5 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80">
-                            <h4 className="font-bold mb-1 text-gray-900 dark:text-white text-base">Cấu hình Kệ Hàng</h4>
-                            <p className="text-xs text-gray-500 mb-3">Nhập tiền tố và số hàng/cột. Hệ thống sẽ tự tạo mã vị trí.</p>
-                            <div className="space-y-2 mb-4">
-                                <input autoFocus type="text" value={rackPopup.prefix}
-                                    onChange={e => setRackPopup(prev => prev ? { ...prev, prefix: e.target.value } : null)}
-                                    placeholder="Tiền tố VD: KE-A" className="w-full px-3 py-2 border rounded-md dark:bg-gray-900 dark:border-gray-700 dark:text-white uppercase text-sm" />
-                                <div className="flex gap-2">
-                                    <label className="flex-1"><span className="text-xs text-gray-500">Hàng</span>
-                                        <input type="number" min={1} max={20} value={rackPopup.rows}
-                                            onChange={e => setRackPopup(prev => prev ? { ...prev, rows: parseInt(e.target.value) || 1 } : null)}
-                                            className="w-full px-2 py-1.5 border rounded-md dark:bg-gray-900 dark:border-gray-700 text-sm" />
-                                    </label>
-                                    <label className="flex-1"><span className="text-xs text-gray-500">Cột</span>
-                                        <input type="number" min={1} max={20} value={rackPopup.cols}
-                                            onChange={e => setRackPopup(prev => prev ? { ...prev, cols: parseInt(e.target.value) || 1 } : null)}
-                                            className="w-full px-2 py-1.5 border rounded-md dark:bg-gray-900 dark:border-gray-700 text-sm" />
-                                    </label>
-                                </div>
-                                <p className="text-xs text-gray-400">Sẽ tạo {rackPopup.rows * rackPopup.cols} vị trí: {(rackPopup.prefix.trim().toUpperCase() || 'R')}-0101 ... {(rackPopup.prefix.trim().toUpperCase() || 'R')}-{String(rackPopup.rows).padStart(2,'0')}{String(rackPopup.cols).padStart(2,'0')}</p>
-                            </div>
-                            <div className="flex justify-end gap-2">
-                                <button type="button" onClick={handleRackCancel} className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200 dark:bg-gray-700">Hủy</button>
-                                <button type="button" onClick={handleRackConfirm} className="px-4 py-1.5 text-sm rounded-md bg-amber-600 hover:bg-amber-700 text-white font-medium">Xác nhận</button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Radius Config Popup */}
-                    {radiusPopup && (
-                        <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-50 bg-white dark:bg-gray-800 p-5 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 w-80">
-                            <h4 className="font-bold mb-1 text-gray-900 dark:text-white text-base">Cấu hình Bo Góc</h4>
-                            <p className="text-xs text-gray-500 mb-4">Nhập bán kính bo góc cho từng góc (pixel).</p>
-                            
-                            <div className="grid grid-cols-2 gap-4 mb-5">
-                                <label className="flex flex-col gap-1">
-                                    <span className="text-xs font-semibold text-gray-600">Góc trên - trái</span>
-                                    <input type="number" min={0} value={radiusPopup.radii[0]} onChange={(e) => setRadiusPopup({ ...radiusPopup, radii: [parseInt(e.target.value)||0, radiusPopup.radii[1], radiusPopup.radii[2], radiusPopup.radii[3]] })} className="px-3 py-1.5 border rounded-md" />
-                                </label>
-                                <label className="flex flex-col gap-1">
-                                    <span className="text-xs font-semibold text-gray-600">Góc trên - phải</span>
-                                    <input type="number" min={0} value={radiusPopup.radii[1]} onChange={(e) => setRadiusPopup({ ...radiusPopup, radii: [radiusPopup.radii[0], parseInt(e.target.value)||0, radiusPopup.radii[2], radiusPopup.radii[3]] })} className="px-3 py-1.5 border rounded-md" />
-                                </label>
-                                <label className="flex flex-col gap-1">
-                                    <span className="text-xs font-semibold text-gray-600">Góc dưới - trái</span>
-                                    <input type="number" min={0} value={radiusPopup.radii[3]} onChange={(e) => setRadiusPopup({ ...radiusPopup, radii: [radiusPopup.radii[0], radiusPopup.radii[1], radiusPopup.radii[2], parseInt(e.target.value)||0] })} className="px-3 py-1.5 border rounded-md" />
-                                </label>
-                                <label className="flex flex-col gap-1">
-                                    <span className="text-xs font-semibold text-gray-600">Góc dưới - phải</span>
-                                    <input type="number" min={0} value={radiusPopup.radii[2]} onChange={(e) => setRadiusPopup({ ...radiusPopup, radii: [radiusPopup.radii[0], radiusPopup.radii[1], parseInt(e.target.value)||0, radiusPopup.radii[3]] })} className="px-3 py-1.5 border rounded-md" />
-                                </label>
-                            </div>
-                            <div className="flex gap-2 mb-4 justify-between">
-                                <button type="button" onClick={() => setRadiusPopup({ ...radiusPopup, radii: [0,0,0,0] })} className="text-xs px-2 py-1 bg-gray-100 rounded">Vuông</button>
-                                <button type="button" onClick={() => setRadiusPopup({ ...radiusPopup, radii: [16,16,16,16] })} className="text-xs px-2 py-1 bg-gray-100 rounded">Bo tròn</button>
-                                <button type="button" onClick={() => setRadiusPopup({ ...radiusPopup, radii: [16,16,0,0] })} className="text-xs px-2 py-1 bg-gray-100 rounded">Chỉ trên</button>
-                            </div>
-
-                            <div className="flex justify-end gap-2">
-                                <button type="button" onClick={handleRadiusCancel} className="px-3 py-1.5 text-sm rounded-md bg-gray-100 hover:bg-gray-200">Hủy</button>
-                                <button type="button" onClick={handleRadiusConfirm} className="px-4 py-1.5 text-sm rounded-md bg-teal-600 hover:bg-teal-700 text-white font-medium">Lưu góc</button>
-                            </div>
-                        </div>
-                    )}
-
-                    <svg
-                        ref={svgRef}
-                        width={canvasW * zoom}
-                        height={canvasH * zoom}
-                        viewBox={`0 0 ${canvasW} ${canvasH}`}
-                        className="bg-white shadow-lg cursor-crosshair"
-                        style={{ minWidth: canvasW * zoom, minHeight: canvasH * zoom }}
-                        onMouseDown={onMouseDown}
-                        onMouseMove={onMouseMove}
-                        onDragStart={e => e.preventDefault()}
+                {/* Center SVG Canvas */}
+                <div className="flex-1 overflow-auto bg-gray-200 dark:bg-zinc-950 p-6 flex items-center justify-center relative custom-scrollbar">
+                    <div 
+                        className="bg-white shadow-2xl rounded-2xl overflow-hidden transition-transform duration-75 relative"
+                        style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
                     >
-                        {/* Grid */}
-                        <defs>
-                            <pattern id="smallGrid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
-                                <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#e5e7eb" strokeWidth="0.5" />
-                            </pattern>
-                            <pattern id="grid" width={GRID * 5} height={GRID * 5} patternUnits="userSpaceOnUse">
-                                <rect width={GRID * 5} height={GRID * 5} fill="url(#smallGrid)" />
-                                <path d={`M ${GRID * 5} 0 L 0 0 0 ${GRID * 5}`} fill="none" stroke="#d1d5db" strokeWidth="1" />
-                            </pattern>
-                        </defs>
-                        <rect width={canvasW} height={canvasH} fill="url(#grid)" />
+                        <svg
+                            ref={svgRef}
+                            width={canvasW}
+                            height={canvasH}
+                            onMouseDown={onMouseDown}
+                            onMouseMove={onMouseMove}
+                            onMouseUp={onMouseUp}
+                            className={`select-none ${activeTool === 'SELECT' ? 'cursor-default' : 'cursor-crosshair'}`}
+                        >
+                            {/* Grid background & Technical Hatch Patterns */}
+                            <defs>
+                                <pattern id="editorGrid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
+                                    <path d={`M ${GRID} 0 L 0 0 0 ${GRID}`} fill="none" stroke="#f1f5f9" strokeWidth="1" />
+                                </pattern>
+                                <pattern id="hazardStripes" width="20" height="20" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                                    <line x1="0" y1="0" x2="0" y2="20" stroke="#fde047" strokeWidth="10" />
+                                    <line x1="10" y1="0" x2="10" y2="20" stroke="#1f2937" strokeWidth="10" />
+                                </pattern>
+                                <pattern id="fencePattern" width="12" height="12" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">
+                                    <rect width="12" height="12" fill="none" stroke="#94a3b8" strokeWidth="0.8" />
+                                </pattern>
+                            </defs>
+                            <rect width={canvasW} height={canvasH} fill="url(#editorGrid)" />
 
-                        {/* Shapes */}
-                        {shapes.map(shapeOrig => {
-                            const isDragging = dragPos?.id === shapeOrig.id;
-                            const shape = isDragging ? { ...shapeOrig, x: dragPos.x, y: dragPos.y, width: dragPos.w ?? shapeOrig.width, height: dragPos.h ?? shapeOrig.height } : shapeOrig;
-                            const sx = shape.x;
-                            const sy = shape.y;
-                            const isSelected = shape.id === selectedId;
-                            const rot = shape.rotation || 0;
-                            const cx = sx + shape.width / 2;
-                            const cy = sy + shape.height / 2;
-                            const rotTransform = rot ? `rotate(${rot} ${cx} ${cy})` : undefined;
+                            {/* Render All Shapes */}
+                            {shapes.map(shape => {
+                                const isSelected = shape.id === selectedId;
+                                const sx = dragPos?.id === shape.id ? dragPos.x : shape.x;
+                                const sy = dragPos?.id === shape.id ? dragPos.y : shape.y;
+                                const sw = dragPos?.id === shape.id && dragPos.w ? dragPos.w : shape.width;
+                                const sh = dragPos?.id === shape.id && dragPos.h ? dragPos.h : shape.height;
 
-                            const selBox = isSelected && (
-                                <>
-                                    <rect x={sx - 2} y={sy - 2} width={shape.width + 4} height={shape.height + 4}
-                                        fill="none" stroke="#3b82f6" strokeWidth={2} strokeDasharray="6 3" rx={4} />
-                                    {([
-                                        [sx - 4, sy - 4, 'nw', 'nwse-resize'],
-                                        [sx + shape.width - 4, sy - 4, 'ne', 'nesw-resize'],
-                                        [sx - 4, sy + shape.height - 4, 'sw', 'nesw-resize'],
-                                        [sx + shape.width - 4, sy + shape.height - 4, 'se', 'nwse-resize'],
-                                        [sx + shape.width - 4, sy + shape.height / 2 - 4, 'e', 'ew-resize'],
-                                        [sx + shape.width / 2 - 4, sy + shape.height - 4, 's', 'ns-resize'],
-                                        [sx - 4, sy + shape.height / 2 - 4, 'w', 'ew-resize'],
-                                        [sx + shape.width / 2 - 4, sy - 4, 'n', 'ns-resize'],
-                                    ]).map(([hx, hy, handle, cursor], i) => (
-                                        <rect key={i} x={hx as number} y={hy as number} width={8} height={8} fill="#3b82f6" stroke="white" strokeWidth={1} rx={1} 
-                                            style={{ cursor: cursor as string }}
-                                            onMouseDown={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                                draggingRef.current = { 
-                                                    id: shape.id, offsetX: 0, offsetY: 0, isResize: true, handle: handle as string,
-                                                    origX: shape.x, origY: shape.y, origW: shape.width, origH: shape.height
-                                                };
-                                            }}
-                                        />
-                                    ))}
-                                </>
-                            );
+                                const def = SHAPE_DEFAULTS[shape.type] || SHAPE_DEFAULTS.ZONE;
+                                const fill = shape.color || def.fill;
+                                const stroke = shape.strokeColor || def.stroke;
+                                const opacity = shape.opacity ?? 0.9;
+                                const rotTransform = shape.rotation ? `rotate(${shape.rotation} ${sx + sw/2} ${sy + sh/2})` : undefined;
 
-                            // PILLAR: circle
-                            if (shape.type === 'PILLAR') {
-                                const r = Math.min(shape.width, shape.height) / 2;
                                 return (
-                                    <g key={shape.id} transform={rotTransform}>
-                                        <circle cx={cx} cy={cy} r={r}
-                                            fill={SHAPE_FILL.PILLAR} stroke={SHAPE_STROKE.PILLAR} strokeWidth={2} />
-                                        {shape.label && (
-                                            <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-                                                fontSize={9} fontWeight="bold" fill="#334155" style={{ userSelect: 'none' }}>{shape.label}</text>
-                                        )}
-                                        {selBox}
-                                    </g>
-                                );
-                            }
-
-                            // DOOR
-                            if (shape.type === 'DOOR') {
-                                return (
-                                    <g key={shape.id} transform={rotTransform}>
-                                        <rect x={sx} y={sy} width={shape.width} height={shape.height}
-                                            fill={SHAPE_FILL.DOOR} stroke={SHAPE_STROKE.DOOR} strokeWidth={2} rx={3} />
-                                        <path d={`M ${sx + 4} ${sy + shape.height} A ${shape.width - 8} ${shape.width - 8} 0 0 1 ${sx + shape.width - 4} ${sy + shape.height}`}
-                                            fill="none" stroke={SHAPE_STROKE.DOOR} strokeWidth={1.5} strokeDasharray="4 2" />
-                                        <text x={sx + shape.width / 2} y={sy + shape.height / 2 - 2} textAnchor="middle" dominantBaseline="central"
-                                            fontSize={10} fontWeight="bold" fill={SHAPE_STROKE.DOOR}>🚪 {shape.label || ''}</text>
-                                        {selBox}
-                                    </g>
-                                );
-                            }
-
-                            // RACK: rectangle with internal grid cells
-                            if (shape.type === 'RACK' && shape.rows && shape.cols) {
-                                const cellW = shape.width / shape.cols;
-                                const cellH = shape.height / shape.rows;
-                                return (
-                                    <g key={shape.id} transform={rotTransform}>
-                                        <rect x={sx} y={sy} width={shape.width} height={shape.height}
-                                            fill={SHAPE_FILL.RACK} stroke={SHAPE_STROKE.RACK} strokeWidth={2} />
-                                        {/* Grid lines */}
-                                        {Array.from({ length: shape.rows - 1 }).map((_, i) => (
-                                            <line key={`r${i}`} x1={sx} y1={sy + (i + 1) * cellH} x2={sx + shape.width} y2={sy + (i + 1) * cellH}
-                                                stroke={SHAPE_STROKE.RACK} strokeWidth={0.8} />
-                                        ))}
-                                        {Array.from({ length: shape.cols - 1 }).map((_, i) => (
-                                            <line key={`c${i}`} x1={sx + (i + 1) * cellW} y1={sy} x2={sx + (i + 1) * cellW} y2={sy + shape.height}
-                                                stroke={SHAPE_STROKE.RACK} strokeWidth={0.8} />
-                                        ))}
-                                        {/* Cell position codes */}
-                                        {(shape.positions || []).map((code, idx) => {
-                                            const row = Math.floor(idx / shape.cols!);
-                                            const col = idx % shape.cols!;
-                                            return (
-                                                <text key={idx} x={sx + col * cellW + cellW / 2} y={sy + row * cellH + cellH / 2}
-                                                    textAnchor="middle" dominantBaseline="central"
-                                                    fontSize={Math.min(10, cellW / 5)} fill="#92400e" fontWeight="600"
-                                                    style={{ userSelect: 'none' }}>
-                                                    {code}
+                                    <g key={shape.id} transform={rotTransform} className="cursor-pointer">
+                                        {/* Hình dạng theo từng loại chuyên dụng */}
+                                        {shape.type === 'PILLAR' ? (
+                                            /* Cột trụ nhà xưởng (hình tròn có dấu X chịu lực) */
+                                            <g>
+                                                <circle 
+                                                    cx={sx + sw/2} cy={sy + sh/2} r={Math.min(sw, sh)/2}
+                                                    fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2}
+                                                    opacity={opacity}
+                                                />
+                                                <line x1={sx + sw*0.2} y1={sy + sh*0.2} x2={sx + sw*0.8} y2={sy + sh*0.8} stroke={stroke} strokeWidth={1.5} />
+                                                <line x1={sx + sw*0.8} y1={sy + sh*0.2} x2={sx + sw*0.2} y2={sy + sh*0.8} stroke={stroke} strokeWidth={1.5} />
+                                            </g>
+                                        ) : shape.type === 'FENCE' ? (
+                                            /* Hàng rào lưới bảo vệ / Lan can */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={2} opacity={opacity} />
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill="url(#fencePattern)" opacity={0.7} />
+                                                <line x1={sx} y1={sy+3} x2={sx+sw} y2={sy+3} stroke={stroke} strokeWidth={1.5} />
+                                                <line x1={sx} y1={sy+sh-3} x2={sx+sw} y2={sy+sh-3} stroke={stroke} strokeWidth={1.5} />
+                                            </g>
+                                        ) : shape.type === 'PARTITION' ? (
+                                            /* Vách ngăn panel nhẹ / Vách thạch cao */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={1.5} strokeDasharray="6 3" opacity={opacity} />
+                                                <line x1={sx+3} y1={sy+sh/2} x2={sx+sw-3} y2={sy+sh/2} stroke={stroke} strokeWidth={1} strokeDasharray="3 3" />
+                                            </g>
+                                        ) : shape.type === 'STAGING' ? (
+                                            /* Khu tập kết / Đệm hàng chờ xuất nhập */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} strokeDasharray="8 4" opacity={opacity} />
+                                                <rect x={sx + 4} y={sy + 4} width={sw - 8} height={10} fill="url(#hazardStripes)" opacity={0.65} />
+                                                <rect x={sx + 4} y={sy + sh - 14} width={sw - 8} height={10} fill="url(#hazardStripes)" opacity={0.65} />
+                                            </g>
+                                        ) : shape.type === 'QC_AREA' ? (
+                                            /* Khu kiểm hàng KCS */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} strokeDasharray="6 3" rx={6} opacity={opacity} />
+                                                <rect x={sx + 6} y={sy + 6} width={50} height={16} rx={4} fill="#059669" />
+                                                <text x={sx + 31} y={sy + 18} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#ffffff">✓ KCS</text>
+                                            </g>
+                                        ) : shape.type === 'SCRAP' ? (
+                                            /* Khu phế phẩm / Hàng hỏng */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} strokeDasharray="6 4" rx={6} opacity={opacity} />
+                                                <line x1={sx} y1={sy} x2={sx+sw} y2={sy+sh} stroke="#dc2626" strokeWidth={1} strokeOpacity={0.3} />
+                                                <line x1={sx+sw} y1={sy} x2={sx} y2={sy+sh} stroke="#dc2626" strokeWidth={1} strokeOpacity={0.3} />
+                                                <rect x={sx + 6} y={sy + 6} width={56} height={16} rx={4} fill="#dc2626" />
+                                                <text x={sx + 34} y={sy + 18} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#ffffff">⚠ PHẾ LIỆU</text>
+                                            </g>
+                                        ) : shape.type === 'FORKLIFT_PARK' ? (
+                                            /* Bãi đỗ / Sạc xe nâng */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={6} opacity={opacity} />
+                                                <rect x={sx + 4} y={sy + 4} width={sw - 8} height={8} fill="url(#hazardStripes)" opacity={0.5} />
+                                                <rect x={sx + 6} y={sy + sh - 22} width={64} height={16} rx={4} fill="#d97706" />
+                                                <text x={sx + 38} y={sy + sh - 10} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#ffffff">⚡ XE NÂNG</text>
+                                            </g>
+                                        ) : shape.type === 'DOCK' ? (
+                                            /* Cửa Dock xuất nhập hàng xe tải */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={4} opacity={opacity} />
+                                                {/* Dock leveller plate */}
+                                                <rect x={sx + 6} y={sy + sh - 16} width={sw - 12} height={12} fill="#4338ca" rx={2} opacity={0.8} />
+                                                <rect x={sx + 4} y={sy + 4} width={sw - 8} height={8} fill="url(#hazardStripes)" opacity={0.6} />
+                                                <text x={sx + sw/2} y={sy + sh - 7} textAnchor="middle" fontSize={8} fontWeight="bold" fill="#ffffff">DOCK SÀN NÂNG</text>
+                                            </g>
+                                        ) : shape.type === 'DESK' ? (
+                                            /* Bàn làm việc / Bàn kiểm đếm thủ kho */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={6} opacity={opacity} />
+                                                {/* Ngăn bàn / Bàn máy tính */}
+                                                <rect x={sx + 6} y={sy + 6} width={Math.min(30, sw*0.35)} height={sh - 12} fill="#0284c7" fillOpacity={0.2} stroke="#0284c7" strokeWidth={1} rx={3} />
+                                                {/* Ghế ngồi thủ kho */}
+                                                <circle cx={sx + sw*0.65} cy={sy + sh/2} r={Math.min(10, sh*0.25)} fill="#94a3b8" stroke="#475569" strokeWidth={1} opacity={0.7} />
+                                            </g>
+                                        ) : shape.type === 'PACK_STATION' ? (
+                                            /* Trạm đóng gói bao bì / Máy dán thùng */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={4} opacity={opacity} />
+                                                <rect x={sx + sw/2 - 12} y={sy + sh/2 - 12} width={24} height={24} fill="#ca8a04" rx={3} opacity={0.5} />
+                                                <line x1={sx + sw/2 - 12} y1={sy + sh/2} x2={sx + sw/2 + 12} y2={sy + sh/2} stroke="#854d0e" strokeWidth={1.5} />
+                                                <line x1={sx + sw/2} y1={sy + sh/2 - 12} x2={sx + sw/2} y2={sy + sh/2 + 12} stroke="#854d0e" strokeWidth={1.5} />
+                                            </g>
+                                        ) : shape.type === 'SCALE' ? (
+                                            /* Trạm cân điện tử */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={4} opacity={opacity} />
+                                                {/* 4 đệm góc cân */}
+                                                <rect x={sx+4} y={sy+4} width={6} height={6} fill="#0d9488" rx={1} />
+                                                <rect x={sx+sw-10} y={sy+4} width={6} height={6} fill="#0d9488" rx={1} />
+                                                <rect x={sx+4} y={sy+sh-10} width={6} height={6} fill="#0d9488" rx={1} />
+                                                <rect x={sx+sw-10} y={sy+sh-10} width={6} height={6} fill="#0d9488" rx={1} />
+                                                {/* Màn hình hiển thị số kg */}
+                                                <rect x={sx + sw/2 - 20} y={sy + 6} width={40} height={14} fill="#0f172a" rx={2} />
+                                                <text x={sx + sw/2} y={sy + 16} textAnchor="middle" fontSize={8} fontWeight="bold" fill="#34d399">0.0 kg</text>
+                                            </g>
+                                        ) : shape.type === 'FIRE_EXT' ? (
+                                            /* Hộp / Bình PCCC cứu hỏa */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={4} opacity={opacity} />
+                                                <circle cx={sx + sw/2} cy={sy + sh/2} r={Math.min(sw, sh)*0.35} fill="#dc2626" />
+                                                <text x={sx + sw/2} y={sy + sh/2 + 4} textAnchor="middle" fontSize={14}>🔥</text>
+                                            </g>
+                                        ) : shape.type === 'FIRST_AID' ? (
+                                            /* Tủ y tế / Sơ cứu tai nạn */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} rx={4} opacity={opacity} />
+                                                <rect x={sx + sw/2 - 4} y={sy + sh*0.25} width={8} height={sh*0.5} fill="#16a34a" rx={1} />
+                                                <rect x={sx + sw*0.25} y={sy + sh/2 - 4} width={sw*0.5} height={8} fill="#16a34a" rx={1} />
+                                            </g>
+                                        ) : shape.type === 'STAIRS' ? (
+                                            /* Cầu thang bộ */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} opacity={opacity} />
+                                                {Array.from({ length: 5 }).map((_, i) => (
+                                                    <line key={`st_${i}`} x1={sx} y1={sy + (i+1)*(sh/6)} x2={sx + sw} y2={sy + (i+1)*(sh/6)} stroke={stroke} strokeWidth={1.5} />
+                                                ))}
+                                                <line x1={sx + sw/2} y1={sy + sh*0.8} x2={sx + sw/2} y2={sy + sh*0.2} stroke="#2563eb" strokeWidth={2} />
+                                                <polygon points={`${sx + sw/2},${sy + sh*0.15} ${sx + sw/2 - 4},${sy + sh*0.25} ${sx + sw/2 + 4},${sy + sh*0.25}`} fill="#2563eb" />
+                                            </g>
+                                        ) : shape.type === 'ARROW' ? (
+                                            /* Mũi tên chỉ hướng luồng di chuyển */
+                                            <g>
+                                                <line x1={sx + 8} y1={sy + sh/2} x2={sx + sw - 16} y2={sy + sh/2} stroke={fill} strokeWidth={Math.min(10, sh*0.35)} strokeLinecap="round" />
+                                                <polygon points={`${sx + sw - 6},${sy + sh/2} ${sx + sw - 22},${sy + sh*0.2} ${sx + sw - 22},${sy + sh*0.8}`} fill={fill} />
+                                            </g>
+                                        ) : shape.type === 'TEXT_NOTE' ? (
+                                            /* Nhãn chữ / Ghi chú bản vẽ */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill="none" stroke={isSelected ? '#3b82f6' : 'transparent'} strokeWidth={1} strokeDasharray="3 3" />
+                                                <text 
+                                                    x={sx + 6} y={sy + sh/2} 
+                                                    dominantBaseline="central" 
+                                                    fontSize={Math.min(20, sh * 0.6)} 
+                                                    fontWeight="bold" 
+                                                    fill="#1e293b"
+                                                >
+                                                    {shape.label || 'Ghi chú'}
                                                 </text>
-                                            );
-                                        })}
-                                        {/* Header label */}
-                                        {shape.label && (
-                                            <text x={sx + shape.width / 2} y={sy - 6} textAnchor="middle" fontSize={11}
-                                                fontWeight="bold" fill={SHAPE_STROKE.RACK} style={{ userSelect: 'none' }}>
+                                            </g>
+                                        ) : shape.type === 'RACK' && shape.rows && shape.cols ? (
+                                            /* Kệ hàng chia ô */
+                                            <g>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2} opacity={opacity} />
+                                                {Array.from({ length: shape.rows - 1 }).map((_, i) => (
+                                                    <line key={`r${i}`} x1={sx} y1={sy + (i+1)*(sh/shape.rows!)} x2={sx + sw} y2={sy + (i+1)*(sh/shape.rows!)} stroke={stroke} strokeWidth={1} />
+                                                ))}
+                                                {Array.from({ length: shape.cols - 1 }).map((_, i) => (
+                                                    <line key={`c${i}`} x1={sx + (i+1)*(sw/shape.cols!)} y1={sy} x2={sx + (i+1)*(sw/shape.cols!)} y2={sy + sh} stroke={stroke} strokeWidth={1} />
+                                                ))}
+                                            </g>
+                                        ) : (
+                                            /* ZONE, ROOM, WALL, PATH, DOOR... */
+                                            <rect 
+                                                x={sx} y={sy} width={sw} height={sh}
+                                                fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2}
+                                                rx={shape.rx || (shape.type === 'DOOR' ? 3 : shape.type === 'ROOM' ? 8 : 0)}
+                                                opacity={opacity}
+                                            />
+                                        )}
+
+                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE) */}
+                                        {shape.type !== 'TEXT_NOTE' && shape.label && (
+                                            <text 
+                                                x={sx + sw/2} y={shape.type === 'ARROW' ? sy + sh*0.85 : sy + sh/2} 
+                                                textAnchor="middle" dominantBaseline="central"
+                                                fontSize={Math.min(13, sw / (shape.label.length || 1) * 1.6, sh * 0.35)}
+                                                fontWeight="bold" 
+                                                fill={shape.type === 'WALL' ? '#ffffff' : '#1e293b'}
+                                            >
                                                 {shape.label}
                                             </text>
                                         )}
-                                        {selBox}
+
+                                        {/* Badge Multi-Lot trên hình ZONE */}
+                                        {shape.type === 'ZONE' && shape.isMultiLot && (
+                                            <g transform={`translate(${sx + 4}, ${sy + 4})`}>
+                                                <rect width={56} height={16} rx={4} fill="#ea580c" />
+                                                <text x={28} y={11} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#ffffff">ĐA LÔ</text>
+                                            </g>
+                                        )}
+
+                                        {/* Selection Outline & Resize Handles */}
+                                        {isSelected && (
+                                            <g>
+                                                <rect 
+                                                    x={sx - 3} y={sy - 3} width={sw + 6} height={sh + 6} 
+                                                    fill="none" stroke="#2563eb" strokeWidth="2" strokeDasharray="4 2" 
+                                                />
+                                                {/* Dimension indicator */}
+                                                <text x={sx + sw/2} y={sy - 8} textAnchor="middle" fontSize={11} fontWeight="bold" fill="#2563eb">
+                                                    {(sw/20).toFixed(1)}m × {(sh/20).toFixed(1)}m
+                                                </text>
+
+                                                {!shape.isLocked && (
+                                                    <>
+                                                        <rect x={sx - 6} y={sy - 6} width={10} height={10} fill="#2563eb" onMouseDown={e => onResizeStart(e, shape.id, 'nw')} className="cursor-nw-resize" />
+                                                        <rect x={sx + sw - 4} y={sy - 6} width={10} height={10} fill="#2563eb" onMouseDown={e => onResizeStart(e, shape.id, 'ne')} className="cursor-ne-resize" />
+                                                        <rect x={sx + sw - 4} y={sy + sh - 4} width={10} height={10} fill="#2563eb" onMouseDown={e => onResizeStart(e, shape.id, 'se')} className="cursor-se-resize" />
+                                                        <rect x={sx - 6} y={sy + sh - 4} width={10} height={10} fill="#2563eb" onMouseDown={e => onResizeStart(e, shape.id, 'sw')} className="cursor-sw-resize" />
+                                                    </>
+                                                )}
+                                            </g>
+                                        )}
                                     </g>
                                 );
-                            }
+                            })}
 
-                            // ROOM: dashed border container
-                            if (shape.type === 'ROOM') {
-                                const d = createRoundedRectPath(sx, sy, shape.width, shape.height, shape.customRadii || [8,8,8,8]);
-                                return (
-                                    <g key={shape.id} transform={rotTransform}>
-                                        <path d={d}
-                                            fill={SHAPE_FILL.ROOM} fillOpacity={0.4} stroke={SHAPE_STROKE.ROOM} strokeWidth={isSelected ? 3 : 2.5}
-                                            strokeDasharray="10 4" />
-                                        <path d={createRoundedRectPath(sx, sy, shape.width, 22, [shape.customRadii?.[0]||8, shape.customRadii?.[1]||8, 0, 0])}
-                                            fill={SHAPE_STROKE.ROOM} fillOpacity={0.15} />
-                                        <text x={sx + 8} y={sy + 14} fontSize={11} fontWeight="bold" fill={SHAPE_STROKE.ROOM} className="pointer-events-none select-none">{shape.label || 'Phòng'}</text>
-                                        {selBox}
-                                    </g>
-                                );
-                            }
-
-                            // Default: ZONE, WALL, PATH, generic RACK
-                            const d = createRoundedRectPath(sx, sy, shape.width, shape.height, shape.customRadii || (shape.type === 'ZONE' ? [4,4,4,4] : [0,0,0,0]));
-                            return (
-                                <g key={shape.id} transform={rotTransform}>
-                                    <path d={d}
-                                        fill={SHAPE_FILL[shape.type] || SHAPE_FILL.ZONE}
-                                        stroke={isSelected ? '#3b82f6' : (SHAPE_STROKE[shape.type] || SHAPE_STROKE.ZONE)}
-                                        strokeWidth={isSelected ? 3 : 2} opacity={0.85} />
-                                    {shape.label && (
-                                        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-                                            fontSize={Math.min(14, shape.width / shape.label.length * 1.5, shape.height * 0.4)}
-                                            fontWeight="bold" fill="#78350f" className="pointer-events-none select-none">{shape.label}</text>
-                                    )}
-                                    {!shape.label && shape.width > 50 && (
-                                        <text x={cx} y={cy} textAnchor="middle" dominantBaseline="central"
-                                            fontSize={10} fill="#64748b" style={{ userSelect: 'none' }}>
-                                            {SHAPE_LABELS[shape.type] || ''}
-                                        </text>
-                                    )}
-                                    {selBox}
-                                </g>
-                            );
-                        })}
-
-                        {/* Draw Preview */}
-                        {drawPreview && drawPreview.w > 0 && drawPreview.h > 0 && (
-                            <rect x={drawPreview.x} y={drawPreview.y} width={drawPreview.w} height={drawPreview.h}
-                                fill={SHAPE_FILL[activeTool as ShapeType] || '#fed7aa'} fillOpacity={0.4}
-                                stroke={SHAPE_STROKE[activeTool as ShapeType] || '#ea580c'}
-                                strokeWidth={2} strokeDasharray="8 4" rx={activeTool === 'ZONE' ? 4 : 0} />
-                        )}
-                    </svg>
+                            {/* Draw Preview when creating */}
+                            {drawPreview && (
+                                <rect 
+                                    x={drawPreview.x} y={drawPreview.y} width={drawPreview.w} height={drawPreview.h}
+                                    fill="#93c5fd" fillOpacity="0.3" stroke="#2563eb" strokeWidth="2" strokeDasharray="6 3"
+                                />
+                            )}
+                        </svg>
+                    </div>
                 </div>
+
+                {/* Right Inspector Panel (Bảng thuộc tính chuyên nghiệp) */}
+                {selectedShape && (
+                    <div className="w-80 border-l border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 overflow-y-auto custom-scrollbar flex flex-col gap-5">
+                        <div className="flex items-center justify-between border-b border-gray-100 dark:border-zinc-800 pb-3">
+                            <div>
+                                <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
+                                    <Sliders size={16} className="text-blue-600" /> Thuộc Tính Đối Tượng
+                                </h3>
+                                <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{selectedShape.type}</span>
+                            </div>
+                            <button 
+                                onClick={() => updateSelectedShape({ isLocked: !selectedShape.isLocked })}
+                                className={`p-2 rounded-xl border transition-colors ${
+                                    selectedShape.isLocked 
+                                        ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800' 
+                                        : 'text-gray-400 border-gray-200 dark:border-zinc-700 hover:text-gray-700'
+                                }`}
+                                title={selectedShape.isLocked ? 'Đang khóa (Không thể di chuyển)' : 'Chưa khóa'}
+                            >
+                                {selectedShape.isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                            </button>
+                        </div>
+
+                        {/* Tên & Mã định danh */}
+                        <div className="space-y-3">
+                            <div>
+                                <label className="text-xs font-bold text-gray-600 dark:text-gray-400 block mb-1">Tên hiển thị (Label)</label>
+                                <input 
+                                    type="text" 
+                                    value={selectedShape.label || ''} 
+                                    onChange={e => updateSelectedShape({ label: e.target.value })}
+                                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="VD: Khu Thùng Carton 10kg"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-gray-600 dark:text-gray-400 block mb-1">Mã hệ thống (Code)</label>
+                                <input 
+                                    type="text" 
+                                    value={selectedShape.code || ''} 
+                                    onChange={e => updateSelectedShape({ code: e.target.value.toUpperCase() })}
+                                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 font-mono text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500"
+                                    placeholder="VD: KHU-THUNG-10KG"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Multi-Lot Zone Setting */}
+                        {selectedShape.type === 'ZONE' && (
+                            <div className="p-3.5 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/40 rounded-2xl space-y-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input 
+                                        type="checkbox"
+                                        checked={selectedShape.isMultiLot ?? true}
+                                        onChange={e => updateSelectedShape({ isMultiLot: e.target.checked })}
+                                        className="w-4 h-4 text-orange-600 rounded"
+                                    />
+                                    <span className="text-xs font-bold text-orange-900 dark:text-orange-300">
+                                        Bãi Chứa Đa Lô (Nhiều LOT)
+                                    </span>
+                                </label>
+                                <p className="text-[11px] text-orange-700 dark:text-orange-400 leading-relaxed">
+                                    Cho phép lưu trữ nhiều lô hàng khác nhau trong cùng khu vực này và quản lý bốc xuất theo lô.
+                                </p>
+
+                                <div className="grid grid-cols-2 gap-2 pt-1">
+                                    <div>
+                                        <label className="text-[11px] font-bold text-orange-800 dark:text-orange-300 block mb-1">Sức chứa tối đa</label>
+                                        <input 
+                                            type="number"
+                                            value={selectedShape.capacity || ''}
+                                            onChange={e => updateSelectedShape({ capacity: Number(e.target.value) })}
+                                            placeholder="VD: 5000"
+                                            className="w-full px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800 bg-white dark:bg-zinc-900 text-xs font-bold outline-none"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="text-[11px] font-bold text-orange-800 dark:text-orange-300 block mb-1">Đơn vị</label>
+                                        <input 
+                                            type="text"
+                                            value={selectedShape.capacityUnit || 'Cái'}
+                                            onChange={e => updateSelectedShape({ capacityUnit: e.target.value })}
+                                            placeholder="Thùng / Pallet"
+                                            className="w-full px-2.5 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800 bg-white dark:bg-zinc-900 text-xs font-bold outline-none"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Kích thước & Tọa độ */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-600 dark:text-gray-400 block">Kích Thước & Tọa Độ (Grid 20px)</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-zinc-800 p-2 rounded-xl border border-gray-200 dark:border-zinc-700">
+                                    <span className="text-[11px] font-bold text-gray-400">W:</span>
+                                    <input 
+                                        type="number" step={20} min={MIN_SIZE} value={selectedShape.width}
+                                        onChange={e => updateSelectedShape({ width: Math.max(MIN_SIZE, snap(Number(e.target.value))) })}
+                                        className="w-full bg-transparent font-bold text-xs outline-none"
+                                    />
+                                    <span className="text-[10px] text-gray-400">({(selectedShape.width/20).toFixed(1)}m)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-zinc-800 p-2 rounded-xl border border-gray-200 dark:border-zinc-700">
+                                    <span className="text-[11px] font-bold text-gray-400">H:</span>
+                                    <input 
+                                        type="number" step={20} min={MIN_SIZE} value={selectedShape.height}
+                                        onChange={e => updateSelectedShape({ height: Math.max(MIN_SIZE, snap(Number(e.target.value))) })}
+                                        className="w-full bg-transparent font-bold text-xs outline-none"
+                                    />
+                                    <span className="text-[10px] text-gray-400">({(selectedShape.height/20).toFixed(1)}m)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-zinc-800 p-2 rounded-xl border border-gray-200 dark:border-zinc-700">
+                                    <span className="text-[11px] font-bold text-gray-400">X:</span>
+                                    <input 
+                                        type="number" step={20} value={selectedShape.x}
+                                        onChange={e => updateSelectedShape({ x: snap(Number(e.target.value)) })}
+                                        className="w-full bg-transparent font-bold text-xs outline-none"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-zinc-800 p-2 rounded-xl border border-gray-200 dark:border-zinc-700">
+                                    <span className="text-[11px] font-bold text-gray-400">Y:</span>
+                                    <input 
+                                        type="number" step={20} value={selectedShape.y}
+                                        onChange={e => updateSelectedShape({ y: snap(Number(e.target.value)) })}
+                                        className="w-full bg-transparent font-bold text-xs outline-none"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Xoay góc */}
+                        <div className="flex items-center justify-between bg-gray-50 dark:bg-zinc-800 p-3 rounded-xl border border-gray-200 dark:border-zinc-700">
+                            <span className="text-xs font-bold text-gray-600 dark:text-gray-300">Góc xoay</span>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => updateSelectedShape({ rotation: ((selectedShape.rotation || 0) + 90) % 360 })}
+                                    className="px-3 py-1.5 bg-white dark:bg-zinc-700 hover:bg-gray-100 rounded-lg text-xs font-bold border border-gray-200 dark:border-zinc-600 flex items-center gap-1"
+                                >
+                                    <RotateCw size={12} /> {selectedShape.rotation || 0}°
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Màu sắc tùy chỉnh */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
+                                <Palette size={14} /> Màu sắc đại diện
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {COLOR_PRESETS.map((preset, pIdx) => (
+                                    <button
+                                        key={pIdx}
+                                        onClick={() => updateSelectedShape({ color: preset.fill, strokeColor: preset.stroke })}
+                                        className="h-8 rounded-lg border-2 transition-transform hover:scale-105"
+                                        style={{ backgroundColor: preset.fill, borderColor: preset.stroke }}
+                                        title={preset.name}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Layer Order */}
+                        <div className="space-y-2 border-t border-gray-100 dark:border-zinc-800 pt-3">
+                            <label className="text-xs font-bold text-gray-600 dark:text-gray-400 block">Sắp xếp Lớp (Layer)</label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button 
+                                    onClick={handleBringToFront}
+                                    className="px-3 py-2 bg-gray-50 dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold border border-gray-200 dark:border-zinc-700 flex items-center justify-center gap-1.5"
+                                >
+                                    <ArrowUp size={14} /> Lên trên cùng
+                                </button>
+                                <button 
+                                    onClick={handleSendToBack}
+                                    className="px-3 py-2 bg-gray-50 dark:bg-zinc-800 hover:bg-gray-100 dark:hover:bg-zinc-700 rounded-xl text-xs font-bold border border-gray-200 dark:border-zinc-700 flex items-center justify-center gap-1.5"
+                                >
+                                    <ArrowDown size={14} /> Xuống dưới cùng
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

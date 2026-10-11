@@ -127,17 +127,31 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
                     if (order.created_at) setCreatedAt(order.created_at)
 
                     const { data: itemsData } = await supabase.from('inbound_order_items').select('*').eq('order_id', editOrderId)
-                    if (itemsData) setItems(itemsData.map((i: any) => ({
-                        id: crypto.randomUUID(),
-                        productId: i.product_id || '',
-                        productName: i.product_name || '',
-                        unit: i.unit || '',
-                        quantity: i.quantity,
-                        document_quantity: i.document_quantity || i.quantity,
-                        price: i.price || 0,
-                        note: i.note || '',
-                        categoryId: i.category_id || null
-                    })))
+                    if (itemsData) setItems(itemsData.map((i: any) => {
+                        let rawNote = i.note || ''
+                        let batch_code = ''
+                        let customer_name = ''
+                        if (rawNote) {
+                            const lotMatch = rawNote.match(/Lô:\s*([^•\]]+)/)
+                            if (lotMatch) batch_code = lotMatch[1].trim()
+                            const oemMatch = rawNote.match(/OEM:\s*([^•\]]+)/)
+                            if (oemMatch) customer_name = oemMatch[1].trim()
+                            rawNote = rawNote.replace(/\[\s*(?:Lô:[^•\]]+)?(?:\s*•\s*)?(?:OEM:[^•\]]+)?\s*\]/g, '').trim()
+                        }
+                        return {
+                            id: crypto.randomUUID(),
+                            productId: i.product_id || '',
+                            productName: i.product_name || '',
+                            unit: i.unit || '',
+                            quantity: i.quantity,
+                            document_quantity: i.document_quantity || i.quantity,
+                            price: i.price || 0,
+                            note: rawNote,
+                            batch_code: batch_code || undefined,
+                            customer_name: customer_name || undefined,
+                            categoryId: i.category_id || null
+                        }
+                    }))
                 }
             } else if (duplicateOrderId) {
                 // Nhân bản phiếu: fetch dữ liệu gốc nhưng tạo mã mới
@@ -167,17 +181,31 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
                     setCreatedAt(new Date().toISOString())
 
                     const { data: itemsData } = await supabase.from('inbound_order_items').select('*').eq('order_id', duplicateOrderId)
-                    if (itemsData) setItems(itemsData.map((i: any) => ({
-                        id: crypto.randomUUID(),
-                        productId: i.product_id || '',
-                        productName: i.product_name || '',
-                        unit: i.unit || '',
-                        quantity: i.quantity,
-                        document_quantity: i.document_quantity || i.quantity,
-                        price: i.price || 0,
-                        note: i.note || '',
-                        categoryId: i.category_id || null
-                    })))
+                    if (itemsData) setItems(itemsData.map((i: any) => {
+                        let rawNote = i.note || ''
+                        let batch_code = ''
+                        let customer_name = ''
+                        if (rawNote) {
+                            const lotMatch = rawNote.match(/Lô:\s*([^•\]]+)/)
+                            if (lotMatch) batch_code = lotMatch[1].trim()
+                            const oemMatch = rawNote.match(/OEM:\s*([^•\]]+)/)
+                            if (oemMatch) customer_name = oemMatch[1].trim()
+                            rawNote = rawNote.replace(/\[\s*(?:Lô:[^•\]]+)?(?:\s*•\s*)?(?:OEM:[^•\]]+)?\s*\]/g, '').trim()
+                        }
+                        return {
+                            id: crypto.randomUUID(),
+                            productId: i.product_id || '',
+                            productName: i.product_name || '',
+                            unit: i.unit || '',
+                            quantity: i.quantity,
+                            document_quantity: i.document_quantity || i.quantity,
+                            price: i.price || 0,
+                            note: rawNote,
+                            batch_code: batch_code || undefined,
+                            customer_name: customer_name || undefined,
+                            categoryId: i.category_id || null
+                        }
+                    }))
                 }
                 // Sinh mã phiếu mới
                 generateOrderCode('PNK', systemCode).then(setCode)
@@ -313,17 +341,29 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
             }
 
             if (!orderId) throw new Error('No Order ID')
-            const orderItems = items.map(item => ({
-                order_id: orderId,
-                product_id: item.productId,
-                product_name: item.productName,
-                unit: item.unit,
-                quantity: item.quantity,
-                document_quantity: item.document_quantity || item.quantity,
-                price: item.price,
-                note: item.note,
-                category_id: item.categoryId || null
-            }))
+            const orderItems = items.map(item => {
+                let note = item.note || ''
+                const tags: string[] = []
+                if (item.batch_code) tags.push(`Lô: ${item.batch_code}`)
+                if (item.customer_name) tags.push(`OEM: ${item.customer_name}`)
+                if (tags.length > 0) {
+                    const tagStr = `[${tags.join(' • ')}]`
+                    if (!note.includes(tagStr)) {
+                        note = note ? `${note} ${tagStr}` : tagStr
+                    }
+                }
+                return {
+                    order_id: orderId,
+                    product_id: item.productId,
+                    product_name: item.productName,
+                    unit: item.unit,
+                    quantity: item.quantity,
+                    document_quantity: item.document_quantity || item.quantity,
+                    price: item.price,
+                    note: note || null,
+                    category_id: item.categoryId || null
+                }
+            })
 
             const { error: itemsError } = await (supabase.from('inbound_order_items') as any).insert(orderItems)
             if (itemsError) throw itemsError

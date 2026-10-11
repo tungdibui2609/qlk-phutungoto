@@ -1,4 +1,4 @@
-import { Box, Calendar, Clock, MapPin, Factory, ShieldCheck, Hash, Image, FileText } from 'lucide-react'
+import { Box, Calendar, Clock, MapPin, Factory, ShieldCheck, Hash, Image, FileText, Tag } from 'lucide-react'
 
 export interface LotModule {
     id: string
@@ -33,6 +33,20 @@ export const LOT_MODULES: LotModule[] = [
         name: 'Số Batch/Lô (NCC)',
         description: 'Hiển thị trường nhập số Batch hoặc Lô của nhà cung cấp.',
         icon: Hash
+    },
+    {
+        id: 'oem_info',
+        name: 'Thương hiệu & Khách OEM',
+        description: 'Hiển thị trường nhập thương hiệu, nhãn hàng hoặc khách hàng OEM của lô hàng.',
+        icon: Tag,
+        is_basic: true
+    },
+    {
+        id: 'material_zone',
+        name: 'Vùng nguyên liệu',
+        description: 'Hiển thị trường nhập thông tin vùng nguyên liệu, vùng trồng của lô hàng.',
+        icon: MapPin,
+        is_basic: true
     },
     {
         id: 'supplier_info',

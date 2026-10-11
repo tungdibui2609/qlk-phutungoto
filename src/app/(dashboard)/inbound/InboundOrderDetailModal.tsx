@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, ChevronDown, Eye, Landmark } from 'lucide-react'
+import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, ChevronDown, Eye, Landmark, Hash, Tag, Layers } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -30,6 +30,10 @@ interface InboundOrder {
         driverName?: string
         containerNumber?: string
         targetUnit?: string
+        batch_code?: string
+        customer_name?: string
+        invoice_no?: string
+        [key: string]: any
     } | null
     order_types?: { name: string } | null
 }
@@ -44,6 +48,9 @@ interface OrderItem {
     document_quantity: number
     price: number
     note: string | null
+    batch_code?: string | null
+    customer_name?: string | null
+    [key: string]: any
     products: {
         sku: string
         unit?: string
@@ -357,6 +364,33 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                 </div>
                             )}
 
+                            {/* Lô & OEM Info - spans if exists */}
+                            {(orderDetails.metadata?.batch_code || orderDetails.metadata?.customer_name || orderDetails.metadata?.invoice_no) && (
+                                <div className="md:col-span-2">
+                                    <label className="text-xs font-semibold text-stone-400 uppercase">Thông tin Lô & Đối tác</label>
+                                    <div className="mt-1 flex flex-wrap gap-4 text-sm text-stone-700 dark:text-gray-300">
+                                        {orderDetails.metadata.batch_code && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-stone-500 flex items-center gap-1"><Hash size={14} className="text-amber-500" /> Số Lô / Batch:</span>
+                                                <span className="font-bold bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-lg">{orderDetails.metadata.batch_code}</span>
+                                            </div>
+                                        )}
+                                        {orderDetails.metadata.customer_name && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-stone-500 flex items-center gap-1"><Tag size={14} className="text-purple-500" /> Thương hiệu / OEM:</span>
+                                                <span className="font-bold bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded-lg">{orderDetails.metadata.customer_name}</span>
+                                            </div>
+                                        )}
+                                        {orderDetails.metadata.invoice_no && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-stone-500 flex items-center gap-1"><FileText size={14} className="text-blue-500" /> Số Hóa đơn:</span>
+                                                <span className="font-medium bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-lg">{orderDetails.metadata.invoice_no}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Description - full width */}
                             <div className="md:col-span-2 border-t border-stone-200 dark:border-zinc-700 pt-4">
                                 <label className="text-xs font-semibold text-stone-400 uppercase">Diễn giải</label>
@@ -412,6 +446,12 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                         <div className="text-[10px] font-normal">({targetUnit})</div>
                                                     </th>
                                                 )}
+                                                {hasModule('inbound_batch_lot') && (
+                                                    <th className="px-4 py-3 w-32 text-center">Số Lô / Batch</th>
+                                                )}
+                                                {hasModule('inbound_oem') && (
+                                                    <th className="px-4 py-3 w-36">Thương hiệu / OEM</th>
+                                                )}
                                                 {hasModule('inbound_financials') && (
                                                     <th className="px-4 py-3 w-24 text-right">SL Chứng từ</th>
                                                 )}
@@ -444,6 +484,21 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                                                                 const result = convertUnit(item.product_id, item.unit, targetUnit, item.quantity, item.products.unit || null)
                                                                 return formatQuantityFull(result)
                                                             })()}
+                                                        </td>
+                                                    )}
+
+                                                    {hasModule('inbound_batch_lot') && (
+                                                        <td className="px-4 py-3 text-center">
+                                                            <span className="font-semibold text-xs px-2 py-0.5 rounded bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300">
+                                                                {(item as any).batch_code || orderDetails.metadata?.batch_code || '-'}
+                                                            </span>
+                                                        </td>
+                                                    )}
+                                                    {hasModule('inbound_oem') && (
+                                                        <td className="px-4 py-3">
+                                                            <span className="font-semibold text-xs px-2 py-0.5 rounded bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300">
+                                                                {(item as any).customer_name || orderDetails.metadata?.customer_name || orderDetails.metadata?.oem_brand || '-'}
+                                                            </span>
                                                         </td>
                                                     )}
 

@@ -205,6 +205,26 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             });
         }
 
+        const oemName = (lot.metadata as any)?.customer_name || (lot.metadata as any)?.oem_brand;
+        if (oemName && isModuleEnabled('oem_info')) {
+            infoItems.push({
+                key: 'oem',
+                icon: <Tag size={14} />,
+                label: oemName,
+                colorClass: 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400'
+            });
+        }
+
+        const matZone = (lot.metadata as any)?.material_zone;
+        if (matZone && isModuleEnabled('material_zone')) {
+            infoItems.push({
+                key: 'material_zone',
+                icon: <MapPin size={14} />,
+                label: matZone,
+                colorClass: 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400'
+            });
+        }
+
         if (lot.suppliers && isModuleEnabled('supplier_info')) {
             infoItems.push({
                 key: 'supplier',

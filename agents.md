@@ -8,6 +8,21 @@ Dự án hướng tới xây dựng một hệ thống Quản lý Kho (WMS) vạ
 - **Đa Phân Hệ (Multi-System)**: Quản lý nhiều loại kho trên cùng một nền tảng.
 - **Đa Khách Hàng (Multi-Tenancy)**: Sẵn sàng cho việc phân tầng theo khách hàng/doanh nghiệp trong tương lai.
 
+## 🔒 QUY TẮC SỐNG CÒN: BẢO TOÀN PHÂN HỆ KHO ĐÔNG & TRIỂN KHAI THEO MODULE BẬT/TẮT
+
+### 1. Bảo Toàn Tuyệt Đối Phân Hệ Kho Đông Lạnh (`KHO_DONG_LANH` / `COLD`)
+- Phân hệ Kho Đông Lạnh đã ổn định các tính năng cốt lõi và đang phục vụ vận hành thực tế tại nhà máy.
+- **NGHIÊM CẤM**: Mọi thay đổi logic, mở rộng form, thay đổi cấu trúc bảng hoặc luồng xuất/nhập làm ảnh hưởng, lỗi hoặc phá vỡ trải nghiệm người dùng của Kho Đông Lạnh.
+
+### 2. Triết Lý Phát Triển "Modular-First & Feature Flags" (TUYỆT ĐỐI KHÔNG HARDCODE MÃ KHO)
+- **Hệ thống là nền tảng SaaS Đa Kho**: Người dùng có thể tạo vô số kho mới với bất kỳ tên gọi hay mã kho nào (ví dụ: Kho Thùng, Kho Nhãn, Kho Bao Bì Chi Nhánh 2, Kho Phụ Liệu...).
+- **NGHIÊM CẤM HARDCODE**: Tuyệt đối KHÔNG viết các điều kiện theo mã kho cố định như `systemType === 'PACKAGING'` hay `currentSystem.code === '...'`.
+- **QUY CHUẨN DUY NHẤT**: Mọi tính năng mở rộng BẮT BUỘC phải dựa **100% vào cờ Module Bật/Tắt (`hasModule('tên_module')`)**:
+  1. Khai báo định danh module trong các file cấu hình tương ứng (`src/lib/inbound-modules.ts`, `src/lib/outbound-modules.ts`, `src/lib/lot-modules.ts`, `src/lib/utility-modules.ts`...).
+  2. Sử dụng hook `hasModule('tên_module')` để kiểm soát hiển thị giao diện và logic thực thi.
+  3. Bất kỳ kho nào (dù tên gì, mã gì) khi **BẬT** module đó trong Cài đặt phân hệ $\rightarrow$ Tính năng sẽ tự động kích hoạt.
+  4. Bất kỳ kho nào khi **TẮT** module đó (hoặc chưa bật, như Kho Đông Lạnh) $\rightarrow$ Hệ thống giữ nguyên trạng thái cơ bản ban đầu, tuyệt đối không bị ảnh hưởng.
+
 ## 🏗 Kiến Trúc Phân Hệ & Bảo Mật (System-Aware Planning)
 Đây là yêu cầu tối quan trọng khi triển khai bất kỳ tính năng nào:
 
@@ -15,7 +30,7 @@ Dự án hướng tới xây dựng một hệ thống Quản lý Kho (WMS) vạ
 Mọi thao tác dữ liệu (Query, Insert, Update) và mọi tính năng UI phải luôn ý thức về phân hệ kho hiện hành:
 - **Nguyên tắc**: Dữ liệu thuộc phân hệ này không bao giờ được xuất hiện hoặc có thể truy cập từ phân hệ khác.
 - **Triển khai**: 
-    - Các bảng dữ liệu (như `inventory`, `orders`, `reports`) PHẢI có cột `system_code`.
+    - Các bảng dữ liệu (như `inventory`, `orders`, `reports`, `lots`) PHẢI có cột `system_code`.
     - Các query PHẢI luôn bao gồm điều kiện lọc `where system_code = CURRENT_SYSTEM`.
     - **Ví dụ**: Khi tạo một Báo cáo tồn kho, Agent phải viết mã sao cho báo cáo đó chỉ truy vấn dữ liệu của phân hệ kho đang làm việc.
 
@@ -41,21 +56,22 @@ Hệ thống sẽ mở rộng thêm một bậc phân tầng nữa là **Khách 
 
 ## 🎭 Vai Trò Của Agent
 1. **Kiến Trúc Sư (Architect)**: Đảm bảo tính "System-Aware" và khả năng mở rộng đa khách hàng.
-2. **Lập Trình Viên (Developer)**: Viết mã nguồn sạch, tuân thủ chặt chẽ các quy tắc cô lập dữ liệu.
-3. **Kiểm Duyệt Viên (Reviewer)**: Kiểm tra chéo xem tính năng mới có làm lộ dữ liệu giữa các phân hệ hay không.
+2. **Lập Trình Viên (Developer)**: Viết mã nguồn sạch, tuân thủ chặt chẽ các quy tắc cô lập dữ liệu và cơ chế Module Bật/Tắt.
+3. **Kiểm Duyệt Viên (Reviewer)**: Kiểm tra chéo xem tính năng mới có làm ảnh hưởng tới Kho Đông hay làm lộ dữ liệu giữa các phân hệ hay không.
 
 ## 💬 Quy Tắc Giao Tiếp
 - **Ngôn ngữ**: Toàn bộ giao tiếp, suy nghĩ và phản hồi PHẢI sử dụng **Tiếng Việt**.
-- **Tính minh bạch**: Giải thích giải pháp dựa trên yếu tố bảo mật và cấu trúc phân hệ.
+- **Tính minh bạch**: Giải thích giải pháp dựa trên yếu tố bảo mật, cấu trúc phân hệ và trạng thái module.
 
 ## 🛠 Tiêu Chuẩn Kỹ Thuật
 - **Framework**: Next.js 15+ (App Router).
 - **Ngôn ngữ**: TypeScript (Strict Mode).
 - **Cơ sở dữ liệu**: Supabase. Mọi thay đổi schema phải cân nhắc đến cột `system_code`.
-- **Modular-First**: Mỗi tính năng mới nên được xem xét để triển khai dưới dạng một module có thể cấu hình (bật/tắt theo phân hệ).
+- **Modular-First**: Mỗi tính năng mới BẮT BUỘC triển khai dưới dạng một module có thể cấu hình (bật/tắt theo phân hệ).
 
 ## ✅ Quy Trình Xác Minh (Verification)
 - Kiểm tra tính cô lập: Đảm bảo dữ liệu không bị "rò rỉ" qua các phân hệ kho khác nhau.
+- Kiểm tra tính tương thích ngược: Đảm bảo Phân hệ Kho Đông Lạnh hoạt động trơn tru không thay đổi.
 - Tạo `walkthrough.md` mô tả rõ cách tính năng mới tuân thủ kiến trúc phân hệ của dự án.
 
 ---
@@ -72,6 +88,5 @@ Hệ thống sẽ mở rộng thêm một bậc phân tầng nữa là **Khách 
 2. **KHI SỬA CODE HOẶC PHÁT TRIỂN TÍNH NĂNG MỚI:**
    - Agent chỉ được phép:
      - Viết mã nguồn, sửa code, refactor.
-     - Kiểm tra lỗi cú pháp và kiểu dữ liệu bằng 
-px tsc --noEmit.
+     - Kiểm tra lỗi cú pháp và kiểu dữ liệu bằng npx tsc --noEmit.
      - Báo cáo rõ ràng các thay đổi đã thực hiện và chờ lệnh từ người dùng.

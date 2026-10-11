@@ -26,6 +26,9 @@ export interface OrderItem {
     document_quantity: number
     price: number
     note: string
+    batch_code?: string | null
+    customer_name?: string | null
+    customerId?: string | null
     categoryId?: string | null
     isDocQtyVisible?: boolean
     isNoteOpen?: boolean
