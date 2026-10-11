@@ -29,12 +29,12 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'products', name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
             { id: 'internal_products', name: 'Sản phẩm nội bộ', href: '/internal-products', icon: PackageSearch, requiredModule: 'internal_products' },
-            { id: 'product_aliases', name: 'Tên gõ tắt', href: '/product-aliases', icon: Sparkles, requiredPermission: 'product.view' },
+            { id: 'product_aliases', name: 'Tên gõ tắt', href: '/product-aliases', icon: Sparkles, requiredModule: 'product_aliases', requiredPermission: 'product.view' },
             { id: 'categories', name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
             { id: 'units', name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
             { id: 'origins', name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
             { id: 'lot_codes', name: 'Mã phụ', href: '/warehouses/lot-codes', icon: Tag, requiredPermission: 'product.view' },
-            { id: 'stamp_rules', name: 'Cấu hình Dấu Đóng', href: '/warehouses/stamp-rules', icon: Stamp, requiredPermission: 'product.view' },
+            { id: 'stamp_rules', name: 'Cấu hình Dấu Đóng', href: '/warehouses/stamp-rules', icon: Stamp, requiredModule: 'stamp_rules', requiredPermission: 'product.view' },
         ]
     },
     {
@@ -49,6 +49,7 @@ const menuItems: MenuItem[] = [
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
             { id: 'work_areas', name: 'Khu vực', href: '/work-areas', icon: MapPin, requiredPermission: 'warehouse.manage' },
             { id: 'material_zones', name: 'Vùng trồng / Nguyên liệu', href: '/material-zones', icon: MapPin, requiredModule: 'material_zone' },
+            { id: 'production_places', name: 'Nơi sản xuất / Nhà máy', href: '/production-places', icon: Factory, requiredModule: 'production_place' },
             { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'production.view' },
             { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
         ]
@@ -73,16 +74,16 @@ const menuItems: MenuItem[] = [
         name: 'Quét mã QR',
         icon: QrCode,
         children: [
-            { id: 'pallets', name: 'Quản lý Pallet Quét', href: '/warehouses/pallets', icon: Layers, requiredPermission: 'warehouse_lot.view' },
-            { id: 'lot_labels', name: 'Liên kết Tem Thùng', href: '/warehouses/lot-labels', icon: Tags, requiredPermission: 'warehouse_lot.view' },
-            { id: 'lot_labels_mobile', name: 'Liên kết Tem (Mobile)', href: '/mobile/lot-labels', icon: Smartphone, requiredPermission: 'warehouse_lot.view' },
-            { id: 'stamp_lookup', name: 'Tra cứu tem', href: '/tra-cuu-tem', icon: Stamp },
+            { id: 'pallets', name: 'Quản lý Pallet Quét', href: '/warehouses/pallets', icon: Layers, requiredModule: 'qr_pallets', requiredPermission: 'warehouse_lot.view' },
+            { id: 'lot_labels', name: 'Liên kết Tem Thùng', href: '/warehouses/lot-labels', icon: Tags, requiredModule: 'qr_lot_labels', requiredPermission: 'warehouse_lot.view' },
+            { id: 'lot_labels_mobile', name: 'Liên kết Tem (Mobile)', href: '/mobile/lot-labels', icon: Smartphone, requiredModule: 'qr_lot_labels_mobile', requiredPermission: 'warehouse_lot.view' },
+            { id: 'stamp_lookup', name: 'Tra cứu tem', href: '/tra-cuu-tem', icon: Stamp, requiredModule: 'qr_stamp_lookup' },
             { id: 'qr_assign', name: 'Gán vị trí', href: '/warehouses/scan/assign', icon: MapPin, requiredPermission: 'utility.view', requiredModule: 'utility_qr_assign' },
-            { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredPermission: 'utility.view' },
-            { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredPermission: 'utility.view' },
-            { id: 'print_station', name: 'Máy in trạm', href: '/print/station', icon: Printer, requiredPermission: 'utility.view' },
-            { id: 'mobile_access', name: 'Mobile', href: '/mobile', icon: Smartphone, requiredPermission: 'utility.view' },
-            { id: 'production_lot', name: 'LOT Sản Xuất', href: '/production-lot', icon: Boxes, requiredPermission: 'utility.view' },
+            { id: 'qr_export', name: 'Xuất kho', href: '/warehouses/scan/export', icon: ArrowUpFromLine, requiredModule: 'qr_export', requiredPermission: 'utility.view' },
+            { id: 'qr_export_order', name: 'Lệnh xuất', href: '/warehouses/scan/export-order', icon: FileText, requiredModule: 'qr_export_order', requiredPermission: 'utility.view' },
+            { id: 'print_station', name: 'Máy in trạm', href: '/print/station', icon: Printer, requiredModule: 'qr_print_station', requiredPermission: 'utility.view' },
+            { id: 'mobile_access', name: 'Mobile', href: '/mobile', icon: Smartphone, requiredModule: 'qr_mobile_access', requiredPermission: 'utility.view' },
+            { id: 'production_lot', name: 'LOT Sản Xuất', href: '/production-lot', icon: Boxes, requiredModule: 'qr_production_lot', requiredPermission: 'utility.view' },
         ]
     },
     {
@@ -142,16 +143,16 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'inventory_report', name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
-            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view' },
-            { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: BarChart3, requiredPermission: 'report.view' },
-            { id: 'warehouse_map_log', name: 'Nhật ký sơ đồ kho', href: '/reports/warehouse-map-log', icon: Map, requiredPermission: 'report.view' },
-            { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: Activity, requiredPermission: 'report.view' },
+            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view', requiredModule: 'report_hall_summary' },
+            { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: BarChart3, requiredPermission: 'report.view', requiredModule: 'report_floor_1' },
+            { id: 'warehouse_map_log', name: 'Nhật ký sơ đồ kho', href: '/reports/warehouse-map-log', icon: Map, requiredPermission: 'report.view', requiredModule: 'report_warehouse_map_log' },
+            { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: Activity, requiredPermission: 'report.view', requiredModule: 'report_warehouse_movements' },
             { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
             { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
             { id: 'supplier_debts', name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
             { id: 'accounting_history', name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft, requiredPermission: 'report.view' },
             { id: 'lot_history', name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History, requiredPermission: 'report.view' },
-            { id: 'picking_productivity', name: 'Năng suất lấy hàng', href: '/reports/picking-productivity', icon: BarChart3, requiredPermission: 'report.view' },
+            { id: 'picking_productivity', name: 'Năng suất lấy hàng', href: '/reports/picking-productivity', icon: BarChart3, requiredPermission: 'report.view', requiredModule: 'report_picking_productivity' },
             { id: 'linked_journal', name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft, requiredPermission: 'report.view' },
         ]
     },
@@ -160,10 +161,10 @@ const menuItems: MenuItem[] = [
         name: 'In ấn',
         icon: Printer,
         children: [
-            { id: 'print_bank_report', name: 'Phiếu ngân hàng', href: '/print/bank-report', icon: FileText },
-            { id: 'bank_inbound', name: 'Nhập ngân hàng', href: '/bank-inbound', icon: ArrowDownToLine },
-            { id: 'bank_outbound', name: 'Xuất ngân hàng', href: '/bank-outbound', icon: ArrowUpFromLine },
-            { id: 'print_sequence_number', name: 'In số thứ tự', href: '/print/production-lot?type=sheet', icon: Hash },
+            { id: 'print_bank_report', name: 'Phiếu ngân hàng', href: '/print/bank-report', icon: FileText, requiredModule: 'print_bank_report' },
+            { id: 'bank_inbound', name: 'Nhập ngân hàng', href: '/bank-inbound', icon: ArrowDownToLine, requiredModule: 'bank_inbound' },
+            { id: 'bank_outbound', name: 'Xuất ngân hàng', href: '/bank-outbound', icon: ArrowUpFromLine, requiredModule: 'bank_outbound' },
+            { id: 'print_sequence_number', name: 'In số thứ tự', href: '/print/production-lot?type=sheet', icon: Hash, requiredModule: 'print_sequence_number' },
         ]
     },
     {

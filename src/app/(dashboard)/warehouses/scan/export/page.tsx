@@ -35,7 +35,7 @@ export default function ExportScanPage() {
     const inputRef = useRef<HTMLInputElement>(null)
 
     // Check module permission
-    const isAllowed = hasModule('outbound_basic')
+    const isAllowed = hasModule('qr_export')
 
     // 0. Pre-fetch units for conversion
     useEffect(() => {
@@ -95,8 +95,7 @@ export default function ExportScanPage() {
 
         setLoading(true)
         try {
-            const { data, error } = await supabase
-                .from('lots')
+            const { data, error } = await (supabase.from('lots' as any) as any)
                 .select(`
                     *,
                     suppliers (name),

@@ -4,12 +4,15 @@ import { LOT_MODULES } from '@/lib/lot-modules'
 import { PRODUCT_MODULES } from '@/lib/product-modules'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { UTILITY_MODULES } from '@/lib/utility-modules'
+import { PRINT_MODULES } from '@/lib/print-modules'
+import { QR_MODULES } from '@/lib/qr-modules'
+import { REPORT_MODULES } from '@/lib/report-modules'
 
 export interface SystemCodeModule {
     id: string
     name: string
     description: string
-    category: 'inbound' | 'outbound' | 'lot' | 'product' | 'dashboard' | 'utility' | 'info'
+    category: 'inbound' | 'outbound' | 'lot' | 'product' | 'dashboard' | 'utility' | 'info' | 'print' | 'qr' | 'report'
     is_basic: boolean
 }
 
@@ -58,6 +61,27 @@ export function getAllCodeModules(): SystemCodeModule[] {
             name: m.name,
             description: m.description,
             category: (m.category === 'info' ? 'info' : 'utility') as 'utility' | 'info',
+            is_basic: true
+        })),
+        ...PRINT_MODULES.map(m => ({
+            id: m.id,
+            name: m.name,
+            description: m.description,
+            category: 'print' as const,
+            is_basic: true
+        })),
+        ...QR_MODULES.map(m => ({
+            id: m.id,
+            name: m.name,
+            description: m.description,
+            category: 'qr' as const,
+            is_basic: true
+        })),
+        ...REPORT_MODULES.map(m => ({
+            id: m.id,
+            name: m.name,
+            description: m.description,
+            category: 'report' as const,
             is_basic: true
         }))
     ]

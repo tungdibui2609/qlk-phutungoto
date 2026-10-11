@@ -10,6 +10,9 @@ import { PRODUCT_MODULES } from '@/lib/product-modules'
 import { LOT_MODULES } from '@/lib/lot-modules'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { UTILITY_MODULES } from '@/lib/utility-modules'
+import { PRINT_MODULES } from '@/lib/print-modules'
+import { QR_MODULES } from '@/lib/qr-modules'
+import { REPORT_MODULES } from '@/lib/report-modules'
 import { useUser } from './UserContext' // [NEW] Import
 
 export type SystemType = string // Was rigid Enum, now string
@@ -28,6 +31,9 @@ interface System {
   dashboard_modules?: string[] | null
   lot_modules?: string[] | null
   utility_modules?: string[] | null
+  print_modules?: string[] | null
+  qr_modules?: string[] | null
+  report_modules?: string[] | null
   is_active?: boolean
   sort_order?: number
   hidden_menus?: string[] | null
@@ -138,6 +144,9 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           outbound_modules: Array.isArray(outbound) ? outbound : [],
           dashboard_modules: sys.dashboard_modules,
           lot_modules: sys.lot_modules,
+          print_modules: sys.print_modules,
+          qr_modules: sys.qr_modules,
+          report_modules: sys.report_modules,
           hidden_menus: Array.isArray(sys.hidden_menus) ? sys.hidden_menus : []
         }
       })
@@ -185,6 +194,7 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           if (data === null || data === undefined) {
             return allModules.filter((m: any) => m.is_basic).map((m: any) => m.id)
           }
+          // Nếu đã có cấu hình trong DB (kể cả mảng rỗng []), tôn trọng tuyệt đối lựa chọn đã lưu của Admin/User
           return Array.isArray(data) ? data : []
         }
 
@@ -194,7 +204,10 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
           outbound_modules: getDefaults(sys.outbound_modules, OUTBOUND_MODULES),
           lot_modules: getDefaults(sys.lot_modules, LOT_MODULES),
           dashboard_modules: getDefaults(sys.dashboard_modules, DASHBOARD_MODULES),
-          utility_modules: getDefaults(sys.utility_modules || sys.modules?.utility_modules, UTILITY_MODULES)
+          utility_modules: getDefaults(sys.utility_modules || sys.modules?.utility_modules, UTILITY_MODULES),
+          print_modules: getDefaults(sys.print_modules || sys.modules?.print_modules, PRINT_MODULES),
+          qr_modules: getDefaults(sys.qr_modules || sys.modules?.qr_modules, QR_MODULES),
+          report_modules: getDefaults(sys.report_modules || sys.modules?.report_modules, REPORT_MODULES)
         }))
       }
 
@@ -299,6 +312,9 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     getArr(currentSystem.lot_modules).forEach((m: any) => otherSet.add(m))
     getArr(currentSystem.dashboard_modules).forEach((m: any) => otherSet.add(m))
     getArr(currentSystem.utility_modules).forEach((m: any) => otherSet.add(m))
+    getArr(currentSystem.print_modules).forEach((m: any) => otherSet.add(m))
+    getArr(currentSystem.qr_modules).forEach((m: any) => otherSet.add(m))
+    getArr(currentSystem.report_modules).forEach((m: any) => otherSet.add(m))
 
     const rawModules = currentSystem.modules
     let productModules: string[] = []
@@ -310,6 +326,15 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
       const legacyModules = rawModules as any
       const utilityModules = Array.isArray(legacyModules?.utility_modules) ? legacyModules.utility_modules : []
       utilityModules.forEach((m: any) => otherSet.add(m))
+
+      const printModules = Array.isArray(legacyModules?.print_modules) ? legacyModules.print_modules : []
+      printModules.forEach((m: any) => otherSet.add(m))
+
+      const qrModules = Array.isArray(legacyModules?.qr_modules) ? legacyModules.qr_modules : []
+      qrModules.forEach((m: any) => otherSet.add(m))
+
+      const reportModules = Array.isArray(legacyModules?.report_modules) ? legacyModules.report_modules : []
+      reportModules.forEach((m: any) => otherSet.add(m))
       
       // Legacy boolean properties
       Object.keys(legacyModules).forEach(key => {
@@ -334,7 +359,21 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // 2. Basic Modules (Default):
     const isBasic = basicModuleIds.includes(moduleId)
     if (isBasic) {
-      if (currentSystem && currentSystem.modules) {
+      // Các module cơ bản của LOT hoặc thông tin chung luôn luôn khả dụng ở mọi kho
+      const isLotBasic = LOT_MODULES.some(m => m.id === moduleId && m.is_basic)
+      if (isLotBasic) {
+        return true
+      }
+
+      // Các module in ấn có thể bật/tắt theo kho, ưu tiên kiểm tra cấu hình kho bên dưới
+      const isPrint = PRINT_MODULES.some(m => m.id === moduleId)
+      if (isPrint && currentSystem) {
+        // Fallthrough to check currentSystem.print_modules below
+      } else if (QR_MODULES.some(m => m.id === moduleId) && currentSystem) {
+        // Fallthrough to check currentSystem.qr_modules below
+      } else if (REPORT_MODULES.some(m => m.id === moduleId) && currentSystem) {
+        // Fallthrough to check currentSystem.report_modules below
+      } else if (currentSystem && currentSystem.modules) {
         // Re-use logic below for checking system modules
       } else {
         return true // Default to true if no system config exists yet
@@ -359,6 +398,27 @@ export function SystemProvider({ children }: { children: React.ReactNode }) {
     // 4. Utility Modules: Kiểm tra cấu hình tiện ích bật/tắt của kho hiện tại
     const isUtility = UTILITY_MODULES.some(m => m.id === moduleId)
     if (isUtility) {
+      return otherSet.has(moduleId)
+    }
+
+    // 5. Print Modules: Kiểm tra cấu hình in ấn bật/tắt của kho hiện tại
+    const isPrint = PRINT_MODULES.some(m => m.id === moduleId)
+    if (isPrint) {
+      if (!isBasic && !unlockedModules.includes(moduleId)) return false
+      return otherSet.has(moduleId)
+    }
+
+    // 6. QR Modules: Kiểm tra cấu hình quét mã QR bật/tắt của kho hiện tại
+    const isQr = QR_MODULES.some(m => m.id === moduleId)
+    if (isQr) {
+      if (!isBasic && !unlockedModules.includes(moduleId)) return false
+      return otherSet.has(moduleId)
+    }
+
+    // 7. Report Modules: Kiểm tra cấu hình báo cáo bật/tắt của kho hiện tại
+    const isReport = REPORT_MODULES.some(m => m.id === moduleId)
+    if (isReport) {
+      if (!isBasic && !unlockedModules.includes(moduleId)) return false
       return otherSet.has(moduleId)
     }
 

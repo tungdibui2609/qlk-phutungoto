@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
 import { 
     Stamp, 
     Plus, 
@@ -304,6 +305,24 @@ export const STAMP_CATEGORIES: Record<string, {
 
 export default function StampRulesPage() {
     const { showToast } = useToast()
+    const { hasModule } = useSystem()
+
+    if (!hasModule('stamp_rules')) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 bg-white dark:bg-stone-900 rounded-2xl shadow-sm border border-stone-200 dark:border-stone-800 m-6">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
+                    <Stamp size={40} className="text-slate-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">
+                    Cấu hình Dấu Đóng
+                </h2>
+                <p className="text-stone-500 max-w-md">
+                    Module "Cấu hình Dấu Đóng" chưa được kích hoạt cho kho này.
+                    Vui lòng vào Cài đặt {'>'} Phân hệ để kích hoạt.
+                </p>
+            </div>
+        )
+    }
 
     // Main navigation tab: 'dictionaries' vs 'formats'
     const [mainTab, setMainTab] = useState<'dictionaries' | 'formats'>('dictionaries')

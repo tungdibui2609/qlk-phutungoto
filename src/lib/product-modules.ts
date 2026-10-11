@@ -1,4 +1,4 @@
-import { Car, Package, Thermometer, Truck, Box, Image as ImageIcon, DollarSign, Link as LinkIcon, Settings2, Scale, PackageSearch } from 'lucide-react'
+import { Car, Package, Thermometer, Truck, Box, Image as ImageIcon, DollarSign, Link as LinkIcon, Settings2, Scale, PackageSearch, Sparkles, Stamp } from 'lucide-react'
 
 export interface ProductModule {
     id: string
@@ -51,6 +51,22 @@ export const PRODUCT_MODULES: ProductModule[] = [
         icon: PackageSearch,
         fields: [],
         is_basic: false
+    },
+    {
+        id: 'product_aliases',
+        name: 'Tên gõ tắt',
+        description: 'Thiết lập danh sách tên viết tắt, từ khóa gõ tắt để tìm kiếm nhanh sản phẩm trên sơ đồ kho và tạo phiếu.',
+        icon: Sparkles,
+        fields: [],
+        is_basic: true
+    },
+    {
+        id: 'stamp_rules',
+        name: 'Cấu hình Dấu Đóng',
+        description: 'Thiết lập quy tắc, khuôn định dạng và phân tích giải mã ký hiệu dấu đóng mực trên bao bì/thùng hàng.',
+        icon: Stamp,
+        fields: [],
+        is_basic: true
     }
 ]
 

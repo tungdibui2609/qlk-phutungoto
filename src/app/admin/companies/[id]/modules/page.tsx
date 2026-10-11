@@ -2,13 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Save, Shield, Package, LayoutDashboard, Cog, Archive, ArrowLeft, Loader2, Search } from 'lucide-react'
+import { X, Save, Shield, Package, LayoutDashboard, Cog, Archive, ArrowLeft, Loader2, Search, Printer, QrCode, BarChart3 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { INBOUND_MODULES, OUTBOUND_MODULES } from '@/lib/order-modules'
 import { LOT_MODULES } from '@/lib/lot-modules'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { UTILITY_MODULES } from '@/lib/utility-modules'
 import { PRODUCT_MODULES } from '@/lib/product-modules'
+import { PRINT_MODULES } from '@/lib/print-modules'
+import { QR_MODULES } from '@/lib/qr-modules'
+import { REPORT_MODULES } from '@/lib/report-modules'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -27,7 +30,10 @@ const ALL_MODULES = [
     ...PRODUCT_MODULES.map(m => ({ ...m, category: 'Sản phẩm' })),
     ...LOT_MODULES.map(m => ({ ...m, category: 'Quản lý LOT' })),
     ...DASHBOARD_MODULES.map(m => ({ ...m, category: 'Dashboard' })),
-    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' }))
+    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' })),
+    ...PRINT_MODULES.map(m => ({ ...m, category: 'In ấn' })),
+    ...QR_MODULES.map(m => ({ ...m, category: 'Quét mã QR' })),
+    ...REPORT_MODULES.map(m => ({ ...m, category: 'Báo cáo' }))
 ]
 
 export default function CompanyModulesPage() {
@@ -49,8 +55,8 @@ export default function CompanyModulesPage() {
 
     useEffect(() => {
         const fetchBasic = async () => {
-            const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
-            if (data) setBasicModuleIds(data.map(x => x.id))
+            const { data } = await (supabase.from('app_modules' as any) as any).select('id').eq('is_basic', true)
+            if (data) setBasicModuleIds((data as any[]).map(x => x.id))
         }
         fetchBasic()
     }, [])
@@ -74,8 +80,7 @@ export default function CompanyModulesPage() {
     async function fetchData() {
         setLoading(true)
         try {
-            const { data, error } = await supabase
-                .from('companies')
+            const { data, error } = await (supabase.from('companies' as any) as any)
                 .select('id, name, code, unlocked_modules')
                 .eq('id', id as string)
                 .single()
@@ -119,8 +124,7 @@ export default function CompanyModulesPage() {
     const handleSave = async () => {
         setSaving(true)
         try {
-            const { data, error } = await supabase
-                .from('companies')
+            const { data, error } = await (supabase.from('companies' as any) as any)
                 .update({ unlocked_modules: unlockedModules })
                 .eq('id', id as string)
                 .select() // Return updated rows
@@ -281,6 +285,9 @@ export default function CompanyModulesPage() {
                                             {cat === 'Dashboard' && <LayoutDashboard size={18} />}
                                             {cat === 'Tiện ích hệ thống' && <Cog size={18} />}
                                             {cat === 'Thông tin' && <Shield size={18} />}
+                                            {cat === 'In ấn' && <Printer size={18} />}
+                                            {cat === 'Quét mã QR' && <QrCode size={18} />}
+                                            {cat === 'Báo cáo' && <BarChart3 size={18} />}
                                         </div>
                                         <h2 className="text-base md:text-lg font-bold text-slate-700 uppercase tracking-wide">{cat}</h2>
                                         <span className="text-[10px] md:text-xs font-medium px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full">

@@ -30,6 +30,7 @@ export const APP_ROUTES: RouteItem[] = [
             { name: 'Dòng xe', path: '/vehicles' },
             { name: 'Khách hàng', path: '/customers' },
             { name: 'Vùng trồng / Nguyên liệu', path: '/material-zones' },
+            { name: 'Nơi sản xuất / Nhà máy', path: '/production-places' },
         ]
     },
     {

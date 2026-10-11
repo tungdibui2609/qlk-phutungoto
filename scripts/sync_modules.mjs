@@ -41,6 +41,7 @@ const MODULE_DEFINITIONS = [
     { id: 'batch_code', name: 'Số Batch/Lô (NCC)', description: 'Hiển thị trường nhập số Batch hoặc Lô của nhà cung cấp.', category: 'lot', is_basic: false },
     { id: 'oem_info', name: 'Thương hiệu & Khách OEM', description: 'Hiển thị trường nhập thương hiệu, nhãn hàng hoặc khách hàng OEM của lô hàng.', category: 'lot', is_basic: true },
     { id: 'material_zone', name: 'Vùng nguyên liệu', description: 'Hiển thị trường nhập thông tin vùng nguyên liệu, vùng trồng của lô hàng.', category: 'lot', is_basic: true },
+    { id: 'production_place', name: 'Nơi sản xuất', description: 'Hiển thị trường nhập thông tin nơi sản xuất, nhà máy hoặc cơ sở chế biến của lô hàng.', category: 'lot', is_basic: true },
     { id: 'supplier_info', name: 'Nhà cung cấp', description: 'Hiển thị và cho phép chọn nhà cung cấp.', category: 'lot', is_basic: false },
     { id: 'qc_info', name: 'Nhân viên QC', description: 'Hiển thị và cho phép chọn nhân viên kiểm soát chất lượng.', category: 'lot', is_basic: false },
     { id: 'raw_material_date', name: 'Ngày nhập nguyên liệu', description: 'Ghi lại ngày nhập nguyên liệu thô cho lô hàng', category: 'lot', is_basic: false },
@@ -53,6 +54,8 @@ const MODULE_DEFINITIONS = [
     { id: 'pricing', name: 'Giá cả', description: 'Thiết lập giá vốn, giá bán lẻ, giá bán buôn', category: 'product', is_basic: false },
     { id: 'packaging', name: 'Quy cách đóng gói', description: 'Ghi chú quy cách đóng gói', category: 'product', is_basic: true },
     { id: 'internal_products', name: 'Sản phẩm nội bộ', description: 'Ánh xạ mã và tên sản phẩm gốc sang mã nội bộ dùng cho hệ thống xưởng', category: 'product', is_basic: false },
+    { id: 'product_aliases', name: 'Tên gõ tắt', description: 'Thiết lập danh sách tên viết tắt, từ khóa gõ tắt để tìm kiếm nhanh sản phẩm trên sơ đồ kho và tạo phiếu.', category: 'product', is_basic: true },
+    { id: 'stamp_rules', name: 'Cấu hình Dấu Đóng', description: 'Thiết lập quy tắc, khuôn định dạng và phân tích giải mã ký hiệu dấu đóng mực trên bao bì/thùng hàng.', category: 'product', is_basic: true },
 
     // Dashboard
     { id: 'stats_overview', name: 'Thẻ thống kê tổng quan', description: 'Hiển thị tổng sản phẩm, danh mục, tồn kho thấp và nhập hàng trong tuần.', category: 'dashboard', is_basic: true },
@@ -77,7 +80,32 @@ const MODULE_DEFINITIONS = [
     { id: 'handover', name: 'Bàn giao hàng hóa', description: 'Quản lý nhận và giao hàng hóa trực tiếp giữa các bộ phận, không cần tạo sản phẩm/đơn vị.', category: 'utility', is_basic: true },
     { id: 'delivery_journal', name: 'Nhật ký giao nhận', description: 'Nhật ký giao nhận giữa Kho và Sản xuất: Kho gửi vật tư, SX nhận và hoàn trả thành phẩm. Đồng bộ real-time.', category: 'utility', is_basic: true },
     { id: 'shift_tasks', name: 'Sổ Giao Việc & Nhắc Nhở Bàn Giao', description: 'Giao việc dở dang, tạo nhắc nhở giao ca kèm hình ảnh minh chứng và xác nhận tiếp nhận 2 bên rõ ràng.', category: 'utility', is_basic: true },
-    { id: 'packaging_auto_sync_accounting', name: 'Tự động tạo Phiếu Kế toán (PNK) khi nhập cấp phát', description: 'Khi nhập hàng trực tiếp tại module Cấp phát/Bao bì, tự động tạo Phiếu Nhập Kho Kế toán và LOT mới tương ứng.', category: 'utility', is_basic: true }
+    { id: 'packaging_auto_sync_accounting', name: 'Tự động tạo Phiếu Kế toán (PNK) khi nhập cấp phát', description: 'Khi nhập hàng trực tiếp tại module Cấp phát/Bao bì, tự động tạo Phiếu Nhập Kho Kế toán và LOT mới tương ứng.', category: 'utility', is_basic: true },
+
+    // Print
+    { id: 'print_bank_report', name: 'Phiếu ngân hàng', description: 'In báo cáo, biểu mẫu kê khai tồn kho và chứng từ cầm cố/bảo lãnh ngân hàng.', category: 'print', is_basic: true },
+    { id: 'bank_inbound', name: 'Nhập ngân hàng', description: 'Quản lý và in ấn chứng từ nhập kho phục vụ thủ tục hồ sơ ngân hàng.', category: 'print', is_basic: true },
+    { id: 'bank_outbound', name: 'Xuất ngân hàng', description: 'Quản lý và in ấn chứng từ giải chấp, xuất kho phục vụ thủ tục hồ sơ ngân hàng.', category: 'print', is_basic: true },
+    { id: 'print_sequence_number', name: 'In số thứ tự (STT)', description: 'In bảng danh sách và biểu mẫu số thứ tự LOT theo ngày / lô sản xuất.', category: 'print', is_basic: true },
+
+    // QR Scan
+    { id: 'qr_pallets', name: 'Quản lý Pallet Quét', description: 'Quản lý, kiểm đếm và theo dõi danh sách Pallet đã quét tem / mã QR theo thời gian thực.', category: 'qr', is_basic: true },
+    { id: 'qr_lot_labels', name: 'Liên kết Tem Thùng', description: 'Quét và gán liên kết mã tem thùng / mã thùng hàng với lô hàng LOT.', category: 'qr', is_basic: true },
+    { id: 'qr_lot_labels_mobile', name: 'Liên kết Tem (Mobile)', description: 'Giao diện di động thao tác nhanh quét liên kết tem thùng trực tiếp tại xưởng.', category: 'qr', is_basic: true },
+    { id: 'qr_stamp_lookup', name: 'Tra cứu tem', description: 'Công cụ tra cứu thông tin chi tiết nguồn gốc và trạng thái của mã tem thùng, dấu đóng.', category: 'qr', is_basic: true },
+    { id: 'utility_qr_assign', name: 'Gán vị trí (Quét QR)', description: 'Quét mã QR để gán nhanh vị trí kho cho Pallet và sản phẩm.', category: 'qr', is_basic: true },
+    { id: 'qr_export', name: 'Xuất kho (Quét QR)', description: 'Thao tác quét mã QR thùng/pallet để thực hiện thủ tục xuất kho chính xác.', category: 'qr', is_basic: true },
+    { id: 'qr_export_order', name: 'Lệnh xuất (Quét QR)', description: 'Quét mã kiểm tra và xuất kho theo lệnh điều động xuất hàng.', category: 'qr', is_basic: true },
+    { id: 'qr_print_station', name: 'Máy in trạm', description: 'Quản lý máy in trạm tại các chốt kiểm soát quét mã và in tem nhãn.', category: 'qr', is_basic: true },
+    { id: 'qr_mobile_access', name: 'Mobile (Quét QR)', description: 'Trung tâm điều hướng giao diện quét mã QR trên thiết bị di động / máy quét cầm tay.', category: 'qr', is_basic: true },
+    { id: 'qr_production_lot', name: 'LOT Sản Xuất', description: 'Quét kiểm tra và theo dõi tiến độ LOT thành phẩm trong dây chuyền sản xuất.', category: 'qr', is_basic: true },
+
+    // Reports
+    { id: 'report_hall_summary', name: 'Thống kê sảnh', description: 'Báo cáo tổng hợp số lượng, trạng thái hàng hóa và vị trí tại các khu vực sảnh.', category: 'report', is_basic: true },
+    { id: 'report_floor_1', name: 'Báo cáo tầng 1', description: 'Báo cáo chi tiết hoạt động xuất nhập và tồn kho tại khu vực tầng 1.', category: 'report', is_basic: true },
+    { id: 'report_warehouse_map_log', name: 'Nhật ký sơ đồ kho', description: 'Theo dõi lịch sử thay đổi vị trí, sơ đồ mặt bằng và cấu trúc kho.', category: 'report', is_basic: true },
+    { id: 'report_warehouse_movements', name: 'Diễn biến kho (Sạch)', description: 'Thống kê luồng luân chuyển hàng hóa sạch và diễn biến xuất nhập tồn.', category: 'report', is_basic: true },
+    { id: 'report_picking_productivity', name: 'Năng suất lấy hàng', description: 'Báo cáo hiệu suất, tốc độ lấy hàng và năng suất làm việc của nhân sự.', category: 'report', is_basic: true }
 ];
 
 async function sync() {

@@ -17,8 +17,8 @@ type ScanStep = 0 | 1 | 2
 type Zone = Database['public']['Tables']['zones']['Row']
 
 export default function FastScanPage() {
-    const { checkSubscription, profile } = useUser()
-    const { currentSystem } = useSystem()
+    const { profile } = useUser()
+    const { currentSystem, hasModule } = useSystem()
     const { showToast } = useToast()
 
     // State
@@ -57,7 +57,7 @@ export default function FastScanPage() {
     const inputRef = useRef<HTMLInputElement>(null)
 
     // Check module permission
-    const isAllowed = checkSubscription('utility_qr_assign')
+    const isAllowed = hasModule('utility_qr_assign')
 
     // 0. Fetch Data
     useEffect(() => {
@@ -271,8 +271,7 @@ export default function FastScanPage() {
         setLoading(true)
         try {
             // 2. Find LOT
-            const { data: lot, error } = await supabase
-                .from('lots')
+            const { data: lot, error } = await (supabase.from('lots' as any) as any)
                 .select('id, code, products(name)')
                 .or(`code.eq.${lotCode},production_code.eq.${lotCode}`)
                 .maybeSingle()
@@ -320,15 +319,13 @@ export default function FastScanPage() {
             setScannedLots(prev => new Set(prev).add(lot.id))
 
             // [FIX] Clear LOT from any previous positions first to avoid duplicates
-            await supabase
-                .from('positions')
-                .update({ lot_id: null } as any)
+            await (supabase.from('positions' as any) as any)
+                .update({ lot_id: null })
                 .eq('lot_id', lot.id)
 
             // 4. Assign
-            const { error: updateError } = await supabase
-                .from('positions')
-                .update({ lot_id: lot.id } as any)
+            const { error: updateError } = await (supabase.from('positions' as any) as any)
+                .update({ lot_id: lot.id })
                 .eq('id', targetPos.id)
 
             if (updateError) throw updateError
@@ -394,8 +391,7 @@ export default function FastScanPage() {
         setLoading(true)
         try {
             // Fetch LOT
-            const { data, error } = await supabase
-                .from('lots')
+            const { data, error } = await (supabase.from('lots' as any) as any)
                 .select(`
                     id, code, packaging_date, company_id,
                     products (name, sku, unit),
@@ -511,15 +507,13 @@ export default function FastScanPage() {
             }
 
             // [FIX] Clear LOT from any previous positions first
-            await supabase
-                .from('positions')
-                .update({ lot_id: null } as any)
+            await (supabase.from('positions' as any) as any)
+                .update({ lot_id: null })
                 .eq('lot_id', lotData.id)
 
             // 2. Assign
-            const { error: updateError } = await supabase
-                .from('positions')
-                .update({ lot_id: lotData.id } as any)
+            const { error: updateError } = await (supabase.from('positions' as any) as any)
+                .update({ lot_id: lotData.id })
                 .eq('id', targetPos.id)
 
             if (updateError) throw updateError

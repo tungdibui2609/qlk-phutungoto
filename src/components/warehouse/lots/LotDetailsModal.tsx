@@ -500,6 +500,19 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     </div>
                                 </div>
                             )}
+                            {isModuleEnabled('production_place') && (
+                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
+                                    <div className="w-10 h-10 rounded-xl bg-blue-50 dark:bg-blue-950/30 text-blue-700 dark:text-blue-400 flex items-center justify-center shrink-0">
+                                        <Factory size={20} />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nơi sản xuất</p>
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">
+                                            {(lot.metadata as any)?.production_place || '---'}
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
                             {isModuleEnabled('extra_info') && (
                                 <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
                                     <div className="w-10 h-10 rounded-xl bg-sky-50 dark:bg-sky-900/20 text-sky-600 dark:text-sky-400 flex items-center justify-center shrink-0">

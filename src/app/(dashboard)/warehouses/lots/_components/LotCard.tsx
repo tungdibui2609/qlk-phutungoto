@@ -226,6 +226,16 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             });
         }
 
+        const prodPlace = (lot.metadata as any)?.production_place;
+        if (prodPlace && isModuleEnabled('production_place')) {
+            infoItems.push({
+                key: 'production_place',
+                icon: <Factory size={14} />,
+                label: prodPlace,
+                colorClass: 'bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-400'
+            });
+        }
+
         if (lot.suppliers && isModuleEnabled('supplier_info')) {
             infoItems.push({
                 key: 'supplier',

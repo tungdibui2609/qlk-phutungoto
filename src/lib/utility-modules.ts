@@ -62,14 +62,6 @@ export const UTILITY_MODULES: UtilityModule[] = [
         default_enabled: false
     },
     {
-        id: 'utility_qr_assign',
-        name: 'Quét mã QR & Gán vị trí',
-        description: 'Cho phép quét mã QR để gán nhanh vị trí kho. Hiển thị menu Quét mã QR trên thanh điều hướng.',
-        icon: QrCode,
-        category: 'automation',
-        default_enabled: false
-    },
-    {
         id: 'member_team_manager',
         name: 'Thành viên & Đội',
         description: 'Quản lý nhân sự và các đội nhóm thi công, vận hành.',

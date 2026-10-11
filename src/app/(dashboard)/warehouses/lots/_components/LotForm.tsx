@@ -86,6 +86,8 @@ export function LotForm({
     const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
     const [customerName, setCustomerName] = useState('')
+    const [productionPlace, setProductionPlace] = useState('')
+    const [productionPlacesList, setProductionPlacesList] = useState<any[]>([])
     const [materialZones, setMaterialZones] = useState<string[]>([])
     const [newMaterialZoneInput, setNewMaterialZoneInput] = useState('')
     const [materialZonesList, setMaterialZonesList] = useState<any[]>([])
@@ -140,6 +142,31 @@ export function LotForm({
                 if (data) setMaterialZonesList(data)
             }
             fetchZones()
+
+            const fetchPlaces = async () => {
+                try {
+                    const { data } = await (supabase.from('production_places' as any) as any)
+                        .select('id, code, name, province, address')
+                        .eq('is_active', true)
+                        .order('code')
+                    if (data && data.length > 0) {
+                        setProductionPlacesList(data)
+                    } else {
+                        setProductionPlacesList([
+                            { id: '1', code: 'NM-BT-01', name: 'Nhà máy Chánh Thu - Bến Tre' },
+                            { id: '2', code: 'CS-DL-01', name: 'Xưởng chế biến Cư M\'gar - Đắk Lắk' },
+                            { id: '3', code: 'NM-TG-01', name: 'Nhà máy Đóng gói Tiền Giang' }
+                        ])
+                    }
+                } catch (e) {
+                    setProductionPlacesList([
+                        { id: '1', code: 'NM-BT-01', name: 'Nhà máy Chánh Thu - Bến Tre' },
+                        { id: '2', code: 'CS-DL-01', name: 'Xưởng chế biến Cư M\'gar - Đắk Lắk' },
+                        { id: '3', code: 'NM-TG-01', name: 'Nhà máy Đóng gói Tiền Giang' }
+                    ])
+                }
+            }
+            fetchPlaces()
         }
     }, [isVisible])
 
@@ -338,6 +365,7 @@ export function LotForm({
                 }
                 setExtraInfo(meta.extra_info || '')
                 setCustomerName(meta.customer_name || meta.oem_brand || '')
+                setProductionPlace(meta.production_place || '')
                 const rawMz = meta.material_zones || (meta.material_zone ? meta.material_zone.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
                 setMaterialZones(Array.isArray(rawMz) ? rawMz : [])
                 setNewMaterialZoneInput('')
@@ -400,6 +428,7 @@ export function LotForm({
                             }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.customerName) setCustomerName(parsed.customerName)
+                            if (parsed.productionPlace) setProductionPlace(parsed.productionPlace)
                             if (parsed.materialZones && Array.isArray(parsed.materialZones)) {
                                 setMaterialZones(parsed.materialZones)
                             } else if (parsed.materialZone) {
@@ -484,6 +513,7 @@ export function LotForm({
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
                 customerName: isPersistent ? customerName : '',
+                productionPlace: isPersistent ? productionPlace : '',
                 materialZones: isPersistent ? materialZones : [],
                 materialZone: isPersistent ? materialZones.join(', ') : '',
                 productionCode: isPersistent ? productionCode : '',
@@ -544,6 +574,7 @@ export function LotForm({
         setWarehouseName('')
         setBatchCode('')
         setCustomerName('')
+        setProductionPlace('')
         setMaterialZones([])
         setNewMaterialZoneInput('')
         setProductionCode('')
@@ -840,6 +871,7 @@ export function LotForm({
                 extra_info: extraInfo,
                 customer_name: customerName || null,
                 oem_brand: customerName || null,
+                production_place: productionPlace || null,
                 material_zone: materialZones.length > 0 ? materialZones.join(', ') : null,
                 material_zones: materialZones.length > 0 ? materialZones : [],
                 manual_material_zones: materialZones.length > 0 ? materialZones : [],
@@ -1142,10 +1174,11 @@ export function LotForm({
                         const dateModulesCount = [hasRawDate, hasInboundDate, hasPeelingDate, hasPackagingDate].filter(Boolean).length
 
                         const hasMaterialZone = hasModule('material_zone')
+                        const hasProductionPlace = hasModule('production_place')
                         const hasOemInfo = hasModule('oem_info')
                         const hasBatchCode = hasModule('batch_code')
-                        const hasAnyTraceModule = hasMaterialZone || hasOemInfo || hasBatchCode
-                        const traceModulesCount = [hasMaterialZone, hasOemInfo, hasBatchCode].filter(Boolean).length
+                        const hasAnyTraceModule = hasMaterialZone || hasProductionPlace || hasOemInfo || hasBatchCode
+                        const traceModulesCount = [hasMaterialZone, hasProductionPlace, hasOemInfo, hasBatchCode].filter(Boolean).length
 
                         const hasImages = hasModule('lot_images')
                         const hasExtraInfo = hasModule('extra_info')
@@ -1644,6 +1677,57 @@ export function LotForm({
                                                             <Plus size={14} />
                                                             <span>Thêm</span>
                                                         </button>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Nơi sản xuất */}
+                                            {hasProductionPlace && (
+                                                <div className="space-y-1.5">
+                                                    <div className="flex items-center justify-between">
+                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                            <Factory size={13} className="text-blue-600" />
+                                                            <span>Nơi sản xuất</span>
+                                                        </label>
+                                                        <div className="flex items-center gap-2">
+                                                            <a
+                                                                href="/production-places"
+                                                                target="_blank"
+                                                                rel="noreferrer"
+                                                                className="text-[11px] font-bold text-blue-600 hover:text-blue-700 dark:text-blue-400 hover:underline flex items-center gap-0.5"
+                                                                title="Mở trang Quản lý & Khai báo Nơi sản xuất / Nhà máy"
+                                                            >
+                                                                <Plus size={12} />
+                                                                Khai báo nơi SX
+                                                            </a>
+                                                            {productionPlace && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => setProductionPlace('')}
+                                                                    className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                >
+                                                                    Xóa
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div className="relative">
+                                                        <Factory className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" size={17} />
+                                                        <input
+                                                            type="text"
+                                                            list="production-places-datalist"
+                                                            value={productionPlace}
+                                                            onChange={(e) => setProductionPlace(e.target.value)}
+                                                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-blue-200/90 dark:border-blue-800/70 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all text-sm font-medium placeholder:text-zinc-400 shadow-xs"
+                                                            placeholder="Chọn cơ sở đã khai báo hoặc gõ tên nhà máy..."
+                                                        />
+                                                        <datalist id="production-places-datalist">
+                                                            {productionPlacesList.map((p: any) => (
+                                                                <option key={p.id} value={p.name}>
+                                                                    {p.code ? `[${p.code}] ${p.name}` : p.name}
+                                                                </option>
+                                                            ))}
+                                                        </datalist>
                                                     </div>
                                                 </div>
                                             )}

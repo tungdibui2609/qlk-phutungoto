@@ -44,7 +44,7 @@ import { saveAs } from 'file-saver'
 
 export default function BankInboundPage() {
     const { showToast } = useToast()
-    const { systemType } = useSystem()
+    const { systemType, hasModule } = useSystem()
 
     const [orders, setOrders] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
@@ -75,6 +75,23 @@ export default function BankInboundPage() {
 
     // Delete confirm
     const [deleteOrderId, setDeleteOrderId] = useState<string | null>(null)
+
+    if (!hasModule('bank_inbound')) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+                <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mb-6">
+                    <Landmark size={40} className="text-slate-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 mb-2">
+                    Nhập ngân hàng
+                </h2>
+                <p className="text-stone-500 max-w-md">
+                    Module "Nhập ngân hàng" chưa được bật cho kho này.
+                    Vui lòng vào Cài đặt {'>'} Phân hệ để kích hoạt.
+                </p>
+            </div>
+        )
+    }
 
     // Load branches
     useEffect(() => {

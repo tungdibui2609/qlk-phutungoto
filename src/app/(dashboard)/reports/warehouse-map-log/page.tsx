@@ -59,13 +59,26 @@ interface MapMovement {
             quantity: number;
             unit: string;
         }>;
+        totalWeightKg?: number;
     } | null;
     sourcePositionCode?: string; // For "moved" type
 }
 
 export default function WarehouseMapLogPage() {
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { showToast } = useToast()
+
+    if (currentSystem && !hasModule('report_warehouse_map_log')) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+                <div className="w-20 h-20 bg-stone-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
+                    <MapIcon size={40} className="text-stone-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">Nhật ký sơ đồ kho</h2>
+                <p className="text-stone-500 max-w-md">Tính năng chưa được kích hoạt cho kho này. Vui lòng vào Cài đặt → Cấu hình Phân hệ để bật.</p>
+            </div>
+        )
+    }
 
     const [loading, setLoading] = useState(true)
     const [dateFrom, setDateFrom] = useState(() => format(subDays(new Date(), 7), 'yyyy-MM-dd'))

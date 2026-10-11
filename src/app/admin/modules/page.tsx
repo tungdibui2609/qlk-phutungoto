@@ -22,7 +22,10 @@ const CATEGORY_MAP: Record<string, string> = {
     'product': 'Sản phẩm',
     'dashboard': 'Dashboard',
     'utility': 'Tiện ích hệ thống',
-    'info': 'Thông tin'
+    'info': 'Thông tin',
+    'print': 'In ấn',
+    'qr': 'Quét mã QR',
+    'report': 'Báo cáo'
 }
 
 export default function ModulesPage() {

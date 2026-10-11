@@ -9,6 +9,9 @@ import { PRODUCT_MODULES } from '@/lib/product-modules'
 import { LOT_MODULES } from '@/lib/lot-modules'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { UTILITY_MODULES } from '@/lib/utility-modules'
+import { PRINT_MODULES } from '@/lib/print-modules'
+import { QR_MODULES } from '@/lib/qr-modules'
+import { REPORT_MODULES } from '@/lib/report-modules'
 import { MENU_STRUCTURE } from '@/lib/menu-structure' // [NEW]
 
 // Combine all modules for display
@@ -18,7 +21,10 @@ const ALL_MODULES = [
     ...PRODUCT_MODULES.map(m => ({ ...m, category: 'Sản phẩm' })),
     ...LOT_MODULES.map(m => ({ ...m, category: 'Quản lý LOT' })),
     ...DASHBOARD_MODULES.map(m => ({ ...m, category: 'Dashboard' })),
-    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' }))
+    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' })),
+    ...PRINT_MODULES.map(m => ({ ...m, category: 'In ấn' })),
+    ...QR_MODULES.map(m => ({ ...m, category: 'Quét mã QR' })),
+    ...REPORT_MODULES.map(m => ({ ...m, category: 'Báo cáo' }))
 ]
 
 interface SystemModuleConfigProps {
@@ -39,9 +45,12 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         lot: string[],
         dashboard: string[],
         utility: string[],
+        print: string[],
+        qr: string[],
+        report: string[],
         hidden_menus: string[] // [NEW]
     }>({
-        inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: [], hidden_menus: []
+        inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: [], print: [], qr: [], report: [], hidden_menus: []
     })
 
     const [loading, setLoading] = useState(false)
@@ -51,8 +60,8 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
     const [basicModuleIds, setBasicModuleIds] = useState<string[]>([])
 
     const fetchBasic = async () => {
-        const { data } = await supabase.from('app_modules').select('id').eq('is_basic', true)
-        if (data) setBasicModuleIds(data.map(x => x.id))
+        const { data } = await (supabase.from('app_modules' as any) as any).select('id').eq('is_basic', true)
+        if (data) setBasicModuleIds((data as any[]).map(x => x.id))
     }
 
     useEffect(() => {
@@ -99,7 +108,7 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
             const sys = data as any
 
             // Helper to get defaults ONLY if data is null/undefined
-            const getDefaults = (modules: any[], allModules: any[]) => {
+            const getDefaults = (modules: any, allModules: any[]) => {
                 if (modules === null || modules === undefined) {
                     return allModules.filter(m => m.is_basic).map(m => m.id)
                 }
@@ -126,6 +135,9 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
 
             let productList: string[] | null = null
             let utilityList: string[] | null = null
+            let printList: string[] | null = null
+            let qrList: string[] | null = null
+            let reportList: string[] | null = null
 
             if (sys.modules) {
                 if (Array.isArray(sys.modules)) {
@@ -134,7 +146,20 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                 } else if (typeof sys.modules === 'object') {
                     if (Array.isArray(sys.modules.product_modules)) productList = sys.modules.product_modules
                     if (Array.isArray(sys.modules.utility_modules)) utilityList = sys.modules.utility_modules
+                    if (Array.isArray(sys.modules.print_modules)) printList = sys.modules.print_modules
+                    if (Array.isArray(sys.modules.qr_modules)) qrList = sys.modules.qr_modules
+                    if (Array.isArray(sys.modules.report_modules)) reportList = sys.modules.report_modules
                 }
+            }
+
+            if (Array.isArray(sys.print_modules)) {
+                printList = sys.print_modules
+            }
+            if (Array.isArray(sys.qr_modules)) {
+                qrList = sys.qr_modules
+            }
+            if (Array.isArray(sys.report_modules)) {
+                reportList = sys.report_modules
             }
 
             // MERGE Logic: Only apply defaults if NULL (New Warehouse)
@@ -146,6 +171,9 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                 lot: getDefaults(lotList, LOT_MODULES),
                 dashboard: getDefaults(dashboardList, DASHBOARD_MODULES),
                 utility: getDefaults(utilityList || [], UTILITY_MODULES),
+                print: getDefaults(printList, PRINT_MODULES),
+                qr: getDefaults(qrList, QR_MODULES),
+                report: getDefaults(reportList, REPORT_MODULES),
                 hidden_menus: Array.isArray(sys.hidden_menus) ? sys.hidden_menus : [] // [NEW]
             })
         } catch (error: any) {
@@ -166,9 +194,9 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
     }, [companyId])
 
     const fetchCompanyLicenses = async () => {
-        const { data } = await supabase.from('companies').select('unlocked_modules').eq('id', companyId).single()
-        if (data && data.unlocked_modules) {
-            setCompanyLicenses(data.unlocked_modules)
+        const { data } = await (supabase.from('companies' as any) as any).select('unlocked_modules').eq('id', companyId).single()
+        if (data && (data as any).unlocked_modules) {
+            setCompanyLicenses((data as any).unlocked_modules)
         }
     }
 
@@ -181,6 +209,9 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         else if (category === 'Quản lý LOT') type = 'lot'
         else if (category === 'Dashboard') type = 'dashboard'
         else if (category === 'Tiện ích hệ thống' || category === 'Thông tin') type = 'utility'
+        else if (category === 'In ấn') type = 'print'
+        else if (category === 'Quét mã QR') type = 'qr'
+        else if (category === 'Báo cáo') type = 'report'
 
         if (!type) return
 
@@ -220,14 +251,20 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
             // 1. Update System Config
             const modulesJson = {
                 product_modules: config.product,
-                utility_modules: config.utility
+                utility_modules: config.utility,
+                print_modules: config.print,
+                qr_modules: config.qr,
+                report_modules: config.report
             }
 
-            const { error: sysError } = await supabase.from('systems').update({
+            const { error: sysError } = await (supabase.from('systems' as any) as any).update({
                 inbound_modules: config.inbound,
                 outbound_modules: config.outbound,
                 lot_modules: config.lot,
                 dashboard_modules: config.dashboard,
+                print_modules: config.print,
+                qr_modules: config.qr,
+                report_modules: config.report,
                 hidden_menus: config.hidden_menus, // [NEW]
                 modules: modulesJson
             }).eq('id', systemId)
@@ -246,7 +283,7 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         }
     }
 
-    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống', 'Thông tin', 'Menu Sidebar']
+    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống', 'Thông tin', 'In ấn', 'Quét mã QR', 'Báo cáo', 'Menu Sidebar']
 
     if (loading) {
         return <div className="flex justify-center p-10"><Loader2 className="animate-spin text-orange-500" size={32} /></div>
@@ -400,6 +437,9 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
                                         else if (cat === 'Quản lý LOT') isChecked = config.lot.includes(mod.id)
                                         else if (cat === 'Dashboard') isChecked = config.dashboard.includes(mod.id)
                                         else if (cat === 'Tiện ích hệ thống' || cat === 'Thông tin') isChecked = config.utility.includes(mod.id)
+                                        else if (cat === 'In ấn') isChecked = config.print.includes(mod.id)
+                                        else if (cat === 'Quét mã QR') isChecked = config.qr.includes(mod.id)
+                                        else if (cat === 'Báo cáo') isChecked = config.report.includes(mod.id)
 
                                         const isUnlocked = companyLicenses.includes(mod.id)
 

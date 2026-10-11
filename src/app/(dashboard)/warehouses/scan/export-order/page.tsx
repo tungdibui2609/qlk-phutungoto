@@ -41,7 +41,7 @@ interface TaskItem {
 
 export default function ExportOrderScanPage() {
     const { profile } = useUser()
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const { showToast } = useToast()
 
     // State
@@ -419,6 +419,18 @@ export default function ExportOrderScanPage() {
     // Stats
     const scannedCount = taskItems.filter(i => i.scanned).length
     const totalCount = taskItems.length
+
+    if (currentSystem && !hasModule('qr_export_order')) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+                <div className="w-20 h-20 bg-stone-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
+                    <FileText size={40} className="text-stone-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">Lệnh xuất (Quét QR)</h2>
+                <p className="text-stone-500 max-w-md">Tính năng chưa được kích hoạt cho kho này. Vui lòng vào Cài đặt → Cấu hình Phân hệ để bật.</p>
+            </div>
+        )
+    }
 
     return (
         <div className="h-[calc(100vh-64px)] flex flex-col bg-slate-50 dark:bg-slate-900 overflow-hidden relative">

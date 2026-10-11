@@ -19,6 +19,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
+import { useSystem } from '@/contexts/SystemContext'
 
 interface BankReportItem {
     id: string
@@ -54,6 +55,7 @@ function createBlankRows(count = 8): BankReportItem[] {
 function BankReportContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
+    const { hasModule } = useSystem()
 
     // Date filters (blank by default to match the paper template)
     const [dateFrom, setDateFrom] = useState(searchParams.get('from') || '')
@@ -62,6 +64,23 @@ function BankReportContent() {
     // Branches & Warehouse
     const [branches, setBranches] = useState<Branch[]>([])
     const [selectedBranch, setSelectedBranch] = useState<string>('Tất cả')
+
+    if (!hasModule('print_bank_report')) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8 bg-white dark:bg-stone-900 rounded-2xl shadow-sm border border-stone-200 dark:border-stone-800 m-6">
+                <div className="w-20 h-20 bg-slate-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
+                    <FileText size={40} className="text-slate-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">
+                    Phiếu ngân hàng
+                </h2>
+                <p className="text-stone-500 max-w-md">
+                    Module "Phiếu ngân hàng" chưa được bật cho kho này.
+                    Vui lòng vào Cài đặt {'>'} Phân hệ để kích hoạt.
+                </p>
+            </div>
+        )
+    }
 
     // Document texts matching user photo
     const [docTitle, setDocTitle] = useState('BÁO CÁO TỔNG HỢP NHẬP - XUẤT - TỒN')

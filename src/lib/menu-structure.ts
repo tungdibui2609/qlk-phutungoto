@@ -47,6 +47,8 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
             { id: 'order_types', name: 'Loại phiếu', icon: FileText },
             { id: 'qc', name: 'QC', icon: ShieldCheck },
             { id: 'work_areas', name: 'Khu vực', icon: MapPin },
+            { id: 'material_zones', name: 'Vùng trồng / Nguyên liệu', icon: MapPin },
+            { id: 'production_places', name: 'Nơi sản xuất / Nhà máy', icon: Factory },
             { id: 'members_teams', name: 'Thành viên & Đội', icon: Users },
         ]
     },

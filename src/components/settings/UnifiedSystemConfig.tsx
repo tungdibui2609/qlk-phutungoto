@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, Save, Package, Archive, Layers, LayoutDashboard, Cog, Check, Search, ShieldAlert, ShoppingBag, ShoppingCart, ChevronDown } from 'lucide-react'
+import { Loader2, Save, Package, Archive, Layers, LayoutDashboard, Cog, Check, Search, ShieldAlert, ShoppingBag, ShoppingCart, ChevronDown, Printer, QrCode, BarChart3 } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
@@ -13,6 +13,9 @@ import { PRODUCT_MODULES } from '@/lib/product-modules'
 import { LOT_MODULES } from '@/lib/lot-modules'
 import { DASHBOARD_MODULES } from '@/lib/dashboard-modules'
 import { UTILITY_MODULES } from '@/lib/utility-modules'
+import { PRINT_MODULES } from '@/lib/print-modules'
+import { QR_MODULES } from '@/lib/qr-modules'
+import { REPORT_MODULES } from '@/lib/report-modules'
 
 // Combine all modules for display
 const ALL_MODULES = [
@@ -21,7 +24,10 @@ const ALL_MODULES = [
     ...PRODUCT_MODULES.map(m => ({ ...m, category: 'Sản phẩm' })),
     ...LOT_MODULES.map(m => ({ ...m, category: 'Quản lý LOT' })),
     ...DASHBOARD_MODULES.map(m => ({ ...m, category: 'Dashboard' })),
-    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' }))
+    ...UTILITY_MODULES.map(m => ({ ...m, category: m.category === 'info' ? 'Thông tin' : 'Tiện ích hệ thống' })),
+    ...PRINT_MODULES.map(m => ({ ...m, category: 'In ấn' })),
+    ...QR_MODULES.map(m => ({ ...m, category: 'Quét mã QR' })),
+    ...REPORT_MODULES.map(m => ({ ...m, category: 'Báo cáo' }))
 ]
 
 export default function UnifiedSystemConfig() {
@@ -42,14 +48,29 @@ export default function UnifiedSystemConfig() {
         product: string[],
         lot: string[],
         dashboard: string[],
-        utility: string[]
+        utility: string[],
+        print: string[],
+        qr: string[],
+        report: string[]
     }>({
-        inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: []
+        inbound: [], outbound: [], product: [], lot: [], dashboard: [], utility: [], print: [], qr: [], report: []
     })
 
     const [saving, setSaving] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [activeCategory, setActiveCategory] = useState<string>('all')
+    const [basicModuleIds, setBasicModuleIds] = useState<string[]>([])
+
+    // Fetch dynamic definition of basic modules from DB
+    useEffect(() => {
+        const fetchBasic = async () => {
+            const { data } = await supabase.from('app_modules').select('id, is_basic')
+            if (data) {
+                setBasicModuleIds(data.filter((x: any) => x.is_basic).map((x: any) => x.id))
+            }
+        }
+        fetchBasic()
+    }, [])
 
     // Initialize selection
     useEffect(() => {
@@ -73,6 +94,24 @@ export default function UnifiedSystemConfig() {
             if (typeof m === 'object' && m !== null && !Array.isArray(m)) return (m as any).utility_modules || []
             return []
         }
+        const parsePrint = () => {
+            if (Array.isArray(currentSystem.print_modules)) return currentSystem.print_modules as string[]
+            const m = currentSystem.modules
+            if (typeof m === 'object' && m !== null && !Array.isArray(m)) return (m as any).print_modules || []
+            return []
+        }
+        const parseQr = () => {
+            if (Array.isArray(currentSystem.qr_modules)) return currentSystem.qr_modules as string[]
+            const m = currentSystem.modules
+            if (typeof m === 'object' && m !== null && !Array.isArray(m)) return (m as any).qr_modules || []
+            return []
+        }
+        const parseReport = () => {
+            if (Array.isArray(currentSystem.report_modules)) return currentSystem.report_modules as string[]
+            const m = currentSystem.modules
+            if (typeof m === 'object' && m !== null && !Array.isArray(m)) return (m as any).report_modules || []
+            return []
+        }
 
         setConfig({
             inbound: Array.isArray(currentSystem.inbound_modules) ? currentSystem.inbound_modules as string[] : [],
@@ -80,7 +119,10 @@ export default function UnifiedSystemConfig() {
             lot: Array.isArray(currentSystem.lot_modules) ? currentSystem.lot_modules as string[] : [],
             dashboard: Array.isArray(currentSystem.dashboard_modules) ? currentSystem.dashboard_modules as string[] : [],
             product: parseProducts(),
-            utility: parseUtility()
+            utility: parseUtility(),
+            print: parsePrint(),
+            qr: parseQr(),
+            report: parseReport()
         })
     }, [currentSystem])
 
@@ -94,6 +136,9 @@ export default function UnifiedSystemConfig() {
         else if (category === 'Quản lý LOT') type = 'lot'
         else if (category === 'Dashboard') type = 'dashboard'
         else if (category === 'Tiện ích hệ thống' || category === 'Thông tin') type = 'utility'
+        else if (category === 'In ấn') type = 'print'
+        else if (category === 'Quét mã QR') type = 'qr'
+        else if (category === 'Báo cáo') type = 'report'
 
         if (!type) return
 
@@ -111,23 +156,37 @@ export default function UnifiedSystemConfig() {
         try {
             const modulesJson = {
                 product_modules: config.product,
-                utility_modules: config.utility
+                utility_modules: config.utility,
+                print_modules: config.print,
+                qr_modules: config.qr,
+                report_modules: config.report
             }
 
-            const { error } = await supabase.from('systems').update({
+            let query = (supabase.from('systems' as any) as any).update({
                 inbound_modules: config.inbound,
                 outbound_modules: config.outbound,
                 lot_modules: config.lot,
                 dashboard_modules: config.dashboard,
+                print_modules: config.print,
+                qr_modules: config.qr,
+                report_modules: config.report,
                 modules: modulesJson
-            }).eq('code', selectedSystemCode)
+            })
+
+            if (currentSystem?.id) {
+                query = query.eq('id', currentSystem.id)
+            } else {
+                query = query.eq('code', selectedSystemCode)
+            }
+
+            const { error } = await query
 
             if (error) throw error
 
             // Trigger realtime update immediately
             await refreshSystems()
 
-            showToast(`Đã lưu cấu hình cho kho ${selectedSystemCode}`, 'success')
+            showToast(`Đã lưu cấu hình cho kho ${currentSystem?.name || selectedSystemCode}`, 'success')
 
         } catch (error: any) {
             console.error('Error saving config:', error)
@@ -137,7 +196,7 @@ export default function UnifiedSystemConfig() {
         }
     }
 
-    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống', 'Thông tin']
+    const categories = ['Nhập kho', 'Xuất kho', 'Sản phẩm', 'Quản lý LOT', 'Dashboard', 'Tiện ích hệ thống', 'Thông tin', 'In ấn', 'Quét mã QR', 'Báo cáo']
     const system = systems.find(s => s.code === selectedSystemCode)
 
     return (
@@ -270,11 +329,17 @@ export default function UnifiedSystemConfig() {
                             if (modules.length === 0) return null
 
                             // Check visibility
-                            const visibleModules = modules.filter(m => {
+                            const visibleModules = modules.map(m => {
+                                const isBasic = basicModuleIds.length > 0 ? basicModuleIds.includes(m.id) : !!m.is_basic
+                                return {
+                                    ...m,
+                                    is_basic: isBasic
+                                }
+                            }).filter(m => {
                                 const matchesSearch = !searchTerm || m.name.toLowerCase().includes(searchTerm.toLowerCase())
                                 const CORE_HIDDEN = ['inbound_basic', 'inbound_supplier', 'outbound_basic', 'outbound_customer', 'warehouse_name', 'images']
-                                const hasLicense = checkSubscription(m.id)
-                                return matchesSearch && !CORE_HIDDEN.includes(m.id) && hasLicense && !m.is_basic
+                                const hasLicense = checkSubscription(m.id) || m.is_basic
+                                return matchesSearch && !CORE_HIDDEN.includes(m.id) && hasLicense
                             })
 
                             if (visibleModules.length === 0) return null
@@ -288,6 +353,9 @@ export default function UnifiedSystemConfig() {
                                         {cat === 'Dashboard' && <LayoutDashboard size={18} className="text-stone-400" />}
                                         {cat === 'Tiện ích hệ thống' && <Cog size={18} className="text-stone-400" />}
                                         {cat === 'Thông tin' && <ShieldAlert size={18} className="text-stone-400" />}
+                                        {cat === 'In ấn' && <Printer size={18} className="text-stone-400" />}
+                                        {cat === 'Quét mã QR' && <QrCode size={18} className="text-stone-400" />}
+                                        {cat === 'Báo cáo' && <BarChart3 size={18} className="text-stone-400" />}
                                         {cat}
                                     </h3>
 
@@ -301,6 +369,9 @@ export default function UnifiedSystemConfig() {
                                             else if (cat === 'Quản lý LOT') isChecked = config.lot.includes(mod.id)
                                             else if (cat === 'Dashboard') isChecked = config.dashboard.includes(mod.id)
                                             else if (cat === 'Tiện ích hệ thống' || cat === 'Thông tin') isChecked = config.utility.includes(mod.id)
+                                            else if (cat === 'In ấn') isChecked = config.print.includes(mod.id)
+                                            else if (cat === 'Quét mã QR') isChecked = config.qr.includes(mod.id)
+                                            else if (cat === 'Báo cáo') isChecked = config.report.includes(mod.id)
 
                                             return (
                                                 <div

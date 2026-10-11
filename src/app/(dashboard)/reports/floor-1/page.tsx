@@ -45,9 +45,21 @@ async function fetchAll(table: string, filter?: (query: any) => any, customSelec
 }
 
 export default function Floor1ReportPage() {
-    const { systemType, currentSystem } = useSystem()
+    const { systemType, currentSystem, hasModule } = useSystem()
     const { showToast } = useToast()
     const [loading, setLoading] = useState(true)
+
+    if (currentSystem && !hasModule('report_floor_1')) {
+        return (
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
+                <div className="w-20 h-20 bg-stone-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
+                    <Layers size={40} className="text-stone-400" />
+                </div>
+                <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">Báo cáo tầng 1</h2>
+                <p className="text-stone-500 max-w-md">Tính năng chưa được kích hoạt cho kho này. Vui lòng vào Cài đặt → Cấu hình Phân hệ để bật.</p>
+            </div>
+        )
+    }
     const [searchTerm, setSearchTerm] = useState('')
     const [activeWarehouseId, setActiveWarehouseId] = useState<string>('all')
     const [activeAisleId, setActiveAisleId] = useState<string>('all')

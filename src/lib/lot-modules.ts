@@ -38,15 +38,19 @@ export const LOT_MODULES: LotModule[] = [
         id: 'oem_info',
         name: 'Thương hiệu & Khách OEM',
         description: 'Hiển thị trường nhập thương hiệu, nhãn hàng hoặc khách hàng OEM của lô hàng.',
-        icon: Tag,
-        is_basic: true
+        icon: Tag
     },
     {
         id: 'material_zone',
         name: 'Vùng nguyên liệu',
         description: 'Hiển thị trường nhập thông tin vùng nguyên liệu, vùng trồng của lô hàng.',
-        icon: MapPin,
-        is_basic: true
+        icon: MapPin
+    },
+    {
+        id: 'production_place',
+        name: 'Nơi sản xuất',
+        description: 'Hiển thị trường nhập thông tin nơi sản xuất, nhà máy hoặc cơ sở chế biến của lô hàng.',
+        icon: Factory
     },
     {
         id: 'supplier_info',
