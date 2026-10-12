@@ -1,11 +1,13 @@
 'use client'
 
 import React, { useMemo, useState, useEffect } from 'react'
-import { Sparkles, Combine, AlertCircle, ArrowRight, HelpCircle, Loader2, ChevronDown, Package } from 'lucide-react'
+import { Sparkles, Combine, AlertCircle, ArrowRight, HelpCircle, Loader2, ChevronDown, Package, FileSpreadsheet, Maximize2 } from 'lucide-react'
 import { Lot } from '../_hooks/useLotManagement'
 import { decodeSTT } from '@/lib/numberUtils'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
+import { exportAllOddLotsToExcel, exportSingleProductOddLotsToExcel } from '@/lib/oddLotExcelExport'
+import { OddLotDetailModal } from './OddLotDetailModal'
 
 interface OddLotSuggestionsProps {
     lots: Lot[]
@@ -21,7 +23,7 @@ interface ZoneItem {
     is_hall: boolean | null
 }
 
-interface OddLotSuggestion {
+export interface OddLotSuggestion {
     productId: string
     productName: string
     productSku: string
@@ -46,6 +48,11 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
     // Quản lý ẩn/hiện chi tiết theo sản phẩm
     const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({})
     
+    // Quản lý mở modal trang chi tiết cho 1 mặt hàng
+    const [selectedDetailProduct, setSelectedDetailProduct] = useState<OddLotSuggestion | null>(null)
+    const [isExportingAll, setIsExportingAll] = useState(false)
+    const [exportingProductId, setExportingProductId] = useState<string | null>(null)
+
     // State để lưu toàn bộ lot fetch từ DB (không phân trang)
     const [allLots, setAllLots] = useState<Lot[]>([])
     const [isLoadingAll, setIsLoadingAll] = useState(true)
@@ -306,6 +313,38 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
         })
     }
 
+    // Xử lý xuất Excel TOÀN BỘ các gợi ý ghép lot lẻ
+    const handleExportAll = async () => {
+        try {
+            setIsExportingAll(true)
+            await exportAllOddLotsToExcel({
+                suggestions,
+                systemName: currentSystem?.name || 'Kho'
+            })
+        } catch (error) {
+            console.error('Lỗi khi xuất Excel toàn bộ gợi ý lot lẻ:', error)
+        } finally {
+            setIsExportingAll(false)
+        }
+    }
+
+    // Xử lý xuất Excel cho riêng 1 mặt hàng
+    const handleExportSingle = async (suggestion: OddLotSuggestion, e?: React.MouseEvent) => {
+        if (e) e.stopPropagation()
+        try {
+            setExportingProductId(suggestion.productId)
+            await exportSingleProductOddLotsToExcel({
+                suggestion,
+                systemName: currentSystem?.name || 'Kho',
+                checkedLotItemIds: checkedLotItemIds[suggestion.productId]
+            })
+        } catch (error) {
+            console.error('Lỗi khi xuất Excel mặt hàng:', error)
+        } finally {
+            setExportingProductId(null)
+        }
+    }
+
     if (isLoadingAll) {
         return (
             <div className="bg-gradient-to-r from-indigo-50/60 to-blue-50/60 dark:from-indigo-950/20 dark:to-slate-900/40 rounded-3xl border border-indigo-100 dark:border-indigo-950/50 p-6 shadow-sm">
@@ -342,7 +381,7 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
 
     return (
         <div className="bg-gradient-to-r from-indigo-50/60 to-blue-50/60 dark:from-indigo-950/20 dark:to-slate-900/40 rounded-3xl border border-indigo-100 dark:border-indigo-950/50 p-6 shadow-sm space-y-4">
-            <div className="flex items-center justify-between border-b border-indigo-100/50 dark:border-indigo-950/30 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100/50 dark:border-indigo-950/30 pb-3">
                 <div className="flex items-center gap-2.5">
                     <div className="p-2 rounded-xl bg-indigo-500 text-white shadow-md shadow-indigo-500/20 animate-pulse">
                         <Combine size={20} />
@@ -358,6 +397,19 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                             Phát hiện các lô chưa đầy pallet có thể ghép lại với nhau. Hãy tích chọn các lô có cùng mã phụ (tag) để ghép.
                         </p>
                     </div>
+                </div>
+
+                {/* Nút Xuất Excel toàn bộ */}
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                    <button
+                        onClick={handleExportAll}
+                        disabled={isExportingAll}
+                        className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer disabled:opacity-60"
+                        title="Xuất file Excel toàn bộ các mặt hàng và lot lẻ"
+                    >
+                        {isExportingAll ? <Loader2 size={15} className="animate-spin" /> : <FileSpreadsheet size={15} />}
+                        <span>Xuất Excel toàn bộ</span>
+                    </button>
                 </div>
             </div>
 
@@ -377,7 +429,7 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
 
                     return (
                         <div key={suggestion.productId} className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-100 dark:border-slate-800 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                            {/* Header - Luôn hiển thị, click để toggle */}
+                            {/* Header - Luôn hiển thị, click để toggle accordion */}
                             <div 
                                 onClick={() => setExpandedProducts(prev => ({ ...prev, [suggestion.productId]: !prev[suggestion.productId] }))}
                                 className="flex items-center justify-between px-4 py-3 cursor-pointer select-none hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors"
@@ -397,13 +449,42 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                                         </div>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 ml-2">
                                     <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-2 py-1 rounded-lg border border-amber-100 dark:border-amber-900/30 hidden sm:inline-block">
                                         {suggestion.quantityPerPallet} {suggestion.productUnit}/Pallet
                                     </span>
                                     <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 px-2 py-1 rounded-lg border border-indigo-100 dark:border-indigo-800">
                                         {suggestion.suggestedLots.length} lot lẻ
                                     </span>
+
+                                    {/* Nút Xuất Excel riêng cho mặt hàng */}
+                                    <button
+                                        onClick={(e) => handleExportSingle(suggestion, e)}
+                                        disabled={exportingProductId === suggestion.productId}
+                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 text-[11px] font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                                        title="Xuất file Excel cho riêng mặt hàng này"
+                                    >
+                                        {exportingProductId === suggestion.productId ? (
+                                            <Loader2 size={13} className="animate-spin" />
+                                        ) : (
+                                            <FileSpreadsheet size={13} />
+                                        )}
+                                        <span className="hidden md:inline">Xuất Excel</span>
+                                    </button>
+
+                                    {/* Nút Xem chi tiết bảng lớn */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation()
+                                            setSelectedDetailProduct(suggestion)
+                                        }}
+                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-800/50 border border-indigo-200 dark:border-indigo-800 text-[11px] font-bold transition-all active:scale-95 cursor-pointer"
+                                        title="Mở trang chi tiết dạng bảng lớn, dễ nhìn"
+                                    >
+                                        <Maximize2 size={13} />
+                                        <span className="hidden md:inline">Chi tiết</span>
+                                    </button>
+
                                     <ChevronDown 
                                         size={16} 
                                         className={`text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} 
@@ -417,12 +498,24 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                                     <div className="space-y-2 mt-3">
                                         <div className="flex items-center justify-between px-1 mb-1">
                                             <div className="text-[10px] font-black uppercase text-slate-400">Các lô hàng lẻ hiện tại:</div>
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); handleToggleAllLotItems(suggestion.productId, allSuggestedItemIds); }}
-                                                className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
-                                            >
-                                                {isAllChecked ? 'Bỏ chọn hết' : 'Tích chọn hết'}
-                                            </button>
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation()
+                                                        setSelectedDetailProduct(suggestion)
+                                                    }}
+                                                    className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer flex items-center gap-1"
+                                                >
+                                                    <Maximize2 size={11} />
+                                                    Xem bảng lớn
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleToggleAllLotItems(suggestion.productId, allSuggestedItemIds); }}
+                                                    className="text-[10px] font-bold uppercase text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                                                >
+                                                    {isAllChecked ? 'Bỏ chọn hết' : 'Tích chọn hết'}
+                                                </button>
+                                            </div>
                                         </div>
                                         <div className="space-y-1.5 max-h-[280px] overflow-y-auto pr-1">
                                             {suggestion.suggestedLots.map((item) => {
@@ -513,27 +606,42 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                                             </div>
                                         </div>
 
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                if (canMerge) {
-                                                    const targetLot = checkedLots[0].lot
-                                                    const sourceLots = checkedLots.slice(1).map(l => l.lot).filter(l => l.id !== targetLot.id)
-                                                    const sourceLotIds = sourceLots.map(l => l.id)
-                                                    onMerge(targetLot, sourceLotIds, sourceLots)
-                                                }
-                                            }}
-                                            disabled={!canMerge}
-                                            className={`flex items-center justify-center gap-1.5 px-4 py-2 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0 cursor-pointer ${
-                                                canMerge 
-                                                    ? 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/10' 
-                                                    : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
-                                            }`}
-                                        >
-                                            <Combine size={14} />
-                                            Ghép ngay
-                                            <ArrowRight size={12} />
-                                        </button>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                onClick={(e) => handleExportSingle(suggestion, e)}
+                                                disabled={exportingProductId === suggestion.productId}
+                                                className="flex items-center gap-1 px-3 py-2 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/50 border border-emerald-200 dark:border-emerald-800 rounded-xl text-xs font-bold transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                                            >
+                                                {exportingProductId === suggestion.productId ? (
+                                                    <Loader2 size={13} className="animate-spin" />
+                                                ) : (
+                                                    <FileSpreadsheet size={13} />
+                                                )}
+                                                <span>Xuất Excel</span>
+                                            </button>
+
+                                            <button
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    if (canMerge) {
+                                                        const targetLot = checkedLots[0].lot
+                                                        const sourceLots = checkedLots.slice(1).map(l => l.lot).filter(l => l.id !== targetLot.id)
+                                                        const sourceLotIds = sourceLots.map(l => l.id)
+                                                        onMerge(targetLot, sourceLotIds, sourceLots)
+                                                    }
+                                                }}
+                                                disabled={!canMerge}
+                                                className={`flex items-center justify-center gap-1.5 px-4 py-2 text-white rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0 cursor-pointer ${
+                                                    canMerge 
+                                                        ? 'bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-500/10' 
+                                                        : 'bg-slate-300 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed'
+                                                }`}
+                                            >
+                                                <Combine size={14} />
+                                                Ghép ngay
+                                                <ArrowRight size={12} />
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -541,6 +649,19 @@ export function OddLotSuggestions({ lots, products, zones, onMerge, isSanxuat = 
                     )
                 })}
             </div>
+
+            {/* Modal hiển thị chi tiết dạng bảng lớn, dễ nhìn cho 1 mặt hàng */}
+            {selectedDetailProduct && (
+                <OddLotDetailModal
+                    isOpen={!!selectedDetailProduct}
+                    onClose={() => setSelectedDetailProduct(null)}
+                    suggestion={selectedDetailProduct}
+                    checkedItemIds={checkedLotItemIds[selectedDetailProduct.productId] || []}
+                    onToggleItem={handleToggleLotItem}
+                    onToggleAll={handleToggleAllLotItems}
+                    onMerge={onMerge}
+                />
+            )}
         </div>
     )
 }
