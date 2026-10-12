@@ -351,13 +351,27 @@ function decodeBoxItem(box: any, dictMap: Record<string, Record<string, string>>
     }
 
     // Trích xuất các trường tóm tắt tiện dụng
-    const fruitType = l1Segments.find(s => s.key === 'fruit_type')?.value || ''
-    const freezeStyle = l1Segments.find(s => s.key === 'freeze_style')?.value || ''
-    const variety = l1Segments.find(s => s.key === 'variety')?.value || ''
-    const productGrade = l1Segments.find(s => s.key === 'product_grade')?.value || ''
-    const packageSpec = l1Segments.find(s => s.key === 'package_spec')?.value || meta.spec || '---'
-    const freezeMethod = l1Segments.find(s => s.key === 'freeze_method')?.value || '---'
-    const customerQuality = l1Segments.find(s => s.key === 'customer_quality')?.value || '---'
+    let fruitType = l1Segments.find(s => s.key === 'fruit_type')?.value || ''
+    let freezeStyle = l1Segments.find(s => s.key === 'freeze_style')?.value || ''
+    let variety = l1Segments.find(s => s.key === 'variety')?.value || ''
+    let productGrade = l1Segments.find(s => s.key === 'product_grade')?.value || ''
+    let packageSpec = l1Segments.find(s => s.key === 'package_spec')?.value || meta.spec || '---'
+    let freezeMethod = l1Segments.find(s => s.key === 'freeze_method')?.value || '---'
+    let customerQuality = l1Segments.find(s => s.key === 'customer_quality')?.value || '---'
+
+    // Chuẩn hóa chính xác cho ngoại lệ 12 số trọn gói (tránh nhầm ký tự 8-9 thành quy cách túi/thùng)
+    if (isSpecial12 && special12Name) {
+        // Ví dụ: "TP cấp đông sầu riêng múi monthong C - Hàng có hạt - Hầm đông"
+        const nameParts = special12Name.split(' - ').map((s: string) => s.trim())
+        if (nameParts.length >= 3) {
+            packageSpec = nameParts[1] // "Hàng có hạt"
+            freezeMethod = nameParts[2] // "Hầm đông"
+        } else if (nameParts.length === 2) {
+            packageSpec = nameParts[1]
+        } else {
+            packageSpec = 'Ngoại lệ trọn gói'
+        }
+    }
 
     const factory = l2Segments.find(s => s.key === 'factory')?.value || meta.shift_group || '---'
     
@@ -450,6 +464,8 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
     const [selectedBoxForDetail, setSelectedBoxForDetail] = useState<any | null>(null)
     const [copiedBoxCode, setCopiedBoxCode] = useState<string | null>(null)
     const [showBannerStampDetails, setShowBannerStampDetails] = useState(false)
+    const [showBannerTechnicalL1, setShowBannerTechnicalL1] = useState(false)
+    const [showBoxTechnicalL1, setShowBoxTechnicalL1] = useState(false)
 
     // Cấu hình con dấu & từ điển từ Supabase
     const [activeFormat, setActiveFormat] = useState<any>(null)
@@ -813,10 +829,15 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                                                 <Sparkles size={13} />
                                             </span>
                                             <div>
-                                                <div className="text-[10px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300">
-                                                    Thông Tin Thành Phẩm Chuẩn Hóa Theo Con Dấu / Tem
+                                                <div className="text-[10px] font-black uppercase tracking-wider text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5 flex-wrap">
+                                                    <span>Thông Tin Thành Phẩm Chuẩn Hóa Theo Con Dấu / Tem</span>
+                                                    {stats.firstDecoded.isSpecial12 && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                                            ⭐ Ngoại lệ ({stats.firstDecoded.special12Code})
+                                                        </span>
+                                                    )}
                                                 </div>
-                                                <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                                                <h4 className="text-sm sm:text-base font-black text-slate-900 dark:text-white mt-0.5">
                                                     {stats.firstDecoded.productTitle}
                                                 </h4>
                                             </div>
@@ -855,24 +876,93 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                                                     <span className="flex items-center gap-1.5">
                                                         <Box size={14} className="text-amber-400" /> KẾT QUẢ GIẢI MÃ DÒNG 1:
                                                     </span>
-                                                    <span className="text-[10px] font-normal text-slate-400 lowercase">màu tương ứng với đoạn mã</span>
+                                                    {stats.firstDecoded.isSpecial12 ? (
+                                                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80">
+                                                            ⭐ Áp dụng quy cách ngoại lệ
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-[10px] font-normal text-slate-400 lowercase">màu tương ứng với đoạn mã</span>
+                                                    )}
                                                 </div>
-                                                <div className="space-y-1.5">
-                                                    {stats.firstDecoded.l1Segments.map((seg: any, idx: number) => (
-                                                        <div 
-                                                            key={idx}
-                                                            className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-950/80 border border-slate-800"
-                                                        >
-                                                            <span className={`px-2.5 py-0.5 rounded-lg font-mono font-black text-xs border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
-                                                                {seg.code}
-                                                            </span>
-                                                            <span className="text-slate-400 text-xs shrink-0 font-medium">{seg.name}:</span>
-                                                            <strong className={`text-xs font-bold truncate ml-auto ${seg.theme.textClass}`}>
-                                                                {seg.value}
-                                                            </strong>
+
+                                                {/* Ngoại lệ 12 số */}
+                                                {stats.firstDecoded.isSpecial12 ? (
+                                                    <div className="space-y-2.5">
+                                                        <div className="p-3 rounded-xl bg-gradient-to-br from-emerald-950/90 to-slate-900 border border-emerald-500/60 text-emerald-100 shadow-sm space-y-2">
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-mono text-[10px] font-black">
+                                                                        12 SỐ ĐẦU
+                                                                    </span>
+                                                                    <span className="text-xs font-black text-emerald-400">
+                                                                        ⭐ QUY CÁCH NGOẠI LỆ ƯU TIÊN
+                                                                    </span>
+                                                                </div>
+                                                                <span className="font-mono text-xs font-bold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700/60">
+                                                                    {stats.firstDecoded.special12Code}
+                                                                </span>
+                                                            </div>
+                                                            <div>
+                                                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                                                                    Tên sản phẩm &amp; Quy cách trọn gói:
+                                                                </p>
+                                                                <div className="text-sm font-black text-white mt-0.5 leading-snug">
+                                                                    {stats.firstDecoded.special12Name}
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-[10.5px] text-emerald-300/90 leading-relaxed bg-emerald-950/60 p-2 rounded-lg border border-emerald-800/60 flex items-start gap-1.5">
+                                                                <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
+                                                                <span>Dòng 1 khớp quy cách ngoại lệ trọn gói. Đã ẩn phân đoạn 14 số chuẩn để tránh sai lệch thông số.</span>
+                                                            </p>
                                                         </div>
-                                                    ))}
-                                                </div>
+
+                                                        {/* Nút bấm xem phân tích kỹ thuật nếu cần debug */}
+                                                        <div className="pt-0.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowBannerTechnicalL1(!showBannerTechnicalL1)}
+                                                                className="text-[10px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                                                            >
+                                                                <span>{showBannerTechnicalL1 ? '▲ Thu gọn phân tích 14 số' : '▼ Xem phân đoạn 14 số thô (Chỉ tham khảo)'}</span>
+                                                            </button>
+                                                            {showBannerTechnicalL1 && (
+                                                                <div className="space-y-1 mt-1.5 p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+                                                                    {stats.firstDecoded.l1Segments.map((seg: any, idx: number) => (
+                                                                        <div 
+                                                                            key={idx}
+                                                                            className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-950/80 border border-slate-800/80 opacity-60 hover:opacity-100 transition-opacity"
+                                                                        >
+                                                                            <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
+                                                                                {seg.code}
+                                                                            </span>
+                                                                            <span className="text-slate-400 text-[11px] shrink-0 font-medium">{seg.name}:</span>
+                                                                            <strong className={`text-[11px] font-bold truncate ml-auto ${seg.theme.textClass}`}>
+                                                                                {seg.value}
+                                                                            </strong>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1.5">
+                                                        {stats.firstDecoded.l1Segments.map((seg: any, idx: number) => (
+                                                            <div 
+                                                                key={idx}
+                                                                className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-950/80 border border-slate-800"
+                                                            >
+                                                                <span className={`px-2.5 py-0.5 rounded-lg font-mono font-black text-xs border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
+                                                                    {seg.code}
+                                                                </span>
+                                                                <span className="text-slate-400 text-xs shrink-0 font-medium">{seg.name}:</span>
+                                                                <strong className={`text-xs font-bold truncate ml-auto ${seg.theme.textClass}`}>
+                                                                    {seg.value}
+                                                                </strong>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Dòng 2 */}
@@ -1205,19 +1295,47 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                                                         {/* Dòng 1 */}
                                                         <div>
                                                             <div className="flex items-center justify-between text-[10px] font-mono mb-1">
-                                                                <span className="font-bold text-purple-700 dark:text-purple-300">Dòng 1 (14 số):</span>
+                                                                {decoded.isSpecial12 ? (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="font-bold text-emerald-700 dark:text-emerald-400">Dòng 1:</span>
+                                                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                                                            12 số ngoại lệ
+                                                                        </span>
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="font-bold text-purple-700 dark:text-purple-300">Dòng 1 (14 số):</span>
+                                                                )}
                                                                 <span className="font-black text-slate-800 dark:text-slate-200 tracking-wider">{decoded.stampLine1 || '---'}</span>
                                                             </div>
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {decoded.l1Segments.map((seg, sIdx) => (
-                                                                    <span
-                                                                        key={sIdx}
-                                                                        className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}
-                                                                        title={`${seg.name}: ${seg.value}`}
-                                                                    >
-                                                                        {seg.code}
-                                                                    </span>
-                                                                ))}
+                                                            <div className="flex flex-wrap gap-1 items-center">
+                                                                {decoded.isSpecial12 ? (
+                                                                    <>
+                                                                        <span
+                                                                            className="px-2 py-0.5 rounded text-[10px] font-mono font-black border bg-emerald-100 text-emerald-900 border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-200 dark:border-emerald-700 shadow-2xs"
+                                                                            title={`12 số ngoại lệ: ${decoded.special12Name}`}
+                                                                        >
+                                                                            {decoded.special12Code}
+                                                                        </span>
+                                                                        {decoded.stampLine1 && decoded.stampLine1.length > 12 && (
+                                                                            <span
+                                                                                className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border bg-rose-100 text-rose-900 border-rose-300 dark:bg-rose-950/80 dark:text-rose-200"
+                                                                                title="Đuôi phụ sau 12 số"
+                                                                            >
+                                                                                {decoded.stampLine1.substring(12)}
+                                                                            </span>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    decoded.l1Segments.map((seg, sIdx) => (
+                                                                        <span
+                                                                            key={sIdx}
+                                                                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}
+                                                                            title={`${seg.name}: ${seg.value}`}
+                                                                        >
+                                                                            {seg.code}
+                                                                        </span>
+                                                                    ))
+                                                                )}
                                                             </div>
                                                         </div>
 
@@ -1253,24 +1371,53 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                                                                         <span className="flex items-center gap-1.5">
                                                                             <Box size={13} className="text-amber-500" /> KẾT QUẢ GIẢI MÃ DÒNG 1:
                                                                         </span>
-                                                                        <span className="text-[9px] font-normal text-slate-400 lowercase hidden sm:inline">màu tương ứng với đoạn mã</span>
+                                                                        {decoded.isSpecial12 ? (
+                                                                            <span className="text-[9px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                                                                                ⭐ Áp dụng ngoại lệ
+                                                                            </span>
+                                                                        ) : (
+                                                                            <span className="text-[9px] font-normal text-slate-400 lowercase hidden sm:inline">màu tương ứng với đoạn mã</span>
+                                                                        )}
                                                                     </div>
-                                                                    <div className="space-y-1">
-                                                                        {decoded.l1Segments.map((seg, sIdx) => (
-                                                                            <div 
-                                                                                key={sIdx}
-                                                                                className="flex items-center gap-2 p-1.5 rounded-lg bg-white dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
-                                                                            >
-                                                                                <span className={`px-2 py-0.5 rounded font-mono font-black text-[10px] border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
-                                                                                    {seg.code}
+
+                                                                    {decoded.isSpecial12 ? (
+                                                                        <div className="p-2.5 rounded-xl bg-emerald-500/10 dark:bg-emerald-950/40 border border-emerald-500/30 text-emerald-900 dark:text-emerald-200 space-y-1.5">
+                                                                            <div className="flex items-center justify-between gap-1.5">
+                                                                                <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+                                                                                    12 SỐ ĐẦU TRỌN GÓI
                                                                                 </span>
-                                                                                <span className="text-slate-500 dark:text-slate-400 text-[10px] shrink-0 font-medium">{seg.name}:</span>
-                                                                                <strong className={`text-[11px] font-bold truncate ml-auto ${seg.theme.textClass}`}>
-                                                                                    {seg.value}
-                                                                                </strong>
+                                                                                <span className="font-mono text-[10px] font-bold text-emerald-800 dark:text-emerald-300">
+                                                                                    {decoded.special12Code}
+                                                                                </span>
                                                                             </div>
-                                                                        ))}
-                                                                    </div>
+                                                                            <div>
+                                                                                <span className="text-[9px] font-bold text-slate-400 uppercase block">Quy cách sản phẩm:</span>
+                                                                                <div className="text-xs font-black text-slate-900 dark:text-white leading-snug mt-0.5">
+                                                                                    {decoded.special12Name}
+                                                                                </div>
+                                                                            </div>
+                                                                            <p className="text-[10px] text-emerald-700 dark:text-emerald-300/90 leading-tight">
+                                                                                ✓ Khớp quy cách ngoại lệ trọn gói. Đã ẩn phân đoạn 14 số chuẩn để không làm sai lệch thông số đóng gói.
+                                                                            </p>
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="space-y-1">
+                                                                            {decoded.l1Segments.map((seg, sIdx) => (
+                                                                                <div 
+                                                                                    key={sIdx}
+                                                                                    className="flex items-center gap-2 p-1.5 rounded-lg bg-white dark:bg-slate-950/80 border border-slate-200/60 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 transition-colors"
+                                                                                >
+                                                                                    <span className={`px-2 py-0.5 rounded font-mono font-black text-[10px] border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
+                                                                                        {seg.code}
+                                                                                    </span>
+                                                                                    <span className="text-slate-500 dark:text-slate-400 text-[10px] shrink-0 font-medium">{seg.name}:</span>
+                                                                                    <strong className={`text-[11px] font-bold truncate ml-auto ${seg.theme.textClass}`}>
+                                                                                        {seg.value}
+                                                                                    </strong>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
 
                                                                 {/* Kết quả Dòng 2 */}
@@ -1433,12 +1580,16 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                                                                     {decoded.productTitle}
                                                                 </div>
                                                                 <div className="text-[10px] text-slate-500 dark:text-slate-400 truncate">
-                                                                    {[decoded.fruitType, decoded.variety, decoded.freezeStyle, decoded.productGrade].filter(p => p && p !== '---').join(' • ')}
+                                                                    {decoded.isSpecial12 ? (
+                                                                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">⭐ Quy cách ngoại lệ ({decoded.special12Code})</span>
+                                                                    ) : (
+                                                                        [decoded.fruitType, decoded.variety, decoded.freezeStyle, decoded.productGrade].filter(p => p && p !== '---').join(' • ')
+                                                                    )}
                                                                 </div>
                                                             </td>
                                                             <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-slate-700 dark:text-slate-300">
-                                                                <div>{decoded.packageSpec}</div>
-                                                                <div className="text-[10px] text-slate-400">{decoded.freezeMethod}</div>
+                                                                <div>{decoded.isSpecial12 ? 'Quy cách trọn gói' : decoded.packageSpec}</div>
+                                                                <div className="text-[10px] text-slate-400">{decoded.isSpecial12 ? 'Theo bảng ngoại lệ' : decoded.freezeMethod}</div>
                                                             </td>
                                                             <td className="px-3 py-2.5 whitespace-nowrap text-[11px] text-slate-700 dark:text-slate-300">
                                                                 <div>{decoded.factory}</div>
@@ -1593,24 +1744,92 @@ export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, se
                                             <span className="flex items-center gap-1.5">
                                                 <Box size={14} className="text-amber-400" /> KẾT QUẢ GIẢI MÃ DÒNG 1:
                                             </span>
-                                            <span className="text-[10px] font-normal text-slate-400 lowercase">màu tương ứng với đoạn mã</span>
+                                            {selectedBoxForDetail.decoded.isSpecial12 ? (
+                                                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80">
+                                                    ⭐ Áp dụng quy cách ngoại lệ
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-normal text-slate-400 lowercase">màu tương ứng với đoạn mã</span>
+                                            )}
                                         </div>
-                                        <div className="space-y-1.5">
-                                            {selectedBoxForDetail.decoded.l1Segments.map((seg: any, idx: number) => (
-                                                <div 
-                                                    key={idx}
-                                                    className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition-colors"
-                                                >
-                                                    <span className={`px-2.5 py-0.5 rounded-lg font-mono font-black text-xs border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
-                                                        {seg.code}
-                                                    </span>
-                                                    <span className="text-slate-400 text-xs shrink-0 font-medium">{seg.name}:</span>
-                                                    <strong className={`text-xs font-bold truncate ml-auto ${seg.theme.textClass}`}>
-                                                        {seg.value}
-                                                    </strong>
+
+                                        {selectedBoxForDetail.decoded.isSpecial12 ? (
+                                            <div className="space-y-2.5">
+                                                <div className="p-3.5 rounded-xl bg-gradient-to-br from-emerald-950/90 to-slate-900 border border-emerald-500/60 text-emerald-100 shadow-sm space-y-2">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-mono text-[10px] font-black">
+                                                                12 SỐ ĐẦU
+                                                            </span>
+                                                            <span className="text-xs font-black text-emerald-400">
+                                                                ⭐ QUY CÁCH NGOẠI LỆ ƯU TIÊN
+                                                            </span>
+                                                        </div>
+                                                        <span className="font-mono text-xs font-bold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700/60">
+                                                            {selectedBoxForDetail.decoded.special12Code}
+                                                        </span>
+                                                    </div>
+                                                    <div>
+                                                        <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                                                            Tên sản phẩm &amp; Quy cách trọn gói:
+                                                        </p>
+                                                        <div className="text-sm font-black text-white mt-0.5 leading-snug">
+                                                            {selectedBoxForDetail.decoded.special12Name}
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[10.5px] text-emerald-300/90 leading-relaxed bg-emerald-950/60 p-2 rounded-lg border border-emerald-800/60 flex items-start gap-1.5">
+                                                        <CheckCircle2 size={13} className="text-emerald-400 shrink-0 mt-0.5" />
+                                                        <span>Dòng 1 khớp quy cách ngoại lệ trọn gói. Đã ẩn phân đoạn 14 số chuẩn để tránh sai lệch thông số.</span>
+                                                    </p>
                                                 </div>
-                                            ))}
-                                        </div>
+
+                                                {/* Nút bấm xem phân tích kỹ thuật nếu cần debug */}
+                                                <div className="pt-0.5">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setShowBoxTechnicalL1(!showBoxTechnicalL1)}
+                                                        className="text-[10px] font-semibold text-slate-400 hover:text-white flex items-center gap-1 transition-colors cursor-pointer"
+                                                    >
+                                                        <span>{showBoxTechnicalL1 ? '▲ Thu gọn phân tích 14 số' : '▼ Xem phân đoạn 14 số thô (Chỉ tham khảo)'}</span>
+                                                    </button>
+                                                    {showBoxTechnicalL1 && (
+                                                        <div className="space-y-1 mt-1.5 p-2 rounded-lg bg-slate-950/60 border border-slate-800">
+                                                            {selectedBoxForDetail.decoded.l1Segments.map((seg: any, idx: number) => (
+                                                                <div 
+                                                                    key={idx}
+                                                                    className="flex items-center gap-2 p-1.5 rounded-lg bg-slate-950/80 border border-slate-800/80 opacity-60 hover:opacity-100 transition-opacity"
+                                                                >
+                                                                    <span className={`px-2 py-0.5 rounded font-mono font-bold text-[10px] border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
+                                                                        {seg.code}
+                                                                    </span>
+                                                                    <span className="text-slate-400 text-[11px] shrink-0 font-medium">{seg.name}:</span>
+                                                                    <strong className={`text-[11px] font-bold truncate ml-auto ${seg.theme.textClass}`}>
+                                                                        {seg.value}
+                                                                    </strong>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-1.5">
+                                                {selectedBoxForDetail.decoded.l1Segments.map((seg: any, idx: number) => (
+                                                    <div 
+                                                        key={idx}
+                                                        className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-950/80 border border-slate-800 hover:border-slate-700 transition-colors"
+                                                    >
+                                                        <span className={`px-2.5 py-0.5 rounded-lg font-mono font-black text-xs border shrink-0 ${seg.theme.bgClass} ${seg.theme.textClass} ${seg.theme.borderClass}`}>
+                                                            {seg.code}
+                                                        </span>
+                                                        <span className="text-slate-400 text-xs shrink-0 font-medium">{seg.name}:</span>
+                                                        <strong className={`text-xs font-bold truncate ml-auto ${seg.theme.textClass}`}>
+                                                            {seg.value}
+                                                        </strong>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
                                     </div>
 
                                     {/* Cột 2: KẾT QUẢ GIẢI MÃ DÒNG 2 */}

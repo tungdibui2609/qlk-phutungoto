@@ -97,10 +97,14 @@ const DEFAULT_DICT: Record<string, Record<string, string>> = {
     customer_quality: { '0': 'Không phân chia', '1': 'Xuất khẩu Trung Quốc', '2': 'Xuất khẩu Mỹ' },
     factory: { '1': 'Nhà máy Tiền Giang', '2': 'Nhà máy Đắk Lắk' },
     province: { '66': 'Đắk Lắk', '63': 'Tiền Giang', '64': 'Bến Tre' },
-    supplier: { '001': 'HTX Nông Nghiệp Krông Pắc' }
+    supplier: { '001': 'HTX Nông Nghiệp Krông Pắc' },
+    special_12: { 
+        '102010402001': 'TP cấp đông sầu riêng múi monthong C - Hàng có hạt - Hầm đông' 
+    }
 }
 
 const DEMO_SAMPLES = [
+    { label: 'Quy cách ngoại lệ: Monthong C Múi có hạt (12 số)', l1: '102010402001-0', l2: '2120908092600166' },
     { label: 'Sầu riêng Monthong Cấp đông A (Đắk Lắk)', l1: '102010204001-0', l2: '2120908092600166' },
     { label: 'Sầu riêng Ri6 Nguyên quả VIP (Tiền Giang)', l1: '101020101002-0', l2: '1151010102600163' }
 ]
@@ -119,6 +123,7 @@ function StampCheckerContent() {
     const [activeFormat, setActiveFormat] = useState<any>(null)
     const [dictMap, setDictMap] = useState<Record<string, Record<string, string>>>(DEFAULT_DICT)
     const [copiedLink, setCopiedLink] = useState(false)
+    const [showTechnicalL1, setShowTechnicalL1] = useState(false)
 
     // Camera states
     const [isCameraOpen, setIsCameraOpen] = useState(false)
@@ -255,8 +260,24 @@ function StampCheckerContent() {
         })
     }, [line2, l2Config, dictMap])
 
+    // Kiểm tra trường hợp ngoại lệ ưu tiên (12 ký tự số đầu tiên của Dòng 1)
+    const digitsOnlyL1 = useMemo(() => (line1 || '').trim().replace(/[^0-9]/g, ''), [line1])
+    const special12Match = useMemo(() => {
+        if (digitsOnlyL1.length >= 12) {
+            const c12 = digitsOnlyL1.substring(0, 12)
+            const matchName = dictMap['special_12']?.[c12] || DEFAULT_DICT['special_12']?.[c12]
+            if (matchName) {
+                return { code: c12, name: matchName }
+            }
+        }
+        return null
+    }, [digitsOnlyL1, dictMap])
+
     // Product Title
     const productTitle = useMemo(() => {
+        if (special12Match) {
+            return special12Match.name
+        }
         const fruit = decodedLine1.find((d: DecodedField) => d.field.key === 'fruit_type')?.value || ''
         const variety = decodedLine1.find((d: DecodedField) => d.field.key === 'variety')?.value || ''
         const style = decodedLine1.find((d: DecodedField) => d.field.key === 'freeze_style')?.value || ''
@@ -264,7 +285,7 @@ function StampCheckerContent() {
 
         const parts = [fruit, variety, style, grade].filter(p => p && !p.startsWith('Mã ?') && !p.startsWith('Chưa'))
         return parts.length > 0 ? parts.join(' • ') : 'Sản phẩm chưa xác định'
-    }, [decodedLine1])
+    }, [special12Match, decodedLine1])
 
     // Handle Search click
     const handleDoSearch = (l1?: string, l2?: string) => {
@@ -530,17 +551,36 @@ function StampCheckerContent() {
                                     <span className="font-mono text-slate-500">{line1} / {line2}</span>
                                 </div>
 
-                                <div className="flex flex-wrap gap-1.5">
-                                    {decodedLine1.map(({ code, theme, field }: DecodedField, i: number) => (
-                                        <span 
-                                            key={i} 
-                                            className="px-2 py-0.5 rounded-md text-xs font-mono font-black text-white shadow-2xs"
-                                            style={{ backgroundColor: theme.hexPreview }}
-                                            title={field.name}
-                                        >
-                                            {code}
-                                        </span>
-                                    ))}
+                                <div className="flex flex-wrap gap-1.5 items-center">
+                                    {special12Match ? (
+                                        <>
+                                            <span 
+                                                className="px-2.5 py-0.5 rounded-md text-xs font-mono font-black text-white bg-emerald-600 shadow-2xs border border-emerald-400"
+                                                title="12 số ngoại lệ ưu tiên số 1"
+                                            >
+                                                {special12Match.code}
+                                            </span>
+                                            {line1.includes('-') && (
+                                                <span 
+                                                    className="px-1.5 py-0.5 rounded-md text-xs font-mono font-black text-white bg-rose-600 shadow-2xs"
+                                                    title="Chất lượng theo KH"
+                                                >
+                                                    -{line1.split('-')[1]}
+                                                </span>
+                                            )}
+                                        </>
+                                    ) : (
+                                        decodedLine1.map(({ code, theme, field }: DecodedField, i: number) => (
+                                            <span 
+                                                key={i} 
+                                                className="px-2 py-0.5 rounded-md text-xs font-mono font-black text-white shadow-2xs"
+                                                style={{ backgroundColor: theme.hexPreview }}
+                                                title={field.name}
+                                            >
+                                                {code}
+                                            </span>
+                                        ))
+                                    )}
                                     <span className="px-1 text-slate-500 font-bold self-center">|</span>
                                     {decodedLine2.map(({ code, theme, field }: DecodedField, i: number) => (
                                         <span 
@@ -560,18 +600,83 @@ function StampCheckerContent() {
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Cột 1: Tiêu chuẩn sản phẩm */}
                             <div className="p-4 sm:p-5 rounded-3xl bg-slate-900 border border-slate-800 space-y-3">
-                                <h3 className="text-xs font-black text-purple-400 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-800">
-                                    <Box size={14} /> Tiêu chuẩn sản phẩm (Dòng 1)
-                                </h3>
-
-                                <div className="space-y-2">
-                                    {decodedLine1.map(({ field, value }: DecodedField, idx: number) => (
-                                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs">
-                                            <span className="text-slate-400 text-[11px]">{field.name}:</span>
-                                            <strong className="text-white font-bold">{value}</strong>
-                                        </div>
-                                    ))}
+                                <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                                    <h3 className="text-xs font-black text-purple-400 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Box size={14} /> Tiêu chuẩn sản phẩm (Dòng 1)
+                                    </h3>
+                                    {special12Match && (
+                                        <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/80">
+                                            ⭐ Áp dụng quy cách ngoại lệ
+                                        </span>
+                                    )}
                                 </div>
+
+                                {special12Match ? (
+                                    <div className="space-y-3">
+                                        <div className="p-3.5 rounded-2xl bg-gradient-to-br from-emerald-950/90 to-slate-900 border border-emerald-500/60 text-emerald-100 shadow-md space-y-2">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-mono text-[10px] font-black">
+                                                        12 SỐ ĐẦU
+                                                    </span>
+                                                    <span className="text-xs font-black text-emerald-400">
+                                                        ⭐ QUY CÁCH NGOẠI LỆ ƯU TIÊN
+                                                    </span>
+                                                </div>
+                                                <span className="font-mono text-xs font-bold text-emerald-300 bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-700/60">
+                                                    {special12Match.code}
+                                                </span>
+                                            </div>
+
+                                            <div>
+                                                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">
+                                                    Tên sản phẩm &amp; Quy cách trọn gói:
+                                                </p>
+                                                <h4 className="text-sm font-black text-white mt-0.5 leading-snug">
+                                                    {special12Match.name}
+                                                </h4>
+                                            </div>
+
+                                            <p className="text-[11px] text-emerald-300/90 leading-relaxed bg-emerald-950/60 p-2.5 rounded-lg border border-emerald-800/60 flex items-start gap-2">
+                                                <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+                                                <span>
+                                                    Dòng 1 khớp 12 ký tự ngoại lệ. Hệ thống ưu tiên giải mã trọn gói thông số sản phẩm và ẩn phân đoạn khuôn 14 số chuẩn để tránh thông số sai lệch (như nhầm sang quy cách đóng gói).
+                                                </span>
+                                            </p>
+                                        </div>
+
+                                        {/* Nút bấm xem phân tích kỹ thuật nếu muốn tham khảo */}
+                                        <div className="pt-1 border-t border-slate-800">
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowTechnicalL1(!showTechnicalL1)}
+                                                className="text-[11px] font-semibold text-slate-400 hover:text-white flex items-center gap-1.5 transition-colors cursor-pointer"
+                                            >
+                                                <span>{showTechnicalL1 ? '▲ Thu gọn phân tích khuôn 14 số' : '▼ Xem phân tích thử nghiệm theo khuôn 14 số chuẩn (Chỉ tham khảo)'}</span>
+                                            </button>
+
+                                            {showTechnicalL1 && (
+                                                <div className="space-y-1.5 mt-2.5 p-2.5 rounded-xl bg-slate-950/70 border border-slate-800">
+                                                    {decodedLine1.map(({ field, value }: DecodedField, idx: number) => (
+                                                        <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-900/80 border border-slate-800/80 text-xs opacity-60 hover:opacity-100 transition-opacity">
+                                                            <span className="text-slate-400 text-[11px]">{field.name}:</span>
+                                                            <strong className="text-white font-bold">{value}</strong>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        {decodedLine1.map(({ field, value }: DecodedField, idx: number) => (
+                                            <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs">
+                                                <span className="text-slate-400 text-[11px]">{field.name}:</span>
+                                                <strong className="text-white font-bold">{value}</strong>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
 
                             {/* Cột 2: Truy xuất nguồn gốc */}

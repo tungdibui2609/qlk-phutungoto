@@ -264,16 +264,16 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                 {/* Content */}
                 <div className="p-6 overflow-y-auto custom-scrollbar flex-1">
                     <div className="space-y-6">
-                        {/* Top Grid: Dates & Location */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                            {isModuleEnabled('inbound_date') && (
+                        {/* Top Grid: Dates */}
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {isModuleEnabled('raw_material_date') && (
                                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                        <Calendar size={14} />
-                                        <span className="text-[10px] font-bold uppercase tracking-wider">Ngày nhập</span>
+                                        <Calendar size={14} className="text-emerald-500" />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Ngày nguyên liệu</span>
                                     </div>
                                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                                        {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                        {lot.raw_material_date ? new Date(lot.raw_material_date).toLocaleDateString('vi-VN') : '--/--/----'}
                                     </p>
                                 </div>
                             )}
@@ -290,7 +290,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                         <div className="flex items-center justify-between text-slate-400 mb-1.5">
                                             <div className="flex items-center gap-2">
-                                                <Factory size={14} />
+                                                <Factory size={14} className="text-orange-500" />
                                                 <span className="text-[10px] font-bold uppercase tracking-wider">Ngày sản xuất</span>
                                             </div>
                                             {allDates.length > 1 && (
@@ -321,7 +321,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                             {isModuleEnabled('packaging_date') && (
                                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                        <Package size={14} />
+                                        <Package size={14} className="text-blue-500" />
                                         <span className="text-[10px] font-bold uppercase tracking-wider">Đóng bao bì</span>
                                     </div>
                                     <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
@@ -329,9 +329,20 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     </p>
                                 </div>
                             )}
+                            {isModuleEnabled('inbound_date') && (
+                                <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
+                                    <div className="flex items-center gap-2 text-slate-400 mb-1.5">
+                                        <Calendar size={14} className="text-indigo-500" />
+                                        <span className="text-[10px] font-bold uppercase tracking-wider">Ngày nhập kho</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                                        {lot.inbound_date ? new Date(lot.inbound_date).toLocaleDateString('vi-VN') : '--/--/----'}
+                                    </p>
+                                </div>
+                            )}
 
                             {/* Fallback for created_at if no date modules are enabled */}
-                            {!isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
+                            {!isModuleEnabled('raw_material_date') && !isModuleEnabled('packaging_date') && !isModuleEnabled('peeling_date') && !isModuleEnabled('inbound_date') && (
                                 <div className="p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800">
                                     <div className="flex items-center gap-2 text-slate-400 mb-1.5">
                                         <Calendar size={14} />
@@ -342,24 +353,30 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     </p>
                                 </div>
                             )}
+                        </div>
 
-                            <div className={`p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 col-span-2 sm:col-span-1 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
-                                <div className="flex items-center gap-2 text-slate-400 mb-1.5">
-                                    <MapPin size={14} />
-                                    <span className="text-[10px] font-bold uppercase tracking-wider">Vị trí</span>
-                                </div>
-                                <div className="flex flex-wrap gap-1">
+                        {/* Location & Warehouse Info */}
+                        <div className={`p-3 rounded-2xl bg-slate-50 dark:bg-slate-800/40 border border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-2 transition-all duration-300 ${isHighlighting ? 'animate-highlight-blink' : ''}`}>
+                            <div className="flex items-center gap-2">
+                                <MapPin size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Vị trí lưu kho:</span>
+                                <div className="flex flex-wrap gap-1 items-center">
                                     {lot.positions && lot.positions.length > 0 ? (
                                         lot.positions.map((p: any) => (
-                                            <span key={p.code} className="text-sm font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
+                                            <span key={p.code} className="text-xs font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
                                                 {p.code}
                                             </span>
                                         ))
                                     ) : (
-                                        <p className="text-sm font-medium text-slate-400 italic">Chưa gán</p>
+                                        <span className="text-xs font-medium text-slate-400 italic">Chưa gán vị trí</span>
                                     )}
                                 </div>
                             </div>
+                            {lot.warehouse_name && (
+                                <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
+                                    Kho: {lot.warehouse_name}
+                                </span>
+                            )}
                         </div>
 
                         {/* Production Order Section */}
@@ -433,19 +450,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     </div>
                                 </div>
                             )}
-                            {isModuleEnabled('raw_material_date') && (
-                                <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
-                                    <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                                        <Calendar size={20} />
-                                    </div>
-                                    <div className="min-w-0">
-                                        <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Ngày nhập nguyên liệu</p>
-                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                                            {lot.raw_material_date ? new Date(lot.raw_material_date).toLocaleDateString('vi-VN') : '---'}
-                                        </p>
-                                    </div>
-                                </div>
-                            )}
+
                             {isModuleEnabled('production_code') && (
                                 <div className="flex items-start gap-3 p-4 rounded-2xl border border-zinc-100 dark:border-zinc-800 bg-white dark:bg-zinc-900/50">
                                     <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">

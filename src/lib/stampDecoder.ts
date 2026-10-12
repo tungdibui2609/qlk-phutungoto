@@ -283,9 +283,22 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
     const freezeStyleName = dict.freeze_style?.[freezeStyleCode] || DEFAULT_STAMP_DICT.freeze_style[freezeStyleCode] || (freezeStyleCode ? `Mã ${freezeStyleCode}` : '')
     const varietyName = dict.variety?.[varietyCode] || DEFAULT_STAMP_DICT.variety[varietyCode] || (varietyCode ? `Mã ${varietyCode}` : '')
     const productGradeName = dict.product_grade?.[productGradeCode] || DEFAULT_STAMP_DICT.product_grade[productGradeCode] || (productGradeCode ? `Mã ${productGradeCode}` : '')
-    const packageSpecName = dict.package_spec?.[packageSpecCode] || DEFAULT_STAMP_DICT.package_spec[packageSpecCode] || meta.spec || (packageSpecCode ? `Mã ${packageSpecCode}` : '')
-    const freezeMethodName = dict.freeze_method?.[freezeMethodCode] || DEFAULT_STAMP_DICT.freeze_method[freezeMethodCode] || (freezeMethodCode ? `Mã ${freezeMethodCode}` : '')
+    let packageSpecName = dict.package_spec?.[packageSpecCode] || DEFAULT_STAMP_DICT.package_spec[packageSpecCode] || meta.spec || (packageSpecCode ? `Mã ${packageSpecCode}` : '')
+    let freezeMethodName = dict.freeze_method?.[freezeMethodCode] || DEFAULT_STAMP_DICT.freeze_method[freezeMethodCode] || (freezeMethodCode ? `Mã ${freezeMethodCode}` : '')
     const customerQualityName = dict.customer_quality?.[customerQualityCode] || DEFAULT_STAMP_DICT.customer_quality[customerQualityCode] || (customerQualityCode ? `Mã ${customerQualityCode}` : '')
+
+    // Chuẩn hóa cho trường hợp ngoại lệ 12 số (tránh nhầm ký tự 8-9 thành quy cách đóng gói túi/thùng)
+    if (isSpecial12 && special12Name) {
+        const nameParts = special12Name.split(' - ').map((s: string) => s.trim())
+        if (nameParts.length >= 3) {
+            packageSpecName = nameParts[1]
+            freezeMethodName = nameParts[2]
+        } else if (nameParts.length === 2) {
+            packageSpecName = nameParts[1]
+        } else {
+            packageSpecName = 'Ngoại lệ trọn gói'
+        }
+    }
 
     // Factory fallback: check meta.shift_group
     let factoryName = dict.factory?.[factoryCode] || DEFAULT_STAMP_DICT.factory[factoryCode] || ''
