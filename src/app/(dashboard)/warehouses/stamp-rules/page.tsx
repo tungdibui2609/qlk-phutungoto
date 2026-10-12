@@ -221,6 +221,14 @@ export const STAMP_CATEGORIES: Record<string, {
     description: string
     colorBadge: string
 }> = {
+    special_12: { 
+        label: 'Quy cách ngoại lệ (12 số đầu)', 
+        line: 'line1', 
+        position: '12 ký tự đầu', 
+        length: '12 ký tự', 
+        description: 'Bảng mã quy cách đặc biệt / ngoại lệ ưu tiên giải mã trọn gói tên & quy cách sản phẩm',
+        colorBadge: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+    },
     fruit_type: { 
         label: 'Chủng loại trái cây', 
         line: 'line1', 
@@ -607,7 +615,16 @@ export default function StampRulesPage() {
             }
         })
 
-        return { l1Segments, l2Segments }
+        // Kiểm tra trường hợp ngoại lệ ưu tiên (12 ký tự đầu tiên)
+        const digitsOnlyL1 = clean1.replace(/[^0-9]/g, '')
+        const code12 = digitsOnlyL1.length >= 12 ? digitsOnlyL1.substring(0, 12) : null
+        const special12Name = code12 ? dictMap['special_12']?.[code12] : null
+        const special12Match = (code12 && special12Name) ? {
+            code: code12,
+            name: special12Name
+        } : null
+
+        return { l1Segments, l2Segments, special12Match }
     }, [activeFormat, simLine1, simLine2, dictMap])
 
     // Open Modal Create Rule
@@ -1280,6 +1297,23 @@ export default function StampRulesPage() {
                                 </span>
                                 <span className="text-[10px] font-normal text-slate-400 lowercase">màu tương ứng với đoạn mã</span>
                             </div>
+
+                            {/* Banner phát hiện ngoại lệ 12 số đầu tiên */}
+                            {decodedSimulation.special12Match && (
+                                <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-500/60 text-emerald-200 animate-in fade-in">
+                                    <div className="flex items-center gap-2 text-xs font-black text-emerald-400">
+                                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400 text-emerald-300 font-mono text-[10px]">12 SỐ ĐẦU</span>
+                                        <span>⭐ ƯU TIÊN QUY CÁCH NGOẠI LỆ: {decodedSimulation.special12Match.code}</span>
+                                    </div>
+                                    <p className="text-sm font-bold text-white mt-1">
+                                        {decodedSimulation.special12Match.name}
+                                    </p>
+                                    <p className="text-[10px] text-emerald-300/80 mt-0.5">
+                                        Dòng 1 khớp 12 ký tự ngoại lệ — Hệ thống ưu tiên giải mã trọn gói tên &amp; quy cách sản phẩm từ bảng quy ước đặc biệt này.
+                                    </p>
+                                </div>
+                            )}
+
                             {decodedSimulation.l1Segments.length > 0 ? (
                                 <div className="space-y-1.5">
                                     {decodedSimulation.l1Segments.map((seg: any, idx: number) => (

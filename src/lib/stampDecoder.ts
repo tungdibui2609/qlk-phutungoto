@@ -55,6 +55,44 @@ export const DEFAULT_STAMP_DICT: Record<string, Record<string, string>> = {
         '64': 'Gia Lai',
         '09': 'Tỉnh mã 09',
         '63': 'Tiền Giang'
+    },
+    special_12: {
+        '101010202002': 'TP cấp đông sầu riêng trái ri 6 loại A - Nito',
+        '101010202004': 'TP cấp đông sầu riêng trái ri 6 loại A - Hàng đóng thùng tạm',
+        '101010402004': 'TP cấp đông sầu riêng trái Musaking loại A - Nito - Hàng đóng thùng tạm',
+        '101010403004': 'TP cấp đông sầu riêng trái Musaking loại B - Nito - Hàng đóng thùng tạm',
+        '102010201001': 'TP cấp đông sầu riêng múi monthong A (1 túi) - Hầm đông',
+        '102010201002': 'TP cấp đông sầu riêng múi monthong A (1 túi) - Nito',
+        '102010201004': 'TP cấp đông sầu riêng múi monthong A (1 túi) - múi to (>750gram) - Hầm đông',
+        '102010201005': 'TP cấp đông sầu riêng múi monthong A (1 túi) - múi nhỏ (< 60 gram) - Hầm đông',
+        '102010204001': 'TP cấp đông sầu riêng múi monthong A (4 túi) - Hầm đông',
+        '102010301001': 'TP cấp đông sầu riêng múi monthong B (1 túi) - Hầm đông',
+        '102010301002': 'TP cấp đông sầu riêng múi monthong B (1 túi) - Nito',
+        '102010301004': 'TP cấp đông sầu riêng múi monthong B (1 túi) - múi to (>750gram) - Hầm đông',
+        '102010301005': 'TP cấp đông sầu riêng múi monthong B (1 túi) - múi nhỏ (< 60 gram) - Hầm đông',
+        '102010304001': 'TP cấp đông sầu riêng múi monthong B (4 túi) - Hầm đông',
+        '102010401001': 'TP cấp đông sầu riêng múi monthong C - Hàng không hạt - Hầm đông',
+        '102010402001': 'TP cấp đông sầu riêng múi monthong C - Hàng có hạt - Hầm đông',
+        '102020201001': 'TP cấp đông sầu riêng múi ri 6 A (1 túi) - Hầm đông',
+        '102020204001': 'TP cấp đông sầu riêng múi ri 6 A (4 túi) - Hầm đông',
+        '102020301001': 'TP cấp đông sầu riêng múi ri 6 B (1 túi) - Hầm đông',
+        '102020304001': 'TP cấp đông sầu riêng múi ri 6 B (4 túi) - Hầm đông',
+        '102020401001': 'TP cấp đông sầu riêng múi ri 6 C - Hàng có hạt - Hầm đông',
+        '102020402001': 'TP cấp đông sầu riêng múi ri 6 C - Hàng tách hạt - Hầm đông',
+        '102020701000': 'TP cấp đông sầu riêng múi ri 6 khay (có hạt)',
+        '202010100000': 'TP cấp đông múi mít đỏ loại A',
+        '202010200000': 'TP cấp đông múi mít đỏ loại B',
+        '202010300000': 'TP cấp đông múi mít đỏ loại C',
+        '202010400000': 'TP cấp đông múi mít đỏ loại D',
+        '201090200102': 'TP cấp đông xoài Keaw cắt má loại A (Thùng 10 Kg)',
+        '201090200302': 'TP cấp đông xoài Keaw cắt má loại B (Thùng 10 Kg)',
+        '201090200402': 'TP cấp đông xoài Keaw cắt má loại C (Thùng 10 Kg)',
+        '201090200702': 'TP cấp đông xoài Keaw vụn (Thùng 10 Kg)',
+        '201090300200': 'TP cấp đông xoài Keaw cắt dice 20x20mm',
+        '301010400000': 'TP cấp đông thanh long đỏ 6x6mm',
+        '301020200000': 'TP cấp đông thanh long trắng 15x15mm',
+        '901010050000': 'TP cấp đông dứa queen (1/2 trái)',
+        '901030050000': 'TP cấp đông dứa cayenne (1/2 trái)'
     }
 }
 
@@ -63,6 +101,10 @@ export interface DecodedStampInfo {
     stampLine1: string
     stampLine2: string
     code: string
+    // Ngoại lệ 12 số
+    isSpecial12?: boolean
+    special12Code?: string
+    special12Name?: string
     // Dòng 1
     fruitTypeCode: string
     fruitTypeName: string
@@ -187,6 +229,20 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
     let freezeMethodCode = ''
     let customerQualityCode = ''
 
+    // 0. Kiểm tra trường hợp ngoại lệ ưu tiên (12 ký tự đầu tiên)
+    let isSpecial12 = false
+    let special12Code = ''
+    let special12Name = ''
+    if (digitsOnlyL1.length >= 12) {
+        const c12 = digitsOnlyL1.substring(0, 12)
+        const matchName = dict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12?.[c12]
+        if (matchName) {
+            isSpecial12 = true
+            special12Code = c12
+            special12Name = matchName
+        }
+    }
+
     if (digitsOnlyL1.length >= 1) fruitTypeCode = digitsOnlyL1.substring(0, 1)
     if (digitsOnlyL1.length >= 3) freezeStyleCode = digitsOnlyL1.substring(1, 3)
     if (digitsOnlyL1.length >= 5) varietyCode = digitsOnlyL1.substring(3, 5)
@@ -271,7 +327,8 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
     }
 
     const palletStt = meta.pallet_stt || ''
-    const productTitle = meta.product_name || box.products?.name || [fruitTypeName, varietyName, productGradeName].filter(Boolean).join(' ') || ''
+    const fallbackTitle = [fruitTypeName, varietyName, productGradeName].filter(Boolean).join(' ') || ''
+    const productTitle = meta.product_name || box.products?.name || (isSpecial12 ? special12Name : fallbackTitle) || ''
     const shiftGroup = meta.shift_group || factoryName || ''
     const spec = meta.spec || packageSpecName || ''
 
@@ -285,6 +342,11 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
             // Thêm các từ riêng lẻ
             str.split(/\s+/).forEach(w => { if (w.length > 1) tokens.add(w) })
         }
+    }
+
+    if (isSpecial12) {
+        addToken(special12Code)
+        addToken(special12Name)
     }
 
     addToken(code)
@@ -322,6 +384,9 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
         stampLine1,
         stampLine2,
         code,
+        isSpecial12,
+        special12Code,
+        special12Name,
         fruitTypeCode,
         fruitTypeName,
         freezeStyleCode,
