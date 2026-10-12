@@ -183,7 +183,7 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                             }
                         }
 
-                        if (rate && rate > 1) {
+                        if (rate && rate > 1 && isKg(baseUnit)) {
                             displayUnit = `${unit} (${rate}kg)`
                         }
                     }

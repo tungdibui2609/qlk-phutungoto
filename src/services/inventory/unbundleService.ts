@@ -21,6 +21,7 @@ export interface UnbundleParams {
     unitIdMap: Map<string, string>
     generateOrderCode: (type: 'PNK' | 'PXK') => Promise<string>
     categoryId?: string | null
+    productBaseUnit?: string | null
 }
 
 export const unbundleService = {
@@ -136,8 +137,8 @@ export const unbundleService = {
                     const baseToBreak = Math.ceil(deficit / rateBaseToReq - 0.000001)
 
                     if (currentBase >= baseToBreak) {
-                        const enrichedBase = enrichUnitName(productId, product.unit, conversionMap, unitNameMap, unitIdMap)
-                        const enrichedReq = enrichUnitName(productId, unit, conversionMap, unitNameMap, unitIdMap)
+                        const enrichedBase = enrichUnitName(productId, product.unit, conversionMap, unitNameMap, unitIdMap, product.unit)
+                        const enrichedReq = enrichUnitName(productId, unit, conversionMap, unitNameMap, unitIdMap, product.unit)
                         return {
                             needsUnbundle: true,
                             unbundleInfo: `Tự động: Bẻ ${baseToBreak} ${enrichedBase} -> ${(baseToBreak * rateBaseToReq).toFixed(2).replace(/\.00$/, '')} ${enrichedReq}`,
@@ -189,8 +190,8 @@ export const unbundleService = {
                     const altToBreak = Math.ceil(deficit / rateAltToReq - 0.000001)
 
                     if (currentAlt >= altToBreak) {
-                        const enrichedBase = enrichUnitName(productId, altUnitName, conversionMap, unitNameMap, unitIdMap)
-                        const enrichedReq = enrichUnitName(productId, unit, conversionMap, unitNameMap, unitIdMap)
+                        const enrichedBase = enrichUnitName(productId, altUnitName, conversionMap, unitNameMap, unitIdMap, product.unit)
+                        const enrichedReq = enrichUnitName(productId, unit, conversionMap, unitNameMap, unitIdMap, product.unit)
                         return {
                             needsUnbundle: true,
                             unbundleInfo: `Tự động: Bẻ ${altToBreak} ${enrichedBase} -> ${(altToBreak * rateAltToReq).toFixed(2).replace(/\.00$/, '')} ${enrichedReq}`,
@@ -254,7 +255,7 @@ export const unbundleService = {
         const {
             supabase, productId, productName, baseUnit, reqUnit, reqQty,
             currentLiquid, costPrice, rate, warehouseName, systemCode,
-            mainOrderCode, convTypeId, conversionMap, unitNameMap, unitIdMap, generateOrderCode, categoryId
+            mainOrderCode, convTypeId, conversionMap, unitNameMap, unitIdMap, generateOrderCode, categoryId, productBaseUnit
         } = params
 
         const deficit = reqQty - currentLiquid
@@ -262,9 +263,9 @@ export const unbundleService = {
 
         if (baseToBreak <= 0) return null
 
-        // Enrich Unit Names for Orders
-        const enrichedBaseUnit = enrichUnitName(productId, baseUnit, conversionMap, unitNameMap, unitIdMap)
-        const enrichedReqUnit = enrichUnitName(productId, reqUnit, conversionMap, unitNameMap, unitIdMap)
+        // Enrich Unit Names for Orders (use productBaseUnit to respect product unit domain)
+        const enrichedBaseUnit = enrichUnitName(productId, baseUnit, conversionMap, unitNameMap, unitIdMap, productBaseUnit)
+        const enrichedReqUnit = enrichUnitName(productId, reqUnit, conversionMap, unitNameMap, unitIdMap, productBaseUnit)
 
         // A. Create PXK (Chuyển đổi) - Out Base Units
         const pxkCode = await generateOrderCode('PXK')
@@ -336,14 +337,25 @@ export const unbundleService = {
         if (baseToBreak <= 0) return
 
         // 1. Fetch relevant lot_items in those LOTs that have the base unit
-        const { data: items, error: fetchErr } = await supabase
+        const { data: allLotItems, error: fetchErr } = await supabase
             .from('lot_items')
             .select('id, lot_id, quantity, unit')
             .in('lot_id', lotIds)
             .eq('product_id', productId)
-            .eq('unit', baseUnit)
 
-        if (fetchErr || !items || items.length === 0) {
+        if (fetchErr || !allLotItems || allLotItems.length === 0) {
+            console.warn('[Physical Unbundle] No physical items found in lot to break', { lotIds, productId, baseUnit })
+            return
+        }
+
+        const normBase = (baseUnit || '').toLowerCase().trim()
+        const stripBase = normBase.replace(/\s*\([^)]*\)/g, '').trim()
+        const items = allLotItems.filter(i => {
+            const n = (i.unit || '').toLowerCase().trim()
+            return n === normBase || n.replace(/\s*\([^)]*\)/g, '').trim() === stripBase
+        })
+
+        if (items.length === 0) {
             console.warn('[Physical Unbundle] No physical items found in base unit to break', { lotIds, productId, baseUnit })
             return
         }
@@ -365,14 +377,15 @@ export const unbundleService = {
 
             // Add converted units to the SAME LOT
             const addedQty = canTake * rate
+            const normReq = (reqUnit || '').toLowerCase().trim()
+            const stripReq = normReq.replace(/\s*\([^)]*\)/g, '').trim()
+
             // check if there's already an item with reqUnit in this LOT
-            const { data: existing } = await supabase
-                .from('lot_items')
-                .select('id, quantity')
-                .eq('lot_id', item.lot_id)
-                .eq('product_id', productId)
-                .eq('unit', reqUnit)
-                .maybeSingle()
+            const existing = allLotItems.find(i => {
+                if (i.lot_id !== item.lot_id) return false
+                const n = (i.unit || '').toLowerCase().trim()
+                return n === normReq || n.replace(/\s*\([^)]*\)/g, '').trim() === stripReq
+            })
 
             if (existing) {
                 await supabase.from('lot_items').update({ quantity: (existing.quantity || 0) + addedQty } as any).eq('id', existing.id)

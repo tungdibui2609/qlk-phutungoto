@@ -436,8 +436,22 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 for (const item of processedItems as any[]) {
                     if (item.needsUnbundle && item.unbundleMeta) {
                         const meta = item.unbundleMeta
-                        const currentLiquid = unitStockMap.get(`${item.productId}_${(item.unit || '').toLowerCase().trim()}`) || 0
+                        const normReqUnit = (item.unit || '').toLowerCase().trim()
+                        let currentLiquid = unitStockMap.get(`${item.productId}_${normReqUnit}`)
+                        if (currentLiquid === undefined) {
+                            const strippedReq = normReqUnit.replace(/\s*\([^)]*\)/g, '').trim()
+                            for (const [key, qty] of unitStockMap.entries()) {
+                                if (key.startsWith(`${item.productId}_`)) {
+                                    const uPart = key.split(`${item.productId}_`)[1]
+                                    if (uPart.replace(/\s*\([^)]*\)/g, '').trim() === strippedReq) {
+                                        currentLiquid = qty
+                                        break
+                                    }
+                                }
+                            }
+                        }
                         
+                        const prod = products.find(p => p.id === item.productId)
                         await unbundleService.executeAutoUnbundle({
                             supabase,
                             productId: item.productId,
@@ -445,7 +459,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             baseUnit: meta.sourceUnit,
                             reqUnit: item.unit,
                             reqQty: item.quantity,
-                            currentLiquid,
+                            currentLiquid: currentLiquid || 0,
                             costPrice: item.price,
                             rate: meta.rate,
                             warehouseName,
@@ -456,7 +470,8 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             unitNameMap,
                             unitIdMap,
                             generateOrderCode: (type: 'PNK' | 'PXK') => generateOrderCode(type, systemCode),
-                            categoryId: item.categoryId || null
+                            categoryId: item.categoryId || null,
+                            productBaseUnit: prod?.unit || null
                         })
                     }
                 }

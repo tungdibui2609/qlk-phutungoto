@@ -249,10 +249,12 @@ export async function GET(req: NextRequest) {
                         (isTargetKg && hasWeightSuffix)
                     )
 
+                    const isBaseKg = isKg(baseUnitName)
+
                     if (targetUnitId && isConvertible) {
                         key = `${prod.sku}__${targetUnitId}`
                         const rate = conversionMap.get(pid)?.get(targetUnitId)
-                        const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
+                        const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(') && isBaseKg) ? ` (${rate}kg)` : ''
                         unitDisplay = targetUnit!.name + suffix
                         quantity = convertUnitLogic(pid, uName, targetUnit!.name, quantity, baseUnitName, unitNameMap, conversionMap)
                     } else {
@@ -267,7 +269,7 @@ export async function GET(req: NextRequest) {
                             })
                             if (matchingUnit) rate = productRates.get(matchingUnit.id)
                         }
-                        if (rate && rate > 1 && !unitDisplay.includes('(')) {
+                        if (rate && rate > 1 && !unitDisplay.includes('(') && isBaseKg) {
                             unitDisplay = uName + ` (${rate}kg)`
                         }
                     }

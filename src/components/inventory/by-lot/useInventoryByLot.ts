@@ -543,7 +543,7 @@ export function useInventoryByLot(
 
                 if (targetUnitId && isConvertible) {
                     const rate = conversionMap.get(productId)?.get(targetUnitId)
-                    const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
+                    const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(') && isKg(baseUnit)) ? ` (${rate}kg)` : ''
                     displayUnit = targetUnit!.name + suffix
                     displayQty = convertUnit(productId, unit, targetUnit!.name, qty, baseUnit)
                     key = `${sku}__${targetUnitId}`
@@ -568,7 +568,7 @@ export function useInventoryByLot(
                         }
                     }
 
-                    if (rate && rate > 1) {
+                    if (rate && rate > 1 && isKg(baseUnit)) {
                         displayUnit = displayUnit + ` (${rate}kg)`
                     }
                 }

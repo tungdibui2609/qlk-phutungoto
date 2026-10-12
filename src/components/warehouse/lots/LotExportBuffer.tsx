@@ -385,6 +385,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                     showToast(`Thiếu ${item.unit} tại lô ${item.lot_code}. Đang tự bẻ gói...`, 'info')
 
                     // Sync physical LOT items to match accounting conversion
+                    const prod = (productsData as any[])?.find(p => p.id === item.product_id)
                     const baseToBreak = await unbundleService.executeAutoUnbundle({
                         supabase,
                         productId: item.product_id,
@@ -402,7 +403,8 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                         conversionMap: localConversionMap,
                         unitNameMap: localUnitNameMap,
                         unitIdMap: localUnitIdMap,
-                        generateOrderCode: (type) => generateOrderCode(type, systemType)
+                        generateOrderCode: (type) => generateOrderCode(type, systemType),
+                        productBaseUnit: prod?.unit || null
                     })
 
                     if (baseToBreak && baseToBreak > 0) {

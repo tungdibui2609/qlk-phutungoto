@@ -255,13 +255,15 @@ export async function GET(request: Request) {
                 (isTargetKg && hasWeightSuffix)
             )
 
+            const isBaseKg = isKg(baseUnitName)
+
             if (targetUnitId && isConvertible) {
                 // CONVERTIBLE
                 unitIdVal = targetUnitId
                 key = `${pid}_${wName}_${targetUnitId}_${cid || 'null'}`
-                // Display the suffix if the target unit is not already formatted and has a weight factor
+                // Display the suffix if the target unit is not already formatted and has a weight factor (only if base unit is Kg)
                 const rate = conversionMap.get(pid)?.get(targetUnitId)
-                const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(')) ? ` (${rate}kg)` : ''
+                const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(') && isBaseKg) ? ` (${rate}kg)` : ''
                 unitDisplay = targetUnit!.name + suffix
                 quantity = convertUnitLogic(pid, uName, targetUnit!.name, quantity, baseUnitName, unitNameMap, conversionMap)
             } else {
@@ -273,7 +275,7 @@ export async function GET(request: Request) {
                     isUnconvertible = true
                 }
                 
-                // Even if not converted, try to add suffix for better display if it's missing
+                // Even if not converted, try to add suffix for better display if it's missing (only for Kg base unit)
                 const normUName = normalizeUnit(uName)
                 const productRates = pid ? conversionMap.get(pid) : null
                 let rate = undefined
@@ -285,7 +287,7 @@ export async function GET(request: Request) {
                     if (matchingUnit) rate = productRates.get(matchingUnit.id)
                 }
 
-                if (rate && rate > 1 && !unitDisplay.includes('(')) {
+                if (rate && rate > 1 && !unitDisplay.includes('(') && isBaseKg) {
                     unitDisplay = uName + ` (${rate}kg)`
                 }
             }

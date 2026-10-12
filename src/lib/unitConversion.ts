@@ -389,13 +389,19 @@ export const enrichUnitName = (
     unitName: string | null | undefined,
     conversionMap: ConversionMap,
     unitNameMap: UnitNameMap,
-    unitIdMap: Map<string, string>
+    unitIdMap: Map<string, string>,
+    baseUnitName?: string | null
 ): string => {
     if (!unitName || !productId) return unitName || '';
     
     // If it already has a suffix, return as is
     if (unitName.includes('(')) return unitName;
     
+    // If baseUnitName is explicitly provided and is NOT Kg, do not add weight suffix
+    if (baseUnitName && !isKg(baseUnitName)) {
+        return unitName;
+    }
+
     const normU = normalizeUnit(unitName);
     const productRates = conversionMap.get(productId);
     if (!productRates) return unitName;
@@ -416,7 +422,7 @@ export const enrichUnitName = (
         }
     }
 
-    if (rate && rate > 1) {
+    if (rate && rate > 1 && (!baseUnitName || isKg(baseUnitName))) {
         return `${unitName} (${rate}kg)`;
     }
 
