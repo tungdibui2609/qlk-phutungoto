@@ -47,16 +47,16 @@ export const UTILITY_MODULES: UtilityModule[] = [
     },
     {
         id: 'site_inventory_manager',
-        name: 'Cấp phát hàng hóa',
-        description: 'Theo dõi xuất vật tư tiêu hao theo tổ đội và sổ theo dõi mượn/trả công cụ dụng cụ.',
+        name: 'Cấp phát hàng hóa (Công trình)',
+        description: 'Quản lý cấp phát vật tư tiêu hao theo tổ đội, theo dõi mượn/trả công cụ cho công trình và dự án (/construction, /site-inventory).',
         icon: HardHat,
         category: 'specialized',
         default_enabled: false
     },
     {
         id: 'production_inventory_manager',
-        name: 'Cấp phát sản xuất',
-        description: 'Theo dõi cấp phát vật tư, linh kiện cho các công đoạn sản xuất và lắp ráp.',
+        name: 'Cấp phát sản xuất (Phân xưởng)',
+        description: 'Theo dõi cấp phát vật tư, linh kiện, nguyên liệu cho các công đoạn và chuyền sản xuất (/production-inventory).',
         icon: Factory,
         category: 'specialized',
         default_enabled: false
