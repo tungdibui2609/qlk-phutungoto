@@ -119,7 +119,7 @@ export default function ProductionPlaceModal({ isOpen, onClose, onSuccess, initi
                 updated_at: new Date().toISOString()
             }
 
-            if (initialData?.id) {
+            if (initialData?.id && !initialData.id.startsWith('place-')) {
                 // Cập nhật
                 const { data, error: updateError } = await (supabase.from('production_places' as any) as any)
                     .update(payload)
@@ -131,7 +131,7 @@ export default function ProductionPlaceModal({ isOpen, onClose, onSuccess, initi
                 showToast('Cập nhật nơi sản xuất thành công', 'success')
                 onSuccess(data)
             } else {
-                // Tạo mới
+                // Tạo mới (hoặc nếu là dữ liệu mẫu fallback chưa có trong DB)
                 const { data, error: insertError } = await (supabase.from('production_places' as any) as any)
                     .insert([payload])
                     .select()
@@ -144,8 +144,9 @@ export default function ProductionPlaceModal({ isOpen, onClose, onSuccess, initi
             onClose()
         } catch (err: any) {
             console.error('Save production place failed:', err)
-            setError(err.message || 'Lỗi khi lưu dữ liệu')
-            showToast('Lỗi: ' + (err.message || 'Không thể lưu'), 'error')
+            const errorMsg = err?.message || err?.error_description || (typeof err === 'object' && Object.keys(err).length > 0 ? JSON.stringify(err) : 'Lỗi khi lưu dữ liệu')
+            setError(errorMsg)
+            showToast('Lỗi: ' + errorMsg, 'error')
         } finally {
             setLoading(false)
         }

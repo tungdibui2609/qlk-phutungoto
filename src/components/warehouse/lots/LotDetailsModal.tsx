@@ -507,8 +507,14 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     </div>
                                     <div className="min-w-0">
                                         <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Nơi sản xuất</p>
-                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 truncate">
-                                            {(lot.metadata as any)?.production_place || '---'}
+                                        <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
+                                            {(() => {
+                                                const rawPlaces = (lot.metadata as any)?.production_places;
+                                                if (Array.isArray(rawPlaces) && rawPlaces.length > 0) {
+                                                    return rawPlaces.join(', ');
+                                                }
+                                                return (lot.metadata as any)?.production_place || '---';
+                                            })()}
                                         </p>
                                     </div>
                                 </div>

@@ -111,10 +111,19 @@ export default function ProductionPlacesPage() {
                 if (lots && !error) {
                     const counts: Record<string, number> = {}
                     lots.forEach((l: any) => {
-                        const placeName = l.metadata?.production_place
-                        if (placeName && typeof placeName === 'string') {
-                            counts[placeName] = (counts[placeName] || 0) + 1
-                        }
+                        const rawPlaces = l.metadata?.production_places || (l.metadata?.production_place ? [l.metadata?.production_place] : [])
+                        const placeList = Array.isArray(rawPlaces) 
+                            ? rawPlaces 
+                            : String(rawPlaces).split(',').map((s: string) => s.trim()).filter(Boolean)
+                        const uniqueInLot = new Set<string>()
+                        placeList.forEach((p: any) => {
+                            if (p && typeof p === 'string' && p.trim()) {
+                                uniqueInLot.add(p.trim())
+                            }
+                        })
+                        uniqueInLot.forEach((pName) => {
+                            counts[pName] = (counts[pName] || 0) + 1
+                        })
                     })
                     setLotCountsByPlace(counts)
                 }

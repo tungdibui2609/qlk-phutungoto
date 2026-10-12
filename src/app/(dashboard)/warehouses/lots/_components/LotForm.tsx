@@ -87,6 +87,8 @@ export function LotForm({
     const [batchCode, setBatchCode] = useState('')
     const [customerName, setCustomerName] = useState('')
     const [productionPlace, setProductionPlace] = useState('')
+    const [productionPlaces, setProductionPlaces] = useState<string[]>([])
+    const [newProductionPlaceInput, setNewProductionPlaceInput] = useState('')
     const [productionPlacesList, setProductionPlacesList] = useState<any[]>([])
     const [materialZones, setMaterialZones] = useState<string[]>([])
     const [newMaterialZoneInput, setNewMaterialZoneInput] = useState('')
@@ -181,6 +183,19 @@ export function LotForm({
 
     const handleRemoveMaterialZone = (zoneToRemove: string) => {
         setMaterialZones(prev => prev.filter(z => z !== zoneToRemove))
+    }
+
+    const handleAddProductionPlace = (placeVal?: string) => {
+        const val = (placeVal || newProductionPlaceInput).trim()
+        if (!val) return
+        if (!productionPlaces.includes(val)) {
+            setProductionPlaces(prev => [...prev, val])
+        }
+        setNewProductionPlaceInput('')
+    }
+
+    const handleRemoveProductionPlace = (placeToRemove: string) => {
+        setProductionPlaces(prev => prev.filter(p => p !== placeToRemove))
     }
 
     const [dailySeq, setDailySeq] = useState<number | string>('')
@@ -365,7 +380,11 @@ export function LotForm({
                 }
                 setExtraInfo(meta.extra_info || '')
                 setCustomerName(meta.customer_name || meta.oem_brand || '')
-                setProductionPlace(meta.production_place || '')
+                const rawPp = meta.production_places || (meta.production_place ? meta.production_place.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+                const loadedPlaces = Array.isArray(rawPp) ? rawPp : []
+                setProductionPlaces(loadedPlaces)
+                setProductionPlace(loadedPlaces.join(', '))
+                setNewProductionPlaceInput('')
                 const rawMz = meta.material_zones || (meta.material_zone ? meta.material_zone.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
                 setMaterialZones(Array.isArray(rawMz) ? rawMz : [])
                 setNewMaterialZoneInput('')
@@ -428,7 +447,14 @@ export function LotForm({
                             }
                             if (parsed.batchCode) setBatchCode(parsed.batchCode)
                             if (parsed.customerName) setCustomerName(parsed.customerName)
-                            if (parsed.productionPlace) setProductionPlace(parsed.productionPlace)
+                            if (parsed.productionPlaces && Array.isArray(parsed.productionPlaces)) {
+                                setProductionPlaces(parsed.productionPlaces)
+                                setProductionPlace(parsed.productionPlaces.join(', '))
+                            } else if (parsed.productionPlace) {
+                                const arr = parsed.productionPlace.split(',').map((s: string) => s.trim()).filter(Boolean)
+                                setProductionPlaces(arr)
+                                setProductionPlace(parsed.productionPlace)
+                            }
                             if (parsed.materialZones && Array.isArray(parsed.materialZones)) {
                                 setMaterialZones(parsed.materialZones)
                             } else if (parsed.materialZone) {
@@ -513,7 +539,8 @@ export function LotForm({
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
                 customerName: isPersistent ? customerName : '',
-                productionPlace: isPersistent ? productionPlace : '',
+                productionPlace: isPersistent ? (productionPlaces.length > 0 ? productionPlaces.join(', ') : productionPlace) : '',
+                productionPlaces: isPersistent ? productionPlaces : [],
                 materialZones: isPersistent ? materialZones : [],
                 materialZone: isPersistent ? materialZones.join(', ') : '',
                 productionCode: isPersistent ? productionCode : '',
@@ -540,6 +567,8 @@ export function LotForm({
         warehouseName,
         batchCode,
         customerName,
+        productionPlace,
+        productionPlaces,
         productionCode,
         selectedProductionId,
         extraInfo,
@@ -575,6 +604,8 @@ export function LotForm({
         setBatchCode('')
         setCustomerName('')
         setProductionPlace('')
+        setProductionPlaces([])
+        setNewProductionPlaceInput('')
         setMaterialZones([])
         setNewMaterialZoneInput('')
         setProductionCode('')
@@ -871,7 +902,9 @@ export function LotForm({
                 extra_info: extraInfo,
                 customer_name: customerName || null,
                 oem_brand: customerName || null,
-                production_place: productionPlace || null,
+                production_place: productionPlaces.length > 0 ? productionPlaces.join(', ') : (productionPlace || null),
+                production_places: productionPlaces.length > 0 ? productionPlaces : (productionPlace ? [productionPlace] : []),
+                manual_production_places: productionPlaces.length > 0 ? productionPlaces : (productionPlace ? [productionPlace] : []),
                 material_zone: materialZones.length > 0 ? materialZones.join(', ') : null,
                 material_zones: materialZones.length > 0 ? materialZones : [],
                 manual_material_zones: materialZones.length > 0 ? materialZones : [],
@@ -1685,10 +1718,17 @@ export function LotForm({
                                             {hasProductionPlace && (
                                                 <div className="space-y-1.5">
                                                     <div className="flex items-center justify-between">
-                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                                                            <Factory size={13} className="text-blue-600" />
-                                                            <span>Nơi sản xuất</span>
-                                                        </label>
+                                                        <div className="flex items-center gap-1.5">
+                                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                                <Factory size={13} className="text-blue-600" />
+                                                                <span>Nơi sản xuất / Nhà máy</span>
+                                                            </label>
+                                                            {productionPlaces.length > 1 && (
+                                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300">
+                                                                    {productionPlaces.length} cơ sở
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <div className="flex items-center gap-2">
                                                             <a
                                                                 href="/production-places"
@@ -1700,34 +1740,101 @@ export function LotForm({
                                                                 <Plus size={12} />
                                                                 Khai báo nơi SX
                                                             </a>
-                                                            {productionPlace && (
+                                                            {productionPlaces.length > 0 && (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => setProductionPlace('')}
+                                                                    onClick={() => {
+                                                                        setProductionPlaces([])
+                                                                        setProductionPlace('')
+                                                                    }}
                                                                     className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
+                                                                    title="Xóa tất cả nơi sản xuất đã chọn"
                                                                 >
-                                                                    Xóa
+                                                                    Xóa tất cả
                                                                 </button>
                                                             )}
                                                         </div>
                                                     </div>
-                                                    <div className="relative">
-                                                        <Factory className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-500 pointer-events-none" size={17} />
-                                                        <input
-                                                            type="text"
-                                                            list="production-places-datalist"
-                                                            value={productionPlace}
-                                                            onChange={(e) => setProductionPlace(e.target.value)}
-                                                            className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-900 border border-blue-200/90 dark:border-blue-800/70 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all text-sm font-medium placeholder:text-zinc-400 shadow-xs"
-                                                            placeholder="Chọn cơ sở đã khai báo hoặc gõ tên nhà máy..."
-                                                        />
-                                                        <datalist id="production-places-datalist">
-                                                            {productionPlacesList.map((p: any) => (
-                                                                <option key={p.id} value={p.name}>
-                                                                    {p.code ? `[${p.code}] ${p.name}` : p.name}
-                                                                </option>
-                                                            ))}
-                                                        </datalist>
+
+                                                    {/* Danh sách các nơi sản xuất đã chọn (Hiển thị thẻ chip) */}
+                                                    {productionPlaces.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 p-2 bg-blue-50/40 dark:bg-zinc-800/40 rounded-xl border border-blue-200/80 dark:border-blue-800/60 max-h-28 overflow-y-auto">
+                                                            {productionPlaces.map((pStr) => {
+                                                                const matched = productionPlacesList.find(p => p.name === pStr || p.code === pStr || (p.code && `[${p.code}] ${p.name}` === pStr))
+                                                                const label = matched ? (matched.code ? `[${matched.code}] ${matched.name}` : matched.name) : pStr
+                                                                return (
+                                                                    <div
+                                                                        key={pStr}
+                                                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white dark:bg-zinc-900 border border-blue-300/90 dark:border-blue-700/80 rounded-lg text-xs font-bold text-zinc-900 dark:text-zinc-100 shadow-2xs group"
+                                                                    >
+                                                                        <Factory size={12} className="text-blue-600 shrink-0" />
+                                                                        <span>{label}</span>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => handleRemoveProductionPlace(pStr)}
+                                                                            className="p-0.5 text-zinc-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                                            title={`Gỡ bỏ ${label}`}
+                                                                        >
+                                                                            <X size={12} />
+                                                                        </button>
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Ô nhập / chọn thêm nơi sản xuất */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="relative flex-1">
+                                                            <Factory className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-600/70" size={16} />
+                                                            <input
+                                                                type="text"
+                                                                list="production-places-datalist"
+                                                                value={newProductionPlaceInput}
+                                                                onChange={(e) => {
+                                                                    const val = e.target.value
+                                                                    const found = productionPlacesList.find(p => {
+                                                                        const lbl = p.code ? `[${p.code}] ${p.name}` : p.name
+                                                                        return val === lbl || val === p.code || val === p.name
+                                                                    })
+                                                                    if (found) {
+                                                                        handleAddProductionPlace(found.name)
+                                                                    } else {
+                                                                        setNewProductionPlaceInput(val)
+                                                                    }
+                                                                }}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault()
+                                                                        handleAddProductionPlace()
+                                                                    }
+                                                                }}
+                                                                className="w-full pl-9 pr-3 py-2 bg-white dark:bg-zinc-900 border border-blue-200/90 dark:border-blue-800/70 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-zinc-900 dark:text-zinc-100 transition-all text-xs font-medium placeholder:text-zinc-400 shadow-xs"
+                                                                placeholder="Chọn từ cơ sở đã khai báo hoặc gõ thêm (nhấn Enter hoặc bấm Thêm)..."
+                                                            />
+                                                            <datalist id="production-places-datalist">
+                                                                {productionPlacesList
+                                                                    .filter(p => !productionPlaces.includes(p.name) && !productionPlaces.includes(p.code))
+                                                                    .map((p: any) => {
+                                                                        const label = p.code ? `[${p.code}] ${p.name}` : p.name
+                                                                        return (
+                                                                            <option key={p.id} value={p.name}>
+                                                                                {label}
+                                                                            </option>
+                                                                        )
+                                                                    })}
+                                                            </datalist>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddProductionPlace()}
+                                                            disabled={!newProductionPlaceInput.trim()}
+                                                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
+                                                            title="Thêm nơi sản xuất này vào LOT"
+                                                        >
+                                                            <Plus size={14} />
+                                                            <span>Thêm</span>
+                                                        </button>
                                                     </div>
                                                 </div>
                                             )}

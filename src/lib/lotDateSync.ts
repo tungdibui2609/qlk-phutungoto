@@ -2,16 +2,18 @@ import { supabase } from './supabaseClient'
 import { parseDateToISO } from './dateUtils'
 
 /**
- * Tự động đồng bộ Ngày sản xuất (từ tem nhãn), Ngày nguyên liệu (từ dấu mực)
- * và Vùng nguyên liệu / Vùng trồng từ danh sách các thùng (box_labels) vào bảng lots:
+ * Tự động đồng bộ Ngày sản xuất (từ tem nhãn), Ngày nguyên liệu (từ dấu mực),
+ * Vùng nguyên liệu / Vùng trồng và Nơi sản xuất / Nhà máy từ danh sách các thùng (box_labels) vào bảng lots:
  * - Tem nhãn: Bổ sung không trùng lặp các ngày sản xuất vào metadata.peeling_dates (và peeling_date chính nếu chưa có).
  * - Dấu mực: Cập nhật Ngày nhập nguyên liệu vào trường raw_material_date của Lot.
  * - Vùng nguyên liệu: Bổ sung các vùng trồng từ tem vào metadata.material_zones & metadata.material_zone.
+ * - Nơi sản xuất: Bổ sung nhà máy từ tem vào metadata.production_places & metadata.production_place.
  */
 export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[]): Promise<{
     addedPeelingDatesCount: number
     rawMaterialDate: string | null
     materialZones?: string[]
+    productionPlaces?: string[]
 }> {
     if (!targetLotId || !boxes || boxes.length === 0) {
         return { addedPeelingDatesCount: 0, rawMaterialDate: null }
@@ -29,6 +31,7 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
 
         const newPeelingDates = new Set<string>()
         const newMaterialZones = new Set<string>()
+        const newProductionPlaces = new Set<string>()
         let detectedRawMaterialDate: string | null = null
 
         boxes.forEach(b => {
@@ -50,6 +53,14 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                 if (iso && !detectedRawMaterialDate) {
                     detectedRawMaterialDate = iso
                 }
+
+                // Với dấu mực: Ký tự 1 của Dòng 2 là Mã nhà máy
+                if (meta.stamp_line2) {
+                    const cleanL2 = String(meta.stamp_line2).replace(/[^0-9]/g, '')
+                    if (cleanL2.length >= 1) {
+                        newProductionPlaces.add(cleanL2.substring(0, 1))
+                    }
+                }
             } else {
                 // Với tem nhãn: b.metadata.production_date là Ngày sản xuất
                 const iso = parseDateToISO(meta.production_date)
@@ -62,6 +73,12 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             const rawZone = meta.region || meta.province || meta.material_zone || b.region || ''
             if (rawZone && rawZone !== '---') {
                 newMaterialZones.add(rawZone.trim())
+            }
+
+            // Nơi sản xuất / Nhà máy
+            const rawPlace = meta.production_place || meta.factory || meta.shift_group || b.shift_group || b.production_place || ''
+            if (rawPlace && rawPlace !== '---' && rawPlace !== 'Nguyên') {
+                newProductionPlaces.add(String(rawPlace).trim())
             }
         })
 
@@ -135,6 +152,83 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             lotUpdates.metadata = lotMeta
         }
 
+        // 4. Xử lý Nơi sản xuất / Nhà máy: Hợp nhất vào metadata.production_places & metadata.production_place
+        if (newProductionPlaces.size > 0) {
+            let productionPlacesList: any[] = []
+            let stampFactoryDict: any[] = []
+            try {
+                const [pRes, dRes] = await Promise.all([
+                    (supabase.from('production_places' as any) as any)
+                        .select('code, name')
+                        .eq('is_active', true),
+                    (supabase.from('stamp_dictionaries' as any) as any)
+                        .select('code, name')
+                        .eq('category', 'factory')
+                        .eq('is_active', true)
+                ])
+                if (pRes.data) productionPlacesList = pRes.data
+                if (dRes.data) stampFactoryDict = dRes.data
+            } catch {}
+
+            const currentPlaces: string[] = Array.isArray(lotMeta.production_places)
+                ? lotMeta.production_places
+                : (lotMeta.production_place ? String(lotMeta.production_place).split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+
+            const mergedPlaceSet = new Set<string>(currentPlaces)
+
+            newProductionPlaces.forEach(p => {
+                const cleanP = String(p).trim()
+                if (!cleanP) return
+
+                // Tìm theo mã nhà máy hoặc tên trong production_places
+                let matched = productionPlacesList.find(item => {
+                    const itemCode = String(item.code || '').trim()
+                    const itemName = String(item.name || '').trim().toLowerCase()
+                    const pLower = cleanP.toLowerCase()
+
+                    if (itemCode && (
+                        itemCode === cleanP || 
+                        itemCode.padStart(2, '0') === cleanP.padStart(2, '0') ||
+                        (!isNaN(Number(itemCode)) && !isNaN(Number(cleanP)) && Number(itemCode) === Number(cleanP))
+                    )) {
+                        return true
+                    }
+
+                    return itemName.includes(pLower) || pLower.includes(itemName)
+                })
+
+                // Nếu chưa tìm thấy và cleanP là mã số, thử tra stamp_dictionaries
+                if (!matched && stampFactoryDict.length > 0) {
+                    const dictMatch = stampFactoryDict.find(d => 
+                        String(d.code).trim() === cleanP ||
+                        (!isNaN(Number(d.code)) && !isNaN(Number(cleanP)) && Number(d.code) === Number(cleanP))
+                    )
+                    if (dictMatch) {
+                        const dictNameLower = String(dictMatch.name || '').trim().toLowerCase()
+                        matched = productionPlacesList.find(item => {
+                            const itemName = String(item.name || '').trim().toLowerCase()
+                            return itemName.includes(dictNameLower) || dictNameLower.includes(itemName)
+                        })
+                        if (!matched) {
+                            mergedPlaceSet.add(dictMatch.name)
+                            return
+                        }
+                    }
+                }
+
+                if (matched) {
+                    mergedPlaceSet.add(matched.name)
+                } else {
+                    mergedPlaceSet.add(cleanP)
+                }
+            })
+
+            const finalPlaces = Array.from(mergedPlaceSet).sort()
+            lotMeta.production_places = finalPlaces
+            lotMeta.production_place = finalPlaces.join(', ')
+            lotUpdates.metadata = lotMeta
+        }
+
         if (Object.keys(lotUpdates).length > 0) {
             await (supabase.from('lots') as any).update(lotUpdates).eq('id', targetLotId)
         }
@@ -142,10 +236,11 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
         return {
             addedPeelingDatesCount,
             rawMaterialDate: detectedRawMaterialDate,
-            materialZones: lotMeta.material_zones
+            materialZones: lotMeta.material_zones,
+            productionPlaces: lotMeta.production_places
         }
     } catch (err) {
-        console.warn('Lỗi khi đồng bộ ngày và vùng trồng từ thùng vào Lô:', err)
+        console.warn('Lỗi khi đồng bộ ngày, vùng trồng và nơi sản xuất từ thùng vào Lô:', err)
         return { addedPeelingDatesCount: 0, rawMaterialDate: null }
     }
 }
