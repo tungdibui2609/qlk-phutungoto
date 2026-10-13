@@ -16,6 +16,7 @@ export interface ParsedProductRow {
     description: string
     packaging_specification: string
     quantity_per_pallet: number
+    boxes_per_container: number
     // Validation flags
     isValid: boolean
     errorReason?: string
@@ -47,7 +48,8 @@ const COLUMN_ALIASES: Record<string, string[]> = {
     manufacturer: ['nhà sản xuất', 'hãng sản xuất', 'hãng', 'thương hiệu', 'manufacturer', 'brand', 'nsx'],
     description: ['mô tả', 'ghi chú', 'thông tin chi tiết', 'description', 'note', 'ghi chú sản phẩm'],
     packaging_specification: ['quy cách đóng gói', 'quy cách', 'đóng gói', 'packaging', 'specification'],
-    quantity_per_pallet: ['số lượng / pallet', 'số lượng/pallet', 'sl/pallet', 'pallet qty', 'sl pallet']
+    quantity_per_pallet: ['số lượng / pallet', 'số lượng/pallet', 'sl/pallet', 'pallet qty', 'sl pallet'],
+    boxes_per_container: ['tổng số thùng xuất bán 1 container', 'số thùng / container', 'số thùng/container', 'thùng/cont', 'thùng / cont', 'boxes per container', 'thùng container']
 }
 
 function normalizeHeader(str: string): string {
@@ -133,6 +135,7 @@ export async function downloadProductImportTemplate(systemType: string = 'dashbo
         { label: 'Nhà sản xuất', width: 20, required: false },
         { label: 'Quy cách đóng gói', width: 22, required: false },
         { label: 'Số lượng / Pallet', width: 18, required: false },
+        { label: 'Thùng / Container', width: 18, required: false },
         { label: 'Mô tả', width: 30, required: false },
     ]
 
@@ -323,6 +326,7 @@ export async function parseProductsFromExcel(
         const description = fieldColMap.description ? getCellValue(row.getCell(fieldColMap.description)) : ''
         const packaging_specification = fieldColMap.packaging_specification ? getCellValue(row.getCell(fieldColMap.packaging_specification)) : ''
         const quantity_per_pallet = fieldColMap.quantity_per_pallet ? getCellNumber(row.getCell(fieldColMap.quantity_per_pallet)) : 0
+        const boxes_per_container = fieldColMap.boxes_per_container ? getCellNumber(row.getCell(fieldColMap.boxes_per_container)) : 0
 
         // If entire row is blank, skip
         if (!name && !sku && !part_number && !category_name) {
@@ -366,6 +370,7 @@ export async function parseProductsFromExcel(
             description,
             packaging_specification,
             quantity_per_pallet,
+            boxes_per_container,
             isValid,
             errorReason,
             isDuplicateInFile,
@@ -512,6 +517,7 @@ export async function importProductsToSupabase(
                 description: item.description || null,
                 packaging_specification: item.packaging_specification || null,
                 quantity_per_pallet: item.quantity_per_pallet || 0,
+                boxes_per_container: item.boxes_per_container || 0,
                 category_id: categoryId,
                 system_type: systemType,
                 company_id: companyId || null,

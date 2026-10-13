@@ -283,6 +283,7 @@ export interface Database {
           category_id: string | null
           unit: string | null
           image_url: string | null
+          manufacturer?: string | null
           description?: string | null
           cost_price?: number | null
           sale_price?: number | null
@@ -297,6 +298,7 @@ export interface Database {
           system_code: string | null
           quantity_per_pallet: number | null
           pallet_unit: string | null
+          boxes_per_container?: number | null
           company_id?: string | null
         }
         Insert: {
@@ -306,6 +308,7 @@ export interface Database {
           category_id?: string | null
           unit?: string | null
           image_url?: string | null
+          manufacturer?: string | null
           description?: string | null
           cost_price?: number | null
           sale_price?: number | null
@@ -320,6 +323,7 @@ export interface Database {
           system_code?: string | null
           quantity_per_pallet?: number | null
           pallet_unit?: string | null
+          boxes_per_container?: number | null
           company_id?: string | null
         }
         Update: {
@@ -329,6 +333,7 @@ export interface Database {
           category_id?: string | null
           unit?: string | null
           image_url?: string | null
+          manufacturer?: string | null
           description?: string | null
           cost_price?: number | null
           sale_price?: number | null
@@ -343,13 +348,14 @@ export interface Database {
           system_code?: string | null
           quantity_per_pallet?: number | null
           pallet_unit?: string | null
+          boxes_per_container?: number | null
           company_id?: string | null
         }
       }
       categories: {
-        Row: { id: string; name: string; code?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
-        Insert: { id?: string; name: string; code?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
-        Update: { id?: string; name?: string; code?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Row: { id: string; name: string; code?: string | null; description?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Insert: { id?: string; name: string; code?: string | null; description?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Update: { id?: string; name?: string; code?: string | null; description?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
       }
       vehicles: {
         Row: { id: string; name: string; model?: string | null; brand?: string | null; system_type?: string | null; created_at?: string | null }

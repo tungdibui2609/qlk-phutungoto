@@ -2,9 +2,10 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
-import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, Sparkles, PieChart } from 'lucide-react'
+import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, LayoutDashboard, PieChart } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import InventoryDistributionChart from '@/components/dashboard/InventoryDistributionChart'
+import ContainerStockChart from '@/components/dashboard/ContainerStockChart'
 
 type Category = Database['public']['Tables']['categories']['Row']
 type Product = Database['public']['Tables']['products']['Row']
@@ -18,6 +19,7 @@ export default function Home() {
     // Check if any modules are enabled
     const hasModules = hasModule('stats_overview') ||
         hasModule('inventory_distribution') ||
+        hasModule('container_distribution') ||
         hasModule('categories_summary') ||
         hasModule('recent_products')
 
@@ -76,14 +78,14 @@ export default function Home() {
             <div className="flex items-center justify-between">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
-                        <Sparkles className="text-emerald-500" size={20} />
+                        <LayoutDashboard className="text-emerald-500" size={20} />
                         <span className="text-emerald-700 text-sm font-semibold">Dashboard</span>
                     </div>
                     <h1 className="text-3xl font-black text-stone-900 tracking-tight">
                         Tổng quan {currentSystem?.name || 'Kho hàng'}
                     </h1>
                     <p className="text-stone-500 mt-1 text-sm font-medium">
-                        Hệ thống theo dõi và quản trị kho sầu riêng thông minh
+                        Hệ thống quản trị kho
                     </p>
                 </div>
             </div>
@@ -148,6 +150,13 @@ export default function Home() {
             {hasModule('inventory_distribution') && (
                 <div>
                     <InventoryDistributionChart />
+                </div>
+            )}
+
+            {/* CONTAINER ESTIMATE CHART */}
+            {hasModule('container_distribution') && (
+                <div>
+                    <ContainerStockChart />
                 </div>
             )}
 

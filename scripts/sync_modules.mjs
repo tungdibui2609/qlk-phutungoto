@@ -60,6 +60,7 @@ const MODULE_DEFINITIONS = [
     // Dashboard
     { id: 'stats_overview', name: 'Thẻ thống kê tổng quan', description: 'Hiển thị tổng sản phẩm, danh mục, tồn kho thấp và nhập hàng trong tuần.', category: 'dashboard', is_basic: true },
     { id: 'inventory_distribution', name: 'Tỉ lệ phân bố hàng hóa', description: 'Biểu đồ tròn hiển thị tỉ lệ phần trăm các loại hàng hóa trong kho.', category: 'dashboard', is_basic: false },
+    { id: 'container_distribution', name: 'Ước tính Container xuất bán', description: 'Biểu đồ cột thể hiện ước tính số lượng container tồn kho cho từng sản phẩm theo quy cách thùng.', category: 'dashboard', is_basic: true },
     { id: 'categories_summary', name: 'Danh sách danh mục', description: 'Bảng tóm tắt các danh mục sản phẩm hiện có.', category: 'dashboard', is_basic: false },
     { id: 'recent_products', name: 'Sản phẩm mới nhất', description: 'Danh sách các sản phẩm mới được thêm vào hệ thống.', category: 'dashboard', is_basic: false },
 

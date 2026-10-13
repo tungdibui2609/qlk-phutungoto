@@ -1,4 +1,4 @@
-import { LayoutDashboard, PieChart, Package, Boxes, TrendingUp, AlertTriangle } from 'lucide-react'
+import { LayoutDashboard, PieChart, Package, Boxes, TrendingUp, AlertTriangle, BarChart3 } from 'lucide-react'
 
 export interface DashboardModule {
     id: string
@@ -21,6 +21,13 @@ export const DASHBOARD_MODULES: DashboardModule[] = [
         name: 'Tỉ lệ phân bố hàng hóa',
         description: 'Biểu đồ tròn hiển thị tỉ lệ phần trăm các loại hàng hóa trong kho.',
         icon: PieChart
+    },
+    {
+        id: 'container_distribution',
+        name: 'Ước tính Container xuất bán',
+        description: 'Biểu đồ cột thể hiện ước tính số lượng container tồn kho cho từng sản phẩm theo quy cách thùng.',
+        icon: BarChart3,
+        is_basic: true
     },
     {
         id: 'categories_summary',

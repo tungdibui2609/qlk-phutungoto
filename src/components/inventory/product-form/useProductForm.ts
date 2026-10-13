@@ -54,6 +54,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         packaging_specification: initialData?.packaging_specification || '',
         quantity_per_pallet: initialData?.quantity_per_pallet || 0,
         pallet_unit: initialData?.pallet_unit || '',
+        boxes_per_container: (initialData as any)?.boxes_per_container || 0,
     })
 
     const [mediaItems, setMediaItems] = useState<{ id?: string, url: string, type: 'image' | 'video' }[]>([])
@@ -247,6 +248,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
         const payload = {
             ...baseData,
             quantity_per_pallet: baseData.quantity_per_pallet ? parseInt(String(baseData.quantity_per_pallet), 10) : 0,
+            boxes_per_container: baseData.boxes_per_container ? parseInt(String(baseData.boxes_per_container), 10) : 0,
             category_id: primary_category_id || null, // Primary category in legacy field
             system_type: systemType,
             company_id: profile?.company_id || null

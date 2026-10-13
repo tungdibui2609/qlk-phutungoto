@@ -35,8 +35,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Files]
-; Sao chép toàn bộ mã nguồn, thư viện, bản build, cấu hình (Loại trừ cache dev và file rác)
-Source: "{#SourceFolder}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: ".git\*,.agent\*,build\*,dist\*,dist_installer\*,*.log,scratch_*.js,.next\cache\*,.next\dev\*"
+; Sao chép TOÀN BỘ thư mục dự án 100% không bỏ sót bất kỳ file nào (chỉ loại trừ thư mục xuất file installer và cache build exe tạm)
+Source: "{#SourceFolder}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "dist_installer\*,build\*,dist\*"
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; WorkingDir: "{app}"

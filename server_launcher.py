@@ -39,6 +39,7 @@ DOCKER_PATHS = [
 
 PORTS = {
     "nextjs": 3000,
+    "nextjs_dev": 3001,
     "supabase_api": 64321,
     "supabase_db": 64322,
     "supabase_studio": 64323,
@@ -47,6 +48,7 @@ PORTS = {
 
 URLS = {
     "web_local": f"http://localhost:{PORTS['nextjs']}",
+    "web_dev": f"http://localhost:{PORTS['nextjs_dev']}",
     "studio_local": f"http://localhost:{PORTS['supabase_studio']}",
     "mail_local": f"http://localhost:{PORTS['supabase_mail']}",
     "domain_chanhthu": "https://www.chanhthu.click",
@@ -61,6 +63,22 @@ def is_port_open(port: int, host: str = "127.0.0.1", timeout: float = 0.6) -> bo
             return s.connect_ex((host, port)) == 0
     except Exception:
         return False
+
+
+def kill_process_on_port(port: int):
+    """Tìm và tắt chính xác tiến trình đang chiếm port cụ thể trên Windows"""
+    try:
+        out = subprocess.check_output(f"netstat -ano | findstr :{port}", shell=True, text=True, stderr=subprocess.DEVNULL)
+        pids = set()
+        for line in out.strip().splitlines():
+            parts = line.split()
+            if len(parts) >= 5 and "LISTENING" in parts:
+                pids.add(parts[-1])
+        for pid in pids:
+            if pid and pid != "0":
+                subprocess.run(f"taskkill /F /PID {pid} /T", shell=True, capture_output=True)
+    except Exception:
+        pass
 
 
 def is_docker_ready() -> bool:
@@ -354,12 +372,16 @@ class ServerManagerGUI:
         self.root.configure(bg="#0f172a")
 
         self.proc_nextjs = None
+        self.proc_nextjs_dev = None
         self.proc_tunnel = None
         self.is_starting_all = False
         self.is_stopping_all = False
         self.is_building = False
         self.is_backing_up = False
         self.is_restoring = False
+        self.is_creating_installer = False
+        self.is_archiving_project = False
+        self.last_auto_backup_date = None
         self.running_loop = True
 
         # Tự động đồng bộ file Cloudflare Tunnel vào thư mục người dùng máy mới
@@ -395,6 +417,16 @@ class ServerManagerGUI:
             borderwidth=0
         )
         style.map("Primary.TButton", background=[("active", "#1d4ed8"), ("disabled", "#475569")])
+
+        style.configure(
+            "Dev.TButton",
+            background="#7c3aed",
+            foreground="#ffffff",
+            font=("Segoe UI", 11, "bold"),
+            padding=8,
+            borderwidth=0
+        )
+        style.map("Dev.TButton", background=[("active", "#6d28d9"), ("disabled", "#475569")])
 
         style.configure(
             "Danger.TButton",
@@ -455,6 +487,26 @@ class ServerManagerGUI:
             borderwidth=0
         )
         style.map("Domain.TButton", background=[("active", "#4f46e5"), ("disabled", "#475569")])
+
+        style.configure(
+            "Pack.TButton",
+            background="#d97706",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("Pack.TButton", background=[("active", "#b45309"), ("disabled", "#475569")])
+
+        style.configure(
+            "Archive.TButton",
+            background="#0284c7",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("Archive.TButton", background=[("active", "#0369a1"), ("disabled", "#475569")])
 
         style.configure(
             "Switch.TButton",
@@ -546,8 +598,15 @@ class ServerManagerGUI:
         btn_box = tk.Frame(actions_card, bg="#1e293b")
         btn_box.pack(fill=tk.X, pady=2)
 
-        self.btn_start_all = ttk.Button(btn_box, text="🚀 KHỞI ĐỘNG TẤT CẢ (1-CLICK)", style="Primary.TButton", command=self.start_all_services)
-        self.btn_start_all.pack(fill=tk.X, pady=(0, 6))
+        # Hàng nút khởi động: Hệ thống (Prod :3000) & Khởi chạy Dev (:3001)
+        btn_launch_row = tk.Frame(btn_box, bg="#1e293b")
+        btn_launch_row.pack(fill=tk.X, pady=(0, 6))
+
+        self.btn_start_all = ttk.Button(btn_launch_row, text="🚀 CHẠY HỆ THỐNG (:3000)", style="Primary.TButton", command=self.start_all_services)
+        self.btn_start_all.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+
+        self.btn_dev = ttk.Button(btn_launch_row, text="🛠️ BẬT DEV (:3001)", style="Dev.TButton", command=self.toggle_dev_server)
+        self.btn_dev.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
 
         btn_sub_row = tk.Frame(btn_box, bg="#1e293b")
         btn_sub_row.pack(fill=tk.X)
@@ -562,7 +621,7 @@ class ServerManagerGUI:
         btn_db_row = tk.Frame(btn_box, bg="#1e293b")
         btn_db_row.pack(fill=tk.X, pady=(6, 0))
 
-        self.btn_backup = ttk.Button(btn_db_row, text="💾 SAO LƯU CSDL", style="Backup.TButton", command=self.backup_database)
+        self.btn_backup = ttk.Button(btn_db_row, text="💾 SAO LƯU (Tự động 12:20)", style="Backup.TButton", command=self.backup_database)
         self.btn_backup.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
 
         self.btn_restore = ttk.Button(btn_db_row, text="📥 NẠP / PHỤC HỒI CSDL", style="Success.TButton", command=self.restore_database)
@@ -588,6 +647,16 @@ class ServerManagerGUI:
         self.btn_open_guide = ttk.Button(btn_tools_row2, text="📖 Hướng Dẫn Cloudflare", style="Link.TButton", command=self.open_docs_guide)
         self.btn_open_guide.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
 
+        # Hàng nút Đóng Gói & Đồng Bộ: Tạo File Cài Đặt (EXE) & Nén Google Drive (RAR/ZIP)
+        btn_pack_row = tk.Frame(btn_box, bg="#1e293b")
+        btn_pack_row.pack(fill=tk.X, pady=(6, 0))
+
+        self.btn_pack_exe = ttk.Button(btn_pack_row, text="📦 ĐÓNG GÓI CÀI ĐẶT (EXE)", style="Pack.TButton", command=self.create_installer_exe)
+        self.btn_pack_exe.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+
+        self.btn_pack_drive = ttk.Button(btn_pack_row, text="🗜️ NÉN CHO DRIVE (RAR/ZIP)", style="Archive.TButton", command=self.pack_project_for_drive)
+        self.btn_pack_drive.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
+
         # Cột phải: Bảng trạng thái dịch vụ (Status Dashboard)
         status_card = tk.Frame(top_grid, bg="#1e293b", padx=14, pady=12, highlightthickness=1, highlightbackground="#334155")
         status_card.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
@@ -598,7 +667,8 @@ class ServerManagerGUI:
         services = [
             ("docker", "🐳 Docker Desktop Engine"),
             ("supabase", "🗄️ Supabase Local (DB & API :64321)"),
-            ("nextjs", "🌐 Next.js Web App (:3000)"),
+            ("nextjs", "⚡ Web Production (:3000)"),
+            ("nextjs_dev", "🛠️ Web Development (:3001)"),
             ("tunnel", "🚇 Cloudflare Tunnel (Online)"),
         ]
 
@@ -620,7 +690,8 @@ class ServerManagerGUI:
         links_row = tk.Frame(links_card, bg="#1e293b")
         links_row.pack(fill=tk.X)
 
-        ttk.Button(links_row, text="🌐 Web Local (:3000)", style="Link.TButton", command=lambda: webbrowser.open(URLS["web_local"])).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(links_row, text="⚡ Web Prod (:3000)", style="Link.TButton", command=lambda: webbrowser.open(URLS["web_local"])).pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(links_row, text="🛠️ Web Dev (:3001)", style="Link.TButton", command=lambda: webbrowser.open(URLS["web_dev"])).pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(links_row, text="🗄️ Supabase Studio", style="Link.TButton", command=lambda: webbrowser.open(URLS["studio_local"])).pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(links_row, text="🌍 chanhthu.click", style="Link.TButton", command=lambda: webbrowser.open(URLS["domain_chanhthu"])).pack(side=tk.LEFT, padx=(0, 6))
         ttk.Button(links_row, text="🌍 sarita.click", style="Link.TButton", command=lambda: webbrowser.open(URLS["domain_sarita"])).pack(side=tk.LEFT, padx=(0, 6))
@@ -648,6 +719,7 @@ class ServerManagerGUI:
 
         self.log("ℹ️ Trình quản lý Server Modular WMS đã sẵn sàng.")
         self.log(f"📁 Thư mục dự án: {PROJECT_DIR}")
+        self.log("⏰ Lịch tự động sao lưu dữ liệu CSDL: 12:20 hằng ngày.")
 
     def log(self, message: str):
         timestamp = time.strftime("%H:%M:%S")
@@ -678,8 +750,26 @@ class ServerManagerGUI:
             nextjs_ok = is_port_open(PORTS["nextjs"])
             self.root.after(0, self._update_status_ui, "nextjs", nextjs_ok, "● HOẠT ĐỘNG", "○ TẮT")
 
+            nextjs_dev_ok = is_port_open(PORTS["nextjs_dev"])
+            self.root.after(0, self._update_status_ui, "nextjs_dev", nextjs_dev_ok, "● HOẠT ĐỘNG", "○ TẮT")
+
+            if hasattr(self, "btn_dev"):
+                if nextjs_dev_ok:
+                    self.root.after(0, lambda: self.btn_dev.configure(text="🛑 TẮT DEV (:3001)", style="Danger.TButton"))
+                else:
+                    self.root.after(0, lambda: self.btn_dev.configure(text="🛠️ BẬT DEV (:3001)", style="Dev.TButton"))
+
             tunnel_ok = (self.proc_tunnel is not None and self.proc_tunnel.poll() is None)
             self.root.after(0, self._update_status_ui, "tunnel", tunnel_ok, "● KẾT NỐI", "○ TẮT")
+
+            # Tự động sao lưu dữ liệu CSDL vào đúng 12:20 hằng ngày
+            now = time.localtime()
+            today_str = time.strftime("%Y-%m-%d", now)
+            if now.tm_hour == 12 and now.tm_min == 20:
+                if self.last_auto_backup_date != today_str and not self.is_backing_up:
+                    self.last_auto_backup_date = today_str
+                    self.log("⏰ [LỊCH HẸN 12:20] Đã đến giờ tự động sao lưu dữ liệu CSDL...")
+                    threading.Thread(target=self._backup_database_worker, kwargs={"is_auto": True}, daemon=True).start()
 
             time.sleep(2.5)
 
@@ -704,8 +794,9 @@ class ServerManagerGUI:
         self.btn_backup.configure(state="disabled")
         threading.Thread(target=self._backup_database_worker, daemon=True).start()
 
-    def _backup_database_worker(self):
-        self.log("💾 ================= BẮT ĐẦU SAO LƯU DỮ LIỆU CSDL =================")
+    def _backup_database_worker(self, is_auto: bool = False):
+        log_prefix = "⏰ [TỰ ĐỘNG 12:20]" if is_auto else "💾"
+        self.log(f"{log_prefix} ================= BẮT ĐẦU SAO LƯU DỮ LIỆU CSDL =================")
         try:
             backup_dir = self.get_backup_dir()
             timestamp = time.strftime("%Y%m%d_%H%M%S")
@@ -725,19 +816,22 @@ class ServerManagerGUI:
 
             if res.returncode == 0 and backup_file.exists() and backup_file.stat().st_size > 0:
                 file_size_kb = round(backup_file.stat().st_size / 1024, 2)
-                self.log(f"✅ Sao lưu CSDL THÀNH CÔNG! Dung lượng: {file_size_kb} KB")
+                self.log(f"✅ {log_prefix} Sao lưu CSDL THÀNH CÔNG! Dung lượng: {file_size_kb} KB")
                 self.log(f"📁 File đã lưu tại: {str(backup_file)}")
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Sao Lưu Thành Công",
-                    f"Đã sao lưu toàn bộ dữ liệu CSDL thành công!\n\nFile: {backup_file.name} ({file_size_kb} KB)\nThư mục: {str(backup_dir)}"
-                ))
+                if not is_auto:
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Sao Lưu Thành Công",
+                        f"Đã sao lưu toàn bộ dữ liệu CSDL thành công!\n\nFile: {backup_file.name} ({file_size_kb} KB)\nThư mục: {str(backup_dir)}"
+                    ))
             else:
                 err_msg = res.stderr or res.stdout or "Không xuất được file"
                 self.log(f"❌ Lỗi khi sao lưu: {err_msg}")
-                self.root.after(0, lambda: messagebox.showerror("Lỗi Sao Lưu", f"Không thể sao lưu dữ liệu:\n{err_msg}"))
+                if not is_auto:
+                    self.root.after(0, lambda: messagebox.showerror("Lỗi Sao Lưu", f"Không thể sao lưu dữ liệu:\n{err_msg}"))
         except Exception as e:
             self.log(f"❌ Ngoại lệ khi sao lưu: {e}")
-            self.root.after(0, lambda: messagebox.showerror("Lỗi Ngoại Lệ", f"Lỗi: {e}"))
+            if not is_auto:
+                self.root.after(0, lambda: messagebox.showerror("Lỗi Ngoại Lệ", f"Lỗi: {e}"))
         finally:
             self.is_backing_up = False
             self.root.after(0, lambda: self.btn_backup.configure(state="normal"))
@@ -815,6 +909,159 @@ class ServerManagerGUI:
             self.is_restoring = False
             self.root.after(0, lambda: self.btn_restore.configure(state="normal"))
 
+    def create_installer_exe(self):
+        """Đóng gói toàn bộ hệ thống thành 1 file cài đặt All-In-One (EXE) qua Inno Setup"""
+        if self.is_creating_installer:
+            return
+        self.is_creating_installer = True
+        self.btn_pack_exe.configure(state="disabled")
+        threading.Thread(target=self._create_installer_worker, daemon=True).start()
+
+    def _create_installer_worker(self):
+        self.log("📦 ================= BẮT ĐẦU ĐÓNG GÓI BẢN CÀI ĐẶT ALL-IN-ONE (EXE) =================")
+        iscc_paths = [
+            Path(os.path.expanduser(r"~\AppData\Local\Programs\Inno Setup 6\ISCC.exe")),
+            Path(r"C:\Program Files (x86)\Inno Setup 6\ISCC.exe"),
+            Path(r"C:\Program Files\Inno Setup 6\ISCC.exe"),
+        ]
+        iscc_exe = None
+        for p in iscc_paths:
+            if p.exists():
+                iscc_exe = p
+                break
+
+        if not iscc_exe:
+            self.log("❌ Lỗi: Không tìm thấy trình biên dịch Inno Setup 6 (ISCC.exe) trên máy!")
+            self.root.after(0, lambda: messagebox.showerror(
+                "Thiếu Inno Setup 6",
+                "Không tìm thấy Inno Setup 6!\nVui lòng cài đặt Inno Setup 6 để đóng gói file cài đặt."
+            ))
+            self.is_creating_installer = False
+            self.root.after(0, lambda: self.btn_pack_exe.configure(state="normal"))
+            return
+
+        iss_file = PROJECT_DIR / "installer_config.iss"
+        if not iss_file.exists():
+            self.log(f"❌ Lỗi: Không tìm thấy file cấu hình {iss_file.name}!")
+            self.is_creating_installer = False
+            self.root.after(0, lambda: self.btn_pack_exe.configure(state="normal"))
+            return
+
+        self.log(f"🔨 Đang biên dịch bộ cài đặt bằng Inno Setup ({iscc_exe.name})...")
+        self.log("⏳ Quá trình nén toàn bộ mã nguồn + build + CSDL sẽ mất 1 - 3 phút, vui lòng chờ...")
+
+        try:
+            cmd = f'"{str(iscc_exe)}" "{str(iss_file)}"'
+            proc = subprocess.Popen(
+                cmd,
+                cwd=str(PROJECT_DIR),
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+            for line in iter(proc.stdout.readline, ""):
+                if line:
+                    clean = line.strip()
+                    if clean:
+                        self.log(f"[InnoSetup] {clean}")
+                if not self.running_loop:
+                    break
+            proc.wait()
+
+            dist_installer_dir = PROJECT_DIR / "dist_installer"
+            if proc.returncode == 0:
+                self.log("✅ ĐÓNG GÓI BẢN CÀI ĐẶT THÀNH CÔNG 100%!")
+                created_file = None
+                if dist_installer_dir.exists():
+                    files = list(dist_installer_dir.glob("*.exe"))
+                    if files:
+                        created_file = max(files, key=lambda f: f.stat().st_mtime)
+
+                file_info = ""
+                if created_file and created_file.exists():
+                    size_mb = round(created_file.stat().st_size / (1024 * 1024), 2)
+                    file_info = f"\nFile: {created_file.name} ({size_mb} MB)"
+                    self.log(f"📁 Vị trí: {created_file} ({size_mb} MB)")
+
+                if dist_installer_dir.exists() and sys.platform == "win32":
+                    os.startfile(str(dist_installer_dir))
+
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Đóng Gói Thành Công",
+                    f"Đã tạo file cài đặt All-In-One thành công!{file_info}\n\nThư mục: {str(dist_installer_dir)}"
+                ))
+            else:
+                self.log(f"❌ Quá trình đóng gói thất bại với mã lỗi {proc.returncode}!")
+        except Exception as e:
+            self.log(f"❌ Ngoại lệ khi đóng gói: {e}")
+        finally:
+            self.is_creating_installer = False
+            self.root.after(0, lambda: self.btn_pack_exe.configure(state="normal"))
+
+    def pack_project_for_drive(self):
+        """Nén toàn bộ thư mục dự án thành file RAR (hoặc ZIP) để đồng bộ Google Drive"""
+        if self.is_archiving_project:
+            return
+        self.is_archiving_project = True
+        self.btn_pack_drive.configure(state="disabled")
+        threading.Thread(target=self._pack_project_for_drive_worker, daemon=True).start()
+
+    def _pack_project_for_drive_worker(self):
+        self.log("🗜️ ================= BẮT ĐẦU NÉN DỰ ÁN CHO GOOGLE DRIVE =================")
+        try:
+            backup_dir = self.get_backup_dir()
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+
+            winrar_paths = [
+                Path(r"C:\Program Files\WinRAR\Rar.exe"),
+                Path(r"C:\Program Files\WinRAR\WinRAR.exe"),
+                Path(r"C:\Program Files (x86)\WinRAR\Rar.exe"),
+            ]
+            winrar_exe = None
+            for p in winrar_paths:
+                if p.exists():
+                    winrar_exe = p
+                    break
+
+            if winrar_exe:
+                out_file = backup_dir / f"ModularWMS_Full_{timestamp}.rar"
+                self.log("⚡ Phát hiện WinRAR! Đang sử dụng chuẩn nén RAR5 tối đa (Solid Archive, siêu nhẹ)...")
+                self.log(f"📦 Đang tạo file nén: {out_file.name}...")
+                cmd = f'"{str(winrar_exe)}" a -r -s -m5 -ep1 -x*\\dist_installer\\* -x*\\build\\* -x*\\dist\\* -x*\\backups\\* "{str(out_file)}" "{str(PROJECT_DIR)}\\*"'
+            else:
+                out_file = backup_dir / f"ModularWMS_Full_{timestamp}.zip"
+                self.log("ℹ️ Đang sử dụng PowerShell để nén file ZIP...")
+                self.log(f"📦 Đang tạo file nén: {out_file.name}...")
+                ps_script = f"$src = '{str(PROJECT_DIR)}'; $dest = '{str(out_file)}'; Compress-Archive -Path (Get-ChildItem -Path $src -Exclude 'backups','dist_installer','build','dist') -DestinationPath $dest -CompressionLevel Optimal"
+                cmd = f'powershell.exe -NoProfile -Command "{ps_script}"'
+
+            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=360)
+
+            if out_file.exists() and out_file.stat().st_size > 0:
+                size_mb = round(out_file.stat().st_size / (1024 * 1024), 2)
+                self.log(f"✅ Nén dự án THÀNH CÔNG! Dung lượng file: {size_mb} MB")
+                self.log(f"📁 Đường dẫn: {str(out_file)}")
+                if sys.platform == "win32":
+                    os.startfile(str(backup_dir))
+
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Nén Thành Công (Google Drive)",
+                    f"Đã nén toàn bộ thư mục dự án thành công!\n\nFile: {out_file.name} ({size_mb} MB)\nĐã sẵn sàng tải lên Google Drive!\nThư mục: {str(backup_dir)}"
+                ))
+            else:
+                err_msg = proc.stderr or proc.stdout or "Không tạo được file nén"
+                self.log(f"❌ Lỗi khi nén: {err_msg}")
+                self.root.after(0, lambda: messagebox.showerror("Lỗi Nén Dự Án", f"Không thể nén dự án:\n{err_msg}"))
+        except Exception as e:
+            self.log(f"❌ Ngoại lệ khi nén: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Lỗi Ngoại Lệ", f"Lỗi: {e}"))
+        finally:
+            self.is_archiving_project = False
+            self.root.after(0, lambda: self.btn_pack_drive.configure(state="normal"))
+
     def build_production(self):
         """Build lại bản production Next.js"""
         if self.is_building:
@@ -825,10 +1072,28 @@ class ServerManagerGUI:
 
     def _build_production_worker(self):
         self.log("🔨 ================= BẮT ĐẦU BUILD PRODUCTION (npm run build) =================")
-        if is_port_open(PORTS["nextjs"]):
-            self.log("ℹ️ Đang tạm dừng Web App cũ để tránh xung đột file lock...")
+
+        # 1. Tự động kiểm tra và tắt bản Dev (:3001) nếu người dùng đang mở
+        if is_port_open(PORTS["nextjs_dev"]) or (self.proc_nextjs_dev and self.proc_nextjs_dev.poll() is None):
+            self.log("ℹ️ Phát hiện bản Dev (:3001) đang chạy. Đang tự động tắt Dev để tránh xung đột file lock...")
             try:
-                subprocess.run("taskkill /F /IM node.exe /T", shell=True, capture_output=True)
+                if self.proc_nextjs_dev and self.proc_nextjs_dev.poll() is None:
+                    subprocess.run(f"taskkill /F /PID {self.proc_nextjs_dev.pid} /T", shell=True, capture_output=True)
+                    self.proc_nextjs_dev = None
+                kill_process_on_port(PORTS["nextjs_dev"])
+                time.sleep(1)
+                self.log("✅ Đã tắt bản Dev (:3001) an toàn.")
+            except Exception as e:
+                self.log(f"⚠️ Lỗi tắt Dev: {e}")
+
+        # 2. Tạm dừng bản Production (:3000) cũ để tránh xung đột file lock thư mục .next
+        if is_port_open(PORTS["nextjs"]):
+            self.log("ℹ️ Đang tạm dừng Web Production cổng 3000 cũ để tránh xung đột file lock...")
+            try:
+                if self.proc_nextjs and self.proc_nextjs.poll() is None:
+                    subprocess.run(f"taskkill /F /PID {self.proc_nextjs.pid} /T", shell=True, capture_output=True)
+                    self.proc_nextjs = None
+                kill_process_on_port(PORTS["nextjs"])
                 time.sleep(1.5)
             except Exception:
                 pass
@@ -855,6 +1120,66 @@ class ServerManagerGUI:
         finally:
             self.is_building = False
             self.root.after(0, lambda: self.btn_build.configure(state="normal"))
+
+    def toggle_dev_server(self):
+        """Bật hoặc Tắt nhanh chế độ Dev Server (:3001) độc lập"""
+        if is_port_open(PORTS["nextjs_dev"]):
+            self.log("🛑 Đang tắt Next.js Dev Server (:3001)...")
+            try:
+                if self.proc_nextjs_dev and self.proc_nextjs_dev.poll() is None:
+                    subprocess.run(f"taskkill /F /PID {self.proc_nextjs_dev.pid} /T", shell=True, capture_output=True)
+                    self.proc_nextjs_dev = None
+                kill_process_on_port(PORTS["nextjs_dev"])
+                self.log("✅ Đã tắt Next.js Dev Server (:3001).")
+            except Exception as e:
+                self.log(f"⚠️ Lỗi tắt Dev Server: {e}")
+        else:
+            threading.Thread(target=self._start_dev_worker, daemon=True).start()
+
+    def _start_dev_worker(self):
+        self.log("🛠️ ================= BẮT ĐẦU KHỞI CHẠY DEV SERVER (:3001) =================")
+        # Tự động kiểm tra Docker & Supabase để Dev có CSDL hoạt động
+        if not (is_port_open(PORTS["supabase_api"]) and is_port_open(PORTS["supabase_studio"])):
+            if not is_docker_ready():
+                self.log("🐳 Docker chưa chạy. Vui lòng bật Docker Desktop hoặc dùng nút Chạy Hệ Thống!")
+            else:
+                self.log("📦 Supabase chưa chạy. Đang tự động bật Supabase Local...")
+                try:
+                    subprocess.run("cmd.exe /c npx.cmd supabase start", cwd=str(PROJECT_DIR), shell=True, capture_output=True, timeout=120)
+                except Exception:
+                    pass
+
+        if is_port_open(PORTS["nextjs_dev"]):
+            kill_process_on_port(PORTS["nextjs_dev"])
+            time.sleep(1)
+
+        try:
+            cmd = "cmd.exe /c npm.cmd run dev"
+            self.log("🛠️ Đang thực thi 'npm run dev' trên cổng 3001...")
+            self.proc_nextjs_dev = subprocess.Popen(
+                cmd,
+                cwd=str(PROJECT_DIR),
+                shell=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                bufsize=1,
+                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+            )
+            threading.Thread(target=self._stream_proc_logs, args=(self.proc_nextjs_dev, "[Next.js-Dev]"), daemon=True).start()
+
+            for _ in range(25):
+                if is_port_open(PORTS["nextjs_dev"]):
+                    break
+                time.sleep(1)
+
+            if is_port_open(PORTS["nextjs_dev"]):
+                self.log(f"✅ Next.js Dev đã online tại {URLS['web_dev']}!")
+                webbrowser.open(URLS["web_dev"])
+            else:
+                self.log("⚠️ Next.js Dev đang khởi chạy ngầm...")
+        except Exception as e:
+            self.log(f"❌ Lỗi khởi động Dev: {e}")
 
     def switch_mode_fast(self):
         """Chuyển nhanh chế độ giữa Production và Dev"""
@@ -932,10 +1257,13 @@ class ServerManagerGUI:
 
         # 3. NEXT.JS WEB APP
         self.log(f"3️⃣ [Next.js] Đang khởi chạy Web App ({mode_name})...")
-        if is_port_open(PORTS["nextjs"]):
-            self.log("ℹ️ Đang giải phóng cổng 3000 cũ để áp dụng phiên bản mới...")
+        target_port = PORTS["nextjs"] if mode == "prod" else PORTS["nextjs_dev"]
+        port_label = "3000 (Production)" if mode == "prod" else "3001 (Dev)"
+
+        if is_port_open(target_port):
+            self.log(f"ℹ️ Đang giải phóng cổng {port_label} cũ để áp dụng phiên bản mới...")
             try:
-                subprocess.run("taskkill /F /IM node.exe /T", shell=True, capture_output=True)
+                kill_process_on_port(target_port)
                 time.sleep(1.5)
             except Exception:
                 pass
@@ -948,32 +1276,43 @@ class ServerManagerGUI:
                     subprocess.run("cmd.exe /c npm.cmd run build", cwd=str(PROJECT_DIR), shell=True, capture_output=True, timeout=180)
 
                 cmd_start = "cmd.exe /c npm.cmd run start"
-                self.log("⚡ Đang khởi động Next.js Production Server (npm run start)...")
+                self.log("⚡ Đang khởi động Next.js Production Server cổng 3000 (npm run start)...")
+                self.proc_nextjs = subprocess.Popen(
+                    cmd_start,
+                    cwd=str(PROJECT_DIR),
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                )
+                threading.Thread(target=self._stream_proc_logs, args=(self.proc_nextjs, "[Next.js-Prod]"), daemon=True).start()
             else:
                 cmd_start = "cmd.exe /c npm.cmd run dev"
-                self.log("🛠️ Đang khởi động Next.js Dev Server (npm run dev)...")
-
-            self.proc_nextjs = subprocess.Popen(
-                cmd_start,
-                cwd=str(PROJECT_DIR),
-                shell=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                bufsize=1,
-                creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
-            )
-            threading.Thread(target=self._stream_proc_logs, args=(self.proc_nextjs, "[Next.js]"), daemon=True).start()
+                self.log("🛠️ Đang khởi động Next.js Dev Server cổng 3001 (npm run dev)...")
+                self.proc_nextjs_dev = subprocess.Popen(
+                    cmd_start,
+                    cwd=str(PROJECT_DIR),
+                    shell=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    text=True,
+                    bufsize=1,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                )
+                threading.Thread(target=self._stream_proc_logs, args=(self.proc_nextjs_dev, "[Next.js-Dev]"), daemon=True).start()
 
             for _ in range(25):
-                if is_port_open(PORTS["nextjs"]):
+                if is_port_open(target_port):
                     break
                 time.sleep(1)
 
-            if is_port_open(PORTS["nextjs"]):
-                self.log("✅ Next.js Web App đã online tại http://localhost:3000!")
+            if is_port_open(target_port):
+                url_online = URLS["web_local"] if mode == "prod" else URLS["web_dev"]
+                self.log(f"✅ Next.js Web App ({mode.upper()}) đã online tại {url_online}!")
             else:
-                self.log("⚠️ Next.js đang khởi chạy ngầm...")
+                self.log(f"⚠️ Next.js ({mode.upper()}) đang khởi chạy ngầm...")
         except Exception as e:
             self.log(f"❌ Lỗi khởi động Next.js: {e}")
 
@@ -1045,13 +1384,22 @@ class ServerManagerGUI:
                 self.log(f"⚠️ Lỗi tắt tunnel: {e}")
 
         if self.proc_nextjs and self.proc_nextjs.poll() is None:
-            self.log("🛑 Đang dừng Next.js Web App...")
+            self.log("🛑 Đang dừng Next.js Production (:3000)...")
             try:
                 subprocess.run(f"taskkill /F /PID {self.proc_nextjs.pid} /T", shell=True, capture_output=True)
                 self.proc_nextjs = None
-                self.log("✅ Đã tắt Next.js.")
+                self.log("✅ Đã tắt Next.js Production.")
             except Exception as e:
-                self.log(f"⚠️ Lỗi tắt Next.js: {e}")
+                self.log(f"⚠️ Lỗi tắt Next.js Production: {e}")
+
+        if self.proc_nextjs_dev and self.proc_nextjs_dev.poll() is None:
+            self.log("🛑 Đang dừng Next.js Dev (:3001)...")
+            try:
+                subprocess.run(f"taskkill /F /PID {self.proc_nextjs_dev.pid} /T", shell=True, capture_output=True)
+                self.proc_nextjs_dev = None
+                self.log("✅ Đã tắt Next.js Dev.")
+            except Exception as e:
+                self.log(f"⚠️ Lỗi tắt Next.js Dev: {e}")
 
         self.log("🛑 Đang dừng các container Supabase Local...")
         try:
@@ -1142,8 +1490,9 @@ class ServerManagerGUI:
 
         btn_install_docker = ttk.Button(
             row1,
-            text="⚡ Cài Docker (winget)",
-            style="Doctor.TButton",
+            text="⚡ Cài Docker (winget)" if not (docker_installed or docker_running) else "✅ Đã Có Docker",
+            style="Doctor.TButton" if not (docker_installed or docker_running) else "Success.TButton",
+            state="normal" if not (docker_installed or docker_running) else "disabled",
             command=lambda: self._install_via_winget("Docker Desktop", "Docker.DockerDesktop")
         )
         btn_install_docker.pack(side=tk.RIGHT, padx=4)
@@ -1157,13 +1506,52 @@ class ServerManagerGUI:
         # 2. Node.js
         node_status = "❌ Chưa cài đặt"
         node_color = "#ef4444"
-        try:
-            n_res = subprocess.run(["node", "-v"], capture_output=True, text=True, timeout=2)
-            if n_res.returncode == 0:
-                node_status = f"✅ Đã cài đặt ({n_res.stdout.strip()})"
-                node_color = "#22c55e"
-        except Exception:
-            pass
+        node_check_targets = [
+            shutil.which("node"),
+            r"C:\Program Files\nodejs\node.exe",
+            r"C:\Program Files (x86)\nodejs\node.exe",
+            os.path.expandvars(r"%APPDATA%\npm\node.cmd"),
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\node\node.exe"),
+        ]
+        detected_version = None
+        for candidate in node_check_targets:
+            if not candidate:
+                continue
+            cand_p = Path(candidate)
+            if not cand_p.exists():
+                continue
+            try:
+                n_res = subprocess.run(
+                    [str(cand_p), "-v"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                )
+                if n_res.returncode == 0 and n_res.stdout.strip():
+                    detected_version = n_res.stdout.strip()
+                    break
+            except Exception:
+                pass
+
+        if not detected_version:
+            try:
+                n_res = subprocess.run(
+                    "cmd.exe /c node.exe -v",
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                    creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                )
+                if n_res.returncode == 0 and n_res.stdout.strip():
+                    detected_version = n_res.stdout.strip()
+            except Exception:
+                pass
+
+        if detected_version:
+            node_status = f"✅ Đã cài đặt ({detected_version})"
+            node_color = "#22c55e"
 
         row2 = tk.Frame(items_box, bg="#1e293b", padx=12, pady=10, highlightthickness=1, highlightbackground="#334155")
         row2.pack(fill=tk.X, pady=(0, 8))
@@ -1172,8 +1560,9 @@ class ServerManagerGUI:
 
         btn_install_node = ttk.Button(
             row2,
-            text="⚡ Cài Node.js (winget)",
-            style="Doctor.TButton",
+            text="⚡ Cài Node.js (winget)" if node_color == "#ef4444" else "✅ Đã Có Node.js",
+            style="Doctor.TButton" if node_color == "#ef4444" else "Success.TButton",
+            state="normal" if node_color == "#ef4444" else "disabled",
             command=lambda: self._install_via_winget("Node.js LTS", "OpenJS.NodeJS.LTS")
         )
         btn_install_node.pack(side=tk.RIGHT, padx=4)

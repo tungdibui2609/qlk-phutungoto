@@ -29,6 +29,13 @@ if exist "%FILENAME%" (
     echo [LOI] Khong the tao file sao luu! Vui long kiem tra Supabase co dang chay khong.
 )
 
+if "%1"=="/auto" (
+    echo.
+    echo [Lich hen 12:20] Da hoan tat sao luu tu dong. Tu dong dong sau 3 giay...
+    timeout /t 3 >nul
+    exit /b 0
+)
+
 echo.
 echo Nhan phim bat ky de mo thu muc sao luu hoac thoat...
 pause >nul

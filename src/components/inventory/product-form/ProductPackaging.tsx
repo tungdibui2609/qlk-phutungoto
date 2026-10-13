@@ -54,6 +54,27 @@ export function ProductPackaging({ formData, handleChange, readOnly, inputClass,
                 Dùng để tự động phát hiện và gợi ý ghép lot lẻ chưa lên kệ hoặc ở sảnh.
             </p>
 
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label className="block text-sm font-medium text-stone-700 mb-2">
+                        Tổng số thùng xuất bán 1 container
+                    </label>
+                    <input
+                        type="number"
+                        name="boxes_per_container"
+                        disabled={readOnly}
+                        min={0}
+                        value={formData.boxes_per_container || ''}
+                        onChange={handleChange}
+                        className={inputClass}
+                        placeholder="VD: 1500"
+                    />
+                    <p className="text-xs text-stone-400 mt-1.5">
+                        Tổng số lượng thùng xuất bán tiêu chuẩn cho 1 container.
+                    </p>
+                </div>
+            </div>
+
             <div>
                 <label className="block text-sm font-medium text-stone-700 mb-2">Ghi chú quy cách</label>
                 <textarea

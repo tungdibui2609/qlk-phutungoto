@@ -135,7 +135,7 @@ export default function SelectSystemPage() {
                                             {sys.name}
                                         </h3>
                                         <p className="text-slate-500 text-xs leading-relaxed line-clamp-2">
-                                            {sys.description || 'Hệ thống quản trị kho sầu riêng và bảo quản chuỗi cung ứng'}
+                                            {sys.description || 'Hệ thống quản trị kho'}
                                         </p>
                                     </div>
 

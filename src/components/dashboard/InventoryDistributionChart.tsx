@@ -199,12 +199,13 @@ export default function InventoryDistributionChart() {
     const chartData = useMemo(() => {
         if (conversionLoading || lots.length === 0) return { data: [], totalWeight: 0 }
 
-        const aggregation = new Map<string, { value: number, internalName: string | null, internalCode: string | null, sku: string }>()
+        const aggregation = new Map<string, { value: number, productName: string, internalName: string | null, internalCode: string | null, sku: string }>()
 
         lots.forEach(lot => {
             const process = (
                 pid: string,
                 sku: string,
+                productName: string,
                 qty: number,
                 unit: string,
                 baseUnit: string,
@@ -226,9 +227,10 @@ export default function InventoryDistributionChart() {
                     const kgQty = baseQty * kgRate
 
                     const key = internalCode || sku
-                    const current = aggregation.get(key) || { value: 0, internalName, internalCode, sku }
+                    const current = aggregation.get(key) || { value: 0, productName, internalName, internalCode, sku }
                     aggregation.set(key, { 
                         ...current, 
+                        productName: current.productName || productName,
                         value: current.value + kgQty 
                     })
                 }
@@ -241,6 +243,7 @@ export default function InventoryDistributionChart() {
                         process(
                             item.product_id, 
                             item.products.sku, 
+                            item.products.name,
                             item.quantity, 
                             u, 
                             item.products.unit,
@@ -258,6 +261,7 @@ export default function InventoryDistributionChart() {
                     process(
                         lot.product_id, 
                         lot.products.sku, 
+                        lot.products.name,
                         q, 
                         u, 
                         lot.products.unit,
@@ -273,7 +277,7 @@ export default function InventoryDistributionChart() {
         const totalWeight = Array.from(aggregation.values()).reduce((a, b) => a + b.value, 0)
 
         let data = Array.from(aggregation.values()).map((item) => ({
-            name: item.internalName || item.sku,
+            name: item.productName || item.internalName || item.sku,
             code: item.internalCode || item.sku,
             value: item.value,
             percentage: totalWeight > 0 ? (item.value / totalWeight) * 100 : 0,
@@ -528,25 +532,20 @@ export default function InventoryDistributionChart() {
             </div>
 
             {/* Custom Legend */}
-            <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-y-3 gap-x-6">
+            <div className="mt-8 grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6">
                 {(isLegendExpanded ? processedData : processedData.slice(0, 6)).map((entry, index) => (
-                    <div key={entry.name} className="flex items-center gap-2">
+                    <div key={`${entry.code || entry.name}-${index}`} className="flex items-start gap-2.5">
                         <div
-                            className="w-3 h-3 rounded-full shrink-0"
+                            className="w-3 h-3 rounded-full shrink-0 mt-1"
                             style={{ backgroundColor: COLORS[index % COLORS.length] }}
                         />
-                        <div className="flex flex-col text-sm overflow-hidden">
-                            <span className="font-bold text-stone-800 truncate" title={entry.name}>
+                        <div className="text-xs sm:text-sm flex-1 min-w-0 leading-snug">
+                            <span className="font-semibold text-stone-800 break-words" title={entry.name}>
                                 {entry.name}
                             </span>
-                            <div className="flex items-center gap-2">
-                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 border border-indigo-100 font-mono font-black uppercase">
-                                    {entry.code}
-                                </span>
-                                <span className="text-stone-500 text-xs whitespace-nowrap font-medium">
-                                    ({formatQuantityFull(entry.percentage, 0)}%)
-                                </span>
-                            </div>
+                            <span className="text-stone-500 font-medium ml-1.5 whitespace-nowrap">
+                                ({formatQuantityFull(entry.percentage, 0)}%)
+                            </span>
                         </div>
                     </div>
                 ))}
