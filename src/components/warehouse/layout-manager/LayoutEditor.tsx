@@ -23,6 +23,18 @@ interface LayoutEditorProps {
 const GRID = 20;
 const MIN_SIZE = GRID * 2;
 
+const LineIcon = (props: any) => (
+    <svg width={props.size || 16} height={props.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" {...props}>
+        <line x1="3" y1="21" x2="21" y2="3" />
+    </svg>
+);
+
+const DashedLineIcon = (props: any) => (
+    <svg width={props.size || 16} height={props.size || 16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeDasharray="4 4" {...props}>
+        <line x1="3" y1="21" x2="21" y2="3" />
+    </svg>
+);
+
 type ToolId = 'SELECT' | ShapeType;
 
 // Danh mục công cụ chuyên nghiệp phân theo nhóm kiến trúc & vận hành kho
@@ -34,8 +46,10 @@ const TOOL_GROUPS: {
         name: 'Thao tác & Ký hiệu',
         tools: [
             { id: 'SELECT', label: 'Chọn / Di chuyển', icon: MousePointer },
-            { id: 'TEXT_NOTE', label: 'Văn bản / Ghi chú', icon: Type },
+            { id: 'LINE', label: 'Đường thẳng (Vạch liền)', icon: LineIcon },
+            { id: 'DASHED_LINE', label: 'Đường nét đứt (Vạch đứt)', icon: DashedLineIcon },
             { id: 'ARROW', label: 'Mũi tên luồng di chuyển', icon: ArrowRight },
+            { id: 'TEXT_NOTE', label: 'Văn bản / Ghi chú', icon: Type },
         ]
     },
     {
@@ -102,6 +116,8 @@ const SHAPE_DEFAULTS: Record<ShapeType, { fill: string; stroke: string; label: s
     FIRE_EXT: { fill: '#fee2e2', stroke: '#ef4444', label: 'PCCC' },
     FIRST_AID: { fill: '#dcfce7', stroke: '#16a34a', label: 'Tủ y tế' },
     ARROW: { fill: '#3b82f6', stroke: '#1d4ed8', label: 'Hướng đi' },
+    LINE: { fill: 'transparent', stroke: '#2563eb', label: 'Đường thẳng' },
+    DASHED_LINE: { fill: 'transparent', stroke: '#eab308', label: 'Đường nét đứt' },
     TEXT_NOTE: { fill: 'transparent', stroke: 'transparent', label: 'Ghi chú' },
 };
 
@@ -246,6 +262,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const [drawPreview, setDrawPreview] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
     const drawingRef = useRef(false);
     const drawStartRef = useRef({ x: 0, y: 0 });
+    const drawEndRef = useRef({ x: 0, y: 0 });
 
     // Drag candidate (distinguishes single-click / double-click from intentional drag)
     const dragCandidateRef = useRef<{
@@ -532,6 +549,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
         } else {
             drawingRef.current = true;
             drawStartRef.current = { x: snap(pt.x), y: snap(pt.y) };
+            drawEndRef.current = { x: snap(pt.x), y: snap(pt.y) };
             setDrawPreview({ x: snap(pt.x), y: snap(pt.y), w: 0, h: 0 });
         }
     }, [activeTool, shapes, rackPopup, getSvgPoint, dragPos, pushHistory, handleContainerMouseDown, isSpacePressed]);
@@ -546,6 +564,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             const sy = drawStartRef.current.y;
             const curX = snap(pt.x);
             const curY = snap(pt.y);
+            drawEndRef.current = { x: curX, y: curY };
             setDrawPreview({
                 x: Math.min(sx, curX),
                 y: Math.min(sy, curY),
@@ -610,8 +629,38 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const onMouseUp = useCallback(() => {
         if (drawingRef.current && drawPreview) {
             drawingRef.current = false;
-            const w = Math.max(drawPreview.w, MIN_SIZE);
-            const h = Math.max(drawPreview.h, MIN_SIZE);
+            const isLineTool = activeTool === 'LINE' || activeTool === 'DASHED_LINE';
+            let w = Math.max(drawPreview.w, MIN_SIZE);
+            let h = Math.max(drawPreview.h, MIN_SIZE);
+            let lineOrientation: 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up' | undefined = undefined;
+
+            if (isLineTool) {
+                const sx = drawStartRef.current.x;
+                const sy = drawStartRef.current.y;
+                const ex = drawEndRef.current.x;
+                const ey = drawEndRef.current.y;
+                const dx = ex - sx;
+                const dy = ey - sy;
+
+                if (drawPreview.w === 0 && drawPreview.h === 0) {
+                    w = GRID * 6; // 120px mặc định khi chỉ click chuột
+                    h = GRID;     // 20px chiều cao vùng chạm chọn
+                    lineOrientation = 'horizontal';
+                } else if (Math.abs(dx) >= Math.abs(dy) * 1.5) {
+                    w = Math.max(drawPreview.w, GRID * 2);
+                    h = Math.max(drawPreview.h, GRID);
+                    lineOrientation = 'horizontal';
+                } else if (Math.abs(dy) >= Math.abs(dx) * 1.5) {
+                    w = Math.max(drawPreview.w, GRID);
+                    h = Math.max(drawPreview.h, GRID * 2);
+                    lineOrientation = 'vertical';
+                } else {
+                    w = Math.max(drawPreview.w, GRID * 2);
+                    h = Math.max(drawPreview.h, GRID * 2);
+                    lineOrientation = (dx * dy >= 0) ? 'diagonal-down' : 'diagonal-up';
+                }
+            }
+
             const newShape: LayoutShape = {
                 id: crypto.randomUUID(),
                 type: activeTool as ShapeType,
@@ -622,6 +671,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 label: SHAPE_DEFAULTS[activeTool as ShapeType]?.label || 'Khu vực',
                 code: activeTool === 'ZONE' ? `ZONE-${Math.floor(100 + Math.random() * 900)}` : undefined,
                 isMultiLot: activeTool === 'ZONE' ? true : undefined,
+                strokeWidth: isLineTool ? 3 : undefined,
+                strokeDasharray: activeTool === 'DASHED_LINE' ? '8 6' : undefined,
+                lineOrientation,
             };
             const next = [...shapes, newShape];
             setShapes(next);
@@ -1343,6 +1395,59 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                                     🚪 {shape.label || ''}
                                                 </text>
                                             </g>
+                                        ) : shape.type === 'LINE' || shape.type === 'DASHED_LINE' ? (
+                                            /* Đường thẳng / Đường nét đứt */
+                                            (() => {
+                                                const sWidth = shape.strokeWidth || 3;
+                                                const sDash = shape.strokeDasharray || (shape.type === 'DASHED_LINE' ? '8 6' : undefined);
+                                                const orient = shape.lineOrientation || (sw >= sh ? 'horizontal' : 'vertical');
+
+                                                let x1 = sx, y1 = sy + sh / 2, x2 = sx + sw, y2 = sy + sh / 2;
+                                                if (orient === 'vertical') {
+                                                    x1 = sx + sw / 2; y1 = sy;
+                                                    x2 = sx + sw / 2; y2 = sy + sh;
+                                                } else if (orient === 'diagonal-down') {
+                                                    x1 = sx; y1 = sy;
+                                                    x2 = sx + sw; y2 = sy + sh;
+                                                } else if (orient === 'diagonal-up') {
+                                                    x1 = sx; y1 = sy + sh;
+                                                    x2 = sx + sw; y2 = sy;
+                                                }
+
+                                                return (
+                                                    <g>
+                                                        {/* Vùng đệm trong suốt để click/kéo chọn dễ dàng */}
+                                                        <line 
+                                                            x1={x1} y1={y1} x2={x2} y2={y2} 
+                                                            stroke="transparent" 
+                                                            strokeWidth={Math.max(sWidth + 16, 20)} 
+                                                        />
+                                                        {/* Đường vẽ thực tế */}
+                                                        <line 
+                                                            x1={x1} y1={y1} x2={x2} y2={y2} 
+                                                            stroke={stroke} 
+                                                            strokeWidth={sWidth} 
+                                                            strokeDasharray={sDash}
+                                                            strokeLinecap="round"
+                                                            opacity={opacity}
+                                                        />
+                                                        {/* Nhãn tùy biến (nếu người dùng nhập tên khác mặc định) */}
+                                                        {shape.label && shape.label !== 'Đường thẳng' && shape.label !== 'Đường nét đứt' && (
+                                                            <text 
+                                                                x={sx + sw / 2} 
+                                                                y={orient === 'horizontal' ? sy + sh / 2 - 8 : sy + sh / 2} 
+                                                                textAnchor="middle" 
+                                                                dominantBaseline="central"
+                                                                fontSize={10} 
+                                                                fontWeight="bold" 
+                                                                fill={stroke}
+                                                            >
+                                                                {shape.label}
+                                                            </text>
+                                                        )}
+                                                    </g>
+                                                );
+                                            })()
                                         ) : (
                                             /* ZONE, WALL, PATH... */
                                             <rect 
@@ -1353,8 +1458,8 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                             />
                                         )}
 
-                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE, ROOM, DOOR) */}
-                                        {shape.type !== 'TEXT_NOTE' && shape.type !== 'ROOM' && shape.type !== 'DOOR' && shape.label && (
+                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE, ROOM, DOOR, LINE, DASHED_LINE) */}
+                                        {shape.type !== 'TEXT_NOTE' && shape.type !== 'ROOM' && shape.type !== 'DOOR' && shape.type !== 'LINE' && shape.type !== 'DASHED_LINE' && shape.label && (
                                             <text 
                                                 x={sx + sw/2} y={shape.type === 'ARROW' ? sy + sh*0.85 : sy + sh/2} 
                                                 textAnchor="middle" dominantBaseline="central"
@@ -1420,10 +1525,39 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
                             {/* Draw Preview when creating */}
                             {drawPreview && (
-                                <rect 
-                                    x={drawPreview.x} y={drawPreview.y} width={drawPreview.w} height={drawPreview.h}
-                                    fill="#93c5fd" fillOpacity="0.3" stroke="#2563eb" strokeWidth="2" strokeDasharray="6 3"
-                                />
+                                activeTool === 'LINE' || activeTool === 'DASHED_LINE' ? (
+                                    <g>
+                                        <rect 
+                                            x={drawPreview.x} y={drawPreview.y} width={Math.max(drawPreview.w, 1)} height={Math.max(drawPreview.h, 1)}
+                                            fill="#93c5fd" fillOpacity="0.1" stroke="#93c5fd" strokeWidth="1" strokeDasharray="3 3"
+                                        />
+                                        <line 
+                                            x1={drawPreview.x} 
+                                            y1={drawPreview.w >= drawPreview.h ? drawPreview.y + drawPreview.h/2 : drawPreview.y} 
+                                            x2={drawPreview.x + drawPreview.w} 
+                                            y2={drawPreview.w >= drawPreview.h ? drawPreview.y + drawPreview.h/2 : drawPreview.y + drawPreview.h} 
+                                            stroke={activeTool === 'DASHED_LINE' ? '#eab308' : '#2563eb'} 
+                                            strokeWidth={3} 
+                                            strokeDasharray={activeTool === 'DASHED_LINE' ? '8 6' : undefined}
+                                            strokeLinecap="round"
+                                        />
+                                        <text
+                                            x={drawPreview.x + drawPreview.w / 2}
+                                            y={drawPreview.y - 6}
+                                            textAnchor="middle"
+                                            fontSize={10}
+                                            fontWeight="bold"
+                                            fill={activeTool === 'DASHED_LINE' ? '#d97706' : '#2563eb'}
+                                        >
+                                            {`${((Math.max(drawPreview.w, drawPreview.h)) / 20).toFixed(1)}m`}
+                                        </text>
+                                    </g>
+                                ) : (
+                                    <rect 
+                                        x={drawPreview.x} y={drawPreview.y} width={drawPreview.w} height={drawPreview.h}
+                                        fill="#93c5fd" fillOpacity="0.3" stroke="#2563eb" strokeWidth="2" strokeDasharray="6 3"
+                                    />
+                                )
                             )}
                         </svg>
                     </div>
@@ -1565,6 +1699,127 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                             </div>
                         )}
 
+                        {/* Tùy chỉnh chuyên dụng cho Đường thẳng & Đường nét đứt */}
+                        {(selectedShape.type === 'LINE' || selectedShape.type === 'DASHED_LINE') && (
+                            <div className="p-3.5 bg-blue-50/70 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800/40 rounded-2xl space-y-3.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-blue-900 dark:text-blue-300">Kiểu đường vẽ</span>
+                                    <div className="flex items-center gap-1 bg-white dark:bg-zinc-800 p-0.5 rounded-lg border border-blue-200 dark:border-blue-800">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateSelectedShape({ type: 'LINE', strokeDasharray: undefined })}
+                                            className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                selectedShape.type === 'LINE' 
+                                                    ? 'bg-blue-600 text-white shadow-xs' 
+                                                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700'
+                                            }`}
+                                        >
+                                            Nét liền ──
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateSelectedShape({ type: 'DASHED_LINE', strokeDasharray: selectedShape.strokeDasharray || '8 6' })}
+                                            className={`px-2 py-1 text-[11px] font-bold rounded-md transition-all ${
+                                                selectedShape.type === 'DASHED_LINE' 
+                                                    ? 'bg-blue-600 text-white shadow-xs' 
+                                                    : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700'
+                                            }`}
+                                        >
+                                            Nét đứt ╌╌
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Hướng đường */}
+                                <div>
+                                    <label className="text-[11px] font-bold text-blue-800 dark:text-blue-300 block mb-1.5">Hướng đường</label>
+                                    <div className="grid grid-cols-4 gap-1">
+                                        {[
+                                            { id: 'horizontal', label: 'Ngang ──' },
+                                            { id: 'vertical', label: 'Dọc │' },
+                                            { id: 'diagonal-down', label: 'Chéo ╲' },
+                                            { id: 'diagonal-up', label: 'Chéo ╱' },
+                                        ].map(h => {
+                                            const currentOrient = selectedShape.lineOrientation || (selectedShape.width >= selectedShape.height ? 'horizontal' : 'vertical');
+                                            const isActive = currentOrient === h.id;
+                                            return (
+                                                <button
+                                                    key={h.id}
+                                                    type="button"
+                                                    onClick={() => updateSelectedShape({ lineOrientation: h.id as any })}
+                                                    className={`py-1.5 px-1 text-[10px] font-bold rounded-lg border text-center transition-all ${
+                                                        isActive
+                                                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                                            : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-zinc-700 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    {h.label}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Độ dày nét (strokeWidth) */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-1.5">
+                                        <label className="text-[11px] font-bold text-blue-800 dark:text-blue-300">Độ dày nét vẽ</label>
+                                        <span className="text-[11px] font-mono font-bold text-blue-600">{(selectedShape.strokeWidth || 3)}px</span>
+                                    </div>
+                                    <div className="grid grid-cols-6 gap-1">
+                                        {[1, 2, 3, 4, 6, 8].map(w => {
+                                            const isActive = (selectedShape.strokeWidth || 3) === w;
+                                            return (
+                                                <button
+                                                    key={w}
+                                                    type="button"
+                                                    onClick={() => updateSelectedShape({ strokeWidth: w })}
+                                                    className={`py-1 text-[10px] font-bold rounded-lg border text-center transition-all ${
+                                                        isActive
+                                                            ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                                            : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-zinc-700 hover:bg-gray-50'
+                                                    }`}
+                                                >
+                                                    {w}px
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* Kiểu ngắt quãng nét đứt */}
+                                {selectedShape.type === 'DASHED_LINE' && (
+                                    <div>
+                                        <label className="text-[11px] font-bold text-blue-800 dark:text-blue-300 block mb-1.5">Mẫu nét đứt</label>
+                                        <div className="grid grid-cols-3 gap-1">
+                                            {[
+                                                { dash: '12 8', label: 'Thưa' },
+                                                { dash: '8 6', label: 'Tiêu chuẩn' },
+                                                { dash: '4 4', label: 'Dày' },
+                                            ].map(d => {
+                                                const currentDash = selectedShape.strokeDasharray || '8 6';
+                                                const isActive = currentDash === d.dash;
+                                                return (
+                                                    <button
+                                                        key={d.dash}
+                                                        type="button"
+                                                        onClick={() => updateSelectedShape({ strokeDasharray: d.dash })}
+                                                        className={`py-1 text-[10px] font-bold rounded-lg border text-center transition-all ${
+                                                            isActive
+                                                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                                                                : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-zinc-700 hover:bg-gray-50'
+                                                        }`}
+                                                    >
+                                                        {d.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         {/* Kích thước & Tọa độ */}
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-gray-600 dark:text-gray-400 block">Kích Thước & Tọa Độ (Grid 20px)</label>
@@ -1622,19 +1877,45 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         {/* Màu sắc tùy chỉnh */}
                         <div className="space-y-2">
                             <label className="text-xs font-bold text-gray-600 dark:text-gray-400 flex items-center gap-1.5">
-                                <Palette size={14} /> Màu sắc đại diện
+                                <Palette size={14} /> {selectedShape.type === 'LINE' || selectedShape.type === 'DASHED_LINE' ? 'Màu nét vẽ (Vạch sơn)' : 'Màu sắc đại diện'}
                             </label>
-                            <div className="grid grid-cols-4 gap-2">
-                                {COLOR_PRESETS.map((preset, pIdx) => (
-                                    <button
-                                        key={pIdx}
-                                        onClick={() => updateSelectedShape({ color: preset.fill, strokeColor: preset.stroke })}
-                                        className="h-8 rounded-lg border-2 transition-transform hover:scale-105"
-                                        style={{ backgroundColor: preset.fill, borderColor: preset.stroke }}
-                                        title={preset.name}
-                                    />
-                                ))}
-                            </div>
+                            {selectedShape.type === 'LINE' || selectedShape.type === 'DASHED_LINE' ? (
+                                <div className="grid grid-cols-6 gap-1.5">
+                                    {[
+                                        { color: '#eab308', name: 'Vàng (Sơn an toàn)' },
+                                        { color: '#2563eb', name: 'Xanh dương (Chỉ dẫn)' },
+                                        { color: '#dc2626', name: 'Đỏ (Ranh giới cấm)' },
+                                        { color: '#16a34a', name: 'Xanh lá (Luồng ưu tiên)' },
+                                        { color: '#f8fafc', stroke: '#94a3b8', name: 'Trắng (Vạch sơn phân làn)' },
+                                        { color: '#334155', name: 'Xám đậm (Hạ tầng)' },
+                                    ].map((c, cIdx) => (
+                                        <button
+                                            key={cIdx}
+                                            type="button"
+                                            onClick={() => updateSelectedShape({ strokeColor: c.color, color: c.color })}
+                                            className="h-8 rounded-lg border-2 transition-transform hover:scale-105 flex items-center justify-center shadow-xs"
+                                            style={{ backgroundColor: c.color, borderColor: c.stroke || c.color }}
+                                            title={c.name}
+                                        >
+                                            {(selectedShape.strokeColor === c.color || selectedShape.color === c.color) && (
+                                                <span className="text-[10px] font-black" style={{ color: c.color === '#f8fafc' ? '#0f172a' : '#ffffff' }}>✓</span>
+                                            )}
+                                        </button>
+                                    ))}
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-4 gap-2">
+                                    {COLOR_PRESETS.map((preset, pIdx) => (
+                                        <button
+                                            key={pIdx}
+                                            onClick={() => updateSelectedShape({ color: preset.fill, strokeColor: preset.stroke })}
+                                            className="h-8 rounded-lg border-2 transition-transform hover:scale-105"
+                                            style={{ backgroundColor: preset.fill, borderColor: preset.stroke }}
+                                            title={preset.name}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         {/* Layer Order */}

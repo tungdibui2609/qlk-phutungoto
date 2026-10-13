@@ -32,6 +32,8 @@ export type ShapeType =
     | 'FIRE_EXT'      // Bình PCCC / Trạm an toàn
     | 'FIRST_AID'     // Tủ thuốc y tế / Trạm sơ cứu
     | 'ARROW'         // Mũi tên chỉ hướng di chuyển / Luồng xe
+    | 'LINE'          // Đường thẳng / Vạch kẻ liền
+    | 'DASHED_LINE'   // Đường nét đứt / Vạch kẻ đứt
     | 'TEXT_NOTE';    // Nhãn chữ / Chú thích bản vẽ
 
 export interface LayoutShape {
@@ -50,6 +52,9 @@ export interface LayoutShape {
     // Customization & Appearance
     color?: string;         // Màu nền tùy chỉnh (HEX)
     strokeColor?: string;   // Màu viền tùy chỉnh (HEX)
+    strokeWidth?: number;   // Độ dày nét vẽ
+    strokeDasharray?: string; // Tùy biến nét đứt (ví dụ "8 6", "12 6", "4 4")
+    lineOrientation?: 'horizontal' | 'vertical' | 'diagonal-down' | 'diagonal-up'; // Hướng đường vẽ
     opacity?: number;       // Độ trong suốt (0.1 -> 1)
     isLocked?: boolean;     // Khóa vị trí (không cho kéo nhầm)
     

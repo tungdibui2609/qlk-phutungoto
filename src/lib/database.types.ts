@@ -283,8 +283,12 @@ export interface Database {
           category_id: string | null
           unit: string | null
           image_url: string | null
+          description?: string | null
           cost_price?: number | null
           sale_price?: number | null
+          retail_price?: number | null
+          wholesale_price?: number | null
+          packaging_specification?: string | null
           part_number?: string | null
           internal_code?: string | null
           internal_name?: string | null
@@ -293,6 +297,7 @@ export interface Database {
           system_code: string | null
           quantity_per_pallet: number | null
           pallet_unit: string | null
+          company_id?: string | null
         }
         Insert: {
           id?: string
@@ -301,8 +306,12 @@ export interface Database {
           category_id?: string | null
           unit?: string | null
           image_url?: string | null
+          description?: string | null
           cost_price?: number | null
           sale_price?: number | null
+          retail_price?: number | null
+          wholesale_price?: number | null
+          packaging_specification?: string | null
           part_number?: string | null
           internal_code?: string | null
           internal_name?: string | null
@@ -311,6 +320,7 @@ export interface Database {
           system_code?: string | null
           quantity_per_pallet?: number | null
           pallet_unit?: string | null
+          company_id?: string | null
         }
         Update: {
           id?: string
@@ -319,8 +329,12 @@ export interface Database {
           category_id?: string | null
           unit?: string | null
           image_url?: string | null
+          description?: string | null
           cost_price?: number | null
           sale_price?: number | null
+          retail_price?: number | null
+          wholesale_price?: number | null
+          packaging_specification?: string | null
           part_number?: string | null
           internal_code?: string | null
           internal_name?: string | null
@@ -329,7 +343,33 @@ export interface Database {
           system_code?: string | null
           quantity_per_pallet?: number | null
           pallet_unit?: string | null
+          company_id?: string | null
         }
+      }
+      categories: {
+        Row: { id: string; name: string; code?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Insert: { id?: string; name: string; code?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Update: { id?: string; name?: string; code?: string | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+      }
+      vehicles: {
+        Row: { id: string; name: string; model?: string | null; brand?: string | null; system_type?: string | null; created_at?: string | null }
+        Insert: { id?: string; name: string; model?: string | null; brand?: string | null; system_type?: string | null; created_at?: string | null }
+        Update: { id?: string; name?: string; model?: string | null; brand?: string | null; system_type?: string | null; created_at?: string | null }
+      }
+      product_category_rel: {
+        Row: { id?: string; product_id: string; category_id: string; is_primary?: boolean | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Insert: { id?: string; product_id: string; category_id: string; is_primary?: boolean | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+        Update: { id?: string; product_id?: string; category_id?: string; is_primary?: boolean | null; system_type?: string | null; company_id?: string | null; created_at?: string | null }
+      }
+      product_units: {
+        Row: { id: string; product_id: string; unit_id: string; conversion_rate: number; ref_unit_id?: string | null; company_id?: string | null; created_at?: string | null }
+        Insert: { id?: string; product_id: string; unit_id: string; conversion_rate: number; ref_unit_id?: string | null; company_id?: string | null; created_at?: string | null }
+        Update: { id?: string; product_id?: string; unit_id?: string; conversion_rate?: number; ref_unit_id?: string | null; company_id?: string | null; created_at?: string | null }
+      }
+      product_media: {
+        Row: { id: string; product_id: string; url: string; type: string; sort_order?: number | null; created_at?: string | null }
+        Insert: { id?: string; product_id: string; url: string; type: string; sort_order?: number | null; created_at?: string | null }
+        Update: { id?: string; product_id?: string; url?: string; type?: string; sort_order?: number | null; created_at?: string | null }
       }
       // Add other tables as needed to satisfy imports
       units: {

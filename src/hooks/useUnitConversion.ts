@@ -21,71 +21,78 @@ interface ProductUnit {
     conversion_rate: number
 }
 
-// Module-level in-memory cache to eliminate duplicate queries across multiple components (e.g. 21 LotCards on a single page)
+// Module-level in-memory cache to eliminate duplicate queries across multiple components
 let globalUnits: Unit[] | null = null
 let globalProductUnits: ProductUnit[] | null = null
 let globalFetchPromise: Promise<void> | null = null
+let lastFetchedTime = 0
+const CACHE_TTL_MS = 30000 // 30s cache TTL to avoid stale product units
 
 export function invalidateUnitConversionCache() {
     globalUnits = null
     globalProductUnits = null
     globalFetchPromise = null
+    lastFetchedTime = 0
 }
 
 export function useUnitConversion() {
-    const [loading, setLoading] = useState(!globalUnits)
+    const isCacheValid = Boolean(globalUnits && globalProductUnits && (Date.now() - lastFetchedTime < CACHE_TTL_MS))
+    const [loading, setLoading] = useState(!isCacheValid)
     const [units, setUnits] = useState<Unit[]>(globalUnits || [])
     const [productUnits, setProductUnits] = useState<ProductUnit[]>(globalProductUnits || [])
 
+    const fetchData = useCallback(async () => {
+        try {
+            if (!globalFetchPromise) {
+                globalFetchPromise = (async () => {
+                    const fetchAll = async (tableName: string, query: any) => {
+                        let allResults: any[] = [];
+                        let from = 0;
+                        const LIMIT = 1000;
+                        while (true) {
+                            const { data, error } = await query.range(from, from + LIMIT - 1);
+                            if (error) throw error;
+                            if (!data || data.length === 0) break;
+                            allResults = [...allResults, ...data];
+                            if (data.length < LIMIT) break;
+                            from += LIMIT;
+                        }
+                        return allResults;
+                    };
+
+                    const [unitsData, prodUnitsData] = await Promise.all([
+                        fetchAll('units', supabase.from('units').select('id, name')),
+                        fetchAll('product_units', supabase.from('product_units').select('product_id, unit_id, conversion_rate'))
+                    ]);
+
+                    globalUnits = unitsData || []
+                    globalProductUnits = prodUnitsData || []
+                    lastFetchedTime = Date.now()
+                })()
+            }
+
+            await globalFetchPromise
+            setUnits(globalUnits || [])
+            setProductUnits(globalProductUnits || [])
+        } catch (error) {
+            console.error('Error fetching conversion data', error)
+            globalFetchPromise = null // allow retry on failure
+        } finally {
+            setLoading(false)
+        }
+    }, [])
+
     useEffect(() => {
-        if (globalUnits && globalProductUnits) {
-            setUnits(globalUnits)
-            setProductUnits(globalProductUnits)
+        const valid = Boolean(globalUnits && globalProductUnits && (Date.now() - lastFetchedTime < CACHE_TTL_MS))
+        if (valid) {
+            setUnits(globalUnits!)
+            setProductUnits(globalProductUnits!)
             setLoading(false)
             return
         }
 
-        async function fetchData() {
-            try {
-                if (!globalFetchPromise) {
-                    globalFetchPromise = (async () => {
-                        const fetchAll = async (tableName: string, query: any) => {
-                            let allResults: any[] = [];
-                            let from = 0;
-                            const LIMIT = 1000;
-                            while (true) {
-                                const { data, error } = await query.range(from, from + LIMIT - 1);
-                                if (error) throw error;
-                                if (!data || data.length === 0) break;
-                                allResults = [...allResults, ...data];
-                                if (data.length < LIMIT) break;
-                                from += LIMIT;
-                            }
-                            return allResults;
-                        };
-
-                        const [unitsData, prodUnitsData] = await Promise.all([
-                            fetchAll('units', supabase.from('units').select('id, name')),
-                            fetchAll('product_units', supabase.from('product_units').select('product_id, unit_id, conversion_rate'))
-                        ]);
-
-                        globalUnits = unitsData || []
-                        globalProductUnits = prodUnitsData || []
-                    })()
-                }
-
-                await globalFetchPromise
-                setUnits(globalUnits || [])
-                setProductUnits(globalProductUnits || [])
-            } catch (error) {
-                console.error('Error fetching conversion data', error)
-                globalFetchPromise = null // allow retry on failure
-            } finally {
-                setLoading(false)
-            }
-        }
         fetchData()
-    }, [])
+    }, [fetchData])
 
     const unitNameMap = useMemo(() => {
         const m = new Map<string, string>()
@@ -121,10 +128,11 @@ export function useUnitConversion() {
             // Map by ID
             innerMap.set(pu.unit_id, pu.conversion_rate)
             
-            // Also map by Name (Normalized)
+            // Also map by Name (Normalized and Canonical)
             const normName = unitIdMap.get(pu.unit_id)
             if (normName) {
                 innerMap.set(normName, pu.conversion_rate)
+                innerMap.set(canonicalizeUnit(normName), pu.conversion_rate)
             }
         })
         return cMap

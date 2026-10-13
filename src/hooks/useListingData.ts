@@ -70,12 +70,13 @@ export function useListingData<T extends { id: string; is_active?: boolean | nul
 
         if (!searchTerm) return filtered
 
-        // Sort by relevance score
-        return [...filtered].sort((a, b) => {
-            const scoreA = calculateSearchScore(a, searchTerm)
-            const scoreB = calculateSearchScore(b, searchTerm)
-            return scoreB - scoreA
-        })
+        // Sort by relevance score: tính điểm 1 lần duy nhất cho mỗi item (O(N)) thay vì tính lặp lại trong sort (O(N log N))
+        const scored = filtered.map(item => ({
+            item,
+            score: calculateSearchScore(item, searchTerm)
+        }))
+        scored.sort((a, b) => b.score - a.score)
+        return scored.map(s => s.item)
     }, [data, searchTerm, statusFilter])
 
     return {

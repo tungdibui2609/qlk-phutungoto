@@ -25,11 +25,33 @@ export function matchSearch(data: any, term: string): boolean {
 
     const normalizedTerm = normalizeSearchString(term);
     const unaccentedTerm = normalizeSearchString(term, true);
+    if (!normalizedTerm) return true;
 
-    // Chuẩn hóa dữ liệu
-    const dataString = typeof data === 'string' ? data : JSON.stringify(data);
-    const dynamicSearchString = dataString.toLowerCase().normalize('NFC');
-    const unaccentedDataString = normalizeSearchString(dynamicSearchString, true);
+    // Chuẩn hóa dữ liệu - Tối ưu hóa: Tránh JSON.stringify toàn bộ cây quan hệ nếu là object
+    let dynamicSearchString: string;
+    let unaccentedDataString: string;
+
+    if (typeof data === 'string') {
+        dynamicSearchString = data.toLowerCase().normalize('NFC');
+        unaccentedDataString = normalizeSearchString(dynamicSearchString, true);
+    } else if (typeof data === 'object') {
+        const rawAliases = data.aliases || data.short_name || data.alias;
+        const aliasText = Array.isArray(rawAliases) ? rawAliases.join(' ') : String(rawAliases || '');
+        const catName = data.categories?.name || '';
+        const fields = [
+            data.name, data.sku, data.code, data.internal_code, data.internal_name,
+            data.label, aliasText, catName, data.barcode, data.batch_code,
+            data.phone, data.email, data.address, data.notes, data.description
+        ].filter(Boolean).join(' ');
+
+        dynamicSearchString = fields
+            ? fields.toLowerCase().normalize('NFC')
+            : JSON.stringify(data).toLowerCase().normalize('NFC');
+        unaccentedDataString = normalizeSearchString(dynamicSearchString, true);
+    } else {
+        dynamicSearchString = String(data).toLowerCase().normalize('NFC');
+        unaccentedDataString = normalizeSearchString(dynamicSearchString, true);
+    }
 
     // 1. Kiểm tra khớp chuỗi trực tiếp (Phổ biến nhất)
     if (dynamicSearchString.includes(normalizedTerm) || unaccentedDataString.includes(unaccentedTerm)) {
@@ -161,14 +183,11 @@ export function calculateSearchScore(data: any, term: string, extra?: Record<str
 
     const normalizedTerm = normalizeSearchString(term);
     const unaccentedTerm = normalizeSearchString(term, true);
-
-    const stringData = typeof targetData === 'string' ? targetData : JSON.stringify(targetData);
-    const normalizedData = stringData.toLowerCase().normalize('NFC');
-    const unaccentedData = normalizeSearchString(normalizedData, true);
+    if (!normalizedTerm) return 0;
 
     let score = 0;
 
-    // 1. Nếu là đối tượng, ưu tiên kiểm tra các trường chính TRƯỚC khi stringify toàn bộ
+    // 1. Nếu là đối tượng, ưu tiên kiểm tra các trường chính TRƯỚC (KHÔNG JSON.stringify toàn bộ cây đối tượng)
     if (typeof targetData === 'object' && targetData) {
         // 1a. ĐẶC BIỆT ƯU TIÊN: Kiểm tra trường gõ tắt (aliases / short_name)
         const rawAliases = targetData.aliases || targetData.short_name || targetData.alias;
@@ -243,7 +262,7 @@ export function calculateSearchScore(data: any, term: string, extra?: Record<str
             else if (name.includes(normalizedTerm)) catScore += 150;
             
             return catScore;
-        }
+        };
 
         // Check primary category
         if (targetData.categories) {
@@ -258,19 +277,21 @@ export function calculateSearchScore(data: any, term: string, extra?: Record<str
                 }
             });
         }
+    } else {
+        const stringData = String(targetData || '');
+        const normalizedData = stringData.toLowerCase().normalize('NFC');
+        const unaccentedData = normalizeSearchString(normalizedData, true);
+
+        if (normalizedData === normalizedTerm || unaccentedData === unaccentedTerm) score += 1000;
+        else if (normalizedData.startsWith(normalizedTerm) || unaccentedData.startsWith(unaccentedTerm)) score += 500;
+        else if (normalizedData.includes(normalizedTerm)) score += 100;
     }
 
-    // 2. Fallback sang so sánh chuỗi toàn bộ (đã tính ở trên)
-    if (normalizedData === normalizedTerm) score += 1000;
-    else if (normalizedData.startsWith(normalizedTerm)) score += 500;
-    else if (normalizedData.includes(normalizedTerm)) score += 100;
-
-    // 3. Length Penalty (Bí quyết để "Xoài" thắng "TP Xoài")
+    // 2. Length Penalty (nếu có score > 0)
     // Nếu điểm bằng nhau, chuỗi ngắn hơn (súc tích hơn) sẽ thắng
-    // Chúng ta trừ một lượng điểm nhỏ dựa trên độ dài của dữ liệu
     if (score > 0) {
-        // Chỉ áp dụng penalty nếu có khớp
-        const lengthPenalty = Math.min(normalizedData.length / 2, 50);
+        const textLen = typeof targetData === 'string' ? targetData.length : String(targetData?.name || '').length;
+        const lengthPenalty = Math.min(textLen / 2, 50);
         score -= lengthPenalty;
     }
 

@@ -19,6 +19,7 @@ export interface ProductSearchInputProps {
     autoFocus?: boolean
     disabled?: boolean
     id?: string
+    debounceMs?: number
 }
 
 export function ProductSearchInput({
@@ -35,13 +36,36 @@ export function ProductSearchInput({
     showSearchButton = false,
     autoFocus = false,
     disabled = false,
-    id
+    id,
+    debounceMs = 250
 }: ProductSearchInputProps) {
     const [localValue, setLocalValue] = useState(value)
     const [showSuggestions, setShowSuggestions] = useState(false)
     const [highlightedIndex, setHighlightedIndex] = useState(-1)
     const containerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
+    const debounceTimerRef = useRef<NodeJS.Timeout | null>(null)
+
+    // Clear debounce timer on unmount
+    useEffect(() => {
+        return () => {
+            if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current)
+        }
+    }, [])
+
+    const triggerDebouncedChange = (val: string, immediate = false) => {
+        if (debounceTimerRef.current) {
+            clearTimeout(debounceTimerRef.current)
+            debounceTimerRef.current = null
+        }
+        if (immediate || debounceMs <= 0) {
+            onChange(val)
+        } else {
+            debounceTimerRef.current = setTimeout(() => {
+                onChange(val)
+            }, debounceMs)
+        }
+    }
 
     // Sync local state when external value changes
     useEffect(() => {
@@ -146,6 +170,7 @@ export function ProductSearchInput({
         } else {
             // searchMode === 'all'
             for (const p of products) {
+                if (!matchSearch(p, term)) continue
                 const score = calculateSearchScore(p, term)
 
                 if (score > 0) {
@@ -196,7 +221,7 @@ export function ProductSearchInput({
 
     const handleApplySearch = (termToSearch?: string) => {
         const target = termToSearch !== undefined ? termToSearch : localValue
-        onChange(target)
+        triggerDebouncedChange(target, true)
         if (onSearch) {
             onSearch(target)
         }
@@ -298,7 +323,7 @@ export function ProductSearchInput({
                     onChange={(e) => {
                         const val = e.target.value
                         setLocalValue(val)
-                        onChange(val)
+                        triggerDebouncedChange(val)
                         setShowSuggestions(true)
                         setHighlightedIndex(-1)
                     }}
@@ -317,7 +342,7 @@ export function ProductSearchInput({
                             type="button"
                             onClick={() => {
                                 setLocalValue('')
-                                onChange('')
+                                triggerDebouncedChange('', true)
                                 if (onSearch) onSearch('')
                                 setShowSuggestions(false)
                                 inputRef.current?.focus()

@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import { invalidateUnitConversionCache } from '@/hooks/useUnitConversion'
 
 type Product = Database['public']['Tables']['products']['Row']
 type Category = Database['public']['Tables']['categories']['Row']
@@ -338,6 +339,8 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                         }
                     }
                 }
+                // Invalidate global unit conversion cache so Outbound/Inbound reflect new rates immediately
+                invalidateUnitConversionCache()
             }
 
             // Save Media

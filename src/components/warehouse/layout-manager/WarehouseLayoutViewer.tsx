@@ -12,7 +12,7 @@ const SHAPE_FILL: Record<ShapeType, string> = {
     DOCK: '#e0e7ff', PILLAR: '#94a3b8', DESK: '#e0f2fe', PACK_STATION: '#fef08a',
     SCALE: '#ccfbf1', STAGING: '#fef9c3', QC_AREA: '#d1fae5', SCRAP: '#fee2e2',
     FORKLIFT_PARK: '#fef3c7', STAIRS: '#f1f5f9', FIRE_EXT: '#fee2e2',
-    FIRST_AID: '#dcfce7', ARROW: '#3b82f6', TEXT_NOTE: 'transparent',
+    FIRST_AID: '#dcfce7', ARROW: '#3b82f6', LINE: 'transparent', DASHED_LINE: 'transparent', TEXT_NOTE: 'transparent',
 };
 
 const SHAPE_STROKE: Record<ShapeType, string> = {
@@ -21,7 +21,7 @@ const SHAPE_STROKE: Record<ShapeType, string> = {
     DOCK: '#4338ca', PILLAR: '#475569', DESK: '#0284c7', PACK_STATION: '#ca8a04',
     SCALE: '#0d9488', STAGING: '#eab308', QC_AREA: '#059669', SCRAP: '#dc2626',
     FORKLIFT_PARK: '#d97706', STAIRS: '#475569', FIRE_EXT: '#ef4444',
-    FIRST_AID: '#16a34a', ARROW: '#1d4ed8', TEXT_NOTE: 'transparent',
+    FIRST_AID: '#16a34a', ARROW: '#1d4ed8', LINE: '#2563eb', DASHED_LINE: '#eab308', TEXT_NOTE: 'transparent',
 };
 
 const SHAPE_LABELS: Record<ShapeType, string> = {
@@ -30,7 +30,7 @@ const SHAPE_LABELS: Record<ShapeType, string> = {
     DOCK: 'Dock xe tải', PILLAR: 'Cột trụ', DESK: 'Bàn thủ kho', PACK_STATION: 'Đóng gói',
     SCALE: 'Trạm cân', STAGING: 'Tập kết', QC_AREA: 'KCS / Kiểm hàng', SCRAP: 'Phế phẩm',
     FORKLIFT_PARK: 'Bãi xe nâng', STAIRS: 'Cầu thang', FIRE_EXT: 'PCCC',
-    FIRST_AID: 'Tủ y tế', ARROW: 'Hướng đi', TEXT_NOTE: 'Ghi chú',
+    FIRST_AID: 'Tủ y tế', ARROW: 'Hướng đi', LINE: 'Đường thẳng', DASHED_LINE: 'Đường nét đứt', TEXT_NOTE: 'Ghi chú',
 };
 
 interface WarehouseLayoutViewerProps {
@@ -434,6 +434,51 @@ export default function WarehouseLayoutViewer({
                                                 <line x1={sx + 8} y1={cy} x2={sx + sw - 16} y2={cy} stroke={defFill} strokeWidth={Math.min(10, sh*0.35)} strokeLinecap="round" />
                                                 <polygon points={`${sx + sw - 6},${cy} ${sx + sw - 22},${sy + sh*0.2} ${sx + sw - 22},${sy + sh*0.8}`} fill={defFill} />
                                                 {shape.label && <text x={cx} y={sy + sh*0.85} textAnchor="middle" fontSize={10} fontWeight="bold" fill="#1e40af">{shape.label}</text>}
+                                            </g>
+                                        );
+                                    }
+
+                                    // ĐƯỜNG THẲNG / ĐƯỜNG NÉT ĐỨT (LINE / DASHED_LINE)
+                                    if (shape.type === 'LINE' || shape.type === 'DASHED_LINE') {
+                                        const sWidth = shape.strokeWidth || 3;
+                                        const sDash = shape.strokeDasharray || (shape.type === 'DASHED_LINE' ? '8 6' : undefined);
+                                        const orient = shape.lineOrientation || (sw >= sh ? 'horizontal' : 'vertical');
+
+                                        let x1 = sx, y1 = cy, x2 = sx + sw, y2 = cy;
+                                        if (orient === 'vertical') {
+                                            x1 = cx; y1 = sy;
+                                            x2 = cx; y2 = sy + sh;
+                                        } else if (orient === 'diagonal-down') {
+                                            x1 = sx; y1 = sy;
+                                            x2 = sx + sw; y2 = sy + sh;
+                                        } else if (orient === 'diagonal-up') {
+                                            x1 = sx; y1 = sy + sh;
+                                            x2 = sx + sw; y2 = sy;
+                                        }
+
+                                        return (
+                                            <g key={shape.id} transform={rotTransform}>
+                                                <line 
+                                                    x1={x1} y1={y1} x2={x2} y2={y2} 
+                                                    stroke={defStroke} 
+                                                    strokeWidth={sWidth} 
+                                                    strokeDasharray={sDash}
+                                                    strokeLinecap="round"
+                                                    opacity={opacity}
+                                                />
+                                                {shape.label && shape.label !== 'Đường thẳng' && shape.label !== 'Đường nét đứt' && (
+                                                    <text 
+                                                        x={cx} 
+                                                        y={orient === 'horizontal' ? cy - 8 : cy} 
+                                                        textAnchor="middle" 
+                                                        dominantBaseline="central"
+                                                        fontSize={10} 
+                                                        fontWeight="bold" 
+                                                        fill={defStroke}
+                                                    >
+                                                        {shape.label}
+                                                    </text>
+                                                )}
                                             </g>
                                         );
                                     }

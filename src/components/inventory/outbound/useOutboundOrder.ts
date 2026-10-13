@@ -9,6 +9,7 @@ import { formatQuantityFull } from '@/lib/numberUtils'
 import { Product, Customer, Unit, OrderItem } from '../types'
 import { generateOrderCode } from '@/lib/orderCodeUtils'
 import { lotService } from '@/services/warehouse/lotService'
+import { normalizeUnit, canonicalizeUnit, isKg } from '@/lib/unitConversion'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId, duplicateOrderId }: any) {
     const { showToast } = useToast()
@@ -211,11 +212,61 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     const productLookup = new Map<string, any>()
                     ;(prodRes.data as any[]).forEach(p => productLookup.set(p.id, p))
 
+                    // Build local unit dictionary and conversion rates directly from freshly fetched data
+                    const localUnitIdToName = new Map<string, string>()
+                    const localUnitNameToId = new Map<string, string>()
+                    ;(unitRes.data || []).forEach((u: any) => {
+                        localUnitIdToName.set(u.id, u.name)
+                        const norm = normalizeUnit(u.name)
+                        localUnitNameToId.set(norm, u.id)
+                        const can = canonicalizeUnit(u.name)
+                        if (can !== norm) localUnitNameToId.set(can, u.id)
+                    })
+
+                    const localProductRates = new Map<string, Map<string, number>>()
+                    ;(prodRes.data as any[]).forEach(p => {
+                        if (p.product_units && p.product_units.length > 0) {
+                            const inner = new Map<string, number>()
+                            p.product_units.forEach((pu: any) => {
+                                inner.set(pu.unit_id, pu.conversion_rate)
+                                const uName = localUnitIdToName.get(pu.unit_id)
+                                if (uName) {
+                                    inner.set(normalizeUnit(uName), pu.conversion_rate)
+                                    inner.set(canonicalizeUnit(uName), pu.conversion_rate)
+                                }
+                            })
+                            localProductRates.set(p.id, inner)
+                        }
+                    })
+
+                    const resolveBaseQty = (productId: string, unitName: string | null, qty: number, baseUnitName: string | null): number => {
+                        if (!unitName || !qty) return qty
+                        const normUnit = normalizeUnit(unitName)
+                        const normBase = normalizeUnit(baseUnitName)
+                        if (normUnit === normBase || (isKg(normUnit) && isKg(normBase))) return qty
+
+                        // 1. Direct rate from product_units
+                        const rates = localProductRates.get(productId)
+                        if (rates) {
+                            let rate = rates.get(normUnit) || rates.get(canonicalizeUnit(unitName))
+                            if (rate !== undefined && rate > 0) return qty * rate
+
+                            const uid = localUnitNameToId.get(normUnit) || localUnitNameToId.get(canonicalizeUnit(unitName))
+                            if (uid) {
+                                rate = rates.get(uid)
+                                if (rate !== undefined && rate > 0) return qty * rate
+                            }
+                        }
+
+                        // 2. Fallback to hook's toBaseAmount
+                        return toBaseAmount(productId, unitName, qty, baseUnitName)
+                    }
+
                     // A. Duyệt qua tồn kho hiện tại từ DB
                     invRes.items.forEach((item: any) => {
                         if (item.productId) {
                             const prod = productLookup.get(item.productId)
-                            const baseQty = toBaseAmount(item.productId, item.unit, item.balance, prod?.unit || null)
+                            const baseQty = resolveBaseQty(item.productId, item.unit, item.balance, prod?.unit || null)
                             totalStockMap.set(item.productId, (totalStockMap.get(item.productId) || 0) + baseQty)
 
                             const normUnit = (item.unit || '').toLowerCase().trim()
@@ -234,7 +285,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     originalCompletedItems.forEach((item: any) => {
                         if (item.product_id) {
                             const prod = productLookup.get(item.product_id)
-                            const baseQty = toBaseAmount(item.product_id, item.unit, item.quantity, prod?.unit || null)
+                            const baseQty = resolveBaseQty(item.product_id, item.unit, item.quantity, prod?.unit || null)
                             totalStockMap.set(item.product_id, (totalStockMap.get(item.product_id) || 0) + baseQty)
 
                             const normUnit = (item.unit || '').toLowerCase().trim()
@@ -532,6 +583,54 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         }
     }
 
+    const localConvertUnit = useCallback((
+        productId: string | null,
+        fromUnit: string | null,
+        toUnit: string | null,
+        qty: number,
+        baseUnit: string | null
+    ): number => {
+        if (!productId || !fromUnit || !toUnit || !qty) return qty
+        const normFrom = normalizeUnit(fromUnit)
+        const normTo = normalizeUnit(toUnit)
+        const normBase = normalizeUnit(baseUnit)
+        if (normFrom === normTo) return qty
+
+        const prod = products.find(p => p.id === productId)
+        const effBase = baseUnit || prod?.unit || null
+        const normEffBase = normalizeUnit(effBase)
+
+        // 1. Convert fromUnit to baseUnit
+        let baseQty = qty
+        if (normFrom !== normEffBase && !(isKg(normFrom) && isKg(normEffBase))) {
+            const pu = prod?.product_units?.find((u: any) => {
+                const uName = units.find(unitItem => unitItem.id === u.unit_id)?.name
+                return normalizeUnit(uName) === normFrom || canonicalizeUnit(uName) === canonicalizeUnit(fromUnit)
+            })
+            if (pu && pu.conversion_rate) {
+                baseQty = qty * pu.conversion_rate
+            } else {
+                baseQty = toBaseAmount(productId, fromUnit, qty, effBase)
+            }
+        }
+
+        // 2. If target is baseUnit, done
+        if (normTo === normEffBase || (isKg(normTo) && isKg(normEffBase))) {
+            return baseQty
+        }
+
+        // 3. Convert baseUnit to toUnit
+        const puTarget = prod?.product_units?.find((u: any) => {
+            const uName = units.find(unitItem => unitItem.id === u.unit_id)?.name
+            return normalizeUnit(uName) === normTo || canonicalizeUnit(uName) === canonicalizeUnit(toUnit)
+        })
+        if (puTarget && puTarget.conversion_rate) {
+            return baseQty / puTarget.conversion_rate
+        }
+
+        return convertUnit(productId, fromUnit, toUnit, qty, effBase)
+    }, [products, units, toBaseAmount, convertUnit])
+
     return {
         code, setCode,
         customerName, setCustomerName,
@@ -553,7 +652,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         handleCustomerSelect,
         confirmDialog, setConfirmDialog,
         hasModule,
-        convertUnit,
+        convertUnit: localConvertUnit,
         checkUnbundle
     }
 }
