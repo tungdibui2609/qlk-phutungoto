@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Sparkles, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock, Eraser, Calendar } from 'lucide-react'
+import { Plus, MapPin, X, ArrowUpDown, Layers, Tag, FileText, Wrench, Combine, QrCode, ChevronDown, Trash2, Lock, Unlock, Eraser, Calendar } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
@@ -285,7 +285,7 @@ export function LotPageManager() {
                                     : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800'
                             }`}
                         >
-                            <Sparkles size={16} className={showUtilityMenu ? 'text-amber-300 dark:text-amber-600' : 'text-amber-500'} />
+                            <Wrench size={16} className={showUtilityMenu ? 'text-amber-300 dark:text-amber-600' : 'text-amber-500'} />
                             <span>Tiện ích</span>
                             {showOddLotSuggestions && (
                                 <span className="w-2 h-2 rounded-full bg-indigo-500" title="Gợi ý lot lẻ đang bật" />

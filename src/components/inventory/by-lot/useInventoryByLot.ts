@@ -398,6 +398,13 @@ export function useInventoryByLot(
             if (mode === 'all' || mode === 'name') {
                 if (p?.name) res.push(p.name)
                 if (p?.internal_name) res.push(p.internal_name)
+                const rawAliases = p?.aliases || p?.short_name
+                if (rawAliases) {
+                    String(rawAliases).split(/[,;]/).forEach((a: string) => {
+                        const tr = a.trim()
+                        if (tr) res.push(tr)
+                    })
+                }
             }
             if (mode === 'all' || mode === 'tag') {
                 l.lot_tags?.forEach((t: any) => res.push(t.tag))

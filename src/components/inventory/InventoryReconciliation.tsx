@@ -7,7 +7,12 @@ import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
 import { getLotInventoryForReconciliation } from '@/lib/inventoryService'
-import { canonicalizeUnit, normalizeUnit } from '@/lib/unitConversion'
+import { canonicalizeUnit, normalizeUnit, isKg } from '@/lib/unitConversion'
+import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
+import { useUser } from '@/contexts/UserContext'
+import { ProductSearchInput } from '@/components/shared/ProductSearchInput'
+import { matchSearch } from '@/lib/searchUtils'
 
 // Types
 interface AccountingItem {
@@ -32,11 +37,7 @@ interface ItemReconciliation {
     lotDetails?: { code: string, qty: number, positions: string[] }[]
 }
 
-import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
-import { useUser } from '@/contexts/UserContext'
-
-export default function InventoryReconciliation({ units }: { units: any[] }) {
+export default function InventoryReconciliation({ units, products = [] }: { units: any[], products?: any[] }) {
     const { convertUnit, unitNameMap, unitIdMap, conversionMap, loading: loadingUnits } = useUnitConversion()
     const { systemType } = useSystem()
     // Use company info for printing params, prioritized from user profile
@@ -293,20 +294,25 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
         setItems(Array.from(comparisonMap.values()).sort((a, b) => a.productCode.localeCompare(b.productCode)))
     }, [rawAccountingItems, rawLots, positionFilter, targetUnitId, loadingUnits, convertUnit, unitNameMap, unitIdMap, conversionMap, units])
 
+    const productMap = useMemo(() => {
+        const map = new Map<string, any>()
+        ;(products || []).forEach(p => map.set(p.id, p))
+        return map
+    }, [products])
+
     const displayedItems = useMemo(() => {
         let result = items
         if (showOnlyDiff) {
             result = result.filter(i => Math.abs(i.diff) >= 0.001)
         }
         if (searchQuery.trim()) {
-            const q = searchQuery.toLowerCase().trim()
-            result = result.filter(i => 
-                (i.productCode && i.productCode.toLowerCase().includes(q)) ||
-                (i.productName && i.productName.toLowerCase().includes(q))
-            )
+            result = result.filter(i => {
+                const prod = productMap.get(i.productId)
+                return matchSearch(prod || { name: i.productName, sku: i.productCode }, searchQuery)
+            })
         }
         return result
-    }, [items, showOnlyDiff, searchQuery])
+    }, [items, showOnlyDiff, searchQuery, productMap])
 
     const lotColumnTitle = positionFilter === 'has_position'
         ? 'LOT Đã có vị trí'
@@ -389,16 +395,16 @@ export default function InventoryReconciliation({ units }: { units: any[] }) {
                 {/* Search */}
                 <div className="flex-1 min-w-[200px]">
                     <label className="text-sm font-medium text-stone-700 dark:text-stone-300 mb-1 block italic">Tìm kiếm</label>
-                    <div className="relative">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                        <input
-                            type="text"
-                            value={searchQuery}
-                            onChange={e => setSearchQuery(e.target.value)}
-                            placeholder="Tìm mã hoặc tên sản phẩm..."
-                            className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-stone-50 dark:bg-stone-800/50 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                        />
-                    </div>
+                    <ProductSearchInput
+                        value={searchQuery}
+                        onChange={setSearchQuery}
+                        products={products}
+                        placeholder="Tìm mã hoặc tên sản phẩm (hỗ trợ viết tắt)..."
+                        theme="orange"
+                        className="w-full"
+                        inputClassName="py-2 pl-9 bg-stone-50 dark:bg-stone-800/50 rounded-md"
+                        iconSize={16}
+                    />
                 </div>
 
                 {/* Checkbox show only diff */}

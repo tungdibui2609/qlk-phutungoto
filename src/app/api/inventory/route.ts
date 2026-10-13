@@ -378,7 +378,12 @@ export async function GET(request: Request) {
                 const tags = relatedLots.flatMap(l => lotToTags.get(l.id) || [])
                 const positions = relatedLots.flatMap(l => lotToPositions.get(l.id) || [])
 
-                const checkName = matchSearch(i.productName, q) || matchSearch(i.internalName, q) || matchSearch((prod as any)?.aliases, q)
+                const rawAliases = (prod as any)?.aliases || (prod as any)?.short_name
+                const checkAlias = rawAliases ? (
+                    matchSearch(rawAliases, q) ||
+                    String(rawAliases).split(/[,;]/).some((a: string) => matchSearch(a.trim(), q))
+                ) : false
+                const checkName = matchSearch(i.productName, q) || matchSearch(i.internalName, q) || checkAlias
                 const checkCode = matchSearch(i.productCode, q) || matchSearch(i.internalCode, q) || relatedLots.some(l => matchSearch(l.code, q))
                 const checkCategory = matchSearch(categoryName, q)
                 const checkTag = tags.some(t => matchSearch(t, q))

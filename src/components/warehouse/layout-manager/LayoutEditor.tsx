@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { LayoutShape, ShapeType, WarehouseLayout, LayoutInput, isShapesFormat } from './types';
 import { useToast } from '@/components/ui/ToastProvider';
 import { 
@@ -8,7 +8,7 @@ import {
     ZoomIn, ZoomOut, Grid3X3, Box, Circle, RotateCw, Tag, Copy, Undo2, 
     Redo2, Lock, Unlock, ArrowUp, ArrowDown, Scale, Flame, AlertTriangle, 
     Layers, Sparkles, Check, ChevronRight, Sliders, Palette, Truck, 
-    CheckCircle2, BatteryCharging, HeartPulse, ArrowRight, Type
+    CheckCircle2, BatteryCharging, HeartPulse, ArrowRight, Type, Ruler
 } from 'lucide-react';
 import { layoutService } from '@/services/warehouse/layoutService';
 import { useSystem } from '@/contexts/SystemContext';
@@ -128,6 +128,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const { profile } = useUser();
     const { showToast } = useToast();
     const svgRef = useRef<SVGSVGElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
 
     const [name, setName] = useState(layout?.name || 'Sơ đồ mới');
     const [canvasW, setCanvasW] = useState(layout?.width || 1400);
@@ -136,7 +137,82 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const [shapes, setShapes] = useState<LayoutShape[]>(() => initShapes(layout));
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [isSaving, setIsSaving] = useState(false);
-    const [zoom, setZoom] = useState(1);
+    const [zoom, setZoom] = useState(() => {
+        const w = layout?.width || 1400;
+        if (w >= 2000) return 0.45;
+        if (w >= 1600) return 0.6;
+        if (w >= 1200) return 0.8;
+        return 1.0;
+    });
+
+    // Spacebar Pan / Drag State (Photoshop / Figma style)
+    const [isSpacePressed, setIsSpacePressed] = useState(false);
+    const [isPanning, setIsPanning] = useState(false);
+    const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+
+    // Inspector Panel State (chỉ mở khi bấm 'Thuộc tính' hoặc nhấp đúp, không tự ý đẩy lệch màn hình)
+    const [showInspector, setShowInspector] = useState(false);
+
+    // Ruler State & Cursor Coordinate Tracking
+    const [showRulers, setShowRulers] = useState(true);
+    const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+    // Generate ruler tick marks: 20px = 1 mét (CAD scale)
+    const xTicks = useMemo(() => {
+        const ticks: { pos: number; isMajor: boolean; label?: string }[] = [];
+        for (let x = 0; x <= canvasW; x += 20) {
+            const isMajor = x % 100 === 0;
+            ticks.push({
+                pos: x,
+                isMajor,
+                label: isMajor ? `${x / 20}m` : undefined,
+            });
+        }
+        return ticks;
+    }, [canvasW]);
+
+    const yTicks = useMemo(() => {
+        const ticks: { pos: number; isMajor: boolean; label?: string }[] = [];
+        for (let y = 0; y <= canvasH; y += 20) {
+            const isMajor = y % 100 === 0;
+            ticks.push({
+                pos: y,
+                isMajor,
+                label: isMajor ? `${y / 20}m` : undefined,
+            });
+        }
+        return ticks;
+    }, [canvasH]);
+
+    const handleFitToScreen = useCallback(() => {
+        if (!containerRef.current) return;
+        const { clientWidth, clientHeight } = containerRef.current;
+        const padding = 48; // p-6
+        const targetW = clientWidth - padding;
+        const targetH = clientHeight - padding;
+        if (targetW <= 0 || targetH <= 0) return;
+        const fitScale = Math.min(targetW / canvasW, targetH / canvasH);
+        const clamped = Math.min(2.0, Math.max(0.2, Number((fitScale * 0.95).toFixed(2))));
+        setZoom(clamped);
+    }, [canvasW, canvasH]);
+
+    const handleWheel = useCallback((e: React.WheelEvent) => {
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            if (e.deltaY < 0) {
+                setZoom(z => Math.min(2.5, Number((z + 0.05).toFixed(2))));
+            } else {
+                setZoom(z => Math.max(0.2, Number((z - 0.05).toFixed(2))));
+            }
+        }
+    }, []);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            handleFitToScreen();
+        }, 60);
+        return () => clearTimeout(timer);
+    }, [handleFitToScreen]);
 
     // History stack cho Undo / Redo
     const [history, setHistory] = useState<LayoutShape[][]>([initShapes(layout)]);
@@ -171,15 +247,27 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const drawingRef = useRef(false);
     const drawStartRef = useRef({ x: 0, y: 0 });
 
-    // Dragging / Resizing state
+    // Drag candidate (distinguishes single-click / double-click from intentional drag)
+    const dragCandidateRef = useRef<{
+        id: string;
+        startClientX: number;
+        startClientY: number;
+        startSvgX: number;
+        startSvgY: number;
+        origX: number;
+        origY: number;
+        isLocked?: boolean;
+    } | null>(null);
+
+    // Active dragging / Resizing state
     const draggingRef = useRef<{ 
         id: string; 
-        offsetX: number; 
-        offsetY: number;
+        origX: number; 
+        origY: number;
+        startSvgX: number;
+        startSvgY: number;
         isResize?: boolean;
         handle?: string;
-        origX?: number;
-        origY?: number;
         origW?: number;
         origH?: number;
     } | null>(null);
@@ -220,12 +308,21 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
     // Delete shape
     const handleDeleteSelected = useCallback(() => {
-        if (!selectedId) return;
+        if (!selectedId || selectedShape?.isLocked) return;
         const next = shapes.filter(s => s.id !== selectedId);
         setShapes(next);
         setSelectedId(null);
         pushHistory(next);
-    }, [selectedId, shapes, pushHistory]);
+    }, [selectedId, selectedShape, shapes, pushHistory]);
+
+    // Lock / Unlock All Shapes
+    const handleToggleLockAll = useCallback(() => {
+        const hasUnlocked = shapes.some(s => !s.isLocked);
+        const next = shapes.map(s => ({ ...s, isLocked: hasUnlocked }));
+        setShapes(next);
+        pushHistory(next);
+        showToast(hasUnlocked ? 'Đã khóa tất cả hình khối (tránh kéo/xóa nhầm)' : 'Đã mở khóa tất cả hình khối', 'info');
+    }, [shapes, pushHistory, showToast]);
 
     // Layer ordering
     const handleBringToFront = useCallback(() => {
@@ -256,11 +353,59 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
         });
     }, [selectedId, selectedShape, pushHistory]);
 
+    // Pan Mouse Handlers (Space + Drag or Middle Click)
+    const handleContainerMouseDown = useCallback((e: React.MouseEvent) => {
+        if (isSpacePressed || e.button === 1) {
+            e.preventDefault();
+            if (!containerRef.current) return;
+            setIsPanning(true);
+            panStartRef.current = {
+                x: e.clientX,
+                y: e.clientY,
+                scrollLeft: containerRef.current.scrollLeft,
+                scrollTop: containerRef.current.scrollTop
+            };
+        }
+    }, [isSpacePressed]);
+
+    useEffect(() => {
+        if (!isPanning) return;
+        const handleMouseMove = (e: MouseEvent) => {
+            if (!panStartRef.current || !containerRef.current) return;
+            const dx = e.clientX - panStartRef.current.x;
+            const dy = e.clientY - panStartRef.current.y;
+            containerRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+            containerRef.current.scrollTop = panStartRef.current.scrollTop - dy;
+        };
+        const handleMouseUp = () => {
+            setIsPanning(false);
+            panStartRef.current = null;
+        };
+        window.addEventListener('mousemove', handleMouseMove);
+        window.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            window.removeEventListener('mousemove', handleMouseMove);
+            window.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, [isPanning]);
+
     // Keyboard Shortcuts
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
             if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') {
                 return;
+            }
+            if (e.code === 'Space' && !e.repeat) {
+                e.preventDefault();
+                setIsSpacePressed(true);
+                return;
+            }
+            if (e.key === 'Escape') {
+                if (showInspector) {
+                    e.preventDefault();
+                    setShowInspector(false);
+                    return;
+                }
             }
             if (e.key === 'Delete' || e.key === 'Backspace') {
                 if (selectedId && !selectedShape?.isLocked) {
@@ -277,6 +422,13 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             } else if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
                 e.preventDefault();
                 handleDuplicate();
+            } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'l') {
+                e.preventDefault();
+                if (selectedShape) {
+                    const nextLocked = !selectedShape.isLocked;
+                    updateSelectedShape({ isLocked: nextLocked });
+                    showToast(nextLocked ? 'Đã khóa cố định hình khối' : 'Đã mở khóa hình khối', 'info');
+                }
             } else if (e.key === 'ArrowLeft') {
                 e.preventDefault(); handleNudge(-GRID, 0);
             } else if (e.key === 'ArrowRight') {
@@ -287,11 +439,32 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 e.preventDefault(); handleNudge(0, GRID);
             }
         };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [selectedId, selectedShape, handleDeleteSelected, handleUndo, handleRedo, handleDuplicate, handleNudge]);
 
-    const getSvgPoint = useCallback((e: React.MouseEvent): { x: number; y: number } => {
+        const handleKeyUp = (e: KeyboardEvent) => {
+            if (e.code === 'Space') {
+                setIsSpacePressed(false);
+                setIsPanning(false);
+                panStartRef.current = null;
+            }
+        };
+
+        const handleBlur = () => {
+            setIsSpacePressed(false);
+            setIsPanning(false);
+            panStartRef.current = null;
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+        window.addEventListener('blur', handleBlur);
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+            window.removeEventListener('blur', handleBlur);
+        };
+    }, [selectedId, selectedShape, showInspector, handleDeleteSelected, handleUndo, handleRedo, handleDuplicate, handleNudge]);
+
+    const getSvgPoint = useCallback((e: React.MouseEvent | MouseEvent): { x: number; y: number } => {
         const svg = svgRef.current;
         if (!svg) return { x: 0, y: 0 };
         const pt = svg.createSVGPoint();
@@ -300,11 +473,15 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
         const ctm = svg.getScreenCTM();
         if (!ctm) return { x: 0, y: 0 };
         const p = pt.matrixTransform(ctm.inverse());
-        return { x: snap(p.x), y: snap(p.y) };
+        return { x: p.x, y: p.y };
     }, []);
 
     // ---- Mouse Handlers ----
     const onMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        if (isSpacePressed || e.button === 1) {
+            handleContainerMouseDown(e);
+            return;
+        }
         if (rackPopup) return;
         if (e.button !== 0) return;
         e.preventDefault();
@@ -317,12 +494,23 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 return pt.x >= sx && pt.x <= sx + s.width && pt.y >= sy && pt.y <= sy + s.height;
             });
             if (hit) {
+                // Click to select - strictly selects without shifting position
                 setSelectedId(hit.id);
-                if (!hit.isLocked) {
-                    draggingRef.current = { id: hit.id, offsetX: pt.x - hit.x, offsetY: pt.y - hit.y };
-                }
+                // Record pending drag intent (requires intentional movement > 5px to activate moving)
+                dragCandidateRef.current = {
+                    id: hit.id,
+                    startClientX: e.clientX,
+                    startClientY: e.clientY,
+                    startSvgX: pt.x,
+                    startSvgY: pt.y,
+                    origX: hit.x,
+                    origY: hit.y,
+                    isLocked: hit.isLocked,
+                };
             } else {
                 setSelectedId(null);
+                setShowInspector(false);
+                dragCandidateRef.current = null;
             }
         } else if (activeTool === 'DOOR' || activeTool === 'PILLAR' || activeTool === 'FIRE_EXT') {
             const isPillar = activeTool === 'PILLAR';
@@ -330,8 +518,8 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             const newShape: LayoutShape = {
                 id: crypto.randomUUID(),
                 type: activeTool,
-                x: pt.x,
-                y: pt.y,
+                x: snap(pt.x),
+                y: snap(pt.y),
                 width: isPillar || isFire ? GRID * 2 : GRID * 3,
                 height: isPillar || isFire ? GRID * 2 : GRID,
                 rotation: 0,
@@ -343,53 +531,81 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             pushHistory(next);
         } else {
             drawingRef.current = true;
-            drawStartRef.current = pt;
-            setDrawPreview({ x: pt.x, y: pt.y, w: 0, h: 0 });
+            drawStartRef.current = { x: snap(pt.x), y: snap(pt.y) };
+            setDrawPreview({ x: snap(pt.x), y: snap(pt.y), w: 0, h: 0 });
         }
-    }, [activeTool, shapes, rackPopup, getSvgPoint, dragPos, pushHistory]);
+    }, [activeTool, shapes, rackPopup, getSvgPoint, dragPos, pushHistory, handleContainerMouseDown, isSpacePressed]);
 
     const onMouseMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+        if (isPanning || isSpacePressed) return;
         const pt = getSvgPoint(e);
+        setCursorPos({ x: Math.round(pt.x), y: Math.round(pt.y) });
 
         if (drawingRef.current) {
             const sx = drawStartRef.current.x;
             const sy = drawStartRef.current.y;
+            const curX = snap(pt.x);
+            const curY = snap(pt.y);
             setDrawPreview({
-                x: Math.min(sx, pt.x),
-                y: Math.min(sy, pt.y),
-                w: Math.abs(pt.x - sx),
-                h: Math.abs(pt.y - sy),
+                x: Math.min(sx, curX),
+                y: Math.min(sy, curY),
+                w: Math.abs(curX - sx),
+                h: Math.abs(curY - sy),
             });
-        } else if (draggingRef.current) {
+            return;
+        }
+
+        // Check if pending candidate exceeds movement threshold (> 5 screen pixels) to initiate drag
+        if (dragCandidateRef.current && !draggingRef.current) {
+            const cand = dragCandidateRef.current;
+            if (!cand.isLocked) {
+                const screenDist = Math.hypot(e.clientX - cand.startClientX, e.clientY - cand.startClientY);
+                if (screenDist >= 5) {
+                    draggingRef.current = {
+                        id: cand.id,
+                        origX: cand.origX,
+                        origY: cand.origY,
+                        startSvgX: cand.startSvgX,
+                        startSvgY: cand.startSvgY,
+                    };
+                }
+            }
+        }
+
+        if (draggingRef.current) {
             const d = draggingRef.current;
             if (d.isResize) {
-                let nx = d.origX!;
-                let ny = d.origY!;
+                let nx = d.origX;
+                let ny = d.origY;
                 let nw = d.origW!;
                 let nh = d.origH!;
 
                 if (d.handle?.includes('e')) nw = snap(Math.max(MIN_SIZE, pt.x - nx));
                 if (d.handle?.includes('s')) nh = snap(Math.max(MIN_SIZE, pt.y - ny));
                 if (d.handle?.includes('w')) {
-                    const newX = snap(Math.min(d.origX! + d.origW! - MIN_SIZE, pt.x));
-                    nw = d.origX! + d.origW! - newX;
+                    const newX = snap(Math.min(d.origX + d.origW! - MIN_SIZE, pt.x));
+                    nw = d.origX + d.origW! - newX;
                     nx = newX;
                 }
                 if (d.handle?.includes('n')) {
-                    const newY = snap(Math.min(d.origY! + d.origH! - MIN_SIZE, pt.y));
-                    nh = d.origY! + d.origH! - newY;
+                    const newY = snap(Math.min(d.origY + d.origH! - MIN_SIZE, pt.y));
+                    nh = d.origY + d.origH! - newY;
                     ny = newY;
                 }
                 setDragPos({ id: d.id, x: nx, y: ny, w: nw, h: nh });
             } else {
+                const dx = pt.x - d.startSvgX;
+                const dy = pt.y - d.startSvgY;
+                const newX = snap(Math.max(0, d.origX + dx));
+                const newY = snap(Math.max(0, d.origY + dy));
                 setDragPos({
                     id: d.id,
-                    x: snap(pt.x - d.offsetX),
-                    y: snap(pt.y - d.offsetY),
+                    x: newX,
+                    y: newY,
                 });
             }
         }
-    }, [getSvgPoint]);
+    }, [isPanning, isSpacePressed, getSvgPoint]);
 
     const onMouseUp = useCallback(() => {
         if (drawingRef.current && drawPreview) {
@@ -417,21 +633,70 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 setRackPopup({ shapeId: newShape.id, prefix: 'K', rows: 2, cols: 3 });
             }
         } else if (draggingRef.current && dragPos) {
-            const next = shapes.map(s =>
-                s.id === dragPos.id ? { 
-                    ...s, 
-                    x: dragPos.x, 
-                    y: dragPos.y,
-                    width: dragPos.w ?? s.width,
-                    height: dragPos.h ?? s.height
-                } : s
-            );
-            setShapes(next);
-            pushHistory(next);
-            draggingRef.current = null;
-            setDragPos(null);
+            const d = draggingRef.current;
+            const hasMoved = dragPos.x !== d.origX || dragPos.y !== d.origY ||
+                (dragPos.w !== undefined && dragPos.w !== d.origW) ||
+                (dragPos.h !== undefined && dragPos.h !== d.origH);
+            if (hasMoved) {
+                const next = shapes.map(s =>
+                    s.id === dragPos.id ? { 
+                        ...s, 
+                        x: dragPos.x, 
+                        y: dragPos.y,
+                        width: dragPos.w ?? s.width,
+                        height: dragPos.h ?? s.height
+                    } : s
+                );
+                setShapes(next);
+                pushHistory(next);
+            }
         }
+
+        // Always clean up all drag and draw refs on mouseup
+        dragCandidateRef.current = null;
+        draggingRef.current = null;
+        setDragPos(null);
+        drawingRef.current = false;
     }, [activeTool, drawPreview, dragPos, shapes, pushHistory]);
+
+    // Global mouseup failsafe to prevent sticky dragging if released outside canvas
+    useEffect(() => {
+        const handleGlobalMouseUp = () => {
+            if (dragCandidateRef.current || draggingRef.current) {
+                if (draggingRef.current && dragPos) {
+                    const d = draggingRef.current;
+                    const hasMoved = dragPos.x !== d.origX || dragPos.y !== d.origY ||
+                        (dragPos.w !== undefined && dragPos.w !== d.origW) ||
+                        (dragPos.h !== undefined && dragPos.h !== d.origH);
+                    if (hasMoved) {
+                        setShapes(prev => {
+                            const next = prev.map(s =>
+                                s.id === dragPos.id ? {
+                                    ...s,
+                                    x: dragPos.x,
+                                    y: dragPos.y,
+                                    width: dragPos.w ?? s.width,
+                                    height: dragPos.h ?? s.height
+                                } : s
+                            );
+                            pushHistory(next);
+                            return next;
+                        });
+                    }
+                }
+                dragCandidateRef.current = null;
+                draggingRef.current = null;
+                setDragPos(null);
+            }
+        };
+
+        window.addEventListener('mouseup', handleGlobalMouseUp);
+        return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
+    }, [dragPos, pushHistory]);
+
+    const onMouseLeave = useCallback(() => {
+        setCursorPos(null);
+    }, []);
 
     // Handle Resize
     const onResizeStart = useCallback((e: React.MouseEvent, shapeId: string, handle: string) => {
@@ -442,12 +707,12 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
         const pt = getSvgPoint(e);
         draggingRef.current = {
             id: shapeId,
-            offsetX: pt.x,
-            offsetY: pt.y,
-            isResize: true,
-            handle,
             origX: shape.x,
             origY: shape.y,
+            startSvgX: pt.x,
+            startSvgY: pt.y,
+            isResize: true,
+            handle,
             origW: shape.width,
             origH: shape.height
         };
@@ -484,88 +749,179 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
     return (
         <div className="flex flex-col h-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
-            {/* Top Toolbar */}
-            <div className="px-5 py-3 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between bg-gray-50/80 dark:bg-zinc-900/80 backdrop-blur-md">
-                <div className="flex items-center gap-3">
+            {/* Top Toolbar (Thiết kế nhỏ gọn, hiện đại chuẩn Figma/CAD) */}
+            <div className="px-3.5 py-2 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900 shrink-0">
+                <div className="flex items-center gap-2.5 min-w-0">
                     <input 
                         type="text" 
                         value={name} 
                         onChange={e => setName(e.target.value)}
-                        className="px-3 py-1.5 font-black text-lg bg-white dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 dark:text-white"
+                        className="w-44 sm:w-52 px-2.5 py-1 font-bold text-sm bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-zinc-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 text-gray-900 dark:text-white shadow-xs"
                         placeholder="Tên sơ đồ mặt bằng..."
                     />
-                    <div className="flex items-center gap-1.5 text-xs text-gray-500 font-semibold bg-gray-200/50 dark:bg-zinc-800 px-3 py-1.5 rounded-xl">
-                        <span>W:</span>
-                        <input type="number" step={100} value={canvasW} onChange={e => setCanvasW(Number(e.target.value))} className="w-16 bg-transparent text-center font-bold outline-none" />
-                        <span>H:</span>
-                        <input type="number" step={100} value={canvasH} onChange={e => setCanvasH(Number(e.target.value))} className="w-16 bg-transparent text-center font-bold outline-none" />
-                        <span>px</span>
+                    <div className="flex items-center gap-1 text-[11px] text-gray-500 font-semibold bg-gray-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded-lg border border-gray-200/60 dark:border-zinc-700/60 shrink-0">
+                        <span className="text-gray-400 font-bold">W:</span>
+                        <input type="number" step={100} value={canvasW} onChange={e => setCanvasW(Number(e.target.value))} className="w-11 bg-transparent text-center font-bold outline-none text-xs text-gray-700 dark:text-gray-200" />
+                        <span className="text-gray-300 dark:text-zinc-600">×</span>
+                        <span className="text-gray-400 font-bold">H:</span>
+                        <input type="number" step={100} value={canvasH} onChange={e => setCanvasH(Number(e.target.value))} className="w-11 bg-transparent text-center font-bold outline-none text-xs text-gray-700 dark:text-gray-200" />
+                        <span className="text-[10px] text-gray-400">px</span>
                     </div>
                 </div>
 
                 {/* Actions Toolbar */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                     {/* Undo / Redo */}
-                    <div className="flex items-center border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
+                    <div className="flex items-center border border-gray-200 dark:border-zinc-700 rounded-lg overflow-hidden bg-white dark:bg-zinc-800 shadow-xs">
                         <button 
                             type="button" 
                             onClick={handleUndo} 
                             disabled={historyIndex === 0} 
                             title="Hoàn tác (Ctrl+Z)"
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors"
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors"
                         >
-                            <Undo2 size={16} />
+                            <Undo2 size={14} />
                         </button>
-                        <div className="w-px h-4 bg-gray-200 dark:bg-zinc-700" />
+                        <div className="w-px h-3.5 bg-gray-200 dark:bg-zinc-700" />
                         <button 
                             type="button" 
                             onClick={handleRedo} 
                             disabled={historyIndex >= history.length - 1} 
                             title="Làm lại (Ctrl+Y)"
-                            className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors"
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-zinc-700 disabled:opacity-30 transition-colors"
                         >
-                            <Redo2 size={16} />
+                            <Redo2 size={14} />
                         </button>
                     </div>
 
-                    {/* Zoom */}
-                    <div className="flex items-center border border-gray-200 dark:border-zinc-700 rounded-xl overflow-hidden bg-white dark:bg-zinc-800">
-                        <button type="button" onClick={() => setZoom(z => Math.max(0.4, z - 0.1))} className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700">
-                            <ZoomOut size={16} />
+                    {/* Zoom & View */}
+                    <div className="flex items-center border border-gray-200 dark:border-zinc-700 rounded-lg overflow-hidden bg-white dark:bg-zinc-800 shadow-xs">
+                        <button 
+                            type="button" 
+                            onClick={() => setZoom(z => Math.max(0.2, Number((z - 0.1).toFixed(2))))} 
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors text-gray-600 dark:text-gray-300"
+                            title="Thu nhỏ"
+                        >
+                            <ZoomOut size={14} />
                         </button>
-                        <span className="text-xs font-bold px-2">{Math.round(zoom * 100)}%</span>
-                        <button type="button" onClick={() => setZoom(z => Math.min(2.0, z + 0.1))} className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-700">
-                            <ZoomIn size={16} />
+                        <span className="text-[11px] font-bold px-1.5 min-w-[34px] text-center">{Math.round(zoom * 100)}%</span>
+                        <button 
+                            type="button" 
+                            onClick={() => setZoom(z => Math.min(2.5, Number((z + 0.1).toFixed(2))))} 
+                            className="p-1.5 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors text-gray-600 dark:text-gray-300"
+                            title="Phóng to"
+                        >
+                            <ZoomIn size={14} />
+                        </button>
+                        <button 
+                            type="button" 
+                            onClick={handleFitToScreen} 
+                            className="px-2 py-1 text-[11px] font-semibold border-l border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700 transition-colors text-blue-600 dark:text-blue-400"
+                            title="Tự động căn vừa khung hình"
+                        >
+                            Vừa khung
+                        </button>
+                        <button 
+                            type="button" 
+                            onClick={() => setShowRulers(r => !r)} 
+                            className={`px-2 py-1 text-[11px] font-semibold border-l border-gray-200 dark:border-zinc-700 transition-colors flex items-center gap-1 ${
+                                showRulers 
+                                    ? 'bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' 
+                                    : 'hover:bg-gray-100 dark:hover:bg-zinc-700 text-gray-500'
+                            }`}
+                            title={showRulers ? "Ẩn thước kẻ đo kích thước (m / px)" : "Hiện thước kẻ đo kích thước (m / px)"}
+                        >
+                            <Ruler size={12} />
+                            <span>Thước</span>
                         </button>
                     </div>
 
+                    {/* Nút Khóa Tất Cả / Mở Khóa Tất Cả */}
+                    {shapes.length > 0 && (
+                        <button 
+                            type="button" 
+                            onClick={handleToggleLockAll}
+                            title={shapes.some(s => !s.isLocked) ? "Khóa tất cả hình khối để chống click/kéo nhầm" : "Mở khóa tất cả hình khối"}
+                            className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1.5 transition-all shadow-xs ${
+                                shapes.every(s => s.isLocked)
+                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300 dark:border-amber-700'
+                                    : 'bg-white dark:bg-zinc-800 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-zinc-700 hover:bg-gray-100 dark:hover:bg-zinc-700'
+                            }`}
+                        >
+                            {shapes.every(s => s.isLocked) ? <Lock size={13} className="text-amber-600 dark:text-amber-400" /> : <Unlock size={13} />}
+                            <span>{shapes.every(s => s.isLocked) ? 'Đã khóa' : 'Khóa tất cả'}</span>
+                        </button>
+                    )}
+
+                    {/* Context tools khi có đối tượng được chọn */}
                     {selectedShape && (
-                        <>
+                        <div className="flex items-center gap-1 bg-gray-100/80 dark:bg-zinc-800/80 p-0.5 rounded-lg border border-gray-200/80 dark:border-zinc-700/80 animate-in fade-in duration-150">
+                            {/* Nút Khóa / Mở khóa cho hình đang chọn */}
+                            <button 
+                                type="button" 
+                                onClick={() => {
+                                    const nextLocked = !selectedShape.isLocked;
+                                    updateSelectedShape({ isLocked: nextLocked });
+                                    showToast(nextLocked ? 'Đã khóa vị trí hình khối' : 'Đã mở khóa hình khối', 'info');
+                                }}
+                                title={selectedShape.isLocked ? "Mở khóa đối tượng này (Ctrl+L)" : "Khóa cố định đối tượng này (Ctrl+L)"}
+                                className={`p-1.5 rounded-md transition-all ${
+                                    selectedShape.isLocked
+                                        ? 'bg-amber-500 text-white shadow-xs'
+                                        : 'text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-zinc-700'
+                                }`}
+                            >
+                                {selectedShape.isLocked ? <Lock size={13} /> : <Unlock size={13} />}
+                            </button>
+
+                            {/* Nút Mở Thuộc tính */}
+                            <button 
+                                type="button" 
+                                onClick={() => setShowInspector(prev => !prev)}
+                                title="Mở / đóng bảng thuộc tính"
+                                className={`px-2 py-1 text-xs font-bold rounded-md flex items-center gap-1 transition-all ${
+                                    showInspector
+                                        ? 'bg-blue-600 text-white shadow-xs'
+                                        : 'text-blue-600 dark:text-blue-400 hover:bg-blue-100/60 dark:hover:bg-blue-900/40'
+                                }`}
+                            >
+                                <Sliders size={13} />
+                                <span>Thuộc tính</span>
+                            </button>
+
+                            {/* Nút Nhân bản */}
                             <button 
                                 type="button" 
                                 onClick={handleDuplicate}
                                 title="Nhân bản (Ctrl+D)"
-                                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 flex items-center gap-1.5 transition-all"
+                                className="p-1.5 rounded-md text-gray-600 hover:bg-white dark:text-gray-300 dark:hover:bg-zinc-700 transition-all"
                             >
-                                <Copy size={14} /> Nhân bản
+                                <Copy size={13} />
                             </button>
+
+                            {/* Nút Xóa */}
                             <button 
                                 type="button" 
                                 onClick={handleDeleteSelected}
-                                title="Xóa (Delete)"
-                                className="px-3 py-1.5 text-xs font-bold rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-100 flex items-center gap-1.5 transition-all"
+                                disabled={selectedShape.isLocked}
+                                title={selectedShape.isLocked ? "Đối tượng đang khóa, không thể xóa" : "Xóa (Delete)"}
+                                className={`p-1.5 rounded-md transition-all ${
+                                    selectedShape.isLocked 
+                                        ? 'opacity-30 cursor-not-allowed text-gray-400' 
+                                        : 'text-rose-600 hover:bg-rose-100 dark:text-rose-400 dark:hover:bg-rose-950/40'
+                                }`}
                             >
-                                <Trash2 size={14} /> Xóa
+                                <Trash2 size={13} />
                             </button>
-                        </>
+                        </div>
                     )}
 
-                    <div className="w-px h-6 bg-gray-200 dark:border-zinc-700 mx-1" />
+                    <div className="w-px h-5 bg-gray-200 dark:border-zinc-700 mx-0.5" />
 
                     <button 
                         type="button" 
                         onClick={onClose}
-                        className="px-4 py-2 text-sm font-bold border border-gray-200 dark:border-zinc-700 rounded-xl hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-700 dark:text-gray-300"
+                        className="px-3 py-1 text-xs font-semibold border border-gray-200 dark:border-zinc-700 rounded-lg hover:bg-gray-100 dark:hover:bg-zinc-800 text-gray-700 dark:text-gray-300 transition-colors"
                     >
                         Hủy
                     </button>
@@ -573,9 +929,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         type="button" 
                         onClick={handleSave} 
                         disabled={isSaving}
-                        className="px-5 py-2 text-sm font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-lg shadow-blue-500/20 flex items-center gap-2 active:scale-95 disabled:opacity-50 transition-all"
+                        className="px-3.5 py-1 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50 transition-all"
                     >
-                        <Save size={16} /> {isSaving ? 'Đang lưu...' : 'Lưu Sơ Đồ'}
+                        <Save size={14} /> {isSaving ? 'Đang lưu...' : 'Lưu Sơ Đồ'}
                     </button>
                 </div>
             </div>
@@ -614,20 +970,164 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 </div>
 
                 {/* Center SVG Canvas */}
-                <div className="flex-1 overflow-auto bg-gray-200 dark:bg-zinc-950 p-6 flex items-center justify-center relative custom-scrollbar">
-                    <div 
-                        className="bg-white shadow-2xl rounded-2xl overflow-hidden transition-transform duration-75 relative"
-                        style={{ transform: `scale(${zoom})`, transformOrigin: 'center center' }}
-                    >
-                        <svg
-                            ref={svgRef}
-                            width={canvasW}
-                            height={canvasH}
-                            onMouseDown={onMouseDown}
-                            onMouseMove={onMouseMove}
-                            onMouseUp={onMouseUp}
-                            className={`select-none ${activeTool === 'SELECT' ? 'cursor-default' : 'cursor-crosshair'}`}
-                        >
+                <div 
+                    ref={containerRef}
+                    onWheel={handleWheel}
+                    onMouseDown={handleContainerMouseDown}
+                    className={`flex-1 overflow-auto bg-gray-200 dark:bg-zinc-950 p-6 flex relative custom-scrollbar ${
+                        isPanning 
+                            ? 'cursor-grabbing select-none' 
+                            : isSpacePressed 
+                                ? 'cursor-grab select-none' 
+                                : ''
+                    }`}
+                >
+                    <div className="relative shrink-0 m-auto flex flex-col transition-[width,height] duration-150">
+                        {/* Top Ruler Row */}
+                        {showRulers && (
+                            <div className="flex shrink-0">
+                                {/* Corner Intersection Box */}
+                                <div 
+                                    className="w-6 h-6 shrink-0 bg-gray-100 dark:bg-zinc-800 border-t border-l border-r border-b border-gray-300 dark:border-zinc-700 flex items-center justify-center text-[9px] font-black text-gray-500 select-none"
+                                    title="Gốc tọa độ (0, 0) - Tỷ lệ: 1 ô 20px = 1 mét"
+                                >
+                                    m
+                                </div>
+                                {/* Top Horizontal Ruler */}
+                                <div 
+                                    className="h-6 shrink-0 border-t border-b border-r border-gray-300 dark:border-zinc-700 overflow-hidden bg-gray-50 dark:bg-zinc-900"
+                                    style={{ width: `${Math.round(canvasW * zoom)}px` }}
+                                >
+                                    <svg 
+                                        width="100%" 
+                                        height="100%" 
+                                        viewBox={`0 0 ${canvasW} 24`} 
+                                        className="block select-none pointer-events-none"
+                                    >
+                                        {/* Highlight span of selected shape */}
+                                        {selectedShape && (
+                                            <rect 
+                                                x={selectedShape.x} y={0} 
+                                                width={selectedShape.width} height={24} 
+                                                fill="#3b82f6" fillOpacity={0.25} 
+                                            />
+                                        )}
+                                        {/* Cursor Position Indicator */}
+                                        {cursorPos && (
+                                            <g>
+                                                <line x1={cursorPos.x} y1={0} x2={cursorPos.x} y2={24} stroke="#ef4444" strokeWidth={1.5} />
+                                                <polygon points={`${cursorPos.x - 3},24 ${cursorPos.x + 3},24 ${cursorPos.x},18`} fill="#ef4444" />
+                                            </g>
+                                        )}
+                                        {/* Ticks and Metric Labels */}
+                                        {xTicks.map(t => (
+                                            <g key={t.pos}>
+                                                <line 
+                                                    x1={t.pos} y1={t.isMajor ? 10 : 18} 
+                                                    x2={t.pos} y2={24} 
+                                                    stroke={t.isMajor ? "#475569" : "#cbd5e1"} 
+                                                    strokeWidth={t.isMajor ? 1 : 0.75} 
+                                                />
+                                                {t.label && (
+                                                    <text 
+                                                        x={t.pos + 3} y={9} 
+                                                        fontSize={8} fontWeight="bold" 
+                                                        fill="#475569" 
+                                                        fontFamily="ui-monospace, monospace"
+                                                    >
+                                                        {t.label}
+                                                    </text>
+                                                )}
+                                            </g>
+                                        ))}
+                                    </svg>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Canvas + Left Ruler Row */}
+                        <div className="flex shrink-0">
+                            {/* Left Vertical Ruler */}
+                            {showRulers && (
+                                <div 
+                                    className="w-6 shrink-0 border-l border-b border-r border-gray-300 dark:border-zinc-700 overflow-hidden bg-gray-50 dark:bg-zinc-900"
+                                    style={{ height: `${Math.round(canvasH * zoom)}px` }}
+                                >
+                                    <svg 
+                                        width="100%" 
+                                        height="100%" 
+                                        viewBox={`0 0 24 ${canvasH}`} 
+                                        className="block select-none pointer-events-none"
+                                    >
+                                        {/* Highlight span of selected shape */}
+                                        {selectedShape && (
+                                            <rect 
+                                                x={0} y={selectedShape.y} 
+                                                width={24} height={selectedShape.height} 
+                                                fill="#3b82f6" fillOpacity={0.25} 
+                                            />
+                                        )}
+                                        {/* Cursor Position Indicator */}
+                                        {cursorPos && (
+                                            <g>
+                                                <line x1={0} y1={cursorPos.y} x2={24} y2={cursorPos.y} stroke="#ef4444" strokeWidth={1.5} />
+                                                <polygon points={`24,${cursorPos.y - 3} 24,${cursorPos.y + 3} 18,${cursorPos.y}`} fill="#ef4444" />
+                                            </g>
+                                        )}
+                                        {/* Ticks and Metric Labels */}
+                                        {yTicks.map(t => (
+                                            <g key={t.pos}>
+                                                <line 
+                                                    x1={t.isMajor ? 10 : 18} y1={t.pos} 
+                                                    x2={24} y2={t.pos} 
+                                                    stroke={t.isMajor ? "#475569" : "#cbd5e1"} 
+                                                    strokeWidth={t.isMajor ? 1 : 0.75} 
+                                                />
+                                                {t.label && (
+                                                    <text 
+                                                        x={2} y={t.pos + 7} 
+                                                        fontSize={7.5} fontWeight="bold" 
+                                                        fill="#475569" 
+                                                        fontFamily="ui-monospace, monospace"
+                                                    >
+                                                        {t.label}
+                                                    </text>
+                                                )}
+                                            </g>
+                                        ))}
+                                    </svg>
+                                </div>
+                            )}
+
+                            {/* Canvas Main Plane */}
+                            <div 
+                                className="bg-white shadow-2xl rounded-none border border-gray-300 dark:border-zinc-700 relative shrink-0"
+                                style={{ 
+                                    width: `${Math.round(canvasW * zoom)}px`, 
+                                    height: `${Math.round(canvasH * zoom)}px`,
+                                    minWidth: `${Math.round(canvasW * zoom)}px`,
+                                    minHeight: `${Math.round(canvasH * zoom)}px`,
+                                }}
+                            >
+                                <svg
+                                    ref={svgRef}
+                                    width="100%"
+                                    height="100%"
+                                    viewBox={`0 0 ${canvasW} ${canvasH}`}
+                                    onMouseDown={onMouseDown}
+                                    onMouseMove={onMouseMove}
+                                    onMouseLeave={onMouseLeave}
+                                    onMouseUp={onMouseUp}
+                                    className={`select-none ${
+                                        isPanning 
+                                            ? 'cursor-grabbing' 
+                                            : isSpacePressed 
+                                                ? 'cursor-grab' 
+                                                : activeTool === 'SELECT' 
+                                                    ? 'cursor-default' 
+                                                    : 'cursor-crosshair'
+                                    }`}
+                                >
                             {/* Grid background & Technical Hatch Patterns */}
                             <defs>
                                 <pattern id="editorGrid" width={GRID} height={GRID} patternUnits="userSpaceOnUse">
@@ -658,7 +1158,15 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                 const rotTransform = shape.rotation ? `rotate(${shape.rotation} ${sx + sw/2} ${sy + sh/2})` : undefined;
 
                                 return (
-                                    <g key={shape.id} transform={rotTransform} className="cursor-pointer">
+                                    <g 
+                                        key={shape.id} 
+                                        transform={rotTransform} 
+                                        className="cursor-pointer"
+                                        onDoubleClick={(e) => {
+                                            e.stopPropagation();
+                                            setShowInspector(true);
+                                        }}
+                                    >
                                         {/* Hình dạng theo từng loại chuyên dụng */}
                                         {shape.type === 'PILLAR' ? (
                                             /* Cột trụ nhà xưởng (hình tròn có dấu X chịu lực) */
@@ -810,18 +1318,43 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                                     <line key={`c${i}`} x1={sx + (i+1)*(sw/shape.cols!)} y1={sy} x2={sx + (i+1)*(sw/shape.cols!)} y2={sy + sh} stroke={stroke} strokeWidth={1} />
                                                 ))}
                                             </g>
+                                        ) : shape.type === 'ROOM' ? (
+                                            /* Phòng / Văn phòng / Kho biệt lập */
+                                            <g>
+                                                <rect 
+                                                    x={sx} y={sy} width={sw} height={sh} 
+                                                    fill={fill} fillOpacity={0.4} 
+                                                    stroke={stroke} strokeWidth={isSelected ? 3 : 2.5} 
+                                                    strokeDasharray="10 4" rx={shape.rx || 8} 
+                                                />
+                                                <rect x={sx} y={sy} width={sw} height={Math.min(24, Math.max(16, sh * 0.3))} rx={shape.rx || 8} fill={stroke} fillOpacity={0.15} />
+                                                <text x={sx + 8} y={sy + Math.min(14, sh * 0.2)} fontSize={11} fontWeight="bold" fill={stroke}>{shape.label || 'Phòng'}</text>
+                                            </g>
+                                        ) : shape.type === 'DOOR' ? (
+                                            /* Cửa ra vào / Cửa cuốn */
+                                            <g>
+                                                <rect 
+                                                    x={sx} y={sy} width={sw} height={sh}
+                                                    fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2}
+                                                    rx={shape.rx || 3}
+                                                    opacity={opacity}
+                                                />
+                                                <text x={sx + sw/2} y={sy + sh/2} textAnchor="middle" dominantBaseline="central" fontSize={Math.min(11, sh * 0.5)} fontWeight="bold" fill="#15803d">
+                                                    🚪 {shape.label || ''}
+                                                </text>
+                                            </g>
                                         ) : (
-                                            /* ZONE, ROOM, WALL, PATH, DOOR... */
+                                            /* ZONE, WALL, PATH... */
                                             <rect 
                                                 x={sx} y={sy} width={sw} height={sh}
                                                 fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2}
-                                                rx={shape.rx || (shape.type === 'DOOR' ? 3 : shape.type === 'ROOM' ? 8 : 0)}
+                                                rx={shape.rx || 0}
                                                 opacity={opacity}
                                             />
                                         )}
 
-                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE) */}
-                                        {shape.type !== 'TEXT_NOTE' && shape.label && (
+                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE, ROOM, DOOR) */}
+                                        {shape.type !== 'TEXT_NOTE' && shape.type !== 'ROOM' && shape.type !== 'DOOR' && shape.label && (
                                             <text 
                                                 x={sx + sw/2} y={shape.type === 'ARROW' ? sy + sh*0.85 : sy + sh/2} 
                                                 textAnchor="middle" dominantBaseline="central"
@@ -841,16 +1374,34 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                             </g>
                                         )}
 
+                                        {/* Huy hiệu ổ khóa khi hình khối bị khóa */}
+                                        {shape.isLocked && (
+                                            <g transform={`translate(${sx + sw - 22}, ${sy + 4})`}>
+                                                <rect width={18} height={18} rx={4} fill="#f59e0b" fillOpacity={0.9} />
+                                                <path 
+                                                    d="M 6 8 L 6 6 A 3 3 0 0 1 12 6 L 12 8 M 5 8 L 13 8 L 13 14 L 5 14 Z" 
+                                                    fill="none" 
+                                                    stroke="#ffffff" 
+                                                    strokeWidth={1.5} 
+                                                    strokeLinecap="round" 
+                                                    strokeLinejoin="round" 
+                                                />
+                                            </g>
+                                        )}
+
                                         {/* Selection Outline & Resize Handles */}
                                         {isSelected && (
                                             <g>
                                                 <rect 
                                                     x={sx - 3} y={sy - 3} width={sw + 6} height={sh + 6} 
-                                                    fill="none" stroke="#2563eb" strokeWidth="2" strokeDasharray="4 2" 
+                                                    fill="none" 
+                                                    stroke={shape.isLocked ? "#f59e0b" : "#2563eb"} 
+                                                    strokeWidth="2" 
+                                                    strokeDasharray={shape.isLocked ? "6 3" : "4 2"} 
                                                 />
-                                                {/* Dimension indicator */}
-                                                <text x={sx + sw/2} y={sy - 8} textAnchor="middle" fontSize={11} fontWeight="bold" fill="#2563eb">
-                                                    {(sw/20).toFixed(1)}m × {(sh/20).toFixed(1)}m
+                                                {/* Dimension indicator / Lock status */}
+                                                <text x={sx + sw/2} y={sy - 8} textAnchor="middle" fontSize={11} fontWeight="bold" fill={shape.isLocked ? "#d97706" : "#2563eb"}>
+                                                    {shape.isLocked ? '🔒 Đã khóa vị trí' : `${(sw/20).toFixed(1)}m × ${(sh/20).toFixed(1)}m`}
                                                 </text>
 
                                                 {!shape.isLocked && (
@@ -877,29 +1428,74 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         </svg>
                     </div>
                 </div>
+            </div>
 
-                {/* Right Inspector Panel (Bảng thuộc tính chuyên nghiệp) */}
-                {selectedShape && (
-                    <div className="w-80 border-l border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-5 overflow-y-auto custom-scrollbar flex flex-col gap-5">
-                        <div className="flex items-center justify-between border-b border-gray-100 dark:border-zinc-800 pb-3">
-                            <div>
-                                <h3 className="font-extrabold text-sm text-gray-900 dark:text-white flex items-center gap-2">
-                                    <Sliders size={16} className="text-blue-600" /> Thuộc Tính Đối Tượng
-                                </h3>
-                                <span className="text-[10px] text-gray-400 uppercase tracking-widest font-bold">{selectedShape.type}</span>
+            {/* Bottom HUD: Coordinates & Shortcuts */}
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 pointer-events-none select-none z-10">
+                <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 shadow-md border border-gray-200/80 dark:border-zinc-700/80 flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
+                    <span>Giữ <kbd className="px-1.5 py-0.5 text-[11px] font-bold bg-gray-100 dark:bg-zinc-800 rounded border border-gray-300 dark:border-zinc-700 font-mono text-gray-800 dark:text-gray-200 shadow-xs">Space</kbd> + kéo chuột để Pan</span>
+                </div>
+
+                {cursorPos && (
+                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-gray-700 dark:text-gray-200 shadow-md border border-gray-200/80 dark:border-zinc-700/80 flex items-center gap-2 animate-in fade-in duration-100">
+                        <span className="text-blue-600 dark:text-blue-400">X: {cursorPos.x}px ({(cursorPos.x / 20).toFixed(1)}m)</span>
+                        <span className="text-gray-300 dark:text-zinc-700">|</span>
+                        <span className="text-emerald-600 dark:text-emerald-400">Y: {cursorPos.y}px ({(cursorPos.y / 20).toFixed(1)}m)</span>
+                    </div>
+                )}
+            </div>
+        </div>
+
+                {/* Right Inspector Sidebar (Bảng thuộc tính cố định bên phải, KHÔNG che đè lên sơ đồ thiết kế) */}
+                {selectedShape && showInspector && (
+                    <div className="w-80 shrink-0 border-l border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex flex-col h-full z-20 shadow-xl">
+                        {/* Sticky Header - Luôn cố định trên cùng, nút Đóng luôn nhìn thấy rõ ràng */}
+                        <div className="p-3.5 border-b border-gray-100 dark:border-zinc-800 flex items-center justify-between shrink-0 bg-gray-50/90 dark:bg-zinc-900/90 backdrop-blur-sm">
+                            <div className="flex items-center gap-2">
+                                <div className="p-1.5 bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-lg">
+                                    <Sliders size={15} />
+                                </div>
+                                <div>
+                                    <h3 className="font-extrabold text-xs text-gray-900 dark:text-white uppercase tracking-wider">
+                                        Thuộc Tính
+                                    </h3>
+                                    <span className="text-[10px] text-gray-500 font-bold truncate max-w-[130px] block">
+                                        {selectedShape.label || selectedShape.type}
+                                    </span>
+                                </div>
                             </div>
-                            <button 
-                                onClick={() => updateSelectedShape({ isLocked: !selectedShape.isLocked })}
-                                className={`p-2 rounded-xl border transition-colors ${
-                                    selectedShape.isLocked 
-                                        ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800' 
-                                        : 'text-gray-400 border-gray-200 dark:border-zinc-700 hover:text-gray-700'
-                                }`}
-                                title={selectedShape.isLocked ? 'Đang khóa (Không thể di chuyển)' : 'Chưa khóa'}
-                            >
-                                {selectedShape.isLocked ? <Lock size={14} /> : <Unlock size={14} />}
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button 
+                                    type="button"
+                                    onClick={() => {
+                                        const nextLocked = !selectedShape.isLocked;
+                                        updateSelectedShape({ isLocked: nextLocked });
+                                        showToast(nextLocked ? 'Đã khóa vị trí hình khối' : 'Đã mở khóa hình khối', 'info');
+                                    }}
+                                    className={`p-1.5 rounded-xl border transition-colors ${
+                                        selectedShape.isLocked 
+                                            ? 'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800' 
+                                            : 'text-gray-400 border-gray-200 dark:border-zinc-700 hover:text-gray-700'
+                                    }`}
+                                    title={selectedShape.isLocked ? 'Đang khóa (Không thể di chuyển)' : 'Chưa khóa (Ctrl+L)'}
+                                >
+                                    {selectedShape.isLocked ? <Lock size={14} /> : <Unlock size={14} />}
+                                </button>
+                                <button 
+                                    type="button"
+                                    onClick={() => setShowInspector(false)}
+                                    className="px-2.5 py-1.5 rounded-xl text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 hover:bg-rose-100 dark:hover:bg-rose-900/50 transition-colors flex items-center gap-1 text-xs font-bold shadow-xs active:scale-95"
+                                    title="Đóng bảng thuộc tính (Esc)"
+                                >
+                                    <X size={15} />
+                                    <span>Đóng</span>
+                                </button>
+                            </div>
                         </div>
+
+                        {/* Scrollable Content - Cuộn riêng biệt bên dưới header */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
 
                         {/* Tên & Mã định danh */}
                         <div className="space-y-3">
@@ -1060,8 +1656,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                             </div>
                         </div>
                     </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
+    </div>
     );
 }

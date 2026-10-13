@@ -16,6 +16,7 @@ import { useUser } from '@/contexts/UserContext'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import InventoryByBoxLabel from '@/components/inventory/InventoryByBoxLabel'
 import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
+import { ProductSearchInput } from '@/components/shared/ProductSearchInput'
 
 // Types based on API response
 interface InventoryItem {
@@ -63,6 +64,7 @@ export default function InventoryPage() {
     const [targetUnitId, setTargetUnitId] = useState<string | null>(null)
     const [categories, setCategories] = useState<any[]>([])
     const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
+    const [products, setProducts] = useState<any[]>([])
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [isHelpOpen, setIsHelpOpen] = useState(false)
     const [searchMode, setSearchMode] = useState<'all' | 'name' | 'code' | 'tag' | 'position' | 'category'>('all')
@@ -153,6 +155,20 @@ export default function InventoryPage() {
         }
         fetchCategories()
         setSelectedCategoryIds([]) // Reset selected categories when system changes
+
+        async function fetchProducts() {
+            let sysCode = (systemType || '').trim()
+            if (sysCode === 'FROZEN') sysCode = 'KHO_DONG_LANH'
+            else if (sysCode === 'DRY') sysCode = 'KHO_VAT_TU_BAO_BI'
+
+            const { data } = await (supabase
+                .from('products') as any)
+                .select('id, sku, name, internal_name, internal_code, aliases, unit, category_id')
+                .or(`system_code.eq.${sysCode},system_type.eq.${sysCode},system_type.eq.${systemType}`)
+                .order('name')
+            if (data) setProducts(data)
+        }
+        fetchProducts()
     }, [systemType])
 
 
@@ -278,16 +294,17 @@ export default function InventoryPage() {
                                 <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-stone-400 pointer-events-none" />
                             </div>
 
-                            <div className="relative flex-1">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
-                                <input
-                                    type="text"
-                                    value={q}
-                                    onChange={e => setQ(e.target.value)}
-                                    className="w-full pl-9 pr-3 py-2 text-sm border border-stone-300 dark:border-stone-700 rounded-md bg-transparent focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                    placeholder={`Tìm ${currentMode.label.toLowerCase()}... (dùng ; để tìm nhiều, dùng & để kết hợp điều kiện)`}
-                                />
-                            </div>
+                            <ProductSearchInput
+                                value={q}
+                                onChange={setQ}
+                                products={products}
+                                searchMode={searchMode}
+                                placeholder={`Tìm ${currentMode.label.toLowerCase()}... (hỗ trợ viết tắt, SKU; dùng ; để tìm nhiều, & để kết hợp)`}
+                                theme="orange"
+                                className="flex-1"
+                                inputClassName="py-2 pl-9 bg-transparent rounded-md border-stone-300 dark:border-stone-700 text-sm focus:ring-orange-500"
+                                iconSize={16}
+                            />
                         </div>
                     </div>
 
@@ -695,7 +712,7 @@ export default function InventoryPage() {
                 )}
 
                 {activeTab === 'reconciliation' && (
-                    <InventoryReconciliation units={units} />
+                    <InventoryReconciliation units={units} products={products} />
                 )}
 
                 {activeTab === 'labels' && (

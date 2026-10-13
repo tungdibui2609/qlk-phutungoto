@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
-import { X, Save, Tag, Sparkles, Plus, AlertCircle } from 'lucide-react'
+import { X, Save, Tag, Lightbulb, Plus, AlertCircle } from 'lucide-react'
 import { normalizeSearchString } from '@/lib/searchUtils'
 
 type Product = Database['public']['Tables']['products']['Row'] & {
@@ -264,7 +264,7 @@ export default function ProductAliasModal({ open, onOpenChange, product, onSucce
                     {suggestions.length > 0 && (
                         <div className="space-y-2 pt-2 border-t border-stone-100">
                             <div className="flex items-center gap-1.5 text-xs font-black text-amber-800 uppercase tracking-wider">
-                                <Sparkles size={14} className="text-amber-500" />
+                                <Lightbulb size={14} className="text-amber-500" />
                                 <span>Gợi ý gõ tắt thông minh (bấm để thêm):</span>
                             </div>
                             <div className="flex flex-wrap gap-2">

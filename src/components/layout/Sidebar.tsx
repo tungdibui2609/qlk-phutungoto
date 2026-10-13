@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, Sparkles, CheckSquare, Hash, Stamp } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -29,7 +29,7 @@ const menuItems: MenuItem[] = [
         children: [
             { id: 'products', name: 'Sản phẩm', href: '/products', icon: List, requiredPermission: 'product.view' },
             { id: 'internal_products', name: 'Sản phẩm nội bộ', href: '/internal-products', icon: PackageSearch, requiredModule: 'internal_products' },
-            { id: 'product_aliases', name: 'Tên gõ tắt', href: '/product-aliases', icon: Sparkles, requiredModule: 'product_aliases', requiredPermission: 'product.view' },
+            { id: 'product_aliases', name: 'Tên gõ tắt', href: '/product-aliases', icon: Keyboard, requiredModule: 'product_aliases', requiredPermission: 'product.view' },
             { id: 'categories', name: 'Danh mục', href: '/categories', icon: FolderTree, requiredPermission: 'product.view' },
             { id: 'units', name: 'Đơn vị', href: '/units', icon: Boxes, requiredPermission: 'product.view' },
             { id: 'origins', name: 'Xuất xứ', href: '/origins', icon: Globe, requiredPermission: 'product.view' },
@@ -48,10 +48,10 @@ const menuItems: MenuItem[] = [
             { id: 'order_types', name: 'Loại phiếu', href: '/order-types', icon: FileText, requiredPermission: 'warehouse.manage' },
             { id: 'qc', name: 'QC', href: '/qc', icon: ShieldCheck, requiredPermission: 'qc.view' },
             { id: 'work_areas', name: 'Khu vực', href: '/work-areas', icon: MapPin, requiredPermission: 'warehouse.manage' },
-            { id: 'material_zones', name: 'Vùng trồng / Nguyên liệu', href: '/material-zones', icon: MapPin, requiredModule: 'material_zone' },
+            { id: 'material_zones', name: 'Vùng trồng / Nguyên liệu', href: '/material-zones', icon: Sprout, requiredModule: 'material_zone' },
             { id: 'production_places', name: 'Nơi sản xuất / Nhà máy', href: '/production-places', icon: Factory, requiredModule: 'production_place' },
             { id: 'production', name: 'Sản xuất', href: '/production', icon: Factory, requiredPermission: 'production.view' },
-            { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: Users, requiredModule: 'member_team_manager' },
+            { id: 'members_teams', name: 'Thành viên & Đội', href: '/members-teams', icon: UserCheck, requiredModule: 'member_team_manager' },
         ]
     },
     {
@@ -120,8 +120,8 @@ const menuItems: MenuItem[] = [
             { id: 'inbound', name: 'Nhập kho', href: '/inbound', icon: ArrowDownToLine, requiredPermission: 'inbound.view' },
             { id: 'outbound', name: 'Xuất kho', href: '/outbound', icon: ArrowUpFromLine, requiredPermission: 'outbound.view' },
             { id: 'audit', name: 'Kiểm kê', href: '/operations/audit', icon: ClipboardCheck, requiredPermission: 'audit.view' },
-            { id: 'handover', name: 'Bàn giao hàng hóa', href: '/handover', icon: ArrowRightLeft, requiredModule: 'handover' },
-            { id: 'reconciliation', name: 'Đối chiếu', href: '/accounting/reconciliation', icon: ArrowRightLeft, requiredPermission: 'report.view' },
+            { id: 'handover', name: 'Bàn giao hàng hóa', href: '/handover', icon: Handshake, requiredModule: 'handover' },
+            { id: 'reconciliation', name: 'Đối chiếu', href: '/accounting/reconciliation', icon: Scale, requiredPermission: 'report.view' },
         ]
     },
     {
@@ -142,18 +142,18 @@ const menuItems: MenuItem[] = [
         icon: BarChart3,
         children: [
             { id: 'inventory_report', name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
-            { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: BarChart3, requiredPermission: 'warehouse.view' },
-            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: BarChart3, requiredPermission: 'warehouse.view', requiredModule: 'report_hall_summary' },
-            { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: BarChart3, requiredPermission: 'report.view', requiredModule: 'report_floor_1' },
+            { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: PieChart, requiredPermission: 'warehouse.view' },
+            { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: LayoutGrid, requiredPermission: 'warehouse.view', requiredModule: 'report_hall_summary' },
+            { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: Layers, requiredPermission: 'report.view', requiredModule: 'report_floor_1' },
             { id: 'warehouse_map_log', name: 'Nhật ký sơ đồ kho', href: '/reports/warehouse-map-log', icon: Map, requiredPermission: 'report.view', requiredModule: 'report_warehouse_map_log' },
-            { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: Activity, requiredPermission: 'report.view', requiredModule: 'report_warehouse_movements' },
-            { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Activity, requiredPermission: 'report.view' },
-            { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileText, requiredPermission: 'report.view' },
+            { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: TrendingUp, requiredPermission: 'report.view', requiredModule: 'report_warehouse_movements' },
+            { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Clock, requiredPermission: 'report.view' },
+            { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileCheck, requiredPermission: 'report.view' },
             { id: 'supplier_debts', name: 'Công nợ NCC', href: '/reports/supplier-debts', icon: DollarSign, requiredPermission: 'report.view' },
             { id: 'accounting_history', name: 'Nhật ký xuất nhập', href: '/reports/accounting-history', icon: ArrowRightLeft, requiredPermission: 'report.view' },
             { id: 'lot_history', name: 'Nhật ký xuất nhập LOT', href: '/reports/lot-history', icon: History, requiredPermission: 'report.view' },
-            { id: 'picking_productivity', name: 'Năng suất lấy hàng', href: '/reports/picking-productivity', icon: BarChart3, requiredPermission: 'report.view', requiredModule: 'report_picking_productivity' },
-            { id: 'linked_journal', name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: ArrowRightLeft, requiredPermission: 'report.view' },
+            { id: 'picking_productivity', name: 'Năng suất lấy hàng', href: '/reports/picking-productivity', icon: Zap, requiredPermission: 'report.view', requiredModule: 'report_picking_productivity' },
+            { id: 'linked_journal', name: 'Nhật ký liên kết', href: '/reports/linked-journal', icon: Link2, requiredPermission: 'report.view' },
         ]
     },
     {

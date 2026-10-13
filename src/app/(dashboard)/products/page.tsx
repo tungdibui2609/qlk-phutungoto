@@ -20,6 +20,8 @@ import { useListingData } from '@/hooks/useListingData'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
+import { ProductSearchInput } from '@/components/shared/ProductSearchInput'
+
 type Product = Database['public']['Tables']['products']['Row']
 
 export default function InventoryPage() {
@@ -84,6 +86,7 @@ export default function InventoryPage() {
     }, [systemType])
 
     const {
+        data: allRawProducts,
         filteredData: products,
         loading,
         searchTerm,
@@ -219,16 +222,16 @@ export default function InventoryPage() {
 
             {/* FILTERS & SEARCH */}
             <div className="bg-white p-5 rounded-[24px] flex flex-col sm:flex-row gap-4 border border-stone-200 shadow-sm">
-                <div className="relative flex-1">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" size={20} />
-                    <input
-                        type="text"
-                        placeholder="Tìm kiếm theo Tên, SKU, Mã phụ tùng..."
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 transition-all font-medium"
-                    />
-                </div>
+                <ProductSearchInput
+                    value={searchTerm}
+                    onChange={setSearchTerm}
+                    products={allRawProducts}
+                    placeholder="Tìm kiếm theo Tên, SKU, Tên viết tắt..."
+                    theme="orange"
+                    className="flex-1"
+                    inputClassName="py-3 pl-12 rounded-2xl bg-stone-50 border border-stone-200 text-stone-800 placeholder:text-stone-400 focus:outline-none focus:border-orange-400 focus:ring-4 focus:ring-orange-100 font-medium"
+                    iconSize={20}
+                />
 
                 <div className="relative min-w-[200px]">
                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

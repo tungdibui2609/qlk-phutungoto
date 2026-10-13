@@ -47,8 +47,9 @@ export default function LayoutManager() {
 
     if (editingLayout) {
         return (
-            <div className="h-[80vh]">
+            <div className="h-[calc(100vh-140px)] min-h-[680px]">
                 <LayoutEditor 
+                    key={editingLayout === 'NEW' ? 'new' : editingLayout.id}
                     layout={editingLayout === 'NEW' ? undefined : editingLayout} 
                     onClose={() => setEditingLayout(null)} 
                     onSaveSuccess={() => {

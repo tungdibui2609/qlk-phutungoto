@@ -1,6 +1,6 @@
 'use client'
 import React, { useState, useMemo } from 'react'
-import { Sparkles, Search, Edit2, Tag, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react'
+import { Keyboard, Search, Edit2, Tag, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 import { Database } from '@/lib/database.types'
 import PageHeader from '@/components/ui/PageHeader'
@@ -27,7 +27,7 @@ export default function ProductAliasesPage() {
         return (
             <div className="flex flex-col items-center justify-center min-h-[60vh] text-center p-8">
                 <div className="w-20 h-20 bg-slate-100 dark:bg-stone-800 rounded-3xl flex items-center justify-center mb-6">
-                    <Sparkles size={40} className="text-slate-400" />
+                    <Keyboard size={40} className="text-slate-400" />
                 </div>
                 <h2 className="text-2xl font-bold text-stone-800 dark:text-stone-100 mb-2">
                     Tên gõ tắt sản phẩm
@@ -82,7 +82,7 @@ export default function ProductAliasesPage() {
                 title="Tên gõ tắt sản phẩm"
                 subtitle="Product Aliases & Shortcuts"
                 description="Cài đặt từ khóa gõ tắt để tìm kiếm siêu tốc trên toàn hệ thống (Sơ đồ kho, Lô hàng, Nhập/Xuất kho)"
-                icon={Sparkles}
+                icon={Keyboard}
                 permission="product.manage"
             />
 
