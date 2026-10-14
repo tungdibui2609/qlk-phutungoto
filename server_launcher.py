@@ -1028,17 +1028,19 @@ class ServerManagerGUI:
 
             if winrar_exe:
                 out_file = backup_dir / f"ModularWMS_Full_{timestamp}.rar"
-                self.log("⚡ Phát hiện WinRAR! Đang sử dụng chuẩn nén RAR5 tối đa (Solid Archive, siêu nhẹ)...")
-                self.log(f"📦 Đang tạo file nén: {out_file.name}...")
-                cmd = f'"{str(winrar_exe)}" a -r -s -m5 -ep1 -x*\\dist_installer\\* -x*\\build\\* -x*\\dist\\* -x*\\backups\\* "{str(out_file)}" "{str(PROJECT_DIR)}\\*"'
+                self.log("⚡ Phát hiện WinRAR! Đang sử dụng chuẩn nén RAR5 (chỉ nén mã nguồn & node_modules, không nén thư mục build .next)...")
+                self.log(f"📦 Đang tạo file nén: {out_file.name} (Vui lòng đợi trong giây lát)...")
+                # Loại bỏ: backups, dist_installer, và toàn bộ thư mục build .next
+                # Khi giải nén sang máy mới, chỉ cần mở Launcher lên bấm "Build Production" là xong!
+                cmd = f'"{str(winrar_exe)}" a -r -s -m3 -ep1 -x"backups\\*" -x"dist_installer\\*" -x".next\\*" "{str(out_file)}" *'
             else:
                 out_file = backup_dir / f"ModularWMS_Full_{timestamp}.zip"
                 self.log("ℹ️ Đang sử dụng PowerShell để nén file ZIP...")
                 self.log(f"📦 Đang tạo file nén: {out_file.name}...")
-                ps_script = f"$src = '{str(PROJECT_DIR)}'; $dest = '{str(out_file)}'; Compress-Archive -Path (Get-ChildItem -Path $src -Exclude 'backups','dist_installer','build','dist') -DestinationPath $dest -CompressionLevel Optimal"
+                ps_script = f"$dest = '{str(out_file)}'; Compress-Archive -Path (Get-ChildItem -Path '.' -Exclude 'backups','dist_installer','.next') -DestinationPath $dest -CompressionLevel Optimal"
                 cmd = f'powershell.exe -NoProfile -Command "{ps_script}"'
 
-            proc = subprocess.run(cmd, shell=True, capture_output=True, text=True, timeout=360)
+            proc = subprocess.run(cmd, cwd=str(PROJECT_DIR), shell=True, capture_output=True, text=True, timeout=1800)
 
             if out_file.exists() and out_file.stat().st_size > 0:
                 size_mb = round(out_file.stat().st_size / (1024 * 1024), 2)

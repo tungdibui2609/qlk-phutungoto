@@ -58,6 +58,10 @@ export type ProductWithCategory = {
     min_stock_level: number | null
     unit: string | null
     price: number | null
+    quantity_per_pallet?: number | null
+    pallet_unit?: string | null
+    boxes_per_container?: number | null
+    packaging_specification?: string | null
     categories: {
         name: string
     } | null

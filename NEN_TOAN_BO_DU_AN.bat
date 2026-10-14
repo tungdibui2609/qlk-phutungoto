@@ -23,13 +23,13 @@ if not exist "%WINRAR_EXE%" (
 )
 
 if exist "%WINRAR_EXE%" (
-    echo [1/2] Tim thay WinRAR! Dang tien hanh nen RAR5 toi da (Sieu nhe, toi uu)...
+    echo [1/2] Tim thay WinRAR! Dang tien hanh nen RAR5 (Giu nguyen node_modules, bo qua thu muc build .next)...
     set "OUTPUT_FILE=%~dp0backups\ModularWMS_Full_%TIMESTAMP%.rar"
-    "%WINRAR_EXE%" a -r -s -m5 -ep1 -x*\dist_installer\* -x*\build\* -x*\dist\* -x*\backups\* "!OUTPUT_FILE!" "%~dp0*"
+    "%WINRAR_EXE%" a -r -s -m3 -ep1 -x"backups\*" -x"dist_installer\*" -x".next\*" "!OUTPUT_FILE!" *
 ) else (
     echo [1/2] Dang su dung PowerShell de nen file ZIP...
     set "OUTPUT_FILE=%~dp0backups\ModularWMS_Full_%TIMESTAMP%.zip"
-    powershell -NoProfile -Command "$src = '%~dp0'; $dest = '%~dp0backups\ModularWMS_Full_%TIMESTAMP%.zip'; Compress-Archive -Path (Get-ChildItem -Path $src -Exclude 'backups','dist_installer','build','dist') -DestinationPath $dest -CompressionLevel Optimal"
+    powershell -NoProfile -Command "$dest = '%~dp0backups\ModularWMS_Full_%TIMESTAMP%.zip'; Compress-Archive -Path (Get-ChildItem -Path '%~dp0' -Exclude 'backups','dist_installer','.next') -DestinationPath $dest -CompressionLevel Optimal"
 )
 
 if exist "%OUTPUT_FILE%" (

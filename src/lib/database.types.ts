@@ -452,6 +452,33 @@ export interface Database {
           created_at?: string
           created_by?: string | null
         }
+      },
+      dashboard_chart_settings: {
+        Row: {
+          id: string
+          system_code: string
+          category_ids: Json
+          pinned_ids: Json
+          top_n: number
+          updated_at: string
+        }
+        Insert: {
+          id: string
+          system_code: string
+          category_ids?: Json
+          pinned_ids?: Json
+          top_n?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          system_code?: string
+          category_ids?: Json
+          pinned_ids?: Json
+          top_n?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
     }
     Views: {
