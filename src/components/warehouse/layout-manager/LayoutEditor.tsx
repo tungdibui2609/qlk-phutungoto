@@ -1029,19 +1029,21 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                     ))}
                 </div>
 
-                {/* Center SVG Canvas */}
-                <div 
-                    ref={containerRef}
-                    onWheel={handleWheel}
-                    onMouseDown={handleContainerMouseDown}
-                    className={`flex-1 overflow-auto bg-gray-200 dark:bg-zinc-950 p-6 flex relative custom-scrollbar ${
-                        isPanning 
-                            ? 'cursor-grabbing select-none' 
-                            : isSpacePressed 
-                                ? 'cursor-grab select-none' 
-                                : ''
-                    }`}
-                >
+                {/* Center Column: SVG Canvas + Bottom Status Bar */}
+                <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+                    {/* Center SVG Canvas Scrollport */}
+                    <div 
+                        ref={containerRef}
+                        onWheel={handleWheel}
+                        onMouseDown={handleContainerMouseDown}
+                        className={`flex-1 overflow-auto bg-gray-200 dark:bg-zinc-950 p-6 flex relative custom-scrollbar ${
+                            isPanning 
+                                ? 'cursor-grabbing select-none' 
+                                : isSpacePressed 
+                                    ? 'cursor-grab select-none' 
+                                    : ''
+                        }`}
+                    >
                     <div className="relative shrink-0 m-auto flex flex-col transition-[width,height] duration-150">
                         {/* Top Ruler Row */}
                         {showRulers && (
@@ -1611,22 +1613,29 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         </svg>
                     </div>
                 </div>
+                </div>
             </div>
 
-            {/* Bottom HUD: Coordinates & Shortcuts */}
-            <div className="absolute bottom-4 left-4 flex items-center gap-2 pointer-events-none select-none z-10">
-                <div className="bg-white/90 dark:bg-zinc-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 shadow-md border border-gray-200/80 dark:border-zinc-700/80 flex items-center gap-2">
-                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                    <span>Giữ <kbd className="px-1.5 py-0.5 text-[11px] font-bold bg-gray-100 dark:bg-zinc-800 rounded border border-gray-300 dark:border-zinc-700 font-mono text-gray-800 dark:text-gray-200 shadow-xs">Space</kbd> + kéo chuột để Pan</span>
+            {/* Bottom Status Bar: Đặt cố định ở đáy bên dưới khung vẽ, KHÔNG che đè lên sơ đồ thiết kế */}
+            <div className="py-1.5 px-4 min-h-[32px] border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between text-xs select-none shrink-0 z-10 shadow-xs">
+                <div className="flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                    <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse shrink-0"></span>
+                    <span className="font-medium text-xs">
+                        Giữ <kbd className="px-1.5 py-0.5 text-[10px] font-bold bg-gray-100 dark:bg-zinc-800 rounded border border-gray-300 dark:border-zinc-700 font-mono text-gray-800 dark:text-gray-200 shadow-xs">Space</kbd> + kéo chuột để Pan
+                    </span>
                 </div>
 
-                {cursorPos && (
-                    <div className="bg-white/95 dark:bg-zinc-900/95 backdrop-blur-md px-3 py-1.5 rounded-xl text-xs font-mono font-bold text-gray-700 dark:text-gray-200 shadow-md border border-gray-200/80 dark:border-zinc-700/80 flex items-center gap-2 animate-in fade-in duration-100">
-                        <span className="text-blue-600 dark:text-blue-400">X: {cursorPos.x}px ({(cursorPos.x / 20).toFixed(1)}m)</span>
-                        <span className="text-gray-300 dark:text-zinc-700">|</span>
-                        <span className="text-emerald-600 dark:text-emerald-400">Y: {cursorPos.y}px ({(cursorPos.y / 20).toFixed(1)}m)</span>
-                    </div>
-                )}
+                <div className="flex items-center gap-4">
+                    {cursorPos ? (
+                        <div className="font-mono text-xs font-semibold flex items-center gap-2 text-gray-600 dark:text-gray-300">
+                            <span className="text-blue-600 dark:text-blue-400">X: {cursorPos.x}px ({(cursorPos.x / 20).toFixed(1)}m)</span>
+                            <span className="text-gray-300 dark:text-zinc-700">|</span>
+                            <span className="text-emerald-600 dark:text-emerald-400">Y: {cursorPos.y}px ({(cursorPos.y / 20).toFixed(1)}m)</span>
+                        </div>
+                    ) : (
+                        <span className="text-[11px] text-gray-400 font-medium">Tỷ lệ: 20px = 1 mét</span>
+                    )}
+                </div>
             </div>
         </div>
 
@@ -1705,22 +1714,37 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                             </div>
                         </div>
 
-                        {/* Multi-Lot Zone Setting */}
-                        {selectedShape.type === 'ZONE' && (
+                        {/* Multi-Lot & Storage Position Settings - Áp dụng cho mọi hình khối hạ tầng có thể chứa hàng */}
+                        {selectedShape.type !== 'LINE' && selectedShape.type !== 'DASHED_LINE' && selectedShape.type !== 'ARROW' && selectedShape.type !== 'TEXT_NOTE' && selectedShape.type !== 'WALL' && selectedShape.type !== 'PILLAR' && (
                             <div className="p-3.5 bg-orange-50 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/40 rounded-2xl space-y-3">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input 
-                                        type="checkbox"
-                                        checked={selectedShape.isMultiLot ?? true}
-                                        onChange={e => updateSelectedShape({ isMultiLot: e.target.checked })}
-                                        className="w-4 h-4 text-orange-600 rounded"
-                                    />
-                                    <span className="text-xs font-bold text-orange-900 dark:text-orange-300">
-                                        Bãi Chứa Đa Lô (Nhiều LOT)
-                                    </span>
-                                </label>
+                                <div className="space-y-2">
+                                    <label className="flex items-center gap-2 cursor-pointer">
+                                        <input 
+                                            type="checkbox"
+                                            checked={selectedShape.isStorage ?? (selectedShape.type === 'ZONE' || Boolean(selectedShape.code))}
+                                            onChange={e => updateSelectedShape({ isStorage: e.target.checked })}
+                                            className="w-4 h-4 text-orange-600 rounded"
+                                        />
+                                        <span className="text-xs font-bold text-orange-900 dark:text-orange-300">
+                                            Vị Trí Chứa Hàng (Lưu Kho)
+                                        </span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer pl-6">
+                                        <input 
+                                            type="checkbox"
+                                            checked={selectedShape.isMultiLot ?? (selectedShape.type === 'ZONE')}
+                                            onChange={e => updateSelectedShape({ isMultiLot: e.target.checked })}
+                                            className="w-3.5 h-3.5 text-orange-600 rounded"
+                                        />
+                                        <span className="text-[11px] font-bold text-orange-800 dark:text-orange-300">
+                                            Cho phép chứa nhiều Lô (Đa Lô)
+                                        </span>
+                                    </label>
+                                </div>
                                 <p className="text-[11px] text-orange-700 dark:text-orange-400 leading-relaxed">
-                                    Cho phép lưu trữ nhiều lô hàng khác nhau trong cùng khu vực này và quản lý bốc xuất theo lô.
+                                    {selectedShape.type === 'ZONE' 
+                                        ? 'Cho phép lưu trữ nhiều lô hàng khác nhau trong khu vực này và quản lý bốc xuất theo lô.'
+                                        : `Biến ${selectedShape.label || selectedShape.type} này thành một vị trí lưu trữ hàng hóa linh động (khi có Mã hệ thống, hệ thống sẽ tự động hiển thị hàng tồn và cho phép gán/xuất lô).`}
                                 </p>
 
                                 <div className="grid grid-cols-2 gap-2 pt-1">

@@ -253,23 +253,165 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 return
             }
 
-            // Check if position exists
-            const { data: posData, error: posError } = await (supabase
-                .from('positions') as any)
-                .select('id, lot_id, code')
-                .eq('code', targetCode)
-                .single()
+            // Helper to check if a code is a Multi-Lot zone in active layouts
+            const checkIsMultiLotZone = async (codeToCheck: string) => {
+                try {
+                    const { data: layouts } = await (supabase.from('warehouse_layouts') as any)
+                        .select('grid_data, is_active')
+                        .eq('system_type', currentSystem?.code)
+                    
+                    if (!layouts || layouts.length === 0) return false
+                    const activeLayouts = layouts.filter((l: any) => l.is_active)
+                    const targetLayouts = activeLayouts.length > 0 ? activeLayouts : layouts
 
-            if (posError || !posData) {
-                showToast(`Không tìm thấy ô vị trí: ${targetCode}`, 'error')
-                setLoading(false)
-                return
+                    for (const l of targetLayouts) {
+                        const items = l.grid_data || []
+                        const found = items.find((s: any) => 
+                            (s.type === 'ZONE' || s.type === 'STAGING') &&
+                            (s.code === codeToCheck || s.label === codeToCheck) &&
+                            s.isMultiLot !== false
+                        )
+                        if (found) return true
+                    }
+                    return false
+                } catch {
+                    return false
+                }
             }
 
+            // Check if position exists
+            let { data: posData, error: posError } = await (supabase
+                .from('positions') as any)
+                .select('id, lot_id, code, system_type, company_id')
+                .eq('code', targetCode)
+                .maybeSingle()
+
+            let assignedTargetPosId = posData?.id
+            let assignedTargetCode = targetCode
+            let isAutoCreatedSubPos = false
+
+            // Case A: Position does not exist yet (posData == null)
+            if (!posData) {
+                // Check if targetCode has a hyphen (e.g., K1.01-02 or K1.01-01)
+                const hyphenIdx = targetCode.lastIndexOf('-')
+                if (hyphenIdx > 0) {
+                    const baseCode = targetCode.substring(0, hyphenIdx)
+                    const isMulti = await checkIsMultiLotZone(baseCode)
+                    if (isMulti) {
+                        // Find base position to copy system_type and zone link
+                        const { data: basePos } = await (supabase.from('positions') as any)
+                            .select('id, code, system_type, company_id')
+                            .eq('code', baseCode)
+                            .maybeSingle()
+                        
+                        const newPosId = crypto.randomUUID()
+                        const newSysType = basePos?.system_type || currentSystem?.code
+                        const newCompId = basePos?.company_id || (currentSystem as any)?.company_id || null
+
+                        const { error: insErr } = await (supabase.from('positions') as any).insert({
+                            id: newPosId,
+                            code: targetCode,
+                            system_type: newSysType,
+                            company_id: newCompId,
+                            lot_id: null
+                        })
+                        if (!insErr) {
+                            if (basePos?.id) {
+                                const { data: zp } = await (supabase.from('zone_positions') as any)
+                                    .select('zone_id')
+                                    .eq('position_id', basePos.id)
+                                    .maybeSingle()
+                                if (zp?.zone_id) {
+                                    await (supabase.from('zone_positions') as any).insert({
+                                        zone_id: zp.zone_id,
+                                        position_id: newPosId
+                                    })
+                                }
+                            }
+                            posData = {
+                                id: newPosId,
+                                code: targetCode,
+                                lot_id: null,
+                                system_type: newSysType,
+                                company_id: newCompId
+                            }
+                            assignedTargetPosId = newPosId
+                        }
+                    }
+                }
+
+                if (!posData) {
+                    showToast(`Không tìm thấy ô vị trí: ${targetCode}`, 'error')
+                    setLoading(false)
+                    return
+                }
+            }
+
+            // Case B: Position exists, but already assigned to another LOT
             if (posData.lot_id && posData.lot_id !== lot.id) {
-                showToast(`Ô vị trí ${targetCode} đã được gán cho một LOT khác`, 'error')
-                setLoading(false)
-                return
+                // Check if this position is a Multi-Lot Zone
+                const isMulti = await checkIsMultiLotZone(posData.code)
+                if (isMulti) {
+                    // Find all existing sub-positions with prefix `${posData.code}-`
+                    const { data: existingSubs } = await (supabase.from('positions') as any)
+                        .select('id, code, lot_id, system_type, company_id')
+                        .ilike('code', `${posData.code}-%`)
+                        .eq('system_type', posData.system_type || currentSystem?.code)
+                    
+                    // Check if any existing sub-position is currently empty
+                    const emptySub = (existingSubs || []).find((p: any) => !p.lot_id)
+                    if (emptySub) {
+                        assignedTargetPosId = emptySub.id
+                        assignedTargetCode = emptySub.code
+                    } else {
+                        // Calculate next sub-index: K1.01-02, K1.01-03...
+                        let maxSuffix = 1
+                        ;(existingSubs || []).forEach((p: any) => {
+                            const m = p.code.match(/-(\d+)$/)
+                            if (m) {
+                                const num = parseInt(m[1], 10)
+                                if (num > maxSuffix) maxSuffix = num
+                            }
+                        })
+                        const nextSuffix = maxSuffix + 1
+                        const nextSubCode = `${posData.code}-${String(nextSuffix).padStart(2, '0')}`
+                        const newPosId = crypto.randomUUID()
+
+                        const { error: insErr } = await (supabase.from('positions') as any).insert({
+                            id: newPosId,
+                            code: nextSubCode,
+                            system_type: posData.system_type || currentSystem?.code,
+                            company_id: posData.company_id || (currentSystem as any)?.company_id || null,
+                            lot_id: null
+                        })
+
+                        if (insErr) {
+                            showToast(`Lỗi tạo vị trí nhánh con: ${insErr.message}`, 'error')
+                            setLoading(false)
+                            return
+                        }
+
+                        // Link to zone
+                        const { data: zp } = await (supabase.from('zone_positions') as any)
+                            .select('zone_id')
+                            .eq('position_id', posData.id)
+                            .maybeSingle()
+                        if (zp?.zone_id) {
+                            await (supabase.from('zone_positions') as any).insert({
+                                zone_id: zp.zone_id,
+                                position_id: newPosId
+                            })
+                        }
+
+                        assignedTargetPosId = newPosId
+                        assignedTargetCode = nextSubCode
+                        isAutoCreatedSubPos = true
+                    }
+                } else {
+                    showToast(`Ô vị trí ${targetCode} đã được gán cho một LOT khác`, 'error')
+                    setLoading(false)
+                    return
+                }
             }
 
             // 1. Get current positions for "Move" audit trail
@@ -302,7 +444,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             const { error: assignError } = await (supabase
                 .from('positions') as any)
                 .update({ lot_id: lot.id })
-                .eq('id', posData.id)
+                .eq('id', assignedTargetPosId)
 
             if (assignError) {
                 throw assignError
@@ -312,7 +454,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             await logActivity({
                 supabase,
                 tableName: 'positions',
-                recordId: posData.id,
+                recordId: assignedTargetPosId,
                 action: 'UPDATE',
                 oldData: { lot_id: null },
                 newData: { lot_id: lot.id },
@@ -326,14 +468,20 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 entity_type: 'lot',
                 entity_id: lot.id,
                 details: {
-                    position_code: targetCode,
-                    position_id: posData.id
+                    position_code: assignedTargetCode,
+                    position_id: assignedTargetPosId
                 }
             } as any;
 
             await (supabase as any).from('operation_history').insert(historyObj);
 
-            showToast(`Gán thành công vào ô ${targetCode}!`, 'success')
+            if (isAutoCreatedSubPos) {
+                showToast(`Ô ${targetCode} là Bãi Đa Lô. Đã tự động tạo và gán vào nhánh ${assignedTargetCode}!`, 'success')
+            } else if (assignedTargetCode !== targetCode) {
+                showToast(`Ô ${targetCode} là Bãi Đa Lô. Đã tự động gán vào ô nhánh trống ${assignedTargetCode}!`, 'success')
+            } else {
+                showToast(`Gán thành công vào ô ${assignedTargetCode}!`, 'success')
+            }
             onSuccess()
         } catch (err: any) {
             console.error(err)

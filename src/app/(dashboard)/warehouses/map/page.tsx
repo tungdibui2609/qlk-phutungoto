@@ -1380,10 +1380,30 @@ function WarehouseMapContent() {
                 {is2DLayoutEnabled ? (
                     <div className="mb-8">
                         <WarehouseLayoutViewer 
-                            positions={filteredPositions}
-                            onPositionClick={handlePositionSelect}
+                            positions={positions}
+                            filteredPositions={filteredPositions}
+                            searchTerm={isDeepScanMode ? (deepScanTerm || 'deep_scan') : searchTerm}
+                            onPositionClick={(pos) => {
+                                if (assignLot) {
+                                    handlePositionSelect(pos.id || pos);
+                                }
+                            }}
+                            onPositionSelect={(posId) => handlePositionSelect(posId)}
+                            selectedPositionIds={selectedPositionIds}
+                            onViewLotDetails={(lotId) => fetchFullLotDetails(lotId)}
+                            onExportLot={(posId, lotId) => handleExportOrder(posId ? [posId] : [], [lotId])}
+                            onUnassignPosition={(posId) => handleBulkUnassignPosition([posId])}
+                            onMoveLot={(posId) => {
+                                setSelectedPositionIds(new Set([posId]));
+                                setIsMoveModalOpen(true);
+                            }}
+                            onPrintQr={(lot) => setQrLot(lot)}
+                            onAssignLot={(shape) => {
+                                router.push(`/warehouses/lots?assignZone=${encodeURIComponent(shape.code || shape.label || '')}`);
+                            }}
                             selectedZone={zones.find(z => z.id === selectedZoneId)}
                             lotInfo={lotInfo}
+                            isAssignmentMode={!!assignLot}
                         />
                     </div>
                 ) : (
