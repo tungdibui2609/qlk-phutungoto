@@ -357,8 +357,8 @@ export default function InventoryPage() {
                                                             <Package className="text-stone-300" size={30} />
                                                         )}
                                                     </div>
-                                                    <div>
-                                                        <p className="font-bold text-stone-800 text-base line-clamp-1">{item.name}</p>
+                                                    <div className="min-w-0 flex-1">
+                                                        <p className="font-bold text-stone-800 text-sm leading-snug whitespace-normal break-words">{item.name}</p>
                                                         <div className="flex gap-2 mt-2 flex-wrap">
                                                             <span className="text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-wider bg-orange-100 text-orange-700 border border-orange-200 shadow-sm shadow-orange-500/5">
                                                                 {item.sku}
