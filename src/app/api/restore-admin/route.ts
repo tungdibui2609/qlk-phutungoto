@@ -1,10 +1,10 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
-
+import { getServerSupabaseUrl } from '@/lib/supabaseUrl'
 
 export async function GET(req: Request) {
     const supabaseAdmin = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        getServerSupabaseUrl(),
         process.env.SUPABASE_SERVICE_ROLE_KEY!,
         {
             auth: {

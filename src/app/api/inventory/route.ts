@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextResponse } from 'next/server'
 import { Database } from '@/lib/database.types'
+import { getServerSupabaseUrl } from '@/lib/supabaseUrl'
 import { convertUnit as convertUnitLogic, normalizeUnit, isKg, extractWeightFromName, canonicalizeUnit, getMatchingUnitName, toBaseAmount, getBaseToKgRate } from '@/lib/unitConversion'
 
 const normalizeWarehouseName = (name: string) => {
@@ -22,9 +23,10 @@ export async function GET(request: Request) {
         const cookieStore = await cookies()
 
         // Use service role key to bypass RLS - this is a server-side route
-        // so it's safe and eliminates all token expiration issues
+        // so it's safe and eliminates all token expiration issues.
+        // Use getServerSupabaseUrl() to support 100% offline local running (http://127.0.0.1:64321).
         const supabase = createClient<Database>(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
+            getServerSupabaseUrl(),
             process.env.SUPABASE_SERVICE_ROLE_KEY!
         )
         const { searchParams } = new URL(request.url)

@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, Suspense, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
+import { getActiveSupabaseUrl } from '@/lib/supabaseUrl'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import {
@@ -108,7 +109,7 @@ function PrintStationContent() {
         if (silentParam && token && typeof window !== 'undefined') {
             try {
                 return createBrowserClient(
-                    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+                    getActiveSupabaseUrl(),
                     token
                 )
             } catch (e) {

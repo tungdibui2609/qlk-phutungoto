@@ -387,7 +387,15 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             if (field === 'productId') {
                 const prod = products.find(p => p.id === value)
                 let initialUnit = ''
-                if (prod && (!prod.product_units || prod.product_units.length === 0) && prod.unit) initialUnit = prod.unit
+                if (prod) {
+                    if (prod.unit) {
+                        initialUnit = prod.unit
+                    } else if (prod.product_units && prod.product_units.length > 0) {
+                        const firstUnitId = prod.product_units[0]?.unit_id
+                        const firstUnit = units.find(u => u.id === firstUnitId)
+                        if (firstUnit) initialUnit = firstUnit.name
+                    }
+                }
                 
                 const returnItem = { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.price || 0, categoryId: prod?.category_id || null }
                 

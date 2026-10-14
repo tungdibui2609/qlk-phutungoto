@@ -2,11 +2,12 @@ import { createClient } from '@supabase/supabase-js'
 import { Boxes, Calendar, Package, Factory, ShieldCheck } from 'lucide-react'
 import Image from 'next/image'
 import TraceView from './TraceView'
+import { getServerSupabaseUrl } from '@/lib/supabaseUrl'
 
 // Use Service Role to fetch public data safely (Read Only for specifics)
 // In a real app, strict RLS or RPC is better. Here we sanitize at fetch level.
 const supabaseAdmin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    getServerSupabaseUrl(),
     process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 

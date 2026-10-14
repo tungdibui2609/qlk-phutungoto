@@ -1,10 +1,11 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { getServerSupabaseUrl } from '@/lib/supabaseUrl'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseUrl = getServerSupabaseUrl()
     const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
     if (!supabaseUrl || !supabaseKey) {
