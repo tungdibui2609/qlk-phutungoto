@@ -31,6 +31,7 @@ export type ShapeType =
     | 'STAIRS'        // Cầu thang bộ
     | 'FIRE_EXT'      // Bình PCCC / Trạm an toàn
     | 'FIRST_AID'     // Tủ thuốc y tế / Trạm sơ cứu
+    | 'LOCKER'        // Tủ chứa đồ / Tủ locker / Tủ dụng cụ
     | 'ARROW'         // Mũi tên chỉ hướng di chuyển / Luồng xe
     | 'LINE'          // Đường thẳng / Vạch kẻ liền
     | 'DASHED_LINE'   // Đường nét đứt / Vạch kẻ đứt

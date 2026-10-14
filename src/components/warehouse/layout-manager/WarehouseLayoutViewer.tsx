@@ -12,7 +12,7 @@ const SHAPE_FILL: Record<ShapeType, string> = {
     DOCK: '#e0e7ff', PILLAR: '#94a3b8', DESK: '#e0f2fe', PACK_STATION: '#fef08a',
     SCALE: '#ccfbf1', STAGING: '#fef9c3', QC_AREA: '#d1fae5', SCRAP: '#fee2e2',
     FORKLIFT_PARK: '#fef3c7', STAIRS: '#f1f5f9', FIRE_EXT: '#fee2e2',
-    FIRST_AID: '#dcfce7', ARROW: '#3b82f6', LINE: 'transparent', DASHED_LINE: 'transparent', TEXT_NOTE: 'transparent',
+    FIRST_AID: '#dcfce7', LOCKER: '#e2e8f0', ARROW: '#3b82f6', LINE: 'transparent', DASHED_LINE: 'transparent', TEXT_NOTE: 'transparent',
 };
 
 const SHAPE_STROKE: Record<ShapeType, string> = {
@@ -21,7 +21,7 @@ const SHAPE_STROKE: Record<ShapeType, string> = {
     DOCK: '#4338ca', PILLAR: '#475569', DESK: '#0284c7', PACK_STATION: '#ca8a04',
     SCALE: '#0d9488', STAGING: '#eab308', QC_AREA: '#059669', SCRAP: '#dc2626',
     FORKLIFT_PARK: '#d97706', STAIRS: '#475569', FIRE_EXT: '#ef4444',
-    FIRST_AID: '#16a34a', ARROW: '#1d4ed8', LINE: '#2563eb', DASHED_LINE: '#eab308', TEXT_NOTE: 'transparent',
+    FIRST_AID: '#16a34a', LOCKER: '#475569', ARROW: '#1d4ed8', LINE: '#2563eb', DASHED_LINE: '#eab308', TEXT_NOTE: 'transparent',
 };
 
 const SHAPE_LABELS: Record<ShapeType, string> = {
@@ -30,7 +30,7 @@ const SHAPE_LABELS: Record<ShapeType, string> = {
     DOCK: 'Dock xe tải', PILLAR: 'Cột trụ', DESK: 'Bàn thủ kho', PACK_STATION: 'Đóng gói',
     SCALE: 'Trạm cân', STAGING: 'Tập kết', QC_AREA: 'KCS / Kiểm hàng', SCRAP: 'Phế phẩm',
     FORKLIFT_PARK: 'Bãi xe nâng', STAIRS: 'Cầu thang', FIRE_EXT: 'PCCC',
-    FIRST_AID: 'Tủ y tế', ARROW: 'Hướng đi', LINE: 'Đường thẳng', DASHED_LINE: 'Đường nét đứt', TEXT_NOTE: 'Ghi chú',
+    FIRST_AID: 'Tủ y tế', LOCKER: 'Tủ đồ', ARROW: 'Hướng đi', LINE: 'Đường thẳng', DASHED_LINE: 'Đường nét đứt', TEXT_NOTE: 'Ghi chú',
 };
 
 interface WarehouseLayoutViewerProps {
@@ -413,6 +413,26 @@ export default function WarehouseLayoutViewer({
                                         );
                                     }
 
+                                    // TỦ CHỨA ĐỒ / TỦ LOCKER (LOCKER)
+                                    if (shape.type === 'LOCKER') {
+                                        return (
+                                            <g key={shape.id} transform={rotTransform}>
+                                                <rect x={sx} y={sy} width={sw} height={sh} fill={defFill} stroke={defStroke} strokeWidth={2} rx={3} opacity={opacity} />
+                                                <line x1={cx} y1={sy + 2} x2={cx} y2={sy + sh - 2} stroke={defStroke} strokeWidth={1.5} opacity={0.6} />
+                                                <circle cx={cx - 4} cy={cy} r={Math.min(2.5, sw * 0.05)} fill={defStroke} />
+                                                <circle cx={cx + 4} cy={cy} r={Math.min(2.5, sw * 0.05)} fill={defStroke} />
+                                                <text x={cx} y={sh >= 40 ? sy + 14 : cy} textAnchor="middle" dominantBaseline="central" fontSize={Math.min(13, sw * 0.35, sh * 0.35)}>
+                                                    🗄️
+                                                </text>
+                                                {sh >= 40 && shape.label && (
+                                                    <text x={cx} y={sy + sh - 10} textAnchor="middle" dominantBaseline="central" fontSize={9} fontWeight="bold" fill="#334155">
+                                                        {shape.label}
+                                                    </text>
+                                                )}
+                                            </g>
+                                        );
+                                    }
+
                                     // CẦU THANG (STAIRS)
                                     if (shape.type === 'STAIRS') {
                                         return (
@@ -444,10 +464,13 @@ export default function WarehouseLayoutViewer({
                                         const sDash = shape.strokeDasharray || (shape.type === 'DASHED_LINE' ? '8 6' : undefined);
                                         const orient = shape.lineOrientation || (sw >= sh ? 'horizontal' : 'vertical');
 
-                                        let x1 = sx, y1 = cy, x2 = sx + sw, y2 = cy;
+                                        let x1 = sx, y1 = sy, x2 = sx + sw, y2 = sy;
                                         if (orient === 'vertical') {
-                                            x1 = cx; y1 = sy;
-                                            x2 = cx; y2 = sy + sh;
+                                            x1 = sx; y1 = sy;
+                                            x2 = sx; y2 = sy + sh;
+                                        } else if (orient === 'horizontal') {
+                                            x1 = sx; y1 = sy;
+                                            x2 = sx + sw; y2 = sy;
                                         } else if (orient === 'diagonal-down') {
                                             x1 = sx; y1 = sy;
                                             x2 = sx + sw; y2 = sy + sh;

@@ -8,7 +8,8 @@ import {
     ZoomIn, ZoomOut, Grid3X3, Box, Circle, RotateCw, Tag, Copy, Undo2, 
     Redo2, Lock, Unlock, ArrowUp, ArrowDown, Scale, Flame, AlertTriangle, 
     Layers, Sparkles, Check, ChevronRight, Sliders, Palette, Truck, 
-    CheckCircle2, BatteryCharging, HeartPulse, ArrowRight, Type, Ruler
+    CheckCircle2, BatteryCharging, HeartPulse, ArrowRight, Type, Ruler,
+    Archive
 } from 'lucide-react';
 import { layoutService } from '@/services/warehouse/layoutService';
 import { useSystem } from '@/contexts/SystemContext';
@@ -80,6 +81,7 @@ const TOOL_GROUPS: {
         name: 'Bàn thao tác & Thiết bị',
         tools: [
             { id: 'DESK', label: 'Bàn làm việc / Thủ kho', icon: Box },
+            { id: 'LOCKER', label: 'Tủ chứa đồ / Tủ dụng cụ', icon: Archive },
             { id: 'PACK_STATION', label: 'Trạm đóng gói / Máy dán', icon: Sparkles },
             { id: 'SCALE', label: 'Trạm cân điện tử', icon: Scale },
             { id: 'FORKLIFT_PARK', label: 'Bãi đỗ / Sạc xe nâng', icon: BatteryCharging },
@@ -106,6 +108,7 @@ const SHAPE_DEFAULTS: Record<ShapeType, { fill: string; stroke: string; label: s
     DOCK: { fill: '#e0e7ff', stroke: '#4338ca', label: 'Cửa Dock xe tải' },
     PILLAR: { fill: '#94a3b8', stroke: '#475569', label: 'Cột' },
     DESK: { fill: '#e0f2fe', stroke: '#0284c7', label: 'Bàn kiểm' },
+    LOCKER: { fill: '#e2e8f0', stroke: '#475569', label: 'Tủ đồ' },
     PACK_STATION: { fill: '#fef08a', stroke: '#ca8a04', label: 'Đóng gói' },
     SCALE: { fill: '#ccfbf1', stroke: '#0d9488', label: 'Trạm cân' },
     STAGING: { fill: '#fef9c3', stroke: '#eab308', label: 'Khu tập kết' },
@@ -508,7 +511,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             const hit = [...shapes].reverse().find(s => {
                 const sx = dragPos?.id === s.id ? dragPos.x : s.x;
                 const sy = dragPos?.id === s.id ? dragPos.y : s.y;
-                return pt.x >= sx && pt.x <= sx + s.width && pt.y >= sy && pt.y <= sy + s.height;
+                const isLine = s.type === 'LINE' || s.type === 'DASHED_LINE';
+                const pad = isLine ? 10 : 0;
+                return pt.x >= sx - pad && pt.x <= sx + s.width + pad && pt.y >= sy - pad && pt.y <= sy + s.height + pad;
             });
             if (hit) {
                 // Click to select - strictly selects without shifting position
@@ -599,15 +604,20 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 let nw = d.origW!;
                 let nh = d.origH!;
 
-                if (d.handle?.includes('e')) nw = snap(Math.max(MIN_SIZE, pt.x - nx));
-                if (d.handle?.includes('s')) nh = snap(Math.max(MIN_SIZE, pt.y - ny));
+                const currentShape = shapes.find(s => s.id === d.id);
+                const isLine = currentShape?.type === 'LINE' || currentShape?.type === 'DASHED_LINE';
+                const minW = isLine && currentShape?.lineOrientation === 'vertical' ? 0 : (isLine ? GRID : MIN_SIZE);
+                const minH = isLine && currentShape?.lineOrientation === 'horizontal' ? 0 : (isLine ? GRID : MIN_SIZE);
+
+                if (d.handle?.includes('e')) nw = snap(Math.max(minW, pt.x - nx));
+                if (d.handle?.includes('s')) nh = snap(Math.max(minH, pt.y - ny));
                 if (d.handle?.includes('w')) {
-                    const newX = snap(Math.min(d.origX + d.origW! - MIN_SIZE, pt.x));
+                    const newX = snap(Math.min(d.origX + d.origW! - minW, pt.x));
                     nw = d.origX + d.origW! - newX;
                     nx = newX;
                 }
                 if (d.handle?.includes('n')) {
-                    const newY = snap(Math.min(d.origY + d.origH! - MIN_SIZE, pt.y));
+                    const newY = snap(Math.min(d.origY + d.origH! - minH, pt.y));
                     nh = d.origY + d.origH! - newY;
                     ny = newY;
                 }
@@ -644,20 +654,18 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
                 if (drawPreview.w === 0 && drawPreview.h === 0) {
                     w = GRID * 6; // 120px mặc định khi chỉ click chuột
-                    h = GRID;     // 20px chiều cao vùng chạm chọn
+                    h = 0;
                     lineOrientation = 'horizontal';
-                } else if (Math.abs(dx) >= Math.abs(dy) * 1.5) {
-                    w = Math.max(drawPreview.w, GRID * 2);
-                    h = Math.max(drawPreview.h, GRID);
-                    lineOrientation = 'horizontal';
-                } else if (Math.abs(dy) >= Math.abs(dx) * 1.5) {
+                } else if (Math.abs(dx) >= Math.abs(dy)) {
+                    // Ưu tiên đường ngang chuẩn xác khớp lưới
                     w = Math.max(drawPreview.w, GRID);
-                    h = Math.max(drawPreview.h, GRID * 2);
-                    lineOrientation = 'vertical';
+                    h = 0;
+                    lineOrientation = 'horizontal';
                 } else {
-                    w = Math.max(drawPreview.w, GRID * 2);
-                    h = Math.max(drawPreview.h, GRID * 2);
-                    lineOrientation = (dx * dy >= 0) ? 'diagonal-down' : 'diagonal-up';
+                    // Ưu tiên đường dọc chuẩn xác khớp lưới
+                    w = 0;
+                    h = Math.max(drawPreview.h, GRID);
+                    lineOrientation = 'vertical';
                 }
             }
 
@@ -1382,6 +1390,44 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                                 <rect x={sx} y={sy} width={sw} height={Math.min(24, Math.max(16, sh * 0.3))} rx={shape.rx || 8} fill={stroke} fillOpacity={0.15} />
                                                 <text x={sx + 8} y={sy + Math.min(14, sh * 0.2)} fontSize={11} fontWeight="bold" fill={stroke}>{shape.label || 'Phòng'}</text>
                                             </g>
+                                        ) : shape.type === 'LOCKER' ? (
+                                            /* Tủ chứa đồ / Tủ locker / Tủ dụng cụ */
+                                            <g>
+                                                <rect 
+                                                    x={sx} y={sy} width={sw} height={sh}
+                                                    fill={fill} stroke={stroke} strokeWidth={isSelected ? 3 : 2}
+                                                    rx={shape.rx || 3}
+                                                    opacity={opacity}
+                                                />
+                                                {/* Vách ngăn chia 2 cánh tủ */}
+                                                <line x1={sx + sw/2} y1={sy + 2} x2={sx + sw/2} y2={sy + sh - 2} stroke={stroke} strokeWidth={1.5} opacity={0.6} />
+                                                {/* Tay nắm tủ 2 bên */}
+                                                <circle cx={sx + sw/2 - 4} cy={sy + sh/2} r={Math.min(2.5, sw * 0.05)} fill={stroke} />
+                                                <circle cx={sx + sw/2 + 4} cy={sy + sh/2} r={Math.min(2.5, sw * 0.05)} fill={stroke} />
+                                                {/* Biểu tượng & Nhãn */}
+                                                <text 
+                                                    x={sx + sw/2} 
+                                                    y={sh >= 40 ? sy + 14 : sy + sh/2} 
+                                                    textAnchor="middle" 
+                                                    dominantBaseline="central" 
+                                                    fontSize={Math.min(13, sw * 0.35, sh * 0.35)}
+                                                >
+                                                    🗄️
+                                                </text>
+                                                {sh >= 40 && shape.label && (
+                                                    <text 
+                                                        x={sx + sw/2} 
+                                                        y={sy + sh - 10} 
+                                                        textAnchor="middle" 
+                                                        dominantBaseline="central" 
+                                                        fontSize={9} 
+                                                        fontWeight="bold" 
+                                                        fill="#334155"
+                                                    >
+                                                        {shape.label}
+                                                    </text>
+                                                )}
+                                            </g>
                                         ) : shape.type === 'DOOR' ? (
                                             /* Cửa ra vào / Cửa cuốn */
                                             <g>
@@ -1402,10 +1448,13 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                                 const sDash = shape.strokeDasharray || (shape.type === 'DASHED_LINE' ? '8 6' : undefined);
                                                 const orient = shape.lineOrientation || (sw >= sh ? 'horizontal' : 'vertical');
 
-                                                let x1 = sx, y1 = sy + sh / 2, x2 = sx + sw, y2 = sy + sh / 2;
+                                                let x1 = sx, y1 = sy, x2 = sx + sw, y2 = sy;
                                                 if (orient === 'vertical') {
-                                                    x1 = sx + sw / 2; y1 = sy;
-                                                    x2 = sx + sw / 2; y2 = sy + sh;
+                                                    x1 = sx; y1 = sy;
+                                                    x2 = sx; y2 = sy + sh;
+                                                } else if (orient === 'horizontal') {
+                                                    x1 = sx; y1 = sy;
+                                                    x2 = sx + sw; y2 = sy;
                                                 } else if (orient === 'diagonal-down') {
                                                     x1 = sx; y1 = sy;
                                                     x2 = sx + sw; y2 = sy + sh;
@@ -1458,8 +1507,8 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                             />
                                         )}
 
-                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE, ROOM, DOOR, LINE, DASHED_LINE) */}
-                                        {shape.type !== 'TEXT_NOTE' && shape.type !== 'ROOM' && shape.type !== 'DOOR' && shape.type !== 'LINE' && shape.type !== 'DASHED_LINE' && shape.label && (
+                                        {/* Label & Badges (cho các shape không phải TEXT_NOTE, ROOM, DOOR, LOCKER, LINE, DASHED_LINE) */}
+                                        {shape.type !== 'TEXT_NOTE' && shape.type !== 'ROOM' && shape.type !== 'DOOR' && shape.type !== 'LOCKER' && shape.type !== 'LINE' && shape.type !== 'DASHED_LINE' && shape.label && (
                                             <text 
                                                 x={sx + sw/2} y={shape.type === 'ARROW' ? sy + sh*0.85 : sy + sh/2} 
                                                 textAnchor="middle" dominantBaseline="central"
@@ -1533,9 +1582,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                         />
                                         <line 
                                             x1={drawPreview.x} 
-                                            y1={drawPreview.w >= drawPreview.h ? drawPreview.y + drawPreview.h/2 : drawPreview.y} 
-                                            x2={drawPreview.x + drawPreview.w} 
-                                            y2={drawPreview.w >= drawPreview.h ? drawPreview.y + drawPreview.h/2 : drawPreview.y + drawPreview.h} 
+                                            y1={drawPreview.w >= drawPreview.h ? drawPreview.y : drawPreview.y} 
+                                            x2={drawPreview.w >= drawPreview.h ? drawPreview.x + drawPreview.w : drawPreview.x} 
+                                            y2={drawPreview.w >= drawPreview.h ? drawPreview.y : drawPreview.y + drawPreview.h} 
                                             stroke={activeTool === 'DASHED_LINE' ? '#eab308' : '#2563eb'} 
                                             strokeWidth={3} 
                                             strokeDasharray={activeTool === 'DASHED_LINE' ? '8 6' : undefined}
