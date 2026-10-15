@@ -19,6 +19,8 @@ export interface MultiLotItem {
     inboundDate?: string;
     batchCode?: string;
     customerName?: string;
+    tag?: string;
+    allTags?: string[];
 }
 
 interface MultiLotZoneModalProps {
@@ -65,7 +67,7 @@ export default function MultiLotZoneModal({
                     <div>
                         <div className="flex items-center gap-2 mb-1.5 flex-wrap">
                             <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-orange-500 text-white tracking-wider shadow-xs">
-                                {shape.isMultiLot || lots.length > 1 ? 'BÃI CHỨA ĐA LÔ' : 'VỊ TRÍ LƯU TRỮ'}
+                                KHU VỰC LƯU TRỮ
                             </span>
                             <span className="text-xs px-2 py-0.5 rounded-md bg-stone-200/80 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 font-mono font-bold">
                                 {shape.code || shape.label || 'ZONE'}
@@ -181,8 +183,16 @@ export default function MultiLotZoneModal({
                                                 {item.lotCode}
                                             </span>
 
+                                            {/* Mã Tag thùng tái sử dụng */}
+                                            {item.tag && (
+                                                <span className="inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 dark:bg-amber-950/70 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                                                    <Tag size={11} className="text-amber-600 dark:text-amber-400" />
+                                                    <span>Tag: {item.tag}</span>
+                                                </span>
+                                            )}
+
                                             {item.batchCode && (
-                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300">
+                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 border border-stone-200 dark:border-zinc-700">
                                                     Lô SX: {item.batchCode}
                                                 </span>
                                             )}

@@ -33,6 +33,33 @@ const SHAPE_LABELS: Record<ShapeType, string> = {
     FIRST_AID: 'Tủ y tế', LOCKER: 'Tủ đồ', ARROW: 'Hướng đi', LINE: 'Đường thẳng', DASHED_LINE: 'Đường nét đứt', TEXT_NOTE: 'Ghi chú',
 };
 
+const formatShortDate = (dateVal?: string | Date) => {
+    if (!dateVal) return '';
+    try {
+        const dt = new Date(dateVal);
+        if (isNaN(dt.getTime())) return '';
+        const d = String(dt.getDate()).padStart(2, '0');
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        return `${d}/${m}`;
+    } catch {
+        return '';
+    }
+};
+
+const formatFullDate = (dateVal?: string | Date) => {
+    if (!dateVal) return '';
+    try {
+        const dt = new Date(dateVal);
+        if (isNaN(dt.getTime())) return '';
+        const d = String(dt.getDate()).padStart(2, '0');
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const y = dt.getFullYear();
+        return `${d}/${m}/${y}`;
+    } catch {
+        return '';
+    }
+};
+
 import { CheckSquare } from 'lucide-react';
 
 interface WarehouseLayoutViewerProps {
@@ -96,7 +123,9 @@ export default function WarehouseLayoutViewer({
         const matchBatch = (lotItem.batchCode || '').toLowerCase().includes(normSearch);
         const matchCust = (lotItem.customerName || '').toLowerCase().includes(normSearch);
         const matchPos = (lotItem.position?.code || '').toLowerCase().includes(normSearch);
-        return matchLot || matchProd || matchSku || matchBatch || matchCust || matchPos;
+        const matchTag = (lotItem.allTags || []).some((t: string) => t.toLowerCase().includes(normSearch)) || 
+            (lotItem.tag || '').toLowerCase().includes(normSearch);
+        return matchLot || matchProd || matchSku || matchBatch || matchCust || matchPos || matchTag;
     };
 
     // Multi-Lot Zone Modal State
@@ -156,6 +185,30 @@ export default function WarehouseLayoutViewer({
                 (pos as any)?.products?.name || 
                 (pos as any)?.product?.name || '';
 
+            // Trích xuất toàn bộ tags từ lot, items, lot_tags, position
+            const itemTags = (lot?.items || []).flatMap((it: any) => it.tags || []);
+            const rawTags: any[] = [
+                ...(lot?.tags || []),
+                ...itemTags,
+                ...(firstItem?.tags || []),
+                ...(Array.isArray(lot?.lot_tags) ? lot.lot_tags.map((t: any) => (typeof t === 'string' ? t : t.tag)) : []),
+                ...(pos?.tags ? (Array.isArray(pos.tags) ? pos.tags : [pos.tags]) : []),
+                ...(Array.isArray(pos?.lot_tags) ? pos.lot_tags.map((t: any) => (typeof t === 'string' ? t : t.tag)) : [])
+            ];
+            const cleanTags = Array.from(new Set(rawTags.map(t => String(t || '').trim()))).filter(t => 
+                t && !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:')
+            );
+            const primaryTag = cleanTags[0] || '';
+
+            // Mã Lô SX / Batch
+            const batchCode = lot?.production_lot_codes?.[0] || 
+                lot?.batch_code || 
+                lot?.batch_number || 
+                pos?.batch_code || '';
+
+            // Ngày nhập kho hoặc ngày tạo
+            const inboundDate = lot?.inbound_date || lot?.created_at || pos?.inbound_date || pos?.created_at || '';
+
             return {
                 position: pos,
                 lot: lot,
@@ -165,8 +218,10 @@ export default function WarehouseLayoutViewer({
                 sku: firstItem?.sku || lot?.products?.sku || lot?.sku || (pos as any)?.sku || '',
                 quantity: totalLotQty,
                 unit: firstItem?.unit || lot?.products?.unit || lot?.unit || (pos as any)?.unit || 'cái',
-                inboundDate: lot?.inbound_date || lot?.created_at,
-                batchCode: lot?.batch_code || lot?.batch_number,
+                inboundDate: inboundDate,
+                batchCode: batchCode,
+                tag: primaryTag,
+                allTags: cleanTags,
                 customerName: lot?.customer_name || lot?.supplier_name,
             };
         });
@@ -315,7 +370,7 @@ export default function WarehouseLayoutViewer({
                                             case 'PATH': return { icon: '🛣️', text: 'LỐI ĐI' };
                                             case 'SCRAP': return { icon: '⚠️', text: 'PHẾ PHẨM' };
                                             case 'SCALE': return { icon: '⚖️', text: 'TRẠM CÂN' };
-                                            case 'ZONE': return { icon: '', text: 'ĐA LÔ' };
+                                            case 'ZONE': return { icon: '', text: 'KHU VỰC' };
                                             default: return { icon: '📍', text: 'VỊ TRÍ' };
                                         }
                                     };
@@ -371,6 +426,11 @@ export default function WarehouseLayoutViewer({
                                         const isMultiSplit = zoneLots.length > 1;
                                         const isHorizontal = sw >= sh;
                                         const splitCount = zoneLots.length;
+                                        const zoneLabel = shape.label || shape.code || '';
+                                        const showVerticalStrip = Boolean(zoneLabel || shape.type !== 'ZONE') && sw >= 36 && sh >= 20;
+                                        const stripW = showVerticalStrip ? Math.min(18, Math.max(14, Math.floor(sw * 0.12))) : 0;
+                                        const contentX = sx + stripW;
+                                        const contentW = sw - stripW;
 
                                         return (
                                             <g 
@@ -433,13 +493,42 @@ export default function WarehouseLayoutViewer({
                                                     </g>
                                                 )}
 
+                                                {/* Dải tên Zone theo mép chiều cao (Vertical Ribbon on left edge) */}
+                                                {showVerticalStrip && (
+                                                    <g className="select-none pointer-events-none">
+                                                        <rect 
+                                                            x={sx + 1.5} 
+                                                            y={sy + 1.5} 
+                                                            width={stripW - 1.5} 
+                                                            height={sh - 3} 
+                                                            rx={Math.min(shape.rx || 3, 3)} 
+                                                            fill={shape.type === 'ZONE' ? (hasLots ? '#c2410c' : '#475569') : defStroke}
+                                                            fillOpacity={0.92} 
+                                                        />
+                                                        <text 
+                                                            x={sx + stripW / 2} 
+                                                            y={sy + sh / 2} 
+                                                            textAnchor="middle" 
+                                                            dominantBaseline="central" 
+                                                            transform={`rotate(-90, ${sx + stripW / 2}, ${sy + sh / 2})`}
+                                                            fontSize={Math.min(10, stripW * 0.72, Math.max(7.5, (sh - 6) / Math.max(zoneLabel.length || 1, 1) * 1.5))} 
+                                                            fontWeight="900" 
+                                                            fill="#ffffff"
+                                                            letterSpacing="0.5px"
+                                                        >
+                                                            <title>{`Khu vực: ${zoneLabel || typeInfo.text}`}</title>
+                                                            {shape.type !== 'ZONE' ? `${typeInfo.icon} ${zoneLabel || typeInfo.text}` : zoneLabel}
+                                                        </text>
+                                                    </g>
+                                                )}
+
                                                 {/* TRƯỜNG HỢP 1: CÓ TỪ 2 LOT TRỞ LÊN -> TỰ ĐỘNG CHIA KHU VỰC THÀNH CÁC Ô NHỎ VỚI ĐƯỜNG KẺ MỜ */}
                                                 {isMultiSplit ? (
                                                     <g>
                                                         {/* Các đường kẻ mờ phân cách giữa các ô con */}
                                                         {Array.from({ length: splitCount - 1 }).map((_, idx) => {
                                                             if (isHorizontal) {
-                                                                const lineX = sx + (idx + 1) * (sw / splitCount);
+                                                                 const lineX = contentX + (idx + 1) * (contentW / splitCount);
                                                                 return (
                                                                     <line 
                                                                         key={`div_${idx}`}
@@ -456,8 +545,8 @@ export default function WarehouseLayoutViewer({
                                                                 return (
                                                                     <line 
                                                                         key={`div_${idx}`}
-                                                                        x1={sx + 3} y1={lineY}
-                                                                        x2={sx + sw - 3} y2={lineY}
+                                                                        x1={contentX + 3} y1={lineY}
+                                                                        x2={contentX + contentW - 3} y2={lineY}
                                                                         stroke="#ea580c"
                                                                         strokeWidth={1.5}
                                                                         strokeDasharray="4 3"
@@ -469,9 +558,9 @@ export default function WarehouseLayoutViewer({
 
                                                         {/* Từng ô nhỏ hiển thị thông tin 1 Lot */}
                                                         {zoneLots.map((item, idx) => {
-                                                            const cellW = isHorizontal ? sw / splitCount : sw;
+                                                            const cellW = isHorizontal ? contentW / splitCount : contentW;
                                                             const cellH = isHorizontal ? sh : sh / splitCount;
-                                                            const cellX = isHorizontal ? sx + idx * cellW : sx;
+                                                            const cellX = isHorizontal ? contentX + idx * cellW : contentX;
                                                             const cellY = isHorizontal ? sy : sy + idx * cellH;
                                                             const subCx = cellX + cellW / 2;
                                                             const subCy = cellY + cellH / 2;
@@ -527,12 +616,34 @@ export default function WarehouseLayoutViewer({
                                                                         </g>
                                                                     )}
 
-                                                                    {/* 3 Tầng thông tin: Mã Vị trí/Lô -> Tên sản phẩm -> Badge Số lượng */}
+                                                                    {/* 3 Tầng thông tin: Mã Tag/Lô SX + Ngày nhập -> Tên sản phẩm -> Badge Số lượng */}
                                                                     {(() => {
                                                                         const hasProd = Boolean(item.productName && item.productName.trim() !== '');
                                                                         const show3Rows = hasProd && cellH >= 38;
                                                                         const labelY = show3Rows ? subCy - Math.min(13, cellH * 0.25) : subCy - 9;
                                                                         const badgeY = show3Rows ? subCy + Math.min(13, cellH * 0.27) : subCy + 10;
+                                                                        
+                                                                        // Header hiển thị: Ưu tiên Mã Tag, sau đó Số Batch / Lô SX, kèm Ngày nhập kho
+                                                                        const dateStr = formatShortDate(item.inboundDate);
+                                                                        const tagOrBatch = item.tag ? `🏷️ ${item.tag}` : (item.batchCode ? `Lô ${item.batchCode}` : '');
+                                                                        
+                                                                        let headerText = '';
+                                                                        if (tagOrBatch && dateStr) {
+                                                                            headerText = `${tagOrBatch} • ${dateStr}`;
+                                                                        } else if (tagOrBatch) {
+                                                                            headerText = tagOrBatch;
+                                                                        } else if (dateStr) {
+                                                                            headerText = `📅 ${dateStr}`;
+                                                                        } else {
+                                                                            // Fallback vị trí nếu hoàn toàn không có tag/batch/date
+                                                                            headerText = lotLabel;
+                                                                        }
+
+                                                                        const maxHeaderChars = Math.max(6, Math.floor((cellW - 6) / 5.5));
+                                                                        const truncatedHeader = headerText.length > maxHeaderChars 
+                                                                            ? headerText.slice(0, maxHeaderChars - 1) + '…' 
+                                                                            : headerText;
+
                                                                         const maxProdChars = Math.max(6, Math.floor((cellW - 8) / 6.2));
                                                                         const truncatedProd = item.productName && item.productName.length > maxProdChars 
                                                                             ? item.productName.slice(0, maxProdChars - 1) + '…' 
@@ -540,20 +651,22 @@ export default function WarehouseLayoutViewer({
 
                                                                         return (
                                                                             <>
-                                                                                {/* Mã Lô / Vị trí con của ô */}
+                                                                                {/* Dòng 1: Mã Tag / Batch & Ngày nhập kho (thay thế mã vị trí cứng K1.01) */}
                                                                                 <text 
                                                                                     x={subCx} 
                                                                                     y={labelY} 
                                                                                     textAnchor="middle" 
                                                                                     dominantBaseline="central"
-                                                                                    fontSize={Math.min(11.5, cellW / (lotLabel.length || 1) * 1.3, cellH * 0.26)}
+                                                                                    fontSize={Math.min(10.5, cellW / (truncatedHeader.length || 1) * 1.35, cellH * 0.25)}
                                                                                     fontWeight="bold" 
-                                                                                    fill="#1e293b"
+                                                                                    fill={isCellMatch ? '#065f46' : '#0f172a'}
+                                                                                    className="select-none pointer-events-none"
                                                                                 >
-                                                                                    {lotLabel}
+                                                                                    <title>{`Vị trí: ${lotLabel}\nTag / Tem: ${item.tag || 'Chưa gắn'}\nLô SX: ${item.batchCode || 'Không'}\nNgày nhập kho: ${formatFullDate(item.inboundDate) || 'Chưa rõ'}\nSản phẩm: ${item.productName}\nSố lượng: ${item.quantity.toLocaleString()} ${item.unit || ''}`}</title>
+                                                                                    {truncatedHeader}
                                                                                 </text>
 
-                                                                                {/* Tên sản phẩm ở giữa */}
+                                                                                {/* Dòng 2: Tên sản phẩm ở giữa */}
                                                                                 {show3Rows && (
                                                                                     <text 
                                                                                         x={subCx} 
@@ -562,7 +675,7 @@ export default function WarehouseLayoutViewer({
                                                                                         dominantBaseline="central"
                                                                                         fontSize={Math.min(9.5, Math.max(7.5, cellH * 0.2))}
                                                                                         fontWeight="600" 
-                                                                                        fill={isCellMatch ? '#065f46' : '#334155'}
+                                                                                        fill={isCellMatch ? '#047857' : '#1d4ed8'}
                                                                                         className="select-none pointer-events-none"
                                                                                     >
                                                                                         <title>{item.productName}{item.sku ? ` (${item.sku})` : ''}</title>
@@ -570,7 +683,7 @@ export default function WarehouseLayoutViewer({
                                                                                     </text>
                                                                                 )}
 
-                                                                                {/* Badge số lượng của Lô */}
+                                                                                {/* Dòng 3: Badge số lượng của Lô */}
                                                                                 <g transform={`translate(${subCx}, ${badgeY})`}>
                                                                                     <rect 
                                                                                         x={-Math.min(45, cellW * 0.42)} 
@@ -597,15 +710,6 @@ export default function WarehouseLayoutViewer({
                                                             );
                                                         })}
 
-                                                        {/* Badge Loại hình khối & Tên khu vực ở góc trái */}
-                                                        <g transform={`translate(${sx + 4}, ${sy + 4})`}>
-                                                            <rect width={Math.min(105, sw * 0.48)} height={14} rx={3} fill="#c2410c" />
-                                                            <text x={Math.min(105, sw * 0.48) / 2} y={10} textAnchor="middle" fontSize={8} fontWeight="bold" fill="#ffffff">
-                                                                {shape.type !== 'ZONE' 
-                                                                    ? `${typeInfo.icon} ${typeInfo.text}${shape.label ? ` • ${shape.label}` : (shape.code ? ` • ${shape.code}` : '')}`
-                                                                    : (shape.label ? `ĐA LÔ • ${shape.label}` : 'ĐA LÔ')}
-                                                            </text>
-                                                        </g>
                                                     </g>
                                                 ) : (
                                                     /* TRƯỜNG HỢP 2: 1 LOT HOẶC TRỐNG -> HIỂN THỊ NGUYÊN BẢN CẢ KHU VỰC */
@@ -614,78 +718,90 @@ export default function WarehouseLayoutViewer({
                                                             const firstLot = zoneLots[0];
                                                             const hasProd = Boolean(hasLots && firstLot?.productName && firstLot.productName.trim() !== '');
                                                             const show3Rows = hasProd && sh >= 38;
-                                                            const labelY = hasLots ? (show3Rows ? cy - Math.min(14, sh * 0.26) : cy - 8) : cy;
-                                                            const badgeY = show3Rows ? cy + Math.min(14, sh * 0.28) : cy + 10;
-                                                            const maxZoneChars = Math.max(8, Math.floor((sw - 12) / 6.2));
+                                                            const singleCx = contentX + contentW / 2;
+                                                            const singleCy = sy + sh / 2;
+                                                            const labelY = hasLots ? (show3Rows ? singleCy - Math.min(14, sh * 0.26) : singleCy - 8) : singleCy;
+                                                            const badgeY = show3Rows ? singleCy + Math.min(14, sh * 0.28) : singleCy + 10;
+                                                            
+                                                            // Header hiển thị: Khi có hàng, ưu tiên Mã Tag, Số Batch, Ngày nhập kho
+                                                            const dateStr = firstLot ? formatShortDate(firstLot.inboundDate) : '';
+                                                            const tagOrBatch = firstLot?.tag ? `🏷️ ${firstLot.tag}` : (firstLot?.batchCode ? `Lô ${firstLot.batchCode}` : '');
+                                                            
+                                                            let headerText = !showVerticalStrip ? (shape.label || shape.code || '') : '';
+                                                            if (hasLots) {
+                                                                if (tagOrBatch && dateStr) {
+                                                                    headerText = `${tagOrBatch} • ${dateStr}`;
+                                                                } else if (tagOrBatch) {
+                                                                    headerText = tagOrBatch;
+                                                                } else if (dateStr) {
+                                                                    headerText = `📅 ${dateStr}`;
+                                                                }
+                                                            }
+
+                                                            const maxHeaderChars = Math.max(8, Math.floor((contentW - 12) / 6.0));
+                                                            const truncatedHeader = headerText.length > maxHeaderChars 
+                                                                ? headerText.slice(0, maxHeaderChars - 1) + '…' 
+                                                                : headerText;
+
+                                                            const maxZoneChars = Math.max(8, Math.floor((contentW - 12) / 6.2));
                                                             const truncatedProd = firstLot?.productName && firstLot.productName.length > maxZoneChars 
                                                                 ? firstLot.productName.slice(0, maxZoneChars - 1) + '…' 
                                                                 : firstLot?.productName;
 
                                                             return (
                                                                 <>
-                                                                    {/* Label / Code */}
-                                                                    {(shape.label || shape.code) && (
+                                                                    {/* Header Dòng 1: Tag / Batch / Ngày nhập (khi có hàng) hoặc Tên khu vực (khi trống) */}
+                                                                    {headerText && (
                                                                         <text 
-                                                                            x={cx} y={labelY} 
+                                                                            x={singleCx} y={labelY} 
                                                                             textAnchor="middle" dominantBaseline="central"
-                                                                            fontSize={Math.min(13, sw / ((shape.label || shape.code || '').length || 1) * 1.5, sh * 0.3)}
+                                                                            fontSize={Math.min(12, contentW / (truncatedHeader.length || 1) * 1.4, sh * 0.28)}
                                                                             fontWeight="bold" 
-                                                                            fill="#1e293b"
+                                                                            fill={isZoneMatched ? '#065f46' : '#1e293b'}
                                                                         >
-                                                                            {shape.label || shape.code}
+                                                                            <title>{hasLots ? `Vị trí: ${shape.label || shape.code}\nTag / Tem: ${firstLot?.tag || 'Chưa gắn'}\nLô SX: ${firstLot?.batchCode || 'Không'}\nNgày nhập kho: ${formatFullDate(firstLot?.inboundDate) || 'Chưa rõ'}\nSản phẩm: ${firstLot?.productName}\nSố lượng: ${firstLot?.quantity?.toLocaleString()} ${firstLot?.unit || ''}` : (shape.label || shape.code)}</title>
+                                                                            {truncatedHeader}
                                                                         </text>
                                                                     )}
 
                                                                     {/* Tên sản phẩm */}
                                                                     {show3Rows && (
                                                                         <text 
-                                                                            x={cx} y={cy} 
+                                                                            x={singleCx} y={singleCy} 
                                                                             textAnchor="middle" dominantBaseline="central"
-                                                                            fontSize={Math.min(10.5, sw * 0.09, sh * 0.22)}
+                                                                            fontSize={Math.min(10.5, contentW * 0.09, sh * 0.22)}
                                                                             fontWeight="600" 
-                                                                            fill={isZoneMatched ? '#065f46' : '#334155'}
+                                                                            fill={isZoneMatched ? '#047857' : '#1d4ed8'}
                                                                             className="select-none pointer-events-none"
                                                                         >
-                                                                            <title>{firstLot.productName}{firstLot.sku ? ` (${firstLot.sku})` : ''}</title>
+                                                                            <title>{firstLot?.productName}{firstLot?.sku ? ` (${firstLot.sku})` : ''}</title>
                                                                             {truncatedProd}
                                                                         </text>
                                                                     )}
 
                                                                     {/* Thông tin tồn kho & số Lô */}
                                                                     {hasLots ? (
-                                                                        <g transform={`translate(${cx}, ${badgeY})`}>
+                                                                        <g transform={`translate(${singleCx}, ${badgeY})`}>
                                                                             <rect 
-                                                                                x={-Math.min(48, sw * 0.42)} 
+                                                                                x={-Math.min(48, contentW * 0.42)} 
                                                                                 y={-9} 
-                                                                                width={Math.min(96, sw * 0.84)} 
+                                                                                width={Math.min(96, contentW * 0.84)} 
                                                                                 height={18} 
                                                                                 rx={9} 
                                                                                 fill={isZoneMatched ? '#059669' : '#ea580c'} 
                                                                             />
-                                                                            <text x={0} y={4} textAnchor="middle" fontSize={Math.min(10, sw * 0.1, sh * 0.22)} fontWeight="bold" fill="#ffffff">
+                                                                            <text x={0} y={4} textAnchor="middle" fontSize={Math.min(10, contentW * 0.1, sh * 0.22)} fontWeight="bold" fill="#ffffff">
                                                                                 {firstLot?.quantity?.toLocaleString()} {firstLot?.unit || 'cái'}
                                                                             </text>
                                                                         </g>
                                                                     ) : (
-                                                                        <text x={cx} y={shape.label || shape.code ? cy + 12 : cy} textAnchor="middle" fontSize={9} fill="#94a3b8" fontWeight="500">
+                                                                        <text x={singleCx} y={headerText ? singleCy + 12 : singleCy} textAnchor="middle" fontSize={9} fill="#94a3b8" fontWeight="500">
                                                                             Trống
                                                                         </text>
                                                                     )}
                                                                 </>
                                                             );
                                                         })()}
-
-                                                        {/* Badge Loại hình khối / ĐA LÔ nếu được cấu hình */}
-                                                        {(isMulti || shape.type !== 'ZONE') && (
-                                                            <g transform={`translate(${sx + 4}, ${sy + 4})`}>
-                                                                <rect width={Math.min(100, sw * 0.48)} height={14} rx={3} fill="#c2410c" />
-                                                                <text x={Math.min(100, sw * 0.48) / 2} y={10} textAnchor="middle" fontSize={8} fontWeight="bold" fill="#ffffff">
-                                                                    {shape.type !== 'ZONE' 
-                                                                        ? `${typeInfo.icon} ${typeInfo.text}${shape.code ? ` • ${shape.code}` : ''}` 
-                                                                        : 'ĐA LÔ'}
-                                                                </text>
-                                                            </g>
-                                                        )}
                                                     </g>
                                                 )}
                                             </g>

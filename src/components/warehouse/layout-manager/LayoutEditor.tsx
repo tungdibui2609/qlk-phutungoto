@@ -56,7 +56,7 @@ const TOOL_GROUPS: {
     {
         name: 'Khu vực lưu trữ',
         tools: [
-            { id: 'ZONE', label: 'Bãi chứa hàng (Đa Lô)', icon: Square },
+            { id: 'ZONE', label: 'Bãi / Khu vực chứa hàng', icon: Square },
             { id: 'RACK', label: 'Kệ hàng (Chia ô)', icon: Grid3X3 },
             { id: 'STAGING', label: 'Khu tập kết / Đệm hàng', icon: Layers },
             { id: 'QC_AREA', label: 'Khu kiểm hàng (KCS)', icon: CheckCircle2 },
@@ -1522,13 +1522,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                             </text>
                                         )}
 
-                                        {/* Badge Multi-Lot trên hình ZONE */}
-                                        {shape.type === 'ZONE' && shape.isMultiLot && (
-                                            <g transform={`translate(${sx + 4}, ${sy + 4})`}>
-                                                <rect width={56} height={16} rx={4} fill="#ea580c" />
-                                                <text x={28} y={11} textAnchor="middle" fontSize={9} fontWeight="bold" fill="#ffffff">ĐA LÔ</text>
-                                            </g>
-                                        )}
+
 
                                         {/* Huy hiệu ổ khóa khi hình khối bị khóa */}
                                         {shape.isLocked && (
