@@ -1,6 +1,68 @@
-import { useState } from 'react'
-import { Image as ImageIcon, Plus, X, Video, Maximize2, ChevronLeft, ChevronRight, UploadCloud, Loader2 } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { Image as ImageIcon, Plus, X, Video, Maximize2, ChevronLeft, ChevronRight, UploadCloud, Loader2, ImageOff } from 'lucide-react'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog'
+
+function MediaImage({
+    url,
+    alt,
+    className,
+    size = 600
+}: {
+    url: string
+    alt: string
+    className?: string
+    size?: number
+}) {
+    const driveIdMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/)
+    const driveId = driveIdMatch ? driveIdMatch[1] : null
+
+    // Attempt 0: Google CDN (lh3.googleusercontent.com) - direct, fast, avoids 429
+    // Attempt 1: Google Drive thumbnail
+    // Attempt 2: Google Drive uc export
+    const [attempt, setAttempt] = useState<number>(0)
+    const [hasError, setHasError] = useState(false)
+
+    useEffect(() => {
+        setAttempt(0)
+        setHasError(false)
+    }, [url])
+
+    const getSourceUrl = () => {
+        if (!driveId) return url
+        if (attempt === 0) return `https://lh3.googleusercontent.com/d/${driveId}=s${size}`
+        if (attempt === 1) return `https://drive.google.com/thumbnail?id=${driveId}&sz=w${size}`
+        if (attempt === 2) return `https://drive.google.com/uc?export=view&id=${driveId}`
+        return url
+    }
+
+    const handleError = () => {
+        if (driveId && attempt < 2) {
+            setAttempt(prev => prev + 1)
+        } else {
+            setHasError(true)
+        }
+    }
+
+    if (hasError) {
+        return (
+            <div className="w-full h-full flex flex-col items-center justify-center bg-stone-900 text-stone-400 p-2 text-center select-none">
+                <ImageOff size={22} className="text-stone-500 mb-1" />
+                <span className="text-[11px] text-stone-300 font-medium">Invalid Image</span>
+            </div>
+        )
+    }
+
+    return (
+        <img
+            key={`${url}_${attempt}`}
+            src={getSourceUrl()}
+            alt={alt}
+            className={className}
+            referrerPolicy="no-referrer"
+            onError={handleError}
+        />
+    )
+}
 
 interface ProductMediaProps {
     mediaItems: { id?: string, url: string, type: 'image' | 'video' }[]
@@ -157,15 +219,11 @@ export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass, 
                                     className={`relative aspect-square rounded-xl overflow-hidden bg-black border border-stone-200 group ${readOnly ? 'cursor-pointer hover:opacity-90 transition-opacity' : ''}`}
                                 >
                                     {item.type === 'image' ? (
-                                        <img
-                                            src={displayUrl}
+                                        <MediaImage
+                                            url={item.url}
                                             alt={`Preview ${idx}`}
                                             className="w-full h-full object-cover"
-                                            onError={(e) => {
-                                                (e.target as HTMLImageElement).style.display = 'none';
-                                                (e.target as HTMLImageElement).parentElement!.classList.add('flex', 'items-center', 'justify-center');
-                                                (e.target as HTMLImageElement).parentElement!.innerHTML += `<span class="text-white text-xs">Invalid Image</span>`
-                                            }}
+                                            size={600}
                                         />
                                     ) : (
                                         <div className="w-full h-full flex items-center justify-center relative">
@@ -269,15 +327,12 @@ export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass, 
                                     }
 
                                     // Image
-                                    const displayUrl = driveId
-                                        ? `https://drive.google.com/thumbnail?id=${driveId}&sz=w1200`
-                                        : currentItem.url
-
                                     return (
-                                        <img
-                                            src={displayUrl}
+                                        <MediaImage
+                                            url={currentItem.url}
                                             alt="Gallery View"
                                             className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+                                            size={1600}
                                         />
                                     )
                                 })()}
@@ -300,7 +355,12 @@ export function ProductMedia({ mediaItems, setMediaItems, readOnly, inputClass, 
                                             className={`relative w-16 h-16 rounded-lg overflow-hidden border-2 transition-all flex-shrink-0 ${currentImageIndex === idx ? 'border-orange-500 scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
                                         >
                                             {item.type === 'image' ? (
-                                                <img src={thumbUrl} className="w-full h-full object-cover" />
+                                                <MediaImage
+                                                    url={item.url}
+                                                    alt={`Thumb ${idx}`}
+                                                    className="w-full h-full object-cover"
+                                                    size={200}
+                                                />
                                             ) : (
                                                 <div className="w-full h-full bg-stone-800 flex items-center justify-center">
                                                     <Video size={20} className="text-white" />

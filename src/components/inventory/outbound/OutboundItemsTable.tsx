@@ -319,7 +319,27 @@ function OutboundItemsTableComponent({
                                                         {item.unbundleInfo}
                                                     </div>
                                                 )}
-                                                {isOverStock && !item.needsUnbundle && (
+                                                {item.needsBundle && (
+                                                    <div className="flex flex-col items-end gap-0.5 mt-0.5">
+                                                        <label className={`inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold px-2 py-0.5 rounded border transition-all ${
+                                                            item.isBundleConfirmed 
+                                                                ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                                                : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                                                        }`}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={!!item.isBundleConfirmed}
+                                                                onChange={(e) => updateItem(item.id, 'isBundleConfirmed', e.target.checked)}
+                                                                className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                                                            />
+                                                            <span>{item.isBundleConfirmed ? '✓ Đã đồng ý gộp lẻ' : 'Tích để gộp lẻ'}</span>
+                                                        </label>
+                                                        <span className="text-[9px] text-blue-600 font-medium">
+                                                            {item.bundleInfo}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                {isOverStock && !item.needsUnbundle && !(item.needsBundle && item.isBundleConfirmed) && (
                                                     <div className="text-[10px] text-red-500 text-right font-medium">
                                                         Vượt quá tồn!
                                                     </div>
@@ -513,7 +533,27 @@ function OutboundItemsTableComponent({
                                                 {item.unbundleInfo}
                                             </div>
                                         )}
-                                        {isOverStock && !item.needsUnbundle && (
+                                        {item.needsBundle && (
+                                            <div className="flex flex-col items-end gap-1 mt-1">
+                                                <label className={`inline-flex items-center gap-1.5 cursor-pointer text-[10px] font-semibold px-2 py-0.5 rounded border transition-all ${
+                                                    item.isBundleConfirmed 
+                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm' 
+                                                        : 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                                                }`}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={!!item.isBundleConfirmed}
+                                                        onChange={(e) => updateItem(item.id, 'isBundleConfirmed', e.target.checked)}
+                                                        className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                                                    />
+                                                    <span>{item.isBundleConfirmed ? '✓ Đã đồng ý gộp lẻ' : 'Tích để gộp lẻ'}</span>
+                                                </label>
+                                                <span className="text-[9px] text-blue-600 font-medium">
+                                                    {item.bundleInfo}
+                                                </span>
+                                            </div>
+                                        )}
+                                        {isOverStock && !item.needsUnbundle && !(item.needsBundle && item.isBundleConfirmed) && (
                                             <div className="text-[10px] text-red-500 text-right font-bold animate-pulse">
                                                 Vượt quá tồn kho!
                                             </div>

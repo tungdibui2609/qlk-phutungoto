@@ -34,6 +34,11 @@ export interface OrderItem {
     isNoteOpen?: boolean
     needsUnbundle?: boolean
     unbundleInfo?: string
+    unbundleMeta?: any
+    needsBundle?: boolean
+    bundleInfo?: string
+    bundleMeta?: any
+    isBundleConfirmed?: boolean
 }
 
 export interface OrderFormProps<T> {

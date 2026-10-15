@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -43,6 +43,24 @@ export const UTILITY_MODULES: UtilityModule[] = [
         description: 'Cho phép thực hiện thao tác chia tách LOT và bẻ đơn vị tính trực tiếp tại sơ đồ kho.',
         icon: Scissors,
         category: 'automation',
+        default_enabled: true
+    },
+    {
+        id: 'auto_bundle_order',
+        name: 'Gộp lẻ Kế toán (PNK/PXK)',
+        description: 'Tự động tạo phiếu chuyển đổi (AUTO) gom hàng lẻ thành đơn vị lớn khi xuất kho (ví dụ: gom 15kg thành 1 Thùng).',
+        icon: PackagePlus,
+        category: 'automation',
+        is_basic: true,
+        default_enabled: false
+    },
+    {
+        id: 'auto_bundle_lot',
+        name: 'Gộp lẻ Kho (LOT/Vị trí)',
+        description: 'Cho phép gom số lượng lẻ tại cùng một LOT/vị trí thành kiện lớn trực tiếp tại sơ đồ kho & xuất LOT.',
+        icon: Boxes,
+        category: 'automation',
+        is_basic: true,
         default_enabled: true
     },
     {

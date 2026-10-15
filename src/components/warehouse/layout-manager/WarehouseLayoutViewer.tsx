@@ -60,7 +60,13 @@ const formatFullDate = (dateVal?: string | Date) => {
     }
 };
 
-import { CheckSquare } from 'lucide-react';
+import { 
+    CheckSquare, ArrowLeftRight, X, Sparkles, Inbox, 
+    ChevronDown, ChevronUp, Layers, Tag, Package, 
+    PlusCircle, RefreshCw, MoveRight, ZoomIn, ZoomOut, Maximize2 
+} from 'lucide-react';
+import { supabase } from '@/lib/supabaseClient';
+import { useToast } from '@/components/ui/ToastProvider';
 
 interface WarehouseLayoutViewerProps {
     positions?: any[];
@@ -78,6 +84,16 @@ interface WarehouseLayoutViewerProps {
     selectedZone?: any;
     lotInfo?: Record<string, any>;
     isAssignmentMode?: boolean;
+    onSwapLots?: (posAId: string, posBId: string) => Promise<void> | void;
+    onMoveLotToPosition?: (sourcePosId: string, targetPosId: string) => Promise<void> | void;
+    onMoveLotToZoneShape?: (sourcePosId: string, targetShape: LayoutShape) => Promise<void> | void;
+    onToggleOrientation?: (shapeId: string, orientation: 'horizontal' | 'vertical') => Promise<void> | void;
+    onRefreshData?: () => void;
+    unassignedLots?: any[];
+    loadingUnassignedLots?: boolean;
+    onAssignStagingLotToPosition?: (lotId: string, posId: string) => Promise<void> | void;
+    onAssignStagingLotToZoneShape?: (lotId: string, shape: LayoutShape) => Promise<void> | void;
+    onRefreshUnassignedLots?: () => void;
 }
 
 export default function WarehouseLayoutViewer({ 
@@ -95,13 +111,398 @@ export default function WarehouseLayoutViewer({
     onAssignLot,
     selectedZone,
     lotInfo = {},
-    isAssignmentMode = false
+    isAssignmentMode = false,
+    onSwapLots,
+    onMoveLotToPosition,
+    onMoveLotToZoneShape,
+    onToggleOrientation,
+    onRefreshData,
+    unassignedLots = [],
+    loadingUnassignedLots = false,
+    onAssignStagingLotToPosition,
+    onAssignStagingLotToZoneShape,
+    onRefreshUnassignedLots
 }: WarehouseLayoutViewerProps) {
     const { systemType } = useSystem();
     const [layoutsToRender, setLayoutsToRender] = useState<WarehouseLayout[]>([]);
     const [loading, setLoading] = useState(true);
     const [isBulkSelectionActive, setIsBulkSelectionActive] = useState(false);
     const containerRef = React.useRef<HTMLDivElement>(null);
+
+    const { showToast } = useToast();
+
+    // Khay Hàng Chờ Xếp Vị Trí (Staging Buffer State)
+    const [selectedStagingLot, setSelectedStagingLot] = useState<any | null>(null);
+    const [isStagingExpanded, setIsStagingExpanded] = useState(true);
+
+    // Zoom & Fit Screen State
+    const [zoomMap, setZoomMap] = useState<Record<string, number>>({});
+    const [isFitMap, setIsFitMap] = useState<Record<string, boolean>>({});
+
+    const handleZoomChange = (layoutId: string, delta: number) => {
+        setZoomMap(prev => {
+            const current = prev[layoutId] ?? 1.0;
+            const next = Math.min(2.5, Math.max(0.3, Number((current + delta).toFixed(2))));
+            return { ...prev, [layoutId]: next };
+        });
+        setIsFitMap(prev => ({ ...prev, [layoutId]: false }));
+    };
+
+    const toggleFit = (layoutId: string) => {
+        setIsFitMap(prev => {
+            const current = prev[layoutId] !== false; // Mặc định ban đầu là true (vừa màn hình)
+            return { ...prev, [layoutId]: !current };
+        });
+    };
+
+    // Pointer-based Drag & Drop State (hoạt động 100% trên SVG chuột & cảm ứng)
+    const [pointerDrag, setPointerDrag] = useState<{
+        isDragging: boolean;
+        startX: number;
+        startY: number;
+        currentX: number;
+        currentY: number;
+        sourceItem: any;
+        sourceShape?: LayoutShape | null;
+        isStaging?: boolean;
+    } | null>(null);
+
+    const pointerDragRef = React.useRef<{
+        startX: number;
+        startY: number;
+        sourceItem: any;
+        sourceShape?: LayoutShape | null;
+        isStaging?: boolean;
+    } | null>(null);
+
+    // Hover Target trong lúc kéo thả
+    const [dragOverCell, setDragOverCell] = useState<{
+        posId: string;
+        shapeId: string;
+        productName: string;
+        isSameZone: boolean;
+    } | null>(null);
+
+    const [dragOverShape, setDragOverShape] = useState<{
+        shapeId: string;
+        label: string;
+    } | null>(null);
+
+    // Chế độ Đổi chỗ bằng Click (bấm ô 1 rồi bấm ô 2)
+    const [clickSwapSource, setClickSwapSource] = useState<{
+        posId: string;
+        lotId: string;
+        productName: string;
+        zoneCode: string;
+    } | null>(null);
+    const [isSwapModeActive, setIsSwapModeActive] = useState(false);
+
+    // Multi-Lot Zone Modal State
+    const [activeMultiLot, setActiveMultiLot] = useState<{
+        shape: LayoutShape;
+        lots: any[];
+        allZoneLots?: any[];
+    } | null>(null);
+
+    const justFinishedDragRef = React.useRef(false);
+
+    // Pointer Event Handlers cho Drag & Drop trực tiếp trên sơ đồ
+    const handleCellPointerDown = (e: React.PointerEvent, item: any, shape: LayoutShape) => {
+        if (isBulkSelectionActive || isAssignmentMode || isSwapModeActive || clickSwapSource || selectedStagingLot) return;
+        if (e.button !== 0) return; // Chỉ nhận chuột trái hoặc cảm ứng
+
+        pointerDragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            sourceItem: item,
+            sourceShape: shape
+        };
+
+        setPointerDrag({
+            isDragging: false,
+            startX: e.clientX,
+            startY: e.clientY,
+            currentX: e.clientX,
+            currentY: e.clientY,
+            sourceItem: item,
+            sourceShape: shape
+        });
+    };
+
+    // Bắt đầu kéo thả từ Khay Hàng Chờ (Staging Buffer)
+    const handleStagingPointerDown = (e: React.PointerEvent, stagingItem: any) => {
+        if (e.button !== 0) return;
+        pointerDragRef.current = {
+            startX: e.clientX,
+            startY: e.clientY,
+            sourceItem: {
+                ...stagingItem,
+                isStaging: true
+            },
+            sourceShape: null
+        };
+
+        setPointerDrag({
+            isDragging: false,
+            startX: e.clientX,
+            startY: e.clientY,
+            currentX: e.clientX,
+            currentY: e.clientY,
+            sourceItem: {
+                ...stagingItem,
+                isStaging: true
+            },
+            sourceShape: null,
+            isStaging: true
+        });
+    };
+
+    // Window-level listener khi đang pointerDrag để kéo thả mượt mà 100% không bị hụt tay
+    useEffect(() => {
+        if (!pointerDrag) return;
+
+        const handlePointerMove = (e: PointerEvent) => {
+            const dist = Math.hypot(e.clientX - pointerDrag.startX, e.clientY - pointerDrag.startY);
+            if (dist > 5) {
+                setPointerDrag(prev => prev ? {
+                    ...prev,
+                    isDragging: true,
+                    currentX: e.clientX,
+                    currentY: e.clientY
+                } : null);
+
+                // Tìm phần tử nằm dưới con trỏ
+                const elements = document.elementsFromPoint(e.clientX, e.clientY);
+                let foundCell: Element | null = null;
+                let foundShape: Element | null = null;
+
+                for (const el of elements) {
+                    if (!foundCell) {
+                        const c = el.closest('[data-role="lot-cell"]');
+                        if (c && c.getAttribute('data-pos-id') !== pointerDrag.sourceItem.position?.id) {
+                            foundCell = c;
+                        }
+                    }
+                    if (!foundShape) {
+                        const s = el.closest('[data-role="zone-shape"]');
+                        if (s && s.getAttribute('data-shape-id') !== pointerDrag.sourceShape?.id) {
+                            foundShape = s;
+                        }
+                    }
+                }
+
+                if (foundCell) {
+                    const tgtPosId = foundCell.getAttribute('data-pos-id') || '';
+                    const tgtShapeId = foundCell.getAttribute('data-shape-id') || '';
+                    const tgtProd = foundCell.getAttribute('data-prod-name') || '';
+                    setDragOverCell({
+                        posId: tgtPosId,
+                        shapeId: tgtShapeId,
+                        productName: tgtProd,
+                        isSameZone: Boolean(pointerDrag.sourceShape && tgtShapeId === pointerDrag.sourceShape.id)
+                    });
+                    setDragOverShape(null);
+                    return;
+                }
+
+                if (foundShape) {
+                    const shId = foundShape.getAttribute('data-shape-id') || '';
+                    const shLabel = foundShape.getAttribute('data-shape-label') || '';
+                    setDragOverShape({
+                        shapeId: shId,
+                        label: shLabel
+                    });
+                    setDragOverCell(null);
+                    return;
+                }
+
+                setDragOverCell(null);
+                setDragOverShape(null);
+            }
+        };
+
+        const handlePointerUp = (e: PointerEvent) => {
+            if (pointerDrag.isDragging) {
+                justFinishedDragRef.current = true;
+                setTimeout(() => {
+                    justFinishedDragRef.current = false;
+                }, 200);
+
+                const elements = document.elementsFromPoint(e.clientX, e.clientY);
+                let foundCell: Element | null = null;
+                let foundShape: Element | null = null;
+
+                for (const el of elements) {
+                    if (!foundCell) {
+                        const c = el.closest('[data-role="lot-cell"]');
+                        if (c && c.getAttribute('data-pos-id') !== pointerDrag.sourceItem.position?.id) {
+                            foundCell = c;
+                        }
+                    }
+                    if (!foundShape) {
+                        const s = el.closest('[data-role="zone-shape"]');
+                        if (s && s.getAttribute('data-shape-id') !== pointerDrag.sourceShape?.id) {
+                            foundShape = s;
+                        }
+                    }
+                }
+
+                // 1. Trường hợp kéo từ Khay Chờ (Staging Buffer)
+                if (pointerDrag.sourceItem?.isStaging) {
+                    const lotId = pointerDrag.sourceItem.lotId;
+                    if (foundCell) {
+                        const tgtPosId = foundCell.getAttribute('data-pos-id');
+                        if (tgtPosId && onAssignStagingLotToPosition) {
+                            onAssignStagingLotToPosition(lotId, tgtPosId);
+                        }
+                    } else if (foundShape) {
+                        const shId = foundShape.getAttribute('data-shape-id');
+                        const layout = layoutsToRender[0];
+                        const allShapes: LayoutShape[] = layout && isShapesFormat(layout.grid_data) ? layout.grid_data : [];
+                        const tgtShape = allShapes.find(s => s.id === shId);
+                        if (tgtShape && onAssignStagingLotToZoneShape) {
+                            onAssignStagingLotToZoneShape(lotId, tgtShape);
+                        }
+                    }
+                } else {
+                    // 2. Trường hợp hoán đổi giữa các ô trên sơ đồ
+                    const srcPosId = pointerDrag.sourceItem.position?.id;
+
+                    if (foundCell && srcPosId) {
+                        const tgtPosId = foundCell.getAttribute('data-pos-id');
+                        if (tgtPosId) {
+                            handleExecuteSwap(srcPosId, tgtPosId);
+                        }
+                    } else if (foundShape && srcPosId) {
+                        const shId = foundShape.getAttribute('data-shape-id');
+                        const layout = layoutsToRender[0];
+                        const allShapes: LayoutShape[] = layout && isShapesFormat(layout.grid_data) ? layout.grid_data : [];
+                        const tgtShape = allShapes.find(s => s.id === shId);
+                        if (tgtShape) {
+                            handleExecuteMoveToShape(srcPosId, tgtShape);
+                        }
+                    }
+                }
+            }
+
+            pointerDragRef.current = null;
+            setPointerDrag(null);
+            setDragOverCell(null);
+            setDragOverShape(null);
+        };
+
+        window.addEventListener('pointermove', handlePointerMove);
+        window.addEventListener('pointerup', handlePointerUp);
+        window.addEventListener('pointercancel', handlePointerUp);
+        return () => {
+            window.removeEventListener('pointermove', handlePointerMove);
+            window.removeEventListener('pointerup', handlePointerUp);
+            window.removeEventListener('pointercancel', handlePointerUp);
+        };
+    }, [pointerDrag, layoutsToRender]);
+
+    // Helper execute swap positions
+    const handleExecuteSwap = async (sourcePosId: string, targetPosId: string) => {
+        if (!sourcePosId || !targetPosId || sourcePosId === targetPosId) return;
+
+        // Optimistically update activeMultiLot if open
+        setActiveMultiLot(prev => {
+            if (!prev) return null;
+            const updateList = (list: any[]) => {
+                const idxA = list.findIndex(it => (it.position?.id === sourcePosId) || (it.lotId === sourcePosId));
+                const idxB = list.findIndex(it => (it.position?.id === targetPosId) || (it.lotId === targetPosId));
+                if (idxA !== -1 && idxB !== -1) {
+                    const next = [...list];
+                    const temp = next[idxA];
+                    next[idxA] = next[idxB];
+                    next[idxB] = temp;
+                    return next;
+                }
+                return list;
+            };
+            return {
+                ...prev,
+                lots: updateList(prev.lots),
+                allZoneLots: prev.allZoneLots ? updateList(prev.allZoneLots) : prev.allZoneLots
+            };
+        });
+
+        if (onSwapLots) {
+            await onSwapLots(sourcePosId, targetPosId);
+        } else {
+            const posA = positions.find(p => p.id === sourcePosId);
+            const posB = positions.find(p => p.id === targetPosId);
+            if (!posA || !posB) return;
+            try {
+                await (supabase.from('positions') as any).update({ lot_id: posB.lot_id }).eq('id', sourcePosId);
+                await (supabase.from('positions') as any).update({ lot_id: posA.lot_id }).eq('id', targetPosId);
+                if (onRefreshData) onRefreshData();
+            } catch (err) {
+                console.error('Swap lots error:', err);
+            }
+        }
+    };
+
+    // Helper execute move lot into a zone shape
+    const handleExecuteMoveToShape = async (sourcePosId: string, targetShape: LayoutShape) => {
+        if (!sourcePosId) return;
+        if (onMoveLotToZoneShape) {
+            await onMoveLotToZoneShape(sourcePosId, targetShape);
+        } else {
+            const targetPositions = positions.filter(p => {
+                if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
+                if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
+                if (targetShape.id && p.zone_id === targetShape.id) return true;
+                return false;
+            });
+            const emptyPos = targetPositions.find(p => !p.lot_id);
+            if (emptyPos) {
+                if (onMoveLotToPosition) {
+                    await onMoveLotToPosition(sourcePosId, emptyPos.id);
+                } else {
+                    const src = positions.find(p => p.id === sourcePosId);
+                    if (src?.lot_id) {
+                        await (supabase.from('positions') as any).update({ lot_id: null }).eq('id', sourcePosId);
+                        await (supabase.from('positions') as any).update({ lot_id: src.lot_id }).eq('id', emptyPos.id);
+                        if (onRefreshData) onRefreshData();
+                    }
+                }
+            } else if (targetPositions.length === 1 && targetPositions[0].id !== sourcePosId) {
+                await handleExecuteSwap(sourcePosId, targetPositions[0].id);
+            }
+        }
+    };
+
+    // Helper toggle split orientation (Ngang ↔ vs Dọc ↕)
+    const handleToggleOrientation = async (shapeId: string, orientation: 'horizontal' | 'vertical') => {
+        setLayoutsToRender(prev => prev.map(layout => {
+            const shapes = (layout.grid_data || []) as LayoutShape[];
+            const updated = shapes.map(s => s.id === shapeId ? { ...s, splitOrientation: orientation } : s);
+            return { ...layout, grid_data: updated };
+        }));
+
+        if (activeMultiLot && activeMultiLot.shape.id === shapeId) {
+            setActiveMultiLot(prev => prev ? {
+                ...prev,
+                shape: { ...prev.shape, splitOrientation: orientation }
+            } : null);
+        }
+
+        if (onToggleOrientation) {
+            await onToggleOrientation(shapeId, orientation);
+        } else {
+            try {
+                const currentLayout = layoutsToRender[0];
+                if (currentLayout) {
+                    const shapes = (currentLayout.grid_data || []) as LayoutShape[];
+                    const updated = shapes.map(s => s.id === shapeId ? { ...s, splitOrientation: orientation } : s);
+                    await layoutService.saveLayout({ ...currentLayout, grid_data: updated });
+                }
+            } catch (err) {
+                console.error('Failed to save layout orientation:', err);
+            }
+        }
+    };
 
     // Search Matching Logic for 2D Layout
     const normSearch = (searchTerm || '').trim().toLowerCase();
@@ -127,13 +528,6 @@ export default function WarehouseLayoutViewer({
             (lotItem.tag || '').toLowerCase().includes(normSearch);
         return matchLot || matchProd || matchSku || matchBatch || matchCust || matchPos || matchTag;
     };
-
-    // Multi-Lot Zone Modal State
-    const [activeMultiLot, setActiveMultiLot] = useState<{
-        shape: LayoutShape;
-        lots: any[];
-        allZoneLots?: any[];
-    } | null>(null);
 
     useEffect(() => {
         const fetchLayout = async () => {
@@ -277,21 +671,84 @@ export default function WarehouseLayoutViewer({
                                 <h2 className="text-lg font-black text-gray-900 dark:text-white flex items-center gap-2">
                                     <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
                                     {layout.name}
+                                    {layout.code && (
+                                        <span className="px-2 py-0.5 text-xs font-mono font-black bg-amber-100 dark:bg-amber-950/60 text-amber-900 dark:text-amber-300 border border-amber-300 dark:border-amber-700/60 rounded-lg">
+                                            {layout.code}
+                                        </span>
+                                    )}
                                 </h2>
                                 {!isAssignmentMode && (
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsBulkSelectionActive(prev => !prev)}
-                                        className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
-                                            isBulkSelectionActive
-                                                ? 'bg-blue-600 text-white shadow-blue-500/20 shadow-md ring-2 ring-blue-400'
-                                                : 'bg-stone-100 hover:bg-stone-200 text-stone-700 dark:bg-zinc-800 dark:text-stone-300 dark:hover:bg-zinc-700'
-                                        }`}
-                                        title={isBulkSelectionActive ? "Đang bật chế độ chọn nhiều ô" : "Bấm để bật chế độ chọn nhiều ô hàng loạt"}
-                                    >
-                                        <CheckSquare size={13} />
-                                        <span>{isBulkSelectionActive ? 'Chế độ: Chọn nhiều ô' : 'Chọn nhiều'}</span>
-                                    </button>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setIsSwapModeActive(prev => {
+                                                    const next = !prev;
+                                                    if (!next) setClickSwapSource(null);
+                                                    return next;
+                                                });
+                                            }}
+                                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                                                isSwapModeActive || clickSwapSource
+                                                    ? 'bg-amber-600 text-white shadow-amber-500/30 shadow-md ring-2 ring-amber-400'
+                                                    : 'bg-stone-100 hover:bg-stone-200 text-stone-700 dark:bg-zinc-800 dark:text-stone-300 dark:hover:bg-zinc-700'
+                                            }`}
+                                            title="Bấm để bật chế độ Đổi vị trí: Bấm chọn ô 1 rồi bấm ô 2 để hoán đổi tức thì"
+                                        >
+                                            <ArrowLeftRight size={13} />
+                                            <span>{isSwapModeActive || clickSwapSource ? 'Đang bật: Đổi vị trí' : 'Đổi vị trí (Click)'}</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsBulkSelectionActive(prev => !prev)}
+                                            className={`px-2.5 py-1 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs ${
+                                                isBulkSelectionActive
+                                                    ? 'bg-blue-600 text-white shadow-blue-500/20 shadow-md ring-2 ring-blue-400'
+                                                    : 'bg-stone-100 hover:bg-stone-200 text-stone-700 dark:bg-zinc-800 dark:text-stone-300 dark:hover:bg-zinc-700'
+                                            }`}
+                                            title={isBulkSelectionActive ? "Đang bật chế độ chọn nhiều ô" : "Bấm để bật chế độ chọn nhiều ô hàng loạt"}
+                                        >
+                                            <CheckSquare size={13} />
+                                            <span>{isBulkSelectionActive ? 'Chế độ: Chọn nhiều ô' : 'Chọn nhiều'}</span>
+                                        </button>
+
+                                        {/* Zoom & Fit to Screen Controls */}
+                                        <div className="flex items-center border border-stone-200 dark:border-zinc-700 rounded-xl overflow-hidden bg-stone-100 dark:bg-zinc-800 shadow-2xs">
+                                            <button
+                                                type="button"
+                                                onClick={() => handleZoomChange(layout.id, -0.1)}
+                                                className="p-1.5 hover:bg-stone-200 dark:hover:bg-zinc-700 text-stone-600 dark:text-stone-300 transition-colors"
+                                                title="Thu nhỏ sơ đồ"
+                                            >
+                                                <ZoomOut size={13} />
+                                            </button>
+                                            <span className="text-[11px] font-bold px-1.5 min-w-[36px] text-center text-stone-700 dark:text-stone-200">
+                                                {isFitMap[layout.id] !== false ? 'Vừa' : `${Math.round((zoomMap[layout.id] || 1) * 100)}%`}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleZoomChange(layout.id, 0.1)}
+                                                className="p-1.5 hover:bg-stone-200 dark:hover:bg-zinc-700 text-stone-600 dark:text-stone-300 transition-colors"
+                                                title="Phóng to sơ đồ"
+                                            >
+                                                <ZoomIn size={13} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => toggleFit(layout.id)}
+                                                className={`px-2.5 py-1 text-[11px] font-bold border-l border-stone-200 dark:border-zinc-700 transition-all flex items-center gap-1 ${
+                                                    isFitMap[layout.id] !== false
+                                                        ? 'bg-blue-600 text-white shadow-xs'
+                                                        : 'hover:bg-stone-200 dark:hover:bg-zinc-700 text-blue-600 dark:text-blue-400'
+                                                }`}
+                                                title={isFitMap[layout.id] !== false ? "Đang bật chế độ tự động co giãn vừa màn hình" : "Bấm để tự động co giãn vừa khung hình (không cần cuộn ngang)"}
+                                            >
+                                                <Maximize2 size={12} />
+                                                <span>{isFitMap[layout.id] !== false ? 'Đang vừa' : 'Vừa màn hình'}</span>
+                                            </button>
+                                        </div>
+                                    </div>
                                 )}
                             </div>
                             {/* Legend chú thích ký hiệu */}
@@ -308,13 +765,190 @@ export default function WarehouseLayoutViewer({
                             </div>
                         </div>
 
-                        <div ref={containerRef} className="overflow-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-zinc-950 p-2 scroll-smooth">
+                        {/* Banner hướng dẫn khi đang chọn Lô từ Khay Chờ để xếp vị trí */}
+                        {selectedStagingLot && (
+                            <div className="mb-3 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl flex items-center justify-between text-xs font-bold shadow-lg ring-2 ring-blue-300 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center gap-2">
+                                    <span className="p-1 bg-white/20 rounded-lg text-sm">📥</span>
+                                    <span>
+                                        Đang xếp: <strong className="underline underline-offset-2">{selectedStagingLot.productName}</strong> {selectedStagingLot.tag ? `(Tag: ${selectedStagingLot.tag})` : (selectedStagingLot.batchCode ? `(Lô: ${selectedStagingLot.batchCode})` : '')} • {selectedStagingLot.quantity.toLocaleString()} {selectedStagingLot.unit}. 
+                                        <span className="ml-1 opacity-90 font-normal">👉 Bấm vào bất kỳ ô hoặc khu vực nào trên sơ đồ 2D để XẾP VÀO!</span>
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedStagingLot(null)}
+                                    className="px-2.5 py-1 bg-black/20 hover:bg-black/30 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                                >
+                                    <X size={12} />
+                                    <span>Huỷ</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Banner hướng dẫn khi đang chọn ô để Đổi chỗ (Click-to-Swap) */}
+                        {clickSwapSource && (
+                            <div className="mb-3 px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl flex items-center justify-between text-xs font-bold shadow-md animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div className="flex items-center gap-2">
+                                    <span className="p-1 bg-white/20 rounded-lg text-sm">⇄</span>
+                                    <span>
+                                        Đang chọn: <strong className="underline underline-offset-2">{clickSwapSource.productName}</strong> ({clickSwapSource.zoneCode}). 
+                                        <span className="ml-1 opacity-90 font-normal">👉 Bấm vào bất kỳ ô nào khác trên sơ đồ để ĐỔI CHỖ ngay!</span>
+                                    </span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setClickSwapSource(null)}
+                                    className="px-2.5 py-1 bg-black/20 hover:bg-black/30 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1"
+                                >
+                                    <X size={12} />
+                                    <span>Huỷ</span>
+                                </button>
+                            </div>
+                        )}
+
+                        {/* Khay Hàng Chờ Xếp Vị Trí (Inbound Staging Buffer Panel) */}
+                        {(() => {
+                            const layoutUnassignedLots = unassignedLots.filter(item => {
+                                if (!item.warehouseName || !item.warehouseName.trim()) return true;
+                                const target = item.warehouseName.trim().toLowerCase();
+                                const lCode = (layout.code || '').trim().toLowerCase();
+                                const lName = (layout.name || '').trim().toLowerCase();
+                                return (lCode && target === lCode) || (lName && target === lName);
+                            });
+
+                            return (
+                                <div className="mb-4 bg-gradient-to-br from-amber-500/10 via-orange-500/5 to-transparent dark:from-amber-950/30 dark:via-orange-950/10 rounded-2xl border border-amber-200/80 dark:border-amber-900/50 p-3.5 shadow-sm">
+                                    <div className="flex items-center justify-between gap-3 mb-1">
+                                        <div className="flex items-center gap-2.5 flex-wrap">
+                                            <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shadow-amber-500/20">
+                                                <Inbox size={18} />
+                                            </div>
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-black uppercase tracking-wider text-amber-900 dark:text-amber-300">
+                                                        Khu vực Chờ Nhập Kho {layout.code ? `(${layout.code})` : ''}
+                                                    </span>
+                                                    <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-amber-500 text-white shadow-2xs">
+                                                        {layoutUnassignedLots.length} lô chờ
+                                                    </span>
+                                                    {loadingUnassignedLots && (
+                                                        <span className="text-[11px] text-amber-600 animate-pulse">Đang tải...</span>
+                                                    )}
+                                                </div>
+                                                <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                                                    Kéo thẻ hàng thả vào sơ đồ hoặc bấm &quot;Xếp vào ô&quot; để định vị trí
+                                                </p>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5">
+                                            {onRefreshUnassignedLots && (
+                                                <button
+                                                    type="button"
+                                                    onClick={onRefreshUnassignedLots}
+                                                    className="p-1.5 hover:bg-amber-100 dark:hover:bg-amber-950/60 text-amber-700 dark:text-amber-400 rounded-lg transition-colors"
+                                                    title="Làm mới danh sách chờ"
+                                                >
+                                                    <RefreshCw size={13} className={loadingUnassignedLots ? 'animate-spin' : ''} />
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                onClick={() => setIsStagingExpanded(prev => !prev)}
+                                                className="px-2.5 py-1 text-xs font-bold text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-950/60 rounded-xl transition-all flex items-center gap-1"
+                                            >
+                                                <span>{isStagingExpanded ? 'Thu gọn' : 'Mở rộng'}</span>
+                                                {isStagingExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {isStagingExpanded && (
+                                        <div className="mt-2.5">
+                                            {layoutUnassignedLots.length === 0 ? (
+                                                <div className="py-4 px-4 bg-white/80 dark:bg-zinc-900/80 rounded-xl border border-dashed border-amber-300/60 dark:border-amber-800/40 text-center text-xs text-stone-500 flex items-center justify-center gap-2">
+                                                    <Sparkles size={15} className="text-amber-500" />
+                                                    <span>Tất cả các lô hàng của kho {layout.code || layout.name} đã được xếp vào vị trí đầy đủ! 🎉</span>
+                                                </div>
+                                            ) : (
+                                                <div className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 custom-scrollbar">
+                                                    {layoutUnassignedLots.map((item) => {
+                                                        const isSelected = selectedStagingLot?.lotId === item.lotId;
+                                                        const dateStr = formatShortDate(item.inboundDate);
+                                                        const tagOrBatch = item.tag ? `🏷️ ${item.tag}` : (item.batchCode ? `Lô ${item.batchCode}` : item.lotCode);
+
+                                                        return (
+                                                            <div
+                                                                key={item.lotId}
+                                                                onPointerDown={(e) => handleStagingPointerDown(e, item)}
+                                                                className={`shrink-0 w-64 p-3 rounded-xl border transition-all cursor-grab active:cursor-grabbing shadow-xs ${
+                                                                    isSelected
+                                                                        ? 'bg-amber-500 text-white border-amber-600 shadow-md ring-2 ring-amber-400'
+                                                                        : 'bg-white dark:bg-zinc-850 hover:bg-amber-50/50 dark:hover:bg-zinc-800 border-stone-200 dark:border-zinc-700 hover:border-amber-400'
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center justify-between gap-1 mb-1.5">
+                                                                    <span className={`text-[11px] font-mono font-black px-1.5 py-0.5 rounded ${
+                                                                        isSelected ? 'bg-white/20 text-white' : 'bg-amber-100 dark:bg-amber-950/70 text-amber-900 dark:text-amber-300'
+                                                                    }`}>
+                                                                        {tagOrBatch}
+                                                                    </span>
+                                                                    {dateStr && (
+                                                                        <span className={`text-[10px] font-medium ${isSelected ? 'text-amber-100' : 'text-stone-400'}`}>
+                                                                            📅 {dateStr}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+
+                                                                <div className={`text-xs font-bold truncate mb-2 ${isSelected ? 'text-white' : 'text-stone-900 dark:text-white'}`} title={item.productName}>
+                                                                    {item.productName}
+                                                                </div>
+
+                                                                <div className="flex items-center justify-between gap-1">
+                                                                    <span className={`text-xs font-black ${isSelected ? 'text-amber-100' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                                                        {item.quantity.toLocaleString()} {item.unit}
+                                                                    </span>
+
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            if (isSelected) {
+                                                                                setSelectedStagingLot(null);
+                                                                            } else {
+                                                                                setSelectedStagingLot(item);
+                                                                                setClickSwapSource(null);
+                                                                            }
+                                                                        }}
+                                                                        className={`px-2 py-1 rounded-lg text-[11px] font-bold transition-all flex items-center gap-1 shadow-2xs ${
+                                                                            isSelected
+                                                                                ? 'bg-white text-amber-900 hover:bg-amber-100'
+                                                                                : 'bg-amber-600 hover:bg-amber-700 text-white'
+                                                                        }`}
+                                                                    >
+                                                                        <span>{isSelected ? 'Đang chọn' : 'Xếp vào ô'}</span>
+                                                                        <MoveRight size={11} />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })()}
+
+                        <div ref={containerRef} className="overflow-auto border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-zinc-950 p-2 scroll-smooth flex justify-center">
                             <svg
-                                width={layout.width}
-                                height={layout.height}
+                                width={isFitMap[layout.id] !== false ? "100%" : Math.round(layout.width * (zoomMap[layout.id] || 1))}
+                                height={isFitMap[layout.id] !== false ? "auto" : Math.round(layout.height * (zoomMap[layout.id] || 1))}
                                 viewBox={`0 0 ${layout.width} ${layout.height}`}
-                                className="max-w-full h-auto select-none"
-                                style={{ minHeight: 300 }}
+                                className={`select-none transition-all duration-150 ${isFitMap[layout.id] !== false ? 'w-full h-auto' : ''}`}
+                                style={isFitMap[layout.id] !== false ? { maxWidth: '100%', aspectRatio: `${layout.width}/${layout.height}` } : { minHeight: 300 }}
                             >
                                 {/* Technical Patterns */}
                                 <defs>
@@ -386,13 +1020,7 @@ export default function WarehouseLayoutViewer({
                                     
                                     const zoneLots = isEligibleStorageType ? getZoneLots(shape) : [];
                                     const hasLots = zoneLots.length > 0;
-                                    const isStorageLocation = isEligibleStorageType && (
-                                        shape.type === 'ZONE' || 
-                                        hasLots || 
-                                        shape.isStorage || 
-                                        shape.isMultiLot || 
-                                        Boolean(shape.code && shape.code.trim() !== '')
-                                    );
+                                    const isStorageLocation = isEligibleStorageType;
 
                                     // Logic đối với Vị trí Lưu trữ / Chứa hàng (Bãi ZONE hoặc mọi hình khối hạ tầng được gán mã)
                                     if (isStorageLocation) {
@@ -414,6 +1042,20 @@ export default function WarehouseLayoutViewer({
                                         const effectiveOpacity = isSearching ? (isZoneMatched ? 1 : 0.22) : opacity;
 
                                         const handleClick = () => {
+                                            if (justFinishedDragRef.current) return;
+                                            if (selectedStagingLot) {
+                                                if (onAssignStagingLotToZoneShape) {
+                                                    onAssignStagingLotToZoneShape(selectedStagingLot.lotId, shape);
+                                                }
+                                                setSelectedStagingLot(null);
+                                                return;
+                                            }
+                                            if (clickSwapSource) {
+                                                const srcPosId = clickSwapSource.posId;
+                                                setClickSwapSource(null);
+                                                handleExecuteMoveToShape(srcPosId, shape);
+                                                return;
+                                            }
                                             if (isBulkSelectionActive && onPositionSelect && singlePos?.id) {
                                                 onPositionSelect(singlePos.id);
                                             } else if (isAssignmentMode && onPositionClick && singlePos) {
@@ -424,7 +1066,9 @@ export default function WarehouseLayoutViewer({
                                         };
 
                                         const isMultiSplit = zoneLots.length > 1;
-                                        const isHorizontal = sw >= sh;
+                                        const isHorizontal = shape.splitOrientation === 'vertical' 
+                                            ? false 
+                                            : (shape.splitOrientation === 'horizontal' ? true : sw >= sh);
                                         const splitCount = zoneLots.length;
                                         const zoneLabel = shape.label || shape.code || '';
                                         const showVerticalStrip = Boolean(zoneLabel || shape.type !== 'ZONE') && sw >= 36 && sh >= 20;
@@ -432,14 +1076,19 @@ export default function WarehouseLayoutViewer({
                                         const contentX = sx + stripW;
                                         const contentW = sw - stripW;
 
+                                        const isThisShapeHovered = dragOverShape?.shapeId === shape.id;
+
                                         return (
                                             <g 
                                                 key={shape.id} 
+                                                data-role="zone-shape"
+                                                data-shape-id={shape.id}
+                                                data-shape-label={shape.label || shape.code || ''}
                                                 transform={rotTransform} 
                                                 onClick={handleClick} 
                                                 className="cursor-pointer group"
                                             >
-                                                {/* Vòng hào quang loé sáng / Radar ping khi khớp tìm kiếm */}
+                                                {/* Vùng hào quang loé sáng / Radar ping khi khớp tìm kiếm */}
                                                 {isZoneMatched && (
                                                     <rect 
                                                         x={sx - 6} y={sy - 6} width={sw + 12} height={sh + 12}
@@ -450,6 +1099,27 @@ export default function WarehouseLayoutViewer({
                                                         className="animate-pulse pointer-events-none"
                                                         filter={`url(#searchGlow-${layout.id})`}
                                                     />
+                                                )}
+
+                                                {/* Vùng phát sáng khi đang kéo LOT thả vào Zone này */}
+                                                {isThisShapeHovered && (
+                                                    <g className="pointer-events-none">
+                                                        <rect 
+                                                            x={sx - 3} y={sy - 3} width={sw + 6} height={sh + 6}
+                                                            rx={(shape.rx || 6) + 3}
+                                                            fill="rgba(59, 130, 246, 0.22)"
+                                                            stroke="#2563eb"
+                                                            strokeWidth={3.5}
+                                                            strokeDasharray="6 3"
+                                                            className="animate-pulse"
+                                                        />
+                                                        <g transform={`translate(${cx}, ${sy - 15})`} className="animate-bounce">
+                                                            <rect x={-65} y={-11} width={130} height={22} rx={11} fill="#2563eb" stroke="#ffffff" strokeWidth={1.5} />
+                                                            <text x={0} y={3.5} textAnchor="middle" fontSize={10} fontWeight="900" fill="#ffffff">
+                                                                📦 THẢ VÀO KHU NÀY
+                                                            </text>
+                                                        </g>
+                                                    </g>
                                                 )}
 
                                                 {/* Khung nền bao ngoài của khu vực */}
@@ -567,13 +1237,59 @@ export default function WarehouseLayoutViewer({
                                                             const lotLabel = item.position?.code || item.lotCode;
                                                             const isCellSelected = Boolean(item.position?.id && selectedPositionIds?.has(item.position.id));
                                                             const isCellMatch = isLotMatched(item);
+                                                            const isThisCellDragging = pointerDrag?.isDragging && pointerDrag.sourceItem?.position?.id === item.position?.id;
+                                                            const isThisCellHovered = dragOverCell?.posId === item.position?.id;
+                                                            const isThisClickSwapSource = clickSwapSource?.posId === item.position?.id;
 
                                                             return (
                                                                 <g 
                                                                     key={item.lotId || idx}
-                                                                    opacity={isSearching && !isCellMatch ? 0.35 : 1}
+                                                                    data-role="lot-cell"
+                                                                    data-pos-id={item.position?.id}
+                                                                    data-shape-id={shape.id}
+                                                                    data-prod-name={item.productName || ''}
+                                                                    opacity={isSearching && !isCellMatch ? 0.35 : (isThisCellDragging ? 0.45 : 1)}
+                                                                    onPointerDown={(e) => handleCellPointerDown(e, item, shape)}
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
+                                                                        if (justFinishedDragRef.current) return;
+
+                                                                        // Nếu đang chọn Lô từ Khay Chờ để xếp vị trí:
+                                                                        if (selectedStagingLot) {
+                                                                            if (onAssignStagingLotToPosition && item.position?.id) {
+                                                                                onAssignStagingLotToPosition(selectedStagingLot.lotId, item.position.id);
+                                                                            } else if (onAssignStagingLotToZoneShape) {
+                                                                                onAssignStagingLotToZoneShape(selectedStagingLot.lotId, shape);
+                                                                            }
+                                                                            setSelectedStagingLot(null);
+                                                                            return;
+                                                                        }
+
+                                                                        // Nếu đang trong chế độ Đổi chỗ Click-to-Swap:
+                                                                        if (clickSwapSource) {
+                                                                            if (clickSwapSource.posId === item.position?.id) {
+                                                                                setClickSwapSource(null);
+                                                                                return;
+                                                                            }
+                                                                            const srcId = clickSwapSource.posId;
+                                                                            const tgtId = item.position?.id;
+                                                                            setClickSwapSource(null);
+                                                                            if (srcId && tgtId) {
+                                                                                handleExecuteSwap(srcId, tgtId);
+                                                                            }
+                                                                            return;
+                                                                        }
+
+                                                                        if (isSwapModeActive && item.position?.id) {
+                                                                            setClickSwapSource({
+                                                                                posId: item.position.id,
+                                                                                lotId: item.lotId,
+                                                                                productName: item.productName || item.position.code || 'Lô hàng',
+                                                                                zoneCode: shape.label || shape.code || ''
+                                                                            });
+                                                                            return;
+                                                                        }
+
                                                                         if (isBulkSelectionActive && onPositionSelect && item.position?.id) {
                                                                             onPositionSelect(item.position.id);
                                                                         } else if (isAssignmentMode && onPositionClick && item.position) {
@@ -593,18 +1309,45 @@ export default function WarehouseLayoutViewer({
                                                                             });
                                                                         }
                                                                     }}
-                                                                    className="group/cell cursor-pointer"
+                                                                    className={`group/cell cursor-pointer ${pointerDrag?.isDragging ? 'cursor-grabbing' : (isSwapModeActive ? 'cursor-alias' : 'cursor-grab')}`}
                                                                 >
                                                                     {/* Vùng cảm ứng hover sáng nhẹ hoặc viền chọn / loé sáng tìm kiếm */}
                                                                     <rect 
                                                                         x={cellX + 2} y={cellY + 2}
                                                                         width={cellW - 4} height={cellH - 4}
-                                                                        fill={isCellSelected ? 'rgba(59, 130, 246, 0.25)' : (isCellMatch ? 'rgba(16, 185, 129, 0.35)' : 'transparent')}
-                                                                        stroke={isCellSelected ? '#2563eb' : (isCellMatch ? '#059669' : 'none')}
-                                                                        strokeWidth={isCellMatch ? 2.5 : 2}
+                                                                        fill={
+                                                                            isThisClickSwapSource
+                                                                                ? 'rgba(245, 158, 11, 0.4)'
+                                                                                : (isThisCellHovered 
+                                                                                    ? (dragOverCell?.isSameZone ? 'rgba(245, 158, 11, 0.35)' : 'rgba(16, 185, 129, 0.35)')
+                                                                                    : (isCellSelected ? 'rgba(59, 130, 246, 0.25)' : (isCellMatch ? 'rgba(16, 185, 129, 0.35)' : 'transparent')))
+                                                                        }
+                                                                        stroke={
+                                                                            isThisClickSwapSource
+                                                                                ? '#f59e0b'
+                                                                                : (isThisCellHovered
+                                                                                    ? (dragOverCell?.isSameZone ? '#f59e0b' : '#10b981')
+                                                                                    : (isCellSelected ? '#2563eb' : (isCellMatch ? '#059669' : (isThisCellDragging ? '#ea580c' : 'none'))))
+                                                                        }
+                                                                         strokeWidth={isThisClickSwapSource ? 3 : (isThisCellHovered ? 3 : (isCellMatch ? 2.5 : 2))}
+                                                                        strokeDasharray={isThisClickSwapSource ? '4 2' : (isThisCellHovered ? '4 2' : (isThisCellDragging ? '3 3' : undefined))}
                                                                         rx={4}
-                                                                        className={isCellMatch ? 'animate-pulse' : 'transition-colors group-hover/cell:fill-orange-400/20'}
+                                                                        className={isThisClickSwapSource ? 'animate-pulse' : (isCellMatch ? 'animate-pulse' : 'transition-colors group-hover/cell:fill-orange-400/20')}
                                                                     />
+
+                                                                    {/* Floating badge khi kéo đè lên ô này để hoán đổi */}
+                                                                    {isThisCellHovered && (
+                                                                        <g transform={`translate(${subCx}, ${subCy})`} className="pointer-events-none animate-bounce">
+                                                                            <rect 
+                                                                                x={-50} y={-11} width={100} height={22} rx={11} 
+                                                                                fill={dragOverCell?.isSameZone ? '#d97706' : '#059669'} 
+                                                                                stroke="#ffffff" strokeWidth={1.5} 
+                                                                            />
+                                                                            <text x={0} y={3.5} textAnchor="middle" fontSize={9.5} fontWeight="900" fill="#ffffff">
+                                                                                {dragOverCell?.isSameZone ? '⇄ ĐỔI THỨ TỰ' : '⇄ HOÁN ĐỔI'}
+                                                                            </text>
+                                                                        </g>
+                                                                    )}
 
                                                                     {/* Badge nhỏ "KHỚP" khi ô con này khớp tìm kiếm */}
                                                                     {isCellMatch && (
@@ -713,7 +1456,58 @@ export default function WarehouseLayoutViewer({
                                                     </g>
                                                 ) : (
                                                     /* TRƯỜNG HỢP 2: 1 LOT HOẶC TRỐNG -> HIỂN THỊ NGUYÊN BẢN CẢ KHU VỰC */
-                                                    <g>
+                                                    <g
+                                                        data-role={hasLots ? "lot-cell" : "empty-shape"}
+                                                        data-pos-id={zoneLots[0]?.position?.id}
+                                                        data-shape-id={shape.id}
+                                                        data-prod-name={zoneLots[0]?.productName || ''}
+                                                        onPointerDown={(e) => {
+                                                            if (hasLots && zoneLots[0]) {
+                                                                handleCellPointerDown(e, zoneLots[0], shape);
+                                                            }
+                                                        }}
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            if (justFinishedDragRef.current) return;
+                                                            const first = zoneLots[0];
+
+                                                            // Nếu đang chọn Lô từ Khay Chờ để xếp vị trí:
+                                                            if (selectedStagingLot) {
+                                                                if (first?.position?.id && onAssignStagingLotToPosition) {
+                                                                    onAssignStagingLotToPosition(selectedStagingLot.lotId, first.position.id);
+                                                                } else if (onAssignStagingLotToZoneShape) {
+                                                                    onAssignStagingLotToZoneShape(selectedStagingLot.lotId, shape);
+                                                                }
+                                                                setSelectedStagingLot(null);
+                                                                return;
+                                                            }
+
+                                                            if (clickSwapSource && first?.position?.id) {
+                                                                if (clickSwapSource.posId === first.position.id) {
+                                                                    setClickSwapSource(null);
+                                                                    return;
+                                                                }
+                                                                const srcId = clickSwapSource.posId;
+                                                                const tgtId = first.position.id;
+                                                                setClickSwapSource(null);
+                                                                handleExecuteSwap(srcId, tgtId);
+                                                                return;
+                                                            }
+
+                                                            if (isSwapModeActive && first?.position?.id) {
+                                                                setClickSwapSource({
+                                                                    posId: first.position.id,
+                                                                    lotId: first.lotId,
+                                                                    productName: first.productName || first.position.code || 'Lô hàng',
+                                                                    zoneCode: shape.label || shape.code || ''
+                                                                });
+                                                                return;
+                                                            }
+
+                                                            handleClick();
+                                                        }}
+                                                        className={hasLots && !isBulkSelectionActive && !isAssignmentMode ? (pointerDrag?.isDragging ? 'cursor-grabbing' : (isSwapModeActive ? 'cursor-alias' : 'cursor-grab')) : ''}
+                                                    >
                                                         {(() => {
                                                             const firstLot = zoneLots[0];
                                                             const hasProd = Boolean(hasLots && firstLot?.productName && firstLot.productName.trim() !== '');
@@ -1152,6 +1946,22 @@ export default function WarehouseLayoutViewer({
                 );
             })}
 
+            {/* Floating Cursor Chip khi đang Pointer Drag & Drop */}
+            {pointerDrag?.isDragging && (
+                <div 
+                    className={`fixed pointer-events-none z-[99999] px-3.5 py-1.5 ${pointerDrag.sourceItem?.isStaging ? 'bg-amber-600' : 'bg-orange-600'} text-white text-xs font-black rounded-xl shadow-2xl flex items-center gap-2 transform -translate-x-1/2 -translate-y-full border-2 border-white animate-in fade-in zoom-in duration-100`}
+                    style={{ left: pointerDrag.currentX, top: pointerDrag.currentY - 10 }}
+                >
+                    <span className="text-base">{pointerDrag.sourceItem?.isStaging ? '📥' : '📦'}</span>
+                    <div className="flex flex-col">
+                        <span className="leading-tight">{pointerDrag.sourceItem?.productName || 'Lô hàng'}</span>
+                        <span className="text-[10px] text-amber-100 font-normal">
+                            {pointerDrag.sourceItem?.isStaging ? 'Thả vào ô hoặc bãi để XẾP VỊ TRÍ' : 'Thả vào ô hoặc bãi cần đổi'}
+                        </span>
+                    </div>
+                </div>
+            )}
+
             {/* Modal Chi tiết Bãi chứa Đa Lô & Lô Hàng */}
             {activeMultiLot && (
                 <MultiLotZoneModal
@@ -1185,6 +1995,8 @@ export default function WarehouseLayoutViewer({
                     onMoveLot={onMoveLot}
                     onPrintQr={onPrintQr}
                     onAssignLot={onAssignLot}
+                    onSwapLots={handleExecuteSwap}
+                    onToggleOrientation={handleToggleOrientation}
                 />
             )}
         </div>

@@ -12,6 +12,7 @@ import {
     Archive
 } from 'lucide-react';
 import { layoutService } from '@/services/warehouse/layoutService';
+import { supabase } from '@/lib/supabaseClient';
 import { useSystem } from '@/contexts/SystemContext';
 import { useUser } from '@/contexts/UserContext';
 
@@ -150,6 +151,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     const containerRef = useRef<HTMLDivElement>(null);
 
     const [name, setName] = useState(layout?.name || 'Sơ đồ mới');
+    const [code, setCode] = useState(layout?.code || '');
     const [canvasW, setCanvasW] = useState(layout?.width || 1400);
     const [canvasH, setCanvasH] = useState(layout?.height || 900);
     const [activeTool, setActiveTool] = useState<ToolId>('ZONE');
@@ -669,6 +671,25 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 }
             }
 
+            const isEligibleStorage = activeTool !== 'LINE' && activeTool !== 'DASHED_LINE' && activeTool !== 'ARROW' && activeTool !== 'TEXT_NOTE' && activeTool !== 'WALL' && activeTool !== 'RACK';
+            const typePrefixMap: Partial<Record<ShapeType, string>> = {
+                ZONE: 'KV',
+                LOCKER: 'TU',
+                DESK: 'BAN',
+                ROOM: 'PHONG',
+                STAGING: 'TK',
+                QC_AREA: 'KCS',
+                PACK_STATION: 'DG',
+                FORKLIFT_PARK: 'XN',
+                DOCK: 'DOCK',
+                PATH: 'LD',
+                SCRAP: 'PP',
+                SCALE: 'CAN',
+                FIRST_AID: 'YT'
+            };
+            const defaultPrefix = typePrefixMap[activeTool as ShapeType] || 'KV';
+            const defaultCode = isEligibleStorage ? `${defaultPrefix}-${Math.floor(100 + Math.random() * 900)}` : undefined;
+
             const newShape: LayoutShape = {
                 id: crypto.randomUUID(),
                 type: activeTool as ShapeType,
@@ -677,8 +698,9 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 width: w,
                 height: h,
                 label: SHAPE_DEFAULTS[activeTool as ShapeType]?.label || 'Khu vực',
-                code: activeTool === 'ZONE' ? `ZONE-${Math.floor(100 + Math.random() * 900)}` : undefined,
-                isMultiLot: activeTool === 'ZONE' ? true : undefined,
+                code: defaultCode,
+                isMultiLot: isEligibleStorage ? true : undefined,
+                isStorage: isEligibleStorage ? true : undefined,
                 strokeWidth: isLineTool ? 3 : undefined,
                 strokeDasharray: activeTool === 'DASHED_LINE' ? '8 6' : undefined,
                 lineOrientation,
@@ -781,10 +803,30 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     // Handle Save
     const handleSave = async () => {
         if (!name.trim()) return showToast('Vui lòng nhập tên sơ đồ', 'error');
+        const trimmedCode = code.trim().toUpperCase();
+
         setIsSaving(true);
         try {
+            // Kiểm tra chống trùng mã kho trong cùng phân hệ
+            if (trimmedCode) {
+                const { data: existing, error: checkErr } = await (supabase as any)
+                    .from('warehouse_layouts')
+                    .select('id, name, code')
+                    .eq('system_type', systemType)
+                    .ilike('code', trimmedCode);
+
+                if (!checkErr && existing && existing.length > 0) {
+                    const duplicate = existing.find((l: any) => l.id !== layout?.id);
+                    if (duplicate) {
+                        setIsSaving(false);
+                        return showToast(`Mã kho "${trimmedCode}" đã được sử dụng cho sơ đồ "${duplicate.name}". Vui lòng đặt mã khác!`, 'error');
+                    }
+                }
+            }
+
             const layoutData: LayoutInput = {
-                name,
+                name: name.trim(),
+                code: trimmedCode || undefined,
                 width: canvasW,
                 height: canvasH,
                 system_type: systemType,
@@ -801,7 +843,11 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
             }
         } catch (error: any) {
             console.error('Save failed:', error);
-            showToast(`Lỗi khi lưu sơ đồ: ${error.message}`, 'error');
+            if (error.message?.includes('duplicate key') || error.message?.includes('warehouse_layouts_system_code_idx')) {
+                showToast(`Mã kho "${trimmedCode}" đã tồn tại trên hệ thống. Vui lòng chọn mã khác!`, 'error');
+            } else {
+                showToast(`Lỗi khi lưu sơ đồ: ${error.message}`, 'error');
+            }
         } finally {
             setIsSaving(false);
         }
@@ -811,13 +857,24 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
         <div className="flex flex-col h-full bg-white dark:bg-zinc-900 border border-gray-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-2xl">
             {/* Top Toolbar (Thiết kế nhỏ gọn, hiện đại chuẩn Figma/CAD) */}
             <div className="px-3.5 py-2 border-b border-gray-200 dark:border-zinc-800 flex items-center justify-between gap-3 bg-white dark:bg-zinc-900 shrink-0">
-                <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                    <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[11px] font-bold text-gray-500 uppercase">Mã:</span>
+                        <input 
+                            type="text" 
+                            value={code} 
+                            onChange={e => setCode(e.target.value.toUpperCase())}
+                            className="w-24 sm:w-28 px-2 py-1 font-mono font-black text-xs uppercase bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-700/60 rounded-lg outline-none focus:ring-1 focus:ring-amber-500 text-amber-900 dark:text-amber-200 shadow-xs"
+                            placeholder="VD: KBB1"
+                            title="Mã kho (ví dụ: kbb1, kbb2, KHO-01...)"
+                        />
+                    </div>
                     <input 
                         type="text" 
                         value={name} 
                         onChange={e => setName(e.target.value)}
-                        className="w-44 sm:w-52 px-2.5 py-1 font-bold text-sm bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-zinc-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 text-gray-900 dark:text-white shadow-xs"
-                        placeholder="Tên sơ đồ mặt bằng..."
+                        className="w-40 sm:w-48 px-2.5 py-1 font-bold text-sm bg-gray-50 dark:bg-zinc-800/80 border border-gray-200 dark:border-zinc-700 rounded-lg outline-none focus:ring-1 focus:ring-blue-500 text-gray-900 dark:text-white shadow-xs"
+                        placeholder="Tên sơ đồ kho..."
                     />
                     <div className="flex items-center gap-1 text-[11px] text-gray-500 font-semibold bg-gray-100 dark:bg-zinc-800/80 px-2 py-0.5 rounded-lg border border-gray-200/60 dark:border-zinc-700/60 shrink-0">
                         <span className="text-gray-400 font-bold">W:</span>

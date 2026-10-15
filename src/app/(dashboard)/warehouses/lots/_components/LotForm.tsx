@@ -13,6 +13,7 @@ import Protected from '@/components/auth/Protected'
 import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, formatUnitWeight, convertUnit } from '@/lib/unitConversion'
 import { useToast } from '@/components/ui/ToastProvider'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
+import { layoutService } from '@/services/warehouse/layoutService'
 
 interface LotItemInput {
     id?: string
@@ -103,6 +104,14 @@ export function LotForm({
     const [selectedProductionId, setSelectedProductionId] = useState('')
     const [productionData, setProductionData] = useState<any>(null)
     const [isFetchingProduction, setIsFetchingProduction] = useState(false)
+    const [warehouseLayouts, setWarehouseLayouts] = useState<any[]>([])
+
+    useEffect(() => {
+        if (!currentSystem?.code) return
+        layoutService.getLayouts(currentSystem.code).then(data => {
+            if (data) setWarehouseLayouts(data)
+        }).catch(err => console.error('Error fetching layouts for LotForm:', err))
+    }, [currentSystem?.code])
 
     // Load extra production data if needed to ensure we have latest lots
     useEffect(() => {
@@ -1194,7 +1203,7 @@ export function LotForm({
                 <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[3000px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
                     {(() => {
                         // Tính toán số lượng & trạng thái module cho các nhóm bố cục thích ứng
-                        const hasWarehouse = hasModule('warehouse_name')
+                        const hasWarehouse = hasModule('warehouse_name') || hasModule('warehouse_layout_2d') || warehouseLayouts.length > 0
                         const hasQC = hasModule('qc_info')
                         const hasSupplier = hasModule('supplier_info')
                         const generalFieldsCount = 1 + (hasWarehouse ? 1 : 0) + (hasSupplier ? 1 : 0) + (hasQC ? 1 : 0)
@@ -1245,27 +1254,68 @@ export function LotForm({
                                         </div>
                                     </div>
 
-                                    {/* Kho nhập hàng */}
+                                    {/* Kho nhập hàng / Mã kho đích */}
                                     {hasWarehouse && (
                                         <div className="space-y-1.5">
-                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                                                <MapPin size={13} className="text-blue-500" />
-                                                Kho nhập hàng
-                                            </label>
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                    <MapPin size={13} className="text-blue-500" />
+                                                    Kho nhập hàng / Mã kho đích
+                                                </label>
+                                                {warehouseName && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setWarehouseName('')}
+                                                        className="text-[11px] text-rose-500 hover:text-rose-600 hover:underline cursor-pointer"
+                                                    >
+                                                        Xóa
+                                                    </button>
+                                                )}
+                                            </div>
                                             <div className="relative">
                                                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
-                                                <select
+                                                <input
+                                                    type="text"
+                                                    list="warehouse-layouts-datalist"
                                                     value={warehouseName}
                                                     onChange={(e) => setWarehouseName(e.target.value)}
-                                                    className="w-full pl-10 pr-8 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 appearance-none transition-all text-sm font-medium"
-                                                >
-                                                    <option value="">-- Chọn kho hàng --</option>
+                                                    placeholder="Nhập mã kho (VD: kbb1) hoặc chọn kho..."
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm font-medium transition-all"
+                                                />
+                                                <datalist id="warehouse-layouts-datalist">
+                                                    {warehouseLayouts.map(l => (
+                                                        <option key={l.id} value={l.code || l.name}>
+                                                            {l.code ? `[${l.code}] ${l.name}` : l.name}
+                                                        </option>
+                                                    ))}
                                                     {branches.map(b => (
                                                         <option key={b.id} value={b.name}>{b.name}</option>
                                                     ))}
-                                                </select>
-                                                <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" size={16} />
+                                                </datalist>
                                             </div>
+                                            {warehouseLayouts.length > 0 && (
+                                                <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                    {warehouseLayouts.map(l => {
+                                                        const val = l.code || l.name;
+                                                        const isSelected = warehouseName.toLowerCase() === val.toLowerCase();
+                                                        return (
+                                                            <button
+                                                                key={l.id}
+                                                                type="button"
+                                                                onClick={() => setWarehouseName(val)}
+                                                                className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                                                                    isSelected 
+                                                                        ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                                                                        : 'bg-stone-50 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-zinc-700 hover:border-blue-400'
+                                                                }`}
+                                                            >
+                                                                {l.code ? <span className="font-mono text-amber-500 mr-1">[{l.code}]</span> : null}
+                                                                <span>{l.name}</span>
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 

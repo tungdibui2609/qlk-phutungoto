@@ -352,6 +352,7 @@ export default function InventoryPage() {
                                                             <img
                                                                 src={getProductDisplayImage(item)!}
                                                                 alt={item.name}
+                                                                referrerPolicy="no-referrer"
                                                                 className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                                                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                                             />

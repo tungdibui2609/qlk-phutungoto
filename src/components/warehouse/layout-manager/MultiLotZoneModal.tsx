@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { 
     X, Package, Calendar, Tag, ArrowUpRight, ShieldCheck, 
-    Layers, Hash, Eye, Truck, Send, LogOut, QrCode, PlusCircle, MapPin
+    Layers, Hash, Eye, Truck, Send, LogOut, QrCode, PlusCircle, MapPin,
+    ArrowUp, ArrowDown, ArrowLeftRight, Columns, Rows
 } from 'lucide-react';
 import { LayoutShape } from './types';
 
@@ -37,6 +38,8 @@ interface MultiLotZoneModalProps {
     onMoveLot?: (positionId: string) => void;
     onPrintQr?: (lot: any) => void;
     onAssignLot?: (shape: LayoutShape) => void;
+    onSwapLots?: (posAId: string, posBId: string) => void | Promise<void>;
+    onToggleOrientation?: (shapeId: string, orientation: 'horizontal' | 'vertical') => void | Promise<void>;
 }
 
 export default function MultiLotZoneModal({
@@ -52,7 +55,9 @@ export default function MultiLotZoneModal({
     onUnassignPosition,
     onMoveLot,
     onPrintQr,
-    onAssignLot
+    onAssignLot,
+    onSwapLots,
+    onToggleOrientation
 }: MultiLotZoneModalProps) {
     if (!isOpen || !shape) return null;
 
@@ -81,6 +86,31 @@ export default function MultiLotZoneModal({
                                 >
                                     <Layers size={12} />
                                     <span>Xem cả bãi ({allZoneLots.length} lô)</span>
+                                </button>
+                            )}
+
+                            {onToggleOrientation && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const currentOr = shape.splitOrientation || (shape.width >= shape.height ? 'horizontal' : 'vertical');
+                                        const nextOr = currentOr === 'horizontal' ? 'vertical' : 'horizontal';
+                                        onToggleOrientation(shape.id, nextOr);
+                                    }}
+                                    className="px-2.5 py-0.5 text-[11px] font-bold text-stone-700 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:text-stone-300 rounded-lg transition-colors flex items-center gap-1.5 shadow-2xs"
+                                    title="Đổi chiều chia ô trên sơ đồ: Hàng ngang (trái/phải) hoặc Hàng dọc (trên/dưới)"
+                                >
+                                    {(shape.splitOrientation === 'vertical' || (!shape.splitOrientation && shape.width < shape.height)) ? (
+                                        <>
+                                            <Rows size={12} className="text-blue-500" />
+                                            <span>Bố cục: Hàng dọc ↕</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Columns size={12} className="text-orange-500" />
+                                            <span>Bố cục: Hàng ngang ↔</span>
+                                        </>
+                                    )}
                                 </button>
                             )}
                         </div>
@@ -235,6 +265,57 @@ export default function MultiLotZoneModal({
                                     {/* Bottom row: Hành động nhanh cho lô này */}
                                     <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-100 dark:border-zinc-800 flex-wrap">
                                         <div className="flex items-center gap-1.5 flex-wrap">
+                                            {/* Nút sắp xếp thứ tự trước / sau trong khu vực */}
+                                            {(() => {
+                                                const targetList = (allZoneLots && allZoneLots.length > 1) ? allZoneLots : (lots.length > 1 ? lots : []);
+                                                if (!onSwapLots || targetList.length <= 1) return null;
+                                                const curIdx = targetList.findIndex(it => (it.position?.id && it.position.id === item.position?.id) || it.lotId === item.lotId);
+                                                const canMoveUp = curIdx > 0;
+                                                const canMoveDown = curIdx >= 0 && curIdx < targetList.length - 1;
+
+                                                return (
+                                                    <div className="flex items-center gap-1 border-r border-stone-200 dark:border-zinc-700 pr-2 mr-1">
+                                                        <button
+                                                            type="button"
+                                                            disabled={!canMoveUp}
+                                                            onClick={() => {
+                                                                if (canMoveUp) {
+                                                                    onSwapLots(item.position.id, targetList[curIdx - 1].position.id);
+                                                                }
+                                                            }}
+                                                            className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs ${
+                                                                !canMoveUp
+                                                                    ? 'opacity-30 cursor-not-allowed bg-stone-100 dark:bg-zinc-800 text-stone-400'
+                                                                    : 'bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200'
+                                                            }`}
+                                                            title="Đưa lên trước (Đổi chỗ với lô bên trên / bên trái)"
+                                                        >
+                                                            <ArrowUp size={13} className="text-amber-600 dark:text-amber-400" />
+                                                            <span className="text-[11px]">Lên trước</span>
+                                                        </button>
+
+                                                        <button
+                                                            type="button"
+                                                            disabled={!canMoveDown}
+                                                            onClick={() => {
+                                                                if (canMoveDown) {
+                                                                    onSwapLots(item.position.id, targetList[curIdx + 1].position.id);
+                                                                }
+                                                            }}
+                                                            className={`px-2 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs ${
+                                                                !canMoveDown
+                                                                    ? 'opacity-30 cursor-not-allowed bg-stone-100 dark:bg-zinc-800 text-stone-400'
+                                                                    : 'bg-amber-100 hover:bg-amber-200 text-amber-900 dark:bg-amber-950/60 dark:text-amber-200'
+                                                            }`}
+                                                            title="Đưa xuống sau (Đổi chỗ với lô bên dưới / bên phải)"
+                                                        >
+                                                            <ArrowDown size={13} className="text-amber-600 dark:text-amber-400" />
+                                                            <span className="text-[11px]">Xuống sau</span>
+                                                        </button>
+                                                    </div>
+                                                );
+                                            })()}
+
                                             {/* Xem chi tiết full modal */}
                                             {onViewLotDetails && item.lotId && (
                                                 <button

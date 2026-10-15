@@ -12,7 +12,7 @@ import { lotService } from '@/services/warehouse/lotService'
 import { normalizeUnit, canonicalizeUnit, isKg } from '@/lib/unitConversion'
 
 export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, onClose, editOrderId, duplicateOrderId }: any) {
-    const { showToast } = useToast()
+    const { showToast, showConfirm } = useToast()
     const { currentSystem, hasModule } = useSystem()
     const { profile } = useUser()
     const { getBaseAmount: toBaseAmount, convertUnit, unitNameMap, conversionMap, unitIdMap } = useUnitConversion()
@@ -125,7 +125,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         if (oemMatch) customer_name = oemMatch[1].trim()
                         rawNote = rawNote.replace(/\[\s*(?:Lô:[^•\]]+)?(?:\s*•\s*)?(?:OEM:[^•\]]+)?\s*\]/g, '').trim()
                     }
-                    const item = {
+                    const item: OrderItem = {
                         id: crypto.randomUUID(),
                         productId: i.product_id,
                         productName: i.product_name,
@@ -140,13 +140,18 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                         isDocQtyVisible: i.document_quantity !== i.quantity
                     }
                     
-                    // Check unbundle for existing items
+                    // Check unbundle or bundle for existing items
+                    let itemWithConv: OrderItem = { ...item }
                     if (isUtilityEnabled('auto_unbundle_order')) {
                         const { needsUnbundle, unbundleInfo } = checkUnbundle(item.productId, item.unit, item.quantity)
-                        return { ...item, needsUnbundle, unbundleInfo }
+                        if (needsUnbundle) itemWithConv = { ...itemWithConv, needsUnbundle, unbundleInfo }
+                    }
+                    if (!itemWithConv.needsUnbundle && isUtilityEnabled('auto_bundle_order')) {
+                        const { needsBundle, bundleInfo } = checkBundle(item.productId, item.unit, item.quantity)
+                        if (needsBundle) itemWithConv = { ...itemWithConv, needsBundle, bundleInfo }
                     }
 
-                    return item
+                    return itemWithConv
                 })
                 setItems(formattedItems)
             }
@@ -381,6 +386,20 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
         })
     }, [products, units, unitNameMap, unitIdMap, conversionMap, unitStockMap])
 
+    const checkBundle = useCallback((productId: string, unit: string, qty: number): { needsBundle: boolean, bundleInfo?: string, sourceUnit?: string, sourceQty?: number, targetQty?: number, rate?: number } => {
+        return unbundleService.checkBundle({
+            productId,
+            unit,
+            qty,
+            products,
+            units,
+            unitNameMap,
+            unitIdMap,
+            conversionMap,
+            unitStockMap
+        })
+    }, [products, units, unitNameMap, unitIdMap, conversionMap, unitStockMap])
+
     const updateItem = useCallback((id: string, field: keyof OrderItem, value: any) => {
         setItems(prev => prev.map(item => {
             if (item.id !== id) return item
@@ -397,24 +416,32 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     }
                 }
                 
-                const returnItem = { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.price || 0, categoryId: prod?.category_id || null }
+                let returnItem: OrderItem = { ...item, productId: value, productName: prod?.name || '', unit: initialUnit, price: (prod as any)?.price || 0, categoryId: prod?.category_id || null, needsUnbundle: false, unbundleInfo: undefined, needsBundle: false, bundleInfo: undefined }
                 
-                // Check unbundle
+                // Check unbundle or bundle
                 if (isUtilityEnabled('auto_unbundle_order')) {
                     const { needsUnbundle, unbundleInfo } = checkUnbundle(value, initialUnit, item.quantity)
-                    return { ...returnItem, needsUnbundle, unbundleInfo }
+                    if (needsUnbundle) returnItem = { ...returnItem, needsUnbundle, unbundleInfo }
+                }
+                if (!returnItem.needsUnbundle && isUtilityEnabled('auto_bundle_order')) {
+                    const { needsBundle, bundleInfo } = checkBundle(value, initialUnit, item.quantity)
+                    if (needsBundle) returnItem = { ...returnItem, needsBundle, bundleInfo }
                 }
 
                 return returnItem
             }
             if (field === 'quantity') {
                 const newValue = Number(value)
-                const returnItem = { ...item, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity }
+                let returnItem: OrderItem = { ...item, quantity: newValue, document_quantity: !item.isDocQtyVisible ? newValue : item.document_quantity, needsUnbundle: false, unbundleInfo: undefined, needsBundle: false, bundleInfo: undefined }
                 
-                // Check unbundle
+                // Check unbundle or bundle
                 if (isUtilityEnabled('auto_unbundle_order')) {
                     const { needsUnbundle, unbundleInfo } = checkUnbundle(item.productId, item.unit, newValue)
-                    return { ...returnItem, needsUnbundle, unbundleInfo }
+                    if (needsUnbundle) returnItem = { ...returnItem, needsUnbundle, unbundleInfo }
+                }
+                if (!returnItem.needsUnbundle && isUtilityEnabled('auto_bundle_order')) {
+                    const { needsBundle, bundleInfo } = checkBundle(item.productId, item.unit, newValue)
+                    if (needsBundle) returnItem = { ...returnItem, needsBundle, bundleInfo }
                 }
 
                 return returnItem
@@ -433,24 +460,32 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     baseUnitName
                 )
 
-                const returnItem = { 
+                let returnItem: OrderItem = { 
                     ...item, 
                     unit: newVal, 
                     quantity: Number(newQty.toFixed(3)),
-                    document_quantity: !item.isDocQtyVisible ? Number(newQty.toFixed(3)) : item.document_quantity
+                    document_quantity: !item.isDocQtyVisible ? Number(newQty.toFixed(3)) : item.document_quantity,
+                    needsUnbundle: false,
+                    unbundleInfo: undefined,
+                    needsBundle: false,
+                    bundleInfo: undefined
                 }
 
-                // Check unbundle
+                // Check unbundle or bundle
                 if (isUtilityEnabled('auto_unbundle_order')) {
                     const { needsUnbundle, unbundleInfo } = checkUnbundle(item.productId, newVal, Number(newQty.toFixed(3)))
-                    return { ...returnItem, needsUnbundle, unbundleInfo }
+                    if (needsUnbundle) returnItem = { ...returnItem, needsUnbundle, unbundleInfo }
+                }
+                if (!returnItem.needsUnbundle && isUtilityEnabled('auto_bundle_order')) {
+                    const { needsBundle, bundleInfo } = checkBundle(item.productId, newVal, Number(newQty.toFixed(3)))
+                    if (needsBundle) returnItem = { ...returnItem, needsBundle, bundleInfo }
                 }
 
                 return returnItem
             }
             return { ...item, [field]: value }
         }))
-    }, [products, convertUnit, currentSystem, checkUnbundle])
+    }, [products, convertUnit, currentSystem, checkUnbundle, checkBundle])
 
     const removeItem = useCallback((id: string) => setItems(prev => prev.filter(i => i.id !== id)), [])
 
@@ -471,6 +506,15 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                 if (unbundledCount > 0) {
                     processedItems = processed
                     showToast(`Đã tự động rã ${unbundledCount} dòng sản phẩm từ kho lẻ`, 'info')
+                }
+            }
+
+            // Bundle processing if enabled
+            if (isUtilityEnabled('auto_bundle_order')) {
+                const { processed, bundledCount } = unbundleService.processBundle(processedItems, products, units, unitNameMap, unitIdMap, conversionMap, unitStockMap)
+                if (bundledCount > 0) {
+                    processedItems = processed
+                    showToast(`Đã tự động gộp ${bundledCount} dòng sản phẩm thành kiện lớn`, 'info')
                 }
             }
 
@@ -519,6 +563,51 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                             reqUnit: item.unit,
                             reqQty: item.quantity,
                             currentLiquid: currentLiquid || 0,
+                            costPrice: item.price,
+                            rate: meta.rate,
+                            warehouseName,
+                            systemCode,
+                            mainOrderCode: code,
+                            convTypeId: convType?.id,
+                            conversionMap,
+                            unitNameMap,
+                            unitIdMap,
+                            generateOrderCode: (type: 'PNK' | 'PXK') => generateOrderCode(type, systemCode),
+                            categoryId: item.categoryId || null,
+                            productBaseUnit: prod?.unit || null
+                        })
+                    }
+                }
+            }
+
+            // Execute automatic bundling for marked items FIRST (only if user confirmed)
+            if (isUtilityEnabled('auto_bundle_order')) {
+                // If there are bundle candidates that user hasn't ticked yet, prompt for explicit consent
+                const unconfirmed = (processedItems as any[]).filter(i => i.needsBundle && !i.isBundleConfirmed)
+                if (unconfirmed.length > 0) {
+                    const confirmList = unconfirmed.map(i => `• ${i.productName}: ${i.bundleInfo}`).join('\n')
+                    const userApproved = await showConfirm(
+                        `Phát hiện các mặt hàng sau thiếu đơn vị lớn nhưng có đủ hàng lẻ:\n\n${confirmList}\n\nBạn có ĐỒNG Ý tự động tạo phiếu gộp lẻ để xuất kho không?\n(Chọn "Hủy" nếu bạn muốn xuất bình thường mà không gộp lẻ)`
+                    )
+                    if (userApproved) {
+                        unconfirmed.forEach(i => i.isBundleConfirmed = true)
+                    }
+                }
+
+                const convType = orderTypes.find(t => t.name?.toLowerCase().includes('chuyển đổi') || t.scope === 'internal')
+                for (const item of processedItems as any[]) {
+                    // ONLY execute bundle if explicitly confirmed by user
+                    if (item.needsBundle && item.bundleMeta && item.isBundleConfirmed) {
+                        const meta = item.bundleMeta
+                        const prod = products.find(p => p.id === item.productId)
+                        await unbundleService.executeAutoBundle({
+                            supabase,
+                            productId: item.productId,
+                            productName: item.productName,
+                            sourceUnit: meta.sourceUnit,
+                            targetUnit: item.unit,
+                            sourceQty: meta.sourceQty,
+                            targetQty: meta.targetQty,
                             costPrice: item.price,
                             rate: meta.rate,
                             warehouseName,

@@ -79,19 +79,26 @@ export async function POST(req: NextRequest) {
         const fileId = response.data.id;
         console.log(`>>> Upload Done in ${Date.now() - startTime}ms. ID: ${fileId}`);
 
-        // Set permission ASYNC - Không đợi bước này để trả kết quả nhanh cho Mobile
+        // Set public reader permission (cần await để khi client load ảnh thẻ <img> không bị 403 Forbidden)
         if (fileId) {
-            drive.permissions.create({
-                fileId: fileId,
-                requestBody: { role: 'reader', type: 'anyone' },
-            }).catch(e => console.error("Async perm error:", e));
+            try {
+                await drive.permissions.create({
+                    fileId: fileId,
+                    requestBody: { role: 'reader', type: 'anyone' },
+                });
+            } catch (e) {
+                console.warn("Async perm warning:", e);
+            }
         }
+
+        const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}=w1000`;
 
         return NextResponse.json({
             success: true,
             fileId: fileId,
             name: response.data.name,
-            link: `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`,
+            link: directCdnUrl,
+            thumbnailLink: directCdnUrl,
             viewLink: response.data.webViewLink
         });
 

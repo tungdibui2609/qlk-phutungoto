@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect, Suspense } from 'react'
+import { useState, useMemo, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
@@ -995,6 +995,309 @@ function WarehouseMapContent() {
         }
     }
 
+    async function handleSwapLots(posAId: string, posBId: string) {
+        const posA = positions.find(p => p.id === posAId);
+        const posB = positions.find(p => p.id === posBId);
+        if (!posA || !posB) return;
+
+        const lotAId = posA.lot_id;
+        const lotBId = posB.lot_id;
+
+        // Optimistic UI update
+        setPositions(prev => prev.map(p => {
+            if (p.id === posAId) return { ...p, lot_id: lotBId };
+            if (p.id === posBId) return { ...p, lot_id: lotAId };
+            return p;
+        }));
+
+        try {
+            await updatePositionsWithLog([
+                { id: posAId, lot_id: lotBId },
+                { id: posBId, lot_id: lotAId }
+            ]);
+            showToast('Đã hoán đổi vị trí thành công!', 'success');
+            fetchData();
+        } catch (error: any) {
+            console.error('Swap lots error:', error);
+            showToast('Lỗi khi hoán đổi vị trí: ' + (error.message || 'Không xác định'), 'error');
+            fetchData();
+        }
+    }
+
+    async function handleMoveLotToPosition(sourcePosId: string, targetPosId: string) {
+        const sourcePos = positions.find(p => p.id === sourcePosId);
+        const targetPos = positions.find(p => p.id === targetPosId);
+        if (!sourcePos || !targetPos || !sourcePos.lot_id) return;
+
+        if (targetPos.lot_id) {
+            await handleSwapLots(sourcePosId, targetPosId);
+            return;
+        }
+
+        const movingLotId = sourcePos.lot_id;
+
+        // Optimistic UI update
+        setPositions(prev => prev.map(p => {
+            if (p.id === sourcePosId) return { ...p, lot_id: null };
+            if (p.id === targetPosId) return { ...p, lot_id: movingLotId };
+            return p;
+        }));
+
+        try {
+            await updatePositionsWithLog([
+                { id: sourcePosId, lot_id: null },
+                { id: targetPosId, lot_id: movingLotId }
+            ]);
+            showToast(`Đã chuyển hàng sang vị trí ${targetPos.code || ''} thành công!`, 'success');
+            fetchData();
+        } catch (error: any) {
+            console.error('Move lot error:', error);
+            showToast('Lỗi khi chuyển vị trí: ' + (error.message || 'Không xác định'), 'error');
+            fetchData();
+        }
+    }
+
+    async function handleMoveLotToZoneShape(sourcePosId: string, targetShape: any) {
+        const sourcePos = positions.find(p => p.id === sourcePosId);
+        if (!sourcePos || !sourcePos.lot_id) return;
+
+        const targetPositions = positions.filter(p => {
+            if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
+            if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
+            if (targetShape.id && p.zone_id === targetShape.id) return true;
+            return false;
+        });
+
+        // 1. If empty position exists in target zone
+        const emptyPos = targetPositions.find(p => !p.lot_id);
+        if (emptyPos) {
+            await handleMoveLotToPosition(sourcePosId, emptyPos.id);
+            return;
+        }
+
+        // 2. If single position exists and is occupied, swap
+        if (targetPositions.length === 1 && targetPositions[0].id !== sourcePosId) {
+            await handleSwapLots(sourcePosId, targetPositions[0].id);
+            return;
+        }
+
+        // 3. Auto create position if empty or multi-lot shape
+        if (targetPositions.length === 0 || targetShape.isMultiLot !== false) {
+            const movingLotId = sourcePos.lot_id;
+            try {
+                const baseCode = (targetShape.code && targetShape.code.trim()) || (targetShape.label && targetShape.label.trim()) || `Z-${Date.now().toString().slice(-4)}`;
+                let maxIdx = 0;
+                targetPositions.forEach(p => {
+                    const match = p.code?.match(/-(\d+)$/);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > maxIdx) maxIdx = num;
+                    }
+                });
+                const nextIdx = Math.max(targetPositions.length + 1, maxIdx + 1);
+                const newPosCode = targetShape.isMultiLot !== false ? `${baseCode}-${String(nextIdx).padStart(2, '0')}` : baseCode;
+                const newPosId = crypto.randomUUID();
+
+                const insertPayload = {
+                    id: newPosId,
+                    code: newPosCode,
+                    lot_id: movingLotId,
+                    system_type: currentSystem?.code || systemType,
+                    company_id: (currentSystem as any)?.company_id || null
+                };
+
+                // 1. Unassign source position FIRST so lot_id is free to satisfy unique constraint
+                await updatePositionsWithLog([{ id: sourcePosId, lot_id: null }]);
+
+                // 2. Insert new position
+                const { error: insErr } = await (supabase.from('positions') as any).insert(insertPayload);
+                if (insErr) {
+                    // Rollback source position if insert fails
+                    await updatePositionsWithLog([{ id: sourcePosId, lot_id: movingLotId }]);
+                    throw insErr;
+                }
+
+                if (targetShape.id) {
+                    const { data: zoneRow } = await (supabase.from('zones') as any).select('id').eq('id', targetShape.id).maybeSingle();
+                    if ((zoneRow as any)?.id) {
+                        await (supabase.from('zone_positions') as any).insert({
+                            zone_id: targetShape.id,
+                            position_id: newPosId
+                        });
+                    }
+                }
+
+                showToast(`Đã chuyển hàng vào khu vực ${targetShape.label || targetShape.code} (${newPosCode}) thành công!`, 'success');
+                fetchData();
+            } catch (error: any) {
+                console.error('Create and move lot error:', error);
+                const msg = error?.message || error?.details || (typeof error === 'object' ? JSON.stringify(error) : String(error));
+                showToast('Lỗi khi chuyển vào khu vực: ' + msg, 'error');
+                fetchData();
+            }
+            return;
+        }
+
+        showToast(`Khu vực "${targetShape.label || targetShape.code}" đã đầy, vui lòng kéo trực tiếp vào 1 ô cụ thể để hoán đổi.`, 'warning');
+    }
+
+    // --- Staging Queue Logic (Khu vực Chờ Nhập Kho cho Kho đang chọn) ---
+    const [unassignedLots, setUnassignedLots] = useState<any[]>([]);
+    const [loadingUnassignedLots, setLoadingUnassignedLots] = useState(false);
+
+    const fetchUnassignedLots = useCallback(async () => {
+        const sysCode = currentSystem?.code || systemType;
+        if (!sysCode) return;
+        setLoadingUnassignedLots(true);
+        try {
+            const { data, error } = await supabase
+                .from('lots')
+                .select(`
+                    id, code, inbound_date, created_at, batch_code, warehouse_name, metadata, status,
+                    lot_items(id, quantity, unit, products(id, name, sku, unit)),
+                    lot_tags(tag, lot_id, lot_item_id)
+                `)
+                .eq('system_code', sysCode)
+                .neq('status', 'EXPORTED')
+                .order('created_at', { ascending: false })
+                .limit(100);
+
+            if (error) throw error;
+
+            const occupiedLotIdSet = new Set(positions.filter(p => p.lot_id).map(p => p.lot_id));
+            const unassigned = (data || []).filter((l: any) => !occupiedLotIdSet.has(l.id));
+
+            const formatted = unassigned.map((l: any) => {
+                const firstItem = l.lot_items?.[0];
+                const totalQty = (l.lot_items || []).reduce((sum: number, it: any) => sum + (it.quantity || 0), 0);
+                const tag = l.lot_tags?.[0]?.tag || l.metadata?.tag || '';
+                const prodName = firstItem?.products?.name || l.metadata?.product_name || 'Lô hàng mới';
+                const sku = firstItem?.products?.sku || '';
+                const unit = firstItem?.unit || firstItem?.products?.unit || '';
+
+                return {
+                    lotId: l.id,
+                    lotCode: l.code,
+                    productName: prodName,
+                    sku,
+                    quantity: totalQty,
+                    unit,
+                    tag,
+                    batchCode: l.batch_code,
+                    warehouseName: l.warehouse_name,
+                    inboundDate: l.inbound_date || l.created_at,
+                    systemType: sysCode
+                };
+            });
+
+            setUnassignedLots(formatted);
+        } catch (err) {
+            console.error('Error fetching unassigned lots:', err);
+        } finally {
+            setLoadingUnassignedLots(false);
+        }
+    }, [currentSystem?.code, systemType, positions]);
+
+    useEffect(() => {
+        fetchUnassignedLots();
+    }, [fetchUnassignedLots]);
+
+    const handleAssignStagingLotToPosition = async (lotId: string, targetPosId: string) => {
+        const targetPos = positions.find(p => p.id === targetPosId);
+        if (!targetPos) return;
+
+        setPositions(prev => prev.map(p => p.id === targetPosId ? { ...p, lot_id: lotId } : p));
+        setUnassignedLots(prev => prev.filter(l => l.lotId !== lotId));
+
+        try {
+            await updatePositionsWithLog([{ id: targetPosId, lot_id: lotId }]);
+            showToast(`Đã xếp lô hàng vào vị trí ${targetPos.code || ''} thành công!`, 'success');
+            fetchData();
+        } catch (err: any) {
+            console.error('Assign staging lot error:', err);
+            showToast('Lỗi khi xếp vị trí: ' + (err.message || 'Không xác định'), 'error');
+            fetchData();
+        }
+    };
+
+    const handleAssignStagingLotToZoneShape = async (lotId: string, targetShape: any) => {
+        const targetPositions = positions.filter(p => {
+            if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
+            if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
+            if (targetShape.id && p.zone_id === targetShape.id) return true;
+            return false;
+        });
+
+        // 1. Ô trống đã có sẵn trong zone
+        const emptyPos = targetPositions.find(p => !p.lot_id);
+        if (emptyPos) {
+            await handleAssignStagingLotToPosition(lotId, emptyPos.id);
+            return;
+        }
+
+        // 2. Tự động sinh vị trí con mới cho khu vực
+        try {
+            const baseCode = (targetShape.code && targetShape.code.trim()) || (targetShape.label && targetShape.label.trim()) || 'Z';
+            let maxIdx = 0;
+            targetPositions.forEach(p => {
+                const match = p.code?.match(/-(\d+)$/);
+                if (match) {
+                    const num = parseInt(match[1], 10);
+                    if (num > maxIdx) maxIdx = num;
+                }
+            });
+            const nextIdx = Math.max(targetPositions.length + 1, maxIdx + 1);
+            const newCode = `${baseCode}-${String(nextIdx).padStart(2, '0')}`;
+            const newPosId = crypto.randomUUID();
+
+            const insertPayload = {
+                id: newPosId,
+                code: newCode,
+                lot_id: lotId,
+                system_type: currentSystem?.code || systemType,
+                company_id: (currentSystem as any)?.company_id || null
+            };
+
+            const localPosObj = {
+                ...insertPayload,
+                zone_id: targetShape.id
+            };
+
+            setPositions(prev => [...prev, localPosObj as any]);
+            setUnassignedLots(prev => prev.filter(l => l.lotId !== lotId));
+
+            const { error: insErr } = await (supabase.from('positions') as any).insert(insertPayload);
+            if (insErr) throw insErr;
+
+            // Link to zone_positions if targetShape.id is a real zone in database
+            if (targetShape.id) {
+                const { data: zoneRow } = await (supabase.from('zones') as any).select('id').eq('id', targetShape.id).maybeSingle();
+                if ((zoneRow as any)?.id) {
+                    await (supabase.from('zone_positions') as any).insert({
+                        zone_id: targetShape.id,
+                        position_id: newPosId
+                    });
+                }
+            }
+
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: newPosId,
+                action: 'CREATE',
+                newData: insertPayload,
+                systemCode: currentSystem?.code || ''
+            });
+
+            showToast(`Đã xếp lô hàng vào khu vực ${targetShape.label || targetShape.code} (${newCode})!`, 'success');
+            fetchData();
+        } catch (err: any) {
+            console.error('Auto create position for staging lot error:', err);
+            showToast('Lỗi khi xếp vị trí vào khu vực: ' + (err.message || 'Không xác định'), 'error');
+            fetchData();
+        }
+    };
+
     async function handleAutoAssignWarehouse(params: { warehouseId: string; hallId: string | null }) {
         setIsAutoAssignModalOpen(false)
         if (selectedPositionIds.size === 0) return
@@ -1404,6 +1707,15 @@ function WarehouseMapContent() {
                             selectedZone={zones.find(z => z.id === selectedZoneId)}
                             lotInfo={lotInfo}
                             isAssignmentMode={!!assignLot}
+                            onSwapLots={handleSwapLots}
+                            onMoveLotToPosition={handleMoveLotToPosition}
+                            onMoveLotToZoneShape={handleMoveLotToZoneShape}
+                            onRefreshData={fetchData}
+                            unassignedLots={unassignedLots}
+                            loadingUnassignedLots={loadingUnassignedLots}
+                            onAssignStagingLotToPosition={handleAssignStagingLotToPosition}
+                            onAssignStagingLotToZoneShape={handleAssignStagingLotToZoneShape}
+                            onRefreshUnassignedLots={fetchUnassignedLots}
                         />
                     </div>
                 ) : (

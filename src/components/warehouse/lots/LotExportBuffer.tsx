@@ -363,57 +363,131 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                     currentInLot: currentInLot
                 })
 
-                // Construct a temporary proxy stock map for checkUnbundle (it expects productId_unit)
+                // Construct a proxy stock map with all units currently present in this specific LOT
                 const proxyStockMap = new Map<string, number>()
-                proxyStockMap.set(`${item.product_id}_${normUnit}`, currentInLot)
+                for (const [k, v] of localLotUnitStockMap.entries()) {
+                    if (k.startsWith(`${item.lot_id}_${item.product_id}_`)) {
+                        const u = k.replace(`${item.lot_id}_${item.product_id}_`, '')
+                        proxyStockMap.set(`${item.product_id}_${u}`, v)
+                    }
+                }
+                if (!proxyStockMap.has(`${item.product_id}_${normUnit}`)) {
+                    proxyStockMap.set(`${item.product_id}_${normUnit}`, currentInLot)
+                }
 
-                const check = unbundleService.checkUnbundle({
-                    productId: item.product_id,
-                    unit: item.unit,
-                    qty: qtyNum,
-                    products: productsData || [],
-                    units: unitsData || [],
-                    unitNameMap: localUnitNameMap,
-                    unitIdMap: localUnitIdMap,
-                    conversionMap: localConversionMap,
-                    unitStockMap: proxyStockMap // Pass the proxy map for this lot
-                })
-
-                console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name} in Lot ${item.lot_code}:`, check)
-
-                if (check.needsUnbundle && check.sourceUnit && check.rate) {
-                    showToast(`Thiếu ${item.unit} tại lô ${item.lot_code}. Đang tự bẻ gói...`, 'info')
-
-                    // Sync physical LOT items to match accounting conversion
-                    const prod = (productsData as any[])?.find(p => p.id === item.product_id)
-                    const baseToBreak = await unbundleService.executeAutoUnbundle({
-                        supabase,
+                // Check Unbundle (Bẻ gói) if auto_unbundle_lot is enabled
+                if (isUtilityEnabled('auto_unbundle_lot')) {
+                    const check = unbundleService.checkUnbundle({
                         productId: item.product_id,
-                        productName: item.product_name,
-                        baseUnit: check.sourceUnit,
-                        reqUnit: item.unit,
-                        reqQty: qtyNum,
-                        currentLiquid: currentInLot, // Use Lot-specific liquid
-                        costPrice: item.cost_price || 0,
-                        rate: check.rate,
-                        warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
-                        systemCode: systemType,
-                        mainOrderCode: orderCode,
-                        convTypeId: convType?.id,
-                        conversionMap: localConversionMap,
+                        unit: item.unit,
+                        qty: qtyNum,
+                        products: productsData || [],
+                        units: unitsData || [],
                         unitNameMap: localUnitNameMap,
                         unitIdMap: localUnitIdMap,
-                        generateOrderCode: (type) => generateOrderCode(type, systemType),
-                        productBaseUnit: prod?.unit || null
+                        conversionMap: localConversionMap,
+                        unitStockMap: proxyStockMap // Pass the proxy map for this lot
                     })
 
-                    if (baseToBreak && baseToBreak > 0) {
-                        // Update the lot-specific map for subsequent items from the same LOT in this batch
-                        const sourceKey = `${item.lot_id}_${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
-                        const reqKey = `${item.lot_id}_${item.product_id}_${normUnit}`
+                    console.log(`[Unbundle Trace] Unbundle Check for ${item.product_name} in Lot ${item.lot_code}:`, check)
 
-                        localLotUnitStockMap.set(sourceKey, (localLotUnitStockMap.get(sourceKey) || 0) - baseToBreak)
-                        localLotUnitStockMap.set(reqKey, (localLotUnitStockMap.get(reqKey) || 0) + (baseToBreak * check.rate))
+                    if (check.needsUnbundle && check.sourceUnit && check.rate) {
+                        showToast(`Thiếu ${item.unit} tại lô ${item.lot_code}. Đang tự bẻ gói...`, 'info')
+
+                        // Sync physical LOT items to match accounting conversion
+                        const prod = (productsData as any[])?.find(p => p.id === item.product_id)
+                        const baseToBreak = await unbundleService.executeAutoUnbundle({
+                            supabase,
+                            productId: item.product_id,
+                            productName: item.product_name,
+                            baseUnit: check.sourceUnit,
+                            reqUnit: item.unit,
+                            reqQty: qtyNum,
+                            currentLiquid: currentInLot, // Use Lot-specific liquid
+                            costPrice: item.cost_price || 0,
+                            rate: check.rate,
+                            warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
+                            systemCode: systemType,
+                            mainOrderCode: orderCode,
+                            convTypeId: convType?.id,
+                            conversionMap: localConversionMap,
+                            unitNameMap: localUnitNameMap,
+                            unitIdMap: localUnitIdMap,
+                            generateOrderCode: (type) => generateOrderCode(type, systemType),
+                            productBaseUnit: prod?.unit || null
+                        })
+
+                        if (baseToBreak && baseToBreak > 0) {
+                            // Update the lot-specific map for subsequent items from the same LOT in this batch
+                            const sourceKey = `${item.lot_id}_${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`
+                            const reqKey = `${item.lot_id}_${item.product_id}_${normUnit}`
+
+                            localLotUnitStockMap.set(sourceKey, (localLotUnitStockMap.get(sourceKey) || 0) - baseToBreak)
+                            localLotUnitStockMap.set(reqKey, (localLotUnitStockMap.get(reqKey) || 0) + (baseToBreak * check.rate))
+                            proxyStockMap.set(`${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`, (proxyStockMap.get(`${item.product_id}_${check.sourceUnit.toLowerCase().trim()}`) || 0) - baseToBreak)
+                            proxyStockMap.set(`${item.product_id}_${normUnit}`, (proxyStockMap.get(`${item.product_id}_${normUnit}`) || 0) + (baseToBreak * check.rate))
+                        }
+                    }
+                }
+
+                // Check Bundle (Gộp lẻ) if auto_bundle_lot is enabled
+                if (isUtilityEnabled('auto_bundle_lot')) {
+                    const checkB = unbundleService.checkBundle({
+                        productId: item.product_id,
+                        unit: item.unit,
+                        qty: qtyNum,
+                        products: productsData || [],
+                        units: unitsData || [],
+                        unitNameMap: localUnitNameMap,
+                        unitIdMap: localUnitIdMap,
+                        conversionMap: localConversionMap,
+                        unitStockMap: proxyStockMap // Pass the proxy map for this lot
+                    })
+
+                    console.log(`[Bundle Trace] Bundle Check for ${item.product_name} in Lot ${item.lot_code}:`, checkB)
+
+                    if (checkB.needsBundle && checkB.sourceUnit && checkB.sourceQty && checkB.targetQty && checkB.rate) {
+                        const confirmed = await showConfirm(
+                            `Lô [${item.lot_code}] đang thiếu ${qtyNum} ${item.unit} (${item.product_name}) nhưng có đủ ${checkB.sourceQty} ${checkB.sourceUnit} lẻ.\n\nBạn có ĐỒNG Ý tự động gộp ${checkB.sourceQty} ${checkB.sourceUnit} thành ${checkB.targetQty} ${item.unit} để xuất không?`
+                        )
+                        if (!confirmed) {
+                            showToast(`Đã bỏ qua gộp lẻ cho lô ${item.lot_code}.`, 'info')
+                            continue
+                        }
+
+                        showToast(`Đang gộp lẻ tại lô ${item.lot_code}...`, 'info')
+
+                        const prod = (productsData as any[])?.find(p => p.id === item.product_id)
+                        const resBundle = await unbundleService.executeAutoBundle({
+                            supabase,
+                            productId: item.product_id,
+                            productName: item.product_name,
+                            sourceUnit: checkB.sourceUnit,
+                            targetUnit: item.unit,
+                            sourceQty: checkB.sourceQty,
+                            targetQty: checkB.targetQty,
+                            costPrice: item.cost_price || 0,
+                            rate: checkB.rate,
+                            warehouseName: quickBranchName || currentSystem?.name || 'Kho chính',
+                            systemCode: systemType,
+                            mainOrderCode: orderCode,
+                            convTypeId: convType?.id,
+                            conversionMap: localConversionMap,
+                            unitNameMap: localUnitNameMap,
+                            unitIdMap: localUnitIdMap,
+                            generateOrderCode: (type) => generateOrderCode(type, systemType),
+                            productBaseUnit: prod?.unit || null
+                        })
+
+                        if (resBundle) {
+                            const sourceKey = `${item.lot_id}_${item.product_id}_${checkB.sourceUnit.toLowerCase().trim()}`
+                            const reqKey = `${item.lot_id}_${item.product_id}_${normUnit}`
+
+                            localLotUnitStockMap.set(sourceKey, (localLotUnitStockMap.get(sourceKey) || 0) - checkB.sourceQty)
+                            localLotUnitStockMap.set(reqKey, (localLotUnitStockMap.get(reqKey) || 0) + checkB.targetQty)
+                            proxyStockMap.set(`${item.product_id}_${checkB.sourceUnit.toLowerCase().trim()}`, (proxyStockMap.get(`${item.product_id}_${checkB.sourceUnit.toLowerCase().trim()}`) || 0) - checkB.sourceQty)
+                            proxyStockMap.set(`${item.product_id}_${normUnit}`, (proxyStockMap.get(`${item.product_id}_${normUnit}`) || 0) + checkB.targetQty)
+                        }
                     }
                 }
             }

@@ -169,9 +169,16 @@ export function LotItemImageManager({ lot, item, triggerOpen = false, onCloseTri
                                     {itemImages.map((img) => (
                                         <div key={img.fileId} className="group relative aspect-square rounded-2xl overflow-hidden border border-zinc-100 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-950">
                                             <img 
-                                                src={`https://drive.google.com/thumbnail?id=${img.fileId}&sz=w600`} 
+                                                src={`https://lh3.googleusercontent.com/d/${img.fileId}=s600`} 
                                                 alt={img.name}
+                                                referrerPolicy="no-referrer"
                                                 className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-500"
+                                                onError={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    if (!target.src.includes('drive.google.com')) {
+                                                        target.src = `https://drive.google.com/thumbnail?id=${img.fileId}&sz=w600`;
+                                                    }
+                                                }}
                                                 onClick={() => setViewDocUrl({ url: img.link, title: img.name })}
                                             />
                                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">

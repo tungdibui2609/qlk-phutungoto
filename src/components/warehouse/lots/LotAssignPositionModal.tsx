@@ -19,16 +19,47 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
     const { showToast, showConfirm } = useToast()
     const { currentSystem } = useSystem()
     const [loading, setLoading] = useState(false)
-    const [code, setCode] = useState('')
+    const initialPosCode = typeof lot.positions?.[0] === 'string'
+        ? lot.positions[0]
+        : (lot.positions?.[0] as any)?.code || lot.warehouse_name || ''
+    const [code, setCode] = useState<string>(initialPosCode)
     const [searchTerm, setSearchTerm] = useState('')
     const [positions, setPositions] = useState<ComboboxOption[]>([])
     const [loadingPositions, setLoadingPositions] = useState(false)
+    const [warehouseLayouts, setWarehouseLayouts] = useState<any[]>([])
+    const [loadingLayouts, setLoadingLayouts] = useState(false)
 
     // New states for Auto Assign
     const [activeTab, setActiveTab] = useState<'manual' | 'auto'>('manual')
     const [halls, setHalls] = useState<any[]>([])
     const [loadingHalls, setLoadingHalls] = useState(false)
     const [expandedWarehouse, setExpandedWarehouse] = useState<string | null>(null)
+
+    // Fetch warehouse layouts for suggestions and staging assignment
+    useEffect(() => {
+        if (!currentSystem?.code) return
+
+        async function fetchLayouts() {
+            setLoadingLayouts(true)
+            try {
+                const { data, error } = await (supabase.from('warehouse_layouts') as any)
+                    .select('id, name, code, is_active')
+                    .eq('system_type', currentSystem!.code)
+                    .order('name')
+
+                if (error) throw error
+                if (data) {
+                    setWarehouseLayouts(data)
+                }
+            } catch (err) {
+                console.error('Error fetching warehouse layouts:', err)
+            } finally {
+                setLoadingLayouts(false)
+            }
+        }
+
+        fetchLayouts()
+    }, [currentSystem?.code])
 
     // Fetch positions for suggestions (Manual tab)
     useEffect(() => {
@@ -37,6 +68,19 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
         async function fetchPositions(search: string = '') {
             setLoadingPositions(true)
             try {
+                const s = search.toLowerCase().trim()
+                const matchingLayouts = (warehouseLayouts || []).filter((l: any) => {
+                    if (!s) return true
+                    const lCode = (l.code || '').toLowerCase()
+                    const lName = (l.name || '').toLowerCase()
+                    return lCode.includes(s) || lName.includes(s)
+                })
+
+                const layoutOptions: ComboboxOption[] = matchingLayouts.map((l: any) => ({
+                    value: l.code || l.name,
+                    label: `🏢 [KHO] ${l.code ? `${l.code} - ` : ''}${l.name} (Khu vực Chờ)`
+                }))
+
                 let query = (supabase.from('positions') as any)
                     .select('id, code')
                     .eq('system_type', currentSystem!.code)
@@ -50,25 +94,24 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 const { data, error } = await query
 
                 if (error) throw error
-                if (data) {
-                    let lockedIds = new Set<string>()
-                    if (typeof window !== 'undefined' && currentSystem?.code) {
-                        try {
-                            const raw = localStorage.getItem(`warehouse_locked_positions_${currentSystem.code}`)
-                            if (raw) {
-                                const arr = JSON.parse(raw)
-                                if (Array.isArray(arr)) lockedIds = new Set(arr)
-                            }
-                        } catch (e) {}
-                    }
-                    const options = data
-                        .filter((p: any) => !lockedIds.has(p.id) && !lockedIds.has(p.code))
-                        .map((p: any) => ({
-                            value: p.code,
-                            label: p.code
-                        }))
-                    setPositions(options)
+                let lockedIds = new Set<string>()
+                if (typeof window !== 'undefined' && currentSystem?.code) {
+                    try {
+                        const raw = localStorage.getItem(`warehouse_locked_positions_${currentSystem.code}`)
+                        if (raw) {
+                            const arr = JSON.parse(raw)
+                            if (Array.isArray(arr)) lockedIds = new Set(arr)
+                        }
+                    } catch (e) {}
                 }
+                const posOptions = (data || [])
+                    .filter((p: any) => !lockedIds.has(p.id) && !lockedIds.has(p.code))
+                    .map((p: any) => ({
+                        value: p.code,
+                        label: p.code
+                    }))
+
+                setPositions([...layoutOptions, ...posOptions])
             } catch (err) {
                 console.error('Error fetching positions:', err)
             } finally {
@@ -81,7 +124,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
         }, 300)
 
         return () => clearTimeout(timer)
-    }, [currentSystem?.code, searchTerm, activeTab])
+    }, [currentSystem?.code, searchTerm, activeTab, warehouseLayouts])
 
     // Fetch halls for Auto Assign tab
     useEffect(() => {
@@ -199,7 +242,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
         setLoading(true)
 
         try {
-            // Case: Empty code = Unassign position
+            // Case: Empty code = Unassign position & warehouse
             if (!targetCode) {
                 const confirmed = await showConfirm('Bạn có chắc chắn muốn xóa vị trí của LOT này và chuyển về trạng thái chưa gán?')
                 if (!confirmed) {
@@ -220,6 +263,11 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
 
                 if (unassignError) throw unassignError
 
+                // Clear warehouse_name on lot
+                await (supabase.from('lots') as any)
+                    .update({ warehouse_name: null })
+                    .eq('id', lot.id)
+
                 // Log Activity for Audit Trail
                 if (currentPositions && currentPositions.length > 0) {
                     for (const pos of currentPositions) {
@@ -236,19 +284,98 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 }
 
                 // Log history for operation_history (legacy)
-                const historyObj = {
-                    system_code: currentSystem?.code ?? null,
-                    action_type: 'unassign_position',
-                    entity_type: 'lot',
-                    entity_id: lot.id,
-                    details: {
-                        previous_positions: currentPositions?.map((p: any) => p.code) || []
-                    }
-                } as any;
+                try {
+                    const historyObj = {
+                        system_code: currentSystem?.code ?? null,
+                        action_type: 'unassign_position',
+                        entity_type: 'lot',
+                        entity_id: lot.id,
+                        details: {
+                            previous_positions: currentPositions?.map((p: any) => p.code) || [],
+                            previous_warehouse: lot.warehouse_name
+                        }
+                    } as any;
 
-                await (supabase as any).from('operation_history').insert(historyObj);
+                    await (supabase as any).from('operation_history').insert(historyObj);
+                } catch {}
 
                 showToast('Đã xóa vị trí thành công!', 'success')
+                onSuccess()
+                return
+            }
+
+            // Case: Check if targetCode matches a Warehouse Layout (e.g. KBB1, KBB2, Kho Bao Bì)
+            const matchedLayout = warehouseLayouts.find((l: any) => 
+                (l.code && l.code.trim().toUpperCase() === targetCode) ||
+                (l.name && l.name.trim().toUpperCase() === targetCode)
+            )
+
+            if (matchedLayout) {
+                // Target is a warehouse staging queue
+                // 1. Unassign from physical positions if any
+                const { data: currentPositions } = await (supabase.from('positions') as any)
+                    .select('id, code')
+                    .eq('lot_id', lot.id)
+
+                if (currentPositions && currentPositions.length > 0) {
+                    const { error: unassignError } = await (supabase.from('positions') as any)
+                        .update({ lot_id: null })
+                        .eq('lot_id', lot.id)
+
+                    if (unassignError) throw unassignError
+
+                    for (const pos of currentPositions) {
+                        await logActivity({
+                            supabase,
+                            tableName: 'positions',
+                            recordId: pos.id,
+                            action: 'UPDATE',
+                            oldData: { lot_id: lot.id },
+                            newData: { lot_id: null },
+                            systemCode: currentSystem?.code || ''
+                        })
+                    }
+                }
+
+                // 2. Set warehouse_name on lot
+                const targetWarehouseCode = matchedLayout.code || matchedLayout.name
+                const { error: lotUpdateError } = await (supabase.from('lots') as any)
+                    .update({ 
+                        warehouse_name: targetWarehouseCode
+                    })
+                    .eq('id', lot.id)
+
+                if (lotUpdateError) throw lotUpdateError
+
+                // 3. Log Activity & Operation History
+                await logActivity({
+                    supabase,
+                    tableName: 'lots',
+                    recordId: lot.id,
+                    action: 'UPDATE',
+                    oldData: { warehouse_name: lot.warehouse_name },
+                    newData: { warehouse_name: targetWarehouseCode },
+                    systemCode: currentSystem?.code || ''
+                })
+
+                try {
+                    const historyObj = {
+                        system_code: currentSystem?.code ?? null,
+                        action_type: 'assign_warehouse_queue',
+                        entity_type: 'lot',
+                        entity_id: lot.id,
+                        details: {
+                            warehouse_code: matchedLayout.code,
+                            warehouse_name: matchedLayout.name,
+                            target: targetWarehouseCode,
+                            previous_warehouse: lot.warehouse_name,
+                            previous_positions: currentPositions?.map((p: any) => p.code) || []
+                        }
+                    } as any;
+                    await (supabase as any).from('operation_history').insert(historyObj);
+                } catch {}
+
+                showToast(`Đã đưa lô hàng vào Khu vực Chờ của Kho ${matchedLayout.name} (${matchedLayout.code || targetWarehouseCode})!`, 'success')
                 onSuccess()
                 return
             }
@@ -484,8 +611,9 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             }
             onSuccess()
         } catch (err: any) {
-            console.error(err)
-            showToast('Lỗi khi xử lý vị trí: ' + err.message, 'error')
+            console.error('Lỗi khi xử lý vị trí:', err)
+            const msg = err?.message || err?.details || (typeof err === 'object' ? JSON.stringify(err) : String(err))
+            showToast('Lỗi khi xử lý vị trí: ' + msg, 'error')
         } finally {
             setLoading(false)
         }
@@ -668,15 +796,24 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 <div className="p-4 space-y-4 overflow-y-auto">
                     <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-100 dark:border-slate-800">
                         <div className="text-[10px] text-slate-500 font-bold mb-1 uppercase tracking-wider">Lot đang chọn</div>
-                        <div className="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">
-                            {lot.code}
+                        <div className="flex items-center justify-between">
+                            <div className="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">
+                                {lot.code}
+                            </div>
+                            {lot.warehouse_name && (
+                                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/60">
+                                    Kho: {lot.warehouse_name}
+                                </span>
+                            )}
                         </div>
                     </div>
 
                     {activeTab === 'manual' ? (
                         <form onSubmit={handleAssign} className="space-y-4">
                             <div>
-                                <label className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider block">Mã vị trí (Ô/Kệ)</label>
+                                <label className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider block">
+                                    Mã vị trí (Ô/Kệ) hoặc Mã kho
+                                </label>
                                 <Combobox
                                     options={positions}
                                     value={code}
@@ -684,15 +821,56 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                                         setCode(val || '')
                                         if (val) setSearchTerm(val)
                                     }}
-                                    onSearchChange={(val) => setSearchTerm(val)}
-                                    placeholder="Nhập mã vị trí (VD: A-1-1)"
+                                    onSearchChange={(val) => {
+                                        setSearchTerm(val)
+                                        setCode(val)
+                                    }}
+                                    placeholder="Nhập mã vị trí (VD: A-1-1) hoặc mã kho (VD: KBB1)"
                                     className="w-full"
-                                    isLoading={loadingPositions}
+                                    isLoading={loadingPositions || loadingLayouts}
                                     allowCustom={true}
                                 />
                                 <p className="mt-1 text-[10px] text-slate-400 italic">
-                                    Để trống để xóa vị trí hiện tại.
+                                    Nhập mã kho (VD: KBB1) để đưa vào Khu vực Chờ của kho đó, hoặc nhập mã ô kệ cụ thể. Để trống để xóa vị trí.
                                 </p>
+
+                                {/* Gợi ý gán nhanh kho */}
+                                {warehouseLayouts.length > 0 && (
+                                    <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
+                                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                            <Building2 size={13} className="text-orange-500" />
+                                            Gợi ý gán vào Kho (Khu vực Chờ):
+                                        </div>
+                                        <div className="flex flex-wrap gap-2">
+                                            {warehouseLayouts.map((l: any) => {
+                                                const targetVal = l.code || l.name;
+                                                const isSelected = code.trim().toLowerCase() === targetVal.toLowerCase();
+                                                return (
+                                                    <button
+                                                        key={l.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setCode(targetVal);
+                                                            setSearchTerm(targetVal);
+                                                        }}
+                                                        className={`px-3 py-1.5 text-xs font-semibold rounded-xl border transition-all flex items-center gap-1.5 ${
+                                                            isSelected
+                                                                ? 'bg-orange-500 text-white border-orange-500 shadow-sm shadow-orange-500/20'
+                                                                : 'bg-slate-50 hover:bg-orange-50 text-slate-700 hover:text-orange-600 border-slate-200 dark:bg-slate-800 dark:border-slate-700 dark:text-slate-300'
+                                                        }`}
+                                                    >
+                                                        {l.code && (
+                                                            <span className="font-mono font-bold text-[10px] bg-black/10 dark:bg-white/10 px-1.5 py-0.5 rounded">
+                                                                {l.code}
+                                                            </span>
+                                                        )}
+                                                        <span>{l.name}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-100 dark:border-slate-800">

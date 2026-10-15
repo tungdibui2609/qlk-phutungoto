@@ -68,6 +68,8 @@ const MODULE_DEFINITIONS = [
     { id: 'lot_accounting_sync', name: 'Đồng bộ Kho - Kế toán (LOT)', description: 'Tự động tạo hàng chờ nhập/xuất và đồng bộ dữ liệu chênh lệch khi thay đổi LOT.', category: 'utility', is_basic: false },
     { id: 'auto_unbundle_order', name: 'Bẻ gói Kế toán (PNK/PXK)', description: 'Tự động tạo phiếu chuyển đổi (AUTO) khi xuất hàng lẻ đơn vị (ví dụ: bẻ Bao thành Gói).', category: 'utility', is_basic: false },
     { id: 'auto_unbundle_lot', name: 'Bẻ gói Kho (LOT/Vị trí)', description: 'Cho phép thực hiện thao tác chia tách LOT và bẻ đơn vị tính trực tiếp tại sơ đồ kho.', category: 'utility', is_basic: false },
+    { id: 'auto_bundle_order', name: 'Gộp lẻ Kế toán (PNK/PXK)', description: 'Tự động tạo phiếu chuyển đổi (AUTO) gom hàng lẻ thành đơn vị lớn khi xuất kho (ví dụ: gom 15kg thành 1 Thùng).', category: 'utility', is_basic: true },
+    { id: 'auto_bundle_lot', name: 'Gộp lẻ Kho (LOT/Vị trí)', description: 'Cho phép gom số lượng lẻ tại cùng một LOT/vị trí thành kiện lớn trực tiếp tại sơ đồ kho & xuất LOT.', category: 'utility', is_basic: true },
     { id: 'site_inventory_manager', name: 'Cấp phát hàng hóa', description: 'Theo dõi xuất vật tư tiêu hao theo tổ đội và sổ theo dõi mượn/trả công cụ dụng cụ.', category: 'utility', is_basic: false },
     { id: 'production_inventory_manager', name: 'Cấp phát sản xuất', description: 'Theo dõi cấp phát vật tư, linh kiện cho các công đoạn sản xuất và lắp ráp.', category: 'utility', is_basic: false },
     { id: 'utility_qr_assign', name: 'Quét mã QR & Gán vị trí', description: 'Cho phép quét mã QR để gán nhanh vị trí kho. Hiển thị menu Quét mã QR trên thanh điều hướng.', category: 'utility', is_basic: false },

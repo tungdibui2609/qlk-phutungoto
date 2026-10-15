@@ -46,8 +46,8 @@ export function getProductDisplayImage(product: ProductImageSource): string | nu
         if (firstImage) {
             url = firstImage.url;
         } else {
-            // 2. If no image, but we have a Google Drive link (video?), try it anyway
-            const firstDriveMedia = product.product_media.find(m => m.url.includes('drive.google.com'));
+            // 2. If no image, but we have a Google Drive/UserContent link (video?), try it anyway
+            const firstDriveMedia = product.product_media.find(m => m.url.includes('drive.google.com') || m.url.includes('googleusercontent.com'));
             if (firstDriveMedia) {
                 url = firstDriveMedia.url;
             }
@@ -56,11 +56,10 @@ export function getProductDisplayImage(product: ProductImageSource): string | nu
 
     if (!url) return null;
 
-    // Google Drive check
+    // Google Drive / Google CDN check - use fast CDN without 429 rate limit
     const idMatch = url.match(/\/d\/([a-zA-Z0-9_-]+)/) || url.match(/id=([a-zA-Z0-9_-]+)/);
     if (idMatch && idMatch[1]) {
-        const thumbUrl = `https://drive.google.com/thumbnail?id=${idMatch[1]}&sz=w600`;
-        return thumbUrl;
+        return `https://lh3.googleusercontent.com/d/${idMatch[1]}=s600`;
     }
 
     return url;

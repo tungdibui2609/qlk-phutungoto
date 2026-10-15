@@ -62,6 +62,7 @@ export interface LayoutShape {
     // Multi-Lot & Warehouse Capacity
     isStorage?: boolean;    // Đánh dấu cho phép lưu trữ hàng hóa
     isMultiLot?: boolean;   // Bãi chứa đa Lô (nhiều LOT trong 1 Zone)
+    splitOrientation?: 'horizontal' | 'vertical' | 'auto'; // Hướng chia ô đa Lô: ngang (trái/phải) hoặc dọc (trên/dưới)
     capacity?: number;      // Sức chứa tối đa
     capacityUnit?: string;  // Đơn vị sức chứa (Pallet, Thùng, Kiện...)
 
@@ -76,6 +77,7 @@ export interface WarehouseLayout {
     system_type: string;
     company_id?: string;
     name: string;
+    code?: string;
     width: number;
     height: number;
     grid_data: GridCell[] | LayoutShape[];

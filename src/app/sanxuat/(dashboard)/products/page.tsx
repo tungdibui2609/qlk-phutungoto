@@ -211,6 +211,7 @@ export default function SanxuatProductsPage() {
                                                         <img
                                                             src={getProductDisplayImage(item)!}
                                                             alt={item.name}
+                                                            referrerPolicy="no-referrer"
                                                             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                                                             onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
                                                         />

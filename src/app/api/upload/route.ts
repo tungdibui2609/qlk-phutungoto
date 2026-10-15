@@ -4,7 +4,7 @@ import { Readable } from "stream";
 
 export const runtime = 'nodejs';
 
-/**
+// Cache folder ID để upload nhanh
 const folderCache = new Map<string, string>();
 
 /**
@@ -112,8 +112,8 @@ export async function POST(req: NextRequest) {
             });
         }
 
-        // Tạo thumbnail link để hiển thị trực tiếp (hack để dùng được thẻ img)
-        const secureUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w1000`;
+        // Tạo link Google CDN để hiển thị trực tiếp trên web không bị chặn 429
+        const secureUrl = `https://lh3.googleusercontent.com/d/${fileId}=w1000`;
 
         // 6. Trả kết quả chuẩn (Giữ nguyên định dạng cũ của Cloudinary để UI không bị hỏng)
         return NextResponse.json({

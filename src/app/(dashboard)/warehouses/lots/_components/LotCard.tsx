@@ -1,4 +1,4 @@
-import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone, Calendar, Plus } from 'lucide-react'
+import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone, Calendar, Plus, Building2 } from 'lucide-react'
 import { useState, useRef } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
 import { Lot } from '../_hooks/useLotManagement'
@@ -487,7 +487,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                         </span>
                     )}
 
-                    {/* 3. VỊ TRÍ - Xanh Lục (Canh đều tự nhiên, hiển thị trọn vẹn mã vị trí) */}
+                    {/* 3. VỊ TRÍ - Xanh Lục (Đã lên kệ) hoặc Hổ Phách (Chờ xếp ở kho) hoặc Đỏ (Chưa gán) */}
                     {lot.positions && lot.positions.length > 0 ? (
                         <button
                             onClick={() => {
@@ -505,6 +505,23 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                             <MapPin size={10} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                             <span className="whitespace-nowrap">{lot.positions[0].code}</span>
                             {lot.positions.length > 1 && <span className="ml-0.5 text-[9px] opacity-75 font-normal shrink-0">+{lot.positions.length - 1}</span>}
+                        </button>
+                    ) : lot.warehouse_name ? (
+                        <button
+                            onClick={() => {
+                                if (lot.is_locked) {
+                                    showToast('Lô hàng đã bị khóa, không thể thay đổi vị trí.', 'warning')
+                                    return
+                                }
+                                if (!isSanxuat) {
+                                    onAssignLocation ? onAssignLocation(lot) : router.push(`/warehouses/map?assignLotId=${lot.id}`)
+                                }
+                            }}
+                            className={`h-6.5 flex-auto min-w-fit inline-flex items-center justify-center gap-1.5 px-2.5 rounded-full text-[10px] sm:text-[11px] font-bold tracking-tight bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800/80 ${!isSanxuat && !lot.is_locked ? 'hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-2xs`}
+                            title={`Kho: ${lot.warehouse_name} (Đang ở hàng chờ nhập kho, chưa xếp vào ô kệ)`}
+                        >
+                            <Building2 size={11} className="text-amber-600 dark:text-amber-400 shrink-0" />
+                            <span className="whitespace-nowrap">{lot.warehouse_name} (Chờ xếp)</span>
                         </button>
                     ) : (
                         <button
