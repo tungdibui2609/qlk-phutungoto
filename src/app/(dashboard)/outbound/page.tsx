@@ -111,11 +111,15 @@ export default function OutboundPage() {
 
     useEffect(() => {
         fetchOrders()
-        updateBufferCount()
+        if (isUtilityEnabled('lot_accounting_sync')) {
+            updateBufferCount()
+        } else {
+            setBufferCount(0)
+        }
     }, [systemType, currentSystem])
 
     const updateBufferCount = async () => {
-        if (!systemType) return
+        if (!systemType || !isUtilityEnabled('lot_accounting_sync')) return
         const { data } = await supabase
             .from('lots')
             .select('metadata')
@@ -531,19 +535,21 @@ export default function OutboundPage() {
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Xem và quản lý các phiếu xuất kho trong hệ thống</p>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
-                    {/* Hàng chờ button */}
-                    <button
-                        className="relative flex items-center h-9 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-                        onClick={() => setIsBufferOpen(true)}
-                    >
-                        <Inbox className="w-4 h-4 mr-1.5 text-amber-600 dark:text-amber-400" />
-                        <span>Hàng chờ</span>
-                        {bufferCount > 0 && (
-                            <span className="ml-1.5 px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-bold rounded-full shadow-xs leading-none">
-                                {bufferCount}
-                            </span>
-                        )}
-                    </button>
+                    {/* Hàng chờ button - Chỉ hiển thị khi bật module Đồng bộ Kho - Kế toán LOT */}
+                    {isUtilityEnabled('lot_accounting_sync') && (
+                        <button
+                            className="relative flex items-center h-9 px-3 bg-amber-50 hover:bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:hover:bg-amber-900/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-semibold shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+                            onClick={() => setIsBufferOpen(true)}
+                        >
+                            <Inbox className="w-4 h-4 mr-1.5 text-amber-600 dark:text-amber-400" />
+                            <span>Hàng chờ</span>
+                            {bufferCount > 0 && (
+                                <span className="ml-1.5 px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-bold rounded-full shadow-xs leading-none">
+                                    {bufferCount}
+                                </span>
+                            )}
+                        </button>
+                    )}
 
                     {/* Grouped Reports */}
                     <div className="flex items-center rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 p-0.5 shadow-xs">

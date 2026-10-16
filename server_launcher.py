@@ -804,6 +804,22 @@ class ServerManagerGUI:
 
             self.log(f"📦 Đang xuất dữ liệu từ Supabase Local ra: {backup_file.name}...")
 
+            # Dọn dẹp file tạm telemetry nếu có để tránh lỗi FileSystem.rename của Supabase CLI trên Windows
+            try:
+                supabase_home = Path.home() / ".supabase"
+                if supabase_home.exists():
+                    for tmp_f in supabase_home.glob("telemetry.json.tmp.*"):
+                        try:
+                            tmp_f.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            dump_env = os.environ.copy()
+            dump_env["DO_NOT_TRACK"] = "1"
+            dump_env["SUPABASE_TELEMETRY"] = "false"
+
             cmd = f'cmd.exe /c npx.cmd supabase db dump --local --data-only -f "{str(backup_file)}"'
             res = subprocess.run(
                 cmd,
@@ -811,6 +827,7 @@ class ServerManagerGUI:
                 shell=True,
                 capture_output=True,
                 text=True,
+                env=dump_env,
                 timeout=180
             )
 
