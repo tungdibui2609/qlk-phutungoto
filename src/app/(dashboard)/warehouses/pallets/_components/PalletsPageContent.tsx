@@ -10,11 +10,13 @@ import {
     Edit3, Check, Calendar, MapPin, Users,
     Tag, AlertCircle, FileSpreadsheet, Link2,
     Unlink, CheckCircle2, AlertTriangle, Zap,
-    ArrowUpRight, Eye
+    ArrowUpRight, Eye, Sparkles, Clock, Factory
 } from 'lucide-react'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 import { syncDatesFromBoxesToLot } from '@/lib/lotDateSync'
+import { Combobox } from '@/components/ui/Combobox'
+import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 
 interface BoxLabelItem {
     id: string
@@ -28,6 +30,7 @@ interface BoxLabelItem {
     metadata?: {
         pallet_stt?: string
         pallet_local_id?: string
+        tag?: string | null
         scan_type?: string
         stamp_line1?: string
         stamp_line2?: string
@@ -63,6 +66,7 @@ interface PalletLot {
 
 interface UnlinkedPalletGroup {
     pallet_stt: string
+    pallet_tag?: string | null
     boxes: BoxLabelItem[]
     total_weight: number
     created_at: string
@@ -72,6 +76,125 @@ interface UnlinkedPalletGroup {
         daily_seq?: number | null
         product_name?: string
     } | null
+}
+
+interface WarehouseProduct {
+    id: string
+    name: string
+    sku: string
+    unit: string | null
+    aliases?: string | null
+    internal_name?: string | null
+}
+
+function findBestMatchingProduct(
+    boxes: BoxLabelItem[],
+    products: WarehouseProduct[]
+): { product: WarehouseProduct | null; matchScore: number; matchReason: string } {
+    if (!products || products.length === 0 || !boxes || boxes.length === 0) {
+        return { product: null, matchScore: 0, matchReason: '' }
+    }
+
+    const sampleBox = boxes.find(b => b.metadata?.product_name || b.metadata?.sku || b.metadata?.stamp_line1) || boxes[0]
+    const boxMeta = sampleBox.metadata || {}
+    const rawBoxProductName = boxMeta.product_name || sampleBox.products?.name || ''
+    const rawBoxSku = boxMeta.sku || sampleBox.products?.sku || ''
+    const rawStampL1 = boxMeta.stamp_line1 || ''
+    const rawSpec = boxMeta.spec || ''
+
+    const cleanStr = (s: string) =>
+        s
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]/g, ' ')
+            .trim()
+
+    const cleanBoxName = cleanStr(rawBoxProductName)
+    const cleanBoxSku = cleanStr(rawBoxSku)
+
+    const stampDigits = rawStampL1.replace(/\D/g, '')
+
+    let bestMatch: WarehouseProduct | null = null
+    let maxScore = -1
+    let bestReason = ''
+
+    for (const p of products) {
+        let score = 0
+        const reasons: string[] = []
+        const cleanPName = cleanStr(p.name || '')
+        const cleanPSku = cleanStr(p.sku || '')
+        const pSkuDigits = (p.sku || '').replace(/\D/g, '')
+
+        // 1. Kiểm tra SKU số đóng dấu (ví dụ 101020104)
+        if (stampDigits && pSkuDigits && (stampDigits.includes(pSkuDigits) || pSkuDigits.includes(stampDigits.slice(0, 8)))) {
+            score += 50
+            reasons.push('Khớp mã số con dấu')
+        } else if (cleanBoxSku && cleanPSku && (cleanBoxSku.includes(cleanPSku) || cleanPSku.includes(cleanBoxSku))) {
+            score += 40
+            reasons.push('Khớp mã SKU')
+        }
+
+        // 2. Đặc biệt phân biệt: CÓ HẠT vs KHÔNG HẠT
+        const isBoxCoHat = cleanBoxName.includes('co hat') || (cleanBoxName.includes('hat') && !cleanBoxName.includes('khong hat') && !cleanBoxName.includes('bo hat'))
+        const isBoxKhongHat = cleanBoxName.includes('khong hat') || cleanBoxName.includes('bo hat') || cleanBoxName.includes('ko hat')
+
+        const isPCoHat = cleanPName.includes('co hat') || (cleanPName.includes('hat') && !cleanPName.includes('khong hat') && !cleanPName.includes('bo hat'))
+        const isPKhongHat = cleanPName.includes('khong hat') || cleanPName.includes('bo hat') || cleanPName.includes('ko hat')
+
+        if (isBoxCoHat && isPCoHat) {
+            score += 35
+            reasons.push('Có hạt')
+        } else if (isBoxKhongHat && isPKhongHat) {
+            score += 35
+            reasons.push('Không hạt')
+        } else if ((isBoxCoHat && isPKhongHat) || (isBoxKhongHat && isPCoHat)) {
+            score -= 60 // Trừ mạnh để tuyệt đối không khớp nhầm
+        }
+
+        // 3. Phân biệt giống Sầu riêng: Ri6 vs Monthong / Dona
+        if (cleanBoxName.includes('ri6') && cleanPName.includes('ri6')) {
+            score += 25
+            reasons.push('Giống Ri6')
+        } else if ((cleanBoxName.includes('monthong') || cleanBoxName.includes('dona')) && (cleanPName.includes('monthong') || cleanPName.includes('dona'))) {
+            score += 25
+            reasons.push('Giống Monthong/Dona')
+        }
+
+        // 4. Khớp phân loại/hạng (A, B, C)
+        const grades = ['c', 'b', 'a']
+        for (const g of grades) {
+            const gradeWord = ` ${g} `
+            const boxHasGrade = cleanBoxName.includes(`loai ${g}`) || cleanBoxName.includes(`mui ${g}`) || cleanBoxName.includes(`hang ${g}`) || ` ${cleanBoxName} `.includes(gradeWord) || cleanStr(rawSpec) === g
+            const pHasGrade = cleanPName.includes(`loai ${g}`) || cleanPName.includes(`mui ${g}`) || cleanPName.includes(`hang ${g}`) || ` ${cleanPName} `.includes(gradeWord)
+
+            if (boxHasGrade && pHasGrade) {
+                score += 20
+                reasons.push(`Loại ${g.toUpperCase()}`)
+                break
+            }
+        }
+
+        // 5. Khớp các từ khóa khác (cấp đông, múi, nguyên trái, hầm đông...)
+        const keywords = ['cap dong', 'mui', 'nguyen trai', 'sau rieng', 'ham dong']
+        for (const kw of keywords) {
+            if (cleanBoxName.includes(kw) && cleanPName.includes(kw)) {
+                score += 8
+            }
+        }
+
+        if (score > maxScore) {
+            maxScore = score
+            bestMatch = p
+            bestReason = reasons.join(' · ')
+        }
+    }
+
+    return {
+        product: maxScore > 15 ? bestMatch : (products[0] || null),
+        matchScore: maxScore,
+        matchReason: bestReason || (bestMatch ? 'Gợi ý từ danh mục' : '')
+    }
 }
 
 function getBoxIndex(box: BoxLabelItem): string {
@@ -103,6 +226,9 @@ export default function PalletsPageContent() {
     // Available Lots on web (for manual linking & matching)
     const [allActiveLots, setAllActiveLots] = useState<{ id: string; code: string; daily_seq: number | null; product_name?: string }[]>([])
 
+    // Available Products for Quick Lot Creation & Auto-matching
+    const [warehouseProducts, setWarehouseProducts] = useState<WarehouseProduct[]>([])
+
     const [isLoading, setIsLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState('')
     const [boxSearchQuery, setBoxSearchQuery] = useState('')
@@ -115,6 +241,22 @@ export default function PalletsPageContent() {
     const [linkLotSearch, setLinkLotSearch] = useState('')
     const [selectedLotForLink, setSelectedLotForLink] = useState<string | null>(null)
     const [isLinking, setIsLinking] = useState(false)
+
+    // Quick Approve & Create Lot Modal
+    const [approveGroup, setApproveGroup] = useState<UnlinkedPalletGroup | null>(null)
+    const [proposedLotCode, setProposedLotCode] = useState('')
+    const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+    const [customLotTag, setCustomLotTag] = useState('')
+    const [customQuantity, setCustomQuantity] = useState<number>(0)
+    const [customInboundDate, setCustomInboundDate] = useState<string>('')
+    const [customPackagingDate, setCustomPackagingDate] = useState<string>('')
+    const [customPeelingDate, setCustomPeelingDate] = useState<string>('')
+    const [customProductionPlace, setCustomProductionPlace] = useState<string>('')
+    const [customMaterialZone, setCustomMaterialZone] = useState<string>('')
+    const [customNotes, setCustomNotes] = useState<string>('')
+    const [isApproving, setIsApproving] = useState(false)
+    const [isGeneratingCode, setIsGeneratingCode] = useState(false)
+    const [matchInfo, setMatchInfo] = useState<{ score: number; reason: string } | null>(null)
 
     // Auto-linking progress
     const [isAutoLinking, setIsAutoLinking] = useState(false)
@@ -245,8 +387,11 @@ export default function PalletsPageContent() {
                     return false
                 })
 
+                const palletTag = boxes.find(b => b.metadata?.tag)?.metadata?.tag || null
+
                 groups.push({
                     pallet_stt: stt,
+                    pallet_tag: palletTag,
                     boxes,
                     total_weight,
                     created_at: latestCreated,
@@ -259,6 +404,28 @@ export default function PalletsPageContent() {
                 if (!prev) return groups[0] || null
                 return groups.find(g => g.pallet_stt === prev.pallet_stt) || groups[0] || null
             })
+
+            // 3. Fetch products for quick lot creation & intelligent matching
+            try {
+                const { data: prodData } = await supabase
+                    .from('products')
+                    .select('id, name, sku, unit, aliases, internal_name')
+                    .or(`system_type.eq.${currentSystem.code},system_code.eq.${currentSystem.code}`)
+                    .order('name')
+
+                if (prodData && prodData.length > 0) {
+                    setWarehouseProducts(prodData as WarehouseProduct[])
+                } else {
+                    const { data: fallbackProds } = await supabase
+                        .from('products')
+                        .select('id, name, sku, unit, aliases, internal_name')
+                        .order('name')
+                        .limit(300)
+                    if (fallbackProds) setWarehouseProducts(fallbackProds as WarehouseProduct[])
+                }
+            } catch (pErr) {
+                console.warn('Lỗi tải danh mục sản phẩm cho Pallet:', pErr)
+            }
         } catch (err: any) {
             console.error('Lỗi tải dữ liệu Pallet:', err)
             showToast('Không thể tải dữ liệu Pallet: ' + (err.message || 'Lỗi mạng'), 'error')
@@ -372,6 +539,30 @@ export default function PalletsPageContent() {
             // Tự động đồng bộ ngày sản xuất / ngày nguyên liệu vào Lô
             await syncDatesFromBoxesToLot(targetLot.id, group.boxes)
 
+            // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
+            const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
+            if (tagFromGroup && tagFromGroup.trim()) {
+                const cleanTag = tagFromGroup.trim().toUpperCase()
+                try {
+                    const { data: existTag } = await supabase
+                        .from('lot_tags')
+                        .select('id')
+                        .eq('lot_id', targetLot.id)
+                        .eq('tag', cleanTag)
+                        .maybeSingle()
+
+                    if (!existTag) {
+                        await (supabase.from('lot_tags') as any).insert({
+                            lot_id: targetLot.id,
+                            tag: cleanTag,
+                            added_at: new Date().toISOString()
+                        })
+                    }
+                } catch (tErr) {
+                    console.warn('Lỗi ghi lot_tags:', tErr)
+                }
+            }
+
             showToast(`✅ Đã kết nối ${group.boxes.length} thùng (STT: ${group.pallet_stt}) vào Lô "${targetLot.code}"!`, 'success')
             setGroupToLink(null)
             setSelectedLotForLink(null)
@@ -409,6 +600,31 @@ export default function PalletsPageContent() {
 
                 if (!error) {
                     await syncDatesFromBoxesToLot(targetLot.id, group.boxes)
+
+                    // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
+                    const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
+                    if (tagFromGroup && tagFromGroup.trim()) {
+                        const cleanTag = tagFromGroup.trim().toUpperCase()
+                        try {
+                            const { data: existTag } = await supabase
+                                .from('lot_tags')
+                                .select('id')
+                                .eq('lot_id', targetLot.id)
+                                .eq('tag', cleanTag)
+                                .maybeSingle()
+
+                            if (!existTag) {
+                                await (supabase.from('lot_tags') as any).insert({
+                                    lot_id: targetLot.id,
+                                    tag: cleanTag,
+                                    added_at: new Date().toISOString()
+                                })
+                            }
+                        } catch (tErr) {
+                            console.warn('Lỗi ghi lot_tags tự động:', tErr)
+                        }
+                    }
+
                     successCount++
                 }
             }
@@ -442,6 +658,219 @@ export default function PalletsPageContent() {
             fetchData()
         } catch (err: any) {
             showToast('Lỗi khi xóa: ' + err.message, 'error')
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // ACTIONS: QUICK APPROVE & CREATE LOT FROM PALLET (Duyệt tạo Lô ngay)
+    // ─────────────────────────────────────────────────────────────
+    const productOptions = useMemo(() => {
+        return warehouseProducts.map(p => ({
+            value: p.id,
+            label: `${p.name} [${p.sku}]`,
+            name: p.name,
+            sku: p.sku,
+            unit: p.unit || 'Kg'
+        }))
+    }, [warehouseProducts])
+
+    const handleOpenApproveModal = async (group: UnlinkedPalletGroup) => {
+        setApproveGroup(group)
+        setIsApproving(false)
+        setIsGeneratingCode(true)
+
+        // 1. Sinh mã Lô gợi ý
+        let lotCode = ''
+        try {
+            if (currentSystem?.name) {
+                lotCode = await generateUniqueLotCode(supabase, currentSystem.name)
+            }
+        } catch (e) {
+            console.error('Lỗi sinh mã Lô tự động:', e)
+        }
+        if (!lotCode) {
+            lotCode = `DL-LOT-${group.pallet_stt}-${Date.now().toString().slice(-4)}`
+        }
+        setProposedLotCode(lotCode)
+        setIsGeneratingCode(false)
+
+        // 2. Khớp thông minh Sản Phẩm từ con dấu / tem quét
+        const match = findBestMatchingProduct(group.boxes, warehouseProducts)
+        setSelectedProductId(match.product?.id || (warehouseProducts[0]?.id ?? null))
+        setMatchInfo({ score: match.matchScore, reason: match.matchReason })
+
+        // 3. Kế thừa mã phụ (Tag)
+        setCustomLotTag(group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag || '')
+
+        // 4. Kế thừa khối lượng
+        setCustomQuantity(group.total_weight)
+
+        // 5. Kế thừa ngày tháng từ các thùng
+        const todayStr = new Date().toISOString().slice(0, 10)
+        const packDates = group.boxes.map(b => b.metadata?.packaging_date).filter(Boolean) as string[]
+        const prodDates = group.boxes.map(b => b.metadata?.production_date).filter(Boolean) as string[]
+
+        const defaultPackDate = packDates.length > 0 ? [...packDates].sort().reverse()[0] : todayStr
+        const defaultProdDate = prodDates.length > 0 ? [...prodDates].sort()[0] : (defaultPackDate || todayStr)
+
+        setCustomInboundDate(todayStr)
+        setCustomPackagingDate(defaultPackDate)
+        setCustomPeelingDate(defaultProdDate)
+
+        // 6. Kế thừa Nơi sản xuất (Tổ đóng gói) & Vùng nguyên liệu
+        const places = Array.from(new Set(group.boxes.map(b => b.metadata?.shift_group).filter(Boolean)))
+        const regions = Array.from(new Set(group.boxes.map(b => b.metadata?.region).filter(Boolean)))
+        setCustomProductionPlace(places.join(', '))
+        setCustomMaterialZone(regions.join(', '))
+
+        setCustomNotes(`Duyệt tạo từ Pallet quét di động STT: ${group.pallet_stt} (${group.boxes.length} thùng)`)
+    }
+
+    const handleRegenerateLotCode = async () => {
+        setIsGeneratingCode(true)
+        try {
+            if (currentSystem?.name) {
+                const code = await generateUniqueLotCode(supabase, currentSystem.name)
+                setProposedLotCode(code)
+            }
+        } catch (e: any) {
+            showToast('Lỗi sinh lại mã: ' + e.message, 'error')
+        } finally {
+            setIsGeneratingCode(false)
+        }
+    }
+
+    const handleConfirmCreateLot = async () => {
+        if (!approveGroup || !currentSystem?.code) return
+        if (!proposedLotCode.trim()) {
+            showToast('Vui lòng nhập Mã Lô định danh!', 'warning')
+            return
+        }
+        if (!selectedProductId) {
+            showToast('Vui lòng chọn Sản phẩm cho Lô hàng!', 'warning')
+            return
+        }
+
+        setIsApproving(true)
+        try {
+            const group = approveGroup
+            const dailySeqVal = encodeSTT(group.pallet_stt)
+
+            // Kiểm tra xem STT này đã bị Lô nào chiếm giữ trên hệ thống chưa
+            if (dailySeqVal !== null) {
+                const { data: existLots } = await (supabase.from('lots') as any)
+                    .select('id, code, inbound_date')
+                    .eq('system_code', currentSystem.code)
+                    .eq('daily_seq', dailySeqVal)
+                    .neq('status', 'hidden')
+                    .neq('status', 'exported')
+                    .limit(1)
+
+                if (existLots && existLots.length > 0) {
+                    const confirmed = window.confirm(
+                        `⚠️ Cảnh báo: STT "${group.pallet_stt}" đã được dùng bởi Lô "${existLots[0].code}".\n` +
+                        `Bạn có chắc chắn muốn tiếp tục tạo Lô mới "${proposedLotCode.trim()}" mang cùng STT này không?`
+                    )
+                    if (!confirmed) {
+                        setIsApproving(false)
+                        return
+                    }
+                }
+            }
+
+            // Kiểm tra trùng Mã Lô
+            const { count: codeCount } = await supabase
+                .from('lots')
+                .select('*', { count: 'exact', head: true })
+                .eq('code', proposedLotCode.trim())
+                .eq('system_code', currentSystem.code)
+
+            let finalLotCode = proposedLotCode.trim()
+            if (codeCount && codeCount > 0) {
+                finalLotCode = await generateUniqueLotCode(supabase, currentSystem.name)
+            }
+
+            const selectedProd = warehouseProducts.find(p => p.id === selectedProductId)
+
+            // 1. Tạo mới bản ghi Lô (lots)
+            const lotPayload: any = {
+                code: finalLotCode,
+                system_code: currentSystem.code,
+                daily_seq: dailySeqVal,
+                quantity: Number(customQuantity) || group.total_weight,
+                status: 'active',
+                inbound_date: customInboundDate || null,
+                packaging_date: customPackagingDate || null,
+                peeling_date: customPeelingDate || null,
+                notes: customNotes.trim() || null,
+                metadata: {
+                    created_from_pallet_stt: group.pallet_stt,
+                    pallet_tag: customLotTag.trim() || null,
+                    production_place: customProductionPlace.trim() || null,
+                    production_places: customProductionPlace.trim() ? [customProductionPlace.trim()] : [],
+                    material_zone: customMaterialZone.trim() || null,
+                    material_zones: customMaterialZone.trim() ? [customMaterialZone.trim()] : [],
+                    peeling_dates: customPeelingDate ? [customPeelingDate] : []
+                }
+            }
+
+            const { data: newLot, error: lotErr } = await (supabase
+                .from('lots') as any)
+                .insert(lotPayload)
+                .select('id, code')
+                .single()
+
+            if (lotErr) throw lotErr
+            const newLotId = newLot.id
+
+            // 2. Tạo bản ghi chi tiết sản phẩm Lô (lot_items)
+            const itemPayload = {
+                lot_id: newLotId,
+                product_id: selectedProductId,
+                quantity: Number(customQuantity) || group.total_weight,
+                unit: selectedProd?.unit || 'Kg'
+            }
+            const { error: itemErr } = await (supabase
+                .from('lot_items') as any)
+                .insert(itemPayload)
+
+            if (itemErr) {
+                console.error('Lỗi thêm lot_items:', itemErr)
+            }
+
+            // 3. Ghi mã phụ vào lot_tags nếu có
+            if (customLotTag && customLotTag.trim()) {
+                const cleanTag = customLotTag.trim().toUpperCase()
+                await (supabase.from('lot_tags') as any).insert({
+                    lot_id: newLotId,
+                    tag: cleanTag,
+                    added_at: new Date().toISOString()
+                })
+            }
+
+            // 4. Ghép toàn bộ thùng của Pallet vào Lô mới
+            const boxIds = group.boxes.map(b => b.id)
+            const { error: boxErr } = await (supabase
+                .from('box_labels') as any)
+                .update({
+                    lot_id: newLotId,
+                    status: 'linked'
+                })
+                .in('id', boxIds)
+
+            if (boxErr) throw boxErr
+
+            // 5. Đồng bộ ngày tháng thùng vào Lô
+            await syncDatesFromBoxesToLot(newLotId, group.boxes)
+
+            showToast(`🎉 Đã duyệt tạo thành công Lô "${finalLotCode}" cho Pallet STT ${group.pallet_stt} và kết nối ${group.boxes.length} thùng!`, 'success')
+            setApproveGroup(null)
+            fetchData()
+        } catch (err: any) {
+            console.error('Lỗi duyệt tạo Lô:', err)
+            showToast('Lỗi khi duyệt tạo Lô: ' + (err.message || 'Lỗi không xác định'), 'error')
+        } finally {
+            setIsApproving(false)
         }
     }
 
@@ -996,10 +1425,15 @@ export default function PalletsPageContent() {
                                             }`}
                                         >
                                             <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <span className="font-mono font-black text-sm text-stone-900 dark:text-zinc-100 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-2xs">
                                                         STT: {group.pallet_stt}
                                                     </span>
+                                                    {group.pallet_tag ? (
+                                                        <span className="text-[11px] font-bold text-orange-700 dark:text-orange-400 bg-orange-100/80 dark:bg-orange-950/50 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-800 flex items-center gap-1">
+                                                            <Tag size={11} /> {group.pallet_tag}
+                                                        </span>
+                                                    ) : null}
                                                     <span className="text-xs font-bold text-stone-600 dark:text-zinc-400">
                                                         {group.boxes.length} thùng
                                                     </span>
@@ -1030,8 +1464,26 @@ export default function PalletsPageContent() {
                                                     </button>
                                                 </div>
                                             ) : (
-                                                <div className="p-2 bg-stone-100 dark:bg-zinc-800/80 rounded-xl mb-3 text-[11px] text-stone-500 dark:text-zinc-400">
-                                                    Chưa có Lô mang STT "{group.pallet_stt}" trên Web mẹ. Hãy tạo Lô hoặc chọn một Lô có sẵn để ghép.
+                                                <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 mb-3 text-xs space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5 text-indigo-900 dark:text-indigo-300 font-bold">
+                                                            <Zap size={14} className="fill-indigo-600 text-indigo-600 dark:fill-indigo-400 dark:text-indigo-400" />
+                                                            <span>Chưa có Lô "{group.pallet_stt}"</span>
+                                                        </div>
+                                                        <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold">
+                                                            Chờ duyệt Lô
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
+                                                        Kế thừa thông tin con dấu & tự động kết nối {group.boxes.length} thùng này ngay lập tức.
+                                                    </p>
+                                                    <button
+                                                        onClick={() => handleOpenApproveModal(group)}
+                                                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer transition-all"
+                                                    >
+                                                        <Sparkles size={14} />
+                                                        <span>⚡ Duyệt Tạo Lô Ngay</span>
+                                                    </button>
                                                 </div>
                                             )}
 
@@ -1043,7 +1495,7 @@ export default function PalletsPageContent() {
                                                         className="flex items-center gap-1 px-2.5 py-1.5 bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 text-stone-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-700 rounded-lg font-bold transition-colors cursor-pointer"
                                                     >
                                                         <Eye size={13} />
-                                                        <span>Xem {group.boxes.length} thùng quét</span>
+                                                        <span>Xem {group.boxes.length} thùng</span>
                                                     </button>
 
                                                     <button
@@ -1057,6 +1509,17 @@ export default function PalletsPageContent() {
                                                         <Link2 size={13} />
                                                         <span>Ghép Lô</span>
                                                     </button>
+
+                                                    {hasMatch && (
+                                                        <button
+                                                            onClick={() => handleOpenApproveModal(group)}
+                                                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg font-bold transition-colors cursor-pointer"
+                                                            title="Duyệt tạo Lô mới riêng cho Pallet này"
+                                                        >
+                                                            <Sparkles size={13} />
+                                                            <span>Tạo Lô mới</span>
+                                                        </button>
+                                                    )}
                                                 </div>
 
                                                 <button
@@ -1182,11 +1645,16 @@ export default function PalletsPageContent() {
                     <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-3xl p-5 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[90vh]">
                         <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800">
                             <div>
-                                <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2">
+                                <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap">
                                     <span>Thông Tin Quét STT:</span>
                                     <span className="font-mono text-emerald-600 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-lg">
                                         {previewGroup.pallet_stt}
                                     </span>
+                                    {previewGroup.pallet_tag ? (
+                                        <span className="text-xs font-bold text-orange-700 dark:text-orange-400 bg-orange-100 dark:bg-orange-950/60 px-2.5 py-0.5 rounded-lg border border-orange-200 dark:border-orange-800 flex items-center gap-1">
+                                            <Tag size={12} /> {previewGroup.pallet_tag}
+                                        </span>
+                                    ) : null}
                                 </h3>
                                 <p className="text-xs text-stone-500">
                                     Đã quét {previewGroup.boxes.length} thùng · Tổng trọng lượng: {previewGroup.total_weight.toFixed(1)} Kg
@@ -1322,6 +1790,246 @@ export default function PalletsPageContent() {
                                 {isSavingEdit ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                                 <span>Lưu Thay Đổi</span>
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL DUYỆT TẠO LÔ MỚI TỪ PALLET QUÉT ─────────── */}
+            {approveGroup && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-2xl p-6 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[92vh]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-zinc-800">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
+                                    <Sparkles size={22} />
+                                </div>
+                                <div>
+                                    <h3 className="font-black text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2">
+                                        <span>Duyệt Tạo Lô Mới Từ Pallet</span>
+                                        <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                            STT: {approveGroup.pallet_stt}
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-stone-500 dark:text-zinc-400">
+                                        Kế thừa tự động dữ liệu quét từ điện thoại ({approveGroup.boxes.length} thùng · {approveGroup.total_weight.toFixed(1)} Kg)
+                                    </p>
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setApproveGroup(null)}
+                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                            {/* 1. Định danh Lô & Mã Phụ (Tag) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200/80 dark:border-zinc-700/60">
+                                <div>
+                                    <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                        Mã Lô Định Danh: <span className="text-rose-500">*</span>
+                                    </label>
+                                    <div className="flex items-center gap-1.5">
+                                        <input
+                                            type="text"
+                                            value={proposedLotCode}
+                                            onChange={e => setProposedLotCode(e.target.value.toUpperCase())}
+                                            placeholder="VD: DL-LOT-G22..."
+                                            className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleRegenerateLotCode}
+                                            disabled={isGeneratingCode}
+                                            title="Sinh lại mã ngẫu nhiên mới"
+                                            className="p-2 bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 rounded-xl text-stone-600 dark:text-zinc-300 cursor-pointer disabled:opacity-50"
+                                        >
+                                            <RefreshCw size={14} className={isGeneratingCode ? 'animate-spin' : ''} />
+                                        </button>
+                                    </div>
+                                    <span className="text-[10px] text-stone-400 mt-1 block">Tự động gắn Số Thứ Tự: {approveGroup.pallet_stt}</span>
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1 flex items-center gap-1">
+                                        <Tag size={13} className="text-orange-500" />
+                                        <span>Mã Phụ (Tag):</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={customLotTag}
+                                        onChange={e => setCustomLotTag(e.target.value.toUpperCase())}
+                                        placeholder="VD: TAG-01, VUNG-TRONG-02..."
+                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    />
+                                    <span className="text-[10px] text-stone-400 mt-1 block">Đồng bộ từ trường Tag trên app quét</span>
+                                </div>
+                            </div>
+
+                            {/* 2. Chọn Sản Phẩm & Nhận diện từ Con Dấu */}
+                            <div className="p-3.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
+                                        <Package size={14} className="text-indigo-600 dark:text-indigo-400" />
+                                        <span>Sản Phẩm Của Lô:</span>
+                                        <span className="text-rose-500">*</span>
+                                    </label>
+                                    {matchInfo && matchInfo.score > 15 ? (
+                                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950/70 px-2.5 py-0.5 rounded-full border border-emerald-300/80 dark:border-emerald-800 flex items-center gap-1">
+                                            <CheckCircle2 size={11} /> Khớp tự động: {matchInfo.reason}
+                                        </span>
+                                    ) : (
+                                        <span className="text-[10px] text-stone-400">Vui lòng chọn hoặc xác nhận đúng biến thể</span>
+                                    )}
+                                </div>
+
+                                <Combobox
+                                    options={productOptions}
+                                    value={selectedProductId}
+                                    onChange={val => setSelectedProductId(val)}
+                                    placeholder="Tìm kiếm sản phẩm (theo tên, mã SKU)..."
+                                    className="w-full text-xs"
+                                />
+
+                                {selectedProductId && (
+                                    <div className="text-[11px] text-stone-600 dark:text-zinc-400 bg-white/80 dark:bg-zinc-900/80 p-2.5 rounded-lg border border-indigo-100 dark:border-indigo-900/40 flex items-center justify-between">
+                                        <span>
+                                            SKU: <strong className="font-mono text-stone-800 dark:text-zinc-200">{warehouseProducts.find(p => p.id === selectedProductId)?.sku}</strong>
+                                        </span>
+                                        <span>
+                                            Đơn vị: <strong className="text-stone-800 dark:text-zinc-200">{warehouseProducts.find(p => p.id === selectedProductId)?.unit || 'Kg'}</strong>
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* 3. Khối lượng & Ngày tháng */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                                <div>
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                                        Khối lượng (Kg):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        value={customQuantity}
+                                        onChange={e => setCustomQuantity(parseFloat(e.target.value) || 0)}
+                                        className="w-full px-3 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{approveGroup.boxes.length} thùng quét</span>
+                                </div>
+
+                                <div>
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
+                                        <Calendar size={11} className="text-indigo-500" />
+                                        <span>Ngày nhập kho:</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={customInboundDate}
+                                        onChange={e => setCustomInboundDate(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
+                                        <Calendar size={11} className="text-amber-500" />
+                                        <span>Ngày đóng gói:</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={customPackagingDate}
+                                        onChange={e => setCustomPackagingDate(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
+                                        <Calendar size={11} className="text-orange-500" />
+                                        <span>Ngày sản xuất:</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={customPeelingDate}
+                                        onChange={e => setCustomPeelingDate(e.target.value)}
+                                        className="w-full px-2.5 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 4. Tổ đóng gói & Vùng nguyên liệu & Ghi chú */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
+                                        <Factory size={11} className="text-blue-500" />
+                                        <span>Nơi sản xuất / Tổ đóng gói:</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={customProductionPlace}
+                                        onChange={e => setCustomProductionPlace(e.target.value)}
+                                        placeholder="VD: Tổ 1, Xưởng Chánh Thu..."
+                                        className="w-full px-3 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
+                                        <MapPin size={11} className="text-emerald-500" />
+                                        <span>Vùng nguyên liệu:</span>
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={customMaterialZone}
+                                        onChange={e => setCustomMaterialZone(e.target.value)}
+                                        placeholder="VD: Bến Tre, Tây Nguyên..."
+                                        className="w-full px-3 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                                    Ghi chú Lô hàng:
+                                </label>
+                                <textarea
+                                    value={customNotes}
+                                    onChange={e => setCustomNotes(e.target.value)}
+                                    rows={2}
+                                    className="w-full px-3 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none resize-none"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Footer Buttons */}
+                        <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-zinc-800">
+                            <span className="text-[11px] text-stone-400">
+                                Khi duyệt, Lô sẽ được tạo trên Web và kết nối tự động toàn bộ {approveGroup.boxes.length} thùng.
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setApproveGroup(null)}
+                                    className="px-4 py-2 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+                                >
+                                    Hủy
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleConfirmCreateLot}
+                                    disabled={isApproving}
+                                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer disabled:opacity-50"
+                                >
+                                    {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                    <span>Tạo Lô & Kết Nối Ngay</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
