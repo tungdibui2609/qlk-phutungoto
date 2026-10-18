@@ -124,6 +124,9 @@ interface PalletItem {
   sku: string | null
   product_aliases?: string | null
   aliases?: string | null
+  location_code?: string | null
+  production_place?: string | null
+  material_zone?: string | null
   packaging_date: string | null
   production_date: string | null
   scan_type: 'label' | 'stamp'
@@ -898,8 +901,10 @@ export default function WebScannerPage() {
           packaging_date,
           peeling_date,
           created_at,
+          notes,
           metadata,
           products ( name, sku, aliases ),
+          positions!positions_lot_id_fkey ( code ),
           box_labels!inner ( id, code, quantity, metadata )
         `)
         .eq('system_code', systemCode)
@@ -939,6 +944,18 @@ export default function WebScannerPage() {
         const firstMeta = boxes[0]?.metadata || {}
         const isSpecial12 = !!(firstMeta.is_special_12 || (firstMeta.sku && (stampDictMap.special_12?.[firstMeta.sku.slice(0, 12)] || DEFAULT_STAMP_DICT.special_12?.[firstMeta.sku.slice(0, 12)])))
 
+        // Trích xuất vị trí kho (location / position)
+        let locationCode: string | null = null
+        if (Array.isArray(l.positions) && l.positions.length > 0) {
+          locationCode = l.positions.map((p: any) => p.code).filter(Boolean).join(', ')
+        }
+        if (!locationCode) {
+          locationCode = l.metadata?.location_code || l.metadata?.location || l.metadata?.position || null
+        }
+
+        const productionPlace = l.metadata?.production_place || firstMeta.production_place || firstMeta.factory || firstMeta.shift_group || null
+        const materialZone = l.metadata?.material_zone || firstMeta.region || firstMeta.province || null
+
         list.push({
           id: l.id,
           stt: stt.trim().toUpperCase(),
@@ -951,6 +968,9 @@ export default function WebScannerPage() {
           sku: l.products?.sku || firstMeta.sku || 'SKU',
           product_aliases: l.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
           aliases: l.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
+          location_code: locationCode,
+          production_place: productionPlace,
+          material_zone: materialZone,
           packaging_date: l.packaging_date || firstMeta.packaging_date || null,
           production_date: l.peeling_date || firstMeta.production_date || null,
           scan_type: isStamp ? 'stamp' : 'label',
@@ -979,6 +999,10 @@ export default function WebScannerPage() {
         )
         const isSpecial12 = !!(firstMeta.is_special_12 || (firstMeta.sku && (stampDictMap.special_12?.[firstMeta.sku.slice(0, 12)] || DEFAULT_STAMP_DICT.special_12?.[firstMeta.sku.slice(0, 12)])))
 
+        const locationCode = firstMeta.location_code || firstMeta.location || firstMeta.position || null
+        const productionPlace = firstMeta.production_place || firstMeta.factory || firstMeta.shift_group || null
+        const materialZone = firstMeta.region || firstMeta.province || null
+
         list.push({
           id: 'unlinked_' + stt,
           stt,
@@ -991,6 +1015,9 @@ export default function WebScannerPage() {
           sku: firstMeta.sku || boxes[0]?.products?.sku || 'SKU',
           product_aliases: boxes[0]?.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
           aliases: boxes[0]?.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
+          location_code: locationCode,
+          production_place: productionPlace,
+          material_zone: materialZone,
           packaging_date: firstMeta.packaging_date || null,
           production_date: firstMeta.production_date || null,
           scan_type: isStamp ? 'stamp' : 'label',
@@ -1791,10 +1818,16 @@ export default function WebScannerPage() {
                       className="p-3 rounded-xl bg-[#111827] border border-slate-800 hover:border-slate-700 transition cursor-pointer active:scale-[0.99] space-y-2 shadow-xs"
                     >
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black font-mono">
                             STT: {p.stt}
                           </span>
+                          {p.location_code && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold font-mono">
+                              <MapPin size={10} className="text-amber-400" />
+                              VT: {p.location_code}
+                            </span>
+                          )}
                           {p.is_linked ? (
                             <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
                               ✓ Đã kết nối LOT
@@ -1805,7 +1838,7 @@ export default function WebScannerPage() {
                             </span>
                           )}
                         </div>
-                        <span className="text-[10px] text-slate-400 font-mono">
+                        <span className="text-[10px] text-slate-400 font-mono shrink-0">
                           {p.boxes_count} thùng
                         </span>
                       </div>
@@ -1814,6 +1847,12 @@ export default function WebScannerPage() {
                         <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-black">
                           ⭐ 12 SỐ ĐẦU TRỌN GÓI
                         </span>
+                      )}
+
+                      {p.lot_code && (
+                        <div className="text-[11px] text-slate-400">
+                          Mã LOT Web: <span className="text-sky-400 font-mono font-bold">{p.lot_code}</span>
+                        </div>
                       )}
 
                       <p className="text-xs font-bold text-white leading-snug line-clamp-2">
@@ -1825,6 +1864,22 @@ export default function WebScannerPage() {
                           <span>🏷️ Gõ tắt:</span>
                           <span className="text-emerald-400 font-bold">{p.product_aliases}</span>
                         </div>
+                      )}
+
+                      {/* Vị trí lưu kho */}
+                      {p.location_code ? (
+                        <div className="flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
+                          <MapPin size={13} className="text-amber-400 shrink-0" />
+                          <span className="text-slate-400 text-[11px]">Vị trí kho:</span>
+                          <span className="font-black font-mono text-amber-300">{p.location_code}</span>
+                        </div>
+                      ) : (
+                        p.is_linked ? (
+                          <div className="flex items-center gap-1.5 text-[11px] text-slate-500 px-1">
+                            <MapPin size={12} className="text-slate-600 shrink-0" />
+                            <span>Chưa gắn vị trí kho</span>
+                          </div>
+                        ) : null
                       )}
 
                       <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
@@ -2473,7 +2528,7 @@ export default function WebScannerPage() {
             </div>
 
             {/* Status Badge */}
-            <div className="my-3">
+            <div className="my-2.5">
               {selectedPallet.is_linked ? (
                 <div className="p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-2">
                   <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
@@ -2483,6 +2538,46 @@ export default function WebScannerPage() {
                 <div className="p-2 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-2">
                   <AlertTriangle size={15} className="text-amber-400 shrink-0" />
                   <span>Pallet đang quét trực tiếp (Chờ duyệt LOT)</span>
+                </div>
+              )}
+            </div>
+
+            {/* Pallet Overview Info (Vị trí kho, Mã LOT, Sản phẩm) */}
+            <div className="mb-3 p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400">Vị trí kho:</span>
+                {selectedPallet.location_code ? (
+                  <span className="font-black font-mono text-amber-300 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded flex items-center gap-1">
+                    <MapPin size={12} className="text-amber-400" />
+                    {selectedPallet.location_code}
+                  </span>
+                ) : (
+                  <span className="text-slate-500 italic">Chưa gắn vị trí</span>
+                )}
+              </div>
+
+              {selectedPallet.lot_code && (
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-400">Mã LOT Web:</span>
+                  <span className="font-bold font-mono text-sky-400">{selectedPallet.lot_code}</span>
+                </div>
+              )}
+
+              {selectedPallet.product_name && (
+                <div className="pt-1 border-t border-slate-800/80">
+                  <span className="text-slate-400 block text-[10px] mb-0.5">Sản phẩm:</span>
+                  <p className="font-bold text-white leading-snug">{selectedPallet.product_name}</p>
+                </div>
+              )}
+
+              {(selectedPallet.production_place || selectedPallet.material_zone) && (
+                <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                  {selectedPallet.production_place && (
+                    <span>Nơi SX: <strong className="text-slate-200">{selectedPallet.production_place}</strong></span>
+                  )}
+                  {selectedPallet.material_zone && (
+                    <span>Vùng NL: <strong className="text-slate-200">{selectedPallet.material_zone}</strong></span>
+                  )}
                 </div>
               )}
             </div>

@@ -348,15 +348,17 @@ export function matchPalletSearch(pallet: any, query: string): boolean {
     const prodName = String(pallet.product_name || '').trim();
     const sku = String(pallet.sku || '').trim();
     const aliases = String(pallet.product_aliases || pallet.aliases || '').trim();
+    const locationCode = String(pallet.location_code || '').trim();
     const notes = String(pallet.notes || '').trim();
 
-    // 1. Khớp trực tiếp trên STT và LOT Code (nhanh nhất)
+    // 1. Khớp trực tiếp trên STT, LOT Code và Vị trí kho (nhanh nhất)
     const sttUnacc = normalizeSearchString(stt, true);
     const lotUnacc = normalizeSearchString(lotCode, true);
-    if (sttUnacc.includes(qUnacc) || lotUnacc.includes(qUnacc)) return true;
+    const locUnacc = normalizeSearchString(locationCode, true);
+    if (sttUnacc.includes(qUnacc) || lotUnacc.includes(qUnacc) || locUnacc.includes(qUnacc)) return true;
 
     // 2. Khớp chuỗi trên toàn bộ thông tin gộp
-    const fullText = [stt, lotCode, prodName, sku, aliases, notes].filter(Boolean).join(' ');
+    const fullText = [stt, lotCode, prodName, sku, aliases, locationCode, notes].filter(Boolean).join(' ');
     const fullNorm = fullText.toLowerCase().normalize('NFC');
     const fullUnacc = normalizeSearchString(fullText, true);
 
