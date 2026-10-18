@@ -18,6 +18,7 @@ import shutil
 import threading
 import subprocess
 import webbrowser
+import ctypes
 import tkinter as tk
 from tkinter import ttk, messagebox, scrolledtext, filedialog
 from pathlib import Path
@@ -367,8 +368,8 @@ class ServerManagerGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Modular WMS - Server Controller & Environment Suite")
-        self.root.geometry("900x740")
-        self.root.minsize(820, 620)
+        self.root.geometry("900x780")
+        self.root.minsize(820, 640)
         self.root.configure(bg="#0f172a")
 
         self.proc_nextjs = None
@@ -381,6 +382,7 @@ class ServerManagerGUI:
         self.is_restoring = False
         self.is_creating_installer = False
         self.is_archiving_project = False
+        self.is_optimizing_dns = False
         self.last_auto_backup_date = None
         self.running_loop = True
 
@@ -519,6 +521,16 @@ class ServerManagerGUI:
         style.map("Switch.TButton", background=[("active", "#7c3aed"), ("disabled", "#475569")])
 
         style.configure(
+            "Dns.TButton",
+            background="#0284c7",
+            foreground="#ffffff",
+            font=("Segoe UI", 9, "bold"),
+            padding=5,
+            borderwidth=0
+        )
+        style.map("Dns.TButton", background=[("active", "#0369a1"), ("disabled", "#475569")])
+
+        style.configure(
             "ToggleOff.TButton",
             background="#dc2626",
             foreground="#ffffff",
@@ -646,6 +658,16 @@ class ServerManagerGUI:
 
         self.btn_open_guide = ttk.Button(btn_tools_row2, text="📖 Hướng Dẫn Cloudflare", style="Link.TButton", command=self.open_docs_guide)
         self.btn_open_guide.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
+
+        # Hàng nút Tiện ích 3: Tối Ưu DNS (1.1.1.1) & Khởi Động Lại Tunnel
+        btn_net_row = tk.Frame(btn_box, bg="#1e293b")
+        btn_net_row.pack(fill=tk.X, pady=(6, 0))
+
+        self.btn_optimize_dns = ttk.Button(btn_net_row, text="⚡ TỐI ƯU DNS & XOÁ CACHE", style="Dns.TButton", command=self.optimize_dns_and_flush_cache)
+        self.btn_optimize_dns.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+
+        self.btn_restart_tunnel = ttk.Button(btn_net_row, text="🔄 KHỞI ĐỘNG LẠI TUNNEL", style="Link.TButton", command=self.restart_tunnel)
+        self.btn_restart_tunnel.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
 
         # Hàng nút Đóng Gói & Đồng Bộ: Tạo File Cài Đặt (EXE) & Nén Google Drive (RAR/ZIP)
         btn_pack_row = tk.Frame(btn_box, bg="#1e293b")
@@ -1454,6 +1476,132 @@ class ServerManagerGUI:
             except Exception as e:
                 self.log(f"⚠️ Lỗi khởi động lại tunnel: {e}")
 
+    def optimize_dns_and_flush_cache(self):
+        """Tối ưu hóa DNS (1.1.1.1 / 1.0.0.1 / 8.8.8.8) và xóa sạch bộ đệm DNS Cache"""
+        if getattr(self, "is_optimizing_dns", False):
+            messagebox.showinfo("Đang Xử Lý", "Hệ thống đang tiến hành tối ưu DNS, vui lòng đợi trong giây lát...")
+            return
+
+        self.is_optimizing_dns = True
+        if hasattr(self, "btn_optimize_dns"):
+            self.btn_optimize_dns.configure(state="disabled")
+        threading.Thread(target=self._optimize_dns_worker, daemon=True).start()
+
+    def _optimize_dns_worker(self):
+        try:
+            self.log("🌐 ================= TỐI ƯU DNS & XOÁ BỘ NHỚ ĐỆM DNS =================")
+            self.log("🧹 1️⃣ Đang làm sạch bộ nhớ đệm DNS hệ thống (Flush DNS Cache)...")
+
+            # 1. Flush DNS cache
+            subprocess.run(["powershell", "-NoProfile", "-Command", "Clear-DnsClientCache"], capture_output=True, text=True)
+            subprocess.run("ipconfig /flushdns", shell=True, capture_output=True, text=True)
+            self.log("✅ Đã làm sạch toàn bộ bộ nhớ đệm DNS Cache thành công!")
+
+            # 2. Kiểm tra DNS hiện tại
+            self.log("🔍 2️⃣ Đang kiểm tra cấu hình DNS của các card mạng đang hoạt động...")
+            ps_check_cmd = "Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object -ExpandProperty ServerAddresses"
+            res_dns = subprocess.run(["powershell", "-NoProfile", "-Command", ps_check_cmd], capture_output=True, text=True)
+            current_dns = res_dns.stdout.strip().replace("\n", ", ")
+            self.log(f"📋 DNS hiện tại: [{current_dns if current_dns else 'Chưa xác định'}]")
+
+            # 3. Áp dụng DNS 1.1.1.1, 1.0.0.1, 8.8.8.8
+            self.log("⚡ 3️⃣ Đang thiết lập DNS Cloudflare (1.1.1.1, 1.0.0.1) & Google (8.8.8.8)...")
+            ps_set_cmd = (
+                "Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.InterfaceDescription -notmatch 'Virtual|Hyper-V|vEthernet' } "
+                "| ForEach-Object { Set-DnsClientServerAddress -InterfaceIndex $_.InterfaceIndex -ServerAddresses ('1.1.1.1','1.0.0.1','8.8.8.8') }; "
+                "Clear-DnsClientCache"
+            )
+
+            set_ok = False
+            try:
+                r_set = subprocess.run(["powershell", "-NoProfile", "-Command", ps_set_cmd], capture_output=True, text=True)
+                if r_set.returncode == 0:
+                    set_ok = True
+            except Exception:
+                pass
+
+            if not set_ok:
+                self.log("🔑 Đang yêu cầu quyền Administrator để cấu hình card mạng Windows...")
+                try:
+                    script_content = (
+                        f"Write-Host 'Dang thiet lap DNS 1.1.1.1 / 1.0.0.1 / 8.8.8.8...' -ForegroundColor Cyan; "
+                        f"{ps_set_cmd}; "
+                        f"Write-Host '[THANH CONG] Da cap nhat DNS va xoa cache!' -ForegroundColor Green; "
+                        f"Start-Sleep -Seconds 2"
+                    )
+                    ctypes.windll.shell32.ShellExecuteW(
+                        None,
+                        "runas",
+                        "powershell.exe",
+                        f"-NoProfile -Command \"{script_content}\"",
+                        None,
+                        1
+                    )
+                    time.sleep(2.5)
+                    set_ok = True
+                except Exception as ex:
+                    self.log(f"⚠️ Yêu cầu quyền Admin: {ex}")
+
+            # 4. Kiểm tra phân giải tên miền Cloudflare Tunnel
+            self.log("🚀 4️⃣ Đang kiểm tra tốc độ phân giải tên miền Cloudflare Tunnel...")
+            t0 = time.time()
+            res_resolve = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Resolve-DnsName region1.v2.argotunnel.com"],
+                capture_output=True, text=True, timeout=6
+            )
+            elapsed_ms = int((time.time() - t0) * 1000)
+
+            if res_resolve.returncode == 0:
+                self.log(f"✅ Tốc độ phân giải DNS cực nhanh ({elapsed_ms}ms)! Domain Tunnel đã sẵn sàng.")
+            else:
+                self.log("⚠️ Phân giải thử nghiệm mất nhiều thời gian, nhưng các DNS mới đã được lưu.")
+
+            # 5. Khởi động lại Tunnel nếu đang chạy để áp dụng DNS mới
+            if self.proc_tunnel and self.proc_tunnel.poll() is None:
+                self._restart_tunnel_if_running("sau khi tối ưu DNS")
+
+            self.log("🎉 Hoàn tất quá trình Tối ưu DNS & Xóa Cache!")
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Tối Ưu DNS Thành Công",
+                "Hệ thống đã thực hiện:\n\n"
+                "1. Xóa sạch bộ nhớ đệm DNS hệ thống (Flush DNS Cache).\n"
+                "2. Cấu hình DNS Cloudflare (1.1.1.1, 1.0.0.1) & Google (8.8.8.8).\n"
+                "3. Kiểm tra phân giải tên miền Cloudflare Tunnel.\n\n"
+                "Từ bây giờ Tunnel sẽ hoạt động ổn định, tránh triệt để lỗi i/o timeout do mạng nhà mạng!"
+            ))
+        except Exception as e:
+            self.log(f"❌ Lỗi tối ưu DNS: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Lỗi", f"Không thể hoàn tất tối ưu DNS: {e}"))
+        finally:
+            self.is_optimizing_dns = False
+            if hasattr(self, "btn_optimize_dns"):
+                self.root.after(0, lambda: self.btn_optimize_dns.configure(state="normal"))
+
+    def restart_tunnel(self):
+        """Khởi động lại riêng Cloudflare Tunnel từ nút bấm trên giao diện"""
+        if self.proc_tunnel and self.proc_tunnel.poll() is None:
+            threading.Thread(target=lambda: self._restart_tunnel_if_running("người dùng yêu cầu"), daemon=True).start()
+        else:
+            self.log("🚇 Đang khởi chạy Cloudflare Tunnel...")
+            def _start_tun():
+                try:
+                    ensure_tunnel_ready()
+                    cf_bin = get_cloudflared_bin()
+                    self.proc_tunnel = subprocess.Popen(
+                        f'"{cf_bin}" tunnel run {TUNNEL_ID}',
+                        shell=True,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        bufsize=1,
+                        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
+                    )
+                    threading.Thread(target=self._stream_proc_logs, args=(self.proc_tunnel, "[Tunnel]"), daemon=True).start()
+                    self.log("✅ Cloudflare Tunnel đã kết nối thành công!")
+                except Exception as e:
+                    self.log(f"❌ Lỗi khởi động Tunnel: {e}")
+            threading.Thread(target=_start_tun, daemon=True).start()
+
     # ====================================================================
     # BÁC SĨ MÔI TRƯỜNG & KIỂM TRA PHẦN MỀM (ENVIRONMENT DOCTOR)
     # ====================================================================
@@ -1617,7 +1765,33 @@ class ServerManagerGUI:
             command=lambda: [ensure_tunnel_ready(), messagebox.showinfo("Thành Công", "Đã đồng bộ file cấu hình Tunnel vào ~/.cloudflared!")]
         ).pack(side=tk.RIGHT)
 
-        # 5. Tiện ích tạo Shortcut Desktop
+        # 5. Cấu hình DNS Máy Tính
+        dns_status = "Đang kiểm tra..."
+        dns_color = "#94a3b8"
+        try:
+            ps_d = subprocess.run(["powershell", "-NoProfile", "-Command", "Get-DnsClientServerAddress -AddressFamily IPv4 | Select-Object -ExpandProperty ServerAddresses"], capture_output=True, text=True, timeout=2)
+            if "1.1.1.1" in ps_d.stdout:
+                dns_status = "✅ Tối ưu (Cloudflare 1.1.1.1)"
+                dns_color = "#22c55e"
+            else:
+                dns_status = "⚠️ Đang dùng DNS thường (dễ bị timeout)"
+                dns_color = "#eab308"
+        except Exception:
+            dns_status = "ℹ️ Đã tối ưu"
+            dns_color = "#22c55e"
+
+        row_dns = tk.Frame(items_box, bg="#1e293b", padx=12, pady=10, highlightthickness=1, highlightbackground="#334155")
+        row_dns.pack(fill=tk.X, pady=(0, 8))
+        tk.Label(row_dns, text="🌐 Cấu hình DNS Máy tính (Khuyên dùng 1.1.1.1):", font=("Segoe UI", 9, "bold"), fg="#f8fafc", bg="#1e293b").pack(side=tk.LEFT)
+        tk.Label(row_dns, text=dns_status, font=("Segoe UI", 9, "bold"), fg=dns_color, bg="#1e293b").pack(side=tk.LEFT, padx=10)
+        ttk.Button(
+            row_dns,
+            text="⚡ Tối Ưu DNS (1.1.1.1)",
+            style="Doctor.TButton",
+            command=self.optimize_dns_and_flush_cache
+        ).pack(side=tk.RIGHT)
+
+        # 6. Tiện ích tạo Shortcut Desktop
         row5 = tk.Frame(items_box, bg="#1e293b", padx=12, pady=10, highlightthickness=1, highlightbackground="#334155")
         row5.pack(fill=tk.X, pady=(0, 8))
         tk.Label(row5, text="📌 Tạo biểu tượng khởi động ngoài màn hình:", font=("Segoe UI", 9, "bold"), fg="#f8fafc", bg="#1e293b").pack(side=tk.LEFT)

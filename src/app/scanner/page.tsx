@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Scan,
   Fingerprint,
@@ -37,7 +37,8 @@ import {
   WifiOff,
   Database,
   CloudDownload,
-  HardDrive
+  HardDrive,
+  Barcode
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeStampBox, DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
@@ -203,6 +204,12 @@ export default function WebScannerPage() {
   const [isSyncingLots, setIsSyncingLots] = useState<boolean>(false)
   const [isSyncingPending, setIsSyncingPending] = useState<boolean>(false)
 
+  // ── Offline Stamp Rules State (Match Mobile App) ──────────────
+  const [stampRulesCount, setStampRulesCount] = useState<number>(0)
+  const [lastStampSync, setLastStampSync] = useState<string | null>(null)
+  const [syncingStamp, setSyncingStamp] = useState<boolean>(false)
+  const [stampDictMap, setStampDictMap] = useState<Record<string, Record<string, string>>>(DEFAULT_STAMP_DICT)
+
   // ── Listen to Network Status & Initialize Offline DB ───────────
   useEffect(() => {
     const handleOnline = () => {
@@ -228,6 +235,28 @@ export default function WebScannerPage() {
     getPendingPallets().then(setPendingPallets).catch(() => {})
     getLotsCountFromOfflineDb().then(setOfflineLotsCount).catch(() => {})
     getOfflineMeta('lots_last_synced_at').then(setLastLotsSync).catch(() => {})
+
+    // Load cached stamp rules & meta
+    try {
+      const savedStampTime = localStorage.getItem('last_stamp_sync_time')
+      if (savedStampTime) setLastStampSync(savedStampTime)
+
+      const savedCount = localStorage.getItem('cached_stamp_rules_count')
+      if (savedCount) {
+        setStampRulesCount(parseInt(savedCount, 10) || 0)
+      } else {
+        let defCount = 0
+        Object.values(DEFAULT_STAMP_DICT).forEach(c => { defCount += Object.keys(c).length })
+        setStampRulesCount(defCount)
+      }
+
+      const cachedDict = localStorage.getItem('cached_stamp_dictionaries')
+      if (cachedDict) {
+        setStampDictMap(JSON.parse(cachedDict))
+      }
+    } catch (e) {
+      console.warn('Lỗi đọc cache quy tắc dấu đóng:', e)
+    }
 
     return () => {
       window.removeEventListener('online', handleOnline)
@@ -365,16 +394,17 @@ export default function WebScannerPage() {
           const stampLine2 = meta.stamp_line2 || b.finished_lot_code || b.semi_finished_lot_code || (b.code?.startsWith('STAMP-') ? b.code.split('-')[2] : '')
           const isStamp = meta.scan_type === 'stamp' || !!stampLine1 || !!stampLine2 || b.code?.startsWith('STAMP-')
 
-          // Check Special 12
+          // Check Special 12 & dictionary lookups (uses live or cached offline dictionary)
+          const activeDict = stampDictMap || DEFAULT_STAMP_DICT
           let isSpecial12 = false
           let special12Code = ''
           let special12Name = ''
           const rawL1 = stampLine1 || meta.sku || b.products?.sku || ''
           const c12 = rawL1.replace(/[^0-9]/g, '').slice(0, 12)
-          if (c12.length >= 12 && DEFAULT_STAMP_DICT.special_12?.[c12]) {
+          if (c12.length >= 12 && (activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12?.[c12])) {
             isSpecial12 = true
             special12Code = c12
-            special12Name = DEFAULT_STAMP_DICT.special_12[c12]
+            special12Name = activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12[c12]
           }
 
           let factory = meta.shift_group || ''
@@ -388,7 +418,7 @@ export default function WebScannerPage() {
             const cleanL2 = stampLine2.replace(/[^0-9]/g, '')
             if (cleanL2.length >= 1 && !factory) {
               const fCode = cleanL2.substring(0, 1)
-              factory = DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
+              factory = activeDict.factory?.[fCode] || DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
             }
             if (cleanL2.length >= 5 && !packagingDate) {
               packagingDate = `${cleanL2.substring(1, 3)}/${cleanL2.substring(3, 5)}`
@@ -404,7 +434,7 @@ export default function WebScannerPage() {
             }
             if (cleanL2.length >= 16 && !province) {
               const pCode = cleanL2.substring(14, 16)
-              province = DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
+              province = activeDict.province?.[pCode] || DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
             }
           }
 
@@ -619,10 +649,15 @@ export default function WebScannerPage() {
 
       if (mode === 'stamp') {
         const stampData = json.data
+        const l1 = stampData.stamp_line1 || ''
+        const l2 = stampData.stamp_line2 || ''
+        const localDecoded = decodeStampBox({
+          metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 }
+        }, stampDictMap)
         setPendingStamp({
-          stamp_line1: stampData.stamp_line1 || '',
-          stamp_line2: stampData.stamp_line2 || '',
-          decoded: stampData.decoded
+          stamp_line1: l1,
+          stamp_line2: l2,
+          decoded: localDecoded || stampData.decoded
         })
         setStampWeight('20')
         setStampCount('1')
@@ -651,7 +686,7 @@ export default function WebScannerPage() {
       const l2 = pendingStamp.stamp_line2.trim()
       const dec = decodeStampBox({
         metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 }
-      })
+      }, stampDictMap)
 
       // Get highest current box_index
       let startIdx = 1
@@ -731,7 +766,7 @@ export default function WebScannerPage() {
       try {
         const l1 = pendingStamp.stamp_line1.trim()
         const l2 = pendingStamp.stamp_line2.trim()
-        const dec = decodeStampBox({ metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 } })
+        const dec = decodeStampBox({ metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 } }, stampDictMap)
         await saveBoxesOffline(
           [],
           cleanStt,
@@ -862,7 +897,7 @@ export default function WebScannerPage() {
           created_at,
           metadata,
           products ( name, sku ),
-          box_labels ( id, code, quantity, metadata )
+          box_labels!inner ( id, code, quantity, metadata )
         `)
         .eq('system_code', systemCode)
         .order('created_at', { ascending: false })
@@ -899,7 +934,7 @@ export default function WebScannerPage() {
         )
 
         const firstMeta = boxes[0]?.metadata || {}
-        const isSpecial12 = !!(firstMeta.is_special_12 || (firstMeta.sku && DEFAULT_STAMP_DICT.special_12?.[firstMeta.sku.slice(0, 12)]))
+        const isSpecial12 = !!(firstMeta.is_special_12 || (firstMeta.sku && (stampDictMap.special_12?.[firstMeta.sku.slice(0, 12)] || DEFAULT_STAMP_DICT.special_12?.[firstMeta.sku.slice(0, 12)])))
 
         list.push({
           id: l.id,
@@ -937,7 +972,7 @@ export default function WebScannerPage() {
         const isStamp = boxes.some((b: any) =>
           b.metadata?.scan_type === 'stamp' || !!b.metadata?.stamp_line1 || (b.code && b.code.startsWith('STAMP-'))
         )
-        const isSpecial12 = !!(firstMeta.is_special_12 || (firstMeta.sku && DEFAULT_STAMP_DICT.special_12?.[firstMeta.sku.slice(0, 12)]))
+        const isSpecial12 = !!(firstMeta.is_special_12 || (firstMeta.sku && (stampDictMap.special_12?.[firstMeta.sku.slice(0, 12)] || DEFAULT_STAMP_DICT.special_12?.[firstMeta.sku.slice(0, 12)])))
 
         list.push({
           id: 'unlinked_' + stt,
@@ -961,6 +996,7 @@ export default function WebScannerPage() {
       setPalletsList(list)
       // Save snapshot to IndexedDB for offline viewing
       savePalletsToOfflineDb(list as any).catch(e => console.warn('Lỗi lưu cache pallet:', e))
+      return list
     } catch (err) {
       console.warn('Lỗi loadAllPallets, tự động chuyển sang đọc từ bộ nhớ máy offline:', err)
       try {
@@ -968,8 +1004,10 @@ export default function WebScannerPage() {
         if (cached && cached.length > 0) {
           setPalletsList(cached as any)
           triggerToast('⚡ Đang xem danh sách Pallet ngoại tuyến (Bộ nhớ máy)')
+          return cached as any
         }
       } catch {}
+      return []
     }
   }, [systemCode])
 
@@ -1015,15 +1053,16 @@ export default function WebScannerPage() {
           const stampLine2 = meta.stamp_line2 || b.finished_lot_code || b.semi_finished_lot_code || (b.code?.startsWith('STAMP-') ? b.code.split('-')[2] : '')
           const isStamp = meta.scan_type === 'stamp' || !!stampLine1 || !!stampLine2 || b.code?.startsWith('STAMP-')
 
+          const activeDict = stampDictMap || DEFAULT_STAMP_DICT
           let isSpecial12 = false
           let special12Code = ''
           let special12Name = ''
           const rawL1 = stampLine1 || meta.sku || b.products?.sku || ''
           const c12 = rawL1.replace(/[^0-9]/g, '').slice(0, 12)
-          if (c12.length >= 12 && DEFAULT_STAMP_DICT.special_12?.[c12]) {
+          if (c12.length >= 12 && (activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12?.[c12])) {
             isSpecial12 = true
             special12Code = c12
-            special12Name = DEFAULT_STAMP_DICT.special_12[c12]
+            special12Name = activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12[c12]
           }
 
           let factory = meta.shift_group || ''
@@ -1037,7 +1076,7 @@ export default function WebScannerPage() {
             const cleanL2 = stampLine2.replace(/[^0-9]/g, '')
             if (cleanL2.length >= 1 && !factory) {
               const fCode = cleanL2.substring(0, 1)
-              factory = DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
+              factory = activeDict.factory?.[fCode] || DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
             }
             if (cleanL2.length >= 5 && !packagingDate) {
               packagingDate = `${cleanL2.substring(1, 3)}/${cleanL2.substring(3, 5)}`
@@ -1053,7 +1092,7 @@ export default function WebScannerPage() {
             }
             if (cleanL2.length >= 16 && !province) {
               const pCode = cleanL2.substring(14, 16)
-              province = DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
+              province = activeDict.province?.[pCode] || DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
             }
           }
 
@@ -1102,6 +1141,68 @@ export default function WebScannerPage() {
     }
   }
 
+  // ── Sync Stamp Rules Offline Handler (Match Mobile App) ───────
+  const handleSyncStampRules = async () => {
+    if (!navigator.onLine) {
+      alert('Thiết bị đang không có kết nối Internet. Vui lòng kết nối Wifi hoặc 4G để tải quy tắc!')
+      return
+    }
+
+    setSyncingStamp(true)
+    try {
+      const { data, error } = await supabase
+        .from('stamp_dictionaries')
+        .select('category, code, name, description, sort_order')
+        .eq('is_active', true)
+
+      if (error) throw error
+
+      if (!data || data.length === 0) {
+        alert('Máy chủ chưa có quy tắc dấu đóng nào được kích hoạt.')
+        return
+      }
+
+      // Merge with default dictionary
+      const mergedMap: Record<string, Record<string, string>> = JSON.parse(JSON.stringify(DEFAULT_STAMP_DICT))
+      data.forEach((item: any) => {
+        if (!item.category || !item.code || !item.name) return
+        const cat = item.category.trim()
+        const code = item.code.trim().toUpperCase()
+        if (!mergedMap[cat]) mergedMap[cat] = {}
+        mergedMap[cat][code] = item.name.trim()
+      })
+
+      // Đồng bộ cấu hình mẫu định dạng dấu đóng động
+      try {
+        const { data: formatsData } = await supabase
+          .from('stamp_formats')
+          .select('*')
+          .eq('is_active', true)
+        if (formatsData && formatsData.length > 0) {
+          localStorage.setItem('cached_stamp_formats', JSON.stringify(formatsData))
+        }
+      } catch (fmtErr) {
+        console.warn('Lỗi tải stamp_formats:', fmtErr)
+      }
+
+      const now = new Date().toISOString()
+      localStorage.setItem('cached_stamp_dictionaries', JSON.stringify(mergedMap))
+      localStorage.setItem('cached_stamp_rules_count', String(data.length))
+      localStorage.setItem('last_stamp_sync_time', now)
+
+      setStampDictMap(mergedMap)
+      setStampRulesCount(data.length)
+      setLastStampSync(now)
+
+      triggerToast(`✅ Đã đồng bộ thành công ${data.length} quy tắc và mẫu định dạng từ Web mẹ!`)
+    } catch (err: any) {
+      console.error('Lỗi syncStampRules:', err)
+      alert('Lỗi tải quy tắc từ máy chủ: ' + (err.message || 'Không thể kết nối'))
+    } finally {
+      setSyncingStamp(false)
+    }
+  }
+
   // ── Sync LOTs Offline Handler ──────────────────────────────────
   const handleSyncLotsOffline = async () => {
     if (!navigator.onLine) {
@@ -1111,36 +1212,62 @@ export default function WebScannerPage() {
 
     setIsSyncingLots(true)
     try {
-      const { data, error } = await supabase
-        .from('lots')
-        .select('id, code, quantity, status, customer_id, created_at, updated_at, products(name, sku)')
-        .order('updated_at', { ascending: false })
-        .limit(3000)
+      // 1. Tải toàn bộ Pallet/LOT trên Cloud về máy (khớp 100% logic fetchCloudPallets của app Android)
+      const list = await loadAllPallets()
+      const palletCount = list?.length || 0
 
-      if (error) throw error
+      // 2. Tải danh mục LOT để tra cứu tìm kiếm nhanh
+      try {
+        const { data: lotsData } = await supabase
+          .from('lots')
+          .select(`
+            id,
+            code,
+            quantity,
+            status,
+            created_at,
+            metadata,
+            products ( name, sku )
+          `)
+          .order('created_at', { ascending: false })
+          .limit(3000)
 
-      if (data && data.length > 0) {
-        const mappedLots: OfflineLot[] = data.map((l: any) => ({
-          id: l.id,
-          lot_code: l.code,
-          product_name: l.products?.name,
-          sku: l.products?.sku,
-          quantity: l.quantity,
-          customer_id: l.customer_id,
-          status: l.status,
-          created_at: l.created_at,
-          updated_at: l.updated_at
-        }))
-
-        await saveLotsToOfflineDb(mappedLots)
-        const count = await getLotsCountFromOfflineDb()
-        const now = new Date().toISOString()
-        setOfflineLotsCount(count)
-        setLastLotsSync(now)
-        triggerToast(`✅ Đã lưu ${count} LOT vào bộ nhớ máy để tra cứu offline!`)
-      } else {
-        triggerToast('Không có dữ liệu LOT mới')
+        if (lotsData && lotsData.length > 0) {
+          const mappedLots: OfflineLot[] = lotsData.map((l: any) => ({
+            id: l.id,
+            lot_code: l.code,
+            product_name: l.products?.name || l.metadata?.product_name || 'Hàng đông lạnh',
+            sku: l.products?.sku || l.metadata?.sku || 'SKU',
+            quantity: l.quantity,
+            status: l.status,
+            created_at: l.created_at
+          }))
+          await saveLotsToOfflineDb(mappedLots)
+        }
+      } catch (lotErr) {
+        console.warn('Lỗi lưu LOT store, tiếp tục:', lotErr)
       }
+
+      // 3. Tải danh mục sản phẩm & aliases gợi ý gõ tắt (fetchProductsForSuggestions)
+      try {
+        const { data: prods } = await supabase
+          .from('products')
+          .select('id, name, sku, aliases')
+          .order('name')
+          .limit(1000)
+
+        if (prods && prods.length > 0) {
+          localStorage.setItem('cached_products', JSON.stringify(prods))
+        }
+      } catch {}
+
+      const now = new Date().toISOString()
+      setOfflineLotsCount(palletCount)
+      setLastLotsSync(now)
+      await setOfflineMeta('lots_last_synced_at', now)
+      await setOfflineMeta('lots_count', palletCount)
+
+      triggerToast(`✅ Đã lưu thành công ${palletCount} LOT/Pallet vào máy để xem ngoại tuyến!`)
     } catch (err: any) {
       alert(`Lỗi tải dữ liệu LOT: ${err.message}`)
     } finally {
@@ -1206,95 +1333,160 @@ export default function WebScannerPage() {
     }
   }
 
-  // Filtered pallets
-  const filteredPallets = palletsList.filter(p => {
-    if (palletFilter === 'linked' && !p.is_linked) return false
-    if (palletFilter === 'unlinked' && p.is_linked) return false
-    if (searchQuery.trim()) {
-      const q = searchQuery.toLowerCase().trim()
-      const matchStt = p.stt.toLowerCase().includes(q)
-      const matchProduct = (p.product_name || '').toLowerCase().includes(q)
-      const matchLot = (p.lot_code || '').toLowerCase().includes(q)
-      if (!matchStt && !matchProduct && !matchLot) return false
-    }
-    return true
-  })
+  // Filtered pallets & Lazy Pagination (prevents lag even with 10,000 pallets)
+  const [palletDisplayLimit, setPalletDisplayLimit] = useState<number>(30)
+
+  useEffect(() => {
+    setPalletDisplayLimit(30)
+  }, [palletFilter, searchQuery])
+
+  const filteredPallets = useMemo(() => {
+    return palletsList.filter(p => {
+      if (palletFilter === 'linked' && !p.is_linked) return false
+      if (palletFilter === 'unlinked' && p.is_linked) return false
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim()
+        const matchStt = p.stt.toLowerCase().includes(q)
+        const matchProduct = (p.product_name || '').toLowerCase().includes(q)
+        const matchLot = (p.lot_code || '').toLowerCase().includes(q)
+        if (!matchStt && !matchProduct && !matchLot) return false
+      }
+      return true
+    })
+  }, [palletsList, palletFilter, searchQuery])
+
+  const displayedPallets = useMemo(() => {
+    return filteredPallets.slice(0, palletDisplayLimit)
+  }, [filteredPallets, palletDisplayLimit])
 
   const currentTotalWeight = currentBoxes.reduce((acc, b) => acc + (b.quantity || 20), 0)
 
   return (
-    <div className="flex flex-col h-screen max-w-md mx-auto w-full bg-[#0b0f19] text-slate-100 select-none overflow-hidden relative">
-      {/* ── TOP HEADER (Match Mobile App) ───────────────────────── */}
-      <header className="shrink-0 bg-[#0f172a] border-b border-slate-800/80 px-3 py-2 flex items-center justify-between z-20 shadow-md">
-        <div className="flex items-center gap-2 overflow-hidden">
-          <div className="w-8 h-8 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
-            <span className="text-emerald-400 font-black text-xs">CT</span>
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <p className="text-[11px] font-bold text-slate-300 truncate">
-                CTG · Chánh Thu
-              </p>
-              {isOnline ? (
-                <span className="flex items-center gap-0.5 text-[9px] font-bold text-emerald-400 bg-emerald-500/10 px-1.5 py-0.2 rounded border border-emerald-500/20">
-                  <Wifi size={9} /> Online
-                </span>
-              ) : (
-                <span className="flex items-center gap-0.5 text-[9px] font-bold text-amber-400 bg-amber-500/20 px-1.5 py-0.2 rounded border border-amber-500/30 animate-pulse">
-                  <WifiOff size={9} /> Offline
-                </span>
-              )}
-            </div>
-            <div className="flex items-center gap-2 mt-0.5">
-              <span className="text-xs font-black text-white font-mono">
-                STT: <span className="text-amber-400">{activePalletStt}</span>
-              </span>
-              <span className="text-[10px] text-slate-400 font-medium">
-                ({currentBoxes.length}/{targetQty} thùng · {currentTotalWeight} Kg)
-              </span>
-            </div>
+    <div className="fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0b0f19] text-slate-100 select-none overflow-hidden z-10">
+      {/* ── TOP HEADER (Match Mobile App topBar) ────────────────── */}
+      <header className="shrink-0 bg-[#0f172a] border-b border-slate-800/90 px-3 py-2 z-20 shadow-md">
+        <div className="flex items-center justify-between gap-2">
+          {/* Pallet STT Selector Button */}
+          <button
+            onClick={() => {
+              setNewSttInput(activePalletStt)
+              setIsSwitchPalletModal(true)
+            }}
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-left transition active:scale-[0.98] min-w-0"
+          >
+            {activeTab === 'stamp' ? (
+              <Fingerprint size={16} className="text-amber-400 shrink-0" />
+            ) : (
+              <Scan size={16} className="text-emerald-400 shrink-0" />
+            )}
+            <span className={`text-[10px] font-black uppercase tracking-wider shrink-0 ${activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}`}>
+              {activeTab === 'stamp' ? 'DẤU MỰC' : 'TEM THÙNG'}
+            </span>
+            <span className="text-xs font-bold text-white font-mono truncate">
+              STT: <strong className="text-amber-400">{activePalletStt || '---'}</strong>
+            </span>
+            <ChevronRight size={13} className="text-slate-400 shrink-0" />
+          </button>
+
+          {/* Quick Action Buttons */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Sync Pending Badge if any */}
+            {pendingPallets.length > 0 && (
+              <button
+                onClick={handleSyncPendingQueue}
+                disabled={isSyncingPending || !isOnline}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold"
+                title="Đồng bộ Pallet ngoại tuyến"
+              >
+                <RefreshCw size={11} className={isSyncingPending ? 'animate-spin' : ''} />
+                <span>{pendingPallets.length}</span>
+              </button>
+            )}
+
+            {/* Flash button */}
+            <button
+              onClick={handleToggleTorch}
+              className={`w-9 h-9 rounded-xl border flex items-center justify-center transition active:scale-95 ${
+                torchActive 
+                  ? 'bg-amber-500/20 border-amber-500 text-amber-400' 
+                  : 'bg-slate-800/80 border-slate-700 text-slate-300'
+              }`}
+              title="Bật/tắt đèn Flash"
+            >
+              {torchActive ? <Zap size={16} /> : <ZapOff size={16} />}
+            </button>
+
+            {/* Manual input shortcut */}
+            <button
+              onClick={() => {
+                if (activeTab === 'stamp') {
+                  setManualStampLine1('')
+                  setManualStampLine2('')
+                  setIsManualStampModal(true)
+                } else {
+                  setIsManualLabelModal(true)
+                }
+              }}
+              className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700 text-slate-300 hover:text-white flex items-center justify-center active:scale-95 transition"
+              title="Nhập số tay"
+            >
+              <Tag size={16} />
+            </button>
+
+            {/* Switch Pallet */}
+            <button
+              onClick={() => {
+                setNewSttInput(activePalletStt)
+                setIsSwitchPalletModal(true)
+              }}
+              className="w-9 h-9 rounded-xl bg-slate-800/80 border border-slate-700 text-emerald-400 hover:text-emerald-300 flex items-center justify-center active:scale-95 transition"
+              title="Đổi STT Pallet"
+            >
+              <RotateCw size={16} />
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {pendingPallets.length > 0 && (
-            <button
-              onClick={handleSyncPendingQueue}
-              disabled={isSyncingPending || !isOnline}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-300 text-[10px] font-black transition active:scale-95"
-              title="Đồng bộ Pallet ngoại tuyến lên máy chủ"
-            >
-              <RefreshCw size={11} className={isSyncingPending ? 'animate-spin text-sky-400' : ''} />
-              <span>{pendingPallets.length} chờ</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => setIsSwitchPalletModal(true)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-400 text-xs font-bold transition active:scale-95"
-          >
-            <RotateCw size={13} />
-            <span>Đổi Pallet</span>
-          </button>
+        {/* Progress Bar (Matching Android app) */}
+        <div className="mt-1.5 space-y-1">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="text-slate-400">
+              Tiến độ: <strong className={activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
+            </span>
+            <span className="text-slate-400">
+              Tổng: <strong className="text-white font-mono">{currentTotalWeight}</strong> Kg
+            </span>
+          </div>
+          <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+            <div
+              className={`h-full transition-all duration-300 rounded-full ${
+                currentBoxes.length >= targetQty
+                  ? 'bg-emerald-500'
+                  : activeTab === 'stamp'
+                  ? 'bg-amber-400'
+                  : 'bg-emerald-400'
+              }`}
+              style={{ width: `${Math.min(100, (currentBoxes.length / targetQty) * 100)}%` }}
+            />
+          </div>
         </div>
       </header>
 
       {/* ── TOAST ALERT ─────────────────────────────────────────── */}
       {toastMessage && (
-        <div className="absolute top-16 left-3 right-3 z-50 p-3 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-white shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="absolute top-20 left-3 right-3 z-50 p-3 rounded-xl bg-slate-900/95 border border-emerald-500/50 text-white shadow-2xl flex items-center gap-2.5 animate-in fade-in slide-in-from-top-2 duration-200">
           <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
           <span className="text-xs font-semibold">{toastMessage}</span>
         </div>
       )}
 
       {/* ── TAB CONTENT ─────────────────────────────────────────── */}
-      <main className="flex-1 overflow-hidden relative flex flex-col">
+      <main className="flex-1 min-h-0 overflow-hidden relative flex flex-col">
         {/* TAB 1: QUÉT TEM (BARCODE / LABEL OCR) */}
         {activeTab === 'label' && (
-          <div className="flex-1 flex flex-col relative bg-black">
+          <div className="flex-1 min-h-0 flex flex-col relative bg-black">
             {/* Live Camera Viewfinder */}
-            <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+            <div className="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center">
               <video
                 ref={videoRef}
                 playsInline
@@ -1304,27 +1496,24 @@ export default function WebScannerPage() {
               />
 
               {/* Reticle Guideline */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6">
-                <div className="w-full max-w-[320px] aspect-[4/3] border-2 border-emerald-400/70 rounded-2xl relative shadow-[0_0_20px_rgba(16,185,129,0.25)] flex items-center justify-center">
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
+                {/* Reticle Header Badge */}
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/85 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold mb-3 shadow-lg">
+                  <Scan size={14} className="text-emerald-400" />
+                  <span>Đặt khung tem thùng vào đây</span>
+                </div>
+
+                <div className="w-[88%] max-w-[320px] aspect-[4/3] border-2 border-emerald-400/80 rounded-2xl relative shadow-[0_0_25px_rgba(16,185,129,0.25)] flex items-center justify-center bg-emerald-500/5">
                   <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-emerald-400 rounded-tl-lg"></div>
                   <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-emerald-400 rounded-tr-lg"></div>
                   <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-emerald-400 rounded-bl-lg"></div>
                   <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-emerald-400 rounded-br-lg"></div>
-
-                  <div className="text-center bg-black/60 backdrop-blur-sm px-3 py-1.5 rounded-lg border border-emerald-500/30">
-                    <p className="text-[11px] font-bold text-emerald-300">Đặt khung tem thùng vào đây</p>
-                    <p className="text-[9px] text-slate-300">Chụp rõ SKU, Lot, Ngày SX & STT Index</p>
-                  </div>
                 </div>
-              </div>
 
-              {/* Torch Button */}
-              <button
-                onClick={handleToggleTorch}
-                className="absolute top-4 right-4 p-2.5 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700 text-amber-400 shadow-lg active:scale-90 transition"
-              >
-                {torchActive ? <Zap size={18} /> : <ZapOff size={18} />}
-              </button>
+                <p className="text-[11px] text-slate-300 mt-3 px-3 py-1 rounded-xl bg-slate-900/80 backdrop-blur-xs text-center">
+                  Chụp rõ nét · Giữ thẳng góc và đủ ánh sáng
+                </p>
+              </div>
 
               {cameraError && (
                 <div className="absolute inset-x-4 top-4 p-3 rounded-xl bg-rose-950/90 border border-rose-500/50 text-rose-200 text-xs shadow-xl">
@@ -1340,35 +1529,67 @@ export default function WebScannerPage() {
               )}
             </div>
 
-            {/* Bottom Controls */}
-            <div className="shrink-0 bg-[#0f172a] border-t border-slate-800 p-4 flex items-center justify-between gap-4">
+            {/* Quick Clone Banner if boxes > 0 */}
+            {currentBoxes.length > 0 && currentBoxes.length < targetQty && (
+              <button
+                onClick={() => {
+                  const lastBox = currentBoxes[currentBoxes.length - 1]
+                  setLabelWeight(String(lastBox.quantity || 20))
+                  setLabelCount(String(targetQty - currentBoxes.length))
+                  setPendingLabel({
+                    sku: lastBox.sku,
+                    lot_code: lastBox.lot_code,
+                    product_name: lastBox.product_name,
+                    spec: lastBox.spec,
+                    shift_group: lastBox.shift_group,
+                    region: lastBox.region,
+                    production_date: lastBox.production_date,
+                    packaging_date: lastBox.packaging_date,
+                    weight: lastBox.quantity
+                  })
+                }}
+                className="shrink-0 bg-emerald-950/80 border-t border-emerald-500/30 px-3 py-2 flex items-center justify-between text-[11px] text-emerald-300 hover:text-emerald-200 transition active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <Copy size={13} className="text-emerald-400 shrink-0" />
+                  <span className="truncate">⚡ Nhân bản thùng #{currentBoxes[currentBoxes.length - 1].box_index} cho {targetQty - currentBoxes.length} thùng còn lại</span>
+                </div>
+                <ChevronRight size={14} className="text-emerald-400 shrink-0 ml-1" />
+              </button>
+            )}
+
+            {/* Bottom Controls Bar (Trigger row matching Android app) */}
+            <div className="shrink-0 bg-[#0f172a] border-t border-slate-800/90 px-6 py-2.5 flex items-center justify-around z-10">
               <button
                 onClick={() => setIsManualLabelModal(true)}
-                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition"
+                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition active:scale-95 w-16"
               >
-                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
                   <Tag size={18} />
                 </div>
-                <span className="text-[10px] font-bold">Nhập Tay</span>
+                <span className="text-[11px] font-bold">Nhập Tay</span>
               </button>
 
-              {/* Shutter Button */}
               <button
                 onClick={handleCaptureAndRecognize}
                 disabled={isRecognizing}
-                className="w-16 h-16 rounded-full bg-emerald-500 border-4 border-slate-900 shadow-[0_0_25px_rgba(16,185,129,0.5)] flex items-center justify-center text-slate-950 active:scale-95 transition"
+                className="w-16 h-16 rounded-full bg-emerald-500 border-4 border-slate-900 shadow-[0_0_25px_rgba(16,185,129,0.5)] flex items-center justify-center text-slate-950 active:scale-95 transition hover:bg-emerald-400"
               >
-                <Camera size={28} className="stroke-[2.5]" />
+                {isRecognizing ? (
+                  <Loader2 size={28} className="animate-spin text-slate-950" />
+                ) : (
+                  <Camera size={30} className="stroke-[2.5]" />
+                )}
               </button>
 
               <button
                 onClick={() => setActiveTab('pallets')}
-                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition"
+                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition active:scale-95 w-16"
               >
-                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
                   <Boxes size={18} />
                 </div>
-                <span className="text-[10px] font-bold">Pallet ({currentBoxes.length})</span>
+                <span className="text-[11px] font-bold">Pallet ({currentBoxes.length})</span>
               </button>
             </div>
           </div>
@@ -1376,9 +1597,9 @@ export default function WebScannerPage() {
 
         {/* TAB 2: DẤU ĐÓNG (INK STAMP OCR & MANUAL) */}
         {activeTab === 'stamp' && (
-          <div className="flex-1 flex flex-col relative bg-black">
+          <div className="flex-1 min-h-0 flex flex-col relative bg-black">
             {/* Live Camera Viewfinder */}
-            <div className="flex-1 relative overflow-hidden flex items-center justify-center">
+            <div className="flex-1 min-h-0 relative overflow-hidden flex items-center justify-center">
               <video
                 ref={videoRef}
                 playsInline
@@ -1387,33 +1608,35 @@ export default function WebScannerPage() {
                 className="w-full h-full object-cover"
               />
 
-              {/* Dual-line Reticle Guideline for Stamp */}
-              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-6">
-                <div className="w-full max-w-[340px] aspect-[16/9] border-2 border-amber-400/80 rounded-2xl relative shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col justify-between p-3 bg-black/30 backdrop-blur-[2px]">
+              {/* Dual-line Reticle Guideline for Stamp (Matching Android Reticle) */}
+              <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center p-4">
+                {/* Reticle Header Badge */}
+                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-900/85 border border-amber-500/40 text-amber-300 text-[11px] font-bold mb-3 shadow-lg">
+                  <Scan size={14} className="text-amber-400" />
+                  <span>Đặt 2 dòng dấu mực vào khung dưới</span>
+                </div>
+
+                <div className="w-[90%] max-w-[340px] aspect-[16/9] border-2 border-amber-400/80 rounded-2xl relative shadow-[0_0_25px_rgba(245,158,11,0.25)] flex flex-col justify-between p-3 bg-amber-400/5">
                   <div className="absolute -top-1 -left-1 w-5 h-5 border-t-4 border-l-4 border-amber-400 rounded-tl-lg"></div>
                   <div className="absolute -top-1 -right-1 w-5 h-5 border-t-4 border-r-4 border-amber-400 rounded-tr-lg"></div>
                   <div className="absolute -bottom-1 -left-1 w-5 h-5 border-b-4 border-l-4 border-amber-400 rounded-bl-lg"></div>
                   <div className="absolute -bottom-1 -right-1 w-5 h-5 border-b-4 border-r-4 border-amber-400 rounded-br-lg"></div>
 
-                  <div className="flex items-center justify-between border-b border-amber-500/40 pb-2">
-                    <span className="text-[10px] font-black uppercase text-amber-300">Dòng 1: Phân cấp (14 số)</span>
-                    <span className="text-[9px] font-mono text-slate-300">102010402001-0</span>
+                  <div className="flex items-center justify-between border-b border-amber-500/30 pb-2">
+                    <span className="text-[10px] font-black uppercase text-amber-300 bg-slate-900/80 px-2 py-0.5 rounded">DÒNG 1</span>
+                    <span className="text-[10px] font-mono text-slate-200">102010402001-0 (14 số)</span>
                   </div>
 
-                  <div className="flex items-center justify-between border-t border-amber-500/40 pt-2">
-                    <span className="text-[10px] font-black uppercase text-emerald-300">Dòng 2: Nguồn gốc (16 số)</span>
-                    <span className="text-[9px] font-mono text-slate-300">2151014102600066</span>
+                  <div className="flex items-center justify-between border-t border-amber-500/30 pt-2">
+                    <span className="text-[10px] font-black uppercase text-emerald-300 bg-slate-900/80 px-2 py-0.5 rounded">DÒNG 2</span>
+                    <span className="text-[10px] font-mono text-slate-200">2151014102600066 (16 số)</span>
                   </div>
                 </div>
-              </div>
 
-              {/* Torch Button */}
-              <button
-                onClick={handleToggleTorch}
-                className="absolute top-4 right-4 p-2.5 rounded-full bg-slate-900/80 backdrop-blur-md border border-slate-700 text-amber-400 shadow-lg active:scale-90 transition"
-              >
-                {torchActive ? <Zap size={18} /> : <ZapOff size={18} />}
-              </button>
+                <p className="text-[11px] text-slate-300 mt-3 px-3 py-1 rounded-xl bg-slate-900/80 backdrop-blur-xs text-center">
+                  Chụp rõ nét · Giữ thẳng góc và đủ ánh sáng
+                </p>
+              </div>
 
               {isRecognizing && (
                 <div className="absolute inset-0 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 z-30">
@@ -1423,39 +1646,71 @@ export default function WebScannerPage() {
               )}
             </div>
 
-            {/* Bottom Controls */}
-            <div className="shrink-0 bg-[#0f172a] border-t border-slate-800 p-4 flex items-center justify-between gap-4">
+            {/* Quick Clone Banner if boxes > 0 */}
+            {currentBoxes.length > 0 && currentBoxes.length < targetQty && (
+              <button
+                onClick={() => {
+                  const lastBox = currentBoxes[currentBoxes.length - 1]
+                  setStampWeight(String(lastBox.quantity || 20))
+                  setStampCount(String(targetQty - currentBoxes.length))
+                  setPendingStamp({
+                    stamp_line1: lastBox.stamp_line1 || lastBox.sku || '',
+                    stamp_line2: lastBox.stamp_line2 || lastBox.lot_code || '',
+                    decoded: decodeStampBox({
+                      metadata: {
+                        scan_type: 'stamp',
+                        stamp_line1: lastBox.stamp_line1 || lastBox.sku,
+                        stamp_line2: lastBox.stamp_line2 || lastBox.lot_code
+                      }
+                    }, stampDictMap)
+                  })
+                }}
+                className="shrink-0 bg-amber-950/80 border-t border-amber-500/30 px-3 py-2 flex items-center justify-between text-[11px] text-amber-300 hover:text-amber-200 transition active:scale-[0.99]"
+              >
+                <div className="flex items-center gap-1.5 truncate">
+                  <Copy size={13} className="text-amber-400 shrink-0" />
+                  <span className="truncate">⚡ Nhân bản thùng #{currentBoxes[currentBoxes.length - 1].box_index} cho {targetQty - currentBoxes.length} thùng còn lại</span>
+                </div>
+                <ChevronRight size={14} className="text-amber-400 shrink-0 ml-1" />
+              </button>
+            )}
+
+            {/* Bottom Controls Bar (Trigger row matching Android app) */}
+            <div className="shrink-0 bg-[#0f172a] border-t border-slate-800/90 px-6 py-2.5 flex items-center justify-around z-10">
               <button
                 onClick={() => {
                   setManualStampLine1('')
                   setManualStampLine2('')
                   setIsManualStampModal(true)
                 }}
-                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition"
+                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition active:scale-95 w-16"
               >
-                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
                   <Fingerprint size={18} />
                 </div>
-                <span className="text-[10px] font-bold">Nhập Số</span>
+                <span className="text-[11px] font-bold">Nhập Số</span>
               </button>
 
-              {/* Shutter Button */}
               <button
                 onClick={handleCaptureAndRecognize}
                 disabled={isRecognizing}
-                className="w-16 h-16 rounded-full bg-amber-500 border-4 border-slate-900 shadow-[0_0_25px_rgba(245,158,11,0.5)] flex items-center justify-center text-slate-950 active:scale-95 transition"
+                className="w-16 h-16 rounded-full bg-amber-500 border-4 border-slate-900 shadow-[0_0_25px_rgba(245,158,11,0.5)] flex items-center justify-center text-slate-950 active:scale-95 transition hover:bg-amber-400"
               >
-                <Camera size={28} className="stroke-[2.5]" />
+                {isRecognizing ? (
+                  <Loader2 size={28} className="animate-spin text-slate-950" />
+                ) : (
+                  <Camera size={30} className="stroke-[2.5]" />
+                )}
               </button>
 
               <button
                 onClick={() => setActiveTab('pallets')}
-                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition"
+                className="flex flex-col items-center gap-1 text-slate-400 hover:text-white transition active:scale-95 w-16"
               >
-                <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-slate-700">
+                <div className="w-10 h-10 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300">
                   <Boxes size={18} />
                 </div>
-                <span className="text-[10px] font-bold">Pallet ({currentBoxes.length})</span>
+                <span className="text-[11px] font-bold">Pallet ({currentBoxes.length})</span>
               </button>
             </div>
           </div>
@@ -1516,55 +1771,68 @@ export default function WebScannerPage() {
                   <p className="text-xs">Không tìm thấy Pallet nào khớp với bộ lọc</p>
                 </div>
               ) : (
-                filteredPallets.map(p => (
-                  <div
-                    key={p.id}
-                    onClick={() => handleOpenPalletDetail(p)}
-                    className="p-3 rounded-xl bg-[#111827] border border-slate-800 hover:border-slate-700 transition cursor-pointer active:scale-[0.99] space-y-2 shadow-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black font-mono">
-                          STT: {p.stt}
-                        </span>
-                        {p.is_linked ? (
-                          <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
-                            ✓ Đã kết nối LOT
+                <>
+                  {displayedPallets.map(p => (
+                    <div
+                      key={p.id}
+                      onClick={() => handleOpenPalletDetail(p)}
+                      className="p-3 rounded-xl bg-[#111827] border border-slate-800 hover:border-slate-700 transition cursor-pointer active:scale-[0.99] space-y-2 shadow-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-black font-mono">
+                            STT: {p.stt}
                           </span>
-                        ) : (
-                          <span className="text-[10px] font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">
-                            ⏳ Chờ duyệt LOT
+                          {p.is_linked ? (
+                            <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
+                              ✓ Đã kết nối LOT
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-amber-400 bg-amber-950/80 px-2 py-0.5 rounded border border-amber-800">
+                              ⏳ Chờ duyệt LOT
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono">
+                          {p.boxes_count} thùng
+                        </span>
+                      </div>
+
+                      {p.is_special_12 && (
+                        <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-black">
+                          ⭐ 12 SỐ ĐẦU TRỌN GÓI
+                        </span>
+                      )}
+
+                      <p className="text-xs font-bold text-white leading-snug line-clamp-2">
+                        {p.product_name}
+                      </p>
+
+                      <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
+                        <span>
+                          {p.scan_type === 'stamp' ? '📅 Nhập NL: ' : '📅 NSX: '}
+                          <strong className="text-amber-400 font-mono">{p.production_date || '---'}</strong>
+                        </span>
+                        {p.packaging_date && (
+                          <span>
+                            📦 Đóng gói: <strong className="text-slate-200 font-mono">{p.packaging_date}</strong>
                           </span>
                         )}
                       </div>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {p.boxes_count} thùng
-                      </span>
                     </div>
+                  ))}
 
-                    {p.is_special_12 && (
-                      <span className="inline-block px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[9px] font-black">
-                        ⭐ 12 SỐ ĐẦU TRỌN GÓI
-                      </span>
-                    )}
-
-                    <p className="text-xs font-bold text-white leading-snug line-clamp-2">
-                      {p.product_name}
-                    </p>
-
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
-                      <span>
-                        {p.scan_type === 'stamp' ? '📅 Nhập NL: ' : '📅 NSX: '}
-                        <strong className="text-amber-400 font-mono">{p.production_date || '---'}</strong>
-                      </span>
-                      {p.packaging_date && (
-                        <span>
-                          📦 Đóng gói: <strong className="text-slate-200 font-mono">{p.packaging_date}</strong>
-                        </span>
-                      )}
+                  {filteredPallets.length > palletDisplayLimit && (
+                    <div className="pt-2 pb-4 text-center">
+                      <button
+                        onClick={() => setPalletDisplayLimit(prev => prev + 30)}
+                        className="w-full py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 border border-slate-700 active:scale-[0.98] transition"
+                      >
+                        Tải thêm ({filteredPallets.length - palletDisplayLimit} Pallet còn lại)
+                      </button>
                     </div>
-                  </div>
-                ))
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -1610,6 +1878,56 @@ export default function WebScannerPage() {
                   {soundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
                 </button>
               </div>
+            </div>
+
+            {/* ── SECTION: OFFLINE STAMP RULES SYNC (Match Mobile App) ── */}
+            <div className="p-4 rounded-2xl bg-[#111827] border border-slate-800 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Barcode size={18} className="text-purple-400" />
+                  <h3 className="text-xs font-black uppercase tracking-wider text-purple-400">
+                    Quy Tắc Giải Mã Dấu Đóng (Offline)
+                  </h3>
+                </div>
+                <span className="text-xs font-black text-sky-400 font-mono">
+                  {stampRulesCount} quy tắc
+                </span>
+              </div>
+
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Dữ liệu này được lưu trong bộ nhớ máy để tự động giải mã 2 dòng dấu đóng ngay cả khi không có mạng wifi trong kho lạnh.
+              </p>
+
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800/80 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400">Số quy tắc trong máy:</span>
+                  <span className="text-sky-400 font-mono font-bold">{stampRulesCount} quy tắc</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-slate-400">Cập nhật lần cuối:</span>
+                  <span className="text-slate-300 font-mono text-[10px] italic">
+                    {lastStampSync ? new Date(lastStampSync).toLocaleString('vi-VN') : 'Dữ liệu mặc định'}
+                  </span>
+                </div>
+              </div>
+
+              <button
+                onClick={handleSyncStampRules}
+                disabled={syncingStamp}
+                className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center justify-center gap-2 shadow-lg shadow-purple-600/25 active:scale-[0.98]"
+              >
+                {syncingStamp ? (
+                  <>
+                    <Loader2 size={15} className="animate-spin" />
+                    <span>Đang tải từ máy chủ web...</span>
+                  </>
+                ) : (
+                  <>
+                    <CloudDownload size={15} />
+                    <span>Tải / Cập nhật quy tắc từ Web mẹ</span>
+                  </>
+                )}
+              </button>
             </div>
 
             {/* ── SECTION: OFFLINE LOT DATA SYNC (Match Mobile App) ── */}
@@ -1981,7 +2299,7 @@ export default function WebScannerPage() {
                 }
                 const dec = decodeStampBox({
                   metadata: { scan_type: 'stamp', stamp_line1: manualStampLine1, stamp_line2: manualStampLine2 }
-                })
+                }, stampDictMap)
                 setPendingStamp({
                   stamp_line1: manualStampLine1,
                   stamp_line2: manualStampLine2,
@@ -2260,46 +2578,103 @@ export default function WebScannerPage() {
         </div>
       )}
 
-      {/* ── MODAL: ĐỔI HOẶC TẠO PALLET ──────────────────────────── */}
+      {/* ── MODAL: ĐỔI HOẶC TẠO PALLET (MATCH ANDROID APP) ──────── */}
       {isSwitchPalletModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-200">
-          <div className="w-full max-w-md bg-[#111827] border border-slate-800 rounded-2xl p-4 space-y-3 shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <h3 className="text-xs font-black text-white uppercase tracking-wider">
-                Đổi hoặc Tạo Pallet Mới
-              </h3>
+        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-200">
+          <div className="w-full max-w-md bg-[#111827] border border-slate-800 rounded-2xl p-4 space-y-3 shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 shrink-0">
+              <div className="flex items-center gap-2">
+                <RotateCw size={18} className="text-emerald-400" />
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                  Chọn hoặc Nhập STT Pallet
+                </h3>
+              </div>
               <button onClick={() => setIsSwitchPalletModal(false)} className="text-slate-400 hover:text-white">
                 <X size={18} />
               </button>
             </div>
 
-            <div>
-              <label className="text-[10px] text-slate-400 block mb-1">Mã STT Pallet (VD: G23, G24, F100):</label>
-              <input
-                type="text"
-                value={newSttInput}
-                onChange={e => setNewSttInput(e.target.value.toUpperCase())}
-                placeholder="Nhập mã STT..."
-                className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 font-mono text-sm font-bold text-amber-400 uppercase"
-              />
-            </div>
+            <div className="space-y-3 overflow-y-auto pr-1 flex-1">
+              {/* Form Input New STT */}
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+                <div>
+                  <label className="text-[10px] text-slate-400 font-bold block mb-1">MÃ STT PALLET MỚI:</label>
+                  <input
+                    type="text"
+                    value={newSttInput}
+                    onChange={e => setNewSttInput(e.target.value.toUpperCase())}
+                    placeholder="VD: G23, G24, F100..."
+                    className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm font-bold text-amber-400 uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-slate-400 block mb-1">Số thùng mục tiêu (Chuẩn 30):</label>
+                  <input
+                    type="number"
+                    value={targetQty}
+                    onChange={e => setTargetQty(parseInt(e.target.value, 10) || 30)}
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-mono"
+                  />
+                </div>
+                <button
+                  onClick={() => {
+                    if (!newSttInput.trim()) {
+                      alert('Vui lòng nhập mã STT Pallet')
+                      return
+                    }
+                    const clean = newSttInput.trim().toUpperCase()
+                    setActivePalletStt(clean)
+                    loadCurrentPalletBoxes(clean)
+                    setIsSwitchPalletModal(false)
+                    setNewSttInput('')
+                    triggerToast(`Đã chuyển sang Pallet ${clean}`)
+                  }}
+                  className="w-full py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
+                >
+                  Xác Nhận Đổi Sang {newSttInput.trim() ? newSttInput.trim().toUpperCase() : 'Pallet Này'}
+                </button>
+              </div>
 
-            <div className="flex gap-2 pt-2">
-              <button
-                onClick={() => {
-                  if (!newSttInput.trim()) {
-                    alert('Vui lòng nhập mã STT')
-                    return
-                  }
-                  setActivePalletStt(newSttInput.trim().toUpperCase())
-                  setIsSwitchPalletModal(false)
-                  setNewSttInput('')
-                  triggerToast(`Đã chuyển sang Pallet ${newSttInput.trim().toUpperCase()}`)
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition"
-              >
-                Xác Nhận Đổi
-              </button>
+              {/* Quick Pick from Existing Pallets */}
+              {palletsList.length > 0 && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] text-slate-400 font-bold block mb-1 uppercase">
+                    HOẶC CHỌN TỪ PALLET ĐANG CÓ ({palletsList.length}):
+                  </label>
+                  <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                    {palletsList.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setActivePalletStt(p.stt)
+                          loadCurrentPalletBoxes(p.stt)
+                          setIsSwitchPalletModal(false)
+                          triggerToast(`Đã chuyển sang Pallet ${p.stt}`)
+                        }}
+                        className={`w-full p-2.5 rounded-xl border flex items-center justify-between text-left transition ${
+                          p.stt === activePalletStt
+                            ? 'bg-emerald-500/10 border-emerald-500 text-white'
+                            : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono font-bold text-amber-400 text-xs">
+                            {p.stt}
+                          </span>
+                          <span className="text-[10px] text-slate-400">
+                            ({p.boxes_count} thùng · {p.total_weight} Kg)
+                          </span>
+                        </div>
+                        {p.stt === activePalletStt ? (
+                          <span className="text-[10px] font-bold text-emerald-400">Đang chọn ✓</span>
+                        ) : (
+                          <span className="text-[10px] text-slate-500">Chọn →</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -27,7 +27,7 @@ export const viewport: Viewport = {
 
 export default function ScannerLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col font-sans antialiased overflow-x-hidden selection:bg-emerald-500 selection:text-white">
+    <div className="bg-[#0b0f19] text-slate-100 h-[100dvh] w-full overflow-hidden fixed inset-0 flex flex-col font-sans antialiased selection:bg-emerald-500 selection:text-white">
       <SwRegister />
       {children}
     </div>
