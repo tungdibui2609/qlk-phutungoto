@@ -127,6 +127,7 @@ interface PalletItem {
   location_code?: string | null
   production_place?: string | null
   material_zone?: string | null
+  tag?: string | null
   packaging_date: string | null
   production_date: string | null
   scan_type: 'label' | 'stamp'
@@ -138,11 +139,16 @@ interface PalletItem {
 export default function WebScannerPage() {
   const [activeTab, setActiveTab] = useState<'label' | 'stamp' | 'pallets' | 'settings'>('label')
   const [activePalletStt, setActivePalletStt] = useState<string>('G23')
+  const [activePalletTag, setActivePalletTag] = useState<string>('')
+  const [activePalletNotes, setActivePalletNotes] = useState<string>('')
   const [targetQty, setTargetQty] = useState<number>(30)
   const [currentBoxes, setCurrentBoxes] = useState<BoxItem[]>([])
   const [loadingBoxes, setLoadingBoxes] = useState<boolean>(false)
   const [isSwitchPalletModal, setIsSwitchPalletModal] = useState<boolean>(false)
   const [newSttInput, setNewSttInput] = useState<string>('')
+  const [newTagInput, setNewTagInput] = useState<string>('')
+  const [newNotesInput, setNewNotesInput] = useState<string>('')
+  const [newTargetQtyInput, setNewTargetQtyInput] = useState<number>(30)
 
   // Camera State
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -386,6 +392,12 @@ export default function WebScannerPage() {
         .order('code', { ascending: true })
 
       if (!error && data) {
+        if (data.length > 0) {
+          const firstMeta = data[0]?.metadata || {}
+          if (firstMeta.pallet_tag) setActivePalletTag(firstMeta.pallet_tag)
+          if (firstMeta.pallet_notes) setActivePalletNotes(firstMeta.pallet_notes)
+          if (firstMeta.target_qty) setTargetQty(parseInt(firstMeta.target_qty, 10) || 30)
+        }
         const mapped = data.map((b: any, idx: number) => {
           const meta = b.metadata || {}
           let boxIndex = String(meta.box_index || '')
@@ -713,6 +725,9 @@ export default function WebScannerPage() {
           finished_lot_code: l2,
           metadata: {
             pallet_stt: cleanStt,
+            pallet_tag: activePalletTag || undefined,
+            pallet_notes: activePalletNotes || undefined,
+            target_qty: targetQty || undefined,
             scan_type: 'stamp',
             stamp_line1: l1,
             stamp_line2: l2,
@@ -808,6 +823,9 @@ export default function WebScannerPage() {
           finished_lot_code: labelData.lot_code,
           metadata: {
             pallet_stt: cleanStt,
+            pallet_tag: activePalletTag || undefined,
+            pallet_notes: activePalletNotes || undefined,
+            target_qty: targetQty || undefined,
             scan_type: 'label',
             box_index: idx,
             sku: labelData.sku,
@@ -955,6 +973,8 @@ export default function WebScannerPage() {
 
         const productionPlace = l.metadata?.production_place || firstMeta.production_place || firstMeta.factory || firstMeta.shift_group || null
         const materialZone = l.metadata?.material_zone || firstMeta.region || firstMeta.province || null
+        const tag = l.metadata?.pallet_tag || l.metadata?.tag || firstMeta.pallet_tag || firstMeta.tag || null
+        const notes = l.notes || l.metadata?.pallet_notes || l.metadata?.notes || firstMeta.pallet_notes || firstMeta.notes || null
 
         list.push({
           id: l.id,
@@ -971,11 +991,12 @@ export default function WebScannerPage() {
           location_code: locationCode,
           production_place: productionPlace,
           material_zone: materialZone,
+          tag,
+          notes,
           packaging_date: l.packaging_date || firstMeta.packaging_date || null,
           production_date: l.peeling_date || firstMeta.production_date || null,
           scan_type: isStamp ? 'stamp' : 'label',
           is_special_12: isSpecial12,
-          notes: l.metadata?.notes || null,
           created_at: l.created_at
         })
         seen.add(stt.trim().toUpperCase())
@@ -1002,6 +1023,8 @@ export default function WebScannerPage() {
         const locationCode = firstMeta.location_code || firstMeta.location || firstMeta.position || null
         const productionPlace = firstMeta.production_place || firstMeta.factory || firstMeta.shift_group || null
         const materialZone = firstMeta.region || firstMeta.province || null
+        const tag = firstMeta.pallet_tag || firstMeta.tag || null
+        const notes = firstMeta.pallet_notes || firstMeta.notes || null
 
         list.push({
           id: 'unlinked_' + stt,
@@ -1018,6 +1041,8 @@ export default function WebScannerPage() {
           location_code: locationCode,
           production_place: productionPlace,
           material_zone: materialZone,
+          tag,
+          notes,
           packaging_date: firstMeta.packaging_date || null,
           production_date: firstMeta.production_date || null,
           scan_type: isStamp ? 'stamp' : 'label',
@@ -1400,9 +1425,12 @@ export default function WebScannerPage() {
           <button
             onClick={() => {
               setNewSttInput(activePalletStt)
+              setNewTagInput(activePalletTag)
+              setNewNotesInput(activePalletNotes)
+              setNewTargetQtyInput(targetQty)
               setIsSwitchPalletModal(true)
             }}
-            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-left transition active:scale-[0.98] min-w-0"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-left transition active:scale-[0.98] min-w-0"
           >
             {activeTab === 'stamp' ? (
               <Fingerprint size={16} className="text-amber-400 shrink-0" />
@@ -1415,6 +1443,16 @@ export default function WebScannerPage() {
             <span className="text-xs font-bold text-white font-mono truncate">
               STT: <strong className="text-amber-400">{activePalletStt || '---'}</strong>
             </span>
+            {activePalletTag && (
+              <span className="bg-orange-600/30 text-orange-400 border border-orange-500/40 px-1 py-0.2 rounded text-[9px] font-bold font-mono shrink-0">
+                🏷️ {activePalletTag}
+              </span>
+            )}
+            {activePalletNotes && (
+              <span className="bg-blue-600/30 text-blue-400 border border-blue-500/40 px-1 py-0.2 rounded text-[9px] font-bold shrink-0" title={activePalletNotes}>
+                📝 Ghi chú
+              </span>
+            )}
             <ChevronRight size={13} className="text-slate-400 shrink-0" />
           </button>
 
@@ -1828,6 +1866,11 @@ export default function WebScannerPage() {
                               VT: {p.location_code}
                             </span>
                           )}
+                          {p.tag && (
+                            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-orange-600/20 text-orange-400 border border-orange-500/40 text-[10px] font-bold font-mono">
+                              🏷️ {p.tag}
+                            </span>
+                          )}
                           {p.is_linked ? (
                             <span className="text-[10px] font-bold text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
                               ✓ Đã kết nối LOT
@@ -1863,6 +1906,13 @@ export default function WebScannerPage() {
                         <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
                           <span>🏷️ Gõ tắt:</span>
                           <span className="text-emerald-400 font-bold">{p.product_aliases}</span>
+                        </div>
+                      )}
+
+                      {p.notes && (
+                        <div className="text-[11px] text-slate-300 bg-slate-900/90 border border-slate-800/80 px-2.5 py-1 rounded-lg">
+                          <span className="text-slate-500 text-[10px] block font-bold">📝 GHI CHÚ:</span>
+                          <span className="text-slate-300 italic">{p.notes}</span>
                         </div>
                       )}
 
@@ -2580,6 +2630,25 @@ export default function WebScannerPage() {
                   )}
                 </div>
               )}
+
+              {/* Tag & Notes if available */}
+              {(selectedPallet.tag || selectedPallet.notes) && (
+                <div className="pt-1.5 border-t border-slate-800/80 space-y-1">
+                  {selectedPallet.tag && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-slate-400 text-[11px]">Mã phụ:</span>
+                      <span className="text-[11px] font-bold text-orange-400 bg-orange-600/20 border border-orange-500/30 px-1.5 py-0.5 rounded">
+                        🏷️ {selectedPallet.tag}
+                      </span>
+                    </div>
+                  )}
+                  {selectedPallet.notes && (
+                    <div className="text-[11px] text-blue-300 bg-blue-950/40 border border-blue-800/40 rounded-lg p-2 italic leading-relaxed">
+                      📝 {selectedPallet.notes}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Boxes List */}
@@ -2710,7 +2779,7 @@ export default function WebScannerPage() {
 
             <div className="space-y-3 overflow-y-auto pr-1 flex-1">
               {/* Form Input New STT */}
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
                 <div>
                   <label className="text-[10px] text-slate-400 font-bold block mb-1">MÃ STT PALLET MỚI:</label>
                   <input
@@ -2722,31 +2791,62 @@ export default function WebScannerPage() {
                   />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">Số thùng mục tiêu (Chuẩn 30):</label>
+                  <label className="text-[10px] text-slate-400 block mb-1">Chỉ tiêu số thùng (Mặc định: 30):</label>
                   <input
                     type="number"
-                    value={targetQty}
-                    onChange={e => setTargetQty(parseInt(e.target.value, 10) || 30)}
+                    value={newTargetQtyInput}
+                    onChange={e => setNewTargetQtyInput(parseInt(e.target.value, 10) || 30)}
+                    placeholder="30"
                     className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-mono"
                   />
                 </div>
-                <button
-                  onClick={() => {
-                    if (!newSttInput.trim()) {
-                      alert('Vui lòng nhập mã STT Pallet')
-                      return
-                    }
-                    const clean = newSttInput.trim().toUpperCase()
-                    setActivePalletStt(clean)
-                    loadCurrentPalletBoxes(clean)
-                    setIsSwitchPalletModal(false)
-                    setNewSttInput('')
-                    triggerToast(`Đã chuyển sang Pallet ${clean}`)
-                  }}
-                  className="w-full py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
-                >
-                  Xác Nhận Đổi Sang {newSttInput.trim() ? newSttInput.trim().toUpperCase() : 'Pallet Này'}
-                </button>
+                <div>
+                  <label className="text-[10px] text-orange-400 font-bold block mb-1">MÃ PHỤ (TAG):</label>
+                  <input
+                    type="text"
+                    value={newTagInput}
+                    onChange={e => setNewTagInput(e.target.value.toUpperCase())}
+                    placeholder="Ví dụ: OEM-A, XK-HQ, HÀNG LOẠI 1..."
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-xs text-orange-300 uppercase placeholder-slate-600"
+                  />
+                </div>
+                <div>
+                  <label className="text-[10px] text-blue-400 font-bold block mb-1">GHI CHÚ PALLET / LOT HÀNG:</label>
+                  <textarea
+                    rows={2}
+                    value={newNotesInput}
+                    onChange={e => setNewNotesInput(e.target.value)}
+                    placeholder="Nhập ghi chú cho LOT hàng (nếu có)..."
+                    className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200 placeholder-slate-600 resize-none"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    onClick={() => setIsSwitchPalletModal(false)}
+                    className="flex-1 py-2.5 rounded-lg bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition"
+                  >
+                    Đóng
+                  </button>
+                  <button
+                    onClick={() => {
+                      if (!newSttInput.trim()) {
+                        alert('Vui lòng nhập mã STT Pallet')
+                        return
+                      }
+                      const clean = newSttInput.trim().toUpperCase()
+                      setActivePalletStt(clean)
+                      setActivePalletTag(newTagInput.trim())
+                      setActivePalletNotes(newNotesInput.trim())
+                      setTargetQty(newTargetQtyInput || 30)
+                      loadCurrentPalletBoxes(clean)
+                      setIsSwitchPalletModal(false)
+                      triggerToast(`Đã chuyển sang Pallet ${clean}`)
+                    }}
+                    className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
+                  >
+                    Bắt Đầu Quét
+                  </button>
+                </div>
               </div>
 
               {/* Quick Pick from Existing Pallets */}
@@ -2761,6 +2861,8 @@ export default function WebScannerPage() {
                         key={p.id}
                         onClick={() => {
                           setActivePalletStt(p.stt)
+                          setActivePalletTag(p.tag || '')
+                          setActivePalletNotes(p.notes || '')
                           loadCurrentPalletBoxes(p.stt)
                           setIsSwitchPalletModal(false)
                           triggerToast(`Đã chuyển sang Pallet ${p.stt}`)
@@ -2771,10 +2873,20 @@ export default function WebScannerPage() {
                             : 'bg-slate-900/80 border-slate-800 text-slate-300 hover:border-slate-700'
                         }`}
                       >
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
                           <span className="font-mono font-bold text-amber-400 text-xs">
                             {p.stt}
                           </span>
+                          {p.tag && (
+                            <span className="bg-orange-600/20 text-orange-400 border border-orange-500/30 px-1.5 py-0.2 rounded text-[9px] font-bold font-mono">
+                              🏷️ {p.tag}
+                            </span>
+                          )}
+                          {p.notes && (
+                            <span className="bg-blue-600/20 text-blue-400 border border-blue-500/30 px-1 py-0.2 rounded text-[9px] font-bold" title={p.notes}>
+                              📝
+                            </span>
+                          )}
                           <span className="text-[10px] text-slate-400">
                             ({p.boxes_count} thùng · {p.total_weight} Kg)
                           </span>
