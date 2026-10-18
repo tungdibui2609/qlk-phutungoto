@@ -58,6 +58,7 @@ import {
   OfflinePendingPallet,
   OfflineLot
 } from '@/lib/scanner-db'
+import { matchPalletSearch } from '@/lib/searchUtils'
 
 // Helper function to synthesize an audio beep on scan success
 function playScanSound() {
@@ -121,6 +122,8 @@ interface PalletItem {
   is_linked: boolean
   product_name: string | null
   sku: string | null
+  product_aliases?: string | null
+  aliases?: string | null
   packaging_date: string | null
   production_date: string | null
   scan_type: 'label' | 'stamp'
@@ -896,7 +899,7 @@ export default function WebScannerPage() {
           peeling_date,
           created_at,
           metadata,
-          products ( name, sku ),
+          products ( name, sku, aliases ),
           box_labels!inner ( id, code, quantity, metadata )
         `)
         .eq('system_code', systemCode)
@@ -911,7 +914,7 @@ export default function WebScannerPage() {
           quantity,
           metadata,
           created_at,
-          products ( name, sku )
+          products ( name, sku, aliases )
         `)
         .is('lot_id', null)
         .order('created_at', { ascending: false })
@@ -946,6 +949,8 @@ export default function WebScannerPage() {
           is_linked: true,
           product_name: l.products?.name || firstMeta.product_name || 'Hàng đông lạnh',
           sku: l.products?.sku || firstMeta.sku || 'SKU',
+          product_aliases: l.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
+          aliases: l.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
           packaging_date: l.packaging_date || firstMeta.packaging_date || null,
           production_date: l.peeling_date || firstMeta.production_date || null,
           scan_type: isStamp ? 'stamp' : 'label',
@@ -984,6 +989,8 @@ export default function WebScannerPage() {
           is_linked: false,
           product_name: firstMeta.product_name || boxes[0]?.products?.name || 'Hàng đông lạnh',
           sku: firstMeta.sku || boxes[0]?.products?.sku || 'SKU',
+          product_aliases: boxes[0]?.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
+          aliases: boxes[0]?.products?.aliases || firstMeta.product_aliases || firstMeta.aliases || null,
           packaging_date: firstMeta.packaging_date || null,
           production_date: firstMeta.production_date || null,
           scan_type: isStamp ? 'stamp' : 'label',
@@ -1345,11 +1352,7 @@ export default function WebScannerPage() {
       if (palletFilter === 'linked' && !p.is_linked) return false
       if (palletFilter === 'unlinked' && p.is_linked) return false
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim()
-        const matchStt = p.stt.toLowerCase().includes(q)
-        const matchProduct = (p.product_name || '').toLowerCase().includes(q)
-        const matchLot = (p.lot_code || '').toLowerCase().includes(q)
-        if (!matchStt && !matchProduct && !matchLot) return false
+        if (!matchPalletSearch(p, searchQuery)) return false
       }
       return true
     })
@@ -1728,9 +1731,18 @@ export default function WebScannerPage() {
                     type="text"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    placeholder="Tìm STT, LOT, sản phẩm..."
-                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
+                    placeholder="Tìm STT, LOT, gõ tắt (VD: Đô c, srmc)..."
+                    className="w-full pl-8 pr-8 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-emerald-500"
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      title="Xóa tìm kiếm"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
                 </div>
                 <button
                   onClick={loadAllPallets}
@@ -1807,6 +1819,13 @@ export default function WebScannerPage() {
                       <p className="text-xs font-bold text-white leading-snug line-clamp-2">
                         {p.product_name}
                       </p>
+
+                      {p.product_aliases && (
+                        <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1">
+                          <span>🏷️ Gõ tắt:</span>
+                          <span className="text-emerald-400 font-bold">{p.product_aliases}</span>
+                        </div>
+                      )}
 
                       <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-slate-800/80">
                         <span>

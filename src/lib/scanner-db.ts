@@ -17,6 +17,8 @@ export interface OfflinePallet {
     status?: string | null
     product_name?: string | null
     sku?: string | null
+    product_aliases?: string | null
+    aliases?: string | null
     tag?: string | null
     notes?: string | null
     production_place?: string | null
