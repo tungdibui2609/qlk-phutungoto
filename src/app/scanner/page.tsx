@@ -152,6 +152,7 @@ export default function WebScannerPage() {
 
   // Camera State
   const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const [cameraActive, setCameraActive] = useState<boolean>(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
   const [torchActive, setTorchActive] = useState<boolean>(false)
@@ -393,7 +394,7 @@ export default function WebScannerPage() {
 
       if (!error && data) {
         if (data.length > 0) {
-          const firstMeta = data[0]?.metadata || {}
+          const firstMeta = (data as any[])[0]?.metadata || {}
           if (firstMeta.pallet_tag) setActivePalletTag(firstMeta.pallet_tag)
           if (firstMeta.pallet_notes) setActivePalletNotes(firstMeta.pallet_notes)
           if (firstMeta.target_qty) setTargetQty(parseInt(firstMeta.target_qty, 10) || 30)
@@ -568,6 +569,9 @@ export default function WebScannerPage() {
   // ── Camera Initialization ─────────────────────────────────────
   const startCamera = useCallback(async () => {
     try {
+      // Don't start camera if document is hidden / app is in background
+      if (typeof document !== 'undefined' && document.hidden) return
+
       setCameraError(null)
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
@@ -577,6 +581,7 @@ export default function WebScannerPage() {
         },
         audio: false
       })
+      streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
@@ -590,22 +595,60 @@ export default function WebScannerPage() {
   }, [])
 
   const stopCamera = useCallback(() => {
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject as MediaStream
-      stream.getTracks().forEach(t => t.stop())
-      videoRef.current.srcObject = null
-      setCameraActive(false)
-      setTorchActive(false)
+    // 1. Stop all tracks in streamRef
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => {
+        try {
+          t.stop()
+        } catch {}
+      })
+      streamRef.current = null
     }
+
+    // 2. Stop all tracks in video element
+    if (videoRef.current) {
+      if (videoRef.current.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream
+        stream.getTracks().forEach(t => {
+          try {
+            t.stop()
+          } catch {}
+        })
+      }
+      videoRef.current.srcObject = null
+    }
+    setCameraActive(false)
+    setTorchActive(false)
   }, [])
 
+  // Manage camera lifecycle:
+  // - Starts camera when on 'label' or 'stamp' tab AND page is visible
+  // - Shuts down camera when user presses Home, switches apps/tabs, locks phone, or changes tab
   useEffect(() => {
-    if (activeTab === 'label' || activeTab === 'stamp') {
+    const handleVisibilityChange = () => {
+      if (document.hidden) {
+        // App is minimized or screen locked -> stop camera immediately to release hardware and save battery
+        stopCamera()
+      } else {
+        // App returned to foreground -> restart camera if on scanning tabs
+        if (activeTab === 'label' || activeTab === 'stamp') {
+          startCamera()
+        }
+      }
+    }
+
+    if (!document.hidden && (activeTab === 'label' || activeTab === 'stamp')) {
       startCamera()
     } else {
       stopCamera()
     }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('pagehide', stopCamera)
+
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', stopCamera)
       stopCamera()
     }
   }, [activeTab, startCamera, stopCamera])
