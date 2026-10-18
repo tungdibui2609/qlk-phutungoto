@@ -50,6 +50,7 @@ export const APP_ROUTES: RouteItem[] = [
         name: 'Quét mã QR',
         path: '/scan-management',
         children: [
+            { name: 'Máy Quét Di Động (Web)', path: '/scanner' },
             { name: 'Quản lý Pallet Quét', path: '/warehouses/pallets' },
             { name: 'Liên kết Tem Thùng', path: '/warehouses/lot-labels' },
             { name: 'Liên kết Tem (Mobile)', path: '/mobile/lot-labels' },

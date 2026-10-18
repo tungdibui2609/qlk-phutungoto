@@ -1,5 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Tesseract from 'tesseract.js';
+import { decodeStampBox, DEFAULT_STAMP_DICT } from '@/lib/stampDecoder';
+
+function cleanStampNumericString(input: string): string {
+  if (!input) return '';
+  let s = input.trim();
+  s = s.replace(/[oOQD]/g, '0');
+  s = s.replace(/[Il|!]/g, '1');
+  s = s.replace(/[Zz]/g, '2');
+  s = s.replace(/[S]/g, '5');
+  s = s.replace(/[bB]/g, '8');
+  return s.replace(/[^0-9\-]/g, '');
+}
+
+function parseStampLines(rawText: string) {
+  const rawLines = rawText.split('\n').map(l => l.trim()).filter(Boolean);
+  const numericLines: string[] = [];
+
+  for (const line of rawLines) {
+    const cleaned = cleanStampNumericString(line);
+    if (cleaned.replace(/-/g, '').length >= 8) {
+      numericLines.push(cleaned);
+    }
+  }
+
+  let line1 = '';
+  let line2 = '';
+
+  if (numericLines.length === 1 && numericLines[0].replace(/-/g, '').length >= 26) {
+    const full = numericLines[0];
+    const fullDigits = full.replace(/[^0-9]/g, '');
+    const isHeadSpecial12 = fullDigits.length >= 12 && !!DEFAULT_STAMP_DICT.special_12?.[fullDigits.substring(0, 12)];
+    
+    let l1Cut = 14;
+    if (isHeadSpecial12) {
+      if (full.length > 12 && full[12] === '-') {
+        l1Cut = 14;
+      } else if (fullDigits.length === 28) {
+        l1Cut = 12;
+      }
+    }
+    line1 = full.slice(0, l1Cut);
+    line2 = full.slice(l1Cut);
+  } else if (numericLines.length >= 2) {
+    line1 = numericLines[0];
+    line2 = numericLines[1];
+  } else if (numericLines.length === 1) {
+    line1 = numericLines[0];
+  }
+
+  const decoded = decodeStampBox({
+    metadata: {
+      scan_type: 'stamp',
+      stamp_line1: line1,
+      stamp_line2: line2
+    }
+  });
+
+  return {
+    stamp_line1: line1,
+    stamp_line2: line2,
+    decoded
+  };
+}
 
 function parseBoxLabelText(cleanText: string) {
   const clean = (cleanText || '').replace(/\r/g, '');
@@ -100,12 +163,9 @@ function parseBoxLabelText(cleanText: string) {
     }
   }
 
-  // 7. Fallback for STT/INDEX if still missing
-  // Look for any 2-4 digit integer on lines near bottom or right
   if (!box_index) {
     const allNumbers = clean.match(/\b([0-9]{2,4})\b/g);
     if (allNumbers && allNumbers.length > 0) {
-      // Pick the last number before dates
       box_index = allNumbers[allNumbers.length - 1];
     }
   }
@@ -138,7 +198,7 @@ async function getWorker() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { image } = body;
+    const { image, mode } = body;
 
     if (!image) {
       return NextResponse.json({ success: false, error: 'Missing image data' }, { status: 400 });
@@ -151,18 +211,28 @@ export async function POST(req: NextRequest) {
     const result = await worker.recognize(imageBuffer);
 
     const rawText = result?.data?.text || '';
-    console.log('[OCR Server] Recognized text:', rawText.substring(0, 150));
+    console.log('[OCR Server] Mode:', mode, 'Text:', rawText.substring(0, 150));
+
+    if (mode === 'stamp') {
+      const stampData = parseStampLines(rawText);
+      return NextResponse.json({
+        success: true,
+        mode: 'stamp',
+        data: stampData,
+        rawText
+      });
+    }
 
     const parsed = parseBoxLabelText(rawText);
 
     return NextResponse.json({
       success: true,
+      mode: 'label',
       data: parsed,
       rawText
     });
   } catch (error: any) {
     console.error('[OCR Server Error]:', error);
-    // If worker died, reset cache
     cachedWorker = null;
     return NextResponse.json({ success: false, error: error.message }, { status: 500 });
   }

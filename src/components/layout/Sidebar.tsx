@@ -74,6 +74,7 @@ const menuItems: MenuItem[] = [
         name: 'Quét mã QR',
         icon: QrCode,
         children: [
+            { id: 'web_scanner', name: 'Máy Quét Di Động (Web)', href: '/scanner', icon: Smartphone, requiredPermission: 'warehouse_lot.view' },
             { id: 'pallets', name: 'Quản lý Pallet Quét', href: '/warehouses/pallets', icon: Layers, requiredModule: 'qr_pallets', requiredPermission: 'warehouse_lot.view' },
             { id: 'lot_labels', name: 'Liên kết Tem Thùng', href: '/warehouses/lot-labels', icon: Tags, requiredModule: 'qr_lot_labels', requiredPermission: 'warehouse_lot.view' },
             { id: 'lot_labels_mobile', name: 'Liên kết Tem (Mobile)', href: '/mobile/lot-labels', icon: Smartphone, requiredModule: 'qr_lot_labels_mobile', requiredPermission: 'warehouse_lot.view' },

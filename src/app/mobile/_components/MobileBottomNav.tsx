@@ -18,7 +18,7 @@ const TABS = [
 export default function MobileBottomNav() {
     const pathname = usePathname()
 
-    if (pathname === '/mobile/lot-labels') {
+    if (pathname === '/mobile/lot-labels' || pathname?.startsWith('/scanner')) {
         return null
     }
 

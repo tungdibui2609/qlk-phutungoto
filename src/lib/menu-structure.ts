@@ -77,6 +77,7 @@ export const MENU_STRUCTURE: MenuItemConfig[] = [
         description: 'Các công cụ quét mã QR gán vị trí và điều phối nhanh.',
         icon: QrCode,
         children: [
+            { id: 'web_scanner', name: 'Máy Quét Di Động (Web)', icon: Smartphone },
             { id: 'qr_assign', name: 'Gán vị trí', icon: MapPin },
             { id: 'qr_export', name: 'Xuất kho', icon: ArrowUpFromLine },
             { id: 'qr_export_order', name: 'Lệnh xuất', icon: FileText },
