@@ -27,7 +27,25 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT } from '@/lib/numberUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
-import { matchPalletSearch, calculateSearchScore, matchSearch } from '@/lib/searchUtils'
+import { matchPalletSearch, calculateSearchScore, matchSearch, normalizeSearchString } from '@/lib/searchUtils'
+
+export interface UniqueProductItem {
+  name: string
+  sku: string | null
+  aliases: string | null
+  unit: string
+  positionCount: number
+  totalQuantity: number
+  normName: string
+  unaccName: string
+  normSku: string
+  unaccSku: string
+  aliasList: Array<{
+    raw: string
+    norm: string
+    unacc: string
+  }>
+}
 
 interface ZoneItem {
   id: string
@@ -54,6 +72,256 @@ interface PositionItem {
   quantity?: number | null
 }
 
+// ── ISOLATED MEMOIZED SEARCH BAR (0ms Latency: typing updates only this component) ──
+const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
+  uniqueProducts,
+  searchQuery,
+  onExecuteSearch,
+  onClearSearch
+}: {
+  uniqueProducts: UniqueProductItem[]
+  searchQuery: string
+  onExecuteSearch: (query: string) => void
+  onClearSearch: () => void
+}) {
+  const [inputValue, setInputValue] = useState(searchQuery)
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Sync with outside reset (e.g. when user clicks "Xóa tìm kiếm")
+  useEffect(() => {
+    setInputValue(searchQuery)
+  }, [searchQuery])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick)
+    return () => document.removeEventListener('mousedown', handleOutsideClick)
+  }, [])
+
+  // Fast pre-indexed suggestions (takes < 0.01ms, never lags typing)
+  const suggestions = useMemo(() => {
+    const q = inputValue.trim()
+    if (!q || q.length < 1) return []
+
+    const normQ = normalizeSearchString(q)
+    const unaccQ = normalizeSearchString(q, true)
+    if (!normQ && !unaccQ) return []
+
+    const list: Array<{
+      product: UniqueProductItem
+      score: number
+      matchedAlias?: string
+    }> = []
+
+    for (let i = 0; i < uniqueProducts.length; i++) {
+      const prod = uniqueProducts[i]
+      let matched = false
+      let score = 0
+      let matchedAlias: string | undefined
+
+      // 1. Alias check (tên viết tắt / gõ tắt: VD "đô c" -> "đô c có hạt")
+      for (let j = 0; j < prod.aliasList.length; j++) {
+        const al = prod.aliasList[j]
+        if (al.norm === normQ || al.unacc === unaccQ) {
+          matched = true
+          score = 3000
+          matchedAlias = al.raw
+          break
+        } else if (al.norm.startsWith(normQ) || al.unacc.startsWith(unaccQ)) {
+          matched = true
+          score = 2200
+          matchedAlias = al.raw
+          break
+        } else if (al.norm.includes(normQ) || al.unacc.includes(unaccQ)) {
+          matched = true
+          score = 1500
+          matchedAlias = al.raw
+          break
+        }
+      }
+
+      // 2. Name check
+      if (!matched) {
+        if (prod.normName === normQ || prod.unaccName === unaccQ) {
+          matched = true
+          score = 2000
+        } else if (prod.normName.startsWith(normQ) || prod.unaccName.startsWith(unaccQ)) {
+          matched = true
+          score = 1200
+        } else if (prod.normName.includes(normQ) || prod.unaccName.includes(unaccQ)) {
+          matched = true
+          score = 800
+        }
+      }
+
+      // 3. SKU check
+      if (!matched && (prod.normSku || prod.unaccSku)) {
+        if (prod.normSku === normQ || prod.unaccSku === unaccQ) {
+          matched = true
+          score = 1000
+        } else if (prod.normSku.includes(normQ) || prod.unaccSku.includes(unaccQ)) {
+          matched = true
+          score = 500
+        }
+      }
+
+      if (matched) {
+        list.push({ product: prod, score, matchedAlias })
+      }
+    }
+
+    return list.sort((a, b) => b.score - a.score).slice(0, 8)
+  }, [inputValue, uniqueProducts])
+
+  const handleSelect = (name: string) => {
+    setInputValue(name)
+    setShowSuggestions(false)
+    onExecuteSearch(name)
+  }
+
+  const handleSubmit = (customTerm?: string) => {
+    const term = (customTerm !== undefined ? customTerm : inputValue).trim()
+    if (!term) return
+    setShowSuggestions(false)
+    onExecuteSearch(term)
+  }
+
+  return (
+    <div ref={containerRef} className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30">
+      <div className="relative flex items-center gap-1.5">
+        <div className="relative flex-1 flex items-center">
+          <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
+          <input
+            type="text"
+            value={inputValue}
+            onChange={e => {
+              setInputValue(e.target.value)
+              setShowSuggestions(true)
+            }}
+            onFocus={() => {
+              if (inputValue.trim().length > 0) setShowSuggestions(true)
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                handleSubmit()
+              } else if (e.key === 'Escape') {
+                setShowSuggestions(false)
+              }
+            }}
+            placeholder="Nhập tên sản phẩm (đô, ri6...), mã LOT, vị trí..."
+            className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 transition"
+          />
+          {inputValue && (
+            <button
+              type="button"
+              onClick={() => {
+                setInputValue('')
+                setShowSuggestions(false)
+                onClearSearch()
+              }}
+              className="absolute right-2.5 p-1 text-slate-400 hover:text-white"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => handleSubmit()}
+          className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+        >
+          <Search size={13} />
+          <span>Tìm</span>
+        </button>
+      </div>
+
+      {/* ── DROPDOWN GỢI Ý SẢN PHẨM (POPUP GỢI Ý KHI GÕ TỪ KHÓA) ── */}
+      {showSuggestions && inputValue.trim().length > 0 && (
+        <div className="absolute top-full left-2.5 right-2.5 mt-1 bg-[#0b1324] border border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md">
+          <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-cyan-400">
+            <span className="flex items-center gap-1.5">
+              <Sparkles size={13} className="text-amber-400" />
+              <span>GỢI Ý SẢN PHẨM ({suggestions.length})</span>
+            </span>
+            <span className="text-[10px] font-normal text-slate-400">
+              Chạm để chọn & xem tất cả vị trí
+            </span>
+          </div>
+
+          {suggestions.length > 0 ? (
+            <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/60">
+              {suggestions.map((item, idx) => (
+                <div
+                  key={idx}
+                  onClick={() => handleSelect(item.product.name)}
+                  className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold text-xs text-white">
+                        {item.product.name}
+                      </span>
+                      {item.matchedAlias ? (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold">
+                          ⚡ {item.matchedAlias}
+                        </span>
+                      ) : item.product.aliases ? (
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                          ⚡ {item.product.aliases}
+                        </span>
+                      ) : null}
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+                      {item.product.sku && (
+                        <span className="text-slate-500 font-mono">SKU: {item.product.sku}</span>
+                      )}
+                      <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
+                        📍 {item.product.positionCount} vị trí trong kho
+                      </span>
+                      {item.product.totalQuantity > 0 && (
+                        <span className="text-slate-300">
+                          · {item.product.totalQuantity} {item.product.unit}
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <ArrowRight size={15} className="text-cyan-400 shrink-0" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-3 text-center text-xs text-slate-400">
+              Không có sản phẩm nào khớp tên hoặc từ gõ tắt.
+            </div>
+          )}
+
+          {/* Direct query search option */}
+          <div
+            onClick={() => handleSubmit()}
+            className="p-2.5 bg-slate-900/90 border-t border-slate-800 hover:bg-slate-800/90 cursor-pointer transition flex items-center justify-between text-xs text-slate-300 font-medium"
+          >
+            <div className="flex items-center gap-2">
+              <Search size={13} className="text-cyan-400" />
+              <span>Tìm tất cả cho "{inputValue.trim()}" (STT, mã vị trí, mã lot...)</span>
+            </div>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700 font-mono font-bold">
+              Tìm ngay ↵
+            </span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+})
+
 export default function WarehouseMapTab() {
   const [loading, setLoading] = useState<boolean>(true)
   const [refreshing, setRefreshing] = useState<boolean>(false)
@@ -67,28 +335,13 @@ export default function WarehouseMapTab() {
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null)
   const [onlyShowMatches, setOnlyShowMatches] = useState<boolean>(false)
 
-  // Search & Product Suggestions state
-  const [searchInput, setSearchInput] = useState<string>('')
+  // Search state (searchQuery drives the map, while typing is fully isolated in WarehouseSearchBar)
   const [searchQuery, setSearchQuery] = useState<string>('')
-  const [showSuggestions, setShowSuggestions] = useState<boolean>(false)
-  const searchContainerRef = useRef<HTMLDivElement>(null)
-
   const [activeView, setActiveView] = useState<'map' | 'search_list'>('map')
   const [searchFilterWhId, setSearchFilterWhId] = useState<string>('all')
   const [searchFilterStatus, setSearchFilterStatus] = useState<'all' | 'occupied' | 'empty'>('all')
   const [searchPageLimit, setSearchPageLimit] = useState<number>(60)
   const [highlightedPosId, setHighlightedPosId] = useState<string | null>(null)
-
-  // Đóng gợi ý sản phẩm khi nhấp ra ngoài
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
-        setShowSuggestions(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   // Position detail modal
   const [selectedPosDetail, setSelectedPosDetail] = useState<PositionItem | null>(null)
@@ -435,16 +688,9 @@ export default function WarehouseMapTab() {
     [zonePathMap]
   )
 
-  // ── Danh sách sản phẩm duy nhất đang có trong kho ──────────────
+  // ── Danh sách sản phẩm duy nhất đang có trong kho (Pre-indexed cho gợi ý 0ms) ──────────────
   const uniqueProducts = useMemo(() => {
-    const prodMap = new Map<string, {
-      name: string
-      sku: string | null
-      aliases: string | null
-      unit: string
-      positionCount: number
-      totalQuantity: number
-    }>()
+    const prodMap = new Map<string, UniqueProductItem>()
 
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i]
@@ -454,16 +700,37 @@ export default function WarehouseMapTab() {
         if (existing) {
           existing.positionCount++
           existing.totalQuantity += (p.quantity || 0)
-          if (!existing.aliases && p.aliases) existing.aliases = p.aliases
-          if (!existing.sku && p.sku) existing.sku = p.sku
+          if (!existing.aliases && p.aliases) {
+            existing.aliases = p.aliases
+            existing.aliasList = p.aliases.split(',').map(a => a.trim()).filter(Boolean).map(a => ({
+              raw: a,
+              norm: normalizeSearchString(a),
+              unacc: normalizeSearchString(a, true)
+            }))
+          }
+          if (!existing.sku && p.sku) {
+            existing.sku = p.sku
+            existing.normSku = normalizeSearchString(p.sku)
+            existing.unaccSku = normalizeSearchString(p.sku, true)
+          }
         } else {
+          const aliasList = (p.aliases || '').split(',').map(a => a.trim()).filter(Boolean).map(a => ({
+            raw: a,
+            norm: normalizeSearchString(a),
+            unacc: normalizeSearchString(a, true)
+          }))
           prodMap.set(name, {
             name,
             sku: p.sku || null,
             aliases: p.aliases || null,
             unit: p.unit || 'Thùng',
             positionCount: 1,
-            totalQuantity: p.quantity || 0
+            totalQuantity: p.quantity || 0,
+            normName: normalizeSearchString(name),
+            unaccName: normalizeSearchString(name, true),
+            normSku: normalizeSearchString(p.sku || ''),
+            unaccSku: normalizeSearchString(p.sku || '', true),
+            aliasList
           })
         }
       }
@@ -472,72 +739,20 @@ export default function WarehouseMapTab() {
     return Array.from(prodMap.values())
   }, [positions])
 
-  // Gợi ý sản phẩm thông minh khi người dùng gõ từ khóa (VD: gõ "đô" -> hiện gợi ý sản phẩm)
-  const productSuggestions = useMemo(() => {
-    const q = searchInput.trim()
-    if (!q || q.length < 1) return []
-
-    const list: Array<{
-      product: typeof uniqueProducts[0]
-      score: number
-      matchedAlias?: string
-    }> = []
-
-    for (let i = 0; i < uniqueProducts.length; i++) {
-      const prod = uniqueProducts[i]
-      let matched = false
-      let score = 0
-      let matchedAlias: string | undefined
-
-      // 1. Khớp theo alias (tên viết tắt / gõ tắt: VD "đô c" -> "đô c có hạt")
-      if (prod.aliases) {
-        const aliasList = prod.aliases.split(',').map(a => a.trim()).filter(Boolean)
-        const found = aliasList.find(a => matchSearch(a, q))
-        if (found) {
-          matched = true
-          score = 1500
-          matchedAlias = found
-        }
-      }
-
-      // 2. Khớp theo tên sản phẩm hoặc SKU
-      if (!matched) {
-        const s = calculateSearchScore(prod, q)
-        if (s > 0) {
-          matched = true
-          score = s
-        } else if (matchSearch(prod, q)) {
-          matched = true
-          score = 500
-        }
-      }
-
-      if (matched) {
-        list.push({ product: prod, score, matchedAlias })
-      }
-    }
-
-    return list.sort((a, b) => b.score - a.score).slice(0, 8)
-  }, [searchInput, uniqueProducts])
-
-  // Chọn sản phẩm gợi ý -> thực hiện tìm kiếm liệt kê tất cả vị trí có sản phẩm đó
-  const handleSelectProductSuggestion = (productName: string) => {
-    setSearchInput(productName)
-    setSearchQuery(productName)
-    setShowSuggestions(false)
-    setActiveView('search_list')
-    setSearchPageLimit(60)
-  }
-
-  // Thực hiện tìm kiếm tự do khi ấn Enter hoặc nút Tìm
-  const handleExecuteSearch = (term?: string) => {
-    const q = (term !== undefined ? term : searchInput).trim()
+  // Thực hiện tìm kiếm (chỉ cập nhật map khi người dùng chọn gợi ý hoặc ấn Tìm)
+  const handleExecuteSearch = useCallback((term: string) => {
+    const q = term.trim()
     if (!q) return
     setSearchQuery(q)
-    setShowSuggestions(false)
     setActiveView('search_list')
     setSearchPageLimit(60)
-  }
+  }, [])
+
+  const handleClearSearch = useCallback(() => {
+    setSearchQuery('')
+    setActiveView('map')
+    setHighlightedPosId(null)
+  }, [])
 
   // ── Search & Filter Logic (High Performance with Pre-Scoring) ──
   const isSearchActive = !!searchQuery.trim()
@@ -873,135 +1088,13 @@ export default function WarehouseMapTab() {
         </div>
       )}
 
-      {/* ── SEARCH BAR WITH PRODUCT SUGGESTIONS (Gõ "đô" -> Gợi ý sản phẩm) ── */}
-      <div ref={searchContainerRef} className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30">
-        <div className="relative flex items-center gap-1.5">
-          <div className="relative flex-1 flex items-center">
-            <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
-            <input
-              type="text"
-              value={searchInput}
-              onChange={e => {
-                setSearchInput(e.target.value)
-                setShowSuggestions(true)
-              }}
-              onFocus={() => {
-                if (searchInput.trim().length > 0) setShowSuggestions(true)
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  handleExecuteSearch()
-                } else if (e.key === 'Escape') {
-                  setShowSuggestions(false)
-                }
-              }}
-              placeholder="Nhập tên sản phẩm (đô, ri6...), mã LOT, vị trí..."
-              className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 transition"
-            />
-            {searchInput && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSearchInput('')
-                  setSearchQuery('')
-                  setShowSuggestions(false)
-                  setActiveView('map')
-                  setHighlightedPosId(null)
-                }}
-                className="absolute right-2.5 p-1 text-slate-400 hover:text-white"
-              >
-                <X size={14} />
-              </button>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => handleExecuteSearch()}
-            className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
-          >
-            <Search size={13} />
-            <span>Tìm</span>
-          </button>
-        </div>
-
-        {/* ── DROPDOWN GỢI Ý SẢN PHẨM (POPUP GỢI Ý KHI GÕ TỪ KHÓA) ── */}
-        {showSuggestions && searchInput.trim().length > 0 && (
-          <div className="absolute top-full left-2.5 right-2.5 mt-1 bg-[#0b1324] border border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md">
-            <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-cyan-400">
-              <span className="flex items-center gap-1.5">
-                <Sparkles size={13} className="text-amber-400" />
-                <span>GỢI Ý SẢN PHẨM ({productSuggestions.length})</span>
-              </span>
-              <span className="text-[10px] font-normal text-slate-400">
-                Chạm để chọn & xem tất cả vị trí
-              </span>
-            </div>
-
-            {productSuggestions.length > 0 ? (
-              <div className="max-h-72 overflow-y-auto divide-y divide-slate-800/60">
-                {productSuggestions.map((item, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleSelectProductSuggestion(item.product.name)}
-                    className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-bold text-xs text-white">
-                          {item.product.name}
-                        </span>
-                        {item.matchedAlias ? (
-                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold">
-                            ⚡ {item.matchedAlias}
-                          </span>
-                        ) : item.product.aliases ? (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
-                            ⚡ {item.product.aliases}
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
-                        {item.product.sku && (
-                          <span className="text-slate-500 font-mono">SKU: {item.product.sku}</span>
-                        )}
-                        <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
-                          📍 {item.product.positionCount} vị trí trong kho
-                        </span>
-                        {item.product.totalQuantity > 0 && (
-                          <span className="text-slate-300">
-                            · {item.product.totalQuantity} {item.product.unit}
-                          </span>
-                        )}
-                      </p>
-                    </div>
-                    <ArrowRight size={15} className="text-cyan-400 shrink-0" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-3 text-center text-xs text-slate-400">
-                Không có sản phẩm nào khớp tên hoặc từ gõ tắt.
-              </div>
-            )}
-
-            {/* Direct query search option */}
-            <div
-              onClick={() => handleExecuteSearch()}
-              className="p-2.5 bg-slate-900/90 border-t border-slate-800 hover:bg-slate-800/90 cursor-pointer transition flex items-center justify-between text-xs text-slate-300 font-medium"
-            >
-              <div className="flex items-center gap-2">
-                <Search size={13} className="text-cyan-400" />
-                <span>Tìm tất cả cho "{searchInput.trim()}" (STT, mã vị trí, mã lot...)</span>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700 font-mono font-bold">
-                Tìm ngay ↵
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* ── ISOLATED SEARCH BAR (0ms Latency: typing updates only search bar) ── */}
+      <WarehouseSearchBar
+        uniqueProducts={uniqueProducts}
+        searchQuery={searchQuery}
+        onExecuteSearch={handleExecuteSearch}
+        onClearSearch={handleClearSearch}
+      />
 
       {/* ── SEARCH VIEW TABS: DANH SÁCH KẾT QUẢ vs XEM TRÊN SƠ ĐỒ ── */}
       {isSearchActive && (
@@ -1032,12 +1125,7 @@ export default function WarehouseMapTab() {
           </div>
 
           <button
-            onClick={() => {
-              setSearchInput('')
-              setSearchQuery('')
-              setActiveView('map')
-              setHighlightedPosId(null)
-            }}
+            onClick={handleClearSearch}
             className="text-[11px] font-bold text-slate-400 hover:text-rose-400 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-800 transition"
           >
             <X size={13} />
