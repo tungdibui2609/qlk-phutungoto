@@ -348,7 +348,7 @@ export function matchPalletSearch(pallet: any, query: string): boolean {
     const prodName = String(pallet.product_name || '').trim();
     const sku = String(pallet.sku || '').trim();
     const aliases = String(pallet.product_aliases || pallet.aliases || '').trim();
-    const locationCode = String(pallet.location_code || '').trim();
+    const locationCode = String(pallet.location_code || pallet.code || '').trim();
     const tag = String(pallet.tag || '').trim();
     const notes = String(pallet.notes || '').trim();
 

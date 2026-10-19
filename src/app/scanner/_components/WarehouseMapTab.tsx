@@ -57,10 +57,11 @@ export default function WarehouseMapTab() {
   const [positions, setPositions] = useState<PositionItem[]>([])
 
   // Hierarchy Navigation States: Kho -> Dãy / Sảnh -> Ô -> Tầng
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>('all')
   const [selectedAisleId, setSelectedAisleId] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
   const [selectedTierId, setSelectedTierId] = useState<string | null>(null)
+  const [onlyShowMatches, setOnlyShowMatches] = useState<boolean>(false)
 
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>('')
@@ -91,8 +92,7 @@ export default function WarehouseMapTab() {
           setPositions(cached.positions || [])
           setCachedAt(cached.cachedAt || null)
           if (!selectedWarehouseId) {
-            const firstWh = cached.zones.find((z: any) => !z.parent_id)
-            if (firstWh) setSelectedWarehouseId(firstWh.id)
+            setSelectedWarehouseId('all')
           }
         }
       }
@@ -162,23 +162,26 @@ export default function WarehouseMapTab() {
         chunkResults.forEach((res: any) => {
           if (res.data) {
             res.data.forEach((l: any) => {
-              const tags = (l.lot_tags || []).map((t: any) => t.tag).filter(Boolean)
-              const tagsStr = tags.length > 0 ? tags.join(', ') : ''
+              const allItems = l.lot_items || []
+              const allProdNames = [
+                l.products?.name,
+                ...allItems.map((it: any) => it.products?.name)
+              ].filter(Boolean)
+              const prodName = allProdNames.length > 0
+                ? allProdNames.join(', ')
+                : (tagsStr ? `Hàng ${tagsStr}` : 'Hàng đông lạnh')
 
-              const prodName =
-                l.products?.name ||
-                l.lot_items?.[0]?.products?.name ||
-                (tagsStr ? `Hàng ${tagsStr}` : 'Hàng đông lạnh')
+              const allSkus = [
+                l.products?.sku,
+                ...allItems.map((it: any) => it.products?.sku)
+              ].filter(Boolean)
+              const sku = allSkus.length > 0 ? allSkus.join(', ') : (tags.length > 0 ? tags[0] : '---')
 
-              const sku =
-                l.products?.sku ||
-                l.lot_items?.[0]?.products?.sku ||
-                (tags.length > 0 ? tags[0] : '---')
-
-              const aliases =
-                l.products?.aliases ||
-                l.lot_items?.[0]?.products?.aliases ||
-                null
+              const allAliases = [
+                l.products?.aliases,
+                ...allItems.map((it: any) => it.products?.aliases)
+              ].filter(Boolean)
+              const aliases = allAliases.length > 0 ? allAliases.join(', ') : null
 
               const unit =
                 l.products?.unit ||
@@ -267,10 +270,9 @@ export default function WarehouseMapTab() {
         console.warn('Lỗi lưu cache sơ đồ kho:', e)
       }
 
-      // Auto-select first warehouse if none selected
+      // Auto-select 'all' warehouses if none selected
       if (!selectedWarehouseId) {
-        const firstWh = rawZones.find(z => !z.parent_id)
-        if (firstWh) setSelectedWarehouseId(firstWh.id)
+        setSelectedWarehouseId('all')
       }
     } catch (err) {
       console.warn('Lỗi tải dữ liệu Sơ đồ kho từ máy chủ, chuyển sang chế độ ngoại tuyến:', err)
@@ -327,34 +329,6 @@ export default function WarehouseMapTab() {
       (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
     )
 
-  // 1. Warehouses (Level 1: parent_id is null)
-  const warehouses = useMemo(
-    () => sortZones(activeZones.filter(z => !z.parent_id)),
-    [activeZones]
-  )
-
-  // 2. Aisles / Halls (Level 2: parent_id === selectedWarehouseId)
-  const aisles = useMemo(() => {
-    if (!selectedWarehouseId) return []
-    return sortZones(activeZones.filter(z => z.parent_id === selectedWarehouseId))
-  }, [activeZones, selectedWarehouseId])
-
-  // 3. Slots (Level 3: parent_id === selectedAisleId) -> Ô GỘP: Ô 01, Ô 02...
-  const slots = useMemo(() => {
-    if (!selectedAisleId) return []
-    return sortZones(activeZones.filter(z => z.parent_id === selectedAisleId))
-  }, [activeZones, selectedAisleId])
-
-  // 4. Tiers (Level 4: parent_id === selectedSlotId) -> Tầng của Ô gộp
-  // Sắp xếp tầng từ trên xuống dưới (Tầng 5 -> Tầng 1) để chuẩn kệ kho thực tế
-  const tiers = useMemo(() => {
-    if (!selectedSlotId) return []
-    const list = activeZones.filter(z => z.parent_id === selectedSlotId)
-    return [...list].sort((a, b) =>
-      (b.name || '').localeCompare(a.name || '', undefined, { numeric: true })
-    )
-  }, [activeZones, selectedSlotId])
-
   // Helper to get ALL real zone descendants for any zone ID (whether virtual or real)
   const getDescendantZoneIds = useCallback(
     (targetZoneId: string): string[] => {
@@ -374,6 +348,117 @@ export default function WarehouseMapTab() {
     },
     [zones, virtualToRealMap]
   )
+
+  // Helper to get full zone path string (e.g. "Kho 2 · Dãy 4 · Ô B13 · Tầng 5")
+  const getPositionPath = useCallback(
+    (pos: PositionItem) => {
+      const leafZoneId = pos.zone_ids[0]
+      if (!leafZoneId) return ''
+      const realZoneMap = new Map(zones.map(z => [z.id, z]))
+      let curr = realZoneMap.get(leafZoneId)
+      const names: string[] = []
+      while (curr) {
+        names.unshift(curr.name)
+        curr = curr.parent_id ? realZoneMap.get(curr.parent_id) : undefined
+      }
+      return names.join(' · ')
+    },
+    [zones]
+  )
+
+  // ── Search & Filter Logic (Smart Vietnamese & Abbreviation search) ──
+  const isSearchActive = !!searchQuery.trim()
+
+  const matchingPositions = useMemo(() => {
+    const q = searchQuery.trim()
+    if (!q || q.length < 1) return []
+
+    return positions
+      .filter(p => matchPalletSearch(p, q))
+      .sort((a, b) => {
+        const scoreA = calculateSearchScore(a, q, { name: a.product_name, code: a.code, lot_code: a.lot_code, aliases: a.aliases })
+        const scoreB = calculateSearchScore(b, q, { name: b.product_name, code: b.code, lot_code: b.lot_code, aliases: b.aliases })
+        return scoreB - scoreA
+      })
+  }, [searchQuery, positions])
+
+  const matchingPosIds = useMemo(() => {
+    return new Set(matchingPositions.map(p => p.id))
+  }, [matchingPositions])
+
+  const searchResults = useMemo(() => {
+    return matchingPositions.slice(0, 50)
+  }, [matchingPositions])
+
+  // Count matches per zone (Warehouse, Aisle, Slot, Tier)
+  const zoneMatchCountMap = useMemo(() => {
+    const map = new Map<string, number>()
+    if (!isSearchActive || activeZones.length === 0 || matchingPosIds.size === 0) return map
+
+    activeZones.forEach(z => {
+      const descIds = new Set(getDescendantZoneIds(z.id))
+      let matchCount = 0
+      positions.forEach(p => {
+        if (matchingPosIds.has(p.id) && p.zone_ids.some(zid => descIds.has(zid))) {
+          matchCount++
+        }
+      })
+      if (matchCount > 0) map.set(z.id, matchCount)
+    })
+    return map
+  }, [isSearchActive, activeZones, matchingPosIds, positions, getDescendantZoneIds])
+
+  // 1. Warehouses (Level 1: parent_id is null)
+  const warehouses = useMemo(
+    () => sortZones(activeZones.filter(z => !z.parent_id)),
+    [activeZones]
+  )
+
+  // 2. Aisles / Halls (Level 2: parent_id === selectedWarehouseId or all)
+  const aisles = useMemo(() => {
+    let list: ZoneItem[] = []
+    if (!selectedWarehouseId || selectedWarehouseId === 'all') {
+      const whIds = new Set(warehouses.map(w => w.id))
+      list = activeZones.filter(z => z.parent_id && whIds.has(z.parent_id))
+    } else {
+      list = activeZones.filter(z => z.parent_id === selectedWarehouseId)
+    }
+
+    if (isSearchActive) {
+      return [...list].sort((a, b) => {
+        const countA = zoneMatchCountMap.get(a.id) || 0
+        const countB = zoneMatchCountMap.get(b.id) || 0
+        if (countB !== countA) return countB - countA
+        return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+      })
+    }
+    return sortZones(list)
+  }, [activeZones, selectedWarehouseId, warehouses, isSearchActive, zoneMatchCountMap])
+
+  // 3. Slots (Level 3: parent_id === selectedAisleId) -> Ô GỘP: Ô 01, Ô 02...
+  const slots = useMemo(() => {
+    if (!selectedAisleId) return []
+    const list = activeZones.filter(z => z.parent_id === selectedAisleId)
+    if (isSearchActive) {
+      return [...list].sort((a, b) => {
+        const countA = zoneMatchCountMap.get(a.id) || 0
+        const countB = zoneMatchCountMap.get(b.id) || 0
+        if (countB !== countA) return countB - countA
+        return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+      })
+    }
+    return sortZones(list)
+  }, [activeZones, selectedAisleId, isSearchActive, zoneMatchCountMap])
+
+  // 4. Tiers (Level 4: parent_id === selectedSlotId) -> Tầng của Ô gộp
+  // Sắp xếp tầng từ trên xuống dưới (Tầng 5 -> Tầng 1) để chuẩn kệ kho thực tế
+  const tiers = useMemo(() => {
+    if (!selectedSlotId) return []
+    const list = activeZones.filter(z => z.parent_id === selectedSlotId)
+    return [...list].sort((a, b) =>
+      (b.name || '').localeCompare(a.name || '', undefined, { numeric: true })
+    )
+  }, [activeZones, selectedSlotId])
 
   // ── Stats Calculator (Total, Occupied, Empty) per Zone ─────────
   const zoneStatsMap = useMemo(() => {
@@ -412,14 +497,18 @@ export default function WarehouseMapTab() {
     const targetZoneId = selectedTierId || selectedSlotId
     const targetZoneIds = new Set(getDescendantZoneIds(targetZoneId))
 
-    const filtered = positions.filter(p =>
+    let filtered = positions.filter(p =>
       p.zone_ids.some(zid => targetZoneIds.has(zid))
     )
+
+    if (onlyShowMatches && isSearchActive) {
+      filtered = filtered.filter(p => matchingPosIds.has(p.id))
+    }
 
     return filtered.sort((a, b) =>
       a.code.localeCompare(b.code, undefined, { numeric: true })
     )
-  }, [selectedSlotId, selectedTierId, positions, getDescendantZoneIds])
+  }, [selectedSlotId, selectedTierId, positions, getDescendantZoneIds, onlyShowMatches, isSearchActive, matchingPosIds])
 
   // Map positions by tier for grouped rack display
   const tierPositionsMap = useMemo(() => {
@@ -436,21 +525,6 @@ export default function WarehouseMapTab() {
 
     return map
   }, [selectedSlotId, tiers, positions, getDescendantZoneIds])
-
-  // ── Search & Jump to Position Logic (Smart Vietnamese & Abbreviation search) ──
-  const searchResults = useMemo(() => {
-    const q = searchQuery.trim()
-    if (!q || q.length < 1) return []
-
-    return positions
-      .filter(p => matchPalletSearch(p, q))
-      .sort((a, b) => {
-        const scoreA = calculateSearchScore(a, q, { name: a.product_name, code: a.code, lot_code: a.lot_code, aliases: a.aliases })
-        const scoreB = calculateSearchScore(b, q, { name: b.product_name, code: b.code, lot_code: b.lot_code, aliases: b.aliases })
-        return scoreB - scoreA
-      })
-      .slice(0, 20)
-  }, [searchQuery, positions])
 
   const handleSelectSearchResult = (pos: PositionItem) => {
     // Find zone hierarchy for this position
@@ -495,7 +569,6 @@ export default function WarehouseMapTab() {
     }
 
     setHighlightedPosId(pos.id)
-    setSearchQuery('')
     setIsSearching(false)
     setSelectedPosDetail(pos)
   }
@@ -612,9 +685,9 @@ export default function WarehouseMapTab() {
 
         {/* Search Results Dropdown */}
         {isSearching && searchQuery.trim() && (
-          <div className="absolute top-full left-2.5 right-2.5 z-40 mt-1 max-h-72 overflow-y-auto bg-[#111827] border border-cyan-500/40 rounded-2xl shadow-2xl p-2 space-y-1.5 animate-in fade-in duration-150">
+          <div className="absolute top-full left-2.5 right-2.5 z-40 mt-1 max-h-80 overflow-y-auto bg-[#111827] border border-cyan-500/40 rounded-2xl shadow-2xl p-2 space-y-1.5 animate-in fade-in duration-150">
             <div className="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase flex justify-between border-b border-slate-800">
-              <span>Kết quả tìm kiếm ({searchResults.length})</span>
+              <span>Kết quả ({searchResults.length}/{matchingPositions.length})</span>
               <span>Bấm để nhảy tới vị trí</span>
             </div>
 
@@ -629,8 +702,8 @@ export default function WarehouseMapTab() {
                   onClick={() => handleSelectSearchResult(p)}
                   className="w-full p-2.5 rounded-xl bg-slate-900/90 hover:bg-cyan-950/40 border border-slate-800 hover:border-cyan-500/50 flex items-center justify-between text-left transition group"
                 >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-2">
+                  <div className="space-y-0.5 min-w-0 pr-2">
+                    <div className="flex items-center gap-1.5 flex-wrap">
                       <span className="font-mono font-black text-xs text-cyan-300">
                         📍 {p.code}
                       </span>
@@ -643,6 +716,9 @@ export default function WarehouseMapTab() {
                           TRỐNG
                         </span>
                       )}
+                      <span className="text-[10px] text-slate-400 font-medium truncate">
+                        · {getPositionPath(p)}
+                      </span>
                     </div>
                     {p.lot_code && (
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -657,13 +733,44 @@ export default function WarehouseMapTab() {
                       </div>
                     )}
                   </div>
-                  <ChevronRight size={15} className="text-slate-500 group-hover:text-cyan-400 transition" />
+                  <ChevronRight size={15} className="text-slate-500 group-hover:text-cyan-400 transition shrink-0" />
                 </button>
               ))
             )}
           </div>
         )}
       </div>
+
+      {/* ── SEARCH MATCH STATS BANNER (Shows total matching positions) ── */}
+      {isSearchActive && (
+        <div className="bg-gradient-to-r from-cyan-950/90 via-slate-900 to-amber-950/40 border-b border-cyan-500/40 px-3 py-2 flex items-center justify-between text-xs shrink-0 animate-in fade-in">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
+            <span className="truncate text-slate-300">
+              Tìm: <strong className="text-white">&quot;{searchQuery}&quot;</strong> · <strong className="text-cyan-300 font-mono font-black">{matchingPositions.length}</strong> vị trí khớp
+            </span>
+          </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              onClick={() => setIsSearching(true)}
+              className="px-2 py-1 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-[11px] font-bold transition active:scale-95"
+            >
+              Xem ({matchingPositions.length})
+            </button>
+            <button
+              onClick={() => {
+                setSearchQuery('')
+                setIsSearching(false)
+                setHighlightedPosId(null)
+              }}
+              className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition"
+              title="Xóa tìm kiếm"
+            >
+              <X size={15} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── BREADCRUMB NAVIGATION (Kho > Dãy > Ô > Tầng) ─────────── */}
       <div className="px-3 py-2 bg-[#0c1322] border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto shrink-0 scrollbar-none text-xs">
@@ -680,7 +787,7 @@ export default function WarehouseMapTab() {
           }`}
         >
           <Building2 size={13} />
-          <span>{getZoneName(selectedWarehouseId) || 'Chọn Kho'}</span>
+          <span>{(!selectedWarehouseId || selectedWarehouseId === 'all') ? 'Tất cả Kho' : getZoneName(selectedWarehouseId)}</span>
         </button>
 
         {selectedAisleId && (
@@ -741,34 +848,67 @@ export default function WarehouseMapTab() {
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Layers size={14} className="text-cyan-400" />
-                <span>CHỌN DÃY / SẢNH (KHO {getZoneName(selectedWarehouseId)}):</span>
+                <span>
+                  CHỌN DÃY / SẢNH {(!selectedWarehouseId || selectedWarehouseId === 'all') ? '(TẤT CẢ KHO)' : `(KHO ${getZoneName(selectedWarehouseId)})`}:
+                </span>
               </span>
               <span className="text-[10px] text-slate-500 font-mono">
                 {aisles.length} phân khu
               </span>
             </div>
 
-            {/* Switch Warehouse Pills if multiple warehouses */}
+            {/* Switch Warehouse Pills with 'Tất cả Kho' option */}
             {warehouses.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
-                {warehouses.map(wh => (
-                  <button
-                    key={wh.id}
-                    onClick={() => {
-                      setSelectedWarehouseId(wh.id)
-                      setSelectedAisleId(null)
-                      setSelectedSlotId(null)
-                      setSelectedTierId(null)
-                    }}
-                    className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition ${
-                      wh.id === selectedWarehouseId
-                        ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/30'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
-                  >
-                    🏢 {wh.name}
-                  </button>
-                ))}
+                <button
+                  onClick={() => {
+                    setSelectedWarehouseId('all')
+                    setSelectedAisleId(null)
+                    setSelectedSlotId(null)
+                    setSelectedTierId(null)
+                  }}
+                  className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
+                    (!selectedWarehouseId || selectedWarehouseId === 'all')
+                      ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  <Layers size={13} />
+                  <span>TẤT CẢ KHO</span>
+                  {isSearchActive && matchingPositions.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
+                      {matchingPositions.length}
+                    </span>
+                  )}
+                </button>
+
+                {warehouses.map(wh => {
+                  const whMatchCount = zoneMatchCountMap.get(wh.id) || 0
+                  return (
+                    <button
+                      key={wh.id}
+                      onClick={() => {
+                        setSelectedWarehouseId(wh.id)
+                        setSelectedAisleId(null)
+                        setSelectedSlotId(null)
+                        setSelectedTierId(null)
+                      }}
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
+                        wh.id === selectedWarehouseId
+                          ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+                          : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <Building2 size={13} />
+                      <span>{wh.name}</span>
+                      {isSearchActive && whMatchCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
+                          {whMatchCount}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             )}
 
@@ -776,24 +916,42 @@ export default function WarehouseMapTab() {
               {aisles.map(aisle => {
                 const stats = zoneStatsMap.get(aisle.id) || { total: 0, occupied: 0, empty: 0 }
                 const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
+                const aisleWh = warehouses.find(w => w.id === aisle.parent_id)
+                const aisleMatchCount = zoneMatchCountMap.get(aisle.id) || 0
 
                 return (
                   <button
                     key={aisle.id}
                     onClick={() => {
+                      if (aisle.parent_id) setSelectedWarehouseId(aisle.parent_id)
                       setSelectedAisleId(aisle.id)
                       setSelectedSlotId(null)
                       setSelectedTierId(null)
                     }}
-                    className="p-3.5 rounded-2xl bg-[#111827] border border-slate-800 hover:border-cyan-500/50 text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group"
+                    className={`p-3.5 rounded-2xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${
+                      aisleMatchCount > 0 ? 'border-cyan-500/80 shadow-lg shadow-cyan-500/10' : 'border-slate-800 hover:border-cyan-500/50'
+                    }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="font-black text-sm text-white group-hover:text-cyan-300 transition">
-                        🚪 {aisle.name}
-                      </span>
-                      <span className="text-xs text-cyan-400 font-bold flex items-center gap-0.5">
-                        Xem Ô →
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {(!selectedWarehouseId || selectedWarehouseId === 'all') && aisleWh && (
+                          <span className="px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-bold text-[10px]">
+                            {aisleWh.name}
+                          </span>
+                        )}
+                        <span className="font-black text-sm text-white group-hover:text-cyan-300 transition">
+                          🚪 {aisle.name}
+                        </span>
+                      </div>
+                      {isSearchActive && aisleMatchCount > 0 ? (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-black animate-pulse">
+                          🔥 {aisleMatchCount} khớp
+                        </span>
+                      ) : (
+                        <span className="text-xs text-cyan-400 font-bold flex items-center gap-0.5">
+                          Xem Ô →
+                        </span>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between text-[11px] text-slate-400">
@@ -837,6 +995,7 @@ export default function WarehouseMapTab() {
               {slots.map(slot => {
                 const stats = zoneStatsMap.get(slot.id) || { total: 0, occupied: 0, empty: 0 }
                 const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
+                const slotMatchCount = zoneMatchCountMap.get(slot.id) || 0
 
                 return (
                   <button
@@ -845,10 +1004,17 @@ export default function WarehouseMapTab() {
                       setSelectedSlotId(slot.id)
                       setSelectedTierId(null)
                     }}
-                    className="p-3.5 rounded-2xl bg-[#111827] border border-slate-700/80 hover:border-emerald-500/80 text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm"
+                    className={`p-3.5 rounded-2xl bg-[#111827] border text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm ${
+                      slotMatchCount > 0 ? 'border-cyan-500/80 shadow-md shadow-cyan-500/10' : 'border-slate-700/80 hover:border-emerald-500/80'
+                    }`}
                   >
-                    <div className="font-black text-sm uppercase text-white group-hover:text-emerald-300 transition tracking-wide">
-                      {slot.name}
+                    <div className="font-black text-sm uppercase text-white group-hover:text-emerald-300 transition tracking-wide flex items-center justify-center gap-1.5">
+                      <span>{slot.name}</span>
+                      {isSearchActive && slotMatchCount > 0 && (
+                        <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
+                          ⚡ {slotMatchCount}
+                        </span>
+                      )}
                     </div>
 
                     <div className="text-xs font-bold text-emerald-400 font-mono">
@@ -882,9 +1048,23 @@ export default function WarehouseMapTab() {
                 <ArrowLeft size={14} />
                 <span>Quay lại Ô kệ</span>
               </button>
-              <span className="text-[10px] text-slate-400 font-mono">
-                {currentPositions.length} vị trí
-              </span>
+              <div className="flex items-center gap-2">
+                {isSearchActive && (
+                  <button
+                    onClick={() => setOnlyShowMatches(!onlyShowMatches)}
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
+                      onlyShowMatches
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30'
+                        : 'bg-amber-950/40 text-amber-300 border border-amber-500/40 hover:bg-amber-900/40'
+                    }`}
+                  >
+                    ⭐ {onlyShowMatches ? 'Hiện tất cả' : 'Chỉ vị trí khớp'}
+                  </button>
+                )}
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {currentPositions.length} vị trí
+                </span>
+              </div>
             </div>
 
             {/* Horizontal Tiers Filter Pills */}
@@ -902,6 +1082,7 @@ export default function WarehouseMapTab() {
 
               {tiers.map(tier => {
                 const stats = zoneStatsMap.get(tier.id) || { total: 0, occupied: 0, empty: 0 }
+                const tierMatchCount = zoneMatchCountMap.get(tier.id) || 0
                 return (
                   <button
                     key={tier.id}
@@ -914,6 +1095,11 @@ export default function WarehouseMapTab() {
                   >
                     <span>{tier.name}</span>
                     <span className="text-[10px] opacity-80 font-mono">({stats.occupied}/{stats.total})</span>
+                    {isSearchActive && tierMatchCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black">
+                        {tierMatchCount}
+                      </span>
+                    )}
                   </button>
                 )
               })}
@@ -928,7 +1114,10 @@ export default function WarehouseMapTab() {
               /* When "Tất cả các tầng": Render as clean vertical shelves (Tầng 5 -> Tầng 1) */
               <div className="space-y-3.5">
                 {tiers.map(tier => {
-                  const tierPositions = tierPositionsMap.get(tier.id) || []
+                  let tierPositions = tierPositionsMap.get(tier.id) || []
+                  if (onlyShowMatches && isSearchActive) {
+                    tierPositions = tierPositions.filter(p => matchingPosIds.has(p.id))
+                  }
                   const stats = zoneStatsMap.get(tier.id) || { total: 0, occupied: 0, empty: 0 }
                   if (tierPositions.length === 0) return null
 
@@ -956,6 +1145,7 @@ export default function WarehouseMapTab() {
                         {tierPositions.map(pos => {
                           const isOccupied = !!pos.lot_id
                           const isHighlighted = pos.id === highlightedPosId
+                          const isMatched = matchingPosIds.has(pos.id)
 
                           return (
                             <button
@@ -964,6 +1154,8 @@ export default function WarehouseMapTab() {
                               className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${
                                 isHighlighted
                                   ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
+                                  : isMatched
+                                  ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
                                   : isOccupied
                                   ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
                                   : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
@@ -973,6 +1165,11 @@ export default function WarehouseMapTab() {
                                 <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
                                   {pos.code}
                                 </span>
+                                {isMatched && (
+                                  <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                                    ⭐ Khớp
+                                  </span>
+                                )}
                                 {isOccupied ? (
                                   <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
                                     #{pos.stt || 'LOT'}
@@ -1026,6 +1223,7 @@ export default function WarehouseMapTab() {
                   {currentPositions.map(pos => {
                     const isOccupied = !!pos.lot_id
                     const isHighlighted = pos.id === highlightedPosId
+                    const isMatched = matchingPosIds.has(pos.id)
 
                     return (
                       <button
@@ -1034,6 +1232,8 @@ export default function WarehouseMapTab() {
                         className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${
                           isHighlighted
                             ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
+                            : isMatched
+                            ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
                             : isOccupied
                             ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
                             : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
@@ -1043,6 +1243,11 @@ export default function WarehouseMapTab() {
                           <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
                             {pos.code}
                           </span>
+                          {isMatched && (
+                            <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                              ⭐ Khớp
+                            </span>
+                          )}
                           {isOccupied ? (
                             <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
                               #{pos.stt || 'LOT'}
