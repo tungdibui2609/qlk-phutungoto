@@ -1108,16 +1108,6 @@ export default function WebScannerPage() {
     }
   }
 
-  // ── "Kéo về sửa" Cloud Pallet ──────────────────────────────────
-  const handlePullCloudPalletToEdit = (pallet: PalletItem) => {
-    setActivePalletStt(pallet.stt)
-    setActivePalletTag(pallet.tag || '')
-    setActivePalletNotes(pallet.notes || '')
-    setActiveTab(pallet.scan_type === 'stamp' ? 'stamp' : 'label')
-    loadCurrentPalletBoxes(pallet.stt)
-    localStorage.setItem('last_worked_pallet_stt', pallet.stt)
-    triggerToast(`🔄 Đã kéo Pallet ${pallet.stt} về màn hình quét để tiếp tục làm việc!`)
-  }
 
   // ── Load All Pallets for Tab 3 ────────────────────────────────
   const loadAllPallets = useCallback(async () => {
@@ -2581,25 +2571,13 @@ export default function WebScannerPage() {
                               {p.production_date ? `NSX: ${p.production_date}` : ''}
                             </span>
 
-                            <div className="flex items-center gap-1.5">
-                              {/* Nút "Kéo về sửa" chuẩn mobile app */}
-                              <button
-                                onClick={() => handlePullCloudPalletToEdit(p)}
-                                className="px-2 py-1 rounded-lg bg-sky-600/20 hover:bg-sky-600/30 border border-sky-500/40 text-sky-300 text-[11px] font-bold flex items-center gap-1 transition active:scale-95"
-                                title="Kéo pallet này về màn hình quét để thêm/bớt thùng"
-                              >
-                                <ArrowDownToLine size={12} />
-                                <span>Kéo về sửa</span>
-                              </button>
-
-                              <button
-                                onClick={() => handleOpenPalletDetail(p)}
-                                className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-bold transition flex items-center gap-1 active:scale-95"
-                              >
-                                <span>Chi tiết</span>
-                                <ChevronRight size={12} />
-                              </button>
-                            </div>
+                            <button
+                              onClick={() => handleOpenPalletDetail(p)}
+                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1.5 active:scale-95"
+                            >
+                              <span>Xem chi tiết</span>
+                              <ChevronRight size={14} />
+                            </button>
                           </div>
                         </div>
                       ))}
@@ -3508,20 +3486,10 @@ export default function WebScannerPage() {
               )}
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex gap-2">
-              <button
-                onClick={() => {
-                  setSelectedPallet(null)
-                  handlePullCloudPalletToEdit(selectedPallet)
-                }}
-                className="flex-1 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-bold transition flex items-center justify-center gap-1.5"
-              >
-                <ArrowDownToLine size={14} />
-                <span>Kéo về sửa</span>
-              </button>
+            <div className="pt-3 border-t border-slate-800">
               <button
                 onClick={() => setSelectedPallet(null)}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition"
+                className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition"
               >
                 Đóng
               </button>
