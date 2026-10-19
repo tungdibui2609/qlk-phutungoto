@@ -23,6 +23,7 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT } from '@/lib/numberUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { matchPalletSearch, calculateSearchScore } from '@/lib/searchUtils'
 
 interface ZoneItem {
   id: string
@@ -41,6 +42,7 @@ interface PositionItem {
   lot_code?: string | null
   product_name?: string | null
   sku?: string | null
+  aliases?: string | null
   unit?: string | null
   tags?: string[]
   packaging_date?: string | null
@@ -148,8 +150,8 @@ export default function WarehouseMapTab() {
                 packaging_date,
                 inbound_date,
                 quantity,
-                products ( name, sku, unit ),
-                lot_items ( quantity, unit, products ( name, sku, unit ) ),
+                products ( name, sku, unit, aliases ),
+                lot_items ( quantity, unit, products ( name, sku, unit, aliases ) ),
                 lot_tags ( tag )
               `)
               .in('id', chunk)
@@ -173,6 +175,11 @@ export default function WarehouseMapTab() {
                 l.lot_items?.[0]?.products?.sku ||
                 (tags.length > 0 ? tags[0] : '---')
 
+              const aliases =
+                l.products?.aliases ||
+                l.lot_items?.[0]?.products?.aliases ||
+                null
+
               const unit =
                 l.products?.unit ||
                 l.lot_items?.[0]?.unit ||
@@ -183,6 +190,7 @@ export default function WarehouseMapTab() {
                 stt: l.daily_seq ? decodeSTT(l.daily_seq) : null,
                 product_name: prodName,
                 sku,
+                aliases,
                 unit,
                 tags,
                 packaging_date: l.packaging_date ? String(l.packaging_date).split('T')[0] : null,
@@ -219,6 +227,7 @@ export default function WarehouseMapTab() {
         const lotCode = lotInfo?.code || (pendInfo ? 'Chờ duyệt LOT' : null)
         const productName = lotInfo?.product_name || (pendInfo ? 'Đang chờ gán LOT' : null)
         const sku = lotInfo?.sku || null
+        const aliases = lotInfo?.aliases || null
         const unit = lotInfo?.unit || 'Thùng'
         const tags = lotInfo?.tags || []
         const pkgDate = lotInfo?.packaging_date || pendInfo?.packaging_date || null
@@ -232,6 +241,7 @@ export default function WarehouseMapTab() {
           lot_code: lotCode,
           product_name: productName,
           sku,
+          aliases,
           unit,
           tags,
           packaging_date: pkgDate,
@@ -427,20 +437,19 @@ export default function WarehouseMapTab() {
     return map
   }, [selectedSlotId, tiers, positions, getDescendantZoneIds])
 
-  // ── Search & Jump to Position Logic ───────────────────────────
+  // ── Search & Jump to Position Logic (Smart Vietnamese & Abbreviation search) ──
   const searchResults = useMemo(() => {
-    const q = searchQuery.trim().toUpperCase()
+    const q = searchQuery.trim()
     if (!q || q.length < 1) return []
 
     return positions
-      .filter(p => {
-        const matchCode = p.code.toUpperCase().includes(q)
-        const matchStt = p.stt && p.stt.toUpperCase().includes(q)
-        const matchLot = p.lot_code && p.lot_code.toUpperCase().includes(q)
-        const matchProd = p.product_name && p.product_name.toUpperCase().includes(q)
-        return matchCode || matchStt || matchLot || matchProd
+      .filter(p => matchPalletSearch(p, q))
+      .sort((a, b) => {
+        const scoreA = calculateSearchScore(a, q, { name: a.product_name, code: a.code, lot_code: a.lot_code, aliases: a.aliases })
+        const scoreB = calculateSearchScore(b, q, { name: b.product_name, code: b.code, lot_code: b.lot_code, aliases: b.aliases })
+        return scoreB - scoreA
       })
-      .slice(0, 15)
+      .slice(0, 20)
   }, [searchQuery, positions])
 
   const handleSelectSearchResult = (pos: PositionItem) => {
@@ -636,9 +645,16 @@ export default function WarehouseMapTab() {
                       )}
                     </div>
                     {p.lot_code && (
-                      <p className="text-[11px] text-slate-300 font-bold truncate max-w-xs">
-                        {p.product_name || p.lot_code}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-[11px] text-slate-300 font-bold truncate max-w-xs">
+                          {p.product_name || p.lot_code}
+                        </p>
+                        {p.aliases && (
+                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                            ⚡ {p.aliases}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                   <ChevronRight size={15} className="text-slate-500 group-hover:text-cyan-400 transition" />
