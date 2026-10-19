@@ -441,6 +441,101 @@ export default function WebScannerPage() {
     }
   }
 
+  // ── Helper to decode Box Item matching Mobile App ────────────
+  const parseBoxLabelItem = (b: any, idx: number, activeDict?: Record<string, Record<string, string>>): BoxItem => {
+    const meta = b.metadata || {}
+    let boxIndex = String(meta.box_index || '')
+    if (!boxIndex && b.code) {
+      const parts = b.code.split('-')
+      const last = parts[parts.length - 1]
+      if (!isNaN(parseInt(last))) boxIndex = parseInt(last, 10).toString()
+    }
+    if (!boxIndex) boxIndex = String(idx + 1)
+
+    const stampLine1 = meta.stamp_line1 || (b.code?.startsWith('STAMP-') ? b.code.split('-')[1] : '')
+    const stampLine2 = meta.stamp_line2 || b.finished_lot_code || b.semi_finished_lot_code || (b.code?.startsWith('STAMP-') ? b.code.split('-')[2] : '')
+    const isStamp = meta.scan_type === 'stamp' || !!stampLine1 || !!stampLine2 || b.code?.startsWith('STAMP-')
+
+    const dict = activeDict || DEFAULT_STAMP_DICT
+    let isSpecial12 = false
+    let special12Code = ''
+    let special12Name = ''
+    const rawL1 = stampLine1 || meta.sku || b.products?.sku || ''
+    const c12 = rawL1.replace(/[^0-9]/g, '').slice(0, 12)
+    if (c12.length >= 12 && (dict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12?.[c12])) {
+      isSpecial12 = true
+      special12Code = c12
+      special12Name = dict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12[c12]
+    }
+
+    let factory = meta.shift_group || ''
+    let packagingDate = meta.packaging_date || ''
+    let rawMaterialDate = meta.raw_material_date || meta.production_date || ''
+    let supplierCode = meta.supplier || meta.supplier_code || ''
+    let supplierName = ''
+    let province = meta.region || ''
+
+    if (isStamp && stampLine2) {
+      const cleanL2 = stampLine2.replace(/[^0-9]/g, '')
+      if (cleanL2.length >= 1 && !factory) {
+        const fCode = cleanL2.substring(0, 1)
+        factory = dict.factory?.[fCode] || DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
+      }
+      if (cleanL2.length >= 5 && !packagingDate) {
+        packagingDate = `${cleanL2.substring(1, 3)}/${cleanL2.substring(3, 5)}`
+      }
+      if (cleanL2.length >= 11 && !rawMaterialDate) {
+        const DD = cleanL2.substring(5, 7)
+        const MM = cleanL2.substring(7, 9)
+        const YY = cleanL2.substring(9, 11)
+        rawMaterialDate = `${DD}/${MM}/20${YY}`
+      }
+      if (cleanL2.length >= 14 && !supplierCode) {
+        supplierCode = cleanL2.substring(11, 14)
+      }
+      if (cleanL2.length >= 16 && !province) {
+        const pCode = cleanL2.substring(14, 16)
+        province = dict.province?.[pCode] || DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
+      }
+    }
+
+    if (supplierCode) {
+      supplierName = `Mã NCC ${supplierCode}`
+    }
+
+    let specVal = meta.spec || ''
+    if (isSpecial12 && special12Name) {
+      const parts = special12Name.split(' - ').map((s: string) => s.trim())
+      specVal = parts.length >= 2 ? `${parts[1]}${parts[2] ? ` (${parts[2]})` : ''}` : 'Hàng có hạt (Hầm đông)'
+    }
+
+    return {
+      id: b.id,
+      code: b.code,
+      box_index: boxIndex,
+      quantity: Number(b.quantity) || 20,
+      unit: b.unit || 'Kg',
+      sku: isSpecial12 ? special12Code : (meta.sku || b.products?.sku || 'SKU'),
+      product_name: isSpecial12 ? special12Name : (meta.product_name || b.products?.name || b.products?.internal_name || 'Hàng đông lạnh'),
+      lot_code: b.finished_lot_code || b.semi_finished_lot_code || meta.lot_code || stampLine2 || 'LOT',
+      spec: specVal,
+      shift_group: factory,
+      region: province,
+      production_date: meta.production_date || rawMaterialDate,
+      packaging_date: packagingDate,
+      raw_material_date: rawMaterialDate,
+      supplier: supplierCode,
+      supplier_name: supplierName,
+      scan_type: isStamp ? 'stamp' : (meta.scan_type || 'label'),
+      stamp_line1: stampLine1 || undefined,
+      stamp_line2: stampLine2 || undefined,
+      is_special_12: isSpecial12,
+      special_12_code: special12Code,
+      special_12_name: special12Name,
+      created_at: b.created_at
+    } as BoxItem
+  }
+
   // ── Load Pallet Boxes for an Active Pallet ──────────────────────
   const loadCurrentPalletBoxes = useCallback(async (stt: string) => {
     if (!stt || !stt.trim()) {
@@ -510,100 +605,7 @@ export default function WebScannerPage() {
             setTargetQty(palletTarget)
           }
         }
-        const mapped = data.map((b: any, idx: number) => {
-          const meta = b.metadata || {}
-          let boxIndex = String(meta.box_index || '')
-          if (!boxIndex && b.code) {
-            const parts = b.code.split('-')
-            const last = parts[parts.length - 1]
-            if (!isNaN(parseInt(last))) boxIndex = parseInt(last, 10).toString()
-          }
-          if (!boxIndex) boxIndex = String(idx + 1)
-
-          const stampLine1 = meta.stamp_line1 || (b.code?.startsWith('STAMP-') ? b.code.split('-')[1] : '')
-          const stampLine2 = meta.stamp_line2 || b.finished_lot_code || b.semi_finished_lot_code || (b.code?.startsWith('STAMP-') ? b.code.split('-')[2] : '')
-          const isStamp = meta.scan_type === 'stamp' || !!stampLine1 || !!stampLine2 || b.code?.startsWith('STAMP-')
-
-          // Check Special 12 & dictionary lookups
-          const activeDict = stampDictMap || DEFAULT_STAMP_DICT
-          let isSpecial12 = false
-          let special12Code = ''
-          let special12Name = ''
-          const rawL1 = stampLine1 || meta.sku || b.products?.sku || ''
-          const c12 = rawL1.replace(/[^0-9]/g, '').slice(0, 12)
-          if (c12.length >= 12 && (activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12?.[c12])) {
-            isSpecial12 = true
-            special12Code = c12
-            special12Name = activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12[c12]
-          }
-
-          let factory = meta.shift_group || ''
-          let packagingDate = meta.packaging_date || ''
-          let rawMaterialDate = meta.raw_material_date || meta.production_date || ''
-          let supplierCode = meta.supplier || meta.supplier_code || ''
-          let supplierName = ''
-          let province = meta.region || ''
-
-          if (isStamp && stampLine2) {
-            const cleanL2 = stampLine2.replace(/[^0-9]/g, '')
-            if (cleanL2.length >= 1 && !factory) {
-              const fCode = cleanL2.substring(0, 1)
-              factory = activeDict.factory?.[fCode] || DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
-            }
-            if (cleanL2.length >= 5 && !packagingDate) {
-              packagingDate = `${cleanL2.substring(1, 3)}/${cleanL2.substring(3, 5)}`
-            }
-            if (cleanL2.length >= 11 && !rawMaterialDate) {
-              const DD = cleanL2.substring(5, 7)
-              const MM = cleanL2.substring(7, 9)
-              const YY = cleanL2.substring(9, 11)
-              rawMaterialDate = `${DD}/${MM}/20${YY}`
-            }
-            if (cleanL2.length >= 14 && !supplierCode) {
-              supplierCode = cleanL2.substring(11, 14)
-            }
-            if (cleanL2.length >= 16 && !province) {
-              const pCode = cleanL2.substring(14, 16)
-              province = activeDict.province?.[pCode] || DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
-            }
-          }
-
-          if (supplierCode) {
-            supplierName = `Mã NCC ${supplierCode}`
-          }
-
-          let specVal = meta.spec || ''
-          if (isSpecial12 && special12Name) {
-            const parts = special12Name.split(' - ').map((s: string) => s.trim())
-            specVal = parts.length >= 2 ? `${parts[1]}${parts[2] ? ` (${parts[2]})` : ''}` : 'Ngoại lệ trọn gói'
-          }
-
-          return {
-            id: b.id,
-            code: b.code,
-            box_index: boxIndex,
-            quantity: Number(b.quantity) || 20,
-            unit: b.unit || 'Kg',
-            sku: isSpecial12 ? special12Code : (meta.sku || b.products?.sku || 'SKU'),
-            product_name: isSpecial12 ? special12Name : (meta.product_name || b.products?.name || b.products?.internal_name || 'Hàng đông lạnh'),
-            lot_code: b.finished_lot_code || b.semi_finished_lot_code || meta.lot_code || stampLine2 || 'LOT',
-            spec: specVal,
-            shift_group: factory,
-            region: province,
-            production_date: meta.production_date || rawMaterialDate,
-            packaging_date: packagingDate,
-            raw_material_date: rawMaterialDate,
-            supplier: supplierCode,
-            supplier_name: supplierName,
-            scan_type: isStamp ? 'stamp' : (meta.scan_type || 'label'),
-            stamp_line1: stampLine1 || undefined,
-            stamp_line2: stampLine2 || undefined,
-            is_special_12: isSpecial12,
-            special_12_code: special12Code,
-            special_12_name: special12Name,
-            created_at: b.created_at
-          } as BoxItem
-        })
+        const mapped = data.map((b: any, idx: number) => parseBoxLabelItem(b, idx, stampDictMap))
 
         mapped.sort((a: BoxItem, b: BoxItem) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
         setCurrentBoxes(mapped)
@@ -1293,34 +1295,8 @@ export default function WebScannerPage() {
         .order('code', { ascending: true })
 
       if (!error && data) {
-        const mapped = data.map((b: any, idx: number) => {
-          const meta = b.metadata || {}
-          let boxIndex = String(meta.box_index || '')
-          if (!boxIndex && b.code) {
-            const parts = b.code.split('-')
-            const last = parts[parts.length - 1]
-            if (!isNaN(parseInt(last))) boxIndex = parseInt(last, 10).toString()
-          }
-          if (!boxIndex) boxIndex = String(idx + 1)
-
-          return {
-            id: b.id,
-            code: b.code,
-            box_index: boxIndex,
-            quantity: Number(b.quantity) || 20,
-            unit: b.unit || 'Kg',
-            sku: meta.sku || b.products?.sku || 'SKU',
-            product_name: meta.product_name || b.products?.name || 'Hàng đông lạnh',
-            lot_code: b.finished_lot_code || b.semi_finished_lot_code || meta.lot_code || 'LOT',
-            spec: meta.spec || '',
-            shift_group: meta.shift_group || '',
-            region: meta.region || '',
-            production_date: meta.production_date || '',
-            packaging_date: meta.packaging_date || '',
-            scan_type: meta.scan_type || 'label',
-            created_at: b.created_at
-          } as BoxItem
-        })
+        const mapped = data.map((b: any, idx: number) => parseBoxLabelItem(b, idx, stampDictMap))
+        mapped.sort((a: BoxItem, b: BoxItem) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
         setSelectedPalletBoxes(mapped)
       } else {
         setSelectedPalletBoxes([])
@@ -3434,16 +3410,32 @@ export default function WebScannerPage() {
               </button>
             </div>
 
-            <div className="my-2.5">
+            <div className="space-y-2 my-2.5">
+              {/* Security status banner */}
               {selectedPallet.is_linked ? (
                 <div className="p-2 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-[11px] font-bold flex items-center gap-2">
-                  <CheckCircle2 size={15} className="text-emerald-400 shrink-0" />
-                  <span>Dữ liệu đã lên Web mẹ an toàn</span>
+                  <ShieldCheck size={15} className="text-emerald-400 shrink-0" />
+                  <span>Dữ liệu đã lên Web mẹ an toàn (Không thể xóa/sửa từ app)</span>
                 </div>
               ) : (
                 <div className="p-2 rounded-xl bg-amber-950/60 border border-amber-500/40 text-amber-300 text-[11px] font-bold flex items-center gap-2">
                   <AlertTriangle size={15} className="text-amber-400 shrink-0" />
                   <span>Pallet đang quét trực tiếp (Chờ duyệt LOT)</span>
+                </div>
+              )}
+
+              {/* Subtitle with total boxes and weight */}
+              <p className="text-xs text-slate-400">
+                Tổng cộng {selectedPalletBoxes.length} thùng · {selectedPalletBoxes.reduce((s, b) => s + b.quantity, 0).toFixed(1)} Kg
+              </p>
+
+              {/* Warehouse Location Banner (Matching Mobile App) */}
+              {selectedPallet.location_code && (
+                <div className="px-3 py-2 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-300 text-xs font-bold flex items-center gap-2">
+                  <MapPin size={15} className="text-amber-400 shrink-0" />
+                  <span>
+                    Vị trí kho: <strong className="text-amber-300 font-mono font-black">{selectedPallet.location_code}</strong>
+                  </span>
                 </div>
               )}
             </div>
@@ -3458,31 +3450,102 @@ export default function WebScannerPage() {
                   Chưa có thùng nào trong Pallet này
                 </div>
               ) : (
-                selectedPalletBoxes.map(b => (
-                  <div
-                    key={b.id}
-                    className="p-3 rounded-xl bg-[#1e293b]/70 border border-slate-800 space-y-1 text-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[10px] font-black font-mono">
-                          #{b.box_index}
-                        </span>
-                        <span className="font-bold text-slate-300 font-mono">
-                          SKU: {b.sku}
+                selectedPalletBoxes.map(b => {
+                  const isStamp = b.scan_type === 'stamp' || !!b.stamp_line1 || !!b.stamp_line2
+                  return (
+                    <div
+                      key={b.id}
+                      className="p-3 rounded-xl bg-[#1e293b]/70 border border-slate-800 space-y-2 text-xs"
+                    >
+                      {/* Header row: #Index, SKU, Weight */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2 py-0.5 rounded bg-emerald-500 text-slate-950 text-[10px] font-black font-mono">
+                            #{b.box_index}
+                          </span>
+                          <span className="font-bold text-slate-300 font-mono text-xs">
+                            SKU: {b.sku}
+                          </span>
+                        </div>
+                        <span className="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30 text-[10px] font-black font-mono">
+                          {b.quantity} {b.unit}
                         </span>
                       </div>
-                      <span className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 text-[10px] font-black font-mono">
-                        {b.quantity} {b.unit}
-                      </span>
-                    </div>
 
-                    <p className="font-bold text-white leading-snug">{b.product_name}</p>
-                    <p className="text-[10px] text-slate-400 font-mono">
-                      Mã LOT: {b.lot_code} | NSX: {b.production_date}
-                    </p>
-                  </div>
-                ))
+                      {/* Badges for Stamp & Special 12 */}
+                      {isStamp && (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="bg-[#451a03] border border-amber-600/60 text-amber-400 px-2 py-0.5 rounded text-[10px] font-extrabold flex items-center gap-1">
+                              📦 DẤU ĐÓNG MỰC
+                            </span>
+                            {b.is_special_12 && (
+                              <span className="bg-[#064e3b] border border-emerald-500/60 text-emerald-300 px-2 py-0.5 rounded text-[10px] font-extrabold flex items-center gap-1">
+                                ⭐ 12 SỐ ĐẦU TRỌN GÓI
+                              </span>
+                            )}
+                          </div>
+                          {b.is_special_12 && (
+                            <p className="text-[10px] text-emerald-300 leading-tight">
+                              ✓ Khớp quy cách ngoại lệ trọn gói. Đã ẩn phân đoạn 14 số chuẩn để không làm sai lệch thông số đóng gói.
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Full Product Name */}
+                      <p className="font-bold text-white leading-snug">{b.product_name}</p>
+
+                      {/* Complete 2-Column Details Grid */}
+                      {isStamp ? (
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-300 pt-1 border-t border-slate-800">
+                          <div>
+                            <span className="text-slate-500">Mã LOT (Dòng 2):</span> <strong className="font-mono text-slate-200">{b.lot_code}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Quy cách:</span> <span className="text-slate-200">{b.spec || (b.is_special_12 ? 'Hàng có hạt (Hầm đông)' : 'Thùng tiêu chuẩn')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Nhà máy:</span> <span className="text-slate-200">{b.shift_group || 'Nhà máy Đắk Lắk'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Vùng NL (Tỉnh):</span> <span className="text-slate-200">{b.region || 'Đắk Lắk'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Ngày nhập NL:</span> <strong className="font-mono text-amber-400">{b.raw_material_date || b.production_date || '---'}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Ngày ĐG:</span> <strong className="font-mono text-slate-200">{b.packaging_date || '---'}</strong>
+                          </div>
+                          <div className="col-span-2">
+                            <span className="text-slate-500">Nhà cung cấp:</span> <span className="text-slate-200">{b.supplier_name || (b.supplier ? `Mã NCC ${b.supplier}` : 'Mã NCC 000')}</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] text-slate-300 pt-1 border-t border-slate-800">
+                          <div>
+                            <span className="text-slate-500">Mã LOT:</span> <strong className="font-mono text-slate-200">{b.lot_code}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Quy cách:</span> <span className="text-slate-200">{b.spec || 'Thùng/túi: 20kg'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Tổ/Nhóm:</span> <span className="text-slate-200">{b.shift_group || 'Nguyên'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Vùng NL:</span> <span className="text-slate-200">{b.region || 'Tây Nguyên'}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Ngày SX:</span> <strong className="font-mono text-amber-400">{b.production_date}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Ngày ĐG:</span> <strong className="font-mono text-slate-200">{b.packaging_date || b.production_date}</strong>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
               )}
             </div>
 
