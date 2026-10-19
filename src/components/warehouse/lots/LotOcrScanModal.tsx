@@ -447,17 +447,16 @@ interface LotOcrScanModalProps {
     dailySeq?: number | string | null
     lotName?: string
     onClose: () => void
-    searchTerm?: string
 }
 
-export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose, searchTerm: initialSearch = '' }: LotOcrScanModalProps) {
+export function LotOcrScanModal({ lotId, lotCode, dailySeq, lotName, onClose }: LotOcrScanModalProps) {
     const { showToast } = useToast()
     const [boxes, setBoxes] = useState<any[]>([])
     const [unlinkedMatchingBoxes, setUnlinkedMatchingBoxes] = useState<any[]>([])
     const [isLoading, setIsLoading] = useState(true)
     const [isUnlinking, setIsUnlinking] = useState<string | null>(null)
     const [isLinkingNow, setIsLinkingNow] = useState(false)
-    const [searchQuery, setSearchQuery] = useState(initialSearch)
+    const [searchQuery, setSearchQuery] = useState('')
     const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid')
     const [filterType, setFilterType] = useState<'all' | 'label' | 'stamp'>('all')
     const [isExpandedAll, setIsExpandedAll] = useState(true)

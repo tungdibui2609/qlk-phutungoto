@@ -12,6 +12,7 @@ import { getProductColorStyle } from '@/lib/warehouseUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
+import { formatMaterialZoneList } from '@/lib/provinces'
 import { useToast } from '@/components/ui/ToastProvider'
 
 interface LotDetailsModalProps {
@@ -494,13 +495,7 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     <div className="min-w-0">
                                         <p className="text-[10px] font-bold text-zinc-400 uppercase mb-0.5">Vùng nguyên liệu</p>
                                         <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200">
-                                            {(() => {
-                                                const rawMz = (lot.metadata as any)?.material_zones;
-                                                if (Array.isArray(rawMz) && rawMz.length > 0) {
-                                                    return rawMz.join(', ');
-                                                }
-                                                return (lot.metadata as any)?.material_zone || '---';
-                                            })()}
+                                            {formatMaterialZoneList((lot.metadata as any)?.material_zones || (lot.metadata as any)?.material_zone)}
                                         </p>
                                     </div>
                                 </div>

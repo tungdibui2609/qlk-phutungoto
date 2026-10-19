@@ -155,6 +155,21 @@ export default function MaterialZonesPage() {
                 </div>
             </div>
 
+            {/* Banner liên kết Quy tắc đóng dấu */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 rounded-2xl text-xs text-emerald-900 dark:text-emerald-200 shadow-sm gap-2">
+                <div className="flex items-center gap-2.5">
+                    <Trees size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                    <div>
+                        <span className="font-bold">Đồng bộ hai chiều với Quy tắc đóng dấu: </span>
+                        <span>Mỗi vùng nguyên liệu / vùng trồng tương ứng với một mã tỉnh 2 số (Ký tự 15, 16 Dòng 2) trong </span>
+                        <Link href="/warehouses/stamp-rules" className="font-bold underline hover:text-emerald-600 dark:hover:text-emerald-300 inline-flex items-center gap-1">
+                            Quy tắc đóng dấu - Vùng nguyên liệu (Tỉnh) <ExternalLink size={12} />
+                        </Link>
+                        <span>. Dữ liệu này tự động tải xuống App Mobile để phục vụ giải mã tức thì khi công nhân quét tem/thùng.</span>
+                    </div>
+                </div>
+            </div>
+
             {/* Filters Bar */}
             <div className="bg-white dark:bg-zinc-900 rounded-2xl p-4 border border-zinc-200/80 dark:border-zinc-800 flex flex-col md:flex-row flex-wrap gap-3 md:items-center shadow-xs">
                 <div className="relative flex-1 w-full md:min-w-[280px]">

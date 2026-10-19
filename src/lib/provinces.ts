@@ -62,3 +62,72 @@ export function getProvinceCode(provinceNameOrCode: string): string | null {
     const p = findProvince(provinceNameOrCode)
     return p ? p.code : null
 }
+
+/**
+ * Chuẩn hóa tên vùng trồng / vùng nguyên liệu chỉ lấy tên tỉnh
+ * Ví dụ: 
+ *  - "VN-66-01 - Vùng trồng Đắk Lắk" -> "Đắk Lắk"
+ *  - "Tỉnh Đắk Lắk" -> "Đắk Lắk"
+ *  - "Vùng trồng Đắk Lắk" -> "Đắk Lắk"
+ *  - "Đắk Lắk" -> "Đắk Lắk"
+ */
+export function formatMaterialZoneProvince(zone: string, materialZonesList?: any[]): string {
+    if (!zone) return ''
+    const trimmed = zone.trim()
+    if (!trimmed || trimmed === '---') return ''
+
+    // 1. Nếu có materialZonesList từ DB, tìm xem có khớp mã/tên vùng không
+    if (materialZonesList && materialZonesList.length > 0) {
+        const lower = trimmed.toLowerCase()
+        const matched = materialZonesList.find(m =>
+            (m.code && (m.code.toLowerCase() === lower || lower.startsWith(m.code.toLowerCase()))) ||
+            (m.name && (m.name.toLowerCase() === lower || lower.includes(m.name.toLowerCase()))) ||
+            (m.province && (m.province.toLowerCase() === lower || lower.includes(m.province.toLowerCase())))
+        )
+        if (matched?.province) {
+            const p = findProvince(matched.province)
+            if (p) return p.shortName
+            return matched.province.replace(/^Tỉnh\s+/i, '').replace(/^Thành phố\s+/i, '').trim() || matched.province
+        }
+    }
+
+    // 2. Tìm qua danh mục 25 tỉnh chuẩn
+    const p = findProvince(trimmed)
+    if (p) return p.shortName
+
+    // 3. Xóa các tiền tố thường gặp: Mã PUC (VN-XX-XX - ), "Vùng trồng", "Tỉnh", "Thành phố"
+    const cleaned = trimmed
+        .replace(/^VN-?\d+-?\d*\s*[-–:]\s*/i, '')
+        .replace(/^Vùng\s+trồng\s+/i, '')
+        .replace(/^(Tỉnh|Thành phố)\s+/i, '')
+        .trim()
+
+    // Thử tìm lại lần nữa với chuỗi đã làm sạch
+    const pCleaned = findProvince(cleaned)
+    if (pCleaned) return pCleaned.shortName
+
+    return cleaned || trimmed
+}
+
+/**
+ * Định dạng danh sách hoặc chuỗi vùng nguyên liệu/vùng trồng thành chuỗi các tỉnh gọn gàng, không trùng lặp
+ */
+export function formatMaterialZoneList(rawMz: any, materialZonesList?: any[]): string {
+    if (!rawMz) return '---'
+    let list: string[] = []
+    if (Array.isArray(rawMz)) {
+        list = rawMz
+    } else if (typeof rawMz === 'string') {
+        list = rawMz.split(',').map((s: string) => s.trim()).filter(Boolean)
+    }
+    if (list.length === 0) return '---'
+
+    const set = new Set<string>()
+    list.forEach(item => {
+        const prov = formatMaterialZoneProvince(item, materialZonesList)
+        if (prov) set.add(prov)
+    })
+
+    const result = Array.from(set)
+    return result.length > 0 ? result.join(', ') : '---'
+}

@@ -141,6 +141,44 @@ export default function ProductionPlaceModal({ isOpen, onClose, onSuccess, initi
                 showToast('Thêm mới nơi sản xuất thành công', 'success')
                 onSuccess(data)
             }
+
+            // Đồng bộ sang danh mục Mã nhà máy (stamp_dictionaries, category: 'factory')
+            try {
+                const rawDigits = (payload.code || '').replace(/[^0-9]/g, '')
+                const targetCode = rawDigits.length > 0 ? String(parseInt(rawDigits, 10)) : '1'
+                const { data: existingDict } = await (supabase.from('stamp_dictionaries' as any) as any)
+                    .select('id, code, name')
+                    .eq('category', 'factory')
+
+                const matchDict = existingDict?.find((d: any) => 
+                    d.code === targetCode || 
+                    d.name.trim().toLowerCase() === payload.name.toLowerCase()
+                )
+
+                if (matchDict) {
+                    await (supabase.from('stamp_dictionaries' as any) as any)
+                        .update({
+                            name: payload.name,
+                            description: payload.address || payload.notes || null,
+                            updated_at: new Date().toISOString()
+                        })
+                        .eq('id', matchDict.id)
+                } else {
+                    await (supabase.from('stamp_dictionaries' as any) as any)
+                        .insert([{
+                            category: 'factory',
+                            code: targetCode,
+                            name: payload.name,
+                            description: payload.address || payload.notes || null,
+                            is_active: true,
+                            sort_order: (existingDict?.length || 0) + 1,
+                            updated_at: new Date().toISOString()
+                        }])
+                }
+            } catch (syncErr) {
+                console.warn('Lỗi đồng bộ sang stamp_dictionaries từ production_places:', syncErr)
+            }
+
             onClose()
         } catch (err: any) {
             console.error('Save production place failed:', err)

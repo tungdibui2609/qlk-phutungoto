@@ -14,6 +14,7 @@ import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, formatUnitWei
 import { useToast } from '@/components/ui/ToastProvider'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 import { layoutService } from '@/services/warehouse/layoutService'
+import { formatMaterialZoneProvince } from '@/lib/provinces'
 
 interface LotItemInput {
     id?: string
@@ -156,24 +157,51 @@ export function LotForm({
 
             const fetchPlaces = async () => {
                 try {
-                    const { data } = await (supabase.from('production_places' as any) as any)
-                        .select('id, code, name, province, address')
-                        .eq('is_active', true)
-                        .order('code')
-                    if (data && data.length > 0) {
-                        setProductionPlacesList(data)
+                    const [pRes, sRes] = await Promise.all([
+                        (supabase.from('production_places' as any) as any)
+                            .select('id, code, name, province, address')
+                            .eq('is_active', true)
+                            .order('code'),
+                        (supabase.from('stamp_dictionaries' as any) as any)
+                            .select('id, code, name')
+                            .eq('category', 'factory')
+                            .eq('is_active', true)
+                            .order('sort_order')
+                    ])
+
+                    const places: any[] = pRes.data || []
+                    const stampFactories: any[] = sRes.data || []
+
+                    // Merge factory stamp rules if not already present in production_places
+                    stampFactories.forEach(sf => {
+                        const exists = places.some(p => 
+                            String(p.name || '').trim().toLowerCase() === String(sf.name || '').trim().toLowerCase() ||
+                            String(p.code || '').trim() === String(sf.code || '').trim()
+                        )
+                        if (!exists) {
+                            places.push({
+                                id: `stamp-fact-${sf.id || sf.code}`,
+                                code: sf.code,
+                                name: sf.name,
+                                province: sf.name.includes('Đắk Lắk') ? 'Đắk Lắk' : (sf.name.includes('Bến Tre') ? 'Bến Tre' : '')
+                            })
+                        }
+                    })
+
+                    if (places.length > 0) {
+                        setProductionPlacesList(places)
                     } else {
                         setProductionPlacesList([
-                            { id: '1', code: 'NM-BT-01', name: 'Nhà máy Chánh Thu - Bến Tre' },
-                            { id: '2', code: 'CS-DL-01', name: 'Xưởng chế biến Cư M\'gar - Đắk Lắk' },
-                            { id: '3', code: 'NM-TG-01', name: 'Nhà máy Đóng gói Tiền Giang' }
+                            { id: '1', code: '01', name: 'Nhà máy Bến Tre', province: 'Bến Tre' },
+                            { id: '2', code: '02', name: 'Nhà máy Đắk Lắk', province: 'Đắk Lắk' },
+                            { id: '3', code: '03', name: 'Phước An, Đắk Lắk', province: 'Đắk Lắk' }
                         ])
                     }
                 } catch (e) {
                     setProductionPlacesList([
-                        { id: '1', code: 'NM-BT-01', name: 'Nhà máy Chánh Thu - Bến Tre' },
-                        { id: '2', code: 'CS-DL-01', name: 'Xưởng chế biến Cư M\'gar - Đắk Lắk' },
-                        { id: '3', code: 'NM-TG-01', name: 'Nhà máy Đóng gói Tiền Giang' }
+                        { id: '1', code: '01', name: 'Nhà máy Bến Tre', province: 'Bến Tre' },
+                        { id: '2', code: '02', name: 'Nhà máy Đắk Lắk', province: 'Đắk Lắk' },
+                        { id: '3', code: '03', name: 'Phước An, Đắk Lắk', province: 'Đắk Lắk' }
                     ])
                 }
             }
@@ -182,10 +210,11 @@ export function LotForm({
     }, [isVisible])
 
     const handleAddMaterialZone = (zoneVal?: string) => {
-        const val = (zoneVal || newMaterialZoneInput).trim()
-        if (!val) return
-        if (!materialZones.includes(val)) {
-            setMaterialZones(prev => [...prev, val])
+        const rawVal = (zoneVal || newMaterialZoneInput).trim()
+        if (!rawVal) return
+        const prov = formatMaterialZoneProvince(rawVal, materialZonesList) || rawVal
+        if (!materialZones.includes(prov)) {
+            setMaterialZones(prev => [...prev, prov])
         }
         setNewMaterialZoneInput('')
     }
@@ -395,7 +424,8 @@ export function LotForm({
                 setProductionPlace(loadedPlaces.join(', '))
                 setNewProductionPlaceInput('')
                 const rawMz = meta.material_zones || (meta.material_zone ? meta.material_zone.split(',').map((s: string) => s.trim()).filter(Boolean) : [])
-                setMaterialZones(Array.isArray(rawMz) ? rawMz : [])
+                const cleanMzList = Array.from(new Set(rawMz.map((z: string) => formatMaterialZoneProvince(z, materialZonesList) || z).filter(Boolean)))
+                setMaterialZones(cleanMzList as string[])
                 setNewMaterialZoneInput('')
 
             } else {
@@ -914,9 +944,9 @@ export function LotForm({
                 production_place: productionPlaces.length > 0 ? productionPlaces.join(', ') : (productionPlace || null),
                 production_places: productionPlaces.length > 0 ? productionPlaces : (productionPlace ? [productionPlace] : []),
                 manual_production_places: productionPlaces.length > 0 ? productionPlaces : (productionPlace ? [productionPlace] : []),
-                material_zone: materialZones.length > 0 ? materialZones.join(', ') : null,
-                material_zones: materialZones.length > 0 ? materialZones : [],
-                manual_material_zones: materialZones.length > 0 ? materialZones : [],
+                material_zone: materialZones.length > 0 ? Array.from(new Set(materialZones.map(z => formatMaterialZoneProvince(z, materialZonesList) || z).filter(Boolean))).join(', ') : null,
+                material_zones: materialZones.length > 0 ? Array.from(new Set(materialZones.map(z => formatMaterialZoneProvince(z, materialZonesList) || z).filter(Boolean))) : [],
+                manual_material_zones: materialZones.length > 0 ? Array.from(new Set(materialZones.map(z => formatMaterialZoneProvince(z, materialZonesList) || z).filter(Boolean))) : [],
                 system_history: systemHistory,
                 manual_peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
                 peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : [])
@@ -1681,8 +1711,7 @@ export function LotForm({
                                                     {materialZones.length > 0 && (
                                                         <div className="flex flex-wrap gap-1.5 p-2 bg-emerald-50/40 dark:bg-zinc-800/40 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 max-h-28 overflow-y-auto">
                                                             {materialZones.map((mzStr) => {
-                                                                const matched = materialZonesList.find(m => m.code === mzStr || m.name === mzStr || `${m.code} - ${m.name}` === mzStr)
-                                                                const label = matched ? `${matched.code} - ${matched.name}` : mzStr
+                                                                const label = formatMaterialZoneProvince(mzStr, materialZonesList) || mzStr
                                                                 return (
                                                                     <div
                                                                         key={mzStr}
@@ -1707,7 +1736,7 @@ export function LotForm({
                                                     {/* Ô nhập / chọn thêm vùng nguyên liệu */}
                                                     <div className="flex items-center gap-1.5">
                                                         <div className="relative flex-1">
-                                                            <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600/70" size={16} />
+                                                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-emerald-600/70" size={16} />
                                                             <input
                                                                 type="text"
                                                                 list="material-zones-datalist"
@@ -1715,12 +1744,13 @@ export function LotForm({
                                                                 onChange={(e) => {
                                                                     const val = e.target.value
                                                                     const found = materialZonesList.find(m => {
+                                                                        const prov = formatMaterialZoneProvince(m.province || m.name, materialZonesList)
                                                                         const lbl = m.code ? `${m.code} - ${m.name}` : m.name
-                                                                        return val === lbl || val === m.code || val === m.name
+                                                                        return val === prov || val === lbl || val === m.code || val === m.name || val === m.province
                                                                     })
                                                                     if (found) {
-                                                                        const itemVal = found.code ? `${found.code} - ${found.name}` : found.name
-                                                                        handleAddMaterialZone(itemVal)
+                                                                        const prov = formatMaterialZoneProvince(found.province || found.name, materialZonesList)
+                                                                        handleAddMaterialZone(prov)
                                                                     } else {
                                                                         setNewMaterialZoneInput(val)
                                                                     }
@@ -1736,15 +1766,11 @@ export function LotForm({
                                                             />
                                                             <datalist id="material-zones-datalist">
                                                                 {materialZonesList
-                                                                    .filter(mz => {
-                                                                        const itemVal = mz.code ? `${mz.code} - ${mz.name}` : mz.name
-                                                                        return !materialZones.includes(itemVal) && !materialZones.includes(mz.code)
-                                                                    })
                                                                     .map((mz) => {
-                                                                        const label = mz.code ? `${mz.code} - ${mz.name}` : mz.name
+                                                                        const prov = formatMaterialZoneProvince(mz.province || mz.name, materialZonesList)
                                                                         return (
-                                                                            <option key={mz.id} value={label}>
-                                                                                {mz.province || mz.name}
+                                                                            <option key={mz.id} value={prov}>
+                                                                                {mz.code ? `[${mz.code}] ` : ''}{mz.name} ({prov})
                                                                             </option>
                                                                         )
                                                                     })}

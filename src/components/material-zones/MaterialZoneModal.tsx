@@ -208,6 +208,54 @@ export default function MaterialZoneModal({ isOpen, onClose, onSuccess, initialD
             }
 
             onSuccess(savedResult || undefined)
+
+            // Tự động đồng bộ sang stamp_dictionaries (category: 'province') cho quy tắc đóng dấu
+            try {
+                const provCode = currentProvinceCode || 
+                    (payload.code ? payload.code.replace(/[^0-9]/g, '').slice(0, 2) : null) || 
+                    (payload.province ? getProvinceCode(payload.province) : null)
+
+                const shortName = currentProvinceObj?.shortName || 
+                    (payload.province ? payload.province.replace(/^(Tỉnh|Thành phố)\s+/i, '').trim() : '') || 
+                    payload.name.replace(/^Vùng trồng\s+/i, '').trim()
+
+                if (provCode && shortName) {
+                    const { data: existingDict } = await (supabase.from('stamp_dictionaries' as any) as any)
+                        .select('id, code, name')
+                        .eq('category', 'province')
+
+                    const matchDict = existingDict?.find((d: any) => 
+                        d.code === provCode || 
+                        d.name.trim().toLowerCase() === shortName.toLowerCase()
+                    )
+
+                    if (matchDict) {
+                        await (supabase.from('stamp_dictionaries' as any) as any)
+                            .update({
+                                code: provCode,
+                                name: shortName,
+                                description: `Tỉnh ${shortName}`,
+                                is_active: payload.is_active ?? true,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', matchDict.id)
+                    } else {
+                        await (supabase.from('stamp_dictionaries' as any) as any)
+                            .insert([{
+                                category: 'province',
+                                code: provCode,
+                                name: shortName,
+                                description: `Tỉnh ${shortName}`,
+                                is_active: payload.is_active ?? true,
+                                sort_order: (existingDict?.length || 0) + 1,
+                                updated_at: new Date().toISOString()
+                            }])
+                    }
+                }
+            } catch (syncErr) {
+                console.warn('Lỗi đồng bộ sang stamp_dictionaries từ material_zones:', syncErr)
+            }
+
             onClose()
         } catch (err: any) {
             console.error('MaterialZone error:', err)

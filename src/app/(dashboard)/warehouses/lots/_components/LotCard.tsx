@@ -10,6 +10,7 @@ import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import React from 'react'
 import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
+import { formatMaterialZoneList } from '@/lib/provinces'
 import { LotBoxLabelsModal } from '@/components/warehouse/lots/LotBoxLabelsModal'
 import { LotOcrScanModal } from '@/components/warehouse/lots/LotOcrScanModal'
 import { advancedMatchSearch } from '@/lib/searchUtils'
@@ -215,9 +216,9 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             });
         }
 
-        const rawMz = (lot.metadata as any)?.material_zones;
-        const matZone = Array.isArray(rawMz) && rawMz.length > 0 ? rawMz.join(', ') : (lot.metadata as any)?.material_zone;
-        if (matZone && isModuleEnabled('material_zone')) {
+        const rawMz = (lot.metadata as any)?.material_zones || (lot.metadata as any)?.material_zone;
+        const matZone = formatMaterialZoneList(rawMz);
+        if (matZone && matZone !== '---' && isModuleEnabled('material_zone')) {
             infoItems.push({
                 key: 'material_zone',
                 icon: <MapPin size={14} />,
@@ -1084,7 +1085,6 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                     lotCode={lot.code}
                     dailySeq={(lot as any).daily_seq}
                     lotName={lot.products?.name || (lot.lot_items?.[0] as any)?.products?.name}
-                    searchTerm={searchTerm}
                     onClose={() => setShowOcrScanModal(false)}
                 />
             )}

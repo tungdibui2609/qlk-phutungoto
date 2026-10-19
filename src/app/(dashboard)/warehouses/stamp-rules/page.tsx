@@ -2,6 +2,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
@@ -682,6 +683,97 @@ export default function StampRulesPage() {
                     .insert([payload])
                 if (error) throw error
                 showToast(`Đã thêm mới quy tắc "${payload.code}" thành công`, 'success')
+            }
+
+            // Tự động đồng bộ sang bảng production_places nếu là Mã nhà máy (factory)
+            if (formCategory === 'factory') {
+                try {
+                    const normCode = formCode.trim()
+                    const paddedCode = normCode.padStart(2, '0')
+                    const { data: existingPlaces } = await supabase
+                        .from('production_places')
+                        .select('id, code, name')
+
+                    const match = existingPlaces?.find((p: any) => 
+                        p.code === normCode || 
+                        p.code === paddedCode ||
+                        p.name.trim().toLowerCase() === formName.trim().toLowerCase()
+                    )
+
+                    const inferredProvince = formName.includes('Đắk Lắk') ? 'Tỉnh Đắk Lắk' : (formName.includes('Bến Tre') ? 'Tỉnh Bến Tre' : null)
+
+                    if (match) {
+                        await supabase
+                            .from('production_places')
+                            .update({
+                                name: formName.trim(),
+                                address: formDesc.trim() || undefined,
+                                province: inferredProvince || undefined,
+                                is_active: true,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', match.id)
+                    } else {
+                        await supabase
+                            .from('production_places')
+                            .insert([{
+                                code: paddedCode,
+                                name: formName.trim(),
+                                address: formDesc.trim() || null,
+                                province: inferredProvince,
+                                is_active: true,
+                                updated_at: new Date().toISOString()
+                            }])
+                    }
+                } catch (placeSyncErr) {
+                    console.warn('Lỗi đồng bộ production_places từ stamp-rules:', placeSyncErr)
+                }
+            }
+
+            // Tự động đồng bộ sang bảng material_zones nếu là Vùng nguyên liệu (province)
+            if (formCategory === 'province') {
+                try {
+                    const normCode = formCode.trim().padStart(2, '0')
+                    const provName = formName.trim()
+                    const { data: existingZones } = await supabase
+                        .from('material_zones')
+                        .select('id, code, name, province')
+
+                    const match = existingZones?.find((z: any) => 
+                        z.code === `VN-${normCode}-01` || 
+                        z.code?.includes(`-${normCode}-`) ||
+                        (z.province && z.province.toLowerCase().includes(provName.toLowerCase())) ||
+                        (z.name && z.name.toLowerCase().includes(provName.toLowerCase()))
+                    )
+
+                    const fullProvName = provName.startsWith('Tỉnh') || provName.startsWith('Thành phố') ? provName : `Tỉnh ${provName}`
+
+                    if (match) {
+                        await supabase
+                            .from('material_zones')
+                            .update({
+                                province: fullProvName,
+                                is_active: true,
+                                updated_at: new Date().toISOString()
+                            })
+                            .eq('id', match.id)
+                    } else {
+                        await supabase
+                            .from('material_zones')
+                            .insert([{
+                                code: `VN-${normCode}-01`,
+                                name: `Vùng trồng ${provName}`,
+                                location: fullProvName,
+                                province: fullProvName,
+                                certification: 'Mã số PUC xuất khẩu',
+                                notes: `Mã dập dấu hành chính: ${normCode}`,
+                                is_active: true,
+                                updated_at: new Date().toISOString()
+                            }])
+                    }
+                } catch (zoneSyncErr) {
+                    console.warn('Lỗi đồng bộ material_zones từ stamp-rules:', zoneSyncErr)
+                }
             }
 
             setIsRuleModalOpen(false)
@@ -1589,6 +1681,40 @@ export default function StampRulesPage() {
                                 })}
                         </div>
                     </div>
+
+                    {/* Banner liên kết Nơi sản xuất / Nhà máy */}
+                    {selectedCategory === 'factory' && (
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-rose-50/80 dark:bg-rose-950/30 border border-rose-200 dark:border-rose-900/60 rounded-2xl text-xs text-rose-900 dark:text-rose-200 shadow-sm gap-2">
+                            <div className="flex items-center gap-2.5">
+                                <Factory size={18} className="text-rose-600 dark:text-rose-400 shrink-0" />
+                                <div>
+                                    <span className="font-bold">Đồng bộ hai chiều với Cơ sở sản xuất: </span>
+                                    <span>Danh mục Mã nhà máy (Ký tự 1 Dòng 2) đã được liên kết trực tiếp với bảng </span>
+                                    <Link href="/production-places" className="font-bold underline hover:text-rose-600 dark:hover:text-rose-300 inline-flex items-center gap-1">
+                                        Nơi sản xuất / Nhà máy (/production-places) <ExternalLink size={12} />
+                                    </Link>
+                                    <span>. Mọi thay đổi ở đây hoặc trang Cơ sở sản xuất sẽ tự động đồng bộ và hiển thị thống nhất trên toàn hệ thống &amp; app mobile.</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Banner liên kết Vùng nguyên liệu (Tỉnh) với /material-zones */}
+                    {selectedCategory === 'province' && (
+                        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 bg-emerald-50/80 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 rounded-2xl text-xs text-emerald-900 dark:text-emerald-200 shadow-sm gap-2">
+                            <div className="flex items-center gap-2.5">
+                                <MapPin size={18} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                <div>
+                                    <span className="font-bold">Đồng bộ hai chiều với Vùng trồng / Vùng nguyên liệu: </span>
+                                    <span>Danh mục Mã tỉnh dập dấu (Ký tự 15, 16 Dòng 2) đã được liên kết tự động với bảng </span>
+                                    <Link href="/material-zones" className="font-bold underline hover:text-emerald-600 dark:hover:text-emerald-300 inline-flex items-center gap-1">
+                                        Vùng nguyên liệu (/material-zones) <ExternalLink size={12} />
+                                    </Link>
+                                    <span>. Khi app mobile quét dấu, mã 2 số này được giải mã thành tên tỉnh và tự động điền vào Lô hàng đồng nhất.</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Table of Rules */}
                     <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl overflow-hidden shadow-sm">

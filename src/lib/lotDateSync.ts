@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient'
 import { parseDateToISO } from './dateUtils'
+import { formatMaterialZoneProvince } from './provinces'
 
 /**
  * Tự động đồng bộ Ngày sản xuất (từ tem nhãn), Ngày nguyên liệu (từ dấu mực),
@@ -79,6 +80,12 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             const rawPlace = meta.production_place || meta.factory || meta.shift_group || b.shift_group || b.production_place || ''
             if (rawPlace && rawPlace !== '---' && rawPlace !== 'Nguyên') {
                 newProductionPlaces.add(String(rawPlace).trim())
+            } else if (isStamp && meta.stamp_line2) {
+                // Chỉ lấy ký tự 1 của Dòng 2 làm mã nhà máy nếu chưa có tên nhà máy cụ thể
+                const cleanL2 = String(meta.stamp_line2).replace(/[^0-9]/g, '')
+                if (cleanL2.length >= 1) {
+                    newProductionPlaces.add(cleanL2.substring(0, 1))
+                }
             }
         })
 
@@ -132,18 +139,15 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                 ? lotMeta.material_zones
                 : (lotMeta.material_zone ? String(lotMeta.material_zone).split(',').map((s: string) => s.trim()).filter(Boolean) : [])
 
-            const mergedZoneSet = new Set<string>(currentZones)
+            const mergedZoneSet = new Set<string>()
+            currentZones.forEach(z => {
+                const prov = formatMaterialZoneProvince(z, materialZonesList)
+                if (prov) mergedZoneSet.add(prov)
+            })
 
             newMaterialZones.forEach(z => {
-                const matched = materialZonesList.find(m => 
-                    (m.province && m.province.toLowerCase().includes(z.toLowerCase())) ||
-                    (m.name && m.name.toLowerCase().includes(z.toLowerCase())) ||
-                    (m.code && m.code.toLowerCase() === z.toLowerCase()) ||
-                    z.toLowerCase().includes(m.province?.toLowerCase() || '') ||
-                    z.toLowerCase().includes(m.name?.toLowerCase() || '')
-                )
-                const standardized = matched ? (matched.code ? `${matched.code} - ${matched.name}` : matched.name) : z
-                mergedZoneSet.add(standardized)
+                const prov = formatMaterialZoneProvince(z, materialZonesList)
+                if (prov) mergedZoneSet.add(prov)
             })
 
             const finalZones = Array.from(mergedZoneSet).sort()
@@ -170,18 +174,26 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                 if (dRes.data) stampFactoryDict = dRes.data
             } catch {}
 
-            const currentPlaces: string[] = Array.isArray(lotMeta.production_places)
-                ? lotMeta.production_places
-                : (lotMeta.production_place ? String(lotMeta.production_place).split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+            const resolvePlace = (rawVal: string): string | null => {
+                const cleanP = String(rawVal).trim()
+                if (!cleanP || cleanP === '---' || cleanP === 'Nguyên') return null
+                if (cleanP.toLowerCase().includes("cư m'gar")) return null
 
-            const mergedPlaceSet = new Set<string>(currentPlaces)
+                // 1. Kiểm tra theo stamp_dictionaries (mã 1, 2, 3...)
+                const dictMatch = stampFactoryDict.find(d => 
+                    String(d.code).trim() === cleanP ||
+                    String(d.name).trim().toLowerCase() === cleanP.toLowerCase() ||
+                    (!isNaN(Number(d.code)) && !isNaN(Number(cleanP)) && Number(d.code) === Number(cleanP))
+                )
+                if (dictMatch) {
+                    const prodMatch = productionPlacesList.find(item => 
+                        String(item.name || '').trim().toLowerCase() === String(dictMatch.name || '').trim().toLowerCase()
+                    )
+                    return prodMatch ? prodMatch.name : dictMatch.name
+                }
 
-            newProductionPlaces.forEach(p => {
-                const cleanP = String(p).trim()
-                if (!cleanP) return
-
-                // Tìm theo mã nhà máy hoặc tên trong production_places
-                let matched = productionPlacesList.find(item => {
+                // 2. Kiểm tra theo production_places
+                const matched = productionPlacesList.find(item => {
                     const itemCode = String(item.code || '').trim()
                     const itemName = String(item.name || '').trim().toLowerCase()
                     const pLower = cleanP.toLowerCase()
@@ -193,34 +205,29 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                     )) {
                         return true
                     }
-
-                    return itemName.includes(pLower) || pLower.includes(itemName)
+                    return itemName === pLower || itemName.includes(pLower) || pLower.includes(itemName)
                 })
 
-                // Nếu chưa tìm thấy và cleanP là mã số, thử tra stamp_dictionaries
-                if (!matched && stampFactoryDict.length > 0) {
-                    const dictMatch = stampFactoryDict.find(d => 
-                        String(d.code).trim() === cleanP ||
-                        (!isNaN(Number(d.code)) && !isNaN(Number(cleanP)) && Number(d.code) === Number(cleanP))
-                    )
-                    if (dictMatch) {
-                        const dictNameLower = String(dictMatch.name || '').trim().toLowerCase()
-                        matched = productionPlacesList.find(item => {
-                            const itemName = String(item.name || '').trim().toLowerCase()
-                            return itemName.includes(dictNameLower) || dictNameLower.includes(itemName)
-                        })
-                        if (!matched) {
-                            mergedPlaceSet.add(dictMatch.name)
-                            return
-                        }
-                    }
-                }
+                if (matched) return matched.name
+                return cleanP
+            }
 
-                if (matched) {
-                    mergedPlaceSet.add(matched.name)
-                } else {
-                    mergedPlaceSet.add(cleanP)
-                }
+            const currentPlaces: string[] = Array.isArray(lotMeta.production_places)
+                ? lotMeta.production_places
+                : (lotMeta.production_place ? String(lotMeta.production_place).split(',').map((s: string) => s.trim()).filter(Boolean) : [])
+
+            const mergedPlaceSet = new Set<string>()
+
+            // Chuẩn hóa currentPlaces (nếu có giá trị cũ)
+            currentPlaces.forEach(p => {
+                const resolved = resolvePlace(p)
+                if (resolved) mergedPlaceSet.add(resolved)
+            })
+
+            // Chuẩn hóa newProductionPlaces từ các thùng vừa quét
+            newProductionPlaces.forEach(p => {
+                const resolved = resolvePlace(p)
+                if (resolved) mergedPlaceSet.add(resolved)
             })
 
             const finalPlaces = Array.from(mergedPlaceSet).sort()

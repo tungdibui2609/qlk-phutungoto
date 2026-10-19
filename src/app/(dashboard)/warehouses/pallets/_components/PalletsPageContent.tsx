@@ -44,7 +44,9 @@ function cleanDateForDB(dateStr?: string | null): string | null {
 }
 
 /**
- * Trích xuất Ngày đóng gói từ thùng (tem nhãn hoặc Dòng 2 con dấu: ký tự 1..4 là DDMM)
+ * Trích xuất Ngày đóng gói từ thùng:
+ * - Tem nhãn: lấy từ packaging_date
+ * - Con dấu: lấy từ Dòng 2 ký tự 1..4 (DDMM)
  */
 function extractPackagingDate(box: BoxLabelItem): string | null {
     const meta = box.metadata || {}
@@ -64,10 +66,37 @@ function extractPackagingDate(box: BoxLabelItem): string | null {
 }
 
 /**
- * Trích xuất Ngày nhập nguyên liệu từ thùng (Dòng 2 con dấu: ký tự 5..10 là DDMMYY)
+ * Trích xuất Ngày sản xuất từ thùng:
+ * - Tem nhãn: lấy từ production_date hoặc peeling_date
+ * - Con dấu: KHÔNG có ngày sản xuất -> TUYỆT ĐỐI để trống (null), không tự ý thêm ngày
+ */
+function extractProductionDate(box: BoxLabelItem): string | null {
+    const meta = box.metadata || {}
+    const isStamp = meta.scan_type === 'stamp' || !!meta.stamp_line1 || !!meta.stamp_line2 || box.code?.startsWith('STAMP-')
+    if (isStamp) {
+        return null // Con dấu tuyệt đối không có ngày sản xuất
+    }
+    if (meta.production_date) {
+        return cleanDateForDB(meta.production_date)
+    }
+    if (meta.peeling_date) {
+        return cleanDateForDB(meta.peeling_date)
+    }
+    return null
+}
+
+/**
+ * Trích xuất Ngày nhập nguyên liệu từ thùng:
+ * - Con dấu: lấy từ Dòng 2 ký tự 5..10 (DDMMYY)
+ * - Tem nhãn: KHÔNG có ngày nhập nguyên liệu -> TUYỆT ĐỐI để trống (null), không tự ý thêm ngày
  */
 function extractRawMaterialDate(box: BoxLabelItem): string | null {
     const meta = box.metadata || {}
+    const isStamp = meta.scan_type === 'stamp' || !!meta.stamp_line1 || !!meta.stamp_line2 || box.code?.startsWith('STAMP-')
+    if (!isStamp && !meta.raw_material_date) {
+        return null // Tem nhãn tuyệt đối không có ngày nhập nguyên liệu
+    }
+
     if (meta.raw_material_date) {
         const d = cleanDateForDB(meta.raw_material_date)
         if (d) return d
@@ -81,10 +110,8 @@ function extractRawMaterialDate(box: BoxLabelItem): string | null {
             return cleanDateForDB(`${dd}/${mm}/20${yy}`)
         }
     }
-    // Mobile scanner lưu ngày nhập nguyên liệu từ con dấu vào production_date hoặc inbound_date
-    const isStamp = meta.scan_type === 'stamp' || !!meta.stamp_line1 || !!meta.stamp_line2 || box.code?.startsWith('STAMP-')
-    if (isStamp && meta.production_date) {
-        return cleanDateForDB(meta.production_date)
+    if (isStamp && meta.inbound_date) {
+        return cleanDateForDB(meta.inbound_date)
     }
     return null
 }
@@ -1136,11 +1163,14 @@ export default function PalletsPageContent() {
 
         const packDates = group.boxes.map(b => extractPackagingDate(b)).filter(Boolean) as string[]
         const rawDates = group.boxes.map(b => extractRawMaterialDate(b)).filter(Boolean) as string[]
-        const prodDates = group.boxes.map(b => cleanDateForDB(b.metadata?.production_date)).filter(Boolean) as string[]
+        const prodDates = group.boxes.map(b => extractProductionDate(b)).filter(Boolean) as string[]
 
-        const defaultPackDate = packDates.length > 0 ? [...packDates].sort().reverse()[0] : todayStr
-        const defaultRawDate = rawDates.length > 0 ? [...rawDates].sort()[0] : ''
-        const defaultProdDate = prodDates.length > 0 ? [...prodDates].sort()[0] : (isStamp ? '' : defaultPackDate)
+        // Quy tắc chính xác:
+        // - Dấu mực: Dòng 2 chỉ có Ngày đóng gói (DDMM) & Ngày nhập nguyên liệu (DDMMYY). TUYỆT ĐỐI không có Ngày sản xuất -> để trống.
+        // - Tem nhãn: Chỉ có Ngày sản xuất (NSX) & Ngày đóng gói (NĐG). TUYỆT ĐỐI không có Ngày nhập nguyên liệu -> để trống.
+        const defaultPackDate = packDates.length > 0 ? [...packDates].sort().reverse()[0] : ''
+        const defaultRawDate = isStamp && rawDates.length > 0 ? [...rawDates].sort()[0] : ''
+        const defaultProdDate = !isStamp && prodDates.length > 0 ? [...prodDates].sort()[0] : ''
 
         setCustomInboundDate(todayStr)
         setCustomPackagingDate(defaultPackDate)
@@ -2576,6 +2606,7 @@ export default function PalletsPageContent() {
                                         onChange={e => setCustomInboundDate(e.target.value)}
                                         className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     />
+                                    <span className="text-[10px] text-stone-400 mt-0.5 block">Ngày tạo LOT nhập kho</span>
                                 </div>
 
                                 <div>
@@ -2591,6 +2622,7 @@ export default function PalletsPageContent() {
                                         onChange={e => setCustomPackagingDate(e.target.value)}
                                         className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
                                     />
+                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{isStampModal ? 'Dấu mực: Dòng 2 (DDMM)' : 'Từ tem nhãn (NĐG)'}</span>
                                 </div>
 
                                 <div>
@@ -2606,6 +2638,7 @@ export default function PalletsPageContent() {
                                         onChange={e => setCustomPeelingDate(e.target.value)}
                                         className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
                                     />
+                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{isStampModal ? 'Dấu mực: để trống' : 'Từ tem nhãn (NSX)'}</span>
                                 </div>
 
                                 <div>
@@ -2622,6 +2655,7 @@ export default function PalletsPageContent() {
                                         title="Ngày nhập nguyên liệu"
                                         className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                                     />
+                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{isStampModal ? 'Dấu mực: Dòng 2 (DDMMYY)' : 'Tem nhãn: để trống'}</span>
                                 </div>
                             </div>
 
