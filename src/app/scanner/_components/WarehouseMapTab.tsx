@@ -41,6 +41,8 @@ interface PositionItem {
   lot_code?: string | null
   product_name?: string | null
   sku?: string | null
+  unit?: string | null
+  tags?: string[]
   packaging_date?: string | null
   inbound_date?: string | null
   quantity?: number | null
@@ -125,45 +127,70 @@ export default function WarehouseMapTab() {
         zpMap.set(item.position_id, list)
       })
 
-      // 3. Fetch Lots information for occupied positions
-      const occupiedLotIds = Array.from(new Set(rawPositions.map((p: any) => p.lot_id).filter(Boolean)))
-      let lotMap = new Map<string, any>()
+      // 3. Fetch Lots information for occupied positions in chunks of 100 (avoids HTTP 414 Request-URI Too Long)
+      const occupiedLotIds = Array.from(
+        new Set(rawPositions.map((p: any) => p.lot_id).filter(Boolean))
+      )
+      const lotMap = new Map<string, any>()
 
       if (occupiedLotIds.length > 0) {
-        // Chunk requests if large
-        const { data: lotsData } = await supabase
-          .from('lots')
-          .select(`
-            id,
-            code,
-            daily_seq,
-            packaging_date,
-            inbound_date,
-            quantity,
-            products ( name, sku ),
-            lot_items ( products ( name, sku ) )
-          `)
-          .in('id', occupiedLotIds)
+        const CHUNK_SIZE = 100
+        const chunkPromises: Promise<any>[] = []
+        for (let i = 0; i < occupiedLotIds.length; i += CHUNK_SIZE) {
+          const chunk = occupiedLotIds.slice(i, i + CHUNK_SIZE)
+          chunkPromises.push(
+            supabase
+              .from('lots')
+              .select(`
+                id,
+                code,
+                daily_seq,
+                packaging_date,
+                inbound_date,
+                quantity,
+                products ( name, sku, unit ),
+                lot_items ( quantity, unit, products ( name, sku, unit ) ),
+                lot_tags ( tag )
+              `)
+              .in('id', chunk)
+          )
+        }
 
-        lotsData?.forEach((l: any) => {
-          const prodName =
-            l.products?.name ||
-            l.lot_items?.[0]?.products?.name ||
-            'Hàng đông lạnh'
-          const sku =
-            l.products?.sku ||
-            l.lot_items?.[0]?.products?.sku ||
-            'SKU'
+        const chunkResults = await Promise.all(chunkPromises)
+        chunkResults.forEach((res: any) => {
+          if (res.data) {
+            res.data.forEach((l: any) => {
+              const tags = (l.lot_tags || []).map((t: any) => t.tag).filter(Boolean)
+              const tagsStr = tags.length > 0 ? tags.join(', ') : ''
 
-          lotMap.set(l.id, {
-            code: l.code,
-            stt: l.daily_seq ? decodeSTT(l.daily_seq) : null,
-            product_name: prodName,
-            sku,
-            packaging_date: l.packaging_date,
-            inbound_date: l.inbound_date,
-            quantity: l.quantity
-          })
+              const prodName =
+                l.products?.name ||
+                l.lot_items?.[0]?.products?.name ||
+                (tagsStr ? `Hàng ${tagsStr}` : 'Hàng đông lạnh')
+
+              const sku =
+                l.products?.sku ||
+                l.lot_items?.[0]?.products?.sku ||
+                (tags.length > 0 ? tags[0] : '---')
+
+              const unit =
+                l.products?.unit ||
+                l.lot_items?.[0]?.unit ||
+                'Thùng'
+
+              lotMap.set(l.id, {
+                code: l.code,
+                stt: l.daily_seq ? decodeSTT(l.daily_seq) : null,
+                product_name: prodName,
+                sku,
+                unit,
+                tags,
+                packaging_date: l.packaging_date ? String(l.packaging_date).split('T')[0] : null,
+                inbound_date: l.inbound_date ? String(l.inbound_date).split('T')[0] : null,
+                quantity: l.quantity || (l.lot_items?.[0]?.quantity ?? null)
+              })
+            })
+          }
         })
       }
 
@@ -192,6 +219,8 @@ export default function WarehouseMapTab() {
         const lotCode = lotInfo?.code || (pendInfo ? 'Chờ duyệt LOT' : null)
         const productName = lotInfo?.product_name || (pendInfo ? 'Đang chờ gán LOT' : null)
         const sku = lotInfo?.sku || null
+        const unit = lotInfo?.unit || 'Thùng'
+        const tags = lotInfo?.tags || []
         const pkgDate = lotInfo?.packaging_date || pendInfo?.packaging_date || null
 
         return {
@@ -203,6 +232,8 @@ export default function WarehouseMapTab() {
           lot_code: lotCode,
           product_name: productName,
           sku,
+          unit,
+          tags,
           packaging_date: pkgDate,
           inbound_date: lotInfo?.inbound_date || null,
           quantity: lotInfo?.quantity || null
@@ -1076,33 +1107,61 @@ export default function WarehouseMapTab() {
 
             {/* Position Details if Occupied */}
             {selectedPosDetail.lot_id && (
-              <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2 text-xs">
+              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 space-y-3 text-xs">
                 <div>
-                  <span className="text-[10px] text-slate-400 block mb-0.5">SẢN PHẨM:</span>
+                  <span className="text-[10px] text-slate-400 block mb-0.5">SẢN PHẨM / PHÂN LOẠI:</span>
                   <p className="font-bold text-white text-sm leading-snug">
-                    {selectedPosDetail.product_name || 'Hàng lưu kho'}
+                    {selectedPosDetail.product_name || 'Hàng đông lạnh'}
                   </p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-800 text-[11px]">
+                <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-slate-800 text-[11px]">
                   <div>
                     <span className="text-slate-500 block text-[10px]">MÃ LOT:</span>
-                    <strong className="text-slate-200 font-mono">{selectedPosDetail.lot_code || '---'}</strong>
+                    <strong className="text-cyan-300 font-mono font-bold text-xs">
+                      {selectedPosDetail.lot_code || '---'}
+                    </strong>
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[10px]">SKU:</span>
-                    <strong className="text-slate-200 font-mono">{selectedPosDetail.sku || '---'}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-500 block text-[10px]">NGÀY ĐÓNG GÓI:</span>
-                    <strong className="text-amber-400 font-mono">{selectedPosDetail.packaging_date || '---'}</strong>
+                    <strong className="text-slate-200 font-mono">
+                      {selectedPosDetail.sku || '---'}
+                    </strong>
                   </div>
                   <div>
                     <span className="text-slate-500 block text-[10px]">SỐ LƯỢNG:</span>
-                    <strong className="text-slate-200 font-mono">
-                      {selectedPosDetail.quantity ? `${selectedPosDetail.quantity} Thùng` : '---'}
+                    <strong className="text-emerald-400 font-mono font-bold text-xs">
+                      {selectedPosDetail.quantity ? `${selectedPosDetail.quantity} ${selectedPosDetail.unit || 'Thùng'}` : '---'}
                     </strong>
                   </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">NGÀY ĐÓNG GÓI (NSX):</span>
+                    <strong className="text-amber-400 font-mono">
+                      {selectedPosDetail.packaging_date || '---'}
+                    </strong>
+                  </div>
+                  <div className="col-span-2">
+                    <span className="text-slate-500 block text-[10px]">NGÀY NHẬP KHO:</span>
+                    <strong className="text-slate-300 font-mono">
+                      {selectedPosDetail.inbound_date || '---'}
+                    </strong>
+                  </div>
+
+                  {selectedPosDetail.tags && selectedPosDetail.tags.length > 0 && (
+                    <div className="col-span-2 pt-1 border-t border-slate-800">
+                      <span className="text-slate-500 block text-[10px] mb-1">THẺ PHÂN LOẠI (TAGS):</span>
+                      <div className="flex flex-wrap gap-1">
+                        {selectedPosDetail.tags.map((tg, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[10px] font-bold"
+                          >
+                            🏷️ {tg}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
