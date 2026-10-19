@@ -1597,121 +1597,123 @@ export default function WebScannerPage() {
         </button>
       </div>
 
-      {/* ── PALLET SESSION TOOLBAR (Top Bar Matching Mobile App) ── */}
-      <header className="shrink-0 bg-[#0f172a] border-b border-slate-800/90 px-3 py-2 z-20 shadow-md">
-        <div className="flex items-center justify-between gap-2">
-          {/* Pallet STT Selector Button */}
-          {activePalletStt ? (
-            <button
-              onClick={() => {
-                setNewSttInput(activePalletStt)
-                setNewTagInput(activePalletTag)
-                setNewNotesInput(activePalletNotes)
-                setNewTargetQtyInput(targetQty)
-                setIsSwitchPalletModal(true)
-              }}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-left transition active:scale-[0.98] min-w-0"
-            >
-              {activeTab === 'stamp' ? (
-                <Fingerprint size={16} className="text-amber-400 shrink-0" />
-              ) : (
-                <Scan size={16} className="text-emerald-400 shrink-0" />
-              )}
-              <span className={`text-[10px] font-black uppercase tracking-wider shrink-0 ${activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}`}>
-                {activeTab === 'stamp' ? 'DẤU MỰC' : 'TEM THÙNG'}
-              </span>
-              <span className="text-xs font-bold text-white font-mono truncate">
-                STT: <strong className="text-amber-400">{activePalletStt}</strong>
-              </span>
-              {activePalletTag && (
-                <span className="bg-orange-600/30 text-orange-400 border border-orange-500/40 px-1 py-0.2 rounded text-[9px] font-bold font-mono shrink-0">
-                  🏷️ {activePalletTag}
-                </span>
-              )}
-              {activePalletNotes && (
-                <span className="bg-blue-600/30 text-blue-400 border border-blue-500/40 px-1 py-0.2 rounded text-[9px] font-bold shrink-0" title={activePalletNotes}>
-                  📝
-                </span>
-              )}
-              <ChevronRight size={13} className="text-slate-400 shrink-0" />
-            </button>
-          ) : (
-            <div>
-              <span className="text-[10px] text-slate-400 font-bold tracking-wider block mb-0.5">STT PALLET HIỆN TẠI</span>
+      {/* ── PALLET SESSION TOOLBAR (Only shown for Quét Tem & Dấu Đóng) ── */}
+      {(activeTab === 'label' || activeTab === 'stamp') && (
+        <header className="shrink-0 bg-[#0f172a] border-b border-slate-800/90 px-3 py-2 z-20 shadow-md">
+          <div className="flex items-center justify-between gap-2">
+            {/* Pallet STT Selector Button */}
+            {activePalletStt ? (
               <button
                 onClick={() => {
-                  setNewSttInput('')
-                  setNewTagInput('')
-                  setNewNotesInput('')
-                  setNewTargetQtyInput(30)
+                  setNewSttInput(activePalletStt)
+                  setNewTagInput(activePalletTag)
+                  setNewNotesInput(activePalletNotes)
+                  setNewTargetQtyInput(targetQty)
                   setIsSwitchPalletModal(true)
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-400 text-xs font-bold transition active:scale-95 shadow-xs"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-left transition active:scale-[0.98] min-w-0"
               >
-                <Plus size={15} className="text-emerald-400 stroke-[2.5]" />
-                <span>Chọn / Nhập STT Pallet</span>
+                {activeTab === 'stamp' ? (
+                  <Fingerprint size={16} className="text-amber-400 shrink-0" />
+                ) : (
+                  <Scan size={16} className="text-emerald-400 shrink-0" />
+                )}
+                <span className={`text-[10px] font-black uppercase tracking-wider shrink-0 ${activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {activeTab === 'stamp' ? 'DẤU MỰC' : 'TEM THÙNG'}
+                </span>
+                <span className="text-xs font-bold text-white font-mono truncate">
+                  STT: <strong className="text-amber-400">{activePalletStt}</strong>
+                </span>
+                {activePalletTag && (
+                  <span className="bg-orange-600/30 text-orange-400 border border-orange-500/40 px-1 py-0.2 rounded text-[9px] font-bold font-mono shrink-0">
+                    🏷️ {activePalletTag}
+                  </span>
+                )}
+                {activePalletNotes && (
+                  <span className="bg-blue-600/30 text-blue-400 border border-blue-500/40 px-1 py-0.2 rounded text-[9px] font-bold shrink-0" title={activePalletNotes}>
+                    📝
+                  </span>
+                )}
+                <ChevronRight size={13} className="text-slate-400 shrink-0" />
+              </button>
+            ) : (
+              <div>
+                <span className="text-[10px] text-slate-400 font-bold tracking-wider block mb-0.5">STT PALLET HIỆN TẠI</span>
+                <button
+                  onClick={() => {
+                    setNewSttInput('')
+                    setNewTagInput('')
+                    setNewNotesInput('')
+                    setNewTargetQtyInput(30)
+                    setIsSwitchPalletModal(true)
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/50 text-emerald-400 text-xs font-bold transition active:scale-95 shadow-xs"
+                >
+                  <Plus size={15} className="text-emerald-400 stroke-[2.5]" />
+                  <span>Chọn / Nhập STT Pallet</span>
+                </button>
+              </div>
+            )}
+
+            {/* Right: Total Kg & Quick actions */}
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl text-right">
+                <span className="text-[9px] text-slate-500 block font-bold">TỔNG KG</span>
+                <span className="text-xs font-black font-mono text-sky-400">
+                  {activePalletStt ? currentTotalWeight.toFixed(1) : 0} Kg
+                </span>
+              </div>
+
+              {/* Flash button */}
+              <button
+                onClick={handleToggleTorch}
+                className={`w-8 h-8 rounded-xl border flex items-center justify-center transition active:scale-95 ${
+                  torchActive 
+                    ? 'bg-amber-500/20 border-amber-500 text-amber-400' 
+                    : 'bg-slate-800/80 border-slate-700 text-slate-300'
+                }`}
+                title="Bật/tắt đèn Flash"
+              >
+                {torchActive ? <Zap size={15} /> : <ZapOff size={15} />}
               </button>
             </div>
+          </div>
+
+          {/* Progress Bar (Matching Android app) or Tip Bar when no pallet */}
+          {activePalletStt ? (
+            <div className="mt-1.5 space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-slate-400">
+                  Tiến độ: <strong className={activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
+                  {currentBoxes.length >= targetQty && (
+                    <span className="ml-1 text-[10px] text-emerald-400 font-bold">✓ Đủ chỉ tiêu</span>
+                  )}
+                </span>
+                <span className="text-slate-400">
+                  Tổng: <strong className="text-white font-mono">{currentTotalWeight.toFixed(1)}</strong> Kg
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 rounded-full ${
+                    currentBoxes.length >= targetQty
+                      ? 'bg-emerald-500'
+                      : activeTab === 'stamp'
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                  }`}
+                  style={{ width: `${Math.min(100, (currentBoxes.length / targetQty) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ) : (
+            <div className="mt-1.5 flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/25 px-2.5 py-1 rounded-lg text-sky-300 text-[11px]">
+              <Info size={13} className="shrink-0 text-sky-400" />
+              <span>Bạn chưa chọn Pallet. Hãy bấm chọn Pallet để bắt đầu.</span>
+            </div>
           )}
-
-          {/* Right: Total Kg & Quick actions */}
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="bg-slate-900 border border-slate-800 px-3 py-1 rounded-xl text-right">
-              <span className="text-[9px] text-slate-500 block font-bold">TỔNG KG</span>
-              <span className="text-xs font-black font-mono text-sky-400">
-                {activePalletStt ? currentTotalWeight.toFixed(1) : 0} Kg
-              </span>
-            </div>
-
-            {/* Flash button */}
-            <button
-              onClick={handleToggleTorch}
-              className={`w-8 h-8 rounded-xl border flex items-center justify-center transition active:scale-95 ${
-                torchActive 
-                  ? 'bg-amber-500/20 border-amber-500 text-amber-400' 
-                  : 'bg-slate-800/80 border-slate-700 text-slate-300'
-              }`}
-              title="Bật/tắt đèn Flash"
-            >
-              {torchActive ? <Zap size={15} /> : <ZapOff size={15} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Progress Bar (Matching Android app) or Tip Bar when no pallet */}
-        {activePalletStt ? (
-          <div className="mt-1.5 space-y-1">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-slate-400">
-                Tiến độ: <strong className={activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
-                {currentBoxes.length >= targetQty && (
-                  <span className="ml-1 text-[10px] text-emerald-400 font-bold">✓ Đủ chỉ tiêu</span>
-                )}
-              </span>
-              <span className="text-slate-400">
-                Tổng: <strong className="text-white font-mono">{currentTotalWeight.toFixed(1)}</strong> Kg
-              </span>
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
-              <div
-                className={`h-full transition-all duration-300 rounded-full ${
-                  currentBoxes.length >= targetQty
-                    ? 'bg-emerald-500'
-                    : activeTab === 'stamp'
-                    ? 'bg-amber-400'
-                    : 'bg-emerald-400'
-                }`}
-                style={{ width: `${Math.min(100, (currentBoxes.length / targetQty) * 100)}%` }}
-              />
-            </div>
-          </div>
-        ) : (
-          <div className="mt-1.5 flex items-center gap-1.5 bg-sky-500/10 border border-sky-500/25 px-2.5 py-1 rounded-lg text-sky-300 text-[11px]">
-            <Info size={13} className="shrink-0 text-sky-400" />
-            <span>Bạn chưa chọn Pallet. Hãy bấm chọn Pallet để bắt đầu.</span>
-          </div>
-        )}
-      </header>
+        </header>
+      )}
 
       {/* ── TOAST ALERT ─────────────────────────────────────────── */}
       {toastMessage && (
