@@ -305,9 +305,13 @@ export default function WarehouseMapTab() {
   }, [activeZones, selectedAisleId])
 
   // 4. Tiers (Level 4: parent_id === selectedSlotId) -> Tầng của Ô gộp
+  // Sắp xếp tầng từ trên xuống dưới (Tầng 5 -> Tầng 1) để chuẩn kệ kho thực tế
   const tiers = useMemo(() => {
     if (!selectedSlotId) return []
-    return sortZones(activeZones.filter(z => z.parent_id === selectedSlotId))
+    const list = activeZones.filter(z => z.parent_id === selectedSlotId)
+    return [...list].sort((a, b) =>
+      (b.name || '').localeCompare(a.name || '', undefined, { numeric: true })
+    )
   }, [activeZones, selectedSlotId])
 
   // Helper to get ALL real zone descendants for any zone ID (whether virtual or real)
@@ -364,12 +368,8 @@ export default function WarehouseMapTab() {
   const currentPositions = useMemo(() => {
     if (!selectedSlotId) return []
 
-    let targetZoneIds: Set<string>
-    if (selectedTierId) {
-      targetZoneIds = new Set([selectedTierId])
-    } else {
-      targetZoneIds = new Set(getDescendantZoneIds(selectedSlotId))
-    }
+    const targetZoneId = selectedTierId || selectedSlotId
+    const targetZoneIds = new Set(getDescendantZoneIds(targetZoneId))
 
     const filtered = positions.filter(p =>
       p.zone_ids.some(zid => targetZoneIds.has(zid))
@@ -379,6 +379,22 @@ export default function WarehouseMapTab() {
       a.code.localeCompare(b.code, undefined, { numeric: true })
     )
   }, [selectedSlotId, selectedTierId, positions, getDescendantZoneIds])
+
+  // Map positions by tier for grouped rack display
+  const tierPositionsMap = useMemo(() => {
+    const map = new Map<string, PositionItem[]>()
+    if (!selectedSlotId) return map
+
+    tiers.forEach(tier => {
+      const descIds = new Set(getDescendantZoneIds(tier.id))
+      const list = positions
+        .filter(p => p.zone_ids.some(zid => descIds.has(zid)))
+        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
+      map.set(tier.id, list)
+    })
+
+    return map
+  }, [selectedSlotId, tiers, positions, getDescendantZoneIds])
 
   // ── Search & Jump to Position Logic ───────────────────────────
   const searchResults = useMemo(() => {
@@ -850,7 +866,7 @@ export default function WarehouseMapTab() {
                     }`}
                   >
                     <span>{tier.name}</span>
-                    <span className="text-[10px] opacity-80">({stats.occupied}/{stats.total})</span>
+                    <span className="text-[10px] opacity-80 font-mono">({stats.occupied}/{stats.total})</span>
                   </button>
                 )
               })}
@@ -861,59 +877,155 @@ export default function WarehouseMapTab() {
               <div className="py-12 text-center text-slate-500 text-xs">
                 Chưa có dữ liệu vị trí nào trong khu vực này.
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
-                {currentPositions.map(pos => {
-                  const isOccupied = !!pos.lot_id
-                  const isHighlighted = pos.id === highlightedPosId
+            ) : !selectedTierId ? (
+              /* When "Tất cả các tầng": Render as clean vertical shelves (Tầng 5 -> Tầng 1) */
+              <div className="space-y-3.5">
+                {tiers.map(tier => {
+                  const tierPositions = tierPositionsMap.get(tier.id) || []
+                  const stats = zoneStatsMap.get(tier.id) || { total: 0, occupied: 0, empty: 0 }
+                  if (tierPositions.length === 0) return null
 
                   return (
-                    <button
-                      key={pos.id}
-                      onClick={() => setSelectedPosDetail(pos)}
-                      className={`p-3 rounded-2xl border text-left transition relative active:scale-[0.98] ${
-                        isHighlighted
-                          ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/40'
-                          : isOccupied
-                          ? 'bg-[#131d33] border-cyan-500/40 hover:border-cyan-400'
-                          : 'bg-slate-900/60 border-dashed border-emerald-500/40 hover:border-emerald-400'
-                      }`}
+                    <div
+                      key={tier.id}
+                      className="p-3 rounded-2xl bg-[#0f172a] border border-slate-800/90 space-y-2.5 shadow-sm"
                     >
-                      {/* Position Code Header */}
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="font-mono font-black text-xs text-white">
-                          {pos.code}
+                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                          <span className="font-black text-xs text-white uppercase tracking-wider">
+                            {tier.name}
+                          </span>
+                          <span className="text-[10px] text-cyan-300 font-mono">
+                            ({stats.occupied}/{stats.total} vị trí có hàng)
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold text-emerald-400 font-mono">
+                          {stats.empty} trống
                         </span>
-                        {isOccupied ? (
-                          <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-black">
-                            STT: {pos.stt || 'LOT'}
-                          </span>
-                        ) : (
-                          <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-bold">
-                            TRỐNG
-                          </span>
-                        )}
                       </div>
 
-                      {/* Content Preview if Occupied */}
-                      {isOccupied ? (
-                        <div className="space-y-1">
-                          <p className="font-bold text-[11px] text-slate-200 leading-snug line-clamp-2">
-                            {pos.product_name || 'Hàng đông lạnh'}
-                          </p>
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                            <span>LOT: {pos.lot_code || '---'}</span>
-                            {pos.quantity && <span>{pos.quantity} Thùng</span>}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="py-2 text-center text-[10px] text-emerald-400/80 font-medium">
-                          + Sẵn sàng xếp hàng
-                        </div>
-                      )}
-                    </button>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                        {tierPositions.map(pos => {
+                          const isOccupied = !!pos.lot_id
+                          const isHighlighted = pos.id === highlightedPosId
+
+                          return (
+                            <button
+                              key={pos.id}
+                              onClick={() => setSelectedPosDetail(pos)}
+                              className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${
+                                isHighlighted
+                                  ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
+                                  : isOccupied
+                                  ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
+                                  : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1 w-full">
+                                <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
+                                  {pos.code}
+                                </span>
+                                {isOccupied ? (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                                    #{pos.stt || 'LOT'}
+                                  </span>
+                                ) : (
+                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                                    TRỐNG
+                                  </span>
+                                )}
+                              </div>
+
+                              {isOccupied ? (
+                                <div className="space-y-0.5 w-full mt-1">
+                                  <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                                    {pos.product_name || 'Hàng đông lạnh'}
+                                  </p>
+                                  <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
+                                    <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                                    {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{pos.quantity} th</span> : null}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="w-full text-center py-1 text-[10px] text-emerald-500/70 font-medium">
+                                  + Vị trí trống
+                                </div>
+                              )}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    </div>
                   )
                 })}
+              </div>
+            ) : (
+              /* When specific Tier selected: Render only that Tier */
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between px-1">
+                  <span className="font-black text-xs text-cyan-300 uppercase flex items-center gap-1.5">
+                    <span>🏢 {getZoneName(selectedTierId)}</span>
+                    <span className="text-[10px] text-slate-400 font-mono font-normal">
+                      ({currentPositions.filter(p => p.lot_id).length}/{currentPositions.length} vị trí có hàng)
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-emerald-400 font-mono font-bold">
+                    {currentPositions.filter(p => !p.lot_id).length} trống
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                  {currentPositions.map(pos => {
+                    const isOccupied = !!pos.lot_id
+                    const isHighlighted = pos.id === highlightedPosId
+
+                    return (
+                      <button
+                        key={pos.id}
+                        onClick={() => setSelectedPosDetail(pos)}
+                        className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${
+                          isHighlighted
+                            ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
+                            : isOccupied
+                            ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
+                            : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
+                            {pos.code}
+                          </span>
+                          {isOccupied ? (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                              #{pos.stt || 'LOT'}
+                            </span>
+                          ) : (
+                            <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                              TRỐNG
+                            </span>
+                          )}
+                        </div>
+
+                        {isOccupied ? (
+                          <div className="space-y-0.5 w-full mt-1">
+                            <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                              {pos.product_name || 'Hàng đông lạnh'}
+                            </p>
+                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
+                              <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                              {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{pos.quantity} th</span> : null}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="w-full text-center py-1 text-[10px] text-emerald-500/70 font-medium">
+                            + Vị trí trống
+                          </div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
           </div>
