@@ -16,7 +16,9 @@ import {
   ArrowLeft,
   Sparkles,
   Info,
-  Check
+  Check,
+  Download,
+  WifiOff
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT } from '@/lib/numberUtils'
@@ -63,10 +65,35 @@ export default function WarehouseMapTab() {
   // Position detail modal
   const [selectedPosDetail, setSelectedPosDetail] = useState<PositionItem | null>(null)
 
+  // Offline support
+  const [isOffline, setIsOffline] = useState<boolean>(false)
+  const [cachedAt, setCachedAt] = useState<string | null>(null)
+  const [downloadingOffline, setDownloadingOffline] = useState<boolean>(false)
+  const [downloadToast, setDownloadToast] = useState<string | null>(null)
+
   // ── Fetch Master Data (Zones, Positions, Lots, Pending) ─────────
   const loadWarehouseMapData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true)
     else setRefreshing(true)
+
+    // 1. Initial cached fallback if not loaded yet
+    try {
+      const cachedRaw = localStorage.getItem('warehouse_map_offline_cache')
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw)
+        if (cached && cached.zones && cached.zones.length > 0) {
+          setZones(cached.zones)
+          setPositions(cached.positions || [])
+          setCachedAt(cached.cachedAt || null)
+          if (!selectedWarehouseId) {
+            const firstWh = cached.zones.find((z: any) => !z.parent_id)
+            if (firstWh) setSelectedWarehouseId(firstWh.id)
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
 
     try {
       // 1. Fetch Zones for Cold Storage
@@ -183,18 +210,56 @@ export default function WarehouseMapTab() {
 
       setPositions(formattedPositions)
 
+      // Save snapshot to local storage for offline use
+      try {
+        const now = new Date().toISOString()
+        const snapshot = {
+          zones: rawZones,
+          positions: formattedPositions,
+          cachedAt: now
+        }
+        localStorage.setItem('warehouse_map_offline_cache', JSON.stringify(snapshot))
+        setCachedAt(now)
+        setIsOffline(false)
+      } catch (e) {
+        console.warn('Lỗi lưu cache sơ đồ kho:', e)
+      }
+
       // Auto-select first warehouse if none selected
       if (!selectedWarehouseId) {
         const firstWh = rawZones.find(z => !z.parent_id)
         if (firstWh) setSelectedWarehouseId(firstWh.id)
       }
     } catch (err) {
-      console.error('Lỗi tải dữ liệu Sơ đồ kho:', err)
+      console.warn('Lỗi tải dữ liệu Sơ đồ kho từ máy chủ, chuyển sang chế độ ngoại tuyến:', err)
+      try {
+        const cachedRaw = localStorage.getItem('warehouse_map_offline_cache')
+        if (cachedRaw) {
+          const cached = JSON.parse(cachedRaw)
+          if (cached && cached.zones) {
+            setZones(cached.zones)
+            setPositions(cached.positions || [])
+            setCachedAt(cached.cachedAt || null)
+            setIsOffline(true)
+          }
+        }
+      } catch {}
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
   }, [selectedWarehouseId])
+
+  const handleDownloadOffline = async () => {
+    setDownloadingOffline(true)
+    try {
+      await loadWarehouseMapData(true)
+      setDownloadToast('Đã lưu toàn bộ sơ đồ kho vào máy để xem ngoại tuyến!')
+      setTimeout(() => setDownloadToast(null), 4000)
+    } finally {
+      setDownloadingOffline(false)
+    }
+  }
 
   useEffect(() => {
     loadWarehouseMapData()
@@ -367,15 +432,63 @@ export default function WarehouseMapTab() {
           </div>
         </div>
 
-        <button
-          onClick={() => loadWarehouseMapData(true)}
-          disabled={refreshing}
-          className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition"
-          title="Tải lại sơ đồ kho"
-        >
-          <RefreshCw size={15} className={refreshing ? 'animate-spin text-cyan-400' : ''} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleDownloadOffline}
+            disabled={downloadingOffline}
+            className="px-2.5 py-1.5 rounded-xl bg-emerald-950/70 hover:bg-emerald-900/90 text-emerald-300 border border-emerald-500/50 active:scale-95 transition flex items-center gap-1.5 text-xs font-bold"
+            title="Tải về máy để xem khi vào kho đông không có mạng"
+          >
+            <Download size={14} className={downloadingOffline ? 'animate-bounce text-emerald-400' : ''} />
+            <span className="hidden sm:inline">Tải xem Offline</span>
+          </button>
+
+          <button
+            onClick={() => loadWarehouseMapData(true)}
+            disabled={refreshing}
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition"
+            title="Tải lại sơ đồ kho"
+          >
+            <RefreshCw size={15} className={refreshing ? 'animate-spin text-cyan-400' : ''} />
+          </button>
+        </div>
       </div>
+
+      {/* ── OFFLINE STATUS BANNER (When inside cold storage without network) ── */}
+      {isOffline && (
+        <div className="bg-amber-950/80 border-b border-amber-500/50 px-3 py-2 flex items-center justify-between text-xs text-amber-200">
+          <div className="flex items-center gap-2 font-bold">
+            <span className="text-sm">❄️</span>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <span>Đang xem Ngoại Tuyến (Offline)</span>
+                <span className="text-[10px] px-1.5 py-0.2 rounded bg-amber-500/30 text-amber-300 font-mono">
+                  Kho đông lạnh
+                </span>
+              </div>
+              {cachedAt && (
+                <p className="text-[10px] text-amber-300/80 font-normal">
+                  Bản lưu lúc: {new Date(cachedAt).toLocaleTimeString('vi-VN')} {new Date(cachedAt).toLocaleDateString('vi-VN')}
+                </p>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => loadWarehouseMapData(true)}
+            className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold active:scale-95 transition"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {/* ── SUCCESS DOWNLOAD TOAST ─────────────────────────────── */}
+      {downloadToast && (
+        <div className="bg-emerald-950 border-b border-emerald-500/50 px-3 py-2 flex items-center gap-2 text-xs text-emerald-200 animate-in fade-in">
+          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+          <span className="font-semibold">{downloadToast}</span>
+        </div>
+      )}
 
       {/* ── SEARCH BAR WITH INSTANT MATCH (Pallet STT, Position, LOT) ── */}
       <div className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative">
