@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT } from '@/lib/numberUtils'
+import { groupWarehouseData } from '@/lib/warehouseUtils'
 
 interface ZoneItem {
   id: string
@@ -265,6 +266,20 @@ export default function WarehouseMapTab() {
     loadWarehouseMapData()
   }, [])
 
+  // ── Ô Gộp (Grouped Warehouse Data) ───────────────────────────
+  const { groupedZones, virtualToRealMap } = useMemo(() => {
+    if (zones.length === 0) {
+      return { groupedZones: [], virtualToRealMap: new Map<string, string[]>() }
+    }
+    const res = groupWarehouseData(zones as any, positions as any)
+    return {
+      groupedZones: (res.zones as ZoneItem[]) || zones,
+      virtualToRealMap: res.virtualToRealMap || new Map<string, string[]>()
+    }
+  }, [zones, positions])
+
+  const activeZones = groupedZones.length > 0 ? groupedZones : zones
+
   // ── Zones Hierarchy Sorting & Filtering ───────────────────────
   const sortZones = (list: ZoneItem[]) =>
     [...list].sort((a, b) =>
@@ -273,45 +288,46 @@ export default function WarehouseMapTab() {
 
   // 1. Warehouses (Level 1: parent_id is null)
   const warehouses = useMemo(
-    () => sortZones(zones.filter(z => !z.parent_id)),
-    [zones]
+    () => sortZones(activeZones.filter(z => !z.parent_id)),
+    [activeZones]
   )
 
   // 2. Aisles / Halls (Level 2: parent_id === selectedWarehouseId)
   const aisles = useMemo(() => {
     if (!selectedWarehouseId) return []
-    return sortZones(zones.filter(z => z.parent_id === selectedWarehouseId))
-  }, [zones, selectedWarehouseId])
+    return sortZones(activeZones.filter(z => z.parent_id === selectedWarehouseId))
+  }, [activeZones, selectedWarehouseId])
 
-  // 3. Slots (Level 3: parent_id === selectedAisleId)
+  // 3. Slots (Level 3: parent_id === selectedAisleId) -> Ô GỘP: Ô 01, Ô 02...
   const slots = useMemo(() => {
     if (!selectedAisleId) return []
-    return sortZones(zones.filter(z => z.parent_id === selectedAisleId))
-  }, [zones, selectedAisleId])
+    return sortZones(activeZones.filter(z => z.parent_id === selectedAisleId))
+  }, [activeZones, selectedAisleId])
 
-  // 4. Tiers (Level 4: parent_id === selectedSlotId)
+  // 4. Tiers (Level 4: parent_id === selectedSlotId) -> Tầng của Ô gộp
   const tiers = useMemo(() => {
     if (!selectedSlotId) return []
-    return sortZones(zones.filter(z => z.parent_id === selectedSlotId))
-  }, [zones, selectedSlotId])
+    return sortZones(activeZones.filter(z => z.parent_id === selectedSlotId))
+  }, [activeZones, selectedSlotId])
 
-  // Helper to get zone descendants
+  // Helper to get ALL real zone descendants for any zone ID (whether virtual or real)
   const getDescendantZoneIds = useCallback(
     (targetZoneId: string): string[] => {
-      const allIds = new Set<string>([targetZoneId])
+      const directMembers = virtualToRealMap.get(targetZoneId) || [targetZoneId]
+      const allRealIds = new Set<string>(directMembers)
       let added = true
       while (added) {
         added = false
         for (const z of zones) {
-          if (z.parent_id && allIds.has(z.parent_id) && !allIds.has(z.id)) {
-            allIds.add(z.id)
+          if (z.parent_id && allRealIds.has(z.parent_id) && !allRealIds.has(z.id)) {
+            allRealIds.add(z.id)
             added = true
           }
         }
       }
-      return Array.from(allIds)
+      return Array.from(allRealIds)
     },
-    [zones]
+    [zones, virtualToRealMap]
   )
 
   // ── Stats Calculator (Total, Occupied, Empty) per Zone ─────────
@@ -320,9 +336,9 @@ export default function WarehouseMapTab() {
       string,
       { total: number; occupied: number; empty: number }
     >()
-    if (zones.length === 0 || positions.length === 0) return map
+    if (activeZones.length === 0 || positions.length === 0) return map
 
-    zones.forEach(z => {
+    activeZones.forEach(z => {
       const descIds = new Set(getDescendantZoneIds(z.id))
       let total = 0
       let occupied = 0
@@ -342,7 +358,7 @@ export default function WarehouseMapTab() {
     })
 
     return map
-  }, [zones, positions, getDescendantZoneIds])
+  }, [activeZones, positions, getDescendantZoneIds])
 
   // ── Positions in Current View (Slot / Tier) ────────────────────
   const currentPositions = useMemo(() => {
@@ -384,21 +400,42 @@ export default function WarehouseMapTab() {
     // Find zone hierarchy for this position
     const leafZoneId = pos.zone_ids[0]
     if (leafZoneId) {
-      const zoneMap = new Map(zones.map(z => [z.id, z]))
-      let curr = zoneMap.get(leafZoneId)
-      const path: ZoneItem[] = []
+      const realZoneMap = new Map(zones.map(z => [z.id, z]))
+      let curr = realZoneMap.get(leafZoneId)
+      const realPath: ZoneItem[] = []
 
       while (curr) {
-        path.unshift(curr)
-        curr = curr.parent_id ? zoneMap.get(curr.parent_id) : undefined
+        realPath.unshift(curr)
+        curr = curr.parent_id ? realZoneMap.get(curr.parent_id) : undefined
       }
 
-      // Hierarchy: [Warehouse, Aisle, Slot, Tier]
-      if (path.length >= 1) setSelectedWarehouseId(path[0].id)
-      if (path.length >= 2) setSelectedAisleId(path[1].id)
-      if (path.length >= 3) setSelectedSlotId(path[2].id)
-      if (path.length >= 4) setSelectedTierId(path[3].id)
-      else setSelectedTierId(null)
+      // realPath is [Warehouse, Aisle, RealSlot(e.g. Ô A01), RealTier(e.g. Tầng 1)]
+      if (realPath.length >= 1) setSelectedWarehouseId(realPath[0].id)
+      if (realPath.length >= 2) {
+        const aisleId = realPath[1].id
+        setSelectedAisleId(aisleId)
+
+        if (realPath.length >= 3) {
+          const realSlotId = realPath[2].id
+          // Find corresponding Ô Gộp under aisle
+          const vSlot = activeZones.find(
+            z => z.parent_id === aisleId && (z.id === realSlotId || virtualToRealMap.get(z.id)?.includes(realSlotId))
+          )
+          if (vSlot) {
+            setSelectedSlotId(vSlot.id)
+
+            if (realPath.length >= 4) {
+              const realTierId = realPath[3].id
+              const vTier = activeZones.find(
+                z => z.parent_id === vSlot.id && (z.id === realTierId || virtualToRealMap.get(z.id)?.includes(realTierId))
+              )
+              setSelectedTierId(vTier ? vTier.id : null)
+            } else {
+              setSelectedTierId(null)
+            }
+          }
+        }
+      }
     }
 
     setHighlightedPosId(pos.id)
@@ -409,7 +446,7 @@ export default function WarehouseMapTab() {
 
   // ── Helper to resolve Zone Names ──────────────────────────────
   const getZoneName = (id: string | null) =>
-    zones.find(z => z.id === id)?.name || ''
+    activeZones.find(z => z.id === id)?.name || ''
 
   return (
     <div className="flex-1 flex flex-col h-full bg-[#0a0f1d] text-slate-100 overflow-hidden">
@@ -725,12 +762,15 @@ export default function WarehouseMapTab() {
                 <ArrowLeft size={14} />
                 <span>Quay lại Dãy</span>
               </button>
+              <span className="text-xs font-black text-emerald-400 uppercase tracking-wide">
+                Bước 3: Chọn Ô ({getZoneName(selectedAisleId)})
+              </span>
               <span className="text-[10px] text-slate-500 font-mono">
-                {slots.length} ô kệ
+                {slots.length} ô gộp
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {slots.map(slot => {
                 const stats = zoneStatsMap.get(slot.id) || { total: 0, occupied: 0, empty: 0 }
                 const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
@@ -742,25 +782,24 @@ export default function WarehouseMapTab() {
                       setSelectedSlotId(slot.id)
                       setSelectedTierId(null)
                     }}
-                    className="p-3 rounded-2xl bg-[#111827] border border-slate-800 hover:border-cyan-500/50 text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-1.5 group"
+                    className="p-3.5 rounded-2xl bg-[#111827] border border-slate-700/80 hover:border-emerald-500/80 text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm"
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-xs text-white group-hover:text-cyan-300 transition">
-                        📦 {slot.name}
-                      </span>
-                      <span className="text-[10px] font-mono text-cyan-400 font-bold">
-                        {pct}%
-                      </span>
+                    <div className="font-black text-sm uppercase text-white group-hover:text-emerald-300 transition tracking-wide">
+                      {slot.name}
                     </div>
 
-                    <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono">
-                      <span>{stats.occupied}/{stats.total}</span>
-                      <span className="text-emerald-400">{stats.empty} trống</span>
+                    <div className="text-xs font-bold text-emerald-400 font-mono">
+                      Trống {stats.empty}
                     </div>
 
-                    <div className="w-full h-1 rounded-full bg-slate-800 overflow-hidden">
+                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-0.5">
+                      <span>{stats.occupied}/{stats.total} vị trí</span>
+                      <span>{pct}%</span>
+                    </div>
+
+                    <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
                       <div
-                        className="h-full bg-cyan-500 rounded-full"
+                        className="h-full bg-emerald-500 rounded-full transition-all duration-300"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
