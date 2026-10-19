@@ -70,6 +70,7 @@ import {
   OfflineLot
 } from '@/lib/scanner-db'
 import { matchPalletSearch, calculateSearchScore, normalizeSearchString } from '@/lib/searchUtils'
+import WarehouseMapTab from './_components/WarehouseMapTab'
 
 // Helper function to synthesize an audio beep on scan success
 function playScanSound() {
@@ -156,7 +157,7 @@ interface ProductSuggestion {
 
 export default function WebScannerPage() {
   // ── Navigation & Active Tab ────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'label' | 'stamp' | 'pallets' | 'settings'>('label')
+  const [activeTab, setActiveTab] = useState<'label' | 'stamp' | 'warehouse_map' | 'pallets' | 'settings'>('label')
   const [palletListSubTab, setPalletListSubTab] = useState<'pending' | 'cloud'>('pending')
 
   // ── Current Pallet Session State (Empty by default like Mobile App) ──
@@ -2220,6 +2221,11 @@ export default function WebScannerPage() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════
+            TAB: SƠ ĐỒ VỊ TRÍ KHO (Mobile Warehouse Map & Hierarchy)
+           ═══════════════════════════════════════════════════════════ */}
+        {activeTab === 'warehouse_map' && <WarehouseMapTab />}
+
+        {/* ═══════════════════════════════════════════════════════════
             TAB 3: PALLET KHO (SPLIT INTO LOCAL/PENDING & CLOUD TABS)
            ═══════════════════════════════════════════════════════════ */}
         {activeTab === 'pallets' && (
@@ -2818,8 +2824,16 @@ export default function WebScannerPage() {
         </button>
 
         <button
+          onClick={() => setActiveTab('warehouse_map')}
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'warehouse_map' ? 'text-cyan-400 bg-cyan-500/10 font-bold' : 'text-slate-400'}`}
+        >
+          <MapPin size={18} />
+          <span className="text-[10px]">Sơ Đồ Kho</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('pallets')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${activeTab === 'pallets' ? 'text-sky-400 bg-sky-500/10 font-bold' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'pallets' ? 'text-sky-400 bg-sky-500/10 font-bold' : 'text-slate-400'}`}
         >
           <Boxes size={18} />
           <span className="text-[10px]">Pallet Kho</span>
@@ -2827,7 +2841,7 @@ export default function WebScannerPage() {
 
         <button
           onClick={() => setActiveTab('settings')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${activeTab === 'settings' ? 'text-purple-400 bg-purple-500/10 font-bold' : 'text-slate-400'}`}
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'settings' ? 'text-purple-400 bg-purple-500/10 font-bold' : 'text-slate-400'}`}
         >
           <Settings size={18} />
           <span className="text-[10px]">Cài Đặt</span>
