@@ -67,12 +67,28 @@ export default function WarehouseMapTab() {
   const [onlyShowMatches, setOnlyShowMatches] = useState<boolean>(false)
 
   // Search state
+  const [searchInput, setSearchInput] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState<string>('')
   const [activeView, setActiveView] = useState<'map' | 'search_list'>('map')
   const [searchFilterWhId, setSearchFilterWhId] = useState<string>('all')
   const [searchFilterStatus, setSearchFilterStatus] = useState<'all' | 'occupied' | 'empty'>('all')
   const [searchPageLimit, setSearchPageLimit] = useState<number>(60)
   const [highlightedPosId, setHighlightedPosId] = useState<string | null>(null)
+
+  // Debounce search query update (180ms) for 60fps instant typing
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const trimmed = searchInput.trim()
+      setSearchQuery(trimmed)
+      if (trimmed) {
+        setActiveView('search_list')
+        setSearchPageLimit(60)
+      } else {
+        setActiveView('map')
+      }
+    }, 180)
+    return () => clearTimeout(timer)
+  }, [searchInput])
 
   // Position detail modal
   const [selectedPosDetail, setSelectedPosDetail] = useState<PositionItem | null>(null)
@@ -85,10 +101,9 @@ export default function WarehouseMapTab() {
 
   // ── Fetch Master Data (Zones, Positions, Lots, Pending) ─────────
   const loadWarehouseMapData = useCallback(async (isSilent = false) => {
-    if (!isSilent) setLoading(true)
-    else setRefreshing(true)
+    let hasCache = false
 
-    // 1. Initial cached fallback if not loaded yet
+    // 1. Initial cached fallback - display immediately to eliminate load delay
     try {
       const cachedRaw = localStorage.getItem('warehouse_map_offline_cache')
       if (cachedRaw) {
@@ -100,32 +115,42 @@ export default function WarehouseMapTab() {
           if (!selectedWarehouseId) {
             setSelectedWarehouseId('all')
           }
+          hasCache = true
+          setLoading(false)
+          setRefreshing(true)
         }
       }
     } catch {
       // ignore
     }
 
+    if (!hasCache) {
+      if (!isSilent) setLoading(true)
+      else setRefreshing(true)
+    }
+
     try {
-      // 1. Fetch Zones for Cold Storage
-      const { data: zonesData } = await (supabase
-        .from('zones') as any)
-        .select('id, name, parent_id, system_type')
-        .eq('system_type', 'KHO_DONG_LANH')
-
-      const rawZones: ZoneItem[] = zonesData || []
-      setZones(rawZones)
-
-      // 2. Fetch all positions & zone associations
-      const [posRes, zpRes] = await Promise.all([
+      // 1. Fetch Zones, Positions, Zone associations, and Pending assignments in parallel
+      const [zonesRes, posRes, zpRes, pendingRes] = await Promise.all([
+        (supabase.from('zones') as any)
+          .select('id, name, parent_id, system_type')
+          .eq('system_type', 'KHO_DONG_LANH'),
         (supabase.from('positions') as any)
           .select('id, code, lot_id, system_type')
           .eq('system_type', 'KHO_DONG_LANH'),
-        (supabase.from('zone_positions') as any).select('position_id, zone_id')
+        (supabase.from('zone_positions') as any).select('position_id, zone_id'),
+        (supabase.from('pending_assignments') as any)
+          .select('position_id, lot_stt, production_date')
+          .eq('system_code', 'KHO_DONG_LANH')
+          .eq('status', 'pending')
       ])
+
+      const rawZones: ZoneItem[] = zonesRes.data || []
+      setZones(rawZones)
 
       const rawPositions = posRes.data || []
       const zpList = zpRes.data || []
+      const pendingData = pendingRes.data || []
 
       // Map zone_ids to positions
       const zpMap = new Map<string, string[]>()
@@ -135,7 +160,7 @@ export default function WarehouseMapTab() {
         zpMap.set(item.position_id, list)
       })
 
-      // 3. Fetch Lots information for occupied positions in chunks of 100 (avoids HTTP 414 Request-URI Too Long)
+      // 2. Fetch Lots information for occupied positions in parallel chunks of 100
       const occupiedLotIds = Array.from(
         new Set(rawPositions.map((p: any) => p.lot_id).filter(Boolean))
       )
@@ -214,14 +239,9 @@ export default function WarehouseMapTab() {
         })
       }
 
-      // 4. Fetch pending assignments for real-time STTs
-      const { data: pendingData } = await (supabase.from('pending_assignments') as any)
-        .select('position_id, lot_stt, production_date')
-        .eq('system_code', 'KHO_DONG_LANH')
-        .eq('status', 'pending')
-
+      // Map pending assignments for real-time STTs
       const pendingMap = new Map<string, any>()
-      pendingData?.forEach((p: any) => {
+      pendingData.forEach((p: any) => {
         if (p.position_id) {
           pendingMap.set(p.position_id, {
             stt: decodeSTT(p.lot_stt),
@@ -338,57 +358,107 @@ export default function WarehouseMapTab() {
       (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
     )
 
-  // Helper to get ALL real zone descendants for any zone ID (whether virtual or real)
-  const getDescendantZoneIds = useCallback(
-    (targetZoneId: string): string[] => {
-      const directMembers = virtualToRealMap.get(targetZoneId) || [targetZoneId]
-      const allRealIds = new Set<string>(directMembers)
-      let added = true
-      while (added) {
-        added = false
-        for (const z of zones) {
-          if (z.parent_id && allRealIds.has(z.parent_id) && !allRealIds.has(z.id)) {
-            allRealIds.add(z.id)
-            added = true
+  // ── Pre-compute Zone Descendants Map & Full Paths ONCE (O(1) lookups) ──
+  const { zoneDescendantsMap, zonePathMap } = useMemo(() => {
+    const rzMap = new Map(zones.map(z => [z.id, z]))
+
+    // 1. Precompute full path string for every real zone
+    const pathMap = new Map<string, string>()
+    zones.forEach(z => {
+      const names: string[] = []
+      let curr: ZoneItem | undefined = z
+      while (curr) {
+        names.unshift(curr.name)
+        curr = curr.parent_id ? rzMap.get(curr.parent_id) : undefined
+      }
+      pathMap.set(z.id, names.join(' · '))
+    })
+
+    // 2. Precompute children map for tree traversal
+    const childrenMap = new Map<string, string[]>()
+    zones.forEach(z => {
+      if (z.parent_id) {
+        const list = childrenMap.get(z.parent_id) || []
+        list.push(z.id)
+        childrenMap.set(z.parent_id, list)
+      }
+    })
+
+    const getRealChildren = (parentId: string): string[] => {
+      const result: string[] = []
+      const stack = [parentId]
+      while (stack.length > 0) {
+        const curr = stack.pop()!
+        const kids = childrenMap.get(curr)
+        if (kids) {
+          for (let i = 0; i < kids.length; i++) {
+            result.push(kids[i])
+            stack.push(kids[i])
           }
         }
       }
-      return Array.from(allRealIds)
+      return result
+    }
+
+    // 3. Precompute descendant set for all active zones (including virtual/grouped ones)
+    const descMap = new Map<string, Set<string>>()
+    activeZones.forEach(z => {
+      const realIds = virtualToRealMap.get(z.id) || [z.id]
+      const allDesc = new Set<string>(realIds)
+      realIds.forEach(rid => {
+        const children = getRealChildren(rid)
+        for (let i = 0; i < children.length; i++) {
+          allDesc.add(children[i])
+        }
+      })
+      descMap.set(z.id, allDesc)
+    })
+
+    return { zoneDescendantsMap: descMap, zonePathMap: pathMap }
+  }, [zones, activeZones, virtualToRealMap])
+
+  // Helper to get ALL real zone descendants (O(1) lookup)
+  const getDescendantZoneIds = useCallback(
+    (targetZoneId: string): Set<string> => {
+      return zoneDescendantsMap.get(targetZoneId) || new Set<string>([targetZoneId])
     },
-    [zones, virtualToRealMap]
+    [zoneDescendantsMap]
   )
 
-  // Helper to get full zone path string (e.g. "Kho 2 · Dãy 4 · Ô B13 · Tầng 5")
+  // Helper to get full zone path string (O(1) lookup)
   const getPositionPath = useCallback(
     (pos: PositionItem) => {
       const leafZoneId = pos.zone_ids[0]
       if (!leafZoneId) return ''
-      const realZoneMap = new Map(zones.map(z => [z.id, z]))
-      let curr = realZoneMap.get(leafZoneId)
-      const names: string[] = []
-      while (curr) {
-        names.unshift(curr.name)
-        curr = curr.parent_id ? realZoneMap.get(curr.parent_id) : undefined
-      }
-      return names.join(' · ')
+      return zonePathMap.get(leafZoneId) || ''
     },
-    [zones]
+    [zonePathMap]
   )
 
-  // ── Search & Filter Logic (Smart Vietnamese & Abbreviation search) ──
+  // ── Search & Filter Logic (High Performance with Pre-Scoring) ──
   const isSearchActive = !!searchQuery.trim()
 
   const matchingPositions = useMemo(() => {
     const q = searchQuery.trim()
     if (!q || q.length < 1) return []
 
-    return positions
-      .filter(p => matchPalletSearch(p, q))
-      .sort((a, b) => {
-        const scoreA = calculateSearchScore(a, q, { name: a.product_name, code: a.code, lot_code: a.lot_code, aliases: a.aliases })
-        const scoreB = calculateSearchScore(b, q, { name: b.product_name, code: b.code, lot_code: b.lot_code, aliases: b.aliases })
-        return scoreB - scoreA
-      })
+    // Pre-calculate score only for matched positions (eliminates ~50,000 repeated calculations in sort)
+    const matched: { pos: PositionItem; score: number }[] = []
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i]
+      if (matchPalletSearch(p, q)) {
+        const score = calculateSearchScore(p, q, {
+          name: p.product_name,
+          code: p.code,
+          lot_code: p.lot_code,
+          aliases: p.aliases
+        })
+        matched.push({ pos: p, score })
+      }
+    }
+
+    matched.sort((a, b) => b.score - a.score)
+    return matched.map(m => m.pos)
   }, [searchQuery, positions])
 
   const matchingPosIds = useMemo(() => {
@@ -403,7 +473,7 @@ export default function WarehouseMapTab() {
   const filteredSearchResults = useMemo(() => {
     let list = matchingPositions
     if (searchFilterWhId !== 'all') {
-      const descIds = new Set(getDescendantZoneIds(searchFilterWhId))
+      const descIds = getDescendantZoneIds(searchFilterWhId)
       list = list.filter(p => p.zone_ids.some(zid => descIds.has(zid)))
     }
     if (searchFilterStatus === 'occupied') {
@@ -424,23 +494,25 @@ export default function WarehouseMapTab() {
     return { total: matchingPositions.length, occupied, empty }
   }, [matchingPositions])
 
-  // Count matches per zone (Warehouse, Aisle, Slot, Tier)
+  // Fast count matches per zone (only loops over matching positions, NOT all positions)
   const zoneMatchCountMap = useMemo(() => {
     const map = new Map<string, number>()
-    if (!isSearchActive || activeZones.length === 0 || matchingPosIds.size === 0) return map
+    if (!isSearchActive || activeZones.length === 0 || matchingPositions.length === 0) return map
 
     activeZones.forEach(z => {
-      const descIds = new Set(getDescendantZoneIds(z.id))
+      const descSet = zoneDescendantsMap.get(z.id)
+      if (!descSet) return
       let matchCount = 0
-      positions.forEach(p => {
-        if (matchingPosIds.has(p.id) && p.zone_ids.some(zid => descIds.has(zid))) {
+      for (let i = 0; i < matchingPositions.length; i++) {
+        const p = matchingPositions[i]
+        if (p.zone_ids.some(zid => descSet.has(zid))) {
           matchCount++
         }
-      })
+      }
       if (matchCount > 0) map.set(z.id, matchCount)
     })
     return map
-  }, [isSearchActive, activeZones, matchingPosIds, positions, getDescendantZoneIds])
+  }, [isSearchActive, activeZones, matchingPositions, zoneDescendantsMap])
 
   // 1. Warehouses (Level 1: parent_id is null)
   const warehouses = useMemo(
@@ -494,7 +566,7 @@ export default function WarehouseMapTab() {
     )
   }, [activeZones, selectedSlotId])
 
-  // ── Stats Calculator (Total, Occupied, Empty) per Zone ─────────
+  // ── Stats Calculator (Total, Occupied, Empty) per Zone (O(1) Set Lookups) ──
   const zoneStatsMap = useMemo(() => {
     const map = new Map<
       string,
@@ -503,16 +575,19 @@ export default function WarehouseMapTab() {
     if (activeZones.length === 0 || positions.length === 0) return map
 
     activeZones.forEach(z => {
-      const descIds = new Set(getDescendantZoneIds(z.id))
+      const descSet = zoneDescendantsMap.get(z.id)
       let total = 0
       let occupied = 0
 
-      positions.forEach(p => {
-        if (p.zone_ids.some(zid => descIds.has(zid))) {
-          total++
-          if (p.lot_id) occupied++
+      if (descSet) {
+        for (let i = 0; i < positions.length; i++) {
+          const p = positions[i]
+          if (p.zone_ids.some(zid => descSet.has(zid))) {
+            total++
+            if (p.lot_id) occupied++
+          }
         }
-      })
+      }
 
       map.set(z.id, {
         total,
@@ -522,14 +597,14 @@ export default function WarehouseMapTab() {
     })
 
     return map
-  }, [activeZones, positions, getDescendantZoneIds])
+  }, [activeZones, positions, zoneDescendantsMap])
 
   // ── Positions in Current View (Slot / Tier) ────────────────────
   const currentPositions = useMemo(() => {
     if (!selectedSlotId) return []
 
     const targetZoneId = selectedTierId || selectedSlotId
-    const targetZoneIds = new Set(getDescendantZoneIds(targetZoneId))
+    const targetZoneIds = getDescendantZoneIds(targetZoneId)
 
     let filtered = positions.filter(p =>
       p.zone_ids.some(zid => targetZoneIds.has(zid))
@@ -550,7 +625,7 @@ export default function WarehouseMapTab() {
     if (!selectedSlotId) return map
 
     tiers.forEach(tier => {
-      const descIds = new Set(getDescendantZoneIds(tier.id))
+      const descIds = getDescendantZoneIds(tier.id)
       const list = positions
         .filter(p => p.zone_ids.some(zid => descIds.has(zid)))
         .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }))
@@ -700,23 +775,25 @@ export default function WarehouseMapTab() {
           <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
           <input
             type="text"
-            value={searchQuery}
-            onChange={e => {
-              const val = e.target.value
-              setSearchQuery(val)
-              if (val.trim()) {
-                setActiveView('search_list')
-                setSearchPageLimit(60)
-              } else {
-                setActiveView('map')
+            value={searchInput}
+            onChange={e => setSearchInput(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const val = searchInput.trim()
+                setSearchQuery(val)
+                if (val) {
+                  setActiveView('search_list')
+                  setSearchPageLimit(60)
+                }
               }
             }}
             placeholder="Tìm theo STT (G22...), Mã vị trí, LOT, Sản phẩm..."
             className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 font-mono text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 transition"
           />
-          {searchQuery && (
+          {searchInput && (
             <button
               onClick={() => {
+                setSearchInput('')
                 setSearchQuery('')
                 setActiveView('map')
                 setHighlightedPosId(null)
@@ -759,6 +836,7 @@ export default function WarehouseMapTab() {
 
           <button
             onClick={() => {
+              setSearchInput('')
               setSearchQuery('')
               setActiveView('map')
               setHighlightedPosId(null)
