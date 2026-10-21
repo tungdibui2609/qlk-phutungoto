@@ -394,9 +394,9 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                     for (const l of targetLayouts) {
                         const items = l.grid_data || []
                         const found = items.find((s: any) => 
-                            (s.type === 'ZONE' || s.type === 'STAGING') &&
+                            s.type !== 'LINE' && s.type !== 'DASHED_LINE' && s.type !== 'ARROW' && s.type !== 'TEXT_NOTE' && s.type !== 'WALL' && s.type !== 'RACK' &&
                             (s.code === codeToCheck || s.label === codeToCheck) &&
-                            s.isMultiLot !== false
+                            s.isMultiLot !== false && s.isStorage !== false
                         )
                         if (found) return true
                     }

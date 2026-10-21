@@ -1061,6 +1061,8 @@ function WarehouseMapContent() {
         const sourcePos = positions.find(p => p.id === sourcePosId);
         if (!sourcePos || !sourcePos.lot_id) return;
 
+        const isMultiLot = targetShape.isMultiLot ?? (targetShape.type === 'ZONE');
+
         const targetPositions = positions.filter(p => {
             if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
             if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
@@ -1068,34 +1070,36 @@ function WarehouseMapContent() {
             return false;
         });
 
-        // 1. If empty position exists in target zone
+        // 1. If empty position exists in target zone, move directly into it
         const emptyPos = targetPositions.find(p => !p.lot_id);
         if (emptyPos) {
             await handleMoveLotToPosition(sourcePosId, emptyPos.id);
             return;
         }
 
-        // 2. If single position exists and is occupied, swap
-        if (targetPositions.length === 1 && targetPositions[0].id !== sourcePosId) {
+        // 2. If single position exists, is occupied, AND this shape is NOT multi-lot, swap with it
+        if (!isMultiLot && targetPositions.length === 1 && targetPositions[0].id !== sourcePosId) {
             await handleSwapLots(sourcePosId, targetPositions[0].id);
             return;
         }
 
-        // 3. Auto create position if empty or multi-lot shape
-        if (targetPositions.length === 0 || targetShape.isMultiLot !== false) {
+        // 3. Auto create position if empty or multi-lot shape (allows multiple lots without kicking existing lot out)
+        if (targetPositions.length === 0 || isMultiLot) {
             const movingLotId = sourcePos.lot_id;
             try {
                 const baseCode = (targetShape.code && targetShape.code.trim()) || (targetShape.label && targetShape.label.trim()) || `Z-${Date.now().toString().slice(-4)}`;
                 let maxIdx = 0;
+                let hasExactBaseCode = false;
                 targetPositions.forEach(p => {
+                    if (p.code === baseCode) hasExactBaseCode = true;
                     const match = p.code?.match(/-(\d+)$/);
                     if (match) {
                         const num = parseInt(match[1], 10);
                         if (num > maxIdx) maxIdx = num;
                     }
                 });
-                const nextIdx = Math.max(targetPositions.length + 1, maxIdx + 1);
-                const newPosCode = targetShape.isMultiLot !== false ? `${baseCode}-${String(nextIdx).padStart(2, '0')}` : baseCode;
+                const nextIdx = Math.max(hasExactBaseCode ? 2 : 1, targetPositions.length + 1, maxIdx + 1);
+                const newPosCode = isMultiLot ? `${baseCode}-${String(nextIdx).padStart(2, '0')}` : baseCode;
                 const newPosId = crypto.randomUUID();
 
                 const insertPayload = {
@@ -1105,6 +1109,15 @@ function WarehouseMapContent() {
                     system_type: currentSystem?.code || systemType,
                     company_id: (currentSystem as any)?.company_id || null
                 };
+
+                // Optimistically update positions state
+                setPositions(prev => [
+                    ...prev.map(p => p.id === sourcePosId ? { ...p, lot_id: null } : p),
+                    {
+                        ...insertPayload,
+                        zone_id: targetShape.id
+                    } as any
+                ]);
 
                 // 1. Unassign source position FIRST so lot_id is free to satisfy unique constraint
                 await updatePositionsWithLog([{ id: sourcePosId, lot_id: null }]);
@@ -1239,14 +1252,16 @@ function WarehouseMapContent() {
         try {
             const baseCode = (targetShape.code && targetShape.code.trim()) || (targetShape.label && targetShape.label.trim()) || 'Z';
             let maxIdx = 0;
+            let hasExactBaseCode = false;
             targetPositions.forEach(p => {
+                if (p.code === baseCode) hasExactBaseCode = true;
                 const match = p.code?.match(/-(\d+)$/);
                 if (match) {
                     const num = parseInt(match[1], 10);
                     if (num > maxIdx) maxIdx = num;
                 }
             });
-            const nextIdx = Math.max(targetPositions.length + 1, maxIdx + 1);
+            const nextIdx = Math.max(hasExactBaseCode ? 2 : 1, targetPositions.length + 1, maxIdx + 1);
             const newCode = `${baseCode}-${String(nextIdx).padStart(2, '0')}`;
             const newPosId = crypto.randomUUID();
 

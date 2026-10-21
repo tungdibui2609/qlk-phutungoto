@@ -22,12 +22,25 @@ import {
   WifiOff,
   List,
   Eye,
-  Filter
+  Filter,
+  BarChart3,
+  ChevronDown,
+  ExternalLink
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT } from '@/lib/numberUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { matchPalletSearch, calculateSearchScore, matchSearch, normalizeSearchString } from '@/lib/searchUtils'
+import { formatMaterialZoneProvince } from '@/lib/provinces'
+
+export type DateFilterType = 'packaging_date' | 'peeling_date' | 'raw_material_date' | 'inbound_date'
+
+export const DATE_FILTER_OPTIONS: { id: DateFilterType; label: string; shortLabel: string; icon: string }[] = [
+  { id: 'packaging_date', label: 'Ngày đóng gói (DD/MM)', shortLabel: 'Đóng gói', icon: '📦' },
+  { id: 'peeling_date', label: 'Ngày sản xuất (bóc múi)', shortLabel: 'Sản xuất', icon: '🔪' },
+  { id: 'raw_material_date', label: 'Ngày nhập nguyên liệu', shortLabel: 'Nguyên liệu', icon: '🚛' },
+  { id: 'inbound_date', label: 'Ngày nhập kho lạnh', shortLabel: 'Nhập kho', icon: '📥' }
+]
 
 export interface UniqueProductItem {
   name: string
@@ -52,7 +65,84 @@ interface ZoneItem {
   name: string
   parent_id: string | null
   system_type: string
+  code?: string
+  display_order?: number | null
+  is_hall?: boolean | null
 }
+
+export const isHallZone = (z: ZoneItem | null | undefined): boolean => {
+  if (!z) return false
+  if (z.is_hall) return true
+  const nameUpper = (z.name || '').trim().toUpperCase()
+  return (
+    nameUpper.startsWith('SẢNH') ||
+    nameUpper.startsWith('SÀNH') ||
+    nameUpper.startsWith('SANH') ||
+    nameUpper.includes('SẢNH') ||
+    nameUpper.includes('SÀNH')
+  )
+}
+
+export const formatDateVN = (d?: string | null): string => {
+  if (!d) return '--/--/----'
+  const clean = String(d).split('T')[0]
+  const parts = clean.split('-')
+  if (parts.length === 3) {
+    const [y, m, day] = parts
+    if (y.length === 4) return `${day.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`
+  }
+  return d
+}
+
+export const getCleanUnitCategory = (rawUnit?: string | null): string => {
+  if (!rawUnit) return 'Thùng'
+  const u = rawUnit.trim()
+  const lower = u.toLowerCase()
+  if (lower.startsWith('thùng') || lower.startsWith('thung') || lower === 'th') return 'Thùng'
+  if (lower === 'kg' || lower === 'kilogram' || lower === 'ký' || lower === 'ky') return 'Kg'
+  if (lower.startsWith('sọt') || lower.startsWith('sot')) return 'Sọt'
+  return u
+}
+
+export const formatUnitsSummary = (
+  unitsMap: Map<string, number> | Record<string, number>,
+  options?: { short?: boolean }
+): string => {
+  const entries = unitsMap instanceof Map ? Array.from(unitsMap.entries()) : Object.entries(unitsMap)
+  const nonZero = entries.filter(([_, q]) => q > 0)
+  if (nonZero.length === 0) return '0'
+
+  // Ưu tiên hiển thị: Thùng trước, rồi đến Kg, Sọt, và các đơn vị khác
+  nonZero.sort(([uA], [uB]) => {
+    const priority = (u: string) => (u === 'Thùng' ? 1 : u === 'Kg' ? 2 : u === 'Sọt' ? 3 : 4)
+    const pA = priority(uA)
+    const pB = priority(uB)
+    if (pA !== pB) return pA - pB
+    return uA.localeCompare(uB)
+  })
+
+  return nonZero
+    .map(([u, q]) => {
+      const formattedQty = Number.isInteger(q)
+        ? q.toLocaleString('vi-VN')
+        : Number(q.toFixed(2)).toLocaleString('vi-VN')
+      const displayUnit = options?.short && u === 'Thùng' ? 'th' : u
+      return `${formattedQty} ${displayUnit}`
+    })
+    .join(' · ')
+}
+
+export const formatPositionQtyUnit = (qty?: number | null, unit?: string | null) => {
+  if (qty === null || qty === undefined) return null
+  const cleanCat = getCleanUnitCategory(unit)
+  const displayUnit = cleanCat === 'Thùng' ? 'th' : cleanCat
+  const formattedQty = Number.isInteger(qty)
+    ? qty.toLocaleString('vi-VN')
+    : Number(qty.toFixed(2)).toLocaleString('vi-VN')
+  return `${formattedQty} ${displayUnit}`
+}
+
+
 
 interface PositionItem {
   id: string
@@ -68,7 +158,15 @@ interface PositionItem {
   unit?: string | null
   tags?: string[]
   packaging_date?: string | null
+  peeling_date?: string | null
+  raw_material_date?: string | null
   inbound_date?: string | null
+  material_zones?: string[]
+  material_zone?: string | null
+  production_code?: string | null
+  batch_code?: string | null
+  production_place?: string | null
+  extra_info?: string | null
   quantity?: number | null
 }
 
@@ -77,12 +175,40 @@ const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   uniqueProducts,
   searchQuery,
   onExecuteSearch,
-  onClearSearch
+  onClearSearch,
+  filterDateType,
+  onFilterDateTypeChange,
+  filterStartDate,
+  onFilterStartDateChange,
+  filterEndDate,
+  onFilterEndDateChange,
+  filterRegion,
+  onFilterRegionChange,
+  availableRegions,
+  hasActiveFilters,
+  onSetDatePreset,
+  onResetFilters,
+  isFilterOpen,
+  onToggleFilterOpen
 }: {
   uniqueProducts: UniqueProductItem[]
   searchQuery: string
   onExecuteSearch: (query: string) => void
   onClearSearch: () => void
+  filterDateType: DateFilterType
+  onFilterDateTypeChange: (type: DateFilterType) => void
+  filterStartDate: string
+  onFilterStartDateChange: (date: string) => void
+  filterEndDate: string
+  onFilterEndDateChange: (date: string) => void
+  filterRegion: string
+  onFilterRegionChange: (region: string) => void
+  availableRegions: Array<{ name: string; count: number }>
+  hasActiveFilters: boolean
+  onSetDatePreset: (preset: 'today' | 3 | 7 | 'this_month' | 'clear') => void
+  onResetFilters: () => void
+  isFilterOpen: boolean
+  onToggleFilterOpen: () => void
 }) {
   const [inputValue, setInputValue] = useState(searchQuery)
   const [showSuggestions, setShowSuggestions] = useState(false)
@@ -187,7 +313,7 @@ const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
 
   const handleSubmit = (customTerm?: string) => {
     const term = (customTerm !== undefined ? customTerm : inputValue).trim()
-    if (!term) return
+    if (!term && !hasActiveFilters) return
     setShowSuggestions(false)
     onExecuteSearch(term)
   }
@@ -236,12 +362,242 @@ const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         <button
           type="button"
           onClick={() => handleSubmit()}
-          className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
+          className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition shadow-xs active:scale-95 flex items-center gap-1 shrink-0 cursor-pointer"
         >
           <Search size={13} />
           <span>Tìm</span>
         </button>
+
+        <button
+          type="button"
+          onClick={onToggleFilterOpen}
+          className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 relative active:scale-95 cursor-pointer ${hasActiveFilters
+              ? 'bg-amber-400 text-slate-950 font-black shadow-md shadow-amber-400/30'
+              : isFilterOpen
+                ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
+                : 'bg-slate-900 border border-amber-500/60 text-amber-300 hover:bg-slate-800 hover:text-amber-200'
+            }`}
+          title="Mở bộ lọc ngày tháng & vùng miền"
+        >
+          <Calendar size={14} className={hasActiveFilters || isFilterOpen ? 'text-slate-950' : 'text-amber-400'} />
+          <span>Lọc ngày</span>
+          {hasActiveFilters && (
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 border-2 border-slate-950 absolute -top-1 -right-1 animate-pulse" />
+          )}
+        </button>
       </div>
+
+      {/* ── THANH CHIPS BỘ LỌC ĐANG HOẠT ĐỘNG (QUICK ACTIVE CHIPS) ── */}
+      {hasActiveFilters && (
+        <div className="flex items-center gap-1.5 overflow-x-auto pt-2 scrollbar-none text-[11px]">
+          <span className="text-slate-400 font-semibold text-[10px] shrink-0">Đang lọc:</span>
+          {(filterStartDate || filterEndDate) && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 font-medium shrink-0">
+              <Calendar size={11} />
+              <span>
+                {DATE_FILTER_OPTIONS.find(o => o.id === filterDateType)?.shortLabel}:{' '}
+                {filterStartDate ? filterStartDate.split('-').reverse().slice(0, 2).join('/') : '...'} →{' '}
+                {filterEndDate ? filterEndDate.split('-').reverse().slice(0, 2).join('/') : '...'}
+              </span>
+              <button
+                type="button"
+                onClick={() => onSetDatePreset('clear')}
+                className="hover:text-white ml-0.5"
+                title="Xóa lọc ngày"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          )}
+
+          {filterRegion && filterRegion !== 'all' && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 font-medium shrink-0">
+              <MapPin size={11} />
+              <span>Vùng: {filterRegion}</span>
+              <button
+                type="button"
+                onClick={() => onFilterRegionChange('all')}
+                className="hover:text-white ml-0.5"
+                title="Xóa lọc vùng"
+              >
+                <X size={11} />
+              </button>
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={onResetFilters}
+            className="text-[10px] text-slate-400 hover:text-rose-400 underline shrink-0 ml-auto"
+          >
+            Đặt lại
+          </button>
+        </div>
+      )}
+
+      {/* ── BỘ LỌC NÂNG CAO (DRAWER: NGÀY THÁNG, VÙNG MIỀN) ── */}
+      {isFilterOpen && (
+        <div className="mt-2.5 p-3 rounded-2xl bg-slate-900/95 border border-slate-700 shadow-2xl space-y-3 animate-in fade-in">
+          {/* Header Drawer */}
+          <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+            <span className="text-[11px] font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Filter size={13} className="text-cyan-400" />
+              <span>BỘ LỌC NGÀY THÁNG & VÙNG MIỀN</span>
+            </span>
+            <div className="flex items-center gap-2">
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={onResetFilters}
+                  className="text-[10px] text-rose-400 hover:text-rose-300 underline font-medium active:scale-95 transition"
+                >
+                  Xóa bộ lọc
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onToggleFilterOpen}
+                className="text-slate-400 hover:text-white p-0.5"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* 1. Mốc ngày & Khoảng ngày */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+                <Calendar size={12} className="text-amber-400" />
+                <span>Mốc ngày:</span>
+              </span>
+              <select
+                value={filterDateType}
+                onChange={e => onFilterDateTypeChange(e.target.value as DateFilterType)}
+                className="bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-xs font-bold text-amber-300 outline-none cursor-pointer"
+              >
+                {DATE_FILTER_OPTIONS.map(opt => (
+                  <option key={opt.id} value={opt.id}>
+                    {opt.icon} {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Inputs: Từ ngày -> Đến ngày */}
+            <div className="grid grid-cols-2 gap-2">
+              <label
+                onClick={e => {
+                  const input = e.currentTarget.querySelector('input')
+                  try { input?.showPicker?.() } catch { }
+                }}
+                className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 rounded-xl px-2.5 py-1.5 cursor-pointer block transition group"
+              >
+                <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold mb-0.5">
+                  <span className="uppercase tracking-wider">Từ ngày:</span>
+                  <Calendar size={13} className="text-amber-400 group-hover:scale-110 transition shrink-0" />
+                </div>
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={e => onFilterStartDateChange(e.target.value)}
+                  onClick={e => {
+                    e.stopPropagation()
+                    try { (e.currentTarget as any).showPicker?.() } catch { }
+                  }}
+                  style={{ colorScheme: 'dark' }}
+                  className="w-full bg-transparent text-xs text-amber-200 font-mono font-bold outline-none cursor-pointer"
+                />
+              </label>
+
+              <label
+                onClick={e => {
+                  const input = e.currentTarget.querySelector('input')
+                  try { input?.showPicker?.() } catch { }
+                }}
+                className="bg-slate-950 border border-slate-800 hover:border-amber-500/60 rounded-xl px-2.5 py-1.5 cursor-pointer block transition group"
+              >
+                <div className="flex items-center justify-between text-[9px] text-slate-400 font-semibold mb-0.5">
+                  <span className="uppercase tracking-wider">Đến ngày:</span>
+                  <Calendar size={13} className="text-amber-400 group-hover:scale-110 transition shrink-0" />
+                </div>
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={e => onFilterEndDateChange(e.target.value)}
+                  onClick={e => {
+                    e.stopPropagation()
+                    try { (e.currentTarget as any).showPicker?.() } catch { }
+                  }}
+                  style={{ colorScheme: 'dark' }}
+                  className="w-full bg-transparent text-xs text-amber-200 font-mono font-bold outline-none cursor-pointer"
+                />
+              </label>
+            </div>
+
+            {/* Presets nhanh */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
+              <button
+                type="button"
+                onClick={() => onSetDatePreset('today')}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition active:scale-95"
+              >
+                Hôm nay
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetDatePreset(3)}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition active:scale-95"
+              >
+                3 ngày
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetDatePreset(7)}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition active:scale-95"
+              >
+                7 ngày
+              </button>
+              <button
+                type="button"
+                onClick={() => onSetDatePreset('this_month')}
+                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] font-semibold transition active:scale-95"
+              >
+                Tháng này
+              </button>
+              {(filterStartDate || filterEndDate) && (
+                <button
+                  type="button"
+                  onClick={() => onSetDatePreset('clear')}
+                  className="px-2 py-1 rounded-lg bg-rose-950/60 border border-rose-800/60 text-rose-300 text-[10px] font-semibold transition active:scale-95"
+                >
+                  ✕ Xóa ngày
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 2. Vùng miền / Vùng nguyên liệu */}
+          <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+            <span className="text-[11px] font-bold text-slate-300 flex items-center gap-1">
+              <MapPin size={12} className="text-emerald-400" />
+              <span>Vùng miền / Vùng nguyên liệu:</span>
+            </span>
+            <select
+              value={filterRegion}
+              onChange={e => onFilterRegionChange(e.target.value)}
+              className="w-full bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-2 text-xs font-bold text-emerald-300 outline-none cursor-pointer"
+            >
+              <option value="all">Tất cả vùng miền</option>
+              {availableRegions.map(r => (
+                <option key={r.name} value={r.name}>
+                  {r.name} ({r.count} ô / pallet)
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      )}
 
       {/* ── DROPDOWN GỢI Ý SẢN PHẨM (POPUP GỢI Ý KHI GÕ TỪ KHÓA) ── */}
       {showSuggestions && inputValue.trim().length > 0 && (
@@ -286,11 +642,6 @@ const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                       <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
                         📍 {item.product.positionCount} vị trí trong kho
                       </span>
-                      {item.product.totalQuantity > 0 && (
-                        <span className="text-slate-300">
-                          · {item.product.totalQuantity} {item.product.unit}
-                        </span>
-                      )}
                     </p>
                   </div>
                   <ArrowRight size={15} className="text-cyan-400 shrink-0" />
@@ -337,11 +688,18 @@ export default function WarehouseMapTab() {
 
   // Search state (searchQuery drives the map, while typing is fully isolated in WarehouseSearchBar)
   const [searchQuery, setSearchQuery] = useState<string>('')
-  const [activeView, setActiveView] = useState<'map' | 'search_list'>('map')
-  const [searchFilterWhId, setSearchFilterWhId] = useState<string>('all')
-  const [searchFilterStatus, setSearchFilterStatus] = useState<'all' | 'occupied' | 'empty'>('all')
-  const [searchPageLimit, setSearchPageLimit] = useState<number>(60)
+  const [searchTab, setSearchTab] = useState<'map' | 'breakdown'>('map')
+  const [expandedWhIds, setExpandedWhIds] = useState<Set<string>>(new Set())
+  const [expandedAisleIds, setExpandedAisleIds] = useState<Set<string>>(new Set())
+  const [expandedTierIds, setExpandedTierIds] = useState<Set<string>>(new Set())
   const [highlightedPosId, setHighlightedPosId] = useState<string | null>(null)
+
+  // Bộ lọc nâng cao: Ngày tháng & Vùng miền
+  const [filterDateType, setFilterDateType] = useState<DateFilterType>('packaging_date')
+  const [filterStartDate, setFilterStartDate] = useState<string>('')
+  const [filterEndDate, setFilterEndDate] = useState<string>('')
+  const [filterRegion, setFilterRegion] = useState<string>('all')
+  const [isFilterOpen, setIsFilterOpen] = useState<boolean>(false)
 
   // Position detail modal
   const [selectedPosDetail, setSelectedPosDetail] = useState<PositionItem | null>(null)
@@ -352,13 +710,17 @@ export default function WarehouseMapTab() {
   const [downloadingOffline, setDownloadingOffline] = useState<boolean>(false)
   const [downloadToast, setDownloadToast] = useState<string | null>(null)
 
-  // ── Fetch Master Data (Zones, Positions, Lots, Pending) ─────────
+  // Offline cache key with versioning
+  const OFFLINE_CACHE_KEY = 'warehouse_map_offline_cache_v6'
   const loadWarehouseMapData = useCallback(async (isSilent = false) => {
     let hasCache = false
 
     // 1. Initial cached fallback - display immediately to eliminate load delay
     try {
-      const cachedRaw = localStorage.getItem('warehouse_map_offline_cache')
+      // Purge outdated v1 cache if exists
+      localStorage.removeItem('warehouse_map_offline_cache')
+
+      const cachedRaw = localStorage.getItem(OFFLINE_CACHE_KEY)
       if (cachedRaw) {
         const cached = JSON.parse(cachedRaw)
         if (cached && cached.zones && cached.zones.length > 0) {
@@ -386,7 +748,7 @@ export default function WarehouseMapTab() {
       // 1. Fetch Zones, Positions, Zone associations, and Pending assignments in parallel
       const [zonesRes, posRes, zpRes, pendingRes] = await Promise.all([
         (supabase.from('zones') as any)
-          .select('id, name, parent_id, system_type')
+          .select('id, name, code, parent_id, system_type, display_order, is_hall')
           .eq('system_type', 'KHO_DONG_LANH'),
         (supabase.from('positions') as any)
           .select('id, code, lot_id, system_type')
@@ -432,7 +794,13 @@ export default function WarehouseMapTab() {
                 code,
                 daily_seq,
                 packaging_date,
+                peeling_date,
+                raw_material_date,
                 inbound_date,
+                production_code,
+                batch_code,
+                notes,
+                metadata,
                 quantity,
                 products ( name, sku, unit, aliases ),
                 lot_items ( quantity, unit, products ( name, sku, unit, aliases ) ),
@@ -450,30 +818,67 @@ export default function WarehouseMapTab() {
               const tagsStr = tags.join(', ')
 
               const allItems = l.lot_items || []
-              const allProdNames = [
+              const allProdNames = Array.from(new Set([
                 l.products?.name,
                 ...allItems.map((it: any) => it.products?.name)
-              ].filter(Boolean)
+              ].filter(Boolean))) as string[]
               const prodName = allProdNames.length > 0
                 ? allProdNames.join(', ')
                 : (tagsStr ? `Hàng ${tagsStr}` : 'Hàng đông lạnh')
 
-              const allSkus = [
+              const allSkus = Array.from(new Set([
                 l.products?.sku,
                 ...allItems.map((it: any) => it.products?.sku)
-              ].filter(Boolean)
+              ].filter(Boolean))) as string[]
               const sku = allSkus.length > 0 ? allSkus.join(', ') : (tags.length > 0 ? tags[0] : '---')
 
-              const allAliases = [
+              const allAliases = Array.from(new Set([
                 l.products?.aliases,
                 ...allItems.map((it: any) => it.products?.aliases)
-              ].filter(Boolean)
+              ].filter(Boolean))) as string[]
               const aliases = allAliases.length > 0 ? allAliases.join(', ') : null
 
+              const itemUnit = allItems.map((it: any) => it.unit).find(Boolean)
               const unit =
+                itemUnit ||
+                l.metadata?.unit ||
                 l.products?.unit ||
-                l.lot_items?.[0]?.unit ||
                 'Thùng'
+
+              // Trích xuất ngày sản xuất (bóc múi)
+              const peelingDate = l.peeling_date
+                ? String(l.peeling_date).split('T')[0]
+                : (Array.isArray(l.metadata?.peeling_dates) && l.metadata.peeling_dates[0]
+                  ? String(l.metadata.peeling_dates[0]).split('T')[0]
+                  : (l.metadata?.production_date ? String(l.metadata.production_date).split('T')[0] : null))
+
+              // Trích xuất ngày nhập nguyên liệu
+              const rawMaterialDate = l.raw_material_date
+                ? String(l.raw_material_date).split('T')[0]
+                : (l.metadata?.raw_material_date ? String(l.metadata.raw_material_date).split('T')[0] : null)
+
+              // Trích xuất vùng miền / vùng nguyên liệu
+              const metaZones: string[] = []
+              if (Array.isArray(l.metadata?.material_zones)) {
+                l.metadata.material_zones.forEach((z: any) => {
+                  if (typeof z === 'string' && z.trim()) metaZones.push(z.trim())
+                })
+              } else if (l.metadata?.material_zone && typeof l.metadata.material_zone === 'string') {
+                l.metadata.material_zone.split(',').forEach((z: string) => {
+                  if (z.trim()) metaZones.push(z.trim())
+                })
+              } else if (l.metadata?.region && typeof l.metadata.region === 'string' && l.metadata.region !== '---') {
+                metaZones.push(l.metadata.region.trim())
+              } else if (l.metadata?.province && typeof l.metadata.province === 'string' && l.metadata.province !== '---') {
+                metaZones.push(l.metadata.province.trim())
+              }
+
+              const cleanZones = Array.from(new Set(metaZones.map(z => formatMaterialZoneProvince(z)).filter(Boolean))) as string[]
+
+              const rawPlaces = l.metadata?.production_places
+              const prodPlace = (Array.isArray(rawPlaces) && rawPlaces.length > 0)
+                ? rawPlaces.join(', ')
+                : (l.metadata?.production_place || null)
 
               lotMap.set(l.id, {
                 code: l.code,
@@ -484,7 +889,15 @@ export default function WarehouseMapTab() {
                 unit,
                 tags,
                 packaging_date: l.packaging_date ? String(l.packaging_date).split('T')[0] : null,
+                peeling_date: peelingDate,
+                raw_material_date: rawMaterialDate,
                 inbound_date: l.inbound_date ? String(l.inbound_date).split('T')[0] : null,
+                material_zones: cleanZones,
+                material_zone: cleanZones.length > 0 ? cleanZones.join(', ') : null,
+                production_code: l.production_code || l.metadata?.production_code || null,
+                batch_code: l.batch_code || l.metadata?.batch_code || null,
+                production_place: prodPlace,
+                extra_info: l.metadata?.extra_info || l.notes || null,
                 quantity: l.quantity || (l.lot_items?.[0]?.quantity ?? null)
               })
             })
@@ -530,7 +943,15 @@ export default function WarehouseMapTab() {
           unit,
           tags,
           packaging_date: pkgDate,
+          peeling_date: lotInfo?.peeling_date || null,
+          raw_material_date: lotInfo?.raw_material_date || null,
           inbound_date: lotInfo?.inbound_date || null,
+          material_zones: lotInfo?.material_zones || [],
+          material_zone: lotInfo?.material_zone || null,
+          production_code: lotInfo?.production_code || null,
+          batch_code: lotInfo?.batch_code || null,
+          production_place: lotInfo?.production_place || null,
+          extra_info: lotInfo?.extra_info || null,
           quantity: lotInfo?.quantity || null
         }
       })
@@ -545,7 +966,7 @@ export default function WarehouseMapTab() {
           positions: formattedPositions,
           cachedAt: now
         }
-        localStorage.setItem('warehouse_map_offline_cache', JSON.stringify(snapshot))
+        localStorage.setItem(OFFLINE_CACHE_KEY, JSON.stringify(snapshot))
         setCachedAt(now)
         setIsOffline(false)
       } catch (e) {
@@ -559,7 +980,7 @@ export default function WarehouseMapTab() {
     } catch (err) {
       console.warn('Lỗi tải dữ liệu Sơ đồ kho từ máy chủ, chuyển sang chế độ ngoại tuyến:', err)
       try {
-        const cachedRaw = localStorage.getItem('warehouse_map_offline_cache')
+        const cachedRaw = localStorage.getItem(OFFLINE_CACHE_KEY)
         if (cachedRaw) {
           const cached = JSON.parse(cachedRaw)
           if (cached && cached.zones) {
@@ -569,7 +990,7 @@ export default function WarehouseMapTab() {
             setIsOffline(true)
           }
         }
-      } catch {}
+      } catch { }
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -607,9 +1028,12 @@ export default function WarehouseMapTab() {
 
   // ── Zones Hierarchy Sorting & Filtering ───────────────────────
   const sortZones = (list: ZoneItem[]) =>
-    [...list].sort((a, b) =>
-      (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
-    )
+    [...list].sort((a, b) => {
+      const oa = a.display_order ?? 0
+      const ob = b.display_order ?? 0
+      if (oa !== ob) return oa - ob
+      return (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true })
+    })
 
   // ── Pre-compute Zone Descendants Map & Full Paths ONCE (O(1) lookups) ──
   const { zoneDescendantsMap, zonePathMap } = useMemo(() => {
@@ -739,78 +1163,147 @@ export default function WarehouseMapTab() {
     return Array.from(prodMap.values())
   }, [positions])
 
-  // Thực hiện tìm kiếm (chỉ cập nhật map khi người dùng chọn gợi ý hoặc ấn Tìm)
+  // Tính toán danh sách vùng miền thực tế có trong kho cùng số lượng pallet
+  const availableRegions = useMemo(() => {
+    const regionCountMap = new Map<string, number>()
+    positions.forEach(p => {
+      const zones = p.material_zones && p.material_zones.length > 0 ? p.material_zones : (p.material_zone ? [p.material_zone] : [])
+      zones.forEach(z => {
+        if (z && z !== '---') {
+          regionCountMap.set(z, (regionCountMap.get(z) || 0) + 1)
+        }
+      })
+    })
+
+    return Array.from(regionCountMap.entries())
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, count]) => ({ name, count }))
+  }, [positions])
+
+  const hasActiveFilters = useMemo(() => {
+    return !!(filterStartDate || filterEndDate || (filterRegion && filterRegion !== 'all'))
+  }, [filterStartDate, filterEndDate, filterRegion])
+
+  const handleSetDatePreset = useCallback((preset: 'today' | 3 | 7 | 'this_month' | 'clear') => {
+    if (preset === 'clear') {
+      setFilterStartDate('')
+      setFilterEndDate('')
+      return
+    }
+
+    const today = new Date()
+    const formatDate = (d: Date) => d.toISOString().split('T')[0]
+    const todayStr = formatDate(today)
+
+    if (preset === 'today') {
+      setFilterStartDate(todayStr)
+      setFilterEndDate(todayStr)
+    } else if (typeof preset === 'number') {
+      const start = new Date()
+      start.setDate(today.getDate() - (preset - 1))
+      setFilterStartDate(formatDate(start))
+      setFilterEndDate(todayStr)
+    } else if (preset === 'this_month') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      setFilterStartDate(formatDate(start))
+      setFilterEndDate(todayStr)
+    }
+  }, [])
+
+  const handleResetFilters = useCallback(() => {
+    setFilterStartDate('')
+    setFilterEndDate('')
+    setFilterRegion('all')
+  }, [])
+
+  const handleClearAllSearchAndFilters = useCallback(() => {
+    setSearchQuery('')
+    setHighlightedPosId(null)
+    setFilterStartDate('')
+    setFilterEndDate('')
+    setFilterRegion('all')
+    setSearchTab('map')
+  }, [])
+
+  // Thực hiện tìm kiếm (cập nhật searchQuery để sơ đồ lọc và đếm vị trí)
   const handleExecuteSearch = useCallback((term: string) => {
     const q = term.trim()
-    if (!q) return
     setSearchQuery(q)
-    setActiveView('search_list')
-    setSearchPageLimit(60)
   }, [])
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('')
-    setActiveView('map')
     setHighlightedPosId(null)
+    setSearchTab('map')
   }, [])
 
   // ── Search & Filter Logic (High Performance with Pre-Scoring) ──
-  const isSearchActive = !!searchQuery.trim()
+  const isSearchActive = !!searchQuery.trim() || hasActiveFilters
 
   const matchingPositions = useMemo(() => {
     const q = searchQuery.trim()
-    if (!q || q.length < 1) return []
+    const hasQuery = q.length > 0
+    const hasDateFilter = !!(filterStartDate || filterEndDate)
+    const hasRegionFilter = !!(filterRegion && filterRegion !== 'all')
+
+    if (!hasQuery && !hasDateFilter && !hasRegionFilter) return []
 
     // Pre-calculate score only for matched positions (eliminates ~50,000 repeated calculations in sort)
     const matched: { pos: PositionItem; score: number }[] = []
+
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i]
-      if (matchPalletSearch(p, q)) {
-        const score = calculateSearchScore(p, q, {
-          name: p.product_name,
-          code: p.code,
-          lot_code: p.lot_code,
-          aliases: p.aliases
+
+      // 1. Lọc theo Mốc ngày (Đóng gói, Sản xuất, Nguyên liệu, Nhập kho)
+      if (hasDateFilter) {
+        let targetDate: string | null = null
+        if (filterDateType === 'packaging_date') targetDate = p.packaging_date || null
+        else if (filterDateType === 'peeling_date') targetDate = p.peeling_date || p.packaging_date || null
+        else if (filterDateType === 'raw_material_date') targetDate = p.raw_material_date || null
+        else if (filterDateType === 'inbound_date') targetDate = p.inbound_date || null
+
+        if (!targetDate) continue
+        if (filterStartDate && targetDate < filterStartDate) continue
+        if (filterEndDate && targetDate > filterEndDate) continue
+      }
+
+      // 2. Lọc theo Vùng miền / Vùng nguyên liệu
+      if (hasRegionFilter) {
+        const pZones = p.material_zones && p.material_zones.length > 0 ? p.material_zones : (p.material_zone ? [p.material_zone] : [])
+        if (pZones.length === 0) continue
+
+        const normFilter = normalizeSearchString(filterRegion, true)
+        const matchedRegion = pZones.some(z => {
+          const normZ = normalizeSearchString(z, true)
+          return normZ.includes(normFilter) || normFilter.includes(normZ)
         })
-        matched.push({ pos: p, score })
+        if (!matchedRegion) continue
+      }
+
+      // 3. Lọc theo Từ khóa tìm kiếm (Sản phẩm, LOT, vị trí...)
+      if (hasQuery) {
+        if (matchPalletSearch(p, q)) {
+          const score = calculateSearchScore(p, q, {
+            name: p.product_name,
+            code: p.code,
+            lot_code: p.lot_code,
+            aliases: p.aliases
+          })
+          matched.push({ pos: p, score })
+        }
+      } else {
+        matched.push({ pos: p, score: 100 })
       }
     }
 
-    matched.sort((a, b) => b.score - a.score)
+    if (hasQuery) {
+      matched.sort((a, b) => b.score - a.score)
+    }
     return matched.map(m => m.pos)
-  }, [searchQuery, positions])
+  }, [positions, searchQuery, filterDateType, filterStartDate, filterEndDate, filterRegion])
 
   const matchingPosIds = useMemo(() => {
     return new Set(matchingPositions.map(p => p.id))
-  }, [matchingPositions])
-
-  const searchResults = useMemo(() => {
-    return matchingPositions.slice(0, 50)
-  }, [matchingPositions])
-
-  // Filtered results for the dedicated Search Results View
-  const filteredSearchResults = useMemo(() => {
-    let list = matchingPositions
-    if (searchFilterWhId !== 'all') {
-      const descIds = getDescendantZoneIds(searchFilterWhId)
-      list = list.filter(p => p.zone_ids.some(zid => descIds.has(zid)))
-    }
-    if (searchFilterStatus === 'occupied') {
-      list = list.filter(p => !!p.lot_id)
-    } else if (searchFilterStatus === 'empty') {
-      list = list.filter(p => !p.lot_id)
-    }
-    return list
-  }, [matchingPositions, searchFilterWhId, searchFilterStatus, getDescendantZoneIds])
-
-  const searchStats = useMemo(() => {
-    let occupied = 0
-    let empty = 0
-    matchingPositions.forEach(p => {
-      if (p.lot_id) occupied++
-      else empty++
-    })
-    return { total: matchingPositions.length, occupied, empty }
   }, [matchingPositions])
 
   // Fast count matches per zone (only loops over matching positions, NOT all positions)
@@ -839,14 +1332,198 @@ export default function WarehouseMapTab() {
     [activeZones]
   )
 
-  // 2. Aisles / Halls (Level 2: parent_id === selectedWarehouseId or all)
+  // ── Thống kê phân bổ kết quả tìm kiếm (Báo cáo Kế toán: Kho -> Dãy -> Ô) ──
+  const breakdownReport = useMemo(() => {
+    if (!isSearchActive || matchingPositions.length === 0) return null
+
+    // 1. Ánh xạ nhanh: zone_id thực -> { wh: Kho, aisle: Dãy, slot: Ô }
+    const zoneHierarchyMap = new Map<string, { wh: ZoneItem; aisle: ZoneItem; slot: ZoneItem }>()
+
+    warehouses.forEach(wh => {
+      const whAisles = activeZones.filter(z => z.parent_id === wh.id)
+      whAisles.forEach(aisle => {
+        const aisleSlots = activeZones.filter(z => z.parent_id === aisle.id)
+        if (aisleSlots.length > 0) {
+          aisleSlots.forEach(slot => {
+            const desc = zoneDescendantsMap.get(slot.id)
+            if (desc) {
+              desc.forEach(zid => {
+                zoneHierarchyMap.set(zid, { wh, aisle, slot })
+              })
+            }
+          })
+        } else {
+          // Khu vực Sảnh hoặc Dãy không chia ô: vị trí gắn trực tiếp vào Aisle/Sảnh
+          const desc = zoneDescendantsMap.get(aisle.id)
+          if (desc) {
+            desc.forEach(zid => {
+              zoneHierarchyMap.set(zid, { wh, aisle, slot: aisle })
+            })
+          }
+        }
+      })
+    })
+
+    interface SlotAcc {
+      slot: ZoneItem
+      unitsMap: Map<string, number>
+      positionCount: number
+      positions: PositionItem[]
+    }
+    interface AisleAcc {
+      aisle: ZoneItem
+      unitsMap: Map<string, number>
+      positionCount: number
+      slotsMap: Map<string, SlotAcc>
+    }
+    interface WhAcc {
+      warehouse: ZoneItem
+      unitsMap: Map<string, number>
+      positionCount: number
+      aislesMap: Map<string, AisleAcc>
+    }
+
+    const addQtyToMap = (map: Map<string, number>, unit: string, qty: number) => {
+      map.set(unit, (map.get(unit) || 0) + qty)
+    }
+
+    const whMap = new Map<string, WhAcc>()
+    const grandUnitsMap = new Map<string, number>()
+
+    matchingPositions.forEach(p => {
+      const qty = p.quantity || 0
+      const unitCat = getCleanUnitCategory(p.unit)
+      addQtyToMap(grandUnitsMap, unitCat, qty)
+
+      let hier: { wh: ZoneItem; aisle: ZoneItem; slot: ZoneItem } | undefined
+      for (let i = 0; i < p.zone_ids.length; i++) {
+        const found = zoneHierarchyMap.get(p.zone_ids[i])
+        if (found) {
+          hier = found
+          break
+        }
+      }
+
+      if (hier) {
+        let whAcc = whMap.get(hier.wh.id)
+        if (!whAcc) {
+          whAcc = { warehouse: hier.wh, unitsMap: new Map(), positionCount: 0, aislesMap: new Map() }
+          whMap.set(hier.wh.id, whAcc)
+        }
+        addQtyToMap(whAcc.unitsMap, unitCat, qty)
+        whAcc.positionCount++
+
+        let aisleAcc = whAcc.aislesMap.get(hier.aisle.id)
+        if (!aisleAcc) {
+          aisleAcc = { aisle: hier.aisle, unitsMap: new Map(), positionCount: 0, slotsMap: new Map() }
+          whAcc.aislesMap.set(hier.aisle.id, aisleAcc)
+        }
+        addQtyToMap(aisleAcc.unitsMap, unitCat, qty)
+        aisleAcc.positionCount++
+
+        let slotAcc = aisleAcc.slotsMap.get(hier.slot.id)
+        if (!slotAcc) {
+          slotAcc = { slot: hier.slot, unitsMap: new Map(), positionCount: 0, positions: [] }
+          aisleAcc.slotsMap.set(hier.slot.id, slotAcc)
+        }
+        addQtyToMap(slotAcc.unitsMap, unitCat, qty)
+        slotAcc.positionCount++
+        slotAcc.positions.push(p)
+      }
+    })
+
+    const getMapTotal = (map: Map<string, number>) => Array.from(map.values()).reduce((s, v) => s + v, 0)
+
+    const sortedWhs = Array.from(whMap.values())
+      .sort((a, b) => getMapTotal(b.unitsMap) - getMapTotal(a.unitsMap) || b.positionCount - a.positionCount)
+      .map(whAcc => {
+        const sortedAisles = Array.from(whAcc.aislesMap.values())
+          .sort((a, b) => getMapTotal(b.unitsMap) - getMapTotal(a.unitsMap) || b.positionCount - a.positionCount)
+          .map(aisleAcc => {
+            const sortedSlots = Array.from(aisleAcc.slotsMap.values())
+              .sort((a, b) => {
+                const oa = a.slot.display_order ?? 0
+                const ob = b.slot.display_order ?? 0
+                if (oa !== ob) return oa - ob
+                return (a.slot.name || '').localeCompare(b.slot.name || '', undefined, { numeric: true })
+              })
+            return {
+              aisle: aisleAcc.aisle,
+              unitsMap: aisleAcc.unitsMap,
+              positionCount: aisleAcc.positionCount,
+              slots: sortedSlots
+            }
+          })
+        return {
+          warehouse: whAcc.warehouse,
+          unitsMap: whAcc.unitsMap,
+          positionCount: whAcc.positionCount,
+          aisles: sortedAisles
+        }
+      })
+
+    const grandTotalQty = Array.from(grandUnitsMap.values()).reduce((s, v) => s + v, 0)
+
+    return {
+      grandUnitsMap,
+      grandTotalQty,
+      totalPositions: matchingPositions.length,
+      warehouses: sortedWhs
+    }
+  }, [isSearchActive, matchingPositions, warehouses, activeZones, zoneDescendantsMap])
+
+  // Tự động mở rộng các kho có hàng khi tìm kiếm
+  useEffect(() => {
+    if (breakdownReport?.warehouses) {
+      setExpandedWhIds(new Set(breakdownReport.warehouses.map(w => w.warehouse.id)))
+      const allAisles = new Set<string>()
+      breakdownReport.warehouses.forEach(w => w.aisles.forEach(a => allAisles.add(a.aisle.id)))
+      setExpandedAisleIds(allAisles)
+    }
+  }, [breakdownReport])
+
+  const toggleWarehouseExpand = useCallback((whId: string) => {
+    setExpandedWhIds(prev => {
+      const next = new Set(prev)
+      if (next.has(whId)) next.delete(whId)
+      else next.add(whId)
+      return next
+    })
+  }, [])
+
+  const toggleAisleExpand = useCallback((aisleId: string) => {
+    setExpandedAisleIds(prev => {
+      const next = new Set(prev)
+      if (next.has(aisleId)) next.delete(aisleId)
+      else next.add(aisleId)
+      return next
+    })
+  }, [])
+
+  const handleExpandAll = useCallback(() => {
+    if (breakdownReport) {
+      setExpandedWhIds(new Set(breakdownReport.warehouses.map(w => w.warehouse.id)))
+      const allAisles = new Set<string>()
+      breakdownReport.warehouses.forEach(w => w.aisles.forEach(a => allAisles.add(a.aisle.id)))
+      setExpandedAisleIds(allAisles)
+    }
+  }, [breakdownReport])
+
+  const handleCollapseAll = useCallback(() => {
+    setExpandedWhIds(new Set())
+    setExpandedAisleIds(new Set())
+  }, [])
+
+  // 2. Aisles / Halls (Level 2: parent_id === selectedWarehouseId)
   const aisles = useMemo(() => {
-    let list: ZoneItem[] = []
-    if (!selectedWarehouseId || selectedWarehouseId === 'all') {
-      const whIds = new Set(warehouses.map(w => w.id))
-      list = activeZones.filter(z => z.parent_id && whIds.has(z.parent_id))
-    } else {
-      list = activeZones.filter(z => z.parent_id === selectedWarehouseId)
+    if (!selectedWarehouseId || selectedWarehouseId === 'all') return []
+    const list = activeZones.filter(z => z.parent_id === selectedWarehouseId)
+
+    const compareAisles = (a: ZoneItem, b: ZoneItem) => {
+      const oa = a.display_order ?? 0
+      const ob = b.display_order ?? 0
+      if (oa !== ob) return oa - ob
+      return (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true })
     }
 
     if (isSearchActive) {
@@ -854,11 +1531,11 @@ export default function WarehouseMapTab() {
         const countA = zoneMatchCountMap.get(a.id) || 0
         const countB = zoneMatchCountMap.get(b.id) || 0
         if (countB !== countA) return countB - countA
-        return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+        return compareAisles(a, b)
       })
     }
-    return sortZones(list)
-  }, [activeZones, selectedWarehouseId, warehouses, isSearchActive, zoneMatchCountMap])
+    return [...list].sort(compareAisles)
+  }, [activeZones, selectedWarehouseId, isSearchActive, zoneMatchCountMap])
 
   // 3. Slots (Level 3: parent_id === selectedAisleId) -> Ô GỘP: Ô 01, Ô 02...
   const slots = useMemo(() => {
@@ -869,21 +1546,82 @@ export default function WarehouseMapTab() {
         const countA = zoneMatchCountMap.get(a.id) || 0
         const countB = zoneMatchCountMap.get(b.id) || 0
         if (countB !== countA) return countB - countA
-        return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+        const oa = a.display_order ?? 0
+        const ob = b.display_order ?? 0
+        if (oa !== ob) return oa - ob
+        return (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true })
       })
     }
     return sortZones(list)
   }, [activeZones, selectedAisleId, isSearchActive, zoneMatchCountMap])
 
+  // Selected Aisle Item & Hall Detection (Khu vực Sảnh)
+  const selectedAisle = useMemo(() => {
+    if (!selectedAisleId) return null
+    return activeZones.find(z => z.id === selectedAisleId) || null
+  }, [activeZones, selectedAisleId])
+
+  const isSelectedAisleHall = useMemo(() => {
+    if (!selectedAisle) return false
+    return isHallZone(selectedAisle) || slots.length === 0
+  }, [selectedAisle, slots.length])
+
   // 4. Tiers (Level 4: parent_id === selectedSlotId) -> Tầng của Ô gộp
-  // Sắp xếp tầng từ trên xuống dưới (Tầng 5 -> Tầng 1) để chuẩn kệ kho thực tế
+  // Sắp xếp tầng từ thấp đến cao (Tầng 1 -> Tầng 5)
   const tiers = useMemo(() => {
     if (!selectedSlotId) return []
     const list = activeZones.filter(z => z.parent_id === selectedSlotId)
-    return [...list].sort((a, b) =>
-      (b.name || '').localeCompare(a.name || '', undefined, { numeric: true })
-    )
+    return [...list].sort((a, b) => {
+      const oa = a.display_order ?? 0
+      const ob = b.display_order ?? 0
+      if (oa !== ob) return oa - ob
+      return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+    })
   }, [activeZones, selectedSlotId])
+
+  // ── Thu gọn / Mở rộng các Tầng ───────────────────────────────────
+  const toggleTierExpand = useCallback((tierId: string) => {
+    setExpandedTierIds(prev => {
+      const next = new Set(prev)
+      if (next.has(tierId)) next.delete(tierId)
+      else next.add(tierId)
+      return next
+    })
+  }, [])
+
+  const handleExpandAllTiers = useCallback(() => {
+    setExpandedTierIds(new Set(tiers.map(t => t.id)))
+  }, [tiers])
+
+  const handleCollapseAllTiers = useCallback(() => {
+    setExpandedTierIds(new Set())
+  }, [])
+
+  // Tự động mở rộng tầng khi có vị trí highlight hoặc kết quả tìm kiếm khớp
+  useEffect(() => {
+    if (!selectedSlotId || tiers.length === 0) return
+
+    if (highlightedPosId) {
+      const targetPos = positions.find(p => p.id === highlightedPosId)
+      if (targetPos) {
+        const matchingTier = tiers.find(tier => {
+          const desc = getDescendantZoneIds(tier.id)
+          return targetPos.zone_ids.some(zid => desc.has(zid))
+        })
+        if (matchingTier) {
+          setExpandedTierIds(prev => new Set([...prev, matchingTier.id]))
+          return
+        }
+      }
+    }
+
+    if (isSearchActive) {
+      const matchedTiers = tiers.filter(t => (zoneMatchCountMap.get(t.id) || 0) > 0)
+      if (matchedTiers.length > 0) {
+        setExpandedTierIds(new Set(matchedTiers.map(t => t.id)))
+      }
+    }
+  }, [selectedSlotId, highlightedPosId, isSearchActive, tiers, positions, getDescendantZoneIds, zoneMatchCountMap])
 
   // ── Stats Calculator (Total, Occupied, Empty) per Zone (O(1) Set Lookups) ──
   const zoneStatsMap = useMemo(() => {
@@ -918,8 +1656,46 @@ export default function WarehouseMapTab() {
     return map
   }, [activeZones, positions, zoneDescendantsMap])
 
-  // ── Positions in Current View (Slot / Tier) ────────────────────
+  // Thống kê phân loại (Kệ vs Sảnh) cho từng Kho (đặt sau zoneStatsMap)
+  const getWhBreakdown = useCallback((whId: string) => {
+    const directChildren = activeZones.filter(z => z.parent_id === whId)
+    let rackTotal = 0
+    let rackOccupied = 0
+    let hallTotal = 0
+    let hallOccupied = 0
+
+    directChildren.forEach(child => {
+      const isHall = isHallZone(child)
+      const stats = zoneStatsMap.get(child.id) || { total: 0, occupied: 0, empty: 0 }
+      if (isHall) {
+        hallTotal += stats.total
+        hallOccupied += stats.occupied
+      } else {
+        rackTotal += stats.total
+        rackOccupied += stats.occupied
+      }
+    })
+
+    return { rackTotal, rackOccupied, hallTotal, hallOccupied }
+  }, [activeZones, zoneStatsMap])
+
+  // ── Positions in Current View (Slot / Tier / Hall) ────────────────────
   const currentPositions = useMemo(() => {
+    // Nếu đang vào Sảnh (hoặc khu vực không phân chia ô tầng)
+    if (isSelectedAisleHall) {
+      if (!selectedAisleId) return []
+      const targetZoneIds = getDescendantZoneIds(selectedAisleId)
+      let filtered = positions.filter(p =>
+        p.zone_ids.some(zid => targetZoneIds.has(zid))
+      )
+      if (onlyShowMatches && isSearchActive) {
+        filtered = filtered.filter(p => matchingPosIds.has(p.id))
+      }
+      return filtered.sort((a, b) =>
+        a.code.localeCompare(b.code, undefined, { numeric: true })
+      )
+    }
+
     if (!selectedSlotId) return []
 
     const targetZoneId = selectedTierId || selectedSlotId
@@ -936,7 +1712,17 @@ export default function WarehouseMapTab() {
     return filtered.sort((a, b) =>
       a.code.localeCompare(b.code, undefined, { numeric: true })
     )
-  }, [selectedSlotId, selectedTierId, positions, getDescendantZoneIds, onlyShowMatches, isSearchActive, matchingPosIds])
+  }, [
+    isSelectedAisleHall,
+    selectedAisleId,
+    selectedSlotId,
+    selectedTierId,
+    positions,
+    getDescendantZoneIds,
+    onlyShowMatches,
+    isSearchActive,
+    matchingPosIds
+  ])
 
   // Map positions by tier for grouped rack display
   const tierPositionsMap = useMemo(() => {
@@ -1002,7 +1788,7 @@ export default function WarehouseMapTab() {
 
   const handleJumpToMap = (pos: PositionItem) => {
     handleSelectSearchResult(pos)
-    setActiveView('map')
+    setSearchTab('map')
   }
 
   // ── Helper to resolve Zone Names ──────────────────────────────
@@ -1094,64 +1880,212 @@ export default function WarehouseMapTab() {
         searchQuery={searchQuery}
         onExecuteSearch={handleExecuteSearch}
         onClearSearch={handleClearSearch}
+        filterDateType={filterDateType}
+        onFilterDateTypeChange={setFilterDateType}
+        filterStartDate={filterStartDate}
+        onFilterStartDateChange={setFilterStartDate}
+        filterEndDate={filterEndDate}
+        onFilterEndDateChange={setFilterEndDate}
+        filterRegion={filterRegion}
+        onFilterRegionChange={setFilterRegion}
+        availableRegions={availableRegions}
+        hasActiveFilters={hasActiveFilters}
+        onSetDatePreset={handleSetDatePreset}
+        onResetFilters={handleResetFilters}
+        isFilterOpen={isFilterOpen}
+        onToggleFilterOpen={() => setIsFilterOpen(prev => !prev)}
       />
 
-      {/* ── SEARCH VIEW TABS: DANH SÁCH KẾT QUẢ vs XEM TRÊN SƠ ĐỒ ── */}
+      {/* ── BỘ THỐNG KÊ KẾT QUẢ TÌM KIẾM THEO KHO (SEARCH STATS PANEL) ── */}
       {isSearchActive && (
-        <div className="bg-[#0b1324] border-b border-slate-800 px-3 py-2 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-1.5 p-1 bg-slate-900 rounded-xl border border-slate-800">
+        <div className="bg-[#0b1324] border-b border-slate-800 px-3 py-2 space-y-2 shrink-0 animate-in fade-in">
+          {/* Dòng 1: Tên từ khóa & Tổng số vị trí khớp & Nút xóa */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+              <div className="truncate text-xs">
+                {searchQuery.trim() ? (
+                  <>
+                    <span className="text-slate-400">Kết quả cho: </span>
+                    <span className="text-amber-300 font-bold">&quot;{searchQuery}&quot;</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-slate-400">Lọc theo: </span>
+                    <span className="text-amber-300 font-bold">
+                      {(filterStartDate || filterEndDate) ? DATE_FILTER_OPTIONS.find(o => o.id === filterDateType)?.shortLabel : ''}
+                      {filterRegion !== 'all' ? ` · Vùng ${filterRegion}` : ''}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-[11px] font-mono font-bold text-cyan-400 bg-cyan-950/80 px-2 py-0.5 rounded-md border border-cyan-800/50">
+                {matchingPositions.length} vị trí khớp
+              </span>
+              <button
+                onClick={handleClearAllSearchAndFilters}
+                className="text-[11px] font-bold text-slate-400 hover:text-rose-400 flex items-center gap-0.5 px-1.5 py-0.5 rounded-lg hover:bg-slate-800 transition"
+                title="Xóa tìm kiếm & bộ lọc"
+              >
+                <X size={13} />
+                <span>Xóa</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Dòng 1B: Thanh mở bộ lọc ngày tháng & vùng miền nhanh */}
+          <div className="flex items-center justify-between gap-1.5 text-xs bg-slate-900/80 px-2 py-1.5 rounded-xl border border-slate-800">
             <button
-              onClick={() => setActiveView('search_list')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeView === 'search_list'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              type="button"
+              onClick={() => setIsFilterOpen(prev => !prev)}
+              className="text-[11px] font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1.5 active:scale-95 transition truncate text-left"
             >
-              <List size={13} />
-              <span>Danh sách kết quả ({matchingPositions.length})</span>
+              <Calendar size={13} className="text-amber-400 shrink-0" />
+              <span className="truncate">
+                {hasActiveFilters
+                  ? `Đang lọc: ${(filterStartDate || filterEndDate) ? DATE_FILTER_OPTIONS.find(o => o.id === filterDateType)?.shortLabel : ''}${filterRegion !== 'all' ? ` · Vùng ${filterRegion}` : ''}`
+                  : 'Lọc Ngày (Đóng gói / SX / Nguyên liệu) & Vùng'}
+              </span>
             </button>
             <button
-              onClick={() => setActiveView('map')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                activeView === 'map'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                  : 'text-slate-400 hover:text-white'
-              }`}
+              type="button"
+              onClick={() => setIsFilterOpen(prev => !prev)}
+              className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 hover:bg-amber-500 hover:text-slate-950 transition active:scale-95 border border-amber-500/40 shrink-0"
             >
-              <MapPin size={13} />
-              <span>Xem trên sơ đồ kho</span>
+              {isFilterOpen ? 'Đóng bộ lọc' : 'Mở bộ lọc'}
             </button>
           </div>
 
-          <button
-            onClick={handleClearSearch}
-            className="text-[11px] font-bold text-slate-400 hover:text-rose-400 flex items-center gap-1 px-2 py-1 rounded-lg hover:bg-slate-800 transition"
-          >
-            <X size={13} />
-            <span className="hidden sm:inline">Xóa tìm kiếm</span>
-          </button>
+          {/* Dòng 2: Chuyển đổi giữa 2 tab: [Sơ đồ vị trí] và [Thống kê phân bổ] */}
+          <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
+            <button
+              type="button"
+              onClick={() => setSearchTab('map')}
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${searchTab === 'map'
+                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <MapPin size={13} />
+              <span>Sơ đồ vị trí</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchTab('breakdown')}
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${searchTab === 'breakdown'
+                  ? 'bg-amber-400 text-slate-950 shadow-md shadow-amber-400/20 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <BarChart3 size={13} />
+              <span>Thống kê phân bổ</span>
+              {breakdownReport && breakdownReport.grandTotalQty > 0 && (
+                <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-black ${searchTab === 'breakdown' ? 'bg-slate-950/20 text-slate-950' : 'bg-amber-500/20 text-amber-300'
+                  }`}>
+                  {formatUnitsSummary(breakdownReport.grandUnitsMap, { short: true })}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {/* Dòng 3: Bộ thống kê từng kho (Chỉ hiện khi ở tab Sơ đồ để click chuyển kho trên map) */}
+          {searchTab === 'map' && (
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none text-xs pt-0.5">
+              <button
+                onClick={() => {
+                  setSelectedWarehouseId('all')
+                  setSelectedAisleId(null)
+                  setSelectedSlotId(null)
+                  setSelectedTierId(null)
+                }}
+                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1.5 active:scale-95 ${(!selectedWarehouseId || selectedWarehouseId === 'all')
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
+                    : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white'
+                  }`}
+              >
+                <Building2 size={12} />
+                <span>Tất cả kho</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${(!selectedWarehouseId || selectedWarehouseId === 'all')
+                    ? 'bg-slate-950/30 text-slate-950'
+                    : 'bg-slate-800 text-cyan-300'
+                  }`}>
+                  {matchingPositions.length}
+                </span>
+              </button>
+
+              {warehouses.map(wh => {
+                const matchCount = zoneMatchCountMap.get(wh.id) || 0
+                if (matchCount === 0) return null
+                const isSelected = selectedWarehouseId === wh.id
+
+                return (
+                  <button
+                    key={wh.id}
+                    onClick={() => {
+                      setSelectedWarehouseId(wh.id)
+                      setSelectedAisleId(null)
+                      setSelectedSlotId(null)
+                      setSelectedTierId(null)
+                    }}
+                    className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1.5 active:scale-95 ${isSelected
+                        ? 'bg-amber-500 text-slate-950 shadow-md shadow-amber-500/20 font-black'
+                        : 'bg-slate-900 border border-slate-800 text-slate-300 hover:text-white hover:border-amber-500/50'
+                      }`}
+                  >
+                    <span>{wh.name}</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-black ${isSelected
+                        ? 'bg-slate-950/30 text-slate-950'
+                        : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      }`}>
+                      🔥 {matchCount}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
       {/* ── BREADCRUMB NAVIGATION (Kho > Dãy > Ô > Tầng) ─────────── */}
-      {activeView === 'map' && (
+      {(!isSearchActive || searchTab === 'map') && (
         <div className="px-3 py-2 bg-[#0c1322] border-b border-slate-800/80 flex items-center gap-1.5 overflow-x-auto shrink-0 scrollbar-none text-xs">
           <button
             onClick={() => {
+              setSelectedWarehouseId('all')
               setSelectedAisleId(null)
               setSelectedSlotId(null)
               setSelectedTierId(null)
             }}
-            className={`shrink-0 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition ${
-              !selectedAisleId
+            className={`shrink-0 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition ${(!selectedWarehouseId || selectedWarehouseId === 'all')
                 ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
                 : 'bg-slate-800 text-slate-300 hover:text-white'
-            }`}
+              }`}
           >
             <Building2 size={13} />
-            <span>{(!selectedWarehouseId || selectedWarehouseId === 'all') ? 'Tất cả Kho' : getZoneName(selectedWarehouseId)}</span>
+            <span>Tất cả Kho</span>
           </button>
+
+          {selectedWarehouseId && selectedWarehouseId !== 'all' && (
+            <>
+              <ChevronRight size={13} className="text-slate-600 shrink-0" />
+              <button
+                onClick={() => {
+                  setSelectedAisleId(null)
+                  setSelectedSlotId(null)
+                  setSelectedTierId(null)
+                }}
+                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${!selectedAisleId
+                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
+                    : 'bg-slate-800 text-slate-300 hover:text-white'
+                  }`}
+              >
+                <span>{getZoneName(selectedWarehouseId)}</span>
+              </button>
+            </>
+          )}
 
           {selectedAisleId && (
             <>
@@ -1161,11 +2095,10 @@ export default function WarehouseMapTab() {
                   setSelectedSlotId(null)
                   setSelectedTierId(null)
                 }}
-                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition ${
-                  !selectedSlotId
+                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition ${!selectedSlotId
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
                     : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
+                  }`}
               >
                 {getZoneName(selectedAisleId)}
               </button>
@@ -1177,11 +2110,10 @@ export default function WarehouseMapTab() {
               <ChevronRight size={13} className="text-slate-600 shrink-0" />
               <button
                 onClick={() => setSelectedTierId(null)}
-                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition ${
-                  !selectedTierId
+                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition ${!selectedTierId
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
                     : 'bg-slate-800 text-slate-300 hover:text-white'
-                }`}
+                  }`}
               >
                 {getZoneName(selectedSlotId)}
               </button>
@@ -1206,266 +2138,383 @@ export default function WarehouseMapTab() {
             <RefreshCw size={28} className="animate-spin text-cyan-400" />
             <p className="text-xs">Đang tải sơ đồ kho...</p>
           </div>
-        ) : isSearchActive && activeView === 'search_list' ? (
-          /* ── GIAO DIỆN HIỂN THỊ KẾT QUẢ TÌM KIẾM DÀNH RIÊNG ──────── */
-          <div className="space-y-3">
-            {/* Header info */}
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-xs font-black text-white uppercase tracking-wider flex items-center gap-1.5">
-                  <Search size={14} className="text-cyan-400" />
-                  <span>Kết quả tìm kiếm cho &quot;{searchQuery}&quot;</span>
-                </h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">
-                  Tìm thấy <strong className="text-cyan-300">{filteredSearchResults.length}</strong> vị trí ({searchStats.occupied} có hàng, {searchStats.empty} trống)
-                </p>
+        ) : (isSearchActive && searchTab === 'breakdown' && breakdownReport) ? (
+          /* ── BẢNG THỐNG KÊ KẾ TOÁN: PHÂN BỔ TỒN KHO (KHO -> DÃY -> Ô) ── */
+          <div className="space-y-3 animate-in fade-in pb-10">
+            {/* Header Tổng Quan Kế Toán */}
+            <div className="bg-gradient-to-br from-slate-900 via-slate-900 to-[#0e1726] border border-amber-500/30 rounded-2xl p-3 shadow-lg space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider flex items-center gap-1.5">
+                  <BarChart3 size={14} className="text-amber-400" />
+                  <span>BẢNG THỐNG KÊ PHÂN BỔ TỒN KHO</span>
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleExpandAll}
+                    className="text-[10px] text-slate-400 hover:text-cyan-300 underline active:scale-95 transition"
+                  >
+                    Mở rộng
+                  </button>
+                  <span className="text-slate-600 text-[10px]">•</span>
+                  <button
+                    type="button"
+                    onClick={handleCollapseAll}
+                    className="text-[10px] text-slate-400 hover:text-cyan-300 underline active:scale-95 transition"
+                  >
+                    Thu gọn
+                  </button>
+                </div>
               </div>
-              <button
-                onClick={() => setActiveView('map')}
-                className="px-2.5 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-xs font-bold transition flex items-center gap-1 active:scale-95"
-              >
-                <MapPin size={13} />
-                <span>Xem trên sơ đồ</span>
-              </button>
+
+              {/* 3 Thẻ số liệu KPI */}
+              <div className="grid grid-cols-3 gap-2">
+                {(() => {
+                  const entries = Array.from(breakdownReport.grandUnitsMap.entries()).filter(([_, q]) => q > 0)
+                  entries.sort(([uA], [uB]) => {
+                    const priority = (u: string) => (u === 'Thùng' ? 1 : u === 'Kg' ? 2 : u === 'Sọt' ? 3 : 4)
+                    const pA = priority(uA)
+                    const pB = priority(uB)
+                    if (pA !== pB) return pA - pB
+                    return uA.localeCompare(uB)
+                  })
+
+                  if (entries.length <= 1) {
+                    const [unit, qty] = entries[0] || ['Thùng', 0]
+                    return (
+                      <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-2.5 text-center flex flex-col justify-center min-h-[72px]">
+                        <div className="text-[10px] text-slate-400 font-medium">TỔNG TỒN</div>
+                        <div className="text-base font-black text-amber-300 font-mono leading-tight mt-0.5 truncate">
+                          {Number.isInteger(qty) ? qty.toLocaleString('vi-VN') : Number(qty.toFixed(2)).toLocaleString('vi-VN')}
+                        </div>
+                        <div className="text-[10px] text-amber-400/80 font-medium">{unit}</div>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="bg-amber-950/30 border border-amber-500/30 rounded-xl p-2 text-center flex flex-col justify-center min-h-[72px]">
+                      <div className="text-[10px] text-slate-400 font-medium">TỔNG TỒN</div>
+                      <div className="space-y-0.5 mt-0.5 overflow-y-auto max-h-[38px] scrollbar-none">
+                        {entries.map(([u, q]) => (
+                          <div key={u} className="text-xs font-black text-amber-300 font-mono leading-tight truncate">
+                            {Number.isInteger(q) ? q.toLocaleString('vi-VN') : Number(q.toFixed(2)).toLocaleString('vi-VN')}{' '}
+                            <span className="text-[10px] text-amber-400/80 font-medium">{u}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                <div className="bg-cyan-950/30 border border-cyan-500/30 rounded-xl p-2.5 text-center flex flex-col justify-center min-h-[72px]">
+                  <div className="text-[10px] text-slate-400 font-medium">VỊ TRÍ LƯU</div>
+                  <div className="text-base font-black text-cyan-300 font-mono leading-tight mt-0.5">
+                    {breakdownReport.totalPositions}
+                  </div>
+                  <div className="text-[10px] text-cyan-400/80 font-medium">vị trí (ô)</div>
+                </div>
+
+                <div className="bg-emerald-950/30 border border-emerald-500/30 rounded-xl p-2.5 text-center flex flex-col justify-center min-h-[72px]">
+                  <div className="text-[10px] text-slate-400 font-medium">SỐ KHO</div>
+                  <div className="text-base font-black text-emerald-300 font-mono leading-tight mt-0.5">
+                    {breakdownReport.warehouses.length}
+                  </div>
+                  <div className="text-[10px] text-emerald-400/80 font-medium">kho có hàng</div>
+                </div>
+              </div>
             </div>
 
-            {/* Warehouse Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
-              <button
-                onClick={() => setSearchFilterWhId('all')}
-                className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-                  searchFilterWhId === 'all'
-                    ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
-              >
-                <span>Tất cả kho</span>
-                <span className="px-1 py-0.2 rounded text-[10px] bg-black/20 font-mono">
-                  {matchingPositions.length}
-                </span>
-              </button>
+            {/* Cây phân cấp Kho -> Dãy -> Ô */}
+            <div className="space-y-2.5">
+              {breakdownReport.warehouses.map(whAcc => {
+                const isWhExpanded = expandedWhIds.has(whAcc.warehouse.id)
+                return (
+                  <div
+                    key={whAcc.warehouse.id}
+                    className="rounded-2xl border border-slate-800 bg-[#0c1424] overflow-hidden shadow-sm"
+                  >
+                    {/* Hàng Tiêu đề KHO */}
+                    <div className="flex items-center justify-between p-2.5 hover:bg-slate-800/40 transition gap-2">
+                      <button
+                        type="button"
+                        onClick={() => toggleWarehouseExpand(whAcc.warehouse.id)}
+                        className="flex items-center gap-2 flex-1 min-w-0 text-left active:scale-[0.99] transition"
+                      >
+                        <span className="text-slate-400">
+                          {isWhExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                        </span>
+                        <div className="w-6 h-6 rounded-lg bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                          <Building2 size={13} className="text-cyan-400" />
+                        </div>
+                        <span className="text-xs font-bold text-white uppercase truncate">
+                          {whAcc.warehouse.name}
+                        </span>
+                      </button>
 
+                      <div className="flex items-center gap-2 shrink-0">
+                        <div className="text-right">
+                          <div className="text-xs font-black text-amber-300 font-mono">
+                            {formatUnitsSummary(whAcc.unitsMap)}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {whAcc.positionCount} ô
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedWarehouseId(whAcc.warehouse.id)
+                            setSelectedAisleId(null)
+                            setSelectedSlotId(null)
+                            setSelectedTierId(null)
+                            setSearchTab('map')
+                          }}
+                          className="px-2 py-1 rounded-lg bg-cyan-950/80 hover:bg-cyan-500 text-cyan-300 hover:text-slate-950 border border-cyan-800/60 text-[10px] font-bold flex items-center gap-1 transition shrink-0 active:scale-95"
+                          title="Xem trên sơ đồ kho"
+                        >
+                          <MapPin size={11} />
+                          <span>Sơ đồ</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Danh sách DÃY trong kho */}
+                    {isWhExpanded && (
+                      <div className="p-2 space-y-2 border-t border-slate-800/70 bg-slate-950/40">
+                        {whAcc.aisles.map(aisleAcc => {
+                          const isAisleExpanded = expandedAisleIds.has(aisleAcc.aisle.id)
+                          return (
+                            <div
+                              key={aisleAcc.aisle.id}
+                              className="rounded-xl border border-slate-800/80 bg-[#0e182b] overflow-hidden"
+                            >
+                              {/* Hàng DÃY */}
+                              <div className="flex items-center justify-between p-2 hover:bg-slate-800/30 transition gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleAisleExpand(aisleAcc.aisle.id)}
+                                  className="flex items-center gap-1.5 flex-1 min-w-0 text-left active:scale-[0.99] transition"
+                                >
+                                  <span className="text-slate-500">
+                                    {isAisleExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                                  </span>
+                                  <span className="text-xs font-bold text-slate-200 truncate">
+                                    {aisleAcc.aisle.name}
+                                  </span>
+                                </button>
+
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <div className="text-right">
+                                    <span className="text-xs font-bold text-amber-300 font-mono">
+                                      {formatUnitsSummary(aisleAcc.unitsMap, { short: true })}
+                                    </span>
+                                    <span className="text-[10px] text-slate-500 font-mono ml-1.5">
+                                      ({aisleAcc.positionCount} ô)
+                                    </span>
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedWarehouseId(whAcc.warehouse.id)
+                                      setSelectedAisleId(aisleAcc.aisle.id)
+                                      setSelectedSlotId(null)
+                                      setSelectedTierId(null)
+                                      setSearchTab('map')
+                                    }}
+                                    className="p-1 rounded-md text-slate-400 hover:text-cyan-300 hover:bg-slate-800 transition active:scale-95"
+                                    title="Xem dãy này trên sơ đồ"
+                                  >
+                                    <ExternalLink size={12} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Danh sách Ô trong dãy */}
+                              {isAisleExpanded && (
+                                <div className="p-1.5 space-y-1 border-t border-slate-800/50 bg-[#080e1a]">
+                                  {aisleAcc.slots.map(slotAcc => (
+                                    <div
+                                      key={slotAcc.slot.id}
+                                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800/60 hover:border-cyan-500/30 transition text-xs"
+                                    >
+                                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
+                                        <span className="font-semibold text-slate-300 truncate">
+                                          {slotAcc.slot.name}
+                                        </span>
+                                        {slotAcc.positionCount > 1 && (
+                                          <span className="text-[10px] text-slate-500">
+                                            ({slotAcc.positionCount}p)
+                                          </span>
+                                        )}
+                                        {slotAcc.positions[0]?.material_zone && (
+                                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium">
+                                            {slotAcc.positions[0].material_zone}
+                                          </span>
+                                        )}
+                                        {slotAcc.positions[0]?.packaging_date && (
+                                          <span className="text-[9px] text-slate-400 font-mono">
+                                            {slotAcc.positions[0].packaging_date.split('-').reverse().slice(0, 2).join('/')}
+                                          </span>
+                                        )}
+                                      </div>
+
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <div className="text-right font-mono">
+                                          <span className="font-bold text-emerald-400">
+                                            {formatUnitsSummary(slotAcc.unitsMap, { short: true })}
+                                          </span>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedWarehouseId(whAcc.warehouse.id)
+                                            setSelectedAisleId(aisleAcc.aisle.id)
+                                            if (isHallZone(aisleAcc.aisle) || slotAcc.slot.id === aisleAcc.aisle.id) {
+                                              setSelectedSlotId(null)
+                                            } else {
+                                              setSelectedSlotId(slotAcc.slot.id)
+                                            }
+                                            setSelectedTierId(null)
+                                            setSearchTab('map')
+                                          }}
+                                          className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline px-1 py-0.5 active:scale-95 transition"
+                                          title="Nhảy đến vị trí này trên sơ đồ"
+                                        >
+                                          Xem vị trí
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : (!selectedWarehouseId || selectedWarehouseId === 'all') ? (
+          /* ── LEVEL 0: DANH SÁCH CÁC KHO (TẤT CẢ KHO) ──────────────── */
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Building2 size={14} className="text-cyan-400" />
+                <span>CHỌN KHO (TẤT CẢ KHO):</span>
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">
+                {warehouses.length} kho
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2.5">
               {warehouses.map(wh => {
-                const matchCount = zoneMatchCountMap.get(wh.id) || 0
-                if (matchCount === 0) return null
+                const stats = zoneStatsMap.get(wh.id) || { total: 0, occupied: 0, empty: 0 }
+                const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
+                const whMatchCount = zoneMatchCountMap.get(wh.id) || 0
+                const breakdown = getWhBreakdown(wh.id)
+
                 return (
                   <button
                     key={wh.id}
-                    onClick={() => setSearchFilterWhId(wh.id)}
-                    className={`shrink-0 px-2.5 py-1 rounded-lg font-bold transition flex items-center gap-1 ${
-                      searchFilterWhId === wh.id
-                        ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20'
-                        : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                    onClick={() => {
+                      setSelectedWarehouseId(wh.id)
+                      setSelectedAisleId(null)
+                      setSelectedSlotId(null)
+                      setSelectedTierId(null)
+                    }}
+                    className={`p-3 rounded-xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${whMatchCount > 0 ? 'border-cyan-500/80 shadow-lg shadow-cyan-500/10' : 'border-slate-800 hover:border-cyan-500/50'
+                      }`}
                   >
-                    <span>{wh.name}</span>
-                    <span className="px-1 py-0.2 rounded text-[10px] bg-black/20 font-mono">
-                      {matchCount}
-                    </span>
+                    {/* Header: Tên Kho & Nút Xem Dãy */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-cyan-400 shrink-0">
+                          <Building2 size={16} />
+                        </span>
+                        <span className="font-black text-sm text-white group-hover:text-cyan-300 transition truncate">
+                          {wh.name}
+                        </span>
+                      </div>
+                      {isSearchActive && whMatchCount > 0 ? (
+                        <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black shrink-0 animate-pulse">
+                          🔥 {whMatchCount} khớp
+                        </span>
+                      ) : (
+                        <span className="text-xs text-cyan-400 font-bold flex items-center gap-0.5 shrink-0 whitespace-nowrap">
+                          <span>Xem Dãy →</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Thống kê Tổng, Đã chứa, Trống */}
+                    <div className="flex items-center justify-between text-[11px] text-slate-400">
+                      <span>Tổng: <strong className="text-white font-mono">{stats.total}</strong></span>
+                      <span>Đã chứa: <strong className="text-amber-400 font-mono">{stats.occupied}</strong></span>
+                      <span>Còn trống: <strong className="text-emerald-400 font-mono">{stats.empty}</strong></span>
+                    </div>
+
+                    {/* Chi tiết phụ: Kệ & Sảnh */}
+                    {(breakdown.rackTotal > 0 || breakdown.hallTotal > 0) && (
+                      <div className="flex items-center justify-between text-[10px] text-slate-400/90 pt-1 border-t border-slate-800/60">
+                        <span>Kệ: <strong className="text-slate-300 font-mono">{breakdown.rackTotal}</strong> ({breakdown.rackOccupied} có hàng)</span>
+                        {breakdown.hallTotal > 0 && (
+                          <span className="text-emerald-400 font-medium">Sảnh: <strong className="font-mono">{breakdown.hallTotal}</strong> ({breakdown.hallOccupied})</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Progress Bar */}
+                    <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-amber-500 rounded-full transition-all duration-300"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
                   </button>
                 )
               })}
             </div>
-
-            {/* Status Filter Pills: All, Occupied, Empty */}
-            <div className="flex items-center gap-1.5 text-xs">
-              <button
-                onClick={() => setSearchFilterStatus('all')}
-                className={`px-2.5 py-1 rounded-md font-bold transition text-[11px] ${
-                  searchFilterStatus === 'all'
-                    ? 'bg-slate-200 text-slate-900'
-                    : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
-                }`}
-              >
-                Tất cả ({matchingPositions.length})
-              </button>
-              <button
-                onClick={() => setSearchFilterStatus('occupied')}
-                className={`px-2.5 py-1 rounded-md font-bold transition text-[11px] ${
-                  searchFilterStatus === 'occupied'
-                    ? 'bg-amber-500 text-slate-950 font-black'
-                    : 'bg-slate-900 text-amber-400/80 border border-slate-800 hover:text-amber-300'
-                }`}
-              >
-                Có hàng ({searchStats.occupied})
-              </button>
-              <button
-                onClick={() => setSearchFilterStatus('empty')}
-                className={`px-2.5 py-1 rounded-md font-bold transition text-[11px] ${
-                  searchFilterStatus === 'empty'
-                    ? 'bg-emerald-500 text-slate-950 font-black'
-                    : 'bg-slate-900 text-emerald-400/80 border border-slate-800 hover:text-emerald-300'
-                }`}
-              >
-                Trống ({searchStats.empty})
-              </button>
-            </div>
-
-            {/* Results Cards List */}
-            {filteredSearchResults.length === 0 ? (
-              <div className="py-16 text-center text-slate-500 text-xs space-y-2">
-                <p>Không có vị trí nào thỏa mãn bộ lọc hiện tại.</p>
-                <button
-                  onClick={() => {
-                    setSearchFilterWhId('all')
-                    setSearchFilterStatus('all')
-                  }}
-                  className="text-cyan-400 underline font-bold"
-                >
-                  Đặt lại bộ lọc
-                </button>
-              </div>
-            ) : (
-              <div className="space-y-2.5">
-                {filteredSearchResults.slice(0, searchPageLimit).map(p => {
-                  const isOccupied = !!p.lot_id
-                  return (
-                    <div
-                      key={p.id}
-                      className={`p-3 rounded-2xl border transition space-y-2.5 ${
-                        isOccupied
-                          ? 'bg-slate-900/90 border-slate-800 hover:border-cyan-500/40 shadow-sm'
-                          : 'bg-slate-950/60 border-slate-850 border-dashed hover:border-emerald-500/40'
-                      }`}
-                    >
-                      {/* Header Row */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="font-mono font-black text-sm text-cyan-300">
-                            📍 {p.code}
-                          </span>
-                          {p.stt ? (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 font-mono font-black text-xs">
-                              STT: #{p.stt}
-                            </span>
-                          ) : isOccupied ? (
-                            <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold text-[10px]">
-                              CÓ HÀNG
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold text-[10px]">
-                              VỊ TRÍ TRỐNG
-                            </span>
-                          )}
-                        </div>
-
-                        <span className="text-[10px] text-slate-400 font-mono bg-slate-800/80 px-2 py-0.5 rounded-md">
-                          {getPositionPath(p).split(' · ')[0] || ''}
-                        </span>
-                      </div>
-
-                      {/* Location Path */}
-                      <div className="text-[11px] text-slate-400 font-medium flex items-center gap-1 flex-wrap">
-                        <MapPin size={12} className="text-cyan-400 shrink-0" />
-                        <span>{getPositionPath(p)}</span>
-                      </div>
-
-                      {/* Product & Lot Information */}
-                      {isOccupied && (
-                        <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 space-y-1.5">
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-xs font-bold text-white leading-snug">
-                              {p.product_name || 'Hàng đông lạnh'}
-                            </p>
-                            {p.aliases && (
-                              <span className="shrink-0 px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
-                                ⚡ {p.aliases}
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 border-t border-slate-850 text-[10px]">
-                            <div>
-                              <span className="text-slate-500 block">Mã LOT:</span>
-                              <span className="font-mono font-bold text-amber-300">{p.lot_code || '---'}</span>
-                            </div>
-                            <div>
-                              <span className="text-slate-500 block">Số lượng:</span>
-                              <span className="font-mono font-bold text-slate-200">
-                                {p.quantity ? `${p.quantity} Thùng` : '---'}
-                              </span>
-                            </div>
-                            {(p.packaging_date || p.inbound_date) && (
-                              <div className="col-span-2 sm:col-span-1">
-                                <span className="text-slate-500 block">Ngày nhập/đóng:</span>
-                                <span className="text-slate-300">
-                                  {p.packaging_date || p.inbound_date || '---'}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center gap-2 pt-1">
-                        <button
-                          onClick={() => handleJumpToMap(p)}
-                          className="flex-1 py-1.5 px-3 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold shadow-md shadow-cyan-900/30 active:scale-98 transition flex items-center justify-center gap-1.5"
-                        >
-                          <MapPin size={13} />
-                          <span>Xem vị trí trên sơ đồ</span>
-                        </button>
-
-                        <button
-                          onClick={() => setSelectedPosDetail(p)}
-                          className="py-1.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold border border-slate-700 active:scale-98 transition flex items-center gap-1"
-                        >
-                          <Info size={13} />
-                          <span>Chi tiết</span>
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-
-                {/* Load More Button */}
-                {filteredSearchResults.length > searchPageLimit && (
-                  <button
-                    onClick={() => setSearchPageLimit(prev => prev + 60)}
-                    className="w-full py-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-800 text-cyan-400 font-bold text-xs border border-slate-700/80 transition active:scale-98"
-                  >
-                    Xem thêm 60 vị trí tiếp theo (còn {filteredSearchResults.length - searchPageLimit} vị trí)
-                  </button>
-                )}
-              </div>
-            )}
           </div>
-        ) : (
-          /* ── XEM TRÊN SƠ ĐỒ KHO ──────────────────────────────────── */
-          <>
-            {isSearchActive && (
-              <div className="bg-slate-900/90 border border-amber-500/30 rounded-xl p-2.5 flex items-center justify-between text-xs animate-in fade-in">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
-                  <span className="truncate">Đang xem sơ đồ cho: <strong className="text-white">&quot;{searchQuery}&quot;</strong> ({matchingPositions.length} vị trí)</span>
-                </div>
-                <button
-                  onClick={() => setActiveView('search_list')}
-                  className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-xs font-bold transition flex items-center gap-1 active:scale-95 shrink-0"
-                >
-                  <List size={13} />
-                  <span>Danh sách ({matchingPositions.length})</span>
-                </button>
-              </div>
-            )}
-
-            {!selectedAisleId ? (
+        ) : !selectedAisleId ? (
           /* ── LEVEL 1: DANH SÁCH DÃY / SẢNH TRONG KHO ĐANG CHỌN ────── */
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Layers size={14} className="text-cyan-400" />
-                <span>
-                  CHỌN DÃY / SẢNH {(!selectedWarehouseId || selectedWarehouseId === 'all') ? '(TẤT CẢ KHO)' : `(KHO ${getZoneName(selectedWarehouseId)})`}:
-                </span>
-              </span>
+              <button
+                onClick={() => {
+                  setSelectedWarehouseId('all')
+                  setSelectedAisleId(null)
+                  setSelectedSlotId(null)
+                  setSelectedTierId(null)
+                }}
+                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+              >
+                <ArrowLeft size={14} />
+                <span>Quay lại danh sách Kho</span>
+              </button>
               <span className="text-[10px] text-slate-500 font-mono">
                 {aisles.length} phân khu
               </span>
             </div>
 
-            {/* Switch Warehouse Pills with 'Tất cả Kho' option */}
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Layers size={14} className="text-cyan-400" />
+                <span>
+                  CHỌN DÃY / SẢNH ({getZoneName(selectedWarehouseId)}):
+                </span>
+              </span>
+            </div>
+
+            {/* Switch Warehouse Pills */}
             {warehouses.length > 1 && (
               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
                 <button
@@ -1475,19 +2524,10 @@ export default function WarehouseMapTab() {
                     setSelectedSlotId(null)
                     setSelectedTierId(null)
                   }}
-                  className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
-                    (!selectedWarehouseId || selectedWarehouseId === 'all')
-                      ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
-                      : 'bg-slate-800 text-slate-400 hover:text-white'
-                  }`}
+                  className="px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 bg-slate-800 text-slate-400 hover:text-white"
                 >
-                  <Layers size={13} />
+                  <ArrowLeft size={13} />
                   <span>TẤT CẢ KHO</span>
-                  {isSearchActive && matchingPositions.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
-                      {matchingPositions.length}
-                    </span>
-                  )}
                 </button>
 
                 {warehouses.map(wh => {
@@ -1501,11 +2541,10 @@ export default function WarehouseMapTab() {
                         setSelectedSlotId(null)
                         setSelectedTierId(null)
                       }}
-                      className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${
-                        wh.id === selectedWarehouseId
+                      className={`px-3 py-1.5 rounded-xl font-bold text-xs whitespace-nowrap transition flex items-center gap-1.5 ${wh.id === selectedWarehouseId
                           ? 'bg-cyan-500 text-slate-950 font-black shadow-md shadow-cyan-500/30'
                           : 'bg-slate-800 text-slate-400 hover:text-white'
-                      }`}
+                        }`}
                     >
                       <Building2 size={13} />
                       <span>{wh.name}</span>
@@ -1520,44 +2559,40 @@ export default function WarehouseMapTab() {
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 gap-2.5">
               {aisles.map(aisle => {
                 const stats = zoneStatsMap.get(aisle.id) || { total: 0, occupied: 0, empty: 0 }
                 const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
-                const aisleWh = warehouses.find(w => w.id === aisle.parent_id)
                 const aisleMatchCount = zoneMatchCountMap.get(aisle.id) || 0
+                const isHall = isHallZone(aisle)
 
                 return (
                   <button
                     key={aisle.id}
                     onClick={() => {
-                      if (aisle.parent_id) setSelectedWarehouseId(aisle.parent_id)
                       setSelectedAisleId(aisle.id)
                       setSelectedSlotId(null)
                       setSelectedTierId(null)
                     }}
-                    className={`p-3.5 rounded-2xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${
-                      aisleMatchCount > 0 ? 'border-cyan-500/80 shadow-lg shadow-cyan-500/10' : 'border-slate-800 hover:border-cyan-500/50'
-                    }`}
+                    className={`p-3.5 rounded-2xl bg-[#111827] border text-left transition hover:bg-slate-900 active:scale-[0.99] space-y-2 group ${aisleMatchCount > 0 ? 'border-cyan-500/80 shadow-lg shadow-cyan-500/10' : 'border-slate-800 hover:border-cyan-500/50'
+                      }`}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        {(!selectedWarehouseId || selectedWarehouseId === 'all') && aisleWh && (
-                          <span className="px-1.5 py-0.5 rounded bg-cyan-950 border border-cyan-800 text-cyan-300 font-bold text-[10px]">
-                            {aisleWh.name}
+                      <span className="font-black text-sm text-white group-hover:text-cyan-300 transition flex items-center gap-1.5">
+                        {isHall ? '🏢' : '🚪'} {aisle.name}
+                        {isHall && (
+                          <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            SẢNH
                           </span>
                         )}
-                        <span className="font-black text-sm text-white group-hover:text-cyan-300 transition">
-                          🚪 {aisle.name}
-                        </span>
-                      </div>
+                      </span>
                       {isSearchActive && aisleMatchCount > 0 ? (
                         <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[11px] font-black animate-pulse">
                           🔥 {aisleMatchCount} khớp
                         </span>
                       ) : (
                         <span className="text-xs text-cyan-400 font-bold flex items-center gap-0.5">
-                          Xem Ô →
+                          {isHall ? 'Xem vị trí →' : 'Xem Ô →'}
                         </span>
                       )}
                     </div>
@@ -1580,6 +2615,126 @@ export default function WarehouseMapTab() {
               })}
             </div>
           </div>
+        ) : isSelectedAisleHall ? (
+          /* ── LEVEL 2-HALL: LƯỚI VỊ TRÍ TRONG SẢNH (HALL POSITIONS) ────────────────── */
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => {
+                  setSelectedAisleId(null)
+                  setSelectedSlotId(null)
+                  setSelectedTierId(null)
+                }}
+                className="text-xs font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 transition"
+              >
+                <ArrowLeft size={14} />
+                <span>Quay lại Dãy / Sảnh</span>
+              </button>
+              <div className="flex items-center gap-2">
+                {isSearchActive && (
+                  <button
+                    onClick={() => setOnlyShowMatches(!onlyShowMatches)}
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${onlyShowMatches
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30'
+                        : 'bg-amber-950/40 text-amber-300 border border-amber-500/40 hover:bg-amber-900/40'
+                      }`}
+                  >
+                    ⭐ {onlyShowMatches ? 'Hiện tất cả' : 'Chỉ vị trí khớp'}
+                  </button>
+                )}
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {currentPositions.length} vị trí
+                </span>
+              </div>
+            </div>
+
+            {/* Hall Banner / Info */}
+            <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-500/30 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-950 font-black text-xs uppercase shadow-sm">
+                  SẢNH
+                </span>
+                <span className="font-black text-sm text-white uppercase tracking-wide">
+                  {getZoneName(selectedAisleId)}
+                </span>
+              </div>
+              <div className="text-right text-xs font-mono">
+                <span className="text-amber-400 font-bold">
+                  {currentPositions.filter(p => p.lot_id).length} có hàng
+                </span>
+                <span className="text-slate-500 mx-1">/</span>
+                <span className="text-emerald-400 font-bold">
+                  {currentPositions.filter(p => !p.lot_id).length} trống
+                </span>
+              </div>
+            </div>
+
+            {/* Visual Grid of Positions in Hall */}
+            {currentPositions.length === 0 ? (
+              <div className="py-12 text-center text-slate-500 text-xs">
+                Chưa có dữ liệu vị trí nào trong sảnh này.
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                {currentPositions.map(pos => {
+                  const isOccupied = !!pos.lot_id
+                  const isHighlighted = pos.id === highlightedPosId
+                  const isMatched = matchingPosIds.has(pos.id)
+
+                  return (
+                    <button
+                      key={pos.id}
+                      onClick={() => setSelectedPosDetail(pos)}
+                      className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${isHighlighted
+                          ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
+                          : isMatched
+                            ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
+                            : isOccupied
+                              ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
+                              : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
+                        }`}
+                    >
+                      <div className="flex items-center justify-between gap-1 w-full">
+                        <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
+                          {pos.code}
+                        </span>
+                        {isMatched && (
+                          <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                            ⭐ Khớp
+                          </span>
+                        )}
+                        {isOccupied ? (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                            #{pos.stt || 'LOT'}
+                          </span>
+                        ) : (
+                          <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                            TRỐNG
+                          </span>
+                        )}
+                      </div>
+
+                      {isOccupied ? (
+                        <div className="space-y-0.5 w-full mt-1">
+                          <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                            {pos.product_name || 'Hàng đông lạnh'}
+                          </p>
+                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
+                            <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                            {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{formatPositionQtyUnit(pos.quantity, pos.unit)}</span> : null}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="w-full text-center py-1 text-[10px] text-emerald-500/70 font-medium">
+                          + Vị trí trống
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         ) : !selectedSlotId ? (
           /* ── LEVEL 2: DANH SÁCH Ô TRONG DÃY / SẢNH ────────────────── */
           <div className="space-y-3">
@@ -1599,7 +2754,7 @@ export default function WarehouseMapTab() {
               </span>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               {slots.map(slot => {
                 const stats = zoneStatsMap.get(slot.id) || { total: 0, occupied: 0, empty: 0 }
                 const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
@@ -1612,11 +2767,10 @@ export default function WarehouseMapTab() {
                       setSelectedSlotId(slot.id)
                       setSelectedTierId(null)
                     }}
-                    className={`p-3.5 rounded-2xl bg-[#111827] border text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm ${
-                      slotMatchCount > 0 ? 'border-cyan-500/80 shadow-md shadow-cyan-500/10' : 'border-slate-700/80 hover:border-emerald-500/80'
-                    }`}
+                    className={`p-3.5 rounded-2xl bg-[#111827] border text-center transition hover:bg-slate-900 active:scale-[0.98] space-y-1.5 group shadow-sm flex flex-col items-center justify-between min-h-[112px] ${slotMatchCount > 0 ? 'border-cyan-500/80 shadow-md shadow-cyan-500/10' : 'border-slate-800 hover:border-emerald-500/80'
+                      }`}
                   >
-                    <div className="font-black text-sm uppercase text-white group-hover:text-emerald-300 transition tracking-wide flex items-center justify-center gap-1.5">
+                    <div className="font-black text-base uppercase text-white group-hover:text-emerald-300 transition tracking-wide flex items-center justify-center gap-1.5 w-full">
                       <span>{slot.name}</span>
                       {isSearchActive && slotMatchCount > 0 && (
                         <span className="px-1.5 py-0.2 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold">
@@ -1629,9 +2783,9 @@ export default function WarehouseMapTab() {
                       Trống {stats.empty}
                     </div>
 
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-0.5">
-                      <span>{stats.occupied}/{stats.total} vị trí</span>
-                      <span>{pct}%</span>
+                    <div className="w-full flex items-center justify-between text-[11px] text-slate-400 font-mono pt-0.5">
+                      <span className="whitespace-nowrap">{stats.occupied}/{stats.total} vị trí</span>
+                      <span className="whitespace-nowrap">{pct}%</span>
                     </div>
 
                     <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
@@ -1660,11 +2814,10 @@ export default function WarehouseMapTab() {
                 {isSearchActive && (
                   <button
                     onClick={() => setOnlyShowMatches(!onlyShowMatches)}
-                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${
-                      onlyShowMatches
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition flex items-center gap-1 ${onlyShowMatches
                         ? 'bg-amber-500 text-slate-950 font-black shadow-md shadow-amber-500/30'
                         : 'bg-amber-950/40 text-amber-300 border border-amber-500/40 hover:bg-amber-900/40'
-                    }`}
+                      }`}
                   >
                     ⭐ {onlyShowMatches ? 'Hiện tất cả' : 'Chỉ vị trí khớp'}
                   </button>
@@ -1679,11 +2832,10 @@ export default function WarehouseMapTab() {
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
               <button
                 onClick={() => setSelectedTierId(null)}
-                className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition ${
-                  !selectedTierId
+                className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition ${!selectedTierId
                     ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
                     : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
+                  }`}
               >
                 Tất cả các Tầng ({currentPositions.length})
               </button>
@@ -1695,11 +2847,10 @@ export default function WarehouseMapTab() {
                   <button
                     key={tier.id}
                     onClick={() => setSelectedTierId(tier.id)}
-                    className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition flex items-center gap-1.5 ${
-                      selectedTierId === tier.id
+                    className={`px-3 py-1.5 rounded-xl font-bold whitespace-nowrap transition flex items-center gap-1.5 ${selectedTierId === tier.id
                         ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/30'
                         : 'bg-slate-800 text-slate-400 hover:text-white'
-                    }`}
+                      }`}
                   >
                     <span>{tier.name}</span>
                     <span className="text-[10px] opacity-80 font-mono">({stats.occupied}/{stats.total})</span>
@@ -1719,95 +2870,139 @@ export default function WarehouseMapTab() {
                 Chưa có dữ liệu vị trí nào trong khu vực này.
               </div>
             ) : !selectedTierId ? (
-              /* When "Tất cả các tầng": Render as clean vertical shelves (Tầng 5 -> Tầng 1) */
-              <div className="space-y-3.5">
+              /* When "Tất cả các tầng": Render as clean vertical shelves with expand/collapse control */
+              <div className="space-y-2.5">
+                {/* 2 nút Mở tất cả & Thu tất cả */}
+                <div className="flex items-center justify-between px-1 text-xs pb-0.5">
+                  <span className="text-[11px] font-bold text-slate-400">
+                    Chi tiết theo tầng ({tiers.length} tầng):
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={handleExpandAllTiers}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-cyan-300 hover:bg-slate-700 border border-slate-700 transition active:scale-95 flex items-center gap-1 shadow-xs"
+                    >
+                      <span>+ Mở tất cả</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCollapseAllTiers}
+                      className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 border border-slate-700 transition active:scale-95 flex items-center gap-1 shadow-xs"
+                    >
+                      <span>− Thu tất cả</span>
+                    </button>
+                  </div>
+                </div>
+
                 {tiers.map(tier => {
                   let tierPositions = tierPositionsMap.get(tier.id) || []
                   if (onlyShowMatches && isSearchActive) {
                     tierPositions = tierPositions.filter(p => matchingPosIds.has(p.id))
                   }
                   const stats = zoneStatsMap.get(tier.id) || { total: 0, occupied: 0, empty: 0 }
+                  const tierMatchCount = zoneMatchCountMap.get(tier.id) || 0
+                  const isExpanded = expandedTierIds.has(tier.id)
                   if (tierPositions.length === 0) return null
 
                   return (
                     <div
                       key={tier.id}
-                      className="p-3 rounded-2xl bg-[#0f172a] border border-slate-800/90 space-y-2.5 shadow-sm"
+                      className={`rounded-2xl bg-[#0f172a] border transition-all shadow-sm overflow-hidden ${isExpanded ? 'border-slate-800/90' : 'border-slate-800/60 hover:border-slate-700'
+                        }`}
                     >
-                      <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <div className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-cyan-400" />
-                          <span className="font-black text-xs text-white uppercase tracking-wider">
+                      {/* Tiêu đề tầng bấm vào để thu gọn / mở rộng */}
+                      <button
+                        type="button"
+                        onClick={() => toggleTierExpand(tier.id)}
+                        className={`w-full p-3 flex items-center justify-between text-left transition select-none group ${isExpanded ? 'border-b border-slate-800/80 bg-slate-900/40' : 'hover:bg-slate-800/30'
+                          }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-slate-500 group-hover:text-cyan-400 transition shrink-0">
+                            {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                          </span>
+                          <span className="w-2 h-2 rounded-full bg-cyan-400 shrink-0" />
+                          <span className="font-black text-xs text-white uppercase tracking-wider group-hover:text-cyan-300 transition">
                             {tier.name}
                           </span>
                           <span className="text-[10px] text-cyan-300 font-mono">
                             ({stats.occupied}/{stats.total} vị trí có hàng)
                           </span>
+                          {isSearchActive && tierMatchCount > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-amber-400 text-slate-950 text-[9px] font-black shrink-0">
+                              ⚡ {tierMatchCount}
+                            </span>
+                          )}
                         </div>
-                        <span className="text-[10px] font-bold text-emerald-400 font-mono">
-                          {stats.empty} trống
-                        </span>
-                      </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] font-bold text-emerald-400 font-mono">
+                            {stats.empty} trống
+                          </span>
+                        </div>
+                      </button>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-                        {tierPositions.map(pos => {
-                          const isOccupied = !!pos.lot_id
-                          const isHighlighted = pos.id === highlightedPosId
-                          const isMatched = matchingPosIds.has(pos.id)
+                      {/* Lưới các vị trí trong tầng - chỉ hiện khi mở rộng */}
+                      {isExpanded && (
+                        <div className="p-3 grid grid-cols-2 gap-2 animate-in fade-in duration-150">
+                          {tierPositions.map(pos => {
+                            const isOccupied = !!pos.lot_id
+                            const isHighlighted = pos.id === highlightedPosId
+                            const isMatched = matchingPosIds.has(pos.id)
 
-                          return (
-                            <button
-                              key={pos.id}
-                              onClick={() => setSelectedPosDetail(pos)}
-                              className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${
-                                isHighlighted
-                                  ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
-                                  : isMatched
-                                  ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
-                                  : isOccupied
-                                  ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
-                                  : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-1 w-full">
-                                <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
-                                  {pos.code}
-                                </span>
-                                {isMatched && (
-                                  <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
-                                    ⭐ Khớp
+                            return (
+                              <button
+                                key={pos.id}
+                                onClick={() => setSelectedPosDetail(pos)}
+                                className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${isHighlighted
+                                    ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
+                                    : isMatched
+                                      ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
+                                      : isOccupied
+                                        ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
+                                        : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
+                                  }`}
+                              >
+                                <div className="flex items-center justify-between gap-1 w-full">
+                                  <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
+                                    {pos.code}
                                   </span>
-                                )}
+                                  {isMatched && (
+                                    <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                                      ⭐ Khớp
+                                    </span>
+                                  )}
+                                  {isOccupied ? (
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                                      #{pos.stt || 'LOT'}
+                                    </span>
+                                  ) : (
+                                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                                      TRỐNG
+                                    </span>
+                                  )}
+                                </div>
+
                                 {isOccupied ? (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
-                                    #{pos.stt || 'LOT'}
-                                  </span>
-                                ) : (
-                                  <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
-                                    TRỐNG
-                                  </span>
-                                )}
-                              </div>
-
-                              {isOccupied ? (
-                                <div className="space-y-0.5 w-full mt-1">
-                                  <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
-                                    {pos.product_name || 'Hàng đông lạnh'}
-                                  </p>
-                                  <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
-                                    <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
-                                    {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{pos.quantity} th</span> : null}
+                                  <div className="space-y-0.5 w-full mt-1">
+                                    <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                                      {pos.product_name || 'Hàng đông lạnh'}
+                                    </p>
+                                    <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
+                                      <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                                      {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{formatPositionQtyUnit(pos.quantity, pos.unit)}</span> : null}
+                                    </div>
                                   </div>
-                                </div>
-                              ) : (
-                                <div className="w-full text-center py-1 text-[10px] text-emerald-500/70 font-medium">
-                                  + Vị trí trống
-                                </div>
-                              )}
-                            </button>
-                          )
-                        })}
-                      </div>
+                                ) : (
+                                  <div className="w-full text-center py-1 text-[10px] text-emerald-500/70 font-medium">
+                                    + Vị trí trống
+                                  </div>
+                                )}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
@@ -1827,7 +3022,7 @@ export default function WarehouseMapTab() {
                   </span>
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                <div className="grid grid-cols-2 gap-2">
                   {currentPositions.map(pos => {
                     const isOccupied = !!pos.lot_id
                     const isHighlighted = pos.id === highlightedPosId
@@ -1837,15 +3032,14 @@ export default function WarehouseMapTab() {
                       <button
                         key={pos.id}
                         onClick={() => setSelectedPosDetail(pos)}
-                        className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${
-                          isHighlighted
+                        className={`p-2.5 rounded-xl border text-left transition relative active:scale-[0.98] flex flex-col justify-between min-h-[74px] ${isHighlighted
                             ? 'border-amber-400 ring-2 ring-amber-400/50 bg-amber-950/50 shadow-lg'
                             : isMatched
-                            ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
-                            : isOccupied
-                            ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
-                            : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
-                        }`}
+                              ? 'border-amber-400/90 ring-1 ring-amber-400/50 bg-gradient-to-b from-amber-950/50 to-[#131d33] shadow-md shadow-amber-500/20'
+                              : isOccupied
+                                ? 'bg-[#131d33] border-cyan-500/50 hover:border-cyan-400'
+                                : 'bg-slate-900/60 border-slate-700/80 hover:border-emerald-500/60'
+                          }`}
                       >
                         <div className="flex items-center justify-between gap-1 w-full">
                           <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
@@ -1874,7 +3068,7 @@ export default function WarehouseMapTab() {
                             </p>
                             <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
                               <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
-                              {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{pos.quantity} th</span> : null}
+                              {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{formatPositionQtyUnit(pos.quantity, pos.unit)}</span> : null}
                             </div>
                           </div>
                         ) : (
@@ -1890,9 +3084,7 @@ export default function WarehouseMapTab() {
             )}
           </div>
         )}
-      </>
-    )}
-  </div>
+      </div>
 
       {/* ── MODAL: CHI TIẾT VỊ TRÍ KHO & PALLET ───────────────────── */}
       {selectedPosDetail && (
@@ -1966,16 +3158,57 @@ export default function WarehouseMapTab() {
                     </strong>
                   </div>
                   <div>
-                    <span className="text-slate-500 block text-[10px]">NGÀY ĐÓNG GÓI (NSX):</span>
+                    <span className="text-slate-500 block text-[10px]">NGÀY ĐÓNG GÓI:</span>
                     <strong className="text-amber-400 font-mono">
-                      {selectedPosDetail.packaging_date || '---'}
+                      {formatDateVN(selectedPosDetail.packaging_date)}
                     </strong>
                   </div>
-                  <div className="col-span-2">
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">NGÀY SX (BÓC MÚI):</span>
+                    <strong className="text-amber-300 font-mono">
+                      {formatDateVN(selectedPosDetail.peeling_date)}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px]">NGÀY NGUYÊN LIỆU:</span>
+                    <strong className="text-slate-300 font-mono">
+                      {formatDateVN(selectedPosDetail.raw_material_date)}
+                    </strong>
+                  </div>
+                  <div>
                     <span className="text-slate-500 block text-[10px]">NGÀY NHẬP KHO:</span>
                     <strong className="text-slate-300 font-mono">
-                      {selectedPosDetail.inbound_date || '---'}
+                      {formatDateVN(selectedPosDetail.inbound_date)}
                     </strong>
+                  </div>
+                  <div className="col-span-2 pt-2 border-t border-slate-800 grid grid-cols-2 gap-2">
+                    <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] font-semibold mb-0.5"># MÃ SẢN XUẤT</span>
+                      <strong className="text-slate-200 text-xs font-mono">
+                        {selectedPosDetail.production_code || '---'}
+                      </strong>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] font-semibold mb-0.5">📍 VÙNG NGUYÊN LIỆU</span>
+                      <strong className="text-emerald-400 text-xs font-medium">
+                        {selectedPosDetail.material_zone || '---'}
+                      </strong>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] font-semibold mb-0.5">🏭 NƠI SẢN XUẤT</span>
+                      <strong className="text-blue-400 text-xs font-medium">
+                        {selectedPosDetail.production_place || '---'}
+                      </strong>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800">
+                      <span className="text-slate-500 block text-[10px] font-semibold mb-0.5">ℹ️ THÔNG TIN THÊM</span>
+                      <strong className="text-slate-300 text-xs">
+                        {selectedPosDetail.extra_info || '---'}
+                      </strong>
+                    </div>
                   </div>
 
                   {selectedPosDetail.tags && selectedPosDetail.tags.length > 0 && (

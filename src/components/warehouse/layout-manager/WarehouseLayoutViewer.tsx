@@ -291,15 +291,34 @@ export default function WarehouseLayoutViewer({
                     }
                 }
 
+                const layout = layoutsToRender[0];
+                const allShapes: LayoutShape[] = layout && isShapesFormat(layout.grid_data) ? layout.grid_data : [];
+
+                const tgtShapeId = foundShape?.getAttribute('data-shape-id') || foundCell?.getAttribute('data-shape-id');
+                const tgtShape = tgtShapeId ? allShapes.find(s => s.id === tgtShapeId) : null;
+                const isTargetMultiLot = tgtShape ? Boolean((tgtShape.isMultiLot !== false) && (tgtShape.isStorage !== false)) : false;
+                const isInternalDrag = Boolean(pointerDrag.sourceShape && tgtShape && pointerDrag.sourceShape.id === tgtShape.id);
+
+                // Nếu hình đích là Đa Lô (isMultiLot = true hoặc ZONE) và kéo từ ngoài vào (không phải đổi chỗ nội bộ):
+                // Ưu tiên hiển thị hover thả vào toàn bộ Khu Vực / Tủ Đồ Đa Lô
+                if (tgtShape && isTargetMultiLot && !isInternalDrag) {
+                    setDragOverShape({
+                        shapeId: tgtShape.id,
+                        label: tgtShape.label || tgtShape.code || ''
+                    });
+                    setDragOverCell(null);
+                    return;
+                }
+
                 if (foundCell) {
                     const tgtPosId = foundCell.getAttribute('data-pos-id') || '';
-                    const tgtShapeId = foundCell.getAttribute('data-shape-id') || '';
+                    const cellShapeId = foundCell.getAttribute('data-shape-id') || '';
                     const tgtProd = foundCell.getAttribute('data-prod-name') || '';
                     setDragOverCell({
                         posId: tgtPosId,
-                        shapeId: tgtShapeId,
+                        shapeId: cellShapeId,
                         productName: tgtProd,
-                        isSameZone: Boolean(pointerDrag.sourceShape && tgtShapeId === pointerDrag.sourceShape.id)
+                        isSameZone: Boolean(pointerDrag.sourceShape && cellShapeId === pointerDrag.sourceShape.id)
                     });
                     setDragOverShape(null);
                     return;
@@ -347,38 +366,44 @@ export default function WarehouseLayoutViewer({
                     }
                 }
 
+                const layout = layoutsToRender[0];
+                const allShapes: LayoutShape[] = layout && isShapesFormat(layout.grid_data) ? layout.grid_data : [];
+
+                const tgtShapeId = foundShape?.getAttribute('data-shape-id') || foundCell?.getAttribute('data-shape-id');
+                const tgtShape = tgtShapeId ? allShapes.find(s => s.id === tgtShapeId) : null;
+                const isTargetMultiLot = tgtShape ? Boolean((tgtShape.isMultiLot !== false) && (tgtShape.isStorage !== false)) : false;
+                const isInternalDrag = Boolean(pointerDrag.sourceShape && tgtShape && pointerDrag.sourceShape.id === tgtShape.id);
+
                 // 1. Trường hợp kéo từ Khay Chờ (Staging Buffer)
                 if (pointerDrag.sourceItem?.isStaging) {
                     const lotId = pointerDrag.sourceItem.lotId;
-                    if (foundCell) {
+                    if (tgtShape && isTargetMultiLot) {
+                        if (onAssignStagingLotToZoneShape) {
+                            onAssignStagingLotToZoneShape(lotId, tgtShape);
+                        }
+                    } else if (foundCell) {
                         const tgtPosId = foundCell.getAttribute('data-pos-id');
                         if (tgtPosId && onAssignStagingLotToPosition) {
                             onAssignStagingLotToPosition(lotId, tgtPosId);
                         }
-                    } else if (foundShape) {
-                        const shId = foundShape.getAttribute('data-shape-id');
-                        const layout = layoutsToRender[0];
-                        const allShapes: LayoutShape[] = layout && isShapesFormat(layout.grid_data) ? layout.grid_data : [];
-                        const tgtShape = allShapes.find(s => s.id === shId);
-                        if (tgtShape && onAssignStagingLotToZoneShape) {
+                    } else if (tgtShape) {
+                        if (onAssignStagingLotToZoneShape) {
                             onAssignStagingLotToZoneShape(lotId, tgtShape);
                         }
                     }
                 } else {
-                    // 2. Trường hợp hoán đổi giữa các ô trên sơ đồ
+                    // 2. Trường hợp hoán đổi / di chuyển giữa các ô trên sơ đồ
                     const srcPosId = pointerDrag.sourceItem.position?.id;
 
-                    if (foundCell && srcPosId) {
-                        const tgtPosId = foundCell.getAttribute('data-pos-id');
-                        if (tgtPosId) {
-                            handleExecuteSwap(srcPosId, tgtPosId);
-                        }
-                    } else if (foundShape && srcPosId) {
-                        const shId = foundShape.getAttribute('data-shape-id');
-                        const layout = layoutsToRender[0];
-                        const allShapes: LayoutShape[] = layout && isShapesFormat(layout.grid_data) ? layout.grid_data : [];
-                        const tgtShape = allShapes.find(s => s.id === shId);
-                        if (tgtShape) {
+                    if (srcPosId) {
+                        if (tgtShape && isTargetMultiLot && !isInternalDrag) {
+                            handleExecuteMoveToShape(srcPosId, tgtShape);
+                        } else if (foundCell) {
+                            const tgtPosId = foundCell.getAttribute('data-pos-id');
+                            if (tgtPosId) {
+                                handleExecuteSwap(srcPosId, tgtPosId);
+                            }
+                        } else if (tgtShape) {
                             handleExecuteMoveToShape(srcPosId, tgtShape);
                         }
                     }
@@ -449,6 +474,7 @@ export default function WarehouseLayoutViewer({
         if (onMoveLotToZoneShape) {
             await onMoveLotToZoneShape(sourcePosId, targetShape);
         } else {
+            const isTargetMulti = targetShape.isMultiLot !== false && targetShape.isStorage !== false;
             const targetPositions = positions.filter(p => {
                 if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
                 if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
@@ -467,7 +493,7 @@ export default function WarehouseLayoutViewer({
                         if (onRefreshData) onRefreshData();
                     }
                 }
-            } else if (targetPositions.length === 1 && targetPositions[0].id !== sourcePosId) {
+            } else if (!isTargetMulti && targetPositions.length === 1 && targetPositions[0].id !== sourcePosId) {
                 await handleExecuteSwap(sourcePosId, targetPositions[0].id);
             }
         }
@@ -1018,15 +1044,15 @@ export default function WarehouseLayoutViewer({
                                         shape.type !== 'WALL' &&
                                         shape.type !== 'RACK'; // RACK có logic chia ô riêng
                                     
-                                    const zoneLots = isEligibleStorageType ? getZoneLots(shape) : [];
+                                    const isStorageLocation = isEligibleStorageType && shape.isStorage !== false;
+                                    const zoneLots = isStorageLocation ? getZoneLots(shape) : [];
                                     const hasLots = zoneLots.length > 0;
-                                    const isStorageLocation = isEligibleStorageType;
 
                                     // Logic đối với Vị trí Lưu trữ / Chứa hàng (Bãi ZONE hoặc mọi hình khối hạ tầng được gán mã)
                                     if (isStorageLocation) {
                                         const typeInfo = getShapeTypeInfo(shape.type);
                                         const totalQty = zoneLots.reduce((sum, item) => sum + (item.quantity || 0), 0);
-                                        const isMulti = shape.isMultiLot || zoneLots.length > 1;
+                                        const isMulti = shape.isMultiLot !== false || zoneLots.length > 1;
 
                                         // Fallback position thông thường nếu chỉ có 1 position
                                         const singlePos = positions.find(p => p.code === (shape.code || shape.label));
@@ -1473,7 +1499,11 @@ export default function WarehouseLayoutViewer({
 
                                                             // Nếu đang chọn Lô từ Khay Chờ để xếp vị trí:
                                                             if (selectedStagingLot) {
-                                                                if (first?.position?.id && onAssignStagingLotToPosition) {
+                                                                if (isMulti) {
+                                                                    if (onAssignStagingLotToZoneShape) {
+                                                                        onAssignStagingLotToZoneShape(selectedStagingLot.lotId, shape);
+                                                                    }
+                                                                } else if (first?.position?.id && onAssignStagingLotToPosition) {
                                                                     onAssignStagingLotToPosition(selectedStagingLot.lotId, first.position.id);
                                                                 } else if (onAssignStagingLotToZoneShape) {
                                                                     onAssignStagingLotToZoneShape(selectedStagingLot.lotId, shape);
@@ -1490,7 +1520,11 @@ export default function WarehouseLayoutViewer({
                                                                 const srcId = clickSwapSource.posId;
                                                                 const tgtId = first.position.id;
                                                                 setClickSwapSource(null);
-                                                                handleExecuteSwap(srcId, tgtId);
+                                                                if (isMulti) {
+                                                                    handleExecuteMoveToShape(srcId, shape);
+                                                                } else {
+                                                                    handleExecuteSwap(srcId, tgtId);
+                                                                }
                                                                 return;
                                                             }
 

@@ -699,8 +699,8 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 height: h,
                 label: SHAPE_DEFAULTS[activeTool as ShapeType]?.label || 'Khu vực',
                 code: defaultCode,
-                isMultiLot: isEligibleStorage ? true : undefined,
-                isStorage: isEligibleStorage ? true : undefined,
+                isMultiLot: isEligibleStorage ? true : false,
+                isStorage: isEligibleStorage ? true : false,
                 strokeWidth: isLineTool ? 3 : undefined,
                 strokeDasharray: activeTool === 'DASHED_LINE' ? '8 6' : undefined,
                 lineOrientation,
@@ -1772,7 +1772,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                     <label className="flex items-center gap-2 cursor-pointer">
                                         <input 
                                             type="checkbox"
-                                            checked={selectedShape.isStorage ?? (selectedShape.type === 'ZONE' || Boolean(selectedShape.code))}
+                                            checked={selectedShape.isStorage !== false}
                                             onChange={e => updateSelectedShape({ isStorage: e.target.checked })}
                                             className="w-4 h-4 text-orange-600 rounded"
                                         />
@@ -1783,7 +1783,7 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                                     <label className="flex items-center gap-2 cursor-pointer pl-6">
                                         <input 
                                             type="checkbox"
-                                            checked={selectedShape.isMultiLot ?? (selectedShape.type === 'ZONE')}
+                                            checked={selectedShape.isMultiLot !== false}
                                             onChange={e => updateSelectedShape({ isMultiLot: e.target.checked })}
                                             className="w-3.5 h-3.5 text-orange-600 rounded"
                                         />
