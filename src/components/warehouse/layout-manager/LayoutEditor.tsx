@@ -137,6 +137,22 @@ const COLOR_PRESETS = [
 
 const snap = (v: number) => Math.round(v / GRID) * GRID;
 
+function generateUniqueShapeCode(prefix: string, existingShapes: LayoutShape[]): string {
+    const existingCodes = new Set(
+        existingShapes
+            .map(s => (s.code || '').trim().toUpperCase())
+            .filter(Boolean)
+    );
+    let index = 1;
+    while (true) {
+        const candidate = `${prefix}-${String(index).padStart(2, '0')}`;
+        if (!existingCodes.has(candidate)) {
+            return candidate;
+        }
+        index++;
+    }
+}
+
 function initShapes(layout?: WarehouseLayout): LayoutShape[] {
     if (!layout?.grid_data?.length) return [];
     if (isShapesFormat(layout.grid_data)) return layout.grid_data;
@@ -313,19 +329,24 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
     // Duplicate shape
     const handleDuplicate = useCallback(() => {
         if (!selectedShape) return;
+        const basePrefix = selectedShape.code 
+            ? selectedShape.code.replace(/-\d+$/, '').replace(/-COPY.*$/, '')
+            : (selectedShape.type || 'KV');
+        const uniqueCode = selectedShape.code ? generateUniqueShapeCode(basePrefix, shapes) : undefined;
+
         const newShape: LayoutShape = {
             ...selectedShape,
             id: crypto.randomUUID(),
             x: selectedShape.x + GRID * 2,
             y: selectedShape.y + GRID * 2,
-            code: selectedShape.code ? `${selectedShape.code}-COPY` : undefined,
+            code: uniqueCode,
             label: selectedShape.label ? `${selectedShape.label} (Sao chép)` : undefined
         };
         const next = [...shapes, newShape];
         setShapes(next);
         setSelectedId(newShape.id);
         pushHistory(next);
-        showToast('Đã nhân bản đối tượng', 'info');
+        showToast(`Đã nhân bản đối tượng (${uniqueCode || ''})`, 'info');
     }, [selectedShape, shapes, pushHistory, showToast]);
 
     // Delete shape
@@ -685,10 +706,13 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                 PATH: 'LD',
                 SCRAP: 'PP',
                 SCALE: 'CAN',
-                FIRST_AID: 'YT'
+                FIRST_AID: 'YT',
+                DOOR: 'CUA',
+                PILLAR: 'COT',
+                FIRE_EXT: 'PCCC'
             };
             const defaultPrefix = typePrefixMap[activeTool as ShapeType] || 'KV';
-            const defaultCode = isEligibleStorage ? `${defaultPrefix}-${Math.floor(100 + Math.random() * 900)}` : undefined;
+            const defaultCode = isEligibleStorage ? generateUniqueShapeCode(defaultPrefix, shapes) : undefined;
 
             const newShape: LayoutShape = {
                 id: crypto.randomUUID(),
@@ -822,6 +846,22 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
                         return showToast(`Mã kho "${trimmedCode}" đã được sử dụng cho sơ đồ "${duplicate.name}". Vui lòng đặt mã khác!`, 'error');
                     }
                 }
+            }
+
+            // Kiểm tra chống trùng mã giữa các hình khối trong cùng sơ đồ 2D
+            const storageShapes = shapes.filter(s => s.code && s.code.trim() && s.isStorage !== false && s.type !== 'LINE' && s.type !== 'DASHED_LINE' && s.type !== 'ARROW' && s.type !== 'TEXT_NOTE' && s.type !== 'WALL');
+            const codeMap = new Map<string, string[]>();
+            for (const s of storageShapes) {
+                const c = s.code!.trim().toUpperCase();
+                const list = codeMap.get(c) || [];
+                list.push(s.label || s.type);
+                codeMap.set(c, list);
+            }
+            const duplicateEntries = Array.from(codeMap.entries()).filter(([_, names]) => names.length > 1);
+            if (duplicateEntries.length > 0) {
+                const [dupCode, names] = duplicateEntries[0];
+                setIsSaving(false);
+                return showToast(`Mã vị trí "${dupCode}" đang bị trùng giữa các khối [${names.join(' và ')}]. Mỗi khối trên sơ đồ 2D cần có mã riêng biệt để không bị hiển thị nhân bản hàng!`, 'error');
             }
 
             const layoutData: LayoutInput = {
@@ -1755,13 +1795,35 @@ export default function LayoutEditor({ layout, onClose, onSaveSuccess }: LayoutE
 
                             <div>
                                 <label className="text-xs font-bold text-gray-600 dark:text-gray-400 block mb-1">Mã hệ thống (Code)</label>
-                                <input 
-                                    type="text" 
-                                    value={selectedShape.code || ''} 
-                                    onChange={e => updateSelectedShape({ code: e.target.value.toUpperCase() })}
-                                    className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800 font-mono text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500"
-                                    placeholder="VD: KHU-THUNG-10KG"
-                                />
+                                {(() => {
+                                    const trimmedCode = (selectedShape.code || '').trim().toUpperCase();
+                                    const duplicateWithShape = trimmedCode 
+                                        ? shapes.find(s => s.id !== selectedShape.id && s.code && s.code.trim().toUpperCase() === trimmedCode)
+                                        : null;
+                                    const isDuplicateCode = Boolean(duplicateWithShape);
+
+                                    return (
+                                        <>
+                                            <input 
+                                                type="text" 
+                                                value={selectedShape.code || ''} 
+                                                onChange={e => updateSelectedShape({ code: e.target.value.toUpperCase() })}
+                                                className={`w-full px-3 py-2 rounded-xl border ${
+                                                    isDuplicateCode 
+                                                        ? 'border-red-500 bg-red-50 dark:bg-red-950/20 text-red-700 dark:text-red-300' 
+                                                        : 'border-gray-200 dark:border-zinc-700 bg-gray-50 dark:bg-zinc-800'
+                                                } font-mono text-sm uppercase outline-none focus:ring-2 focus:ring-blue-500`}
+                                                placeholder="VD: KHU-THUNG-10KG"
+                                            />
+                                            {isDuplicateCode && (
+                                                <p className="text-[11px] font-bold text-red-600 dark:text-red-400 mt-1.5 flex items-start gap-1">
+                                                    <span>⚠️</span>
+                                                    <span>Trùng mã với &quot;{duplicateWithShape?.label || duplicateWithShape?.type}&quot;! Trên sơ đồ 2D, hai hình khối trùng mã sẽ bị hiển thị chung cùng các lô hàng.</span>
+                                                </p>
+                                            )}
+                                        </>
+                                    );
+                                })()}
                             </div>
                         </div>
 

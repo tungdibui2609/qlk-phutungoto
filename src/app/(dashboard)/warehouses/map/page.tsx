@@ -1061,11 +1061,19 @@ function WarehouseMapContent() {
         const sourcePos = positions.find(p => p.id === sourcePosId);
         if (!sourcePos || !sourcePos.lot_id) return;
 
-        const isMultiLot = targetShape.isMultiLot ?? (targetShape.type === 'ZONE');
+        const isMultiLot = targetShape.isMultiLot !== false && targetShape.isStorage !== false;
+        const targetCodeUpper = (targetShape.code || '').trim().toUpperCase();
+        const targetLabelUpper = (targetShape.label || '').trim().toUpperCase();
 
         const targetPositions = positions.filter(p => {
-            if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
-            if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
+            const pCodeUpper = (p.code || '').trim().toUpperCase();
+            if (targetCodeUpper) {
+                if (pCodeUpper === targetCodeUpper || pCodeUpper.startsWith(targetCodeUpper + '-')) return true;
+                return false;
+            }
+            if (targetLabelUpper) {
+                if (pCodeUpper === targetLabelUpper || pCodeUpper.startsWith(targetLabelUpper + '-')) return true;
+            }
             if (targetShape.id && p.zone_id === targetShape.id) return true;
             return false;
         });
@@ -1087,7 +1095,7 @@ function WarehouseMapContent() {
         if (targetPositions.length === 0 || isMultiLot) {
             const movingLotId = sourcePos.lot_id;
             try {
-                const baseCode = (targetShape.code && targetShape.code.trim()) || (targetShape.label && targetShape.label.trim()) || `Z-${Date.now().toString().slice(-4)}`;
+                const baseCode = targetCodeUpper || (targetShape.type ? `${targetShape.type}-${Date.now().toString().slice(-4)}` : `KV-${Date.now().toString().slice(-4)}`);
                 let maxIdx = 0;
                 let hasExactBaseCode = false;
                 targetPositions.forEach(p => {
@@ -1137,6 +1145,27 @@ function WarehouseMapContent() {
                             zone_id: targetShape.id,
                             position_id: newPosId
                         });
+                    }
+
+                    // Đồng bộ mã định danh ngược lại cho hình khối trong sơ đồ 2D nếu hình chưa có mã
+                    if (!targetShape.code) {
+                        targetShape.code = baseCode;
+                        const { data: activeLayouts } = await (supabase.from('warehouse_layouts') as any)
+                            .select('id, grid_data')
+                            .eq('system_type', currentSystem?.code || systemType)
+                            .eq('is_active', true);
+                        if (activeLayouts && activeLayouts.length > 0) {
+                            for (const l of activeLayouts) {
+                                const shapes = l.grid_data || [];
+                                const matchIdx = shapes.findIndex((s: any) => s.id === targetShape.id);
+                                if (matchIdx !== -1) {
+                                    shapes[matchIdx].code = baseCode;
+                                    shapes[matchIdx].isStorage = true;
+                                    shapes[matchIdx].isMultiLot = true;
+                                    await (supabase.from('warehouse_layouts') as any).update({ grid_data: shapes }).eq('id', l.id);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1234,9 +1263,18 @@ function WarehouseMapContent() {
     };
 
     const handleAssignStagingLotToZoneShape = async (lotId: string, targetShape: any) => {
+        const targetCodeUpper = (targetShape.code || '').trim().toUpperCase();
+        const targetLabelUpper = (targetShape.label || '').trim().toUpperCase();
+
         const targetPositions = positions.filter(p => {
-            if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
-            if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
+            const pCodeUpper = (p.code || '').trim().toUpperCase();
+            if (targetCodeUpper) {
+                if (pCodeUpper === targetCodeUpper || pCodeUpper.startsWith(targetCodeUpper + '-')) return true;
+                return false;
+            }
+            if (targetLabelUpper) {
+                if (pCodeUpper === targetLabelUpper || pCodeUpper.startsWith(targetLabelUpper + '-')) return true;
+            }
             if (targetShape.id && p.zone_id === targetShape.id) return true;
             return false;
         });
@@ -1250,7 +1288,7 @@ function WarehouseMapContent() {
 
         // 2. Tự động sinh vị trí con mới cho khu vực
         try {
-            const baseCode = (targetShape.code && targetShape.code.trim()) || (targetShape.label && targetShape.label.trim()) || 'Z';
+            const baseCode = targetCodeUpper || (targetShape.type ? `${targetShape.type}-${Date.now().toString().slice(-4)}` : `KV-${Date.now().toString().slice(-4)}`);
             let maxIdx = 0;
             let hasExactBaseCode = false;
             targetPositions.forEach(p => {
@@ -1292,6 +1330,27 @@ function WarehouseMapContent() {
                         zone_id: targetShape.id,
                         position_id: newPosId
                     });
+                }
+
+                // Đồng bộ mã định danh ngược lại cho hình khối trong sơ đồ 2D nếu hình chưa có mã
+                if (!targetShape.code) {
+                    targetShape.code = baseCode;
+                    const { data: activeLayouts } = await (supabase.from('warehouse_layouts') as any)
+                        .select('id, grid_data')
+                        .eq('system_type', currentSystem?.code || systemType)
+                        .eq('is_active', true);
+                    if (activeLayouts && activeLayouts.length > 0) {
+                        for (const l of activeLayouts) {
+                            const shapes = l.grid_data || [];
+                            const matchIdx = shapes.findIndex((s: any) => s.id === targetShape.id);
+                            if (matchIdx !== -1) {
+                                shapes[matchIdx].code = baseCode;
+                                shapes[matchIdx].isStorage = true;
+                                shapes[matchIdx].isMultiLot = true;
+                                await (supabase.from('warehouse_layouts') as any).update({ grid_data: shapes }).eq('id', l.id);
+                            }
+                        }
+                    }
                 }
             }
 

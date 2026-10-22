@@ -475,9 +475,18 @@ export default function WarehouseLayoutViewer({
             await onMoveLotToZoneShape(sourcePosId, targetShape);
         } else {
             const isTargetMulti = targetShape.isMultiLot !== false && targetShape.isStorage !== false;
+            const targetCodeUpper = (targetShape.code || '').trim().toUpperCase();
+            const targetLabelUpper = (targetShape.label || '').trim().toUpperCase();
+
             const targetPositions = positions.filter(p => {
-                if (targetShape.code && (p.code === targetShape.code || p.code.startsWith(targetShape.code + '-'))) return true;
-                if (targetShape.label && (p.code === targetShape.label || p.code.startsWith(targetShape.label + '-'))) return true;
+                const pCodeUpper = (p.code || '').trim().toUpperCase();
+                if (targetCodeUpper) {
+                    if (pCodeUpper === targetCodeUpper || pCodeUpper.startsWith(targetCodeUpper + '-')) return true;
+                    return false;
+                }
+                if (targetLabelUpper) {
+                    if (pCodeUpper === targetLabelUpper || pCodeUpper.startsWith(targetLabelUpper + '-')) return true;
+                }
                 if (targetShape.id && p.zone_id === targetShape.id) return true;
                 return false;
             });
@@ -582,10 +591,25 @@ export default function WarehouseLayoutViewer({
 
     // Lấy danh sách LOT thuộc về 1 Zone
     const getZoneLots = (shape: LayoutShape) => {
+        const shapeCodeUpper = (shape.code || '').trim().toUpperCase();
+        const shapeLabelUpper = (shape.label || '').trim().toUpperCase();
+
         const matched = positions.filter(p => {
             if (!p.lot_id) return false;
-            if (shape.code && (p.code === shape.code || p.code.startsWith(shape.code + '-'))) return true;
-            if (shape.label && (p.code === shape.label || p.code.startsWith(shape.label + '-'))) return true;
+            const pCodeUpper = (p.code || '').trim().toUpperCase();
+
+            // 1. Ưu tiên tuyệt đối mã định danh (shape.code)
+            if (shapeCodeUpper) {
+                if (pCodeUpper === shapeCodeUpper || pCodeUpper.startsWith(shapeCodeUpper + '-')) return true;
+                // Nếu hình đã có code riêng mà không khớp code thì KHÔNG BAO GIỜ so khớp theo label nữa!
+                return false;
+            }
+
+            // 2. Chỉ khi hình không hề có mã code mới xem xét fallback sang label
+            if (shapeLabelUpper) {
+                if (pCodeUpper === shapeLabelUpper || pCodeUpper.startsWith(shapeLabelUpper + '-')) return true;
+            }
+
             if (shape.id && p.zone_id === shape.id) return true;
             return false;
         });
@@ -1055,7 +1079,8 @@ export default function WarehouseLayoutViewer({
                                         const isMulti = shape.isMultiLot !== false || zoneLots.length > 1;
 
                                         // Fallback position thông thường nếu chỉ có 1 position
-                                        const singlePos = positions.find(p => p.code === (shape.code || shape.label));
+                                        const shapeLookupCode = (shape.code && shape.code.trim().toUpperCase()) || (shape.label && shape.label.trim().toUpperCase());
+                                        const singlePos = positions.find(p => (p.code || '').trim().toUpperCase() === shapeLookupCode);
                                         const isShapeSelected = Boolean(singlePos && selectedPositionIds?.has(singlePos.id));
 
                                         // Kiểm tra xem Zone này có khớp kết quả tìm kiếm không
