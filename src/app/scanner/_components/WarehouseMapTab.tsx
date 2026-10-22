@@ -94,6 +94,18 @@ export const formatDateVN = (d?: string | null): string => {
   return d
 }
 
+export const formatDateShortVN = (d?: string | null): string => {
+  if (!d) return ''
+  const clean = String(d).split('T')[0]
+  const parts = clean.split('-')
+  if (parts.length === 3) {
+    const [y, m, day] = parts
+    const shortYear = y.length === 4 ? y.slice(2) : y
+    return `${day.padStart(2, '0')}/${m.padStart(2, '0')}/${shortYear}`
+  }
+  return d
+}
+
 export const getCleanUnitCategory = (rawUnit?: string | null): string => {
   if (!rawUnit) return 'Thùng'
   const u = rawUnit.trim()
@@ -168,6 +180,14 @@ interface PositionItem {
   production_place?: string | null
   extra_info?: string | null
   quantity?: number | null
+}
+
+export const getPositionTag = (pos: PositionItem): string | null => {
+  if (pos.tags && pos.tags.length > 0) {
+    const validTags = pos.tags.filter(t => t && !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
+    if (validTags.length > 0) return validTags.join(', ')
+  }
+  return null
 }
 
 // ── ISOLATED MEMOIZED SEARCH BAR (0ms Latency: typing updates only this component) ──
@@ -673,11 +693,42 @@ const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   )
 })
 
+// ── IN-MEMORY MODULE LEVEL CACHE (0ms Immediate Switch) ───────
+interface WebWarehouseMapCache {
+  zones: ZoneItem[]
+  positions: PositionItem[]
+  cachedAt: string | null
+  timestamp: number
+}
+let memoryWebWarehouseMapCache: WebWarehouseMapCache | null = null
+
+function getInitialWebMapCache(): WebWarehouseMapCache | null {
+  if (memoryWebWarehouseMapCache) return memoryWebWarehouseMapCache
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = localStorage.getItem('warehouse_map_offline_cache_v7')
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && parsed.zones && parsed.zones.length > 0) {
+        memoryWebWarehouseMapCache = {
+          zones: parsed.zones,
+          positions: parsed.positions || [],
+          cachedAt: parsed.cachedAt || null,
+          timestamp: Date.now()
+        }
+        return memoryWebWarehouseMapCache
+      }
+    }
+  } catch {}
+  return null
+}
+
 export default function WarehouseMapTab() {
-  const [loading, setLoading] = useState<boolean>(true)
+  const initialCache = getInitialWebMapCache()
+  const [loading, setLoading] = useState<boolean>(() => !initialCache)
   const [refreshing, setRefreshing] = useState<boolean>(false)
-  const [zones, setZones] = useState<ZoneItem[]>([])
-  const [positions, setPositions] = useState<PositionItem[]>([])
+  const [zones, setZones] = useState<ZoneItem[]>(() => initialCache?.zones || [])
+  const [positions, setPositions] = useState<PositionItem[]>(() => initialCache?.positions || [])
 
   // Hierarchy Navigation States: Kho -> Dãy / Sảnh -> Ô -> Tầng
   const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>('all')
@@ -706,14 +757,27 @@ export default function WarehouseMapTab() {
 
   // Offline support
   const [isOffline, setIsOffline] = useState<boolean>(false)
-  const [cachedAt, setCachedAt] = useState<string | null>(null)
+  const [cachedAt, setCachedAt] = useState<string | null>(() => initialCache?.cachedAt || null)
   const [downloadingOffline, setDownloadingOffline] = useState<boolean>(false)
   const [downloadToast, setDownloadToast] = useState<string | null>(null)
 
   // Offline cache key with versioning
-  const OFFLINE_CACHE_KEY = 'warehouse_map_offline_cache_v6'
-  const loadWarehouseMapData = useCallback(async (isSilent = false) => {
-    let hasCache = false
+  const OFFLINE_CACHE_KEY = 'warehouse_map_offline_cache_v7'
+  const loadWarehouseMapData = useCallback(async (isSilent = false, forceSync = false) => {
+    // 0. Nếu đã có cache trong RAM và còn mới (< 5 phút) và không ép sync -> dùng ngay, bỏ qua fetch mạng
+    if (!forceSync && memoryWebWarehouseMapCache && memoryWebWarehouseMapCache.zones.length > 0) {
+      const ageMs = Date.now() - memoryWebWarehouseMapCache.timestamp
+      if (ageMs < 5 * 60 * 1000) {
+        setZones(memoryWebWarehouseMapCache.zones)
+        setPositions(memoryWebWarehouseMapCache.positions)
+        setCachedAt(memoryWebWarehouseMapCache.cachedAt)
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+    }
+
+    let hasCache = Boolean(memoryWebWarehouseMapCache && memoryWebWarehouseMapCache.zones.length > 0)
 
     // 1. Initial cached fallback - display immediately to eliminate load delay
     try {
@@ -782,7 +846,7 @@ export default function WarehouseMapTab() {
       const lotMap = new Map<string, any>()
 
       if (occupiedLotIds.length > 0) {
-        const CHUNK_SIZE = 100
+        const CHUNK_SIZE = 250
         const chunkPromises: Promise<any>[] = []
         for (let i = 0; i < occupiedLotIds.length; i += CHUNK_SIZE) {
           const chunk = occupiedLotIds.slice(i, i + CHUNK_SIZE)
@@ -814,7 +878,14 @@ export default function WarehouseMapTab() {
         chunkResults.forEach((res: any) => {
           if (res.data) {
             res.data.forEach((l: any) => {
-              const tags = (l.lot_tags || []).map((t: any) => t.tag).filter(Boolean)
+              const rawTags = [
+                ...(l.lot_tags || []).map((t: any) => t.tag),
+                l.metadata?.tag,
+                l.metadata?.pallet_tag
+              ].filter(Boolean)
+              const tags = Array.from(new Set(rawTags.map(t => String(t).trim()))).filter(t => 
+                t && !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:')
+              )
               const tagsStr = tags.join(', ')
 
               const allItems = l.lot_items || []
@@ -958,9 +1029,16 @@ export default function WarehouseMapTab() {
 
       setPositions(formattedPositions)
 
-      // Save snapshot to local storage for offline use
+      // Save snapshot to in-memory RAM cache & local storage for offline use
+      const now = new Date().toISOString()
+      memoryWebWarehouseMapCache = {
+        zones: rawZones,
+        positions: formattedPositions,
+        cachedAt: now,
+        timestamp: Date.now()
+      }
+
       try {
-        const now = new Date().toISOString()
         const snapshot = {
           zones: rawZones,
           positions: formattedPositions,
@@ -1000,7 +1078,7 @@ export default function WarehouseMapTab() {
   const handleDownloadOffline = async () => {
     setDownloadingOffline(true)
     try {
-      await loadWarehouseMapData(true)
+      await loadWarehouseMapData(true, true)
       setDownloadToast('Đã lưu toàn bộ sơ đồ kho vào máy để xem ngoại tuyến!')
       setTimeout(() => setDownloadToast(null), 4000)
     } finally {
@@ -1828,7 +1906,7 @@ export default function WarehouseMapTab() {
           </button>
 
           <button
-            onClick={() => loadWarehouseMapData(true)}
+            onClick={() => loadWarehouseMapData(true, true)}
             disabled={refreshing}
             className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition"
             title="Tải lại sơ đồ kho"
@@ -1858,7 +1936,7 @@ export default function WarehouseMapTab() {
             </div>
           </div>
           <button
-            onClick={() => loadWarehouseMapData(true)}
+            onClick={() => loadWarehouseMapData(true, true)}
             className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/40 text-[11px] font-bold active:scale-95 transition"
           >
             Thử lại
@@ -2695,32 +2773,45 @@ export default function WarehouseMapTab() {
                         }`}
                     >
                       <div className="flex items-center justify-between gap-1 w-full">
-                        <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
-                          {pos.code}
-                        </span>
-                        {isMatched && (
-                          <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
-                            ⭐ Khớp
+                        <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                          <span className="font-mono font-bold text-[9px] text-slate-200 truncate" title={pos.code}>
+                            {pos.code}
                           </span>
-                        )}
-                        {isOccupied ? (
-                          <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
-                            #{pos.stt || 'LOT'}
-                          </span>
-                        ) : (
-                          <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
-                            TRỐNG
-                          </span>
-                        )}
+                          {pos.inbound_date && (
+                            <span className="px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 font-mono font-bold text-[7.8px] shrink-0" title={`Nhập kho: ${formatDateVN(pos.inbound_date)}`}>
+                              {formatDateShortVN(pos.inbound_date)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isMatched && (
+                            <span className="px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                              ⭐ Khớp
+                            </span>
+                          )}
+                          {isOccupied ? (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                              #{pos.stt || 'LOT'}
+                            </span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                              TRỐNG
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       {isOccupied ? (
                         <div className="space-y-0.5 w-full mt-1">
-                          <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                          <p className="font-bold text-[9.5px] text-white break-words leading-tight" title={pos.product_name || ''}>
                             {pos.product_name || 'Hàng đông lạnh'}
                           </p>
-                          <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
-                            <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                          <div className="flex items-center justify-between text-[9px] font-mono pt-0.5">
+                            {getPositionTag(pos) ? (
+                              <span className="truncate max-w-[95px] text-cyan-300 font-bold" title={getPositionTag(pos)!}>
+                                TAG: {getPositionTag(pos)}
+                              </span>
+                            ) : <span />}
                             {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{formatPositionQtyUnit(pos.quantity, pos.unit)}</span> : null}
                           </div>
                         </div>
@@ -2964,32 +3055,45 @@ export default function WarehouseMapTab() {
                                   }`}
                               >
                                 <div className="flex items-center justify-between gap-1 w-full">
-                                  <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
-                                    {pos.code}
-                                  </span>
-                                  {isMatched && (
-                                    <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
-                                      ⭐ Khớp
+                                  <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                                    <span className="font-mono font-bold text-[9px] text-slate-200 truncate" title={pos.code}>
+                                      {pos.code}
                                     </span>
-                                  )}
-                                  {isOccupied ? (
-                                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
-                                      #{pos.stt || 'LOT'}
-                                    </span>
-                                  ) : (
-                                    <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
-                                      TRỐNG
-                                    </span>
-                                  )}
+                                    {pos.inbound_date && (
+                                      <span className="px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 font-mono font-bold text-[7.8px] shrink-0" title={`Nhập kho: ${formatDateVN(pos.inbound_date)}`}>
+                                        {formatDateShortVN(pos.inbound_date)}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    {isMatched && (
+                                      <span className="px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                                        ⭐ Khớp
+                                      </span>
+                                    )}
+                                    {isOccupied ? (
+                                      <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                                        #{pos.stt || 'LOT'}
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                                        TRỐNG
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
 
                                 {isOccupied ? (
                                   <div className="space-y-0.5 w-full mt-1">
-                                    <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                                    <p className="font-bold text-[9.5px] text-white break-words leading-tight" title={pos.product_name || ''}>
                                       {pos.product_name || 'Hàng đông lạnh'}
                                     </p>
-                                    <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
-                                      <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                                    <div className="flex items-center justify-between text-[9px] font-mono pt-0.5">
+                                      {getPositionTag(pos) ? (
+                                        <span className="truncate max-w-[95px] text-cyan-300 font-bold" title={getPositionTag(pos)!}>
+                                          TAG: {getPositionTag(pos)}
+                                        </span>
+                                      ) : <span />}
                                       {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{formatPositionQtyUnit(pos.quantity, pos.unit)}</span> : null}
                                     </div>
                                   </div>
@@ -3042,32 +3146,45 @@ export default function WarehouseMapTab() {
                           }`}
                       >
                         <div className="flex items-center justify-between gap-1 w-full">
-                          <span className="font-mono font-bold text-[11px] text-slate-200 truncate" title={pos.code}>
-                            {pos.code}
-                          </span>
-                          {isMatched && (
-                            <span className="shrink-0 px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
-                              ⭐ Khớp
+                          <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                            <span className="font-mono font-bold text-[9px] text-slate-200 truncate" title={pos.code}>
+                              {pos.code}
                             </span>
-                          )}
-                          {isOccupied ? (
-                            <span className="shrink-0 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
-                              #{pos.stt || 'LOT'}
-                            </span>
-                          ) : (
-                            <span className="shrink-0 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
-                              TRỐNG
-                            </span>
-                          )}
+                            {pos.inbound_date && (
+                              <span className="px-1 py-0.2 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 font-mono font-bold text-[7.8px] shrink-0" title={`Nhập kho: ${formatDateVN(pos.inbound_date)}`}>
+                                {formatDateShortVN(pos.inbound_date)}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            {isMatched && (
+                              <span className="px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
+                                ⭐ Khớp
+                              </span>
+                            )}
+                            {isOccupied ? (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
+                                #{pos.stt || 'LOT'}
+                              </span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 text-[8px] font-bold">
+                                TRỐNG
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {isOccupied ? (
                           <div className="space-y-0.5 w-full mt-1">
-                            <p className="font-bold text-[11px] text-white truncate leading-tight" title={pos.product_name || ''}>
+                            <p className="font-bold text-[9.5px] text-white break-words leading-tight" title={pos.product_name || ''}>
                               {pos.product_name || 'Hàng đông lạnh'}
                             </p>
-                            <div className="flex items-center justify-between text-[9px] text-slate-400 font-mono pt-0.5">
-                              <span className="truncate max-w-[85px]">LOT: {pos.lot_code || '---'}</span>
+                            <div className="flex items-center justify-between text-[9px] font-mono pt-0.5">
+                              {getPositionTag(pos) ? (
+                                <span className="truncate max-w-[95px] text-cyan-300 font-bold" title={getPositionTag(pos)!}>
+                                  TAG: {getPositionTag(pos)}
+                                </span>
+                              ) : <span />}
                               {pos.quantity ? <span className="text-amber-300 font-bold shrink-0">{formatPositionQtyUnit(pos.quantity, pos.unit)}</span> : null}
                             </div>
                           </div>

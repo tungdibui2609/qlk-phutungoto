@@ -158,7 +158,14 @@ interface ProductSuggestion {
 export default function WebScannerPage() {
   // ── Navigation & Active Tab ────────────────────────────────────
   const [activeTab, setActiveTab] = useState<'label' | 'stamp' | 'warehouse_map' | 'pallets' | 'settings'>('label')
+  const [visitedWarehouseMapTab, setVisitedWarehouseMapTab] = useState<boolean>(false)
   const [palletListSubTab, setPalletListSubTab] = useState<'pending' | 'cloud'>('pending')
+
+  useEffect(() => {
+    if (activeTab === 'warehouse_map' && !visitedWarehouseMapTab) {
+      setVisitedWarehouseMapTab(true)
+    }
+  }, [activeTab, visitedWarehouseMapTab])
 
   // ── Current Pallet Session State (Empty by default like Mobile App) ──
   const [activePalletStt, setActivePalletStt] = useState<string>('')
@@ -2223,9 +2230,13 @@ export default function WebScannerPage() {
         )}
 
         {/* ═══════════════════════════════════════════════════════════
-            TAB: SƠ ĐỒ VỊ TRÍ KHO (Mobile Warehouse Map & Hierarchy)
+            TAB: SƠ ĐỒ VỊ TRÍ KHO (Keep-Alive: 0ms load sau lần mở đầu)
            ═══════════════════════════════════════════════════════════ */}
-        {activeTab === 'warehouse_map' && <WarehouseMapTab />}
+        {visitedWarehouseMapTab && (
+          <div className={activeTab === 'warehouse_map' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
+            <WarehouseMapTab />
+          </div>
+        )}
 
         {/* ═══════════════════════════════════════════════════════════
             TAB 3: PALLET KHO (SPLIT INTO LOCAL/PENDING & CLOUD TABS)
@@ -2826,19 +2837,19 @@ export default function WebScannerPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab('warehouse_map')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'warehouse_map' ? 'text-cyan-400 bg-cyan-500/10 font-bold' : 'text-slate-400'}`}
-        >
-          <MapPin size={18} />
-          <span className="text-[10px]">Sơ Đồ Kho</span>
-        </button>
-
-        <button
           onClick={() => setActiveTab('pallets')}
           className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'pallets' ? 'text-sky-400 bg-sky-500/10 font-bold' : 'text-slate-400'}`}
         >
           <Boxes size={18} />
           <span className="text-[10px]">Pallet Kho</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('warehouse_map')}
+          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'warehouse_map' ? 'text-cyan-400 bg-cyan-500/10 font-bold' : 'text-slate-400'}`}
+        >
+          <MapPin size={18} />
+          <span className="text-[10px]">Sơ Đồ Kho</span>
         </button>
 
         <button

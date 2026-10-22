@@ -11,6 +11,7 @@ import FlexibleZoneGrid from '@/components/warehouse/FlexibleZoneGrid'
 import LayoutConfigPanel from '@/components/warehouse/LayoutConfigPanel'
 import HorizontalZoneFilter from '@/components/warehouse/HorizontalZoneFilter'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
@@ -50,6 +51,7 @@ type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 function WarehouseMapContent() {
     const { showToast, showConfirm } = useToast()
     const { systemType, currentSystem, hasModule } = useSystem()
+    const { profile } = useUser()
     const is2DLayoutEnabled = hasModule('warehouse_layout_2d')
     const searchParams = useSearchParams()
     const router = useRouter()
@@ -365,17 +367,19 @@ function WarehouseMapContent() {
                 chunk.map(async (u) => {
                     const oldLotId = positions.find(p => p.id === u.id)?.lot_id || null;
                     const res = await (supabase.from('positions') as any).update({ lot_id: u.lot_id }).eq('id', u.id);
-                    if (!res.error) {
-                        await logActivity({
-                            supabase,
-                            tableName: 'positions',
-                            recordId: u.id,
-                            action: 'UPDATE',
-                            oldData: { lot_id: oldLotId },
-                            newData: { lot_id: u.lot_id },
-                            systemCode: currentSystem?.code || ''
-                        });
+                    if (res.error) {
+                        console.error('Lỗi cập nhật lot_id vị trí:', res.error);
+                        throw res.error;
                     }
+                    await logActivity({
+                        supabase,
+                        tableName: 'positions',
+                        recordId: u.id,
+                        action: 'UPDATE',
+                        oldData: { lot_id: oldLotId },
+                        newData: { lot_id: u.lot_id },
+                        systemCode: currentSystem?.code || ''
+                    });
                     return res;
                 })
             );
@@ -410,29 +414,28 @@ function WarehouseMapContent() {
 
                 // 1. Find the old position(s) of this lot and clear them
                 const oldPositions = positions.filter(p => p.lot_id === assignLotId)
-                const updates: { id: string, lot_id: string | null }[] = []
-                oldPositions.forEach(p => updates.push({ id: p.id, lot_id: null }))
-
-                // 2. Assign to the newly selected position(s)
-                targetIds.forEach(id => updates.push({ id, lot_id: assignLotId }))
+                const clearOld = oldPositions.map(p => ({ id: p.id, lot_id: null }))
+                const assignNew = targetIds.map(id => ({ id, lot_id: assignLotId }))
 
                 // Optimistic UI update
                 setPositions(prev => prev.map(p => {
-                    const upd = updates.find(u => u.id === p.id)
-                    return upd ? { ...p, lot_id: upd.lot_id } : p
-                }))
+                    if (oldPositions.some(o => o.id === p.id)) return { ...p, lot_id: null }
+                    if (targetIds.includes(p.id)) return { ...p, lot_id: assignLotId }
+                    return p
+                }));
 
-                // DB Updates
-                updatePositionsWithLog(updates).then(results => {
-                    const hasError = results.some(r => r.error)
-                    if (hasError) {
-                        showToast('Có lỗi xảy ra khi dời vị trí!', 'error')
-                        fetchData()
-                    } else {
+                // DB Updates: tuần tự clear vị trí cũ trước rồi mới gán vị trí mới để không vi phạm ràng buộc UNIQUE
+                ;(async () => {
+                    try {
+                        if (clearOld.length > 0) await updatePositionsWithLog(clearOld)
+                        if (assignNew.length > 0) await updatePositionsWithLog(assignNew)
                         showToast('Đã dời vị trí thành công!', 'success')
                         router.push('/warehouses/map')
+                    } catch (err: any) {
+                        showToast('Có lỗi xảy ra khi dời vị trí: ' + (err.message || 'Không xác định'), 'error')
+                        fetchData()
                     }
-                })
+                })()
 
                 return
             }
@@ -1011,6 +1014,12 @@ function WarehouseMapContent() {
         }));
 
         try {
+            // Bước 1: Tạm thời giải phóng lot_id ở cả 2 vị trí để không vi phạm ràng buộc UNIQUE lot_id
+            await updatePositionsWithLog([
+                { id: posAId, lot_id: null },
+                { id: posBId, lot_id: null }
+            ]);
+            // Bước 2: Hoán đổi gán lại giá trị mới
             await updatePositionsWithLog([
                 { id: posAId, lot_id: lotBId },
                 { id: posBId, lot_id: lotAId }
@@ -1044,10 +1053,11 @@ function WarehouseMapContent() {
         }));
 
         try {
-            await updatePositionsWithLog([
-                { id: sourcePosId, lot_id: null },
-                { id: targetPosId, lot_id: movingLotId }
-            ]);
+            // Bước 1: Gỡ bỏ lot_id khỏi vị trí nguồn trước và chờ hoàn tất để giải phóng ràng buộc UNIQUE
+            await updatePositionsWithLog([{ id: sourcePosId, lot_id: null }]);
+            // Bước 2: Gán lot_id vào vị trí đích sau khi vị trí nguồn đã hoàn tất
+            await updatePositionsWithLog([{ id: targetPosId, lot_id: movingLotId }]);
+
             showToast(`Đã chuyển hàng sang vị trí ${targetPos.code || ''} thành công!`, 'success');
             fetchData();
         } catch (error: any) {
@@ -1108,6 +1118,25 @@ function WarehouseMapContent() {
                 });
                 const nextIdx = Math.max(hasExactBaseCode ? 2 : 1, targetPositions.length + 1, maxIdx + 1);
                 const newPosCode = isMultiLot ? `${baseCode}-${String(nextIdx).padStart(2, '0')}` : baseCode;
+
+                // Kiểm tra xem vị trí có mã newPosCode này đã tồn tại sẵn trong DB chưa (tránh lỗi duplicate key)
+                const { data: existingPos } = await (supabase.from('positions') as any)
+                    .select('id, code, lot_id')
+                    .eq('system_type', currentSystem?.code || systemType)
+                    .eq('code', newPosCode)
+                    .maybeSingle();
+
+                if (existingPos) {
+                    if (!existingPos.lot_id) {
+                        // Tồn tại vị trí trống trong DB -> di chuyển trực tiếp vào vị trí này
+                        await updatePositionsWithLog([{ id: sourcePosId, lot_id: null }]);
+                        await updatePositionsWithLog([{ id: existingPos.id, lot_id: movingLotId }]);
+                        showToast(`Đã chuyển hàng vào khu vực ${targetShape.label || targetShape.code} (${existingPos.code}) thành công!`, 'success');
+                        fetchData();
+                        return;
+                    }
+                }
+
                 const newPosId = crypto.randomUUID();
 
                 const insertPayload = {
@@ -1115,7 +1144,7 @@ function WarehouseMapContent() {
                     code: newPosCode,
                     lot_id: movingLotId,
                     system_type: currentSystem?.code || systemType,
-                    company_id: (currentSystem as any)?.company_id || null
+                    company_id: profile?.company_id || (currentSystem as any)?.company_id || null
                 };
 
                 // Optimistically update positions state
@@ -1301,6 +1330,19 @@ function WarehouseMapContent() {
             });
             const nextIdx = Math.max(hasExactBaseCode ? 2 : 1, targetPositions.length + 1, maxIdx + 1);
             const newCode = `${baseCode}-${String(nextIdx).padStart(2, '0')}`;
+
+            // Kiểm tra xem vị trí newCode đã có sẵn trong DB chưa
+            const { data: existingPos } = await (supabase.from('positions') as any)
+                .select('id, code, lot_id')
+                .eq('system_type', currentSystem?.code || systemType)
+                .eq('code', newCode)
+                .maybeSingle();
+
+            if (existingPos && !existingPos.lot_id) {
+                await handleAssignStagingLotToPosition(lotId, existingPos.id);
+                return;
+            }
+
             const newPosId = crypto.randomUUID();
 
             const insertPayload = {
@@ -1308,7 +1350,7 @@ function WarehouseMapContent() {
                 code: newCode,
                 lot_id: lotId,
                 system_type: currentSystem?.code || systemType,
-                company_id: (currentSystem as any)?.company_id || null
+                company_id: profile?.company_id || (currentSystem as any)?.company_id || null
             };
 
             const localPosObj = {
