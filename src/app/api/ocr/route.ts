@@ -186,13 +186,42 @@ function parseBoxLabelText(cleanText: string) {
   };
 }
 
+import path from 'path';
+
 let cachedWorker: any = null;
+let workerInitializing: Promise<any> | null = null;
 
 async function getWorker() {
-  if (!cachedWorker) {
-    cachedWorker = await Tesseract.createWorker('eng');
-  }
-  return cachedWorker;
+  if (cachedWorker) return cachedWorker;
+  if (workerInitializing) return workerInitializing;
+
+  workerInitializing = (async () => {
+    try {
+      const workerPath = path.join(
+        process.cwd(),
+        'node_modules',
+        'tesseract.js',
+        'src',
+        'worker-script',
+        'node',
+        'index.js'
+      );
+
+      const worker = await Tesseract.createWorker('eng', 1, {
+        workerPath
+      });
+      cachedWorker = worker;
+      return worker;
+    } catch (err) {
+      console.error('[OCR Server] Failed to initialize Tesseract worker:', err);
+      cachedWorker = null;
+      throw err;
+    } finally {
+      workerInitializing = null;
+    }
+  })();
+
+  return workerInitializing;
 }
 
 export async function POST(req: NextRequest) {
@@ -208,7 +237,14 @@ export async function POST(req: NextRequest) {
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
     const worker = await getWorker();
-    const result = await worker.recognize(imageBuffer);
+    
+    // Timeout sau 18 giây để tránh treo vĩnh viễn
+    const recognizePromise = worker.recognize(imageBuffer);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Quá thời gian nhận diện OCR (timeout 18s). Vui lòng thử lại hoặc chụp cận cảnh hơn.')), 18000)
+    );
+
+    const result: any = await Promise.race([recognizePromise, timeoutPromise]);
 
     const rawText = result?.data?.text || '';
     console.log('[OCR Server] Mode:', mode, 'Text:', rawText.substring(0, 150));
@@ -233,8 +269,13 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('[OCR Server Error]:', error);
-    cachedWorker = null;
-    return NextResponse.json({ success: false, error: error.message }, { status: 500 });
+    if (cachedWorker) {
+      try {
+        await cachedWorker.terminate();
+      } catch {}
+      cachedWorker = null;
+    }
+    return NextResponse.json({ success: false, error: error.message || 'Lỗi nhận diện OCR' }, { status: 500 });
   }
 }
 

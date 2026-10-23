@@ -407,6 +407,8 @@ export default function WebScannerPage() {
         boxes: rowsToInsert.map(r => ({
           code: r.code,
           weight: r.quantity,
+          system_code: r.system_code || 'KHO_DONG_LANH',
+          metadata: r.metadata,
           time: new Date().toISOString()
         })),
         product_name: productName || undefined,
@@ -784,13 +786,18 @@ export default function WebScannerPage() {
     }
 
     setIsRecognizing(true)
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), 22000)
+
     try {
       const mode = activeTab === 'stamp' ? 'stamp' : 'label'
       const res = await fetch('/api/ocr', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mode })
+        body: JSON.stringify({ image: base64, mode }),
+        signal: controller.signal
       })
+      clearTimeout(timeoutId)
 
       const json = await res.json()
       if (!json.success) throw new Error(json.error || 'Nhận diện thất bại')
@@ -816,7 +823,12 @@ export default function WebScannerPage() {
         setLabelCount('1')
       }
     } catch (err: any) {
-      triggerToast(`Lỗi OCR: ${err.message || 'Không đọc được văn bản'}`)
+      clearTimeout(timeoutId)
+      if (err.name === 'AbortError') {
+        triggerToast('Quá thời gian nhận diện OCR (timeout). Vui lòng thử lại!')
+      } else {
+        triggerToast(`Lỗi OCR: ${err.message || 'Không đọc được văn bản'}`)
+      }
     } finally {
       setIsRecognizing(false)
     }
@@ -872,6 +884,8 @@ export default function WebScannerPage() {
           unit: 'Kg',
           semi_finished_lot_code: l2,
           finished_lot_code: l2,
+          system_code: 'KHO_DONG_LANH',
+          status: 'printed',
           metadata: {
             pallet_stt: cleanStt,
             pallet_tag: activePalletTag || undefined,
@@ -957,6 +971,8 @@ export default function WebScannerPage() {
           unit: 'Kg',
           semi_finished_lot_code: labelData.lot_code,
           finished_lot_code: labelData.lot_code,
+          system_code: 'KHO_DONG_LANH',
+          status: 'printed',
           metadata: {
             pallet_stt: cleanStt,
             pallet_tag: activePalletTag || undefined,
@@ -1445,20 +1461,26 @@ export default function WebScannerPage() {
       try {
         await updatePendingPalletStatus(p.client_id, 'syncing')
 
-        const rowsToInsert = p.boxes.map((b, idx) => ({
-          code: b.code,
-          quantity: b.weight,
-          unit: 'Kg',
-          semi_finished_lot_code: p.lot_code,
-          finished_lot_code: p.lot_code,
-          metadata: {
-            pallet_stt: p.stt,
-            scan_type: 'label',
-            box_index: idx + 1,
-            sku: p.sku || 'SKU',
-            product_name: p.product_name || 'Hàng đông lạnh'
+        const rowsToInsert = p.boxes.map((b: any, idx: number) => {
+          const bMeta = b.metadata || {}
+          return {
+            code: b.code,
+            quantity: b.weight,
+            unit: 'Kg',
+            semi_finished_lot_code: p.lot_code,
+            finished_lot_code: p.lot_code,
+            system_code: b.system_code || 'KHO_DONG_LANH',
+            status: 'printed',
+            metadata: {
+              pallet_stt: p.stt,
+              scan_type: bMeta.scan_type || (p.stt.startsWith('G') || b.code.startsWith('STAMP') ? 'stamp' : 'label'),
+              box_index: bMeta.box_index || (idx + 1),
+              sku: bMeta.sku || p.sku || 'SKU',
+              product_name: bMeta.product_name || p.product_name || 'Hàng đông lạnh',
+              ...bMeta
+            }
           }
-        }))
+        })
 
         const { error } = await supabase.from('box_labels').insert(rowsToInsert as any)
         if (error) throw error
@@ -1490,20 +1512,26 @@ export default function WebScannerPage() {
     }
     try {
       await updatePendingPalletStatus(item.client_id, 'syncing')
-      const rowsToInsert = item.boxes.map((b, idx) => ({
-        code: b.code,
-        quantity: b.weight,
-        unit: 'Kg',
-        semi_finished_lot_code: item.lot_code,
-        finished_lot_code: item.lot_code,
-        metadata: {
-          pallet_stt: item.stt,
-          scan_type: 'label',
-          box_index: idx + 1,
-          sku: item.sku || 'SKU',
-          product_name: item.product_name || 'Hàng đông lạnh'
+      const rowsToInsert = item.boxes.map((b: any, idx: number) => {
+        const bMeta = b.metadata || {}
+        return {
+          code: b.code,
+          quantity: b.weight,
+          unit: 'Kg',
+          semi_finished_lot_code: item.lot_code,
+          finished_lot_code: item.lot_code,
+          system_code: b.system_code || 'KHO_DONG_LANH',
+          status: 'printed',
+          metadata: {
+            pallet_stt: item.stt,
+            scan_type: bMeta.scan_type || (item.stt.startsWith('G') || b.code.startsWith('STAMP') ? 'stamp' : 'label'),
+            box_index: bMeta.box_index || (idx + 1),
+            sku: bMeta.sku || item.sku || 'SKU',
+            product_name: bMeta.product_name || item.product_name || 'Hàng đông lạnh',
+            ...bMeta
+          }
         }
-      }))
+      })
 
       const { error } = await supabase.from('box_labels').insert(rowsToInsert as any)
       if (error) throw error
