@@ -11,7 +11,8 @@ import {
     Edit3, Check, Calendar, MapPin, Users,
     Tag, AlertCircle, FileSpreadsheet, Link2,
     Unlink, CheckCircle2, AlertTriangle, Zap,
-    ArrowUpRight, Eye, Sparkles, Clock, Factory
+    ArrowUpRight, Eye, Sparkles, Clock, Factory,
+    Sliders, Plus, LayoutGrid, List
 } from 'lucide-react'
 import { advancedMatchSearch, normalizeSearchString } from '@/lib/searchUtils'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
@@ -20,6 +21,81 @@ import { Combobox } from '@/components/ui/Combobox'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import { parseDateToISO } from '@/lib/dateUtils'
+import { DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
+
+/**
+ * Tự động giải mã lại vùng nguyên liệu (tỉnh), nhà máy (tổ), ngày tháng từ Dòng 2 con dấu.
+ * Giúp đồng bộ và ghi đè triệt để các thông tin cũ do OCR đọc sai (ví dụ trước đó Dòng 2 đuôi 88 gán nhầm "Tỉnh mã 88", sau đó sửa lại đuôi 66).
+ */
+function applyStampDecodeToMeta(meta: Record<string, any>): Record<string, any> {
+    const next: Record<string, any> = { ...meta, scan_type: 'stamp' }
+    const l2Digits = String(meta.stamp_line2 || '').replace(/\D/g, '')
+
+    if (l2Digits.length >= 1) {
+        const fCode = l2Digits.substring(0, 1)
+        const fName = DEFAULT_STAMP_DICT.factory?.[fCode] || `Nhà máy ${fCode}`
+        next.shift_group = fName
+        next.production_place = fName
+        next.factory = fName
+    }
+    if (l2Digits.length >= 5) {
+        const dd = l2Digits.substring(1, 3)
+        const mm = l2Digits.substring(3, 5)
+        const pkg = cleanDateForDB(`${dd}/${mm}`)
+        if (pkg) next.packaging_date = pkg
+    }
+    if (l2Digits.length >= 11) {
+        const dd = l2Digits.substring(5, 7)
+        const mm = l2Digits.substring(7, 9)
+        const yy = l2Digits.substring(9, 11)
+        const raw = cleanDateForDB(`${dd}/${mm}/20${yy}`)
+        if (raw) next.raw_material_date = raw
+    }
+    if (l2Digits.length >= 14) {
+        const sCode = l2Digits.substring(11, 14)
+        next.supplier = sCode
+        next.supplier_code = sCode
+
+        // Lấy 2 số đuôi của Dòng 2 (vị trí 14..15 hoặc 2 số cuối cùng)
+        const pCode = l2Digits.length >= 16 ? l2Digits.substring(14, 16) : l2Digits.slice(-2)
+        const pName = DEFAULT_STAMP_DICT.province?.[pCode] || `Tỉnh mã ${pCode}`
+        next.region = pName
+        next.province = pName
+        next.province_code = pCode
+        next.material_zone = pName
+        next.material_zones = [pName]
+    }
+    return next
+}
+
+/**
+ * Tự động đồng bộ/sửa lỗi metadata trong DB cho các thùng dấu mực có thông tin vùng/ngày bị lệch so với Dòng 2 hiện tại.
+ */
+async function healStampBoxesInDB(boxes: BoxLabelItem[]) {
+    const fixes: { id: string; metadata: Record<string, any> }[] = []
+    for (const b of boxes) {
+        const m = b.metadata || {}
+        const isStamp = m.scan_type === 'stamp' || !!m.stamp_line2 || b.code?.startsWith('STAMP-')
+        if (!isStamp || !m.stamp_line2) continue
+        const healed = applyStampDecodeToMeta(m)
+        if (
+            healed.region !== m.region || 
+            healed.province !== m.province || 
+            healed.material_zone !== m.material_zone || 
+            healed.shift_group !== m.shift_group || 
+            healed.raw_material_date !== m.raw_material_date || 
+            healed.packaging_date !== m.packaging_date
+        ) {
+            fixes.push({ id: b.id, metadata: healed })
+            b.metadata = healed
+        }
+    }
+    for (let i = 0; i < fixes.length; i += 15) {
+        await Promise.all(fixes.slice(i, i + 15).map(f =>
+            (supabase.from('box_labels') as any).update({ metadata: f.metadata }).eq('id', f.id)
+        ))
+    }
+}
 
 /**
  * Chuẩn hóa chuỗi ngày quét từ thùng (VD: "15/10", "15/10/2026", "2026-10-15") về định dạng ISO YYYY-MM-DD hợp lệ cho cột DATE của PostgreSQL
@@ -119,6 +195,7 @@ function extractRawMaterialDate(box: BoxLabelItem): string | null {
 interface BoxLabelItem {
     id: string
     code: string
+    lot_id?: string | null
     quantity: number
     unit: string
     status: string
@@ -521,8 +598,14 @@ export default function PalletsPageContent() {
     const [customWeight, setCustomWeight] = useState<number>(0)
     const [customInboundDate, setCustomInboundDate] = useState<string>('')
     const [customPackagingDate, setCustomPackagingDate] = useState<string>('')
+    const [customPackagingDates, setCustomPackagingDates] = useState<string[]>([])
+    const [newPackagingDateInput, setNewPackagingDateInput] = useState('')
     const [customRawMaterialDate, setCustomRawMaterialDate] = useState<string>('')
+    const [customRawMaterialDates, setCustomRawMaterialDates] = useState<string[]>([])
+    const [newRawMaterialDateInput, setNewRawMaterialDateInput] = useState('')
     const [customPeelingDate, setCustomPeelingDate] = useState<string>('')
+    const [customPeelingDates, setCustomPeelingDates] = useState<string[]>([])
+    const [newPeelingDateInput, setNewPeelingDateInput] = useState('')
     const [customProductionPlace, setCustomProductionPlace] = useState<string>('')
     const [customMaterialZone, setCustomMaterialZone] = useState<string>('')
     const [customNotes, setCustomNotes] = useState<string>('')
@@ -537,7 +620,57 @@ export default function PalletsPageContent() {
     const [editingBox, setEditingBox] = useState<BoxLabelItem | null>(null)
     const [editWeight, setEditWeight] = useState('')
     const [editLotCode, setEditLotCode] = useState('')
+    const [editBoxCode, setEditBoxCode] = useState('')
+    const [editStampLine1, setEditStampLine1] = useState('')
+    const [editStampLine2, setEditStampLine2] = useState('')
+    const [editSpec, setEditSpec] = useState('')
+    const [editShiftGroup, setEditShiftGroup] = useState('')
+    const [editProductionDate, setEditProductionDate] = useState('')
+    const [editPackagingDate, setEditPackagingDate] = useState('')
+    const [editApplyToAllInPallet, setEditApplyToAllInPallet] = useState(false)
     const [isSavingEdit, setIsSavingEdit] = useState(false)
+
+    // Chế độ xem cho Tab Chưa kết nối: 'grid' (thẻ gọn 3 hàng) hoặc 'table' (danh sách nhiều hàng)
+    const [unlinkedViewMode, setUnlinkedViewMode] = useState<'grid' | 'table'>(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('PALLET_UNLINKED_VIEW_MODE')
+            if (saved === 'grid' || saved === 'table') return saved
+        }
+        return 'grid'
+    })
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('PALLET_UNLINKED_VIEW_MODE', unlinkedViewMode)
+        }
+    }, [unlinkedViewMode])
+
+    // Phân trang & Bộ lọc thời gian cho Tab Chưa kết nối
+    const [unlinkedDateFilter, setUnlinkedDateFilter] = useState<'all' | 'today' | '3days' | '7days'>('all')
+    const [unlinkedPage, setUnlinkedPage] = useState(1)
+    const [unlinkedPageSize, setUnlinkedPageSize] = useState<number>(18) // 18 pallet = 6 hàng x 3 cột
+
+    // Bulk Edit Modal for Unlinked Boxes
+    const [isBulkEditOpen, setIsBulkEditOpen] = useState(false)
+    const [selectedBoxIds, setSelectedBoxIds] = useState<Set<string>>(new Set())
+    const [bulkScope, setBulkScope] = useState<'all' | 'selected'>('all')
+    const [bulkStampLine1, setBulkStampLine1] = useState('')
+    const [bulkStampLine2, setBulkStampLine2] = useState('')
+    const [bulkLotCode, setBulkLotCode] = useState('')
+    const [bulkWeight, setBulkWeight] = useState('')
+    const [bulkSpec, setBulkSpec] = useState('')
+    const [bulkShiftGroup, setBulkShiftGroup] = useState('')
+    const [bulkProductionDate, setBulkProductionDate] = useState('')
+    const [bulkPackagingDate, setBulkPackagingDate] = useState('')
+    const [bulkRegenerateCode, setBulkRegenerateCode] = useState(true)
+    const [isSavingBulkEdit, setIsSavingBulkEdit] = useState(false)
+
+    // Edit Pallet Info Modal (STT, Tag, Notes)
+    const [editingPalletInfoGroup, setEditingPalletInfoGroup] = useState<UnlinkedPalletGroup | null>(null)
+    const [editPalletSTT, setEditPalletSTT] = useState('')
+    const [editPalletTag, setEditPalletTag] = useState('')
+    const [editPalletNotes, setEditPalletNotes] = useState('')
+    const [isSavingPalletInfo, setIsSavingPalletInfo] = useState(false)
 
     // Đơn vị tính khả dụng kèm hậu tố chuẩn cho sản phẩm đang chọn trong modal
     const isStampModal = useMemo(() => {
@@ -593,6 +726,7 @@ export default function PalletsPageContent() {
                     box_labels (
                         id,
                         code,
+                        lot_id,
                         quantity,
                         unit,
                         status,
@@ -645,32 +779,50 @@ export default function PalletsPageContent() {
                 return linked.find(p => p.id === prev.id) || linked[0] || null
             })
 
-            // 2. Fetch Unlinked Boxes (lot_id IS NULL)
-            const { data: unlinkedData, error: unlinkedErr } = await supabase
-                .from('box_labels')
-                .select(`
-                    id,
-                    code,
-                    quantity,
-                    unit,
-                    status,
-                    semi_finished_lot_code,
-                    finished_lot_code,
-                    created_at,
-                    metadata,
-                    products ( name, sku, internal_name )
-                `)
-                .is('lot_id', null)
-                .order('created_at', { ascending: false })
-                .limit(500)
+            // 2. Fetch Unlinked Boxes (lot_id IS NULL) - Tự động tải ngầm từng đợt 1000 thùng cho tới khi lấy đủ 100% không bị sót
+            let unlinkedData: any[] = []
+            let unlinkedFrom = 0
+            const unlinkedChunkSize = 1000
 
-            if (unlinkedErr) throw unlinkedErr
+            while (true) {
+                const { data: chunk, error: chunkErr } = await supabase
+                    .from('box_labels')
+                    .select(`
+                        id,
+                        code,
+                        lot_id,
+                        quantity,
+                        unit,
+                        status,
+                        semi_finished_lot_code,
+                        finished_lot_code,
+                        created_at,
+                        metadata,
+                        products ( name, sku, internal_name )
+                    `)
+                    .eq('system_code', currentSystem.code)
+                    .is('lot_id', null)
+                    .order('created_at', { ascending: false })
+                    .range(unlinkedFrom, unlinkedFrom + unlinkedChunkSize - 1)
+
+                if (chunkErr) {
+                    console.error('Lỗi tải thùng chưa kết nối:', chunkErr)
+                    throw chunkErr
+                }
+                if (!chunk || chunk.length === 0) break
+                unlinkedData = [...unlinkedData, ...chunk]
+                if (chunk.length < unlinkedChunkSize) break
+                unlinkedFrom += unlinkedChunkSize
+            }
 
             // 2.1 Group unlinked box_labels by pallet_stt
             const groupMap = new Map<string, BoxLabelItem[]>()
             ;(unlinkedData || []).forEach((b: any) => {
                 const rawStt = b.metadata?.pallet_stt
                 if (!rawStt) return // Bỏ qua tem in đơn lẻ/QR test không thuộc đợt quét Pallet
+                if (b.metadata?.stamp_line2) {
+                    b.metadata = applyStampDecodeToMeta(b.metadata)
+                }
                 const stt = rawStt.trim().toUpperCase()
                 if (!groupMap.has(stt)) {
                     groupMap.set(stt, [])
@@ -718,6 +870,10 @@ export default function PalletsPageContent() {
             setSelectedUnlinkedGroup(prev => {
                 if (!prev) return groups[0] || null
                 return groups.find(g => g.pallet_stt === prev.pallet_stt) || groups[0] || null
+            })
+            setPreviewGroup(prev => {
+                if (!prev) return null
+                return groups.find(g => g.pallet_stt === prev.pallet_stt) || null
             })
 
             // 3. Fetch all products for the current warehouse system (hỗ trợ phân trang, khắc phục giới hạn 300/1000)
@@ -820,6 +976,12 @@ export default function PalletsPageContent() {
 
             if (error) throw error
 
+            // Cập nhật lại số lượng thùng trong LOT
+            const remainingCount = Math.max(0, selectedPallet.box_labels.length - 1)
+            await (supabase.from('lots') as any)
+                .update({ quantity: remainingCount })
+                .eq('id', selectedPallet.id)
+
             showToast(`Đã gỡ thùng #${getBoxIndex(box)} ra khỏi LOT ${selectedPallet.code}!`, 'success')
             fetchData()
         } catch (err: any) {
@@ -871,6 +1033,20 @@ export default function PalletsPageContent() {
 
         setIsLinking(true)
         try {
+            // Đồng bộ dữ liệu giải mã chuẩn cho các thùng con dấu trước khi ghép vào LOT
+            const validProv = group.boxes.map(b => b.metadata?.region).find(r => r && !r.startsWith('Tỉnh mã ') && !r.startsWith('Mã '))
+            if (validProv) {
+                group.boxes.forEach(b => {
+                    if (b.metadata && (!b.metadata.region || b.metadata.region.startsWith('Tỉnh mã '))) {
+                        b.metadata.region = validProv
+                        b.metadata.province = validProv
+                        b.metadata.material_zone = validProv
+                        b.metadata.material_zones = [validProv]
+                    }
+                })
+            }
+            await healStampBoxesInDB(group.boxes)
+
             const boxIds = group.boxes.map(b => b.id)
             const { error: boxErr } = await (supabase
                 .from('box_labels') as any)
@@ -884,6 +1060,31 @@ export default function PalletsPageContent() {
 
             // Tự động đồng bộ ngày sản xuất / ngày nguyên liệu vào LOT
             await syncDatesFromBoxesToLot(targetLot.id, group.boxes)
+
+            // Cập nhật số lượng thùng trong bảng lots
+            await (supabase
+                .from('lots') as any)
+                .update({ quantity: group.boxes.length })
+                .eq('id', targetLot.id)
+
+            // Cập nhật ghi chú nếu có
+            if (group.pallet_notes && group.pallet_notes.trim()) {
+                try {
+                    const { data: currentLot } = await (supabase
+                        .from('lots') as any)
+                        .select('notes')
+                        .eq('id', targetLot.id)
+                        .maybeSingle()
+
+                    if (currentLot && !(currentLot as any).notes) {
+                        await (supabase.from('lots') as any)
+                            .update({ notes: group.pallet_notes.trim() })
+                            .eq('id', targetLot.id)
+                    }
+                } catch (noteErr) {
+                    console.warn('Lỗi cập nhật ghi chú lô:', noteErr)
+                }
+            }
 
             // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
             const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
@@ -931,16 +1132,16 @@ export default function PalletsPageContent() {
         }
 
         const confirmed = window.confirm(
-            `CẬP NHẬT LOT: Bạn có chắc muốn THAY THẾ danh sách thùng của LOT ${targetLot.code} (STT: ${group.pallet_stt}) bằng ${group.boxes.length} thùng mới quét này không?\n\n(Hệ thống sẽ gỡ các thùng cũ của LOT ra và gán toàn bộ ${group.boxes.length} thùng mới này vào LOT ${targetLot.code})`
+            `CẬP NHẬT LOT: Bạn có chắc muốn THAY THẾ danh sách thùng của LOT ${targetLot.code} (STT: ${group.pallet_stt}) bằng ${group.boxes.length} thùng mới quét này không?\n\n(Hệ thống sẽ xóa các thùng cũ của LOT ra và gán toàn bộ ${group.boxes.length} thùng mới này vào LOT ${targetLot.code})`
         )
         if (!confirmed) return
 
         setIsLinking(true)
         try {
-            // 1. Gỡ các thùng cũ của LOT này
+            // 1. Xóa triệt để các thùng cũ của LOT này để tránh bị nhân đôi / dư thừa thùng rác
             await (supabase
                 .from('box_labels') as any)
-                .update({ lot_id: null, status: 'unlinked' })
+                .delete()
                 .eq('lot_id', targetLot.id)
 
             // 2. Gán các thùng mới vào LOT
@@ -1035,6 +1236,11 @@ export default function PalletsPageContent() {
                 if (!error) {
                     await syncDatesFromBoxesToLot(targetLot.id, group.boxes)
 
+                    // Cập nhật số lượng thùng trong bảng lots
+                    await (supabase.from('lots') as any)
+                        .update({ quantity: group.boxes.length })
+                        .eq('id', targetLot.id)
+
                     // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
                     const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
                     if (tagFromGroup && tagFromGroup.trim()) {
@@ -1080,18 +1286,33 @@ export default function PalletsPageContent() {
         if (!confirmed) return
 
         try {
+            // 1. Cập nhật giao diện ngay lập tức để người dùng thấy biến mất ngay
+            setUnlinkedGroups(prev => prev.filter(g => g.pallet_stt !== group.pallet_stt))
+            setSelectedUnlinkedGroup(prev => prev?.pallet_stt === group.pallet_stt ? null : prev)
+            setPreviewGroup(prev => prev?.pallet_stt === group.pallet_stt ? null : prev)
+
+            // 2. Xóa các thùng theo ID đã tải
             const boxIds = group.boxes.map(b => b.id)
-            const { error } = await supabase
-                .from('box_labels')
+            if (boxIds.length > 0) {
+                await supabase
+                    .from('box_labels')
+                    .delete()
+                    .in('id', boxIds)
+            }
+
+            // 3. Xóa triệt để TẤT CẢ các thùng chưa kết nối (lot_id IS NULL) còn sót lại trong DB của STT này (tránh bị tràn phân trang 500 thùng)
+            const sttClean = group.pallet_stt.trim()
+            await (supabase.from('box_labels') as any)
                 .delete()
-                .in('id', boxIds)
+                .is('lot_id', null)
+                .eq('system_code', currentSystem?.code || 'KHO_DONG_LANH')
+                .eq('metadata->>pallet_stt', sttClean)
 
-            if (error) throw error
-
-            showToast(`Đã xóa ${group.boxes.length} thùng của STT ${group.pallet_stt}`, 'success')
-            fetchData()
+            showToast(`Đã xóa hoàn toàn các thùng của STT ${group.pallet_stt}`, 'success')
+            await fetchData()
         } catch (err: any) {
             showToast('Lỗi khi xóa: ' + err.message, 'error')
+            await fetchData()
         }
     }
 
@@ -1161,31 +1382,108 @@ export default function PalletsPageContent() {
             b.metadata?.scan_type === 'stamp' || !!b.metadata?.stamp_line1 || !!b.metadata?.stamp_line2 || b.code?.startsWith('STAMP-')
         )
 
-        const packDates = group.boxes.map(b => extractPackagingDate(b)).filter(Boolean) as string[]
-        const rawDates = group.boxes.map(b => extractRawMaterialDate(b)).filter(Boolean) as string[]
-        const prodDates = group.boxes.map(b => extractProductionDate(b)).filter(Boolean) as string[]
-
         // Quy tắc chính xác:
         // - Dấu mực: Dòng 2 chỉ có Ngày đóng gói (DDMM) & Ngày nhập nguyên liệu (DDMMYY). TUYỆT ĐỐI không có Ngày sản xuất -> để trống.
         // - Tem nhãn: Chỉ có Ngày sản xuất (NSX) & Ngày đóng gói (NĐG). TUYỆT ĐỐI không có Ngày nhập nguyên liệu -> để trống.
-        const defaultPackDate = packDates.length > 0 ? [...packDates].sort().reverse()[0] : ''
-        const defaultRawDate = isStamp && rawDates.length > 0 ? [...rawDates].sort()[0] : ''
-        const defaultProdDate = !isStamp && prodDates.length > 0 ? [...prodDates].sort()[0] : ''
+        const packDates = Array.from(new Set(group.boxes.map(b => extractPackagingDate(b)).filter(Boolean) as string[])).sort()
+        const rawDates = Array.from(new Set(group.boxes.map(b => extractRawMaterialDate(b)).filter(Boolean) as string[])).sort()
+        const prodDates = Array.from(new Set(group.boxes.map(b => extractProductionDate(b)).filter(Boolean) as string[])).sort()
+
+        const defaultPackDate = packDates.length > 0 ? packDates[packDates.length - 1] : ''
+        const defaultRawDate = isStamp && rawDates.length > 0 ? rawDates[0] : ''
+        const defaultProdDate = !isStamp && prodDates.length > 0 ? prodDates[0] : ''
 
         setCustomInboundDate(todayStr)
+
+        setCustomPackagingDates(packDates)
         setCustomPackagingDate(defaultPackDate)
+        setNewPackagingDateInput('')
+
+        const finalRawDates = isStamp ? rawDates : []
+        setCustomRawMaterialDates(finalRawDates)
         setCustomRawMaterialDate(defaultRawDate)
+        setNewRawMaterialDateInput('')
+
+        const finalProdDates = !isStamp ? prodDates : []
+        setCustomPeelingDates(finalProdDates)
         setCustomPeelingDate(defaultProdDate)
+        setNewPeelingDateInput('')
 
         // 6. Kế thừa Nơi sản xuất (Tổ đóng gói) & Vùng nguyên liệu
-        const places = Array.from(new Set(group.boxes.map(b => b.metadata?.shift_group).filter(Boolean)))
-        const regions = Array.from(new Set(group.boxes.map(b => b.metadata?.region).filter(Boolean)))
+        // Với thùng con dấu: luôn giải mã lại từ Dòng 2 hiện tại để loại bỏ hoàn toàn vùng cũ do OCR đọc sai trước khi sửa
+        const effectiveMetas = group.boxes.map(b => {
+            const m = b.metadata || {}
+            const stampBox = m.scan_type === 'stamp' || !!m.stamp_line2 || b.code?.startsWith('STAMP-')
+            return stampBox && m.stamp_line2 ? applyStampDecodeToMeta(m) : m
+        })
+        const places = Array.from(new Set(effectiveMetas.map(m => m.shift_group).filter(Boolean)))
+        const rawRegions = Array.from(new Set(effectiveMetas.map(m => m.region).filter(Boolean)))
+        // Loại bỏ các mã tạm do OCR đọc sai (VD: "Tỉnh mã 88") nếu trong nhóm đã có tỉnh hợp lệ được giải mã chuẩn (VD: "Đắk Lắk")
+        const validProvinces = rawRegions.filter(r => !r.startsWith('Tỉnh mã ') && !r.startsWith('Mã '))
+        const regions = validProvinces.length > 0 ? validProvinces : rawRegions
         setCustomProductionPlace(places.join(', '))
         setCustomMaterialZone(regions.join(', '))
 
         // 7. Kế thừa Ghi chú từ app quét (nếu người dùng có nhập ghi chú trên app)
         const syncedNote = group.pallet_notes || group.boxes.map(b => b.metadata?.pallet_notes || b.metadata?.notes).find(Boolean) || ''
         setCustomNotes(syncedNote)
+    }
+
+    const handleAddRawDate = () => {
+        if (!newRawMaterialDateInput) return
+        const clean = cleanDateForDB(newRawMaterialDateInput)
+        if (clean && !customRawMaterialDates.includes(clean)) {
+            const next = [...customRawMaterialDates, clean].sort()
+            setCustomRawMaterialDates(next)
+            if (!customRawMaterialDate) setCustomRawMaterialDate(clean)
+        }
+        setNewRawMaterialDateInput('')
+    }
+
+    const handleRemoveRawDate = (dateToRemove: string) => {
+        const next = customRawMaterialDates.filter(d => d !== dateToRemove)
+        setCustomRawMaterialDates(next)
+        if (customRawMaterialDate === dateToRemove) {
+            setCustomRawMaterialDate(next[0] || '')
+        }
+    }
+
+    const handleAddPackagingDate = () => {
+        if (!newPackagingDateInput) return
+        const clean = cleanDateForDB(newPackagingDateInput)
+        if (clean && !customPackagingDates.includes(clean)) {
+            const next = [...customPackagingDates, clean].sort()
+            setCustomPackagingDates(next)
+            if (!customPackagingDate) setCustomPackagingDate(clean)
+        }
+        setNewPackagingDateInput('')
+    }
+
+    const handleRemovePackagingDate = (dateToRemove: string) => {
+        const next = customPackagingDates.filter(d => d !== dateToRemove)
+        setCustomPackagingDates(next)
+        if (customPackagingDate === dateToRemove) {
+            setCustomPackagingDate(next[next.length - 1] || '')
+        }
+    }
+
+    const handleAddPeelingDate = () => {
+        if (!newPeelingDateInput) return
+        const clean = cleanDateForDB(newPeelingDateInput)
+        if (clean && !customPeelingDates.includes(clean)) {
+            const next = [...customPeelingDates, clean].sort()
+            setCustomPeelingDates(next)
+            if (!customPeelingDate) setCustomPeelingDate(clean)
+        }
+        setNewPeelingDateInput('')
+    }
+
+    const handleRemovePeelingDate = (dateToRemove: string) => {
+        const next = customPeelingDates.filter(d => d !== dateToRemove)
+        setCustomPeelingDates(next)
+        if (customPeelingDate === dateToRemove) {
+            setCustomPeelingDate(next[0] || '')
+        }
     }
 
     const handleRegenerateLotCode = async () => {
@@ -1255,9 +1553,13 @@ export default function PalletsPageContent() {
             const selectedProd = warehouseProducts.find(p => p.id === selectedProductId)
 
             const cleanInbound = cleanDateForDB(customInboundDate)
-            const cleanPack = cleanDateForDB(customPackagingDate)
-            const cleanRaw = cleanDateForDB(customRawMaterialDate)
-            const cleanPeeling = cleanDateForDB(customPeelingDate)
+            const cleanRawDates = customRawMaterialDates.map(d => cleanDateForDB(d)).filter(Boolean) as string[]
+            const cleanPackagingDates = customPackagingDates.map(d => cleanDateForDB(d)).filter(Boolean) as string[]
+            const cleanPeelingDates = customPeelingDates.map(d => cleanDateForDB(d)).filter(Boolean) as string[]
+
+            const cleanPack = cleanPackagingDates.length > 0 ? cleanPackagingDates[cleanPackagingDates.length - 1] : cleanDateForDB(customPackagingDate)
+            const cleanRaw = cleanRawDates.length > 0 ? cleanRawDates[0] : cleanDateForDB(customRawMaterialDate)
+            const cleanPeeling = cleanPeelingDates.length > 0 ? cleanPeelingDates[0] : cleanDateForDB(customPeelingDate)
 
             // 1. Tạo mới bản ghi Lô (lots)
             const lotPayload: any = {
@@ -1284,7 +1586,13 @@ export default function PalletsPageContent() {
                     material_zone: customMaterialZone.trim() || null,
                     material_zones: customMaterialZone.trim() ? [customMaterialZone.trim()] : [],
                     raw_material_date: cleanRaw || null,
-                    peeling_dates: cleanPeeling ? [cleanPeeling] : []
+                    raw_material_dates: cleanRawDates,
+                    manual_raw_material_dates: cleanRawDates,
+                    packaging_date: cleanPack || null,
+                    packaging_dates: cleanPackagingDates,
+                    manual_packaging_dates: cleanPackagingDates,
+                    peeling_dates: cleanPeelingDates,
+                    manual_peeling_dates: cleanPeelingDates
                 }
             }
 
@@ -1349,6 +1657,20 @@ export default function PalletsPageContent() {
                 }
             }
 
+            // 3.5 Đồng bộ dữ liệu giải mã chuẩn cho các thùng con dấu trước khi kết nối vào LOT
+            // Đồng bộ customMaterialZone đã được duyệt vào toàn bộ thùng để trigger DB không đọc sót mã tỉnh cũ
+            if (customMaterialZone && customMaterialZone.trim()) {
+                const zone = customMaterialZone.trim()
+                group.boxes.forEach(b => {
+                    if (!b.metadata) b.metadata = {}
+                    b.metadata.region = zone
+                    b.metadata.province = zone
+                    b.metadata.material_zone = zone
+                    b.metadata.material_zones = [zone]
+                })
+            }
+            await healStampBoxesInDB(group.boxes)
+
             // 4. Ghép toàn bộ thùng của Pallet vào LOT mới
             const boxIds = group.boxes.map(b => b.id)
             const { error: boxErr } = await (supabase
@@ -1387,8 +1709,17 @@ export default function PalletsPageContent() {
     // ─────────────────────────────────────────────────────────────
     const handleOpenEditBox = (box: BoxLabelItem) => {
         setEditingBox(box)
+        setEditApplyToAllInPallet(false)
         setEditWeight(String(box.quantity || 20))
         setEditLotCode(box.semi_finished_lot_code || box.finished_lot_code || '')
+        setEditBoxCode(box.code || '')
+        const meta = box.metadata || {}
+        setEditStampLine1(meta.stamp_line1 || '')
+        setEditStampLine2(meta.stamp_line2 || '')
+        setEditSpec(meta.spec || '')
+        setEditShiftGroup(meta.shift_group || '')
+        setEditProductionDate(meta.production_date || '')
+        setEditPackagingDate(meta.packaging_date || '')
     }
 
     const handleSaveBoxEdit = async () => {
@@ -1401,24 +1732,306 @@ export default function PalletsPageContent() {
 
         setIsSavingEdit(true)
         try {
+            const isStamp = editingBox.metadata?.scan_type === 'stamp' || editingBox.code?.startsWith('STAMP-') || !!editStampLine1 || !!editStampLine2
+            const currentMeta = { ...(editingBox.metadata || {}) }
+            
+            const updatedMeta: any = {
+                ...currentMeta,
+            }
+
+            if (isStamp) {
+                updatedMeta.scan_type = 'stamp'
+                updatedMeta.stamp_line1 = editStampLine1.trim()
+                updatedMeta.stamp_line2 = editStampLine2.trim()
+                
+                // Giải mã lại toàn bộ vùng (tỉnh), nhà máy (tổ), ngày ĐG, ngày NL từ Dòng 2 đã sửa
+                const decoded = applyStampDecodeToMeta(updatedMeta)
+                Object.assign(updatedMeta, decoded)
+            } else {
+                updatedMeta.spec = editSpec.trim()
+                updatedMeta.shift_group = editShiftGroup.trim()
+                updatedMeta.production_date = editProductionDate.trim() || null
+                updatedMeta.packaging_date = editPackagingDate.trim() || null
+            }
+
+            const cleanCode = editBoxCode.trim() || editingBox.code
+            const finalLot = editLotCode.trim() || (isStamp ? (editStampLine2.trim() || editingBox.semi_finished_lot_code) : editingBox.finished_lot_code)
+
+            const updatePayload: any = {
+                code: cleanCode,
+                quantity: w,
+                semi_finished_lot_code: finalLot,
+                finished_lot_code: finalLot,
+                metadata: updatedMeta
+            }
+
             const { error } = await (supabase
                 .from('box_labels') as any)
-                .update({
-                    quantity: w,
-                    semi_finished_lot_code: editLotCode.trim(),
-                    finished_lot_code: editLotCode.trim()
-                })
+                .update(updatePayload)
                 .eq('id', editingBox.id)
 
             if (error) throw error
 
-            showToast(`Đã cập nhật thùng #${getBoxIndex(editingBox)}!`, 'success')
+            // Xác định danh sách thùng và STT của Pallet hiện tại (hỗ trợ cả tab "Đã kết nối" lẫn "Chưa kết nối")
+            const currentPalletBoxes = selectedPallet ? selectedPallet.box_labels : (previewGroup ? previewGroup.boxes : [])
+            const currentPalletStt = selectedPallet
+                ? (selectedPallet.daily_seq ? decodeSTT(selectedPallet.daily_seq) : selectedPallet.code)
+                : (previewGroup?.pallet_stt || 'PALLET')
+
+            // Nếu người dùng chọn đồng bộ cho toàn bộ thùng trong Pallet
+            if (isStamp && editApplyToAllInPallet && currentPalletBoxes.length > 1) {
+                const otherBoxes = currentPalletBoxes.filter(b => b.id !== editingBox.id)
+                const otherUpdates = otherBoxes.map(b => {
+                    const m = { ...(b.metadata || {}) }
+                    m.scan_type = 'stamp'
+                    if (editStampLine1.trim()) m.stamp_line1 = editStampLine1.trim()
+                    if (editStampLine2.trim()) m.stamp_line2 = editStampLine2.trim()
+                    const dec = applyStampDecodeToMeta(m)
+                    Object.assign(m, dec)
+                    const l1 = (editStampLine1.trim() || m.stamp_line1 || '').replace(/[^a-zA-Z0-9]/g, '')
+                    const l2 = (editStampLine2.trim() || m.stamp_line2 || '').replace(/[^a-zA-Z0-9]/g, '')
+                    const idxStr = String(getBoxIndex(b)).padStart(3, '0')
+                    const cleanStt = currentPalletStt.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                    const newCode = `STAMP-${l1}-${l2}-${cleanStt}-${idxStr}`
+                    return {
+                        id: b.id,
+                        payload: {
+                            code: newCode,
+                            semi_finished_lot_code: editStampLine2.trim() || b.semi_finished_lot_code,
+                            finished_lot_code: editStampLine2.trim() || b.finished_lot_code,
+                            metadata: m
+                        }
+                    }
+                })
+                for (let i = 0; i < otherUpdates.length; i += 15) {
+                    const chunk = otherUpdates.slice(i, i + 15)
+                    await Promise.all(chunk.map(u => (supabase.from('box_labels') as any).update(u.payload).eq('id', u.id)))
+                }
+            }
+
+            // Nếu thùng này thuộc về một LOT đã kết nối, tự động đồng bộ ngay ngày tháng và vùng trồng vào LOT
+            const targetLotId = editingBox.lot_id || (selectedPallet ? selectedPallet.id : null)
+            if (targetLotId) {
+                const allBoxesForSync = currentPalletBoxes.map(b => b.id === editingBox.id ? { ...b, metadata: updatedMeta, quantity: w } : b)
+                await syncDatesFromBoxesToLot(targetLotId, allBoxesForSync)
+            }
+
+            showToast(
+                isStamp && editApplyToAllInPallet && currentPalletBoxes.length > 1
+                    ? `✅ Đã cập nhật và đồng bộ toàn bộ ${currentPalletBoxes.length} thùng của Pallet ${currentPalletStt}!`
+                    : `✅ Đã cập nhật thùng #${getBoxIndex(editingBox)}!`,
+                'success'
+            )
             setEditingBox(null)
-            fetchData()
+            await fetchData()
         } catch (err: any) {
             showToast('Lỗi lưu thùng: ' + err.message, 'error')
         } finally {
             setIsSavingEdit(false)
+        }
+    }
+
+    const handleDeleteSingleBox = async (box: BoxLabelItem) => {
+        const confirmed = window.confirm(`Bạn có chắc chắn muốn xóa thùng #${getBoxIndex(box)} (${box.code}) khỏi hệ thống? Thao tác này không thể hoàn tác.`)
+        if (!confirmed) return
+
+        try {
+            const { error } = await supabase
+                .from('box_labels')
+                .delete()
+                .eq('id', box.id)
+
+            if (error) throw error
+
+            if (box.lot_id) {
+                const { count } = await supabase.from('box_labels').select('id', { count: 'exact', head: true }).eq('lot_id', box.lot_id)
+                await (supabase.from('lots') as any).update({ quantity: count || 0 }).eq('id', box.lot_id)
+            }
+
+            showToast(`Đã xóa thùng #${getBoxIndex(box)}!`, 'success')
+            await fetchData()
+        } catch (err: any) {
+            showToast('Lỗi xóa thùng: ' + err.message, 'error')
+        }
+    }
+
+    const handleOpenBulkEdit = (group: UnlinkedPalletGroup) => {
+        const firstBox = group.boxes[0]
+        const meta = firstBox?.metadata || {}
+        
+        setBulkScope(selectedBoxIds.size > 0 ? 'selected' : 'all')
+        setBulkStampLine1(meta.stamp_line1 || '')
+        setBulkStampLine2(meta.stamp_line2 || '')
+        setBulkLotCode(firstBox?.semi_finished_lot_code || firstBox?.finished_lot_code || '')
+        setBulkWeight(String(firstBox?.quantity || 20))
+        setBulkSpec(meta.spec || '')
+        setBulkShiftGroup(meta.shift_group || '')
+        setBulkProductionDate(meta.production_date || '')
+        setBulkPackagingDate(meta.packaging_date || '')
+        setBulkRegenerateCode(true)
+        setIsBulkEditOpen(true)
+    }
+
+    const handleSaveBulkEdit = async () => {
+        if (!previewGroup) return
+        
+        const targetBoxes = (bulkScope === 'selected' && selectedBoxIds.size > 0)
+            ? previewGroup.boxes.filter(b => selectedBoxIds.has(b.id))
+            : previewGroup.boxes
+
+        if (targetBoxes.length === 0) {
+            showToast('Không có thùng nào để cập nhật', 'warning')
+            return
+        }
+
+        setIsSavingBulkEdit(true)
+        try {
+            const w = bulkWeight.trim() ? parseFloat(bulkWeight) : null
+            if (w !== null && (isNaN(w) || w <= 0)) {
+                showToast('Khối lượng nhập vào không hợp lệ', 'warning')
+                setIsSavingBulkEdit(false)
+                return
+            }
+
+            const isStamp = previewGroup.boxes.some(b => b.metadata?.scan_type === 'stamp' || b.code?.startsWith('STAMP-'))
+
+            const updates = targetBoxes.map(b => {
+                const meta = { ...(b.metadata || {}) }
+                if (isStamp) {
+                    meta.scan_type = 'stamp'
+                    if (bulkStampLine1.trim()) meta.stamp_line1 = bulkStampLine1.trim()
+                    if (bulkStampLine2.trim()) meta.stamp_line2 = bulkStampLine2.trim()
+                    // Giải mã lại toàn bộ vùng (tỉnh), nhà máy (tổ), ngày ĐG, ngày NL từ Dòng 2 mới
+                    const decoded = applyStampDecodeToMeta(meta)
+                    Object.assign(meta, decoded)
+                } else {
+                    if (bulkSpec.trim()) meta.spec = bulkSpec.trim()
+                    if (bulkShiftGroup.trim()) meta.shift_group = bulkShiftGroup.trim()
+                    if (bulkProductionDate.trim()) meta.production_date = bulkProductionDate.trim()
+                    if (bulkPackagingDate.trim()) meta.packaging_date = bulkPackagingDate.trim()
+                }
+
+                let finalLot = b.finished_lot_code || b.semi_finished_lot_code
+                if (bulkLotCode.trim()) {
+                    finalLot = bulkLotCode.trim()
+                } else if (isStamp && bulkStampLine2.trim()) {
+                    finalLot = bulkStampLine2.trim()
+                }
+
+                let finalCode = b.code
+                if (bulkRegenerateCode) {
+                    const l1 = meta.stamp_line1 || ''
+                    const l2 = meta.stamp_line2 || ''
+                    const idxStr = String(getBoxIndex(b)).padStart(3, '0')
+                    const cleanStt = (previewGroup.pallet_stt || 'PALLET').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                    if (isStamp) {
+                        const cleanL1 = l1.replace(/[^a-zA-Z0-9]/g, '')
+                        const cleanL2 = l2.replace(/[^a-zA-Z0-9]/g, '')
+                        finalCode = `STAMP-${cleanL1}-${cleanL2}-${cleanStt}-${idxStr}`
+                    } else {
+                        const cleanLot = (finalLot || 'LOT').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                        const cleanSku = (meta.sku || b.products?.sku || 'SKU').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                        finalCode = `BOX-${cleanLot}-${cleanSku}-${cleanStt}-${idxStr}`
+                    }
+                }
+
+                const payload: any = {
+                    metadata: meta,
+                    code: finalCode,
+                    semi_finished_lot_code: finalLot,
+                    finished_lot_code: finalLot
+                }
+                if (w !== null) {
+                    payload.quantity = w
+                }
+
+                return {
+                    id: b.id,
+                    payload
+                }
+            })
+
+            const chunkSize = 15
+            for (let i = 0; i < updates.length; i += chunkSize) {
+                const chunk = updates.slice(i, i + chunkSize)
+                await Promise.all(
+                    chunk.map(item =>
+                        (supabase.from('box_labels') as any).update(item.payload).eq('id', item.id)
+                    )
+                )
+            }
+
+            showToast(`🎉 Đã cập nhật thành công ${targetBoxes.length} thùng!`, 'success')
+            setIsBulkEditOpen(false)
+            setSelectedBoxIds(new Set())
+            await fetchData()
+        } catch (err: any) {
+            showToast('Lỗi cập nhật hàng loạt: ' + err.message, 'error')
+        } finally {
+            setIsSavingBulkEdit(false)
+        }
+    }
+
+    const handleOpenEditPalletInfo = (group: UnlinkedPalletGroup) => {
+        setEditingPalletInfoGroup(group)
+        setEditPalletSTT(group.pallet_stt)
+        setEditPalletTag(group.pallet_tag || '')
+        setEditPalletNotes(group.pallet_notes || '')
+    }
+
+    const handleSavePalletInfo = async () => {
+        if (!editingPalletInfoGroup) return
+        const newStt = editPalletSTT.trim().toUpperCase()
+        if (!newStt) {
+            showToast('Mã STT Pallet không được để trống', 'warning')
+            return
+        }
+
+        setIsSavingPalletInfo(true)
+        try {
+            const cleanTag = editPalletTag.trim() ? editPalletTag.trim().toUpperCase() : null
+            const cleanNotes = editPalletNotes.trim() ? editPalletNotes.trim() : null
+
+            const updates = editingPalletInfoGroup.boxes.map(b => {
+                const meta = { ...(b.metadata || {}) }
+                meta.pallet_stt = newStt
+                meta.tag = cleanTag
+                meta.pallet_notes = cleanNotes
+                meta.notes = cleanNotes
+
+                let code = b.code
+                if (newStt !== editingPalletInfoGroup.pallet_stt) {
+                    const oldSttClean = editingPalletInfoGroup.pallet_stt.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                    const newSttClean = newStt.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                    code = code.replace(`-${oldSttClean}-`, `-${newSttClean}-`)
+                }
+
+                return {
+                    id: b.id,
+                    payload: {
+                        metadata: meta,
+                        code
+                    }
+                }
+            })
+
+            const chunkSize = 15
+            for (let i = 0; i < updates.length; i += chunkSize) {
+                const chunk = updates.slice(i, i + chunkSize)
+                await Promise.all(
+                    chunk.map(item =>
+                        (supabase.from('box_labels') as any).update(item.payload).eq('id', item.id)
+                    )
+                )
+            }
+
+            showToast(`✅ Đã cập nhật thông tin Pallet STT ${newStt}!`, 'success')
+            setEditingPalletInfoGroup(null)
+            await fetchData()
+        } catch (err: any) {
+            showToast('Lỗi cập nhật Pallet: ' + err.message, 'error')
+        } finally {
+            setIsSavingPalletInfo(false)
         }
     }
 
@@ -1492,9 +2105,51 @@ export default function PalletsPageContent() {
     }, [linkedPallets, searchQuery])
 
     const filteredUnlinkedGroups = useMemo(() => {
-        if (!searchQuery.trim()) return unlinkedGroups
-        return unlinkedGroups.filter(g => advancedMatchSearch(g.pallet_stt, searchQuery))
-    }, [unlinkedGroups, searchQuery])
+        let result = unlinkedGroups
+
+        // 1. Lọc theo thời gian quét
+        if (unlinkedDateFilter !== 'all') {
+            const now = new Date()
+            const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+            
+            result = result.filter(g => {
+                const groupTime = new Date(g.created_at).getTime()
+                if (unlinkedDateFilter === 'today') {
+                    return groupTime >= startOfToday
+                }
+                if (unlinkedDateFilter === '3days') {
+                    return groupTime >= startOfToday - 2 * 86400000
+                }
+                if (unlinkedDateFilter === '7days') {
+                    return groupTime >= startOfToday - 6 * 86400000
+                }
+                return true
+            })
+        }
+
+        // 2. Tìm kiếm theo STT, Tag, Ghi chú
+        if (searchQuery.trim()) {
+            result = result.filter(g =>
+                advancedMatchSearch(g.pallet_stt, searchQuery) ||
+                (g.pallet_tag && advancedMatchSearch(g.pallet_tag, searchQuery)) ||
+                (g.pallet_notes && advancedMatchSearch(g.pallet_notes, searchQuery))
+            )
+        }
+
+        return result
+    }, [unlinkedGroups, searchQuery, unlinkedDateFilter])
+
+    // Phân trang danh sách Pallet chưa kết nối (chuẩn theo số lượng Pallet)
+    const totalUnlinkedPages = useMemo(() => {
+        if (unlinkedPageSize <= 0) return 1
+        return Math.max(1, Math.ceil(filteredUnlinkedGroups.length / unlinkedPageSize))
+    }, [filteredUnlinkedGroups.length, unlinkedPageSize])
+
+    const paginatedUnlinkedGroups = useMemo(() => {
+        if (unlinkedPageSize <= 0) return filteredUnlinkedGroups
+        const start = (unlinkedPage - 1) * unlinkedPageSize
+        return filteredUnlinkedGroups.slice(start, start + unlinkedPageSize)
+    }, [filteredUnlinkedGroups, unlinkedPage, unlinkedPageSize])
 
     const filteredBoxes = useMemo(() => {
         if (!selectedPallet) return []
@@ -1524,55 +2179,53 @@ export default function PalletsPageContent() {
     }, [allActiveLots, linkLotSearch])
 
     return (
-        <div className="flex flex-col h-[calc(100vh-4rem)] p-4 md:p-6 bg-stone-50/50 dark:bg-zinc-950 font-sans">
-            {/* ── HEADER ────────────────────────────────────────── */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-stone-200 dark:border-zinc-800">
-                <div>
+        <div className="flex flex-col h-[calc(100vh-4rem)] p-2 md:p-3 bg-stone-50/50 dark:bg-zinc-950 font-sans">
+            {/* ── HEADER (Thu gọn tối đa để nhường diện tích cho danh sách) ──────── */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2 mb-2 border-b border-stone-200 dark:border-zinc-800">
+                <div className="flex items-center gap-2">
+                    <div className="p-1 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                        <Layers size={16} />
+                    </div>
                     <div className="flex items-center gap-2">
-                        <div className="p-2 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl">
-                            <Layers size={22} />
-                        </div>
-                        <div>
-                            <h1 className="text-xl md:text-2xl font-black text-stone-900 dark:text-zinc-100 tracking-tight">
-                                Quản lý Pallet Quét (App Mobile)
-                            </h1>
-                            <p className="text-xs text-stone-500 dark:text-zinc-400">
-                                LOT do Web tạo · Điện thoại quét OCR và tự động kết nối theo STT
-                            </p>
-                        </div>
+                        <h1 className="text-sm md:text-base font-black text-stone-900 dark:text-zinc-100 tracking-tight">
+                            Quản lý Pallet Quét
+                        </h1>
+                        <span className="hidden lg:inline text-[11px] text-stone-400 dark:text-zinc-500">
+                            · Đồng bộ theo STT
+                        </span>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                     {/* Tab Navigation */}
-                    <div className="flex items-center p-1 bg-stone-200/60 dark:bg-zinc-800/80 rounded-xl">
+                    <div className="flex items-center p-0.5 bg-stone-200/60 dark:bg-zinc-800/80 rounded-lg">
                         <button
                             onClick={() => { setActiveTab('linked'); setShowMobileDetail(false); }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
                                 activeTab === 'linked'
                                     ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                                     : 'text-stone-600 dark:text-zinc-400 hover:text-stone-900 dark:hover:text-zinc-100'
                             }`}
                         >
-                            <CheckCircle2 size={14} />
+                            <CheckCircle2 size={13} />
                             <span>Đã kết nối</span>
-                            <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
+                            <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400">
                                 {linkedPallets.length}
                             </span>
                         </button>
 
                         <button
                             onClick={() => { setActiveTab('unlinked'); setShowMobileDetail(false); }}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
                                 activeTab === 'unlinked'
                                     ? 'bg-white dark:bg-zinc-900 text-amber-600 dark:text-amber-400 shadow-xs'
                                     : 'text-stone-600 dark:text-zinc-400 hover:text-stone-900 dark:hover:text-zinc-100'
                             }`}
                         >
-                            <Unlink size={14} />
+                            <Unlink size={13} />
                             <span>Chưa kết nối</span>
                             {unlinkedGroups.length > 0 && (
-                                <span className="ml-1 px-1.5 py-0.5 text-[10px] rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-extrabold animate-pulse">
+                                <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 font-extrabold animate-pulse">
                                     {unlinkedGroups.length}
                                 </span>
                             )}
@@ -1583,9 +2236,9 @@ export default function PalletsPageContent() {
                         onClick={fetchData}
                         disabled={isLoading}
                         title="Tải lại dữ liệu"
-                        className="p-2 text-stone-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-xl hover:bg-stone-50 transition-colors disabled:opacity-50 cursor-pointer"
+                        className="p-1.5 text-stone-600 dark:text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-lg hover:bg-stone-50 transition-colors disabled:opacity-50 cursor-pointer"
                     >
-                        <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+                        <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
                     </button>
                 </div>
             </div>
@@ -1872,58 +2525,127 @@ export default function PalletsPageContent() {
             ) : (
                 /* TAB 2: CHƯA KẾT NỐI (Chờ kết nối LOT) */
                 <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 shadow-xs overflow-hidden">
-                    {/* Toolbar tab Chưa kết nối */}
-                    <div className="p-4 border-b border-stone-100 dark:border-zinc-800 bg-amber-50/40 dark:bg-amber-950/20">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div className="flex items-center gap-2">
-                                <div className="p-2 bg-amber-100 dark:bg-amber-950/60 text-amber-600 dark:text-amber-400 rounded-xl">
-                                    <AlertTriangle size={20} />
-                                </div>
-                                <div>
-                                    <h2 className="text-sm md:text-base font-black text-stone-900 dark:text-zinc-100">
-                                        Danh Sách Thùng / Pallet Chờ Kết Nối Vào LOT
-                                    </h2>
-                                    <p className="text-xs text-stone-500 dark:text-zinc-400">
-                                        Các thùng tem được gửi lên từ điện thoại khi Web mẹ chưa tạo LOT khớp STT. Bạn có thể tự động hoặc ghép thủ công vào bất kỳ LOT nào.
-                                    </p>
-                                </div>
-                            </div>
+                    {/* Toolbar tab Chưa kết nối - Thiết kế siêu gọn gàng trên 1 hàng duy nhất */}
+                    <div className="px-3 py-1.5 border-b border-stone-100 dark:border-zinc-800 bg-amber-50/40 dark:bg-amber-950/20 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <span className="inline-flex items-center gap-1 text-xs font-black text-amber-800 dark:text-amber-300">
+                                <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                                <span>Chờ kết nối ({filteredUnlinkedGroups.length})</span>
+                            </span>
 
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={handleAutoLinkAll}
-                                    disabled={isAutoLinking || unlinkedGroups.filter(g => !!g.matchedLot).length === 0}
-                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
-                                >
-                                    {isAutoLinking ? <Loader2 size={15} className="animate-spin" /> : <Zap size={15} />}
-                                    <span>Tự động kết nối ({unlinkedGroups.filter(g => !!g.matchedLot).length})</span>
-                                </button>
-                            </div>
+                            <button
+                                onClick={handleAutoLinkAll}
+                                disabled={isAutoLinking || unlinkedGroups.filter(g => !!g.matchedLot).length === 0}
+                                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-40"
+                                title="Tự động kết nối tất cả các nhóm đã khớp STT"
+                            >
+                                {isAutoLinking ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
+                                <span>Tự động kết nối ({unlinkedGroups.filter(g => !!g.matchedLot).length})</span>
+                            </button>
                         </div>
 
-                        {/* Search trong tab Chưa kết nối */}
-                        <div className="mt-3 relative">
-                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
-                            <input
-                                type="text"
-                                placeholder="Tìm kiếm theo STT (C544, G588...)..."
-                                value={searchQuery}
-                                onChange={e => setSearchQuery(e.target.value)}
-                                className="w-full pl-9 pr-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs text-stone-800 dark:text-zinc-200 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
-                            />
+                        {/* Date Filter & Search & Chuyển đổi Dạng Lưới / Dạng Danh Sách */}
+                        <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end">
+                            {/* Date Filter Pill Group */}
+                            <div className="flex items-center gap-0.5 bg-stone-100 dark:bg-zinc-800 p-0.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-[11px] shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => { setUnlinkedDateFilter('all'); setUnlinkedPage(1); }}
+                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                        unlinkedDateFilter === 'all'
+                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
+                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
+                                    }`}
+                                >
+                                    Tất cả
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setUnlinkedDateFilter('today'); setUnlinkedPage(1); }}
+                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                        unlinkedDateFilter === 'today'
+                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
+                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
+                                    }`}
+                                >
+                                    Hôm nay
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setUnlinkedDateFilter('3days'); setUnlinkedPage(1); }}
+                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                        unlinkedDateFilter === '3days'
+                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
+                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
+                                    }`}
+                                >
+                                    3 ngày
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => { setUnlinkedDateFilter('7days'); setUnlinkedPage(1); }}
+                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                                        unlinkedDateFilter === '7days'
+                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
+                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
+                                    }`}
+                                >
+                                    7 ngày
+                                </button>
+                            </div>
+
+                            <div className="relative flex-1 min-w-[130px] max-w-[190px]">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" size={13} />
+                                <input
+                                    type="text"
+                                    placeholder="Tìm STT (G56...)..."
+                                    value={searchQuery}
+                                    onChange={e => { setSearchQuery(e.target.value); setUnlinkedPage(1); }}
+                                    className="w-full pl-8 pr-2.5 py-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs text-stone-800 dark:text-zinc-200 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                />
+                            </div>
+                            
+                            <div className="flex items-center gap-0.5 bg-white dark:bg-zinc-800 p-0.5 rounded-lg border border-stone-200 dark:border-zinc-700 shrink-0 shadow-2xs">
+                                <button
+                                    type="button"
+                                    onClick={() => setUnlinkedViewMode('grid')}
+                                    className={`flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded transition-all cursor-pointer ${
+                                        unlinkedViewMode === 'grid'
+                                            ? 'bg-amber-500 text-white shadow-2xs'
+                                            : 'text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-700'
+                                    }`}
+                                    title="Xem dạng thẻ (3 cột - hiển thị nhiều hàng)"
+                                >
+                                    <LayoutGrid size={12} />
+                                    <span>Thẻ</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setUnlinkedViewMode('table')}
+                                    className={`flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded transition-all cursor-pointer ${
+                                        unlinkedViewMode === 'table'
+                                            ? 'bg-amber-500 text-white shadow-2xs'
+                                            : 'text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-700'
+                                    }`}
+                                    title="Xem dạng danh sách hàng ngang (nhiều hàng nhất)"
+                                >
+                                    <List size={12} />
+                                    <span>Bảng</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
 
                     {/* Danh sách Pallet chưa kết nối */}
-                    <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div className="flex-1 overflow-y-auto p-2 md:p-2.5">
                         {isLoading ? (
-                            <div className="flex flex-col items-center justify-center py-20 text-stone-400">
-                                <Loader2 className="animate-spin mb-2" size={26} />
+                            <div className="flex flex-col items-center justify-center py-16 text-stone-400">
+                                <Loader2 className="animate-spin mb-2" size={24} />
                                 <span className="text-xs">Đang tải danh sách chờ kết nối...</span>
                             </div>
                         ) : filteredUnlinkedGroups.length === 0 ? (
-                            <div className="text-center py-20 px-4">
-                                <CheckCircle2 className="mx-auto text-emerald-500 mb-3" size={42} />
+                            <div className="text-center py-16 px-4">
+                                <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={36} />
                                 <p className="text-sm font-bold text-stone-800 dark:text-zinc-200">
                                     Tuyệt vời! Không có Pallet nào đang chờ kết nối
                                 </p>
@@ -1931,195 +2653,333 @@ export default function PalletsPageContent() {
                                     Mọi đợt quét từ điện thoại đều đã được ghép đúng vào các LOT hàng trên Web mẹ.
                                 </p>
                             </div>
+                        ) : unlinkedViewMode === 'table' ? (
+                            /* DẠNG BẢNG DANH SÁCH HÀNG NGANG: Hiển thị 12-15 hàng rõ ràng */
+                            <div className="border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs">
+                                <table className="w-full text-left text-xs border-collapse">
+                                    <thead className="bg-stone-50 dark:bg-zinc-800/70 border-b border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 text-[11px] uppercase font-bold">
+                                        <tr>
+                                            <th className="py-2 px-3">STT</th>
+                                            <th className="py-2 px-3">Số lượng & Khối lượng</th>
+                                            <th className="py-2 px-3">Ghi chú / Thẻ</th>
+                                            <th className="py-2 px-3">Trạng thái</th>
+                                            <th className="py-2 px-3 text-right">Thao tác</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                        {paginatedUnlinkedGroups.map((group) => {
+                                            const hasMatch = !!group.matchedLot
+                                            return (
+                                                <tr key={group.pallet_stt} className="hover:bg-amber-50/30 dark:hover:bg-zinc-800/40 transition-colors">
+                                                    <td className="py-1.5 px-3 font-mono font-black text-stone-900 dark:text-zinc-100">
+                                                        <span className="px-1.5 py-0.5 rounded bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs shadow-2xs">
+                                                            {group.pallet_stt}
+                                                        </span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3">
+                                                        <span className="font-bold text-stone-700 dark:text-zinc-300">{group.boxes.length} thùng</span>
+                                                        <span className="mx-1.5 text-stone-300 dark:text-zinc-600">·</span>
+                                                        <span className="font-black text-emerald-600 dark:text-emerald-400">{group.total_weight.toFixed(1)} Kg</span>
+                                                    </td>
+                                                    <td className="py-1.5 px-3">
+                                                        {group.pallet_tag && (
+                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-700 dark:text-orange-400 bg-orange-100/70 dark:bg-orange-950/40 px-1.5 py-0.2 rounded border border-orange-200 dark:border-orange-800 mr-1.5">
+                                                                <Tag size={10} /> {group.pallet_tag}
+                                                            </span>
+                                                        )}
+                                                        {group.pallet_notes ? (
+                                                            <span className="text-[11px] text-stone-600 dark:text-zinc-400 font-medium">
+                                                                📝 {group.pallet_notes}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-stone-300 dark:text-zinc-600 text-[11px]">---</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-1.5 px-3">
+                                                        {group.isConflict ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
+                                                                <AlertTriangle size={11} /> Trùng STT: {group.matchedLot!.code}
+                                                            </span>
+                                                        ) : hasMatch ? (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+                                                                <Check size={11} /> Khớp LOT: {group.matchedLot!.code}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                                <Clock size={11} /> Chờ duyệt LOT
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="py-1.5 px-3 text-right">
+                                                        <div className="inline-flex items-center gap-1">
+                                                            {group.isConflict ? (
+                                                                <>
+                                                                    <button
+                                                                        onClick={() => handleUpdateConflictLot(group, group.matchedLot!.id)}
+                                                                        disabled={isLinking}
+                                                                        className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold transition-all cursor-pointer"
+                                                                    >
+                                                                        Gộp
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleOpenApproveModal(group)}
+                                                                        className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold transition-all cursor-pointer"
+                                                                    >
+                                                                        Tách
+                                                                    </button>
+                                                                </>
+                                                            ) : hasMatch ? (
+                                                                <button
+                                                                    onClick={() => handleLinkGroupToLot(group, group.matchedLot!.id)}
+                                                                    disabled={isLinking}
+                                                                    className="px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                                                >
+                                                                    <Check size={11} />
+                                                                    <span>Ghép {group.matchedLot!.code}</span>
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    onClick={() => handleOpenApproveModal(group)}
+                                                                    className="px-2.5 py-0.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
+                                                                >
+                                                                    <Sparkles size={11} />
+                                                                    <span>⚡ Duyệt Tạo LOT</span>
+                                                                </button>
+                                                            )}
+
+                                                            <button
+                                                                onClick={() => {
+                                                                    setSelectedBoxIds(new Set())
+                                                                    setPreviewGroup(group)
+                                                                }}
+                                                                className="p-1 text-stone-500 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded cursor-pointer"
+                                                                title="Xem chi tiết các thùng"
+                                                            >
+                                                                <Eye size={12} />
+                            								</button>
+
+                                                            <button
+                                                                onClick={() => {
+                                                                    setGroupToLink(group)
+                                                                    setLinkLotSearch('')
+                                                                    setSelectedLotForLink(group.matchedLot?.id || null)
+                                                                }}
+                                                                className="p-1 text-stone-500 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded cursor-pointer"
+                                                                title="Ghép thủ công vào LOT khác"
+                                                            >
+                                                                <Link2 size={12} />
+                                                            </button>
+
+                                                            <button
+                                                                onClick={() => handleDeleteUnlinkedGroup(group)}
+                                                                className="p-1 text-stone-400 hover:text-rose-600 rounded cursor-pointer"
+                                                                title="Xóa đợt này"
+                                                            >
+                                                                <Trash2 size={12} />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                                {filteredUnlinkedGroups.map(group => {
+                            /* DẠNG THẺ SIÊU GỌN: 3 cột, mỗi thẻ chỉ cao ~70px -> Hiển thị trọn vẹn 3-5 hàng (9-15 LOT) cùng lúc mà không cần cuộn chuột */
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                                {paginatedUnlinkedGroups.map(group => {
                                     const hasMatch = !!group.matchedLot
                                     return (
                                         <div
                                             key={group.pallet_stt}
-                                            className={`p-4 rounded-2xl border transition-all ${
+                                            className={`p-2 rounded-xl border transition-all flex flex-col justify-between shadow-2xs hover:shadow-xs ${
                                                 hasMatch
                                                     ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
-                                                    : 'bg-stone-50/60 dark:bg-zinc-800/40 border-stone-200 dark:border-zinc-700'
+                                                    : 'bg-white dark:bg-zinc-800/70 border-stone-200 dark:border-zinc-700'
                                             }`}
                                         >
-                                            <div className="flex items-center justify-between mb-2">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="font-mono font-black text-sm text-stone-900 dark:text-zinc-100 bg-white dark:bg-zinc-800 px-2.5 py-1 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-2xs">
+                                            {/* Dòng 1: STT, Số thùng, Khối lượng, Ghi chú + Cụm nút thao tác */}
+                                            <div className="flex items-center justify-between gap-1 mb-1.5">
+                                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                                                    <span className="font-mono font-black text-xs text-stone-900 dark:text-zinc-100 bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded border border-stone-200 dark:border-zinc-600 shadow-2xs shrink-0">
                                                         STT: {group.pallet_stt}
                                                     </span>
-                                                    {group.pallet_tag ? (
-                                                        <span className="text-[11px] font-bold text-orange-700 dark:text-orange-400 bg-orange-100/80 dark:bg-orange-950/50 px-2 py-0.5 rounded-lg border border-orange-200 dark:border-orange-800 flex items-center gap-1">
-                                                            <Tag size={11} /> {group.pallet_tag}
+                                                    <span className="text-[11px] font-bold text-stone-600 dark:text-zinc-300 shrink-0">
+                                                        {group.boxes.length} th
+                                                    </span>
+                                                    <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 shrink-0">
+                                                        {group.total_weight.toFixed(1)} Kg
+                                                    </span>
+                                                    {group.pallet_tag && (
+                                                        <span className="text-[9px] font-bold text-orange-700 dark:text-orange-400 bg-orange-100/90 dark:bg-orange-950/60 px-1 py-0.2 rounded border border-orange-200 dark:border-orange-800 shrink-0">
+                                                            {group.pallet_tag}
                                                         </span>
-                                                    ) : null}
-                                                    {group.pallet_notes ? (
-                                                        <span className="text-[11px] font-bold text-blue-700 dark:text-blue-400 bg-blue-100/80 dark:bg-blue-950/50 px-2 py-0.5 rounded-lg border border-blue-200 dark:border-blue-800 flex items-center gap-1 max-w-[180px] truncate" title={group.pallet_notes}>
+                                                    )}
+                                                    {group.pallet_notes && (
+                                                        <span className="text-[9px] font-bold text-blue-700 dark:text-blue-400 bg-blue-100/90 dark:bg-blue-950/60 px-1 py-0.2 rounded border border-blue-200 dark:border-blue-800 max-w-[80px] truncate shrink-0" title={group.pallet_notes}>
                                                             📝 {group.pallet_notes}
                                                         </span>
-                                                    ) : null}
-                                                    <span className="text-xs font-bold text-stone-600 dark:text-zinc-400">
-                                                        {group.boxes.length} thùng
-                                                    </span>
+                                                    )}
                                                 </div>
 
-                                                <span className="text-xs font-black text-emerald-600 dark:text-emerald-400">
-                                                    {group.total_weight.toFixed(1)} Kg
-                                                </span>
-                                            </div>
-
-                                            {/* Gợi ý nếu đã có LOT khớp STT */}
-                                            {group.isConflict ? (
-                                                <div className="p-3 bg-amber-500/10 dark:bg-amber-950/40 rounded-xl border-2 border-amber-500/40 dark:border-amber-700/60 mb-3 text-xs space-y-2">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-extrabold text-xs">
-                                                            <AlertTriangle size={15} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                                                            <span>⚠️ TRÙNG STT VỚI LOT ĐÃ CÓ</span>
-                                                        </div>
-                                                        <span className="text-[10px] bg-amber-200 dark:bg-amber-900 text-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full font-black">
-                                                            Cần quyết định
-                                                        </span>
-                                                    </div>
-                                                    
-                                                    <div className="bg-white/80 dark:bg-zinc-900/80 p-2 rounded-lg border border-amber-200 dark:border-amber-900 text-[11px] space-y-1">
-                                                        <p className="text-stone-700 dark:text-zinc-300">
-                                                            📦 <strong className="text-stone-900 dark:text-zinc-100">LOT hiện tại:</strong>{' '}
-                                                            <span className="font-mono font-bold text-amber-700 dark:text-amber-400">{group.matchedLot!.code}</span>{' '}
-                                                            ({group.matchedLot!.existingBoxesCount} thùng · {group.matchedLot!.existingTotalWeight?.toFixed(1)} Kg)
-                                                            {group.matchedLot!.product_name ? ` · ${group.matchedLot!.product_name}` : ''}
-                                                        </p>
-                                                        <p className="text-stone-700 dark:text-zinc-300">
-                                                            📲 <strong className="text-stone-900 dark:text-zinc-100">Đợt quét mới:</strong>{' '}
-                                                            <span className="font-bold text-emerald-600 dark:text-emerald-400">{group.boxes.length} thùng</span> ({group.total_weight.toFixed(1)} Kg)
-                                                        </p>
-                                                    </div>
-
-                                                    <p className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 pt-0.5">
-                                                        Chọn hướng xử lý cho đợt quét mới này:
-                                                    </p>
-
-                                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5 pt-1">
-                                                        <button
-                                                            onClick={() => handleUpdateConflictLot(group, group.matchedLot!.id)}
-                                                            disabled={isLinking}
-                                                            className="flex items-center justify-center gap-1 px-2 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] shadow-xs cursor-pointer disabled:opacity-50 transition-all text-center"
-                                                            title="Cập nhật thay thế danh sách thùng cũ của LOT bằng đợt quét mới"
-                                                        >
-                                                            <RefreshCw size={12} />
-                                                            <span>Cập nhật LOT</span>
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() => handleOpenApproveModal(group)}
-                                                            className="flex items-center justify-center gap-1 px-2 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-[11px] shadow-xs cursor-pointer transition-all text-center"
-                                                            title="Duyệt đợt quét này thành một LOT mới riêng biệt, giữ nguyên LOT cũ"
-                                                        >
-                                                            <Sparkles size={12} />
-                                                            <span>Tách LOT mới</span>
-                                                        </button>
-
-                                                        <button
-                                                            onClick={() => handleDeleteUnlinkedGroup(group)}
-                                                            className="flex items-center justify-center gap-1 px-2 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold text-[11px] shadow-xs cursor-pointer transition-all text-center"
-                                                            title="Hủy bỏ các thùng mới vừa đẩy lên nhầm, giữ nguyên LOT cũ"
-                                                        >
-                                                            <Trash2 size={12} />
-                                                            <span>Hủy đợt mới</span>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : hasMatch ? (
-                                                <div className="p-2.5 bg-emerald-100/70 dark:bg-emerald-950/60 rounded-xl border border-emerald-200/80 dark:border-emerald-800/60 mb-3 text-xs">
-                                                    <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300 font-bold mb-1">
-                                                        <Zap size={14} className="fill-emerald-600 text-emerald-600" />
-                                                        <span>Phát hiện LOT khớp trên Web!</span>
-                                                    </div>
-                                                    <p className="text-[11px] text-emerald-700 dark:text-emerald-400">
-                                                        LOT: <strong className="font-mono">{group.matchedLot!.code}</strong> {group.matchedLot!.product_name ? `(${group.matchedLot!.product_name})` : ''}
-                                                    </p>
+                                                {/* Cụm icon phụ: xem thùng, ghép LOT, xóa */}
+                                                <div className="flex items-center gap-0.5 shrink-0">
                                                     <button
-                                                        onClick={() => handleLinkGroupToLot(group, group.matchedLot!.id)}
-                                                        disabled={isLinking}
-                                                        className="mt-2 w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer disabled:opacity-50"
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setSelectedBoxIds(new Set())
+                                                            setPreviewGroup(group)
+                                                        }}
+                                                        className="p-1 text-stone-500 hover:text-stone-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded transition-colors cursor-pointer"
+                                                        title={`Xem chi tiết ${group.boxes.length} thùng`}
                                                     >
-                                                        <Check size={14} />
-                                                        <span>Ghép ngay vào LOT {group.matchedLot!.code}</span>
+                                                        <Eye size={12} />
                                                     </button>
-                                                </div>
-                                            ) : (
-                                                <div className="p-3 bg-indigo-50/70 dark:bg-indigo-950/40 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 mb-3 text-xs space-y-2">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="flex items-center gap-1.5 text-indigo-900 dark:text-indigo-300 font-bold">
-                                                            <Zap size={14} className="fill-indigo-600 text-indigo-600 dark:fill-indigo-400 dark:text-indigo-400" />
-                                                            <span>Chưa có LOT "{group.pallet_stt}"</span>
-                                                        </div>
-                                                        <span className="text-[10px] bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 px-2 py-0.5 rounded-full font-bold">
-                                                            Chờ duyệt LOT
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-[11px] text-indigo-700 dark:text-indigo-300">
-                                                        Kế thừa thông tin con dấu & tự động kết nối {group.boxes.length} thùng này ngay lập tức.
-                                                    </p>
                                                     <button
-                                                        onClick={() => handleOpenApproveModal(group)}
-                                                        className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs shadow-xs cursor-pointer transition-all"
-                                                    >
-                                                        <Sparkles size={14} />
-                                                        <span>⚡ Duyệt Tạo LOT Ngay</span>
-                                                    </button>
-                                                </div>
-                                            )}
-
-                                            {/* Actions */}
-                                            <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-200/60 dark:border-zinc-700/60 text-xs">
-                                                <div className="flex items-center gap-1.5">
-                                                    <button
-                                                        onClick={() => setPreviewGroup(group)}
-                                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 text-stone-800 dark:text-zinc-200 border border-stone-200 dark:border-zinc-700 rounded-lg font-bold transition-colors cursor-pointer"
-                                                    >
-                                                        <Eye size={13} />
-                                                        <span>Xem {group.boxes.length} thùng</span>
-                                                    </button>
-
-                                                    <button
+                                                        type="button"
                                                         onClick={() => {
                                                             setGroupToLink(group)
                                                             setLinkLotSearch('')
                                                             setSelectedLotForLink(group.matchedLot?.id || null)
                                                         }}
-                                                        className="flex items-center gap-1 px-2.5 py-1.5 bg-stone-200/80 hover:bg-stone-300 dark:bg-zinc-700 dark:hover:bg-zinc-600 text-stone-800 dark:text-zinc-200 rounded-lg font-bold transition-colors cursor-pointer"
+                                                        className="p-1 text-stone-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded transition-colors cursor-pointer"
+                                                        title="Ghép thủ công vào LOT khác"
                                                     >
-                                                        <Link2 size={13} />
-                                                        <span>Ghép LOT</span>
+                                                        <Link2 size={12} />
                                                     </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleDeleteUnlinkedGroup(group)}
+                                                        className="p-1 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded transition-colors cursor-pointer"
+                                                        title="Xóa đợt quét này"
+                                                    >
+                                                        <Trash2 size={12} />
+                                                    </button>
+                                                </div>
+                                            </div>
 
-                                                    {hasMatch && (
+                                            {/* Dòng 2: Nút hành động chính */}
+                                            {group.isConflict ? (
+                                                <div className="flex items-center justify-between gap-1 p-1 bg-amber-500/10 dark:bg-amber-950/40 rounded border border-amber-500/30 text-[10px]">
+                                                    <span className="font-bold text-amber-800 dark:text-amber-300 truncate max-w-[120px]" title={`Trùng STT: ${group.matchedLot!.code}`}>
+                                                        ⚠️ Trùng: {group.matchedLot!.code}
+                                                    </span>
+                                                    <div className="flex items-center gap-1">
+                                                        <button
+                                                            onClick={() => handleUpdateConflictLot(group, group.matchedLot!.id)}
+                                                            disabled={isLinking}
+                                                            className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold cursor-pointer"
+                                                            title="Gộp / Cập nhật vào LOT"
+                                                        >
+                                                            Gộp
+                                                        </button>
                                                         <button
                                                             onClick={() => handleOpenApproveModal(group)}
-                                                            className="flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg font-bold transition-colors cursor-pointer"
-                                                            title="Duyệt tạo LOT mới riêng cho Pallet này"
+                                                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold cursor-pointer"
+                                                            title="Tách LOT mới riêng"
                                                         >
-                                                            <Sparkles size={13} />
-                                                            <span>Tạo LOT mới</span>
+                                                            Tách
                                                         </button>
-                                                    )}
+                                                    </div>
                                                 </div>
-
+                                            ) : hasMatch ? (
                                                 <button
-                                                    onClick={() => handleDeleteUnlinkedGroup(group)}
-                                                    title="Xóa đợt quét này"
-                                                    className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 cursor-pointer"
+                                                    onClick={() => handleLinkGroupToLot(group, group.matchedLot!.id)}
+                                                    disabled={isLinking}
+                                                    className="w-full flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-2xs transition-all cursor-pointer active:scale-98"
                                                 >
-                                                    <Trash2 size={15} />
+                                                    <Check size={12} />
+                                                    <span className="truncate">Ghép vào LOT {group.matchedLot!.code}</span>
                                                 </button>
-                                            </div>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleOpenApproveModal(group)}
+                                                    className="w-full flex items-center justify-center gap-1 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-lg font-bold text-xs shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-98"
+                                                >
+                                                    <Sparkles size={12} />
+                                                    <span>⚡ Duyệt Tạo LOT Ngay</span>
+                                                </button>
+                                            )}
                                         </div>
                                     )
                                 })}
                             </div>
                         )}
                     </div>
+
+                    {/* Thanh Phân Trang Cố Định (Pagination Bar) */}
+                    {filteredUnlinkedGroups.length > 0 && (
+                        <div className="px-3 py-1.5 border-t border-stone-200 dark:border-zinc-800 bg-stone-50/90 dark:bg-zinc-900/90 flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="flex items-center gap-2 text-stone-500 dark:text-zinc-400">
+                                <span>
+                                    Hiển thị <strong>{(unlinkedPage - 1) * unlinkedPageSize + 1} - {Math.min(unlinkedPage * unlinkedPageSize, filteredUnlinkedGroups.length)}</strong> trong <strong>{filteredUnlinkedGroups.length}</strong> Pallet
+                                </span>
+                                
+                                <select
+                                    value={unlinkedPageSize}
+                                    onChange={e => {
+                                        setUnlinkedPageSize(Number(e.target.value))
+                                        setUnlinkedPage(1)
+                                    }}
+                                    className="px-1.5 py-0.5 rounded border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] font-bold text-stone-700 dark:text-zinc-300"
+                                >
+                                    <option value={18}>18 Pallet / trang (6 hàng)</option>
+                                    <option value={30}>30 Pallet / trang (10 hàng)</option>
+                                    <option value={60}>60 Pallet / trang</option>
+                                    <option value={9999}>Xem tất cả</option>
+                                </select>
+                            </div>
+
+                            {totalUnlinkedPages > 1 && (
+                                <div className="flex items-center gap-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setUnlinkedPage(p => Math.max(1, p - 1))}
+                                        disabled={unlinkedPage <= 1}
+                                        className="px-2 py-0.5 rounded border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-stone-700 dark:text-zinc-300 hover:bg-stone-100 disabled:opacity-40 cursor-pointer transition-colors"
+                                    >
+                                        ← Trước
+                                    </button>
+
+                                    <div className="flex items-center gap-0.5">
+                                        {Array.from({ length: totalUnlinkedPages }, (_, i) => i + 1)
+                                            .filter(page => page === 1 || page === totalUnlinkedPages || Math.abs(page - unlinkedPage) <= 1)
+                                            .map((page, idx, arr) => {
+                                                const prevPage = arr[idx - 1]
+                                                return (
+                                                    <span key={page} className="flex items-center">
+                                                        {prevPage && page - prevPage > 1 && (
+                                                            <span className="px-1 text-stone-400">...</span>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setUnlinkedPage(page)}
+                                                            className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs cursor-pointer transition-all ${
+                                                                unlinkedPage === page
+                                                                    ? 'bg-amber-500 text-white shadow-2xs'
+                                                                    : 'text-stone-600 dark:text-zinc-400 hover:bg-stone-200 dark:hover:bg-zinc-800'
+                                                            }`}
+                                                        >
+                                                            {page}
+                                                        </button>
+                                                    </span>
+                                                )
+                                            })}
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setUnlinkedPage(p => Math.min(totalUnlinkedPages, p + 1))}
+                                        disabled={unlinkedPage >= totalUnlinkedPages}
+                                        className="px-2 py-0.5 rounded border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-stone-700 dark:text-zinc-300 hover:bg-stone-100 disabled:opacity-40 cursor-pointer transition-colors"
+                                    >
+                                        Sau →
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -2226,12 +3086,13 @@ export default function PalletsPageContent() {
             {/* ── MODAL XEM CHI TIẾT CÁC THÙNG QUÉT (CHƯA KẾT NỐI) ─ */}
             {previewGroup && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-3xl p-5 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[90vh]">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-4xl p-5 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[92vh]">
+                        {/* Header */}
                         <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800">
                             <div>
                                 <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2 flex-wrap">
                                     <span>Thông Tin Quét STT:</span>
-                                    <span className="font-mono text-emerald-600 bg-emerald-100 dark:bg-emerald-950 px-2 py-0.5 rounded-lg">
+                                    <span className="font-mono text-emerald-600 bg-emerald-100 dark:bg-emerald-950 px-2.5 py-0.5 rounded-lg text-sm">
                                         {previewGroup.pallet_stt}
                                     </span>
                                     {previewGroup.pallet_tag ? (
@@ -2244,36 +3105,130 @@ export default function PalletsPageContent() {
                                             📝 {previewGroup.pallet_notes}
                                         </span>
                                     ) : null}
+                                    <button
+                                        onClick={() => handleOpenEditPalletInfo(previewGroup)}
+                                        title="Sửa STT / Mã phụ (Tag) / Ghi chú Pallet"
+                                        className="p-1 text-stone-400 hover:text-emerald-600 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-md transition-colors cursor-pointer"
+                                    >
+                                        <Edit3 size={14} />
+                                    </button>
                                 </h3>
-                                <p className="text-xs text-stone-500">
+                                <p className="text-xs text-stone-500 mt-0.5">
                                     Đã quét {previewGroup.boxes.length} thùng · Tổng trọng lượng: {previewGroup.total_weight.toFixed(1)} Kg
                                 </p>
                             </div>
-                            <button
-                                onClick={() => setPreviewGroup(null)}
-                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200"
-                            >
-                                <X size={18} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleOpenBulkEdit(previewGroup)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                                >
+                                    <Sliders size={14} />
+                                    <span>Sửa Hàng Loạt {selectedBoxIds.size > 0 ? `(${selectedBoxIds.size} thùng)` : `(${previewGroup.boxes.length} thùng)`}</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setPreviewGroup(null)
+                                        setSelectedBoxIds(new Set())
+                                    }}
+                                    className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Thanh công cụ lựa chọn thùng */}
+                        <div className="flex items-center justify-between px-3 py-2 bg-stone-50 dark:bg-zinc-800/60 rounded-xl border border-stone-200/80 dark:border-zinc-700/60 text-xs my-2">
+                            <div className="flex items-center gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer select-none font-semibold text-stone-700 dark:text-zinc-300">
+                                    <input
+                                        type="checkbox"
+                                        checked={previewGroup.boxes.length > 0 && selectedBoxIds.size === previewGroup.boxes.length}
+                                        onChange={e => {
+                                            if (e.target.checked) {
+                                                setSelectedBoxIds(new Set(previewGroup.boxes.map(b => b.id)))
+                                            } else {
+                                                setSelectedBoxIds(new Set())
+                                            }
+                                        }}
+                                        className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                    />
+                                    <span>Chọn tất cả ({previewGroup.boxes.length} thùng)</span>
+                                </label>
+                                {selectedBoxIds.size > 0 && (
+                                    <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-950/70 px-2 py-0.5 rounded-md">
+                                        Đã chọn: {selectedBoxIds.size} / {previewGroup.boxes.length}
+                                    </span>
+                                )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {selectedBoxIds.size > 0 && (
+                                    <button
+                                        onClick={() => setSelectedBoxIds(new Set())}
+                                        className="text-[11px] text-stone-500 hover:text-stone-700 dark:hover:text-zinc-300 underline cursor-pointer"
+                                    >
+                                        Bỏ chọn
+                                    </button>
+                                )}
+                                <span className="text-[11px] text-stone-400 hidden sm:inline">
+                                    💡 Sửa lẻ bằng nút ✏️ trên thẻ thùng, hoặc bấm &quot;Sửa Hàng Loạt&quot; để sửa chung.
+                                </span>
+                            </div>
                         </div>
 
                         {/* Danh sách thẻ thùng chi tiết */}
-                        <div className="flex-1 overflow-y-auto p-2 my-2 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                        <div className="flex-1 overflow-y-auto p-2 my-1 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
                             {previewGroup.boxes.map(box => {
                                 const idx = getBoxIndex(box)
                                 const meta = box.metadata || {}
+                                const isSelected = selectedBoxIds.has(box.id)
                                 return (
                                     <div
                                         key={box.id}
-                                        className="p-2.5 bg-stone-50 dark:bg-zinc-800/50 rounded-xl border border-stone-200 dark:border-zinc-700 text-xs"
+                                        className={`p-2.5 rounded-xl border text-xs transition-all relative ${
+                                            isSelected 
+                                                ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-400 dark:border-emerald-700 ring-2 ring-emerald-500/20' 
+                                                : 'bg-stone-50 dark:bg-zinc-800/50 border-stone-200 dark:border-zinc-700'
+                                        }`}
                                     >
                                         <div className="flex items-center justify-between mb-1.5">
-                                            <span className="font-black text-xs bg-emerald-600 text-white w-6 h-6 flex items-center justify-center rounded-md">
-                                                #{idx}
-                                            </span>
-                                            <span className="font-black text-emerald-600 dark:text-emerald-400">
-                                                {Number(box.quantity).toFixed(1)} {box.unit}
-                                            </span>
+                                            <div className="flex items-center gap-1.5">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isSelected}
+                                                    onChange={() => {
+                                                        setSelectedBoxIds(prev => {
+                                                            const next = new Set(prev)
+                                                            if (next.has(box.id)) next.delete(box.id)
+                                                            else next.add(box.id)
+                                                            return next
+                                                        })
+                                                    }}
+                                                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                                />
+                                                <span className="font-black text-xs bg-emerald-600 text-white w-6 h-6 flex items-center justify-center rounded-md">
+                                                    #{idx}
+                                                </span>
+                                                <span className="font-black text-emerald-600 dark:text-emerald-400">
+                                                    {Number(box.quantity).toFixed(1)} {box.unit}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleOpenEditBox(box)}
+                                                    title="Sửa thông tin thùng này"
+                                                    className="p-1 text-stone-400 hover:text-emerald-600 rounded-md hover:bg-white dark:hover:bg-zinc-700 cursor-pointer transition-colors"
+                                                >
+                                                    <Edit3 size={14} />
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteSingleBox(box)}
+                                                    title="Xóa thùng này khỏi đợt quét"
+                                                    className="p-1 text-stone-400 hover:text-rose-600 rounded-md hover:bg-white dark:hover:bg-zinc-700 cursor-pointer transition-colors"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
                                         </div>
                                         <p className="font-mono font-bold text-[11px] text-stone-800 dark:text-zinc-200 truncate mb-1" title={box.code}>
                                             {box.code}
@@ -2297,69 +3252,228 @@ export default function PalletsPageContent() {
                             })}
                         </div>
 
+                        {/* Modal Footer */}
                         <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-zinc-800">
                             <span className="text-xs text-stone-400">
-                                Dữ liệu quét OCR lưu trên hệ thống, không làm thay đổi thông tin của LOT Web mẹ.
+                                Dữ liệu quét lưu trên hệ thống, có thể sửa đổi và đồng bộ trước khi duyệt tạo hoặc ghép vào LOT.
                             </span>
-                            <button
-                                onClick={() => setPreviewGroup(null)}
-                                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-bold rounded-xl"
-                            >
-                                Đóng
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleOpenBulkEdit(previewGroup)}
+                                    className="flex items-center gap-1.5 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs"
+                                >
+                                    <Sliders size={14} />
+                                    <span>Sửa Hàng Loạt</span>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        setPreviewGroup(null)
+                                        setSelectedBoxIds(new Set())
+                                    }}
+                                    className="px-4 py-2 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-xs font-bold rounded-xl cursor-pointer"
+                                >
+                                    Đóng
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
             )}
 
-            {/* ── MODAL SỬA THÔNG TIN THÙNG ─────────────────────── */}
+            {/* ── MODAL SỬA THÔNG TIN THÙNG (SỬA 1 THÙNG) ──────── */}
             {editingBox && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-stone-200 dark:border-zinc-800">
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-lg p-6 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[90vh]">
                         <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800">
-                            <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100">
-                                Sửa Thùng #{getBoxIndex(editingBox)}
-                            </h3>
+                            <div>
+                                <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2">
+                                    <span>Sửa Thùng #{getBoxIndex(editingBox)}</span>
+                                    <span className="text-xs px-2 py-0.5 rounded-md font-mono bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-zinc-400 truncate max-w-[200px]" title={editingBox.code}>
+                                        {editingBox.code}
+                                    </span>
+                                </h3>
+                                <p className="text-xs text-stone-400">
+                                    Điều chỉnh các chỉ số bị lệch do hình ảnh chụp mờ hoặc sai OCR
+                                </p>
+                            </div>
                             <button
                                 onClick={() => setEditingBox(null)}
-                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200"
+                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 cursor-pointer"
                             >
                                 <X size={18} />
                             </button>
                         </div>
 
-                        <div className="space-y-4 my-4">
-                            <div>
-                                <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                    Mã Thùng:
-                                </label>
-                                <p className="font-mono text-xs text-stone-800 dark:text-zinc-200 bg-stone-100 dark:bg-zinc-800 p-2.5 rounded-lg">
-                                    {editingBox.code}
-                                </p>
+                        <div className="space-y-4 my-4 overflow-y-auto pr-1">
+                            {/* Dành cho thùng đóng dấu mực */}
+                            {(editingBox.metadata?.scan_type === 'stamp' || editingBox.code?.startsWith('STAMP-') || editStampLine1 || editStampLine2) ? (
+                                <div className="space-y-3 p-3.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-xl border border-amber-200/80 dark:border-amber-800/60">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-black text-xs text-amber-800 dark:text-amber-300 flex items-center gap-1">
+                                            📦 THÔNG TIN CON DẤU MỰC
+                                        </span>
+                                        <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                                            Khớp với ảnh chụp thực tế
+                                        </span>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                            Dòng 1 (Mã quy cách / SKU sản phẩm):
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={editStampLine1}
+                                            onChange={e => setEditStampLine1(e.target.value)}
+                                            placeholder="VD: 102010402001-0"
+                                            className="w-full px-3 py-2 font-mono bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                            Dòng 2 (Mã ngày &amp; Barcode 16 số):
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={editStampLine2}
+                                            onChange={e => {
+                                                setEditStampLine2(e.target.value)
+                                                if (!editLotCode || editLotCode === editStampLine2) {
+                                                    setEditLotCode(e.target.value)
+                                                }
+                                            }}
+                                            placeholder="VD: 2231015102600066"
+                                            className="w-full px-3 py-2 font-mono bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+
+                                    {previewGroup && previewGroup.boxes.length > 1 && (
+                                        <label className="flex items-center gap-2 p-2 bg-amber-100/70 dark:bg-amber-900/40 rounded-lg text-xs font-bold text-amber-900 dark:text-amber-200 cursor-pointer select-none border border-amber-300/80 dark:border-amber-700/60">
+                                            <input
+                                                type="checkbox"
+                                                checked={editApplyToAllInPallet}
+                                                onChange={e => setEditApplyToAllInPallet(e.target.checked)}
+                                                className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                                            />
+                                            <span>Đồng bộ Dòng 1 &amp; Dòng 2 cho toàn bộ {previewGroup.boxes.length} thùng của Pallet {previewGroup.pallet_stt}</span>
+                                        </label>
+                                    )}
+                                </div>
+                            ) : (
+                                /* Dành cho tem nhãn in OCR */
+                                <div className="space-y-3 p-3.5 bg-blue-50/70 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60">
+                                    <span className="font-black text-xs text-blue-800 dark:text-blue-300 block">
+                                        🏷️ THÔNG TIN TEM NHÃN OCR
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Quy cách:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editSpec}
+                                                onChange={e => setEditSpec(e.target.value)}
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Tổ / Ca:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editShiftGroup}
+                                                onChange={e => setEditShiftGroup(e.target.value)}
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Ngày sản xuất:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editProductionDate}
+                                                onChange={e => setEditProductionDate(e.target.value)}
+                                                placeholder="DD/MM/YYYY"
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Ngày đóng gói:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={editPackagingDate}
+                                                onChange={e => setEditPackagingDate(e.target.value)}
+                                                placeholder="DD/MM/YYYY"
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                                        Khối lượng ({editingBox.unit}):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        value={editWeight}
+                                        onChange={e => setEditWeight(e.target.value)}
+                                        className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                                        Mã LOT:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={editLotCode}
+                                        onChange={e => setEditLotCode(e.target.value)}
+                                        className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                </div>
                             </div>
 
                             <div>
-                                <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                    Khối lượng ({editingBox.unit}):
-                                </label>
-                                <input
-                                    type="number"
-                                    step="0.1"
-                                    value={editWeight}
-                                    onChange={e => setEditWeight(e.target.value)}
-                                    className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                />
-                            </div>
-
-                            <div>
-                                <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                    Mã LOT:
-                                </label>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-xs font-bold text-stone-600 dark:text-zinc-400">
+                                        Mã Barcode Thùng (Code):
+                                    </label>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const idxStr = String(getBoxIndex(editingBox)).padStart(3, '0')
+                                            const stt = (editingBox.metadata?.pallet_stt || 'PALLET').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                                            if (editStampLine1 || editStampLine2) {
+                                                const l1 = editStampLine1.replace(/[^a-zA-Z0-9]/g, '')
+                                                const l2 = editStampLine2.replace(/[^a-zA-Z0-9]/g, '')
+                                                setEditBoxCode(`STAMP-${l1}-${l2}-${stt}-${idxStr}`)
+                                            } else {
+                                                const lot = (editLotCode || 'LOT').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                                                const sku = (editingBox.metadata?.sku || editingBox.products?.sku || 'SKU').replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+                                                setEditBoxCode(`BOX-${lot}-${sku}-${stt}-${idxStr}`)
+                                            }
+                                        }}
+                                        className="text-[11px] text-emerald-600 dark:text-emerald-400 hover:underline font-semibold cursor-pointer"
+                                    >
+                                        ⚡ Tự tạo lại mã theo dữ liệu mới
+                                    </button>
+                                </div>
                                 <input
                                     type="text"
-                                    value={editLotCode}
-                                    onChange={e => setEditLotCode(e.target.value)}
-                                    className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    value={editBoxCode}
+                                    onChange={e => setEditBoxCode(e.target.value)}
+                                    className="w-full px-3 py-2 font-mono text-xs text-stone-800 dark:text-zinc-200 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
                                 />
                             </div>
                         </div>
@@ -2367,17 +3481,350 @@ export default function PalletsPageContent() {
                         <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-zinc-800">
                             <button
                                 onClick={() => setEditingBox(null)}
-                                className="px-4 py-2 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl"
+                                className="px-4 py-2 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
                             >
                                 Hủy
                             </button>
                             <button
                                 onClick={handleSaveBoxEdit}
                                 disabled={isSavingEdit}
-                                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer"
+                                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-xs"
                             >
                                 {isSavingEdit ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                                 <span>Lưu Thay Đổi</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL SỬA HÀNG LOẠT CÁC THÙNG ────────────────── */}
+            {isBulkEditOpen && previewGroup && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-xl p-6 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[92vh]">
+                        {/* Header */}
+                        <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800">
+                            <div>
+                                <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2">
+                                    <span>⚡ Sửa Hàng Loạt Thùng Quét</span>
+                                    <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">
+                                        STT: {previewGroup.pallet_stt}
+                                    </span>
+                                </h3>
+                                <p className="text-xs text-stone-500">
+                                    {(bulkScope === 'selected' && selectedBoxIds.size > 0)
+                                        ? `Đang áp dụng cho ${selectedBoxIds.size} thùng đã chọn`
+                                        : `Đang áp dụng cho toàn bộ ${previewGroup.boxes.length} thùng của Pallet`}
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setIsBulkEditOpen(false)}
+                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        {/* Phạm vi áp dụng */}
+                        <div className="flex flex-wrap items-center gap-4 px-3 py-2 mt-3 bg-stone-50 dark:bg-zinc-800/60 rounded-xl border border-stone-200/80 dark:border-zinc-700/60 text-xs">
+                            <span className="font-bold text-stone-700 dark:text-zinc-300">Phạm vi:</span>
+                            <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-stone-800 dark:text-zinc-200">
+                                <input
+                                    type="radio"
+                                    name="bulkScope"
+                                    checked={bulkScope === 'all'}
+                                    onChange={() => setBulkScope('all')}
+                                    className="text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <span>Toàn bộ Pallet ({previewGroup.boxes.length} thùng)</span>
+                            </label>
+                            {selectedBoxIds.size > 0 && (
+                                <label className="flex items-center gap-1.5 cursor-pointer font-semibold text-stone-800 dark:text-zinc-200">
+                                    <input
+                                        type="radio"
+                                        name="bulkScope"
+                                        checked={bulkScope === 'selected'}
+                                        onChange={() => setBulkScope('selected')}
+                                        className="text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                    />
+                                    <span>Chỉ {selectedBoxIds.size} thùng đang chọn</span>
+                                </label>
+                            )}
+                        </div>
+
+                        {/* Quick fill button */}
+                        <div className="flex items-center justify-between p-2.5 my-3 bg-stone-50 dark:bg-zinc-800/60 rounded-xl border border-stone-200/80 dark:border-zinc-700/60 text-xs">
+                            <span className="text-stone-600 dark:text-zinc-400">
+                                💡 Nhập các trường cần sửa. Ô để trống sẽ giữ nguyên dữ liệu gốc.
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    const first = previewGroup.boxes[0]
+                                    if (!first) return
+                                    const m = first.metadata || {}
+                                    if (m.stamp_line1) setBulkStampLine1(m.stamp_line1)
+                                    if (m.stamp_line2) setBulkStampLine2(m.stamp_line2)
+                                    if (first.quantity) setBulkWeight(String(first.quantity))
+                                    const lot = first.finished_lot_code || first.semi_finished_lot_code
+                                    if (lot) setBulkLotCode(lot)
+                                    if (m.spec) setBulkSpec(m.spec)
+                                    if (m.shift_group) setBulkShiftGroup(m.shift_group)
+                                    if (m.production_date) setBulkProductionDate(m.production_date)
+                                    if (m.packaging_date) setBulkPackagingDate(m.packaging_date)
+                                    showToast('Đã sao chép mẫu từ Thùng #1!', 'info')
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 bg-white dark:bg-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-600 border border-stone-200 dark:border-zinc-600 rounded-lg font-bold text-stone-700 dark:text-zinc-200 cursor-pointer shadow-2xs"
+                            >
+                                <span>📋 Lấy mẫu từ Thùng #1</span>
+                            </button>
+                        </div>
+
+                        {/* Body fields */}
+                        <div className="space-y-4 flex-1 overflow-y-auto pr-1">
+                            {/* Dành cho thùng con dấu */}
+                            {previewGroup.boxes.some(b => b.metadata?.scan_type === 'stamp' || b.code?.startsWith('STAMP-')) ? (
+                                <div className="space-y-3 p-3.5 bg-amber-50/70 dark:bg-amber-950/30 rounded-xl border border-amber-200/80 dark:border-amber-800/60">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-black text-xs text-amber-800 dark:text-amber-300">
+                                            📦 ĐỒNG BỘ CON DẤU MỰC
+                                        </span>
+                                        <span className="text-[10px] text-amber-700 dark:text-amber-400 font-medium">
+                                            Sửa số bị mờ / lệch
+                                        </span>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                            Dòng 1 mới (Mã quy cách/SKU con dấu):
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={bulkStampLine1}
+                                            onChange={e => setBulkStampLine1(e.target.value)}
+                                            placeholder="(Để trống nếu không đổi)"
+                                            className="w-full px-3 py-2 font-mono bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                            Dòng 2 mới (Mã ngày/LOT con dấu 16 số):
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={bulkStampLine2}
+                                            onChange={e => setBulkStampLine2(e.target.value)}
+                                            placeholder="(Để trống nếu không đổi)"
+                                            className="w-full px-3 py-2 font-mono bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                                        />
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            {/* Dành cho tem nhãn */}
+                            {previewGroup.boxes.some(b => b.metadata?.scan_type !== 'stamp' && !b.code?.startsWith('STAMP-')) ? (
+                                <div className="space-y-3 p-3.5 bg-blue-50/70 dark:bg-blue-950/30 rounded-xl border border-blue-200/80 dark:border-blue-800/60">
+                                    <span className="font-black text-xs text-blue-800 dark:text-blue-300 block">
+                                        🏷️ ĐỒNG BỘ TEM NHÃN OCR
+                                    </span>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Quy cách mới:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={bulkSpec}
+                                                onChange={e => setBulkSpec(e.target.value)}
+                                                placeholder="(Giữ nguyên nếu để trống)"
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Tổ / Ca mới:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={bulkShiftGroup}
+                                                onChange={e => setBulkShiftGroup(e.target.value)}
+                                                placeholder="(Giữ nguyên nếu để trống)"
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Ngày sản xuất mới:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={bulkProductionDate}
+                                                onChange={e => setBulkProductionDate(e.target.value)}
+                                                placeholder="DD/MM/YYYY"
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                Ngày đóng gói mới:
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={bulkPackagingDate}
+                                                onChange={e => setBulkPackagingDate(e.target.value)}
+                                                placeholder="DD/MM/YYYY"
+                                                className="w-full px-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : null}
+
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                                        Khối lượng mỗi thùng ({previewGroup.boxes[0]?.unit || 'Kg'}):
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.1"
+                                        value={bulkWeight}
+                                        onChange={e => setBulkWeight(e.target.value)}
+                                        placeholder="(Giữ nguyên nếu để trống)"
+                                        className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="text-xs font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                                        Mã LOT chung:
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={bulkLotCode}
+                                        onChange={e => setBulkLotCode(e.target.value)}
+                                        placeholder="(Giữ nguyên nếu để trống)"
+                                        className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                    />
+                                </div>
+                            </div>
+
+                            <label className="flex items-center gap-2 p-3 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200/80 dark:border-zinc-700/60 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={bulkRegenerateCode}
+                                    onChange={e => setBulkRegenerateCode(e.target.checked)}
+                                    className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                />
+                                <div className="text-xs">
+                                    <span className="font-bold text-stone-800 dark:text-zinc-200 block">
+                                        Tự động tái tạo lại Mã Barcode thùng theo dữ liệu mới
+                                    </span>
+                                    <span className="text-[11px] text-stone-400">
+                                        Đồng bộ chuỗi STAMP-Dòng1-Dòng2-STT-STTThùng để mã barcode luôn khớp 100% với con dấu.
+                                    </span>
+                                </div>
+                            </label>
+                        </div>
+
+                        {/* Footer */}
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-zinc-800">
+                            <button
+                                onClick={() => setIsBulkEditOpen(false)}
+                                className="px-4 py-2 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleSaveBulkEdit}
+                                disabled={isSavingBulkEdit}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-xs"
+                            >
+                                {isSavingBulkEdit ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                                <span>Xác Nhận Áp Dụng</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ── MODAL SỬA THÔNG TIN PALLET (STT, TAG, GHI CHÚ) ─ */}
+            {editingPalletInfoGroup && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-md p-6 shadow-2xl border border-stone-200 dark:border-zinc-800">
+                        <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800">
+                            <div>
+                                <h3 className="font-bold text-base text-stone-900 dark:text-zinc-100">
+                                    Sửa Thông Tin Pallet
+                                </h3>
+                                <p className="text-xs text-stone-500">
+                                    Cập nhật STT, mã phụ và ghi chú cho toàn bộ các thùng trong Pallet này
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setEditingPalletInfoGroup(null)}
+                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 cursor-pointer"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="space-y-4 my-4">
+                            <div>
+                                <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                    Mã STT Pallet:
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editPalletSTT}
+                                    onChange={e => setEditPalletSTT(e.target.value.toUpperCase())}
+                                    placeholder="VD: G38"
+                                    className="w-full px-3 py-2 font-mono font-bold bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                    Mã Phụ (Tag):
+                                </label>
+                                <input
+                                    type="text"
+                                    value={editPalletTag}
+                                    onChange={e => setEditPalletTag(e.target.value.toUpperCase())}
+                                    placeholder="VD: IQF, XUAT_KHAU... (Để trống nếu không có)"
+                                    className="w-full px-3 py-2 font-mono font-bold bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-sm text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                            </div>
+
+                            <div>
+                                <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                    Ghi Chú Pallet:
+                                </label>
+                                <textarea
+                                    value={editPalletNotes}
+                                    onChange={e => setEditPalletNotes(e.target.value)}
+                                    rows={2}
+                                    placeholder="Ghi chú thêm về đợt quét này..."
+                                    className="w-full px-3 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100 dark:border-zinc-800">
+                            <button
+                                onClick={() => setEditingPalletInfoGroup(null)}
+                                className="px-4 py-2 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+                            >
+                                Hủy
+                            </button>
+                            <button
+                                onClick={handleSavePalletInfo}
+                                disabled={isSavingPalletInfo}
+                                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 cursor-pointer shadow-xs"
+                            >
+                                {isSavingPalletInfo ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                                <span>Lưu Pallet</span>
                             </button>
                         </div>
                     </div>
@@ -2591,71 +4038,191 @@ export default function PalletsPageContent() {
                                 )}
                             </div>
 
-                            {/* 3. Thông tin ngày tháng của LOT (Hiển thị đầy đủ 4 trường ngày) */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                                <div>
-                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                        <span className="flex items-center gap-1">
-                                            <Calendar size={12} className="text-indigo-500 shrink-0" />
-                                            <span className="truncate">Ngày nhập kho:</span>
-                                        </span>
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={customInboundDate}
-                                        onChange={e => setCustomInboundDate(e.target.value)}
-                                        className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    <span className="text-[10px] text-stone-400 mt-0.5 block">Ngày tạo LOT nhập kho</span>
+                            {/* 3. Thông tin ngày tháng của LOT (Hỗ trợ nhiều ngày cho Đóng gói, Sản xuất, Nhập NL) */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                                {/* Ngày nhập kho */}
+                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                    <div>
+                                        <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1.5 flex items-center gap-1">
+                                            <Calendar size={13} className="text-indigo-500 shrink-0" />
+                                            <span>Ngày nhập kho:</span>
+                                        </label>
+                                        <input
+                                            type="date"
+                                            value={customInboundDate}
+                                            onChange={e => setCustomInboundDate(e.target.value)}
+                                            className="w-full h-8 px-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-lg text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        />
+                                    </div>
+                                    <span className="text-[10px] text-stone-400 mt-1 block">Ngày tạo LOT nhập kho</span>
                                 </div>
 
-                                <div>
-                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                        <span className="flex items-center gap-1">
-                                            <Calendar size={12} className="text-amber-500 shrink-0" />
-                                            <span className="truncate">Ngày đóng gói:</span>
-                                        </span>
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={customPackagingDate}
-                                        onChange={e => setCustomPackagingDate(e.target.value)}
-                                        className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                                    />
-                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{isStampModal ? 'Dấu mực: Dòng 2 (DDMM)' : 'Từ tem nhãn (NĐG)'}</span>
+                                {/* Ngày đóng gói */}
+                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
+                                                <Calendar size={13} className="text-amber-500 shrink-0" />
+                                                <span>Ngày đóng gói:</span>
+                                            </label>
+                                            {customPackagingDates.length > 0 && (
+                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                                                    {customPackagingDates.length} ngày
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Danh sách các ngày đóng gói đã có */}
+                                        {customPackagingDates.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mb-1.5 max-h-20 overflow-y-auto">
+                                                {customPackagingDates.map(dStr => (
+                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-amber-300 dark:border-amber-800/60 rounded-md text-[11px] font-bold text-amber-900 dark:text-amber-200 shadow-2xs">
+                                                        <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemovePackagingDate(dStr)}
+                                                            className="text-stone-400 hover:text-rose-600 cursor-pointer p-0.5 rounded"
+                                                            title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                                        >
+                                                            <X size={11} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="date"
+                                                value={newPackagingDateInput}
+                                                onChange={e => setNewPackagingDateInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddPackagingDate(); } }}
+                                                className="w-full h-8 px-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddPackagingDate}
+                                                disabled={!newPackagingDateInput}
+                                                className="h-8 px-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-all shadow-xs"
+                                                title="Thêm ngày đóng gói"
+                                            >
+                                                <Plus size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <span className="text-[10px] text-stone-400 mt-1 block">{isStampModal ? 'Dấu mực: Dòng 2 (DDMM)' : 'Từ tem nhãn (NĐG)'}</span>
                                 </div>
 
-                                <div>
-                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                        <span className="flex items-center gap-1">
-                                            <Calendar size={12} className="text-orange-500 shrink-0" />
-                                            <span className="truncate">Ngày sản xuất:</span>
-                                        </span>
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={customPeelingDate}
-                                        onChange={e => setCustomPeelingDate(e.target.value)}
-                                        className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                    />
-                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{isStampModal ? 'Dấu mực: để trống' : 'Từ tem nhãn (NSX)'}</span>
+                                {/* Ngày sản xuất */}
+                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
+                                                <Calendar size={13} className="text-orange-500 shrink-0" />
+                                                <span>Ngày sản xuất:</span>
+                                            </label>
+                                            {customPeelingDates.length > 0 && (
+                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300">
+                                                    {customPeelingDates.length} ngày
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Danh sách các ngày sản xuất đã có */}
+                                        {customPeelingDates.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mb-1.5 max-h-20 overflow-y-auto">
+                                                {customPeelingDates.map(dStr => (
+                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-orange-300 dark:border-orange-800/60 rounded-md text-[11px] font-bold text-orange-900 dark:text-orange-200 shadow-2xs">
+                                                        <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemovePeelingDate(dStr)}
+                                                            className="text-stone-400 hover:text-rose-600 cursor-pointer p-0.5 rounded"
+                                                            title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                                        >
+                                                            <X size={11} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="date"
+                                                value={newPeelingDateInput}
+                                                onChange={e => setNewPeelingDateInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddPeelingDate(); } }}
+                                                className="w-full h-8 px-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-orange-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddPeelingDate}
+                                                disabled={!newPeelingDateInput}
+                                                className="h-8 px-2 bg-orange-600 hover:bg-orange-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-all shadow-xs"
+                                                title="Thêm ngày sản xuất"
+                                            >
+                                                <Plus size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <span className="text-[10px] text-stone-400 mt-1 block">{isStampModal ? 'Dấu mực: để trống' : 'Từ tem nhãn (NSX)'}</span>
                                 </div>
 
-                                <div>
-                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
-                                        <span className="flex items-center gap-1">
-                                            <Calendar size={12} className="text-emerald-500 shrink-0" />
-                                            <span className="truncate">Ngày nhập NL:</span>
-                                        </span>
-                                    </label>
-                                    <input
-                                        type="date"
-                                        value={customRawMaterialDate}
-                                        onChange={e => setCustomRawMaterialDate(e.target.value)}
-                                        title="Ngày nhập nguyên liệu"
-                                        className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                    />
-                                    <span className="text-[10px] text-stone-400 mt-0.5 block">{isStampModal ? 'Dấu mực: Dòng 2 (DDMMYY)' : 'Tem nhãn: để trống'}</span>
+                                {/* Ngày nhập NL */}
+                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                    <div>
+                                        <div className="flex items-center justify-between mb-1.5">
+                                            <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
+                                                <Calendar size={13} className="text-emerald-500 shrink-0" />
+                                                <span>Ngày nhập NL:</span>
+                                            </label>
+                                            {customRawMaterialDates.length > 0 && (
+                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300">
+                                                    {customRawMaterialDates.length} ngày
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* Danh sách các ngày nhập NL đã có */}
+                                        {customRawMaterialDates.length > 0 && (
+                                            <div className="flex flex-wrap gap-1 mb-1.5 max-h-20 overflow-y-auto">
+                                                {customRawMaterialDates.map(dStr => (
+                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-emerald-300 dark:border-emerald-800/60 rounded-md text-[11px] font-bold text-emerald-900 dark:text-emerald-200 shadow-2xs">
+                                                        <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleRemoveRawDate(dStr)}
+                                                            className="text-stone-400 hover:text-rose-600 cursor-pointer p-0.5 rounded"
+                                                            title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                                        >
+                                                            <X size={11} />
+                                                        </button>
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div className="flex items-center gap-1">
+                                            <input
+                                                type="date"
+                                                value={newRawMaterialDateInput}
+                                                onChange={e => setNewRawMaterialDateInput(e.target.value)}
+                                                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddRawDate(); } }}
+                                                className="w-full h-8 px-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-lg text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={handleAddRawDate}
+                                                disabled={!newRawMaterialDateInput}
+                                                className="h-8 px-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-lg text-xs font-bold shrink-0 cursor-pointer transition-all shadow-xs"
+                                                title="Thêm ngày nhập nguyên liệu"
+                                            >
+                                                <Plus size={13} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <span className="text-[10px] text-stone-400 mt-1 block">{isStampModal ? 'Dấu mực: Dòng 2 (DDMMYY)' : 'Tem nhãn: để trống'}</span>
                                 </div>
                             </div>
 

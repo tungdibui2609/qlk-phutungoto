@@ -13,6 +13,8 @@ import { formatMaterialZoneProvince } from './provinces'
 export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[]): Promise<{
     addedPeelingDatesCount: number
     rawMaterialDate: string | null
+    rawMaterialDates?: string[]
+    packagingDates?: string[]
     materialZones?: string[]
     productionPlaces?: string[]
 }> {
@@ -23,7 +25,7 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
     try {
         const { data: rawLotData, error } = await (supabase
             .from('lots') as any)
-            .select('id, peeling_date, raw_material_date, metadata')
+            .select('id, peeling_date, raw_material_date, packaging_date, metadata')
             .eq('id', targetLotId)
             .single()
 
@@ -31,6 +33,8 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
         if (error || !lotData) return { addedPeelingDatesCount: 0, rawMaterialDate: null }
 
         const newPeelingDates = new Set<string>()
+        const newRawMaterialDates = new Set<string>()
+        const newPackagingDates = new Set<string>()
         const newMaterialZones = new Set<string>()
         const newProductionPlaces = new Set<string>()
         let detectedRawMaterialDate: string | null = null
@@ -39,20 +43,49 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             const meta = b.metadata || {}
             const isStamp = meta.scan_type === 'stamp' || !!meta.stamp_line1 || !!meta.stamp_line2 || b.code?.startsWith('STAMP-')
             if (isStamp) {
-                // Với dấu mực: Dòng 2 chứa Ngày nhập nguyên liệu (DDMMYY)
-                let rawDateStr = meta.production_date || meta.raw_material_date || meta.inbound_date
-                if (!rawDateStr && meta.stamp_line2) {
+                // Với dấu mực: Dòng 2 chứa Ngày đóng gói (DDMM) và Ngày nhập nguyên liệu (DDMMYY)
+                if (meta.stamp_line2) {
                     const cleanL2 = String(meta.stamp_line2).replace(/[^0-9]/g, '')
+                    // Packaging date: DDMM từ ký tự 1..5
+                    if (cleanL2.length >= 5) {
+                        const dd = cleanL2.substring(1, 3)
+                        const mm = cleanL2.substring(3, 5)
+                        const day = parseInt(dd, 10)
+                        const month = parseInt(mm, 10)
+                        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+                            const yyyy = new Date().getFullYear()
+                            newPackagingDates.add(`${yyyy}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`)
+                        }
+                    }
+                    // Raw material date: DDMMYY từ ký tự 5..11
                     if (cleanL2.length >= 11) {
                         const dd = cleanL2.substring(5, 7)
                         const mm = cleanL2.substring(7, 9)
                         const yy = cleanL2.substring(9, 11)
-                        rawDateStr = `${dd}/${mm}/20${yy}`
+                        const day = parseInt(dd, 10)
+                        const month = parseInt(mm, 10)
+                        if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+                            const iso = `20${yy}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+                            newRawMaterialDates.add(iso)
+                            if (!detectedRawMaterialDate) detectedRawMaterialDate = iso
+                        }
                     }
                 }
-                const iso = parseDateToISO(rawDateStr)
-                if (iso && !detectedRawMaterialDate) {
-                    detectedRawMaterialDate = iso
+
+                // Explicit fields nếu có
+                const explicitRaw = meta.raw_material_date || b.raw_material_date
+                if (explicitRaw) {
+                    const iso = parseDateToISO(explicitRaw)
+                    if (iso) {
+                        newRawMaterialDates.add(iso)
+                        if (!detectedRawMaterialDate) detectedRawMaterialDate = iso
+                    }
+                }
+
+                const explicitPack = meta.packaging_date || b.packaging_date
+                if (explicitPack) {
+                    const iso = parseDateToISO(explicitPack)
+                    if (iso) newPackagingDates.add(iso)
                 }
 
                 // Với dấu mực: Ký tự 1 của Dòng 2 là Mã nhà máy
@@ -67,6 +100,10 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
                 const iso = parseDateToISO(meta.production_date)
                 if (iso) {
                     newPeelingDates.add(iso)
+                }
+                const packIso = parseDateToISO(meta.packaging_date || b.packaging_date)
+                if (packIso) {
+                    newPackagingDates.add(packIso)
                 }
             }
 
@@ -120,9 +157,52 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             }
         }
 
-        // 2. Xử lý Ngày nguyên liệu: Cập nhật raw_material_date
-        if (detectedRawMaterialDate) {
+        // 2. Xử lý Ngày nguyên liệu: Hợp nhất vào metadata.raw_material_dates và cập nhật raw_material_date chính
+        if (newRawMaterialDates.size > 0) {
+            const currentMetaRawDates: string[] = Array.isArray(lotMeta.raw_material_dates)
+                ? lotMeta.raw_material_dates
+                : (Array.isArray(lotMeta.manual_raw_material_dates) ? lotMeta.manual_raw_material_dates : [])
+
+            const mergedRawSet = new Set<string>(
+                currentMetaRawDates.map((d: any) => parseDateToISO(String(d))).filter(Boolean) as string[]
+            )
+            if (lotData.raw_material_date) {
+                const isoExisting = parseDateToISO(lotData.raw_material_date)
+                if (isoExisting) mergedRawSet.add(isoExisting)
+            }
+            newRawMaterialDates.forEach(d => mergedRawSet.add(d))
+            const sortedRaw = Array.from(mergedRawSet).sort()
+            lotMeta.raw_material_dates = sortedRaw
+            lotUpdates.metadata = lotMeta
+
+            if (!lotData.raw_material_date && sortedRaw.length > 0) {
+                lotUpdates.raw_material_date = sortedRaw[0]
+            }
+        } else if (detectedRawMaterialDate && !lotData.raw_material_date) {
             lotUpdates.raw_material_date = detectedRawMaterialDate
+        }
+
+        // 3. Xử lý Ngày đóng bao bì: Hợp nhất vào metadata.packaging_dates và cập nhật packaging_date chính
+        if (newPackagingDates.size > 0) {
+            const currentMetaPackDates: string[] = Array.isArray(lotMeta.packaging_dates)
+                ? lotMeta.packaging_dates
+                : (Array.isArray(lotMeta.manual_packaging_dates) ? lotMeta.manual_packaging_dates : [])
+
+            const mergedPackSet = new Set<string>(
+                currentMetaPackDates.map((d: any) => parseDateToISO(String(d))).filter(Boolean) as string[]
+            )
+            if (lotData.packaging_date) {
+                const isoExisting = parseDateToISO(lotData.packaging_date)
+                if (isoExisting) mergedPackSet.add(isoExisting)
+            }
+            newPackagingDates.forEach(d => mergedPackSet.add(d))
+            const sortedPack = Array.from(mergedPackSet).sort()
+            lotMeta.packaging_dates = sortedPack
+            lotUpdates.metadata = lotMeta
+
+            if (!lotData.packaging_date && sortedPack.length > 0) {
+                lotUpdates.packaging_date = sortedPack[0]
+            }
         }
 
         // 3. Xử lý Vùng nguyên liệu (vùng trồng): Hợp nhất vào metadata.material_zones
@@ -243,6 +323,8 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
         return {
             addedPeelingDatesCount,
             rawMaterialDate: detectedRawMaterialDate,
+            rawMaterialDates: lotMeta.raw_material_dates,
+            packagingDates: lotMeta.packaging_dates,
             materialZones: lotMeta.material_zones,
             productionPlaces: lotMeta.production_places
         }

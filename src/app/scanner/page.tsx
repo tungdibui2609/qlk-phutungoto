@@ -1219,8 +1219,7 @@ export default function WebScannerPage() {
           metadata,
           products ( name, sku, aliases )
         `)
-        .is('semi_finished_lot_id', null)
-        .is('finished_lot_id', null)
+        .is('lot_id', null)
         .order('created_at', { ascending: false })
         .limit(800)
 

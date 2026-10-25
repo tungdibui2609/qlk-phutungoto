@@ -81,10 +81,14 @@ export function LotForm({
     const [selectedQCId, setSelectedQCId] = useState('')
     const [inboundDate, setInboundDate] = useState('')
     const [rawMaterialDate, setRawMaterialDate] = useState('')
+    const [rawMaterialDates, setRawMaterialDates] = useState<string[]>([])
+    const [newRawMaterialDateInput, setNewRawMaterialDateInput] = useState('')
     const [peelingDate, setPeelingDate] = useState('')
     const [peelingDates, setPeelingDates] = useState<string[]>([])
     const [newPeelingDateInput, setNewPeelingDateInput] = useState('')
     const [packagingDate, setPackagingDate] = useState('')
+    const [packagingDates, setPackagingDates] = useState<string[]>([])
+    const [newPackagingDateInput, setNewPackagingDateInput] = useState('')
     const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
     const [batchCode, setBatchCode] = useState('')
     const [customerName, setCustomerName] = useState('')
@@ -379,7 +383,24 @@ export function LotForm({
                 setSelectedSupplierId(editingLot.supplier_id || '')
                 setSelectedQCId(editingLot.qc_id || '')
                 setInboundDate(editingLot.inbound_date ? new Date(editingLot.inbound_date).toISOString().split('T')[0] : '')
-                setRawMaterialDate(editingLot.raw_material_date ? new Date(editingLot.raw_material_date).toISOString().split('T')[0] : '')
+                const editRDate = editingLot.raw_material_date ? new Date(editingLot.raw_material_date).toISOString().split('T')[0] : ''
+                setRawMaterialDate(editRDate)
+                let initialRawDates: string[] = []
+                const metaRawDates = (editingLot.metadata as any)?.raw_material_dates || (editingLot.metadata as any)?.manual_raw_material_dates
+                if (Array.isArray(metaRawDates) && metaRawDates.length > 0) {
+                    initialRawDates = metaRawDates.map((d: any) => {
+                        try {
+                            return typeof d === 'string' && d.includes('T') ? d.split('T')[0] : String(d).split('T')[0]
+                        } catch {
+                            return String(d)
+                        }
+                    }).filter(Boolean)
+                } else if (editRDate) {
+                    initialRawDates = [editRDate]
+                }
+                setRawMaterialDates(initialRawDates)
+                setNewRawMaterialDateInput('')
+
                 const editPDate = editingLot.peeling_date ? new Date(editingLot.peeling_date).toISOString().split('T')[0] : ''
                 setPeelingDate(editPDate)
                 let initialPeelingDates: string[] = []
@@ -397,7 +418,24 @@ export function LotForm({
                 }
                 setPeelingDates(initialPeelingDates)
                 setNewPeelingDateInput('')
-                setPackagingDate(editingLot.packaging_date ? new Date(editingLot.packaging_date).toISOString().split('T')[0] : '')
+
+                const editPackDate = editingLot.packaging_date ? new Date(editingLot.packaging_date).toISOString().split('T')[0] : ''
+                setPackagingDate(editPackDate)
+                let initialPackDates: string[] = []
+                const metaPackDates = (editingLot.metadata as any)?.packaging_dates || (editingLot.metadata as any)?.manual_packaging_dates
+                if (Array.isArray(metaPackDates) && metaPackDates.length > 0) {
+                    initialPackDates = metaPackDates.map((d: any) => {
+                        try {
+                            return typeof d === 'string' && d.includes('T') ? d.split('T')[0] : String(d).split('T')[0]
+                        } catch {
+                            return String(d)
+                        }
+                    }).filter(Boolean)
+                } else if (editPackDate) {
+                    initialPackDates = [editPackDate]
+                }
+                setPackagingDates(initialPackDates)
+                setNewPackagingDateInput('')
                 setWarehouseName(editingLot.warehouse_name || '')
                 setBatchCode(editingLot.batch_code || '')
                 setProductionCode(editingLot.production_code || '')
@@ -464,8 +502,29 @@ export function LotForm({
                                 setPeelingDates([])
                             }
                             setNewPeelingDateInput('')
-                            if (parsed.rawMaterialDate) setRawMaterialDate(parsed.rawMaterialDate)
-                            if (parsed.packagingDate) setPackagingDate(parsed.packagingDate)
+                            if (parsed.rawMaterialDates && Array.isArray(parsed.rawMaterialDates) && parsed.rawMaterialDates.length > 0) {
+                                setRawMaterialDates(parsed.rawMaterialDates)
+                                setRawMaterialDate(parsed.rawMaterialDates[0] || parsed.rawMaterialDate || '')
+                            } else if (parsed.rawMaterialDate) {
+                                setRawMaterialDate(parsed.rawMaterialDate)
+                                setRawMaterialDates([parsed.rawMaterialDate])
+                            } else {
+                                setRawMaterialDate('')
+                                setRawMaterialDates([])
+                            }
+                            setNewRawMaterialDateInput('')
+
+                            if (parsed.packagingDates && Array.isArray(parsed.packagingDates) && parsed.packagingDates.length > 0) {
+                                setPackagingDates(parsed.packagingDates)
+                                setPackagingDate(parsed.packagingDates[0] || parsed.packagingDate || '')
+                            } else if (parsed.packagingDate) {
+                                setPackagingDate(parsed.packagingDate)
+                                setPackagingDates([parsed.packagingDate])
+                            } else {
+                                setPackagingDate('')
+                                setPackagingDates([])
+                            }
+                            setNewPackagingDateInput('')
 
                             // Validate and restore Warehouse
                             if (parsed.warehouseName && branches.some(b => b.name === parsed.warehouseName)) {
@@ -515,6 +574,7 @@ export function LotForm({
                             setPeelingDate(initialDate)
                             setPeelingDates([initialDate])
                             setPackagingDate(initialDate)
+                            setPackagingDates([initialDate])
 
                             if (branches && branches.length > 0) {
                                 const defaultBranch = branches.find(b => b.is_default)
@@ -574,7 +634,8 @@ export function LotForm({
                 qcId: isPersistent ? selectedQCId : '',
                 peelingDate: isPersistent ? (peelingDates[0] || peelingDate) : '',
                 peelingDates: isPersistent ? peelingDates : [],
-                packagingDate: isPersistent ? packagingDate : '',
+                packagingDate: isPersistent ? (packagingDates[0] || packagingDate) : '',
+                packagingDates: isPersistent ? packagingDates : [],
                 warehouseName: isPersistent ? warehouseName : '',
                 batchCode: isPersistent ? batchCode : '',
                 customerName: isPersistent ? customerName : '',
@@ -586,7 +647,8 @@ export function LotForm({
                 selectedProductionId: isPersistent ? selectedProductionId : '',
                 extraInfo: isPersistent ? extraInfo : '',
                 inboundDate: isPersistent ? inboundDate : '',
-                rawMaterialDate: isPersistent ? rawMaterialDate : '',
+                rawMaterialDate: isPersistent ? (rawMaterialDates[0] || rawMaterialDate) : '',
+                rawMaterialDates: isPersistent ? rawMaterialDates : [],
                 lotItems: isPersistent ? lotItems : [],
                 dailySeq: isPersistent ? dailySeq : '',
                 isInfoExpanded: isInfoExpanded
@@ -603,6 +665,7 @@ export function LotForm({
         peelingDate,
         peelingDates,
         packagingDate,
+        packagingDates,
         warehouseName,
         batchCode,
         customerName,
@@ -613,6 +676,7 @@ export function LotForm({
         extraInfo,
         inboundDate,
         rawMaterialDate,
+        rawMaterialDates,
         lotItems,
         qcList,
         branches,
@@ -635,10 +699,14 @@ export function LotForm({
         setSelectedQCId('')
         setInboundDate('')
         setRawMaterialDate('')
+        setRawMaterialDates([])
+        setNewRawMaterialDateInput('')
         setPeelingDate('')
         setPeelingDates([])
         setNewPeelingDateInput('')
         setPackagingDate('')
+        setPackagingDates([])
+        setNewPackagingDateInput('')
         setWarehouseName('')
         setBatchCode('')
         setCustomerName('')
@@ -717,6 +785,40 @@ export function LotForm({
         const next = peelingDates.filter(d => d !== dateToRemove)
         setPeelingDates(next)
         setPeelingDate(next[0] || '')
+    }
+
+    const handleAddRawMaterialDate = (dateToAdd?: string) => {
+        const target = (dateToAdd || newRawMaterialDateInput || '').trim()
+        if (!target) return
+        if (!rawMaterialDates.includes(target)) {
+            const next = [...rawMaterialDates, target].sort()
+            setRawMaterialDates(next)
+            setRawMaterialDate(next[0] || '')
+        }
+        setNewRawMaterialDateInput('')
+    }
+
+    const handleRemoveRawMaterialDate = (dateToRemove: string) => {
+        const next = rawMaterialDates.filter(d => d !== dateToRemove)
+        setRawMaterialDates(next)
+        setRawMaterialDate(next[0] || '')
+    }
+
+    const handleAddPackagingDate = (dateToAdd?: string) => {
+        const target = (dateToAdd || newPackagingDateInput || '').trim()
+        if (!target) return
+        if (!packagingDates.includes(target)) {
+            const next = [...packagingDates, target].sort()
+            setPackagingDates(next)
+            setPackagingDate(next[0] || '')
+        }
+        setNewPackagingDateInput('')
+    }
+
+    const handleRemovePackagingDate = (dateToRemove: string) => {
+        const next = packagingDates.filter(d => d !== dateToRemove)
+        setPackagingDates(next)
+        setPackagingDate(next[0] || '')
     }
 
     async function handleSubmit() {
@@ -914,7 +1016,9 @@ export function LotForm({
             }
         }
 
+        const primaryRawMaterialDate = rawMaterialDates.length > 0 ? rawMaterialDates[0] : (rawMaterialDate || null)
         const primaryPeelingDate = peelingDates.length > 0 ? peelingDates[0] : (peelingDate || null)
+        const primaryPackagingDate = packagingDates.length > 0 ? packagingDates[0] : (packagingDate || null)
 
         const lotData = {
             code: newLotCode,
@@ -922,9 +1026,9 @@ export function LotForm({
             supplier_id: selectedSupplierId || null,
             qc_id: selectedQCId || null,
             inbound_date: inboundDate || null,
-            raw_material_date: rawMaterialDate || null,
+            raw_material_date: primaryRawMaterialDate,
             peeling_date: primaryPeelingDate,
-            packaging_date: packagingDate || null,
+            packaging_date: primaryPackagingDate,
             warehouse_name: warehouseName || null,
             batch_code: batchCode || null,
             production_code: productionCode || null,
@@ -949,7 +1053,11 @@ export function LotForm({
                 manual_material_zones: materialZones.length > 0 ? Array.from(new Set(materialZones.map(z => formatMaterialZoneProvince(z, materialZonesList) || z).filter(Boolean))) : [],
                 system_history: systemHistory,
                 manual_peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
-                peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : [])
+                peeling_dates: peelingDates.length > 0 ? peelingDates : (primaryPeelingDate ? [primaryPeelingDate] : []),
+                manual_raw_material_dates: rawMaterialDates.length > 0 ? rawMaterialDates : (primaryRawMaterialDate ? [primaryRawMaterialDate] : []),
+                raw_material_dates: rawMaterialDates.length > 0 ? rawMaterialDates : (primaryRawMaterialDate ? [primaryRawMaterialDate] : []),
+                manual_packaging_dates: packagingDates.length > 0 ? packagingDates : (primaryPackagingDate ? [primaryPackagingDate] : []),
+                packaging_dates: packagingDates.length > 0 ? packagingDates : (primaryPackagingDate ? [primaryPackagingDate] : [])
             }
         }
 
@@ -1470,30 +1578,83 @@ export function LotForm({
                                             {hasRawDate && (
                                                 <div className="space-y-1.5">
                                                     <div className="flex items-center justify-between">
-                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                                                            <Calendar size={13} className="text-emerald-500" />
-                                                            Ngày nhập nguyên liệu
-                                                        </label>
-                                                        {rawMaterialDate && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                                <Calendar size={13} className="text-emerald-500" />
+                                                                Ngày nhập nguyên liệu
+                                                            </label>
+                                                            {rawMaterialDates.length > 0 && (
+                                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                                                                    {rawMaterialDates.length} ngày
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {rawMaterialDates.length > 0 && (
                                                             <button
                                                                 type="button"
-                                                                onClick={() => setRawMaterialDate('')}
+                                                                onClick={() => {
+                                                                    setRawMaterialDates([])
+                                                                    setRawMaterialDate('')
+                                                                }}
                                                                 className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                                                title="Xóa ngày nhập nguyên liệu (để trống)"
+                                                                title="Xóa tất cả ngày nhập nguyên liệu (để trống)"
                                                             >
                                                                 Xóa ngày
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="relative">
-                                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
-                                                        <input
-                                                            type="date"
-                                                            value={rawMaterialDate}
-                                                            onChange={(e) => setRawMaterialDate(e.target.value)}
-                                                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
-                                                            style={{ colorScheme: 'light dark' }}
-                                                        />
+
+                                                    {/* Danh sách các ngày nhập nguyên liệu đã thêm */}
+                                                    {rawMaterialDates.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto">
+                                                            {rawMaterialDates.map((dStr) => (
+                                                                <div
+                                                                    key={dStr}
+                                                                    className="inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-800 border border-emerald-200 dark:border-emerald-800/60 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-200 shadow-xs"
+                                                                >
+                                                                    <Calendar size={12} className="text-emerald-500 shrink-0" />
+                                                                    <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemoveRawMaterialDate(dStr)}
+                                                                        className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                                        title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Ô chọn và nút thêm ngày nhập nguyên liệu */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="relative flex-1">
+                                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                                            <input
+                                                                type="date"
+                                                                value={newRawMaterialDateInput}
+                                                                onChange={(e) => setNewRawMaterialDateInput(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault()
+                                                                        handleAddRawMaterialDate()
+                                                                    }
+                                                                }}
+                                                                className="w-full pl-9 pr-2 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none text-zinc-900 dark:text-zinc-100 text-xs transition-all"
+                                                                style={{ colorScheme: 'light dark' }}
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddRawMaterialDate()}
+                                                            disabled={!newRawMaterialDateInput}
+                                                            className="px-2.5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
+                                                            title="Thêm ngày nhập nguyên liệu"
+                                                        >
+                                                            <Plus size={14} />
+                                                            <span>Thêm</span>
+                                                        </button>
                                                     </div>
                                                 </div>
                                             )}
@@ -1587,30 +1748,83 @@ export function LotForm({
                                             {hasPackagingDate && (
                                                 <div className="space-y-1.5">
                                                     <div className="flex items-center justify-between">
-                                                        <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
-                                                            <Calendar size={13} className="text-blue-500" />
-                                                            Ngày đóng bao bì
-                                                        </label>
-                                                        {packagingDate && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                                <Calendar size={13} className="text-blue-500" />
+                                                                Ngày đóng bao bì
+                                                            </label>
+                                                            {packagingDates.length > 0 && (
+                                                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                                                                    {packagingDates.length} ngày
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        {packagingDates.length > 0 && (
                                                             <button
                                                                 type="button"
-                                                                onClick={() => setPackagingDate('')}
+                                                                onClick={() => {
+                                                                    setPackagingDates([])
+                                                                    setPackagingDate('')
+                                                                }}
                                                                 className="text-[11px] text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline cursor-pointer"
-                                                                title="Xóa ngày đóng bao bì (để trống)"
+                                                                title="Xóa tất cả ngày đóng bao bì (để trống)"
                                                             >
                                                                 Xóa ngày
                                                             </button>
                                                         )}
                                                     </div>
-                                                    <div className="relative">
-                                                        <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
-                                                        <input
-                                                            type="date"
-                                                            value={packagingDate}
-                                                            onChange={(e) => setPackagingDate(e.target.value)}
-                                                            className="w-full pl-10 pr-4 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
-                                                            style={{ colorScheme: 'light dark' }}
-                                                        />
+
+                                                    {/* Danh sách các ngày đóng bao bì đã thêm */}
+                                                    {packagingDates.length > 0 && (
+                                                        <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 dark:bg-slate-800/40 rounded-xl border border-slate-200 dark:border-slate-700 max-h-24 overflow-y-auto">
+                                                            {packagingDates.map((dStr) => (
+                                                                <div
+                                                                    key={dStr}
+                                                                    className="inline-flex items-center gap-1.5 px-2 py-1 bg-white dark:bg-zinc-800 border border-blue-200 dark:border-blue-800/60 rounded-lg text-xs font-bold text-zinc-800 dark:text-zinc-200 shadow-xs"
+                                                                >
+                                                                    <Calendar size={12} className="text-blue-500 shrink-0" />
+                                                                    <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleRemovePackagingDate(dStr)}
+                                                                        className="p-0.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded transition-colors cursor-pointer"
+                                                                        title={`Xóa ngày ${new Date(dStr).toLocaleDateString('vi-VN')}`}
+                                                                    >
+                                                                        <X size={12} />
+                                                                    </button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Ô chọn và nút thêm ngày đóng bao bì */}
+                                                    <div className="flex items-center gap-1.5">
+                                                        <div className="relative flex-1">
+                                                            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={16} />
+                                                            <input
+                                                                type="date"
+                                                                value={newPackagingDateInput}
+                                                                onChange={(e) => setNewPackagingDateInput(e.target.value)}
+                                                                onKeyDown={(e) => {
+                                                                    if (e.key === 'Enter') {
+                                                                        e.preventDefault()
+                                                                        handleAddPackagingDate()
+                                                                    }
+                                                                }}
+                                                                className="w-full pl-9 pr-2 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-zinc-900 dark:text-zinc-100 text-xs transition-all"
+                                                                style={{ colorScheme: 'light dark' }}
+                                                            />
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleAddPackagingDate()}
+                                                            disabled={!newPackagingDateInput}
+                                                            className="px-2.5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-xl flex items-center gap-1 transition-all shrink-0 shadow-xs cursor-pointer"
+                                                            title="Thêm ngày đóng bao bì"
+                                                        >
+                                                            <Plus size={14} />
+                                                            <span>Thêm</span>
+                                                        </button>
                                                     </div>
                                                 </div>
                                             )}
