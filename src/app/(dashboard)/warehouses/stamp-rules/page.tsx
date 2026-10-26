@@ -48,6 +48,7 @@ export interface StampRule {
     code: string
     name: string
     description?: string | null
+    product_sku?: string | null
     system_code?: string
     is_active: boolean
     sort_order: number
@@ -360,8 +361,21 @@ export default function StampRulesPage() {
     const [formCode, setFormCode] = useState('')
     const [formName, setFormName] = useState('')
     const [formDesc, setFormDesc] = useState('')
+    const [formProductSku, setFormProductSku] = useState('')
     const [formSortOrder, setFormSortOrder] = useState('1')
     const [isSavingRule, setIsSavingRule] = useState(false)
+    const [warehouseProducts, setWarehouseProducts] = useState<{ id: string; sku: string; name: string }[]>([])
+
+    // Load danh sách sản phẩm kho để người dùng chọn nhanh SKU khi tạo/sửa quy tắc ngoại lệ 12 số
+    useEffect(() => {
+        supabase
+            .from('products')
+            .select('id, sku, name')
+            .order('sku', { ascending: true })
+            .then(({ data }) => {
+                if (data) setWarehouseProducts(data)
+            })
+    }, [])
 
     // Modal Create / Edit Format (Template) states
     const [isFormatModalOpen, setIsFormatModalOpen] = useState(false)
@@ -636,6 +650,7 @@ export default function StampRulesPage() {
         setFormCode('')
         setFormName('')
         setFormDesc('')
+        setFormProductSku('')
         setFormSortOrder(String(rules.filter(r => r.category === (categoryKey || formCategory)).length + 1))
         setIsRuleModalOpen(true)
     }
@@ -647,6 +662,7 @@ export default function StampRulesPage() {
         setFormCode(rule.code)
         setFormName(rule.name)
         setFormDesc(rule.description || '')
+        setFormProductSku(rule.product_sku || '')
         setFormSortOrder(String(rule.sort_order || 1))
         setIsRuleModalOpen(true)
     }
@@ -666,6 +682,7 @@ export default function StampRulesPage() {
                 code: formCode.trim().toUpperCase(),
                 name: formName.trim(),
                 description: formDesc.trim() || null,
+                product_sku: formProductSku.trim().toUpperCase() || null,
                 sort_order: parseInt(formSortOrder, 10) || 0,
                 updated_at: new Date().toISOString()
             }
@@ -1738,6 +1755,7 @@ export default function StampRulesPage() {
                                             <th className="px-4 py-3.5">Vị trí ký tự</th>
                                             <th className="px-4 py-3.5 text-center">Ký hiệu / Mã</th>
                                             <th className="px-4 py-3.5">Diễn giải tiếng Việt</th>
+                                            <th className="px-4 py-3.5">Mã SKU Kho (Duyệt LOT)</th>
                                             <th className="px-4 py-3.5">Mô tả chi tiết</th>
                                             <th className="px-4 py-3.5 text-center">Trạng thái</th>
                                             <th className="px-4 py-3.5 text-right">Thao tác</th>
@@ -1779,6 +1797,21 @@ export default function StampRulesPage() {
                                                         <div className="font-bold text-slate-900 dark:text-white text-xs sm:text-sm">
                                                             {rule.name}
                                                         </div>
+                                                    </td>
+
+                                                    {/* Mã SKU Kho thành phẩm */}
+                                                    <td className="px-4 py-3">
+                                                        {rule.product_sku ? (
+                                                            <span className="font-mono font-black text-xs px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/50 text-blue-700 dark:text-blue-300 border border-blue-200/80 dark:border-blue-800 shadow-2xs">
+                                                                {rule.product_sku}
+                                                            </span>
+                                                        ) : rule.category === 'special_12' ? (
+                                                            <span className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded-md border border-amber-200/60 dark:border-amber-800/60 italic">
+                                                                Chưa gán SKU
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-slate-300 dark:text-slate-600 text-xs">---</span>
+                                                        )}
                                                     </td>
 
                                                     {/* Mô tả */}
@@ -2989,6 +3022,46 @@ export default function StampRulesPage() {
                                         className="w-full px-3 py-2 rounded-xl text-xs font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                                     />
                                 </div>
+                            </div>
+
+                            {/* Mã SKU Sản Phẩm Kho Thành Phẩm (Cho danh mục Quy cách ngoại lệ special_12 hoặc bất kỳ quy tắc nào) */}
+                            <div className="space-y-1 p-3 bg-purple-50/70 dark:bg-purple-950/40 rounded-xl border border-purple-200/90 dark:border-purple-800/80">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-xs font-bold text-purple-900 dark:text-purple-300 flex items-center gap-1.5">
+                                        <Box size={14} className="text-purple-600" />
+                                        <span>Mã SKU Sản Phẩm Kho Thành Phẩm (Quy ra khi Duyệt LOT)</span>
+                                    </label>
+                                    <span className="text-[10px] font-bold text-purple-700 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/60 px-1.5 py-0.5 rounded">
+                                        ⚡ Khớp 100% trực tiếp
+                                    </span>
+                                </div>
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        list="warehouseProductSkuList"
+                                        value={formProductSku}
+                                        onChange={(e) => {
+                                            const val = e.target.value.trim().toUpperCase()
+                                            setFormProductSku(val)
+                                            if (!formName.trim() && val) {
+                                                const found = warehouseProducts.find(p => p.sku === val)
+                                                if (found) setFormName(found.name)
+                                            }
+                                        }}
+                                        placeholder="Nhập hoặc chọn mã SKU (vd: TP101020104.001, TP101020104.002...)"
+                                        className="w-full px-3 py-2 rounded-xl text-xs font-mono font-bold bg-white dark:bg-slate-900 border border-purple-200 dark:border-purple-700 text-purple-900 dark:text-purple-200 outline-none focus:ring-2 focus:ring-purple-500 shadow-2xs"
+                                    />
+                                    <datalist id="warehouseProductSkuList">
+                                        {warehouseProducts.map(p => (
+                                            <option key={p.id} value={p.sku}>
+                                                {p.sku} - {p.name}
+                                            </option>
+                                        ))}
+                                    </datalist>
+                                </div>
+                                <p className="text-[10px] text-purple-700/80 dark:text-purple-300/80">
+                                    Khi thùng quét mang mã quy cách này, hệ thống sẽ <strong>quy chuẩn thẳng 100% sang mã SKU này</strong> khi Duyệt tạo LOT mới từ Pallet mà không cần so khớp chuỗi.
+                                </p>
                             </div>
 
                             {/* Mô tả chi tiết */}

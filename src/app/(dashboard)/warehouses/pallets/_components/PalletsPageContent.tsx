@@ -24,11 +24,55 @@ import { parseDateToISO } from '@/lib/dateUtils'
 import { DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
 
 /**
- * Tự động giải mã lại vùng nguyên liệu (tỉnh), nhà máy (tổ), ngày tháng từ Dòng 2 con dấu.
- * Giúp đồng bộ và ghi đè triệt để các thông tin cũ do OCR đọc sai (ví dụ trước đó Dòng 2 đuôi 88 gán nhầm "Tỉnh mã 88", sau đó sửa lại đuôi 66).
+ * Tự động giải mã lại toàn bộ thông tin con dấu:
+ * - Dòng 1 (stamp_line1): Giải mã Mã quy cách / SKU, tên sản phẩm ngoại lệ (12 số), đặc tính (có hạt/không hạt, giống, loại...).
+ * - Dòng 2 (stamp_line2): Giải mã vùng nguyên liệu (tỉnh), nhà máy (tổ), ngày đóng gói, ngày nguyên liệu.
+ * Đảm bảo đồng bộ và ghi đè triệt để thông tin cũ khi người dùng chỉnh sửa Dòng 1 hoặc Dòng 2.
  */
 function applyStampDecodeToMeta(meta: Record<string, any>): Record<string, any> {
     const next: Record<string, any> = { ...meta, scan_type: 'stamp' }
+
+    // 1. GIẢI MÃ DÒNG 1 (MÃ QUY CÁCH / SKU / TÊN SẢN PHẨM / ĐẶC TÍNH)
+    if (meta.stamp_line1) {
+        const cleanL1 = String(meta.stamp_line1).trim()
+        const l1Digits = cleanL1.replace(/\D/g, '')
+
+        if (l1Digits.length >= 12) {
+            const spec12 = l1Digits.substring(0, 12)
+            const matchName = DEFAULT_STAMP_DICT.special_12?.[spec12]
+            next.sku = spec12
+            if (matchName) {
+                next.product_name = matchName
+                next.special_12_code = spec12
+                next.special_12_name = matchName
+                const nameParts = matchName.split(' - ').map((s: string) => s.trim())
+                if (nameParts.length >= 2) {
+                    next.spec = nameParts.slice(1).join(' - ')
+                }
+            } else {
+                // Phân rã theo từ điển mặc định
+                const fruitCode = l1Digits.substring(0, 1)
+                const styleCode = l1Digits.substring(1, 3)
+                const varCode = l1Digits.substring(3, 5)
+                const gradeCode = l1Digits.substring(5, 7)
+                const specCode = l1Digits.substring(7, 9)
+                const methodCode = l1Digits.substring(9, 12)
+
+                const fruitName = DEFAULT_STAMP_DICT.fruit_type?.[fruitCode] || ''
+                const styleName = DEFAULT_STAMP_DICT.freeze_style?.[styleCode] || ''
+                const varName = DEFAULT_STAMP_DICT.variety?.[varCode] || ''
+                const gradeName = DEFAULT_STAMP_DICT.product_grade?.[gradeCode] || ''
+                const specName = DEFAULT_STAMP_DICT.package_spec?.[specCode] || ''
+                const methodName = DEFAULT_STAMP_DICT.freeze_method?.[methodCode] || ''
+
+                const title = [fruitName, styleName, varName, gradeName].filter(Boolean).join(' ')
+                if (title) next.product_name = title
+                if (specName || methodName) next.spec = [specName, methodName].filter(Boolean).join(' - ')
+            }
+        }
+    }
+
+    // 2. GIẢI MÃ DÒNG 2 (NHÀ MÁY / NGÀY THÁNG / NHÀ CUNG CẤP / VÙNG NGUYÊN LIỆU)
     const l2Digits = String(meta.stamp_line2 || '').replace(/\D/g, '')
 
     if (l2Digits.length >= 1) {
@@ -75,8 +119,8 @@ async function healStampBoxesInDB(boxes: BoxLabelItem[]) {
     const fixes: { id: string; metadata: Record<string, any> }[] = []
     for (const b of boxes) {
         const m = b.metadata || {}
-        const isStamp = m.scan_type === 'stamp' || !!m.stamp_line2 || b.code?.startsWith('STAMP-')
-        if (!isStamp || !m.stamp_line2) continue
+        const isStamp = m.scan_type === 'stamp' || !!m.stamp_line1 || !!m.stamp_line2 || b.code?.startsWith('STAMP-')
+        if (!isStamp || (!m.stamp_line1 && !m.stamp_line2)) continue
         const healed = applyStampDecodeToMeta(m)
         if (
             healed.region !== m.region || 
@@ -84,7 +128,10 @@ async function healStampBoxesInDB(boxes: BoxLabelItem[]) {
             healed.material_zone !== m.material_zone || 
             healed.shift_group !== m.shift_group || 
             healed.raw_material_date !== m.raw_material_date || 
-            healed.packaging_date !== m.packaging_date
+            healed.packaging_date !== m.packaging_date ||
+            healed.product_name !== m.product_name ||
+            healed.sku !== m.sku ||
+            healed.spec !== m.spec
         ) {
             fixes.push({ id: b.id, metadata: healed })
             b.metadata = healed
@@ -254,7 +301,10 @@ interface UnlinkedPalletGroup {
         id: string
         code: string
         daily_seq?: number | null
+        status?: string | null
         product_name?: string
+        quantity?: number
+        created_at?: string
         existingBoxesCount?: number
         existingTotalWeight?: number
     } | null
@@ -401,19 +451,105 @@ function getProductAliases(p: WarehouseProduct): string {
     return Array.from(list).filter(Boolean).join(', ')
 }
 
+// Bảng ánh xạ chuẩn xác 100% từ Mã quy cách con dấu 12 số sang Mã SKU sản phẩm thành phẩm trong kho
+export const STAMP_CODE_TO_SKU_MAP: Record<string, string> = {
+    '102010401001': 'TP101020104.001', // Monthong C Không hạt
+    '102010402001': 'TP101020104.002', // Monthong C Có hạt
+    '102020401001': 'TP101020204.001', // Ri6 C Có hạt
+    '102020402001': 'TP101020204.002', // Ri6 C Tách hạt
+    '102010201001': 'TP101020102.01.001', // Monthong A 1 túi Hầm đông
+    '102010201002': 'TP101020102.01.002', // Monthong A 1 túi Nito
+    '102010201004': 'TP101020102.01.004', // Monthong A 1 túi múi to Hầm đông
+    '102010201005': 'TP101020102.01.005', // Monthong A 1 túi múi nhỏ Hầm đông
+    '102010204001': 'TP101020102.04.001', // Monthong A 4 túi Hầm đông
+    '102010301001': 'TP101020103.01.001', // Monthong B 1 túi Hầm đông
+    '102010301002': 'TP101020103.01.002', // Monthong B 1 túi Nito
+    '102010301004': 'TP101020103.01.004', // Monthong B 1 túi múi to Hầm đông
+    '102010301005': 'TP101020103.01.005', // Monthong B 1 túi múi nhỏ Hầm đông
+    '102010304001': 'TP101020103.04.001', // Monthong B 4 túi Hầm đông
+    '102020201001': 'TP101020202.01.001', // Ri6 A 1 túi Hầm đông
+    '102020204001': 'TP101020202.04.001', // Ri6 A 4 túi Hầm đông
+    '102020301001': 'TP101020203.01.001', // Ri6 B 1 túi Hầm đông
+    '102020304001': 'TP101020203.04.001', // Ri6 B 4 túi Hầm đông
+    '102020701000': 'TP101020207.01.00', // Ri6 khay có hạt
+    '101010202002': 'TP1010102.02.002', // Ri6 A Nito
+    '101010202004': 'TP1010102.02.004', // Ri6 A Nito thùng tạm
+    '101010402004': 'TP1010104.02.004', // Musaking A Nito thùng tạm
+    '101010403004': 'TP1010104.03.004', // Musaking B Nito thùng tạm
+    '101010102004': 'TP1010101.02.004', // Monthong A Nito thùng tạm
+}
+
 function findBestMatchingProduct(
     boxes: BoxLabelItem[],
-    products: WarehouseProduct[]
+    products: WarehouseProduct[],
+    configuredStampMap?: Record<string, string>
 ): { product: WarehouseProduct | null; matchScore: number; matchReason: string } {
     if (!products || products.length === 0 || !boxes || boxes.length === 0) {
         return { product: null, matchScore: 0, matchReason: '' }
     }
 
-    const sampleBox = boxes.find(b => b.metadata?.product_name || b.metadata?.sku || b.metadata?.stamp_line1) || boxes[0]
+    const sampleBox = boxes.find(b => b.metadata?.stamp_line1 || b.metadata?.product_name || b.metadata?.sku) || boxes[0]
     const boxMeta = sampleBox.metadata || {}
-    const rawBoxProductName = boxMeta.product_name || sampleBox.products?.name || ''
-    const rawBoxSku = boxMeta.sku || sampleBox.products?.sku || ''
-    const rawStampL1 = boxMeta.stamp_line1 || ''
+    let rawStampL1 = boxMeta.stamp_line1 || ''
+    if (!rawStampL1 && sampleBox.code?.startsWith('STAMP-')) {
+        const parts = sampleBox.code.split('-')
+        if (parts[1]) rawStampL1 = parts[1]
+    }
+
+    // ── CẤP 0: ƯU TIÊN TUYỆT ĐỐI (100% ĐỊNH DANH TRỰC TIẾP TỪ CON DẤU MỰC SANG SKU) ──
+    const l1Digits = rawStampL1.replace(/\D/g, '')
+    if (l1Digits.length >= 12) {
+        const spec12 = l1Digits.substring(0, 12)
+        
+        // 1. Tra cứu trực tiếp từ Cài đặt quy tắc con dấu (stamp-rules) hoặc bảng chuẩn sẵn có
+        const targetSku = configuredStampMap?.[spec12] || STAMP_CODE_TO_SKU_MAP[spec12]
+        if (targetSku) {
+            const exactProduct = products.find(p => p.sku === targetSku)
+            if (exactProduct) {
+                return {
+                    product: exactProduct,
+                    matchScore: 9999,
+                    matchReason: `Khớp chuẩn xác 100% từ Cài đặt quy tắc con dấu (${spec12}) sang SKU (${exactProduct.sku}) - ${exactProduct.name}`
+                }
+            }
+        }
+
+        // 2. TỰ ĐỘNG & LINH HOẠT: Nếu người dùng thêm sản phẩm mới và nhập mã 12 số vào Mã nội bộ (internal_code), Tên phụ (aliases), hoặc SKU
+        const dynamicMatchedProduct = products.find(p => {
+            if (p.internal_code && p.internal_code.trim() === spec12) return true
+            if (p.aliases) {
+                const aliasList = p.aliases.split(',').map((a: string) => a.trim().replace(/\D/g, ''))
+                if (aliasList.includes(spec12)) return true
+            }
+            if (p.sku && p.sku.replace(/\D/g, '').includes(spec12)) return true
+            return false
+        })
+
+        if (dynamicMatchedProduct) {
+            return {
+                product: dynamicMatchedProduct,
+                matchScore: 9999,
+                matchReason: `Khớp tự động 100% từ mã con dấu (${spec12}) qua Mã phụ/Mã nội bộ của sản phẩm (${dynamicMatchedProduct.sku}) - ${dynamicMatchedProduct.name}`
+            }
+        }
+    }
+
+    // NẾU LÀ CON DẤU MỰC: Dòng 1 (stamp_line1) là căn cứ tối cao, giải mã trực tiếp để luôn cập nhật ngay khi vừa sửa Dòng 1
+    let rawBoxProductName = ''
+    if (rawStampL1) {
+        if (l1Digits.length >= 12) {
+            const spec12 = l1Digits.substring(0, 12)
+            const spec12Name = DEFAULT_STAMP_DICT.special_12?.[spec12]
+            if (spec12Name) {
+                rawBoxProductName = spec12Name
+            }
+        }
+    }
+    if (!rawBoxProductName) {
+        rawBoxProductName = boxMeta.product_name || sampleBox.products?.name || ''
+    }
+
+    const rawBoxSku = boxMeta.sku || sampleBox.products?.sku || (rawStampL1 ? rawStampL1.replace(/\D/g, '').substring(0, 12) : '')
     const rawSpec = boxMeta.spec || ''
 
     const cleanStr = (s: string) =>
@@ -478,21 +614,21 @@ function findBestMatchingProduct(
             reasons.push('Khớp mã SKU')
         }
 
-        // 2. Đặc biệt phân biệt: CÓ HẠT vs KHÔNG HẠT
-        const isBoxCoHat = cleanBoxName.includes('co hat') || (cleanBoxName.includes('hat') && !cleanBoxName.includes('khong hat') && !cleanBoxName.includes('bo hat'))
-        const isBoxKhongHat = cleanBoxName.includes('khong hat') || cleanBoxName.includes('bo hat') || cleanBoxName.includes('ko hat')
+        // 2. Đặc biệt phân biệt nghiêm ngặt: CÓ HẠT vs KHÔNG HẠT
+        const isBoxCoHat = cleanBoxName.includes('co hat') || (cleanBoxName.includes('hat') && !cleanBoxName.includes('khong hat') && !cleanBoxName.includes('bo hat') && !cleanBoxName.includes('tach hat'))
+        const isBoxKhongHat = cleanBoxName.includes('khong hat') || cleanBoxName.includes('bo hat') || cleanBoxName.includes('ko hat') || cleanBoxName.includes('tach hat')
 
-        const isPCoHat = cleanPName.includes('co hat') || (cleanPName.includes('hat') && !cleanPName.includes('khong hat') && !cleanPName.includes('bo hat'))
-        const isPKhongHat = cleanPName.includes('khong hat') || cleanPName.includes('bo hat') || cleanPName.includes('ko hat')
+        const isPCoHat = cleanPName.includes('co hat') || (cleanPName.includes('hat') && !cleanPName.includes('khong hat') && !cleanPName.includes('bo hat') && !cleanPName.includes('tach hat'))
+        const isPKhongHat = cleanPName.includes('khong hat') || cleanPName.includes('bo hat') || cleanPName.includes('ko hat') || cleanPName.includes('tach hat')
 
         if (isBoxCoHat && isPCoHat) {
-            score += 35
+            score += 50
             reasons.push('Có hạt')
         } else if (isBoxKhongHat && isPKhongHat) {
-            score += 35
+            score += 50
             reasons.push('Không hạt')
         } else if ((isBoxCoHat && isPKhongHat) || (isBoxKhongHat && isPCoHat)) {
-            score -= 60 // Trừ mạnh để tuyệt đối không khớp nhầm
+            score -= 2000 // Phạt cực nặng để TUYỆT ĐỐI không bao giờ khớp Có Hạt sang Không Hạt hoặc ngược lại
         }
 
         // 3. Phân biệt giống Sầu riêng: Ri6 vs Monthong / Dona
@@ -540,6 +676,106 @@ function findBestMatchingProduct(
     }
 }
 
+export interface ApproveLotProductLine {
+    id: string
+    product_id: string
+    product: WarehouseProduct | null
+    quantity: number
+    weight: number
+    unit: string
+    box_ids: string[]
+    stamp_code?: string
+    matchReason?: string
+}
+
+/**
+ * Tự động nhận diện và phân loại toàn bộ thùng trong Pallet thành các dòng sản phẩm riêng biệt:
+ * Hỗ trợ các Pallet hỗn hợp (mix 2 hoặc nhiều sản phẩm cùng 1 Pallet / LOT).
+ */
+function detectPalletProductLines(
+    boxes: BoxLabelItem[],
+    products: WarehouseProduct[],
+    configuredStampMap?: Record<string, string>,
+    productUnits: any[] = [],
+    units: any[] = []
+): ApproveLotProductLine[] {
+    if (!boxes || boxes.length === 0 || !products || products.length === 0) {
+        return []
+    }
+
+    const groupMap = new Map<string, {
+        product: WarehouseProduct
+        boxes: BoxLabelItem[]
+        matchReason: string
+        stamp_code?: string
+    }>()
+
+    for (const b of boxes) {
+        const match = findBestMatchingProduct([b], products, configuredStampMap)
+        const targetProd = match.product || products[0]
+        if (!targetProd) continue
+
+        const pId = targetProd.id
+        if (!groupMap.has(pId)) {
+            let spec12 = ''
+            const rawStampL1 = b.metadata?.stamp_line1 || (b.code?.startsWith('STAMP-') ? b.code.split('-')[1] : '')
+            if (rawStampL1) {
+                const digits = rawStampL1.replace(/\D/g, '')
+                if (digits.length >= 12) spec12 = digits.substring(0, 12)
+            }
+            groupMap.set(pId, {
+                product: targetProd,
+                boxes: [],
+                matchReason: match.matchReason,
+                stamp_code: spec12 || undefined
+            })
+        }
+        groupMap.get(pId)!.boxes.push(b)
+    }
+
+    if (groupMap.size === 0) {
+        const defaultProd = products[0]
+        const totalW = boxes.reduce((acc, b) => acc + (Number(b.quantity) || 20), 0)
+        const availUnits = getAvailableUnitsForProduct(defaultProd, productUnits, units, boxes[0]?.quantity || 20)
+        const thungUnit = availUnits.find(u => normalizeUnit(u).includes('thung') || normalizeUnit(u).includes('thùng'))
+        return [{
+            id: `line-${Date.now()}-0`,
+            product_id: defaultProd.id,
+            product: defaultProd,
+            quantity: boxes.length,
+            weight: Math.round(totalW * 100) / 100,
+            unit: thungUnit || availUnits[0] || 'Thùng (20kg)',
+            box_ids: boxes.map(b => b.id),
+            matchReason: 'Mặc định'
+        }]
+    }
+
+    const lines: ApproveLotProductLine[] = []
+    let index = 0
+    groupMap.forEach((val, pId) => {
+        const prod = val.product
+        const lineBoxes = val.boxes
+        const lineWeight = lineBoxes.reduce((acc, b) => acc + (Number(b.quantity) || 20), 0)
+        const sampleWeight = lineBoxes.find(b => Number(b.quantity) > 0)?.quantity || (lineBoxes.length > 0 ? lineWeight / lineBoxes.length : 20)
+        const availUnits = getAvailableUnitsForProduct(prod, productUnits, units, Number(sampleWeight) || 20)
+        const thungUnit = availUnits.find(u => normalizeUnit(u).includes('thung') || normalizeUnit(u).includes('thùng'))
+
+        lines.push({
+            id: `line-${Date.now()}-${index++}`,
+            product_id: pId,
+            product: prod,
+            quantity: lineBoxes.length,
+            weight: Math.round(lineWeight * 100) / 100,
+            unit: thungUnit || availUnits[0] || 'Thùng (20kg)',
+            box_ids: lineBoxes.map(b => b.id),
+            stamp_code: val.stamp_code,
+            matchReason: val.matchReason
+        })
+    })
+
+    return lines
+}
+
 function getBoxIndex(box: BoxLabelItem): string {
     if (box.metadata?.box_index !== undefined && box.metadata?.box_index !== null) {
         return String(box.metadata.box_index)
@@ -568,12 +804,23 @@ export default function PalletsPageContent() {
     const [previewGroup, setPreviewGroup] = useState<UnlinkedPalletGroup | null>(null)
 
     // Available Lots on web (for manual linking & matching)
-    const [allActiveLots, setAllActiveLots] = useState<{ id: string; code: string; daily_seq: number | null; status?: string | null; product_name?: string }[]>([])
+    const [allActiveLots, setAllActiveLots] = useState<{
+        id: string
+        code: string
+        daily_seq: number | null
+        status?: string | null
+        product_name?: string
+        quantity?: number
+        created_at?: string
+        existingBoxesCount?: number
+        existingTotalWeight?: number
+    }[]>([])
 
     // Available Products for Quick Lot Creation & Auto-matching
     const [warehouseProducts, setWarehouseProducts] = useState<WarehouseProduct[]>([])
     const [allUnits, setAllUnits] = useState<any[]>([])
     const [allProductUnits, setAllProductUnits] = useState<any[]>([])
+    const [dynamicStampMap, setDynamicStampMap] = useState<Record<string, string>>({})
 
     const [isLoading, setIsLoading] = useState(true)
     const [searchQuery, setSearchQuery] = useState('')
@@ -592,6 +839,7 @@ export default function PalletsPageContent() {
     const [approveGroup, setApproveGroup] = useState<UnlinkedPalletGroup | null>(null)
     const [proposedLotCode, setProposedLotCode] = useState('')
     const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+    const [approveProductLines, setApproveProductLines] = useState<ApproveLotProductLine[]>([])
     const [customLotTag, setCustomLotTag] = useState('')
     const [customQuantity, setCustomQuantity] = useState<number>(0)
     const [customUnit, setCustomUnit] = useState<string>('Thùng')
@@ -743,23 +991,7 @@ export default function PalletsPageContent() {
 
             if (lotsErr) throw lotsErr
 
-            // 1.1 Store active lots for manual linking & matching
-            const activeLotsList = (lotsData || []).map((l: any) => {
-                const existingBoxes = Array.isArray(l.box_labels) ? l.box_labels : []
-                const existingWeight = existingBoxes.reduce((sum: number, b: any) => sum + (Number(b.quantity) || 0), 0)
-                return {
-                    id: l.id,
-                    code: l.code,
-                    daily_seq: l.daily_seq,
-                    status: l.status,
-                    product_name: l.products?.name || '',
-                    existingBoxesCount: existingBoxes.length,
-                    existingTotalWeight: existingWeight
-                }
-            })
-            setAllActiveLots(activeLotsList)
-
-            // 1.2 Linked Pallets (Lots having box_labels attached)
+            // 1. Linked Pallets (Lots having box_labels attached within the loaded set)
             const linked = (lotsData || []).filter(
                 (l: any) => Array.isArray(l.box_labels) && l.box_labels.length > 0
             ) as PalletLot[]
@@ -820,7 +1052,7 @@ export default function PalletsPageContent() {
             ;(unlinkedData || []).forEach((b: any) => {
                 const rawStt = b.metadata?.pallet_stt
                 if (!rawStt) return // Bỏ qua tem in đơn lẻ/QR test không thuộc đợt quét Pallet
-                if (b.metadata?.stamp_line2) {
+                if (b.metadata?.stamp_line1 || b.metadata?.stamp_line2 || b.metadata?.scan_type === 'stamp' || b.code?.startsWith('STAMP-')) {
                     b.metadata = applyStampDecodeToMeta(b.metadata)
                 }
                 const stt = rawStt.trim().toUpperCase()
@@ -829,6 +1061,116 @@ export default function PalletsPageContent() {
                 }
                 groupMap.get(stt)!.push(b)
             })
+
+            // 2.2 TẢI BỔ SUNG CHÍNH XÁC CÁC LOT TRONG KHO CÓ STT HOẶC MÃ KHỚP VỚI CÁC ĐỢT QUÉT (Khắc phục triệt để giới hạn 200 Lô)
+            const unlinkedStts = Array.from(groupMap.keys())
+            const neededSeqs = Array.from(new Set(unlinkedStts.map(s => encodeSTT(s)).filter((s): s is number => s !== null)))
+            const neededCodes = Array.from(new Set(unlinkedStts))
+
+            let allLots: any[] = [...(lotsData || [])]
+            const existingLotIds = new Set(allLots.map((l: any) => l.id))
+
+            if (neededSeqs.length > 0 || neededCodes.length > 0) {
+                const extraPromises: any[] = []
+                if (neededSeqs.length > 0) {
+                    extraPromises.push(
+                        (supabase.from('lots') as any)
+                            .select(`
+                                id,
+                                code,
+                                daily_seq,
+                                status,
+                                system_code,
+                                company_id,
+                                created_at,
+                                inbound_date,
+                                quantity,
+                                products ( name, sku ),
+                                box_labels (
+                                    id,
+                                    code,
+                                    lot_id,
+                                    quantity,
+                                    unit,
+                                    status,
+                                    semi_finished_lot_code,
+                                    finished_lot_code,
+                                    created_at,
+                                    metadata,
+                                    products ( name, sku, internal_name )
+                                )
+                            `)
+                            .eq('system_code', currentSystem.code)
+                            .in('daily_seq', neededSeqs)
+                    )
+                }
+                if (neededCodes.length > 0) {
+                    extraPromises.push(
+                        (supabase.from('lots') as any)
+                            .select(`
+                                id,
+                                code,
+                                daily_seq,
+                                status,
+                                system_code,
+                                company_id,
+                                created_at,
+                                inbound_date,
+                                quantity,
+                                products ( name, sku ),
+                                box_labels (
+                                    id,
+                                    code,
+                                    lot_id,
+                                    quantity,
+                                    unit,
+                                    status,
+                                    semi_finished_lot_code,
+                                    finished_lot_code,
+                                    created_at,
+                                    metadata,
+                                    products ( name, sku, internal_name )
+                                )
+                            `)
+                            .eq('system_code', currentSystem.code)
+                            .in('code', neededCodes)
+                    )
+                }
+
+                try {
+                    const extraRes = await Promise.all(extraPromises)
+                    extraRes.forEach((r: any) => {
+                        if (r.data) {
+                            r.data.forEach((l: any) => {
+                                if (!existingLotIds.has(l.id)) {
+                                    existingLotIds.add(l.id)
+                                    allLots.push(l)
+                                }
+                            })
+                        }
+                    })
+                } catch (extraErr) {
+                    console.warn('Lỗi tải bổ sung LOT theo STT đợt quét:', extraErr)
+                }
+            }
+
+            // 2.3 Lưu danh sách LOT hoàn chỉnh cho việc Ghép & Khớp thông minh
+            const activeLotsList = allLots.map((l: any) => {
+                const existingBoxes = Array.isArray(l.box_labels) ? l.box_labels : []
+                const existingWeight = existingBoxes.reduce((sum: number, b: any) => sum + (Number(b.quantity) || 0), 0)
+                return {
+                    id: l.id,
+                    code: l.code,
+                    daily_seq: l.daily_seq,
+                    status: l.status,
+                    quantity: Number(l.quantity) || 0,
+                    created_at: l.created_at,
+                    product_name: l.products?.name || '',
+                    existingBoxesCount: existingBoxes.length,
+                    existingTotalWeight: existingWeight
+                }
+            })
+            setAllActiveLots(activeLotsList)
 
             const groups: UnlinkedPalletGroup[] = []
             groupMap.forEach((boxes, stt) => {
@@ -848,8 +1190,15 @@ export default function PalletsPageContent() {
                     return false
                 })
 
-                // Nhận diện trùng STT: Đã có Lô trên Web VÀ Lô đó còn trong kho (chưa xuất) VÀ Lô đó đã có thùng gắn vào
-                const isConflict = !!(matched && matched.status !== 'exported' && (matched.existingBoxesCount || 0) > 0)
+                // Nhận diện trùng STT (Trường hợp 3: LOT ĐÃ CÓ TRONG KHO):
+                // - Đã có Lô trên Web mang cùng STT/Mã
+                // - Lô đó còn trong kho (status !== 'exported')
+                // - Lô đó ĐÃ CÓ THÙNG gắn vào (existingBoxesCount > 0) HOẶC ĐÃ CÓ SỐ LƯỢNG TỒN trong kho (quantity > 0)
+                const isConflict = !!(
+                    matched &&
+                    matched.status !== 'exported' &&
+                    ((matched.existingBoxesCount || 0) > 0 || (matched.quantity || 0) > 0)
+                )
 
                 const palletTag = boxes.find(b => b.metadata?.tag)?.metadata?.tag || null
                 const palletNotes = boxes.map(b => b.metadata?.pallet_notes || b.metadata?.notes).find(Boolean) || null
@@ -924,6 +1273,26 @@ export default function PalletsPageContent() {
                     if (puRes.data) setAllProductUnits(puRes.data)
                 } catch (uErr) {
                     console.warn('Lỗi tải đơn vị tính cho sản phẩm:', uErr)
+                }
+
+                // 5. Tải trực tiếp bảng quy chuẩn con dấu (stamp_dictionaries) danh mục special_12
+                try {
+                    const { data: stampRulesData } = await (supabase.from('stamp_dictionaries') as any)
+                        .select('code, product_sku')
+                        .eq('category', 'special_12')
+                        .eq('is_active', true)
+
+                    if (stampRulesData) {
+                        const liveMap: Record<string, string> = {}
+                        stampRulesData.forEach((r: any) => {
+                            if (r.code && r.product_sku) {
+                                liveMap[r.code.trim()] = r.product_sku.trim()
+                            }
+                        })
+                        setDynamicStampMap(liveMap)
+                    }
+                } catch (dictErr) {
+                    console.warn('Lỗi tải quy tắc con dấu từ stamp_dictionaries:', dictErr)
                 }
             } catch (pErr) {
                 console.warn('Lỗi tải danh mục sản phẩm cho Pallet:', pErr)
@@ -1338,7 +1707,18 @@ export default function PalletsPageContent() {
     }, [warehouseProducts])
 
     const handleOpenApproveModal = async (group: UnlinkedPalletGroup) => {
-        setApproveGroup(group)
+        // Luôn làm tươi (refresh) toàn bộ metadata thùng theo con dấu trước khi duyệt
+        const refreshedBoxes = group.boxes.map(b => {
+            if (b.metadata?.stamp_line1 || b.metadata?.stamp_line2 || b.metadata?.scan_type === 'stamp' || b.code?.startsWith('STAMP-')) {
+                return {
+                    ...b,
+                    metadata: applyStampDecodeToMeta(b.metadata || {})
+                }
+            }
+            return b
+        })
+        const refreshedGroup = { ...group, boxes: refreshedBoxes }
+        setApproveGroup(refreshedGroup)
         setIsApproving(false)
         setIsGeneratingCode(true)
 
@@ -1357,24 +1737,27 @@ export default function PalletsPageContent() {
         setProposedLotCode(lotCode)
         setIsGeneratingCode(false)
 
-        // 2. Khớp thông minh Sản Phẩm từ con dấu / tem quét
-        const match = findBestMatchingProduct(group.boxes, warehouseProducts)
-        const targetProd = match.product || warehouseProducts[0] || null
+        // 2. Khớp thông minh Sản Phẩm từ con dấu / tem quét (Hỗ trợ tự động phân loại Pallet hỗn hợp nhiều sản phẩm)
+        const detectedLines = detectPalletProductLines(refreshedBoxes, warehouseProducts, dynamicStampMap, allProductUnits, allUnits)
+        setApproveProductLines(detectedLines)
+
+        const targetProd = detectedLines[0]?.product || warehouseProducts[0] || null
         setSelectedProductId(targetProd?.id ?? null)
-        setMatchInfo({ score: match.matchScore, reason: match.matchReason })
+        const primaryMatch = findBestMatchingProduct(refreshedBoxes, warehouseProducts, dynamicStampMap)
+        setMatchInfo({ score: primaryMatch.matchScore, reason: primaryMatch.matchReason })
 
         // 3. Kế thừa mã phụ (Tag)
         setCustomLotTag(group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag || '')
 
         // 4. Kế thừa số lượng thùng (đơn vị: Thùng) & tổng khối lượng (Kg)
-        setCustomQuantity(group.boxes.length)
-        setCustomWeight(group.total_weight)
+        const totalQty = detectedLines.reduce((acc, l) => acc + (Number(l.quantity) || 0), 0)
+        const totalW = detectedLines.reduce((acc, l) => acc + (Number(l.weight) || 0), 0)
+        setCustomQuantity(totalQty || group.boxes.length)
+        setCustomWeight(totalW || group.total_weight)
 
-        // Khớp đơn vị tính chuẩn kèm hậu tố trọng lượng (vd: Thùng (20kg), Kg) khớp với Quản lý sản phẩm & Tạo LOT
-        const sampleWeight = group.boxes.find(b => Number(b.quantity) > 0)?.quantity || (group.boxes.length > 0 ? group.total_weight / group.boxes.length : 20)
-        const availUnits = getAvailableUnitsForProduct(targetProd, allProductUnits, allUnits, Number(sampleWeight) || 20)
-        const thungUnit = availUnits.find(u => normalizeUnit(u).includes('thung') || normalizeUnit(u).includes('thùng'))
-        setCustomUnit(thungUnit || availUnits[0] || 'Thùng (20kg)')
+        // Khớp đơn vị tính chuẩn kèm hậu tố trọng lượng (vd: Thùng (20kg), Kg)
+        const defaultUnit = detectedLines[0]?.unit || 'Thùng (20kg)'
+        setCustomUnit(defaultUnit)
 
         // 5. Kế thừa ngày tháng từ các thùng (khớp chính xác quy tắc đóng dấu Dòng 2 & tem nhãn)
         const todayStr = new Date().toISOString().slice(0, 10)
@@ -1427,6 +1810,47 @@ export default function PalletsPageContent() {
         // 7. Kế thừa Ghi chú từ app quét (nếu người dùng có nhập ghi chú trên app)
         const syncedNote = group.pallet_notes || group.boxes.map(b => b.metadata?.pallet_notes || b.metadata?.notes).find(Boolean) || ''
         setCustomNotes(syncedNote)
+    }
+
+    const handleUpdateProductLine = (lineId: string, updates: Partial<ApproveLotProductLine>) => {
+        setApproveProductLines(prev => prev.map(line => {
+            if (line.id !== lineId) return line
+            const updated = { ...line, ...updates }
+            if (updates.product_id && updates.product_id !== line.product_id) {
+                const newProd = warehouseProducts.find(p => p.id === updates.product_id) || null
+                updated.product = newProd
+                const currentWeightPerBox = line.quantity > 0 ? (line.weight / line.quantity) : 20
+                const newUnits = getAvailableUnitsForProduct(newProd, allProductUnits, allUnits, currentWeightPerBox)
+                const thungOpt = newUnits.find(u => normalizeUnit(u).includes('thung') || normalizeUnit(u).includes('thùng'))
+                updated.unit = thungOpt || newUnits[0] || 'Thùng (20kg)'
+            }
+            return updated
+        }))
+    }
+
+    const handleAddProductLine = () => {
+        const defaultProd = warehouseProducts[0] || null
+        const availUnits = getAvailableUnitsForProduct(defaultProd, allProductUnits, allUnits, 20)
+        const thungUnit = availUnits.find(u => normalizeUnit(u).includes('thung') || normalizeUnit(u).includes('thùng'))
+        const newLine: ApproveLotProductLine = {
+            id: `line-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            product_id: defaultProd ? defaultProd.id : '',
+            product: defaultProd,
+            quantity: 0,
+            weight: 0,
+            unit: thungUnit || availUnits[0] || 'Thùng (20kg)',
+            box_ids: [],
+            matchReason: 'Thêm thủ công'
+        }
+        setApproveProductLines(prev => [...prev, newLine])
+    }
+
+    const handleRemoveProductLine = (lineId: string) => {
+        if (approveProductLines.length <= 1) {
+            showToast('LOT bắt buộc phải có ít nhất 1 dòng sản phẩm', 'warning')
+            return
+        }
+        setApproveProductLines(prev => prev.filter(l => l.id !== lineId))
     }
 
     const handleAddRawDate = () => {
@@ -1506,8 +1930,8 @@ export default function PalletsPageContent() {
             showToast('Vui lòng nhập Mã LOT định danh!', 'warning')
             return
         }
-        if (!selectedProductId) {
-            showToast('Vui lòng chọn Sản phẩm cho LOT hàng!', 'warning')
+        if (!approveProductLines || approveProductLines.length === 0 || !approveProductLines.some(l => l.product_id)) {
+            showToast('Vui lòng chọn ít nhất 1 Sản phẩm cho LOT hàng!', 'warning')
             return
         }
 
@@ -1550,7 +1974,10 @@ export default function PalletsPageContent() {
                 finalLotCode = await generateUniqueLotCode(supabase, currentSystem.name)
             }
 
-            const selectedProd = warehouseProducts.find(p => p.id === selectedProductId)
+            const primaryLine = approveProductLines.find(l => l.product_id) || approveProductLines[0]
+            const primaryProductId = primaryLine.product_id
+            const totalLotQuantity = approveProductLines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0) || group.boxes.length
+            const totalLotWeight = approveProductLines.reduce((sum, l) => sum + (Number(l.weight) || 0), 0) || group.total_weight
 
             const cleanInbound = cleanDateForDB(customInboundDate)
             const cleanRawDates = customRawMaterialDates.map(d => cleanDateForDB(d)).filter(Boolean) as string[]
@@ -1566,9 +1993,9 @@ export default function PalletsPageContent() {
                 code: finalLotCode,
                 system_code: currentSystem.code,
                 company_id: profile?.company_id || null,
-                product_id: selectedProductId,
+                product_id: primaryProductId,
                 daily_seq: dailySeqVal,
-                quantity: Number(customQuantity) || group.boxes.length,
+                quantity: totalLotQuantity,
                 status: 'active',
                 inbound_date: cleanInbound || null,
                 packaging_date: cleanPack || null,
@@ -1578,9 +2005,17 @@ export default function PalletsPageContent() {
                 metadata: {
                     created_from_pallet_stt: group.pallet_stt,
                     pallet_tag: customLotTag.trim() || null,
-                    unit: customUnit || 'Thùng',
-                    total_weight_kg: Number(customWeight) || group.total_weight,
+                    unit: primaryLine.unit || 'Thùng',
+                    total_weight_kg: totalLotWeight,
                     box_count: group.boxes.length,
+                    product_lines: approveProductLines.map(l => ({
+                        product_id: l.product_id,
+                        sku: l.product?.sku || warehouseProducts.find(p => p.id === l.product_id)?.sku,
+                        name: l.product?.name || warehouseProducts.find(p => p.id === l.product_id)?.name,
+                        quantity: Number(l.quantity) || 0,
+                        weight: Number(l.weight) || 0,
+                        unit: l.unit
+                    })),
                     production_place: customProductionPlace.trim() || null,
                     production_places: customProductionPlace.trim() ? [customProductionPlace.trim()] : [],
                     material_zone: customMaterialZone.trim() || null,
@@ -1622,19 +2057,24 @@ export default function PalletsPageContent() {
                 throw new Error('Không lấy được ID của LOT vừa tạo')
             }
 
-            // 2. Tạo bản ghi chi tiết sản phẩm Lô (lot_items)
-            const itemPayload: any = {
-                lot_id: newLotId,
-                product_id: selectedProductId,
-                quantity: Number(customQuantity) || group.boxes.length,
-                unit: customUnit || 'Thùng'
-            }
-            if (profile?.company_id) {
-                itemPayload.company_id = profile.company_id
-            }
+            // 2. Tạo các bản ghi chi tiết từng dòng sản phẩm Lô (lot_items)
+            const itemPayloads = approveProductLines.map(line => {
+                const itemPayload: any = {
+                    lot_id: newLotId,
+                    product_id: line.product_id,
+                    quantity: Number(line.quantity) || 0,
+                    initial_quantity: Number(line.quantity) || 0,
+                    unit: line.unit || 'Thùng'
+                }
+                if (profile?.company_id) {
+                    itemPayload.company_id = profile.company_id
+                }
+                return itemPayload
+            })
+
             const { error: itemErr } = await (supabase
                 .from('lot_items') as any)
-                .insert(itemPayload)
+                .insert(itemPayloads)
 
             if (itemErr) {
                 console.warn('Cảnh báo thêm lot_items:', itemErr.message || itemErr)
@@ -1671,18 +2111,41 @@ export default function PalletsPageContent() {
             }
             await healStampBoxesInDB(group.boxes)
 
-            // 4. Ghép toàn bộ thùng của Pallet vào LOT mới
-            const boxIds = group.boxes.map(b => b.id)
-            const { error: boxErr } = await (supabase
-                .from('box_labels') as any)
-                .update({
-                    lot_id: newLotId,
-                    status: 'linked'
-                })
-                .in('id', boxIds)
+            // 4. Ghép toàn bộ thùng của Pallet vào LOT mới và gắn đúng từng mã sản phẩm tương ứng
+            const assignedBoxIds = new Set<string>()
+            for (const line of approveProductLines) {
+                if (line.box_ids && line.box_ids.length > 0) {
+                    line.box_ids.forEach(id => assignedBoxIds.add(id))
+                    const { error: lineBoxErr } = await (supabase
+                        .from('box_labels') as any)
+                        .update({
+                            lot_id: newLotId,
+                            product_id: line.product_id,
+                            status: 'linked'
+                        })
+                        .in('id', line.box_ids)
 
-            if (boxErr) {
-                throw new Error(boxErr.message || boxErr.details || 'Lỗi cập nhật liên kết box_labels')
+                    if (lineBoxErr) {
+                        console.warn(`Lỗi cập nhật box_labels cho dòng sản phẩm ${line.product_id}:`, lineBoxErr)
+                    }
+                }
+            }
+
+            // Bất kỳ thùng nào chưa được gán theo dòng sẽ được liên kết với sản phẩm chính
+            const unassignedBoxIds = group.boxes.map(b => b.id).filter(id => !assignedBoxIds.has(id))
+            if (unassignedBoxIds.length > 0) {
+                const { error: boxErr } = await (supabase
+                    .from('box_labels') as any)
+                    .update({
+                        lot_id: newLotId,
+                        product_id: primaryProductId,
+                        status: 'linked'
+                    })
+                    .in('id', unassignedBoxIds)
+
+                if (boxErr) {
+                    throw new Error(boxErr.message || boxErr.details || 'Lỗi cập nhật liên kết box_labels')
+                }
             }
 
             // 5. Đồng bộ ngày tháng thùng vào LOT
@@ -1692,7 +2155,11 @@ export default function PalletsPageContent() {
                 console.warn('Cảnh báo đồng bộ ngày tháng từ thùng vào LOT:', syncErr?.message || syncErr)
             }
 
-            showToast(`🎉 Đã duyệt tạo thành công LOT "${finalLotCode}" cho Pallet STT ${group.pallet_stt} và kết nối ${group.boxes.length} thùng!`, 'success')
+            const successMsg = approveProductLines.length > 1
+                ? `🎉 Đã duyệt tạo thành công LOT "${finalLotCode}" (Pallet STT ${group.pallet_stt}) với ${approveProductLines.length} dòng sản phẩm (${group.boxes.length} thùng)!`
+                : `🎉 Đã duyệt tạo thành công LOT "${finalLotCode}" cho Pallet STT ${group.pallet_stt} và kết nối ${group.boxes.length} thùng!`
+
+            showToast(successMsg, 'success')
             setApproveGroup(null)
             fetchData()
         } catch (err: any) {
@@ -2794,9 +3261,11 @@ export default function PalletsPageContent() {
                                         <div
                                             key={group.pallet_stt}
                                             className={`p-2 rounded-xl border transition-all flex flex-col justify-between shadow-2xs hover:shadow-xs ${
-                                                hasMatch
-                                                    ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
-                                                    : 'bg-white dark:bg-zinc-800/70 border-stone-200 dark:border-zinc-700'
+                                                group.isConflict
+                                                    ? 'bg-amber-50/50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-700'
+                                                    : hasMatch
+                                                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
+                                                        : 'bg-white dark:bg-zinc-800/70 border-stone-200 dark:border-zinc-700'
                                             }`}
                                         >
                                             {/* Dòng 1: STT, Số thùng, Khối lượng, Ghi chú + Cụm nút thao tác */}
@@ -3863,6 +4332,23 @@ export default function PalletsPageContent() {
 
                         {/* Modal Body */}
                         <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                            {/* Cảnh báo nếu trùng STT với Lô đã có trong kho */}
+                            {approveGroup.isConflict && approveGroup.matchedLot && (
+                                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200 shadow-2xs">
+                                    <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                                    <div>
+                                        <p className="font-black text-amber-800 dark:text-amber-300">
+                                            ⚠️ CẢNH BÁO: TRÙNG SỐ THỨ TỰ (STT {approveGroup.pallet_stt})
+                                        </p>
+                                        <p className="mt-1 text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">
+                                            Hệ thống phát hiện LOT <strong>&quot;{approveGroup.matchedLot.code}&quot;</strong> mang STT <strong>{approveGroup.pallet_stt}</strong> đã tồn tại trong kho ({approveGroup.matchedLot.existingBoxesCount || approveGroup.matchedLot.quantity || 0} thùng).
+                                            <br />
+                                            Nếu tiếp tục duyệt tại đây, hệ thống sẽ <strong>TÁCH RA THÀNH MỘT LOT MỚI RIÊNG BIỆT</strong>. Nếu bạn muốn GỘP hoặc THAY THẾ vào LOT cũ, vui lòng đóng hộp thoại này và chọn nút <strong>[Gộp]</strong> ngoài màn hình.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* 1. Định danh LOT & Mã Phụ (Tag) */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200/80 dark:border-zinc-700/60">
                                 <div>
@@ -3906,136 +4392,198 @@ export default function PalletsPageContent() {
                                 </div>
                             </div>
 
-                            {/* 2. Chọn Sản Phẩm & Nhận diện từ Con Dấu */}
-                            <div className="p-3.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-2">
+                            {/* 2. Danh Sách Sản Phẩm Của LOT (Hỗ trợ 1 hoặc nhiều sản phẩm trong cùng LOT) */}
+                            <div className="p-3.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-3">
                                 <div className="flex items-center justify-between">
                                     <label className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
                                         <Package size={14} className="text-indigo-600 dark:text-indigo-400" />
-                                        <span>Sản Phẩm Của LOT:</span>
+                                        <span>Danh Sách Sản Phẩm Của LOT ({approveProductLines.length}):</span>
                                         <span className="text-rose-500">*</span>
                                     </label>
-                                    {matchInfo && matchInfo.score > 15 ? (
-                                        <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100/90 dark:bg-emerald-950/70 px-2.5 py-0.5 rounded-full border border-emerald-300/80 dark:border-emerald-800 flex items-center gap-1">
-                                            <CheckCircle2 size={11} /> Khớp tự động: {matchInfo.reason}
-                                        </span>
-                                    ) : (
-                                        <span className="text-[10px] text-stone-400">Vui lòng chọn hoặc xác nhận đúng biến thể</span>
-                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={handleAddProductLine}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition-all shadow-xs"
+                                    >
+                                        <Plus size={12} />
+                                        <span>Thêm sản phẩm</span>
+                                    </button>
                                 </div>
 
-                                <Combobox
-                                    options={productOptions}
-                                    value={selectedProductId}
-                                    onChange={val => {
-                                        setSelectedProductId(val)
-                                        const newProd = warehouseProducts.find(p => p.id === val)
-                                        const newUnits = getAvailableUnitsForProduct(newProd, allProductUnits, allUnits, currentBoxWeight)
-                                        const thungOpt = newUnits.find(u => normalizeUnit(u).includes('thung') || normalizeUnit(u).includes('thùng'))
-                                        if (thungOpt) {
-                                            setCustomUnit(thungOpt)
-                                        } else if (newUnits[0]) {
-                                            setCustomUnit(newUnits[0])
-                                        }
-                                    }}
-                                    placeholder="Tìm kiếm sản phẩm (theo tên, mã SKU, tên viết tắt)..."
-                                    className="w-full text-xs"
-                                    renderValue={(option) => (
-                                        <div className="flex flex-col text-left w-full py-0.5">
-                                            <div className="text-[10px] text-zinc-500 font-mono mb-0.5 leading-none">{option.sku}</div>
-                                            <div className="font-bold text-xs text-zinc-900 dark:text-zinc-100 line-clamp-1 leading-tight">
-                                                {option.name}
-                                            </div>
-                                        </div>
-                                    )}
-                                    renderOption={(option: any) => (
-                                        <div className="flex flex-col text-left w-full py-1">
-                                            <div className="flex items-center justify-between gap-2 mb-0.5">
-                                                <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono leading-none uppercase">
-                                                    {option.sku}
-                                                </div>
-                                                {option.rawAliases && (
-                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40">
-                                                        ⚡ {option.rawAliases.split(/[,;\n]/)[0]?.trim()}
-                                                    </span>
-                                                )}
-                                            </div>
-                                            <div className="text-[11px] text-zinc-600 dark:text-zinc-400 line-clamp-1 leading-tight font-medium">
-                                                {option.name}
-                                            </div>
-                                        </div>
-                                    )}
-                                />
-
-                                {selectedProductId && (
-                                    <div className="bg-white/90 dark:bg-zinc-900/90 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/40">
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                                            {/* 1. Mã SKU */}
-                                            <div>
-                                                <label className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block mb-1">
-                                                    Mã SKU:
-                                                </label>
-                                                <div className="h-9 px-2.5 bg-stone-100/80 dark:bg-zinc-800/80 rounded-xl flex items-center font-mono font-bold text-xs text-stone-900 dark:text-zinc-100 border border-stone-200/80 dark:border-zinc-700/80 truncate">
-                                                    {warehouseProducts.find(p => p.id === selectedProductId)?.sku || '---'}
-                                                </div>
-                                                <span className="text-[10px] text-stone-400 mt-1 block select-none">&nbsp;</span>
-                                            </div>
-
-                                            {/* 2. Đơn vị tính */}
-                                            <div>
-                                                <label className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block mb-1">
-                                                    Đơn vị tính:
-                                                </label>
-                                                <select
-                                                    value={customUnit}
-                                                    onChange={e => setCustomUnit(e.target.value)}
-                                                    className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl font-bold text-stone-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-                                                >
-                                                    {currentAvailableUnits.length > 0 ? (
-                                                        currentAvailableUnits.map(u => (
-                                                            <option key={u} value={u}>{u}</option>
-                                                        ))
-                                                    ) : (
-                                                        <>
-                                                            <option value="Thùng (20kg)">Thùng (20kg)</option>
-                                                            <option value="Kg">Kg</option>
-                                                        </>
-                                                    )}
-                                                </select>
-                                                <span className="text-[10px] text-stone-400 mt-1 block select-none">&nbsp;</span>
-                                            </div>
-
-                                            {/* 3. Số lượng */}
-                                            <div>
-                                                <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1">
-                                                    Số lượng ({customUnit}):
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    step="1"
-                                                    value={customQuantity}
-                                                    onChange={e => setCustomQuantity(parseInt(e.target.value, 10) || 0)}
-                                                    className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                                                />
-                                                <span className="text-[10px] text-stone-400 mt-1 block truncate">{approveGroup.boxes.length} thùng quét</span>
-                                            </div>
-
-                                            {/* 4. Khối lượng */}
-                                            <div>
-                                                <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1">
-                                                    Khối lượng (Kg):
-                                                </label>
-                                                <input
-                                                    type="number"
-                                                    step="0.1"
-                                                    value={customWeight}
-                                                    onChange={e => setCustomWeight(parseFloat(e.target.value) || 0)}
-                                                    className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                                />
-                                                <span className="text-[10px] text-stone-400 mt-1 block truncate">Tổng: {approveGroup.total_weight.toFixed(1)} Kg</span>
-                                            </div>
+                                {approveProductLines.length > 1 && (
+                                    <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs shadow-2xs">
+                                        <Sparkles size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                        <div>
+                                            <span className="font-black">Phát hiện Pallet hỗn hợp ({approveProductLines.length} sản phẩm):</span> Hệ thống tự động phân loại {approveGroup.boxes.length} thùng theo con dấu / tem quét và tạo {approveProductLines.length} dòng sản phẩm (<code>lot_items</code>) riêng biệt cho LOT.
                                         </div>
                                     </div>
                                 )}
+
+                                <div className="space-y-3">
+                                    {approveProductLines.map((line, index) => {
+                                        const currentProd = warehouseProducts.find(p => p.id === line.product_id) || line.product
+                                        const lineWeightPerBox = line.quantity > 0 ? (line.weight / line.quantity) : 20
+                                        const availableUnits = getAvailableUnitsForProduct(currentProd, allProductUnits, allUnits, lineWeightPerBox)
+
+                                        return (
+                                            <div
+                                                key={line.id}
+                                                className="bg-white/95 dark:bg-zinc-900/95 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/40 space-y-2.5 shadow-2xs"
+                                            >
+                                                <div className="flex items-center justify-between gap-2 pb-1 border-b border-stone-100 dark:border-zinc-800/80">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                            {index === 0 ? 'Sản phẩm #1 (Chính)' : `Sản phẩm #${index + 1}`}
+                                                        </span>
+                                                        {line.box_ids && line.box_ids.length > 0 && (
+                                                            <span className="text-[11px] font-bold text-stone-600 dark:text-zinc-300">
+                                                                · {line.box_ids.length} thùng
+                                                            </span>
+                                                        )}
+                                                        {line.stamp_code && (
+                                                            <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
+                                                                Dấu: {line.stamp_code}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5">
+                                                        {line.matchReason && (
+                                                            <span className="hidden sm:inline-flex text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 items-center gap-1">
+                                                                <CheckCircle2 size={11} /> {line.matchReason}
+                                                            </span>
+                                                        )}
+                                                        {approveProductLines.length > 1 && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleRemoveProductLine(line.id)}
+                                                                className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                                                                title="Xóa dòng sản phẩm này"
+                                                            >
+                                                                <Trash2 size={14} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Combobox chọn sản phẩm */}
+                                                <div>
+                                                    <Combobox
+                                                        options={productOptions}
+                                                        value={line.product_id}
+                                                        onChange={val => handleUpdateProductLine(line.id, { product_id: val || '' })}
+                                                        placeholder="Tìm kiếm sản phẩm (theo tên, mã SKU, tên viết tắt)..."
+                                                        className="w-full text-xs"
+                                                        renderValue={(option) => (
+                                                            <div className="flex flex-col text-left w-full py-0.5">
+                                                                <div className="text-[10px] text-zinc-500 font-mono mb-0.5 leading-none">{option.sku}</div>
+                                                                <div className="font-bold text-xs text-zinc-900 dark:text-zinc-100 line-clamp-1 leading-tight">
+                                                                    {option.name}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        renderOption={(option: any) => (
+                                                            <div className="flex flex-col text-left w-full py-1">
+                                                                <div className="flex items-center justify-between gap-2 mb-0.5">
+                                                                    <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono leading-none uppercase">
+                                                                        {option.sku}
+                                                                    </div>
+                                                                    {option.rawAliases && (
+                                                                        <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/40">
+                                                                            ⚡ {option.rawAliases.split(/[,;\n]/)[0]?.trim()}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div className="text-[11px] text-zinc-600 dark:text-zinc-400 line-clamp-1 leading-tight font-medium">
+                                                                    {option.name}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    />
+                                                </div>
+
+                                                {/* Chi tiết đơn vị, số lượng, khối lượng */}
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                                                    {/* Mã SKU */}
+                                                    <div>
+                                                        <label className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block mb-1">
+                                                            Mã SKU:
+                                                        </label>
+                                                        <div className="h-9 px-2.5 bg-stone-100/80 dark:bg-zinc-800/80 rounded-xl flex items-center font-mono font-bold text-xs text-stone-900 dark:text-zinc-100 border border-stone-200/80 dark:border-zinc-700/80 truncate">
+                                                            {currentProd?.sku || '---'}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Đơn vị tính */}
+                                                    <div>
+                                                        <label className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block mb-1">
+                                                            Đơn vị tính:
+                                                        </label>
+                                                        <select
+                                                            value={line.unit}
+                                                            onChange={e => handleUpdateProductLine(line.id, { unit: e.target.value })}
+                                                            className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl font-bold text-stone-800 dark:text-zinc-200 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                                                        >
+                                                            {availableUnits.length > 0 ? (
+                                                                availableUnits.map(u => (
+                                                                    <option key={u} value={u}>{u}</option>
+                                                                ))
+                                                            ) : (
+                                                                <>
+                                                                    <option value="Thùng (20kg)">Thùng (20kg)</option>
+                                                                    <option value="Kg">Kg</option>
+                                                                </>
+                                                            )}
+                                                        </select>
+                                                    </div>
+
+                                                    {/* Số lượng */}
+                                                    <div>
+                                                        <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                            Số lượng ({line.unit || 'Thùng'}):
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            step="1"
+                                                            value={line.quantity}
+                                                            onChange={e => handleUpdateProductLine(line.id, { quantity: parseInt(e.target.value, 10) || 0 })}
+                                                            className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-black text-emerald-600 dark:text-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                                                        />
+                                                    </div>
+
+                                                    {/* Khối lượng */}
+                                                    <div>
+                                                        <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                            Khối lượng (Kg):
+                                                        </label>
+                                                        <input
+                                                            type="number"
+                                                            step="0.1"
+                                                            value={line.weight}
+                                                            onChange={e => handleUpdateProductLine(line.id, { weight: parseFloat(e.target.value) || 0 })}
+                                                            className="w-full h-9 px-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-black text-indigo-600 dark:text-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+
+                                {/* Tổng kết toàn bộ dòng sản phẩm */}
+                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-indigo-100/60 dark:bg-indigo-950/50 rounded-xl border border-indigo-200/60 dark:border-indigo-900/50 text-xs">
+                                    <span className="font-bold text-indigo-950 dark:text-indigo-200">
+                                        Tổng cộng Pallet:
+                                    </span>
+                                    <div className="flex items-center gap-3 font-mono font-black text-xs">
+                                        <span className="text-emerald-700 dark:text-emerald-300">
+                                            {approveProductLines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0)} thùng
+                                        </span>
+                                        <span className="text-stone-300 dark:text-zinc-600">·</span>
+                                        <span className="text-indigo-700 dark:text-indigo-300">
+                                            {approveProductLines.reduce((sum, l) => sum + (Number(l.weight) || 0), 0).toFixed(1)} Kg
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* 3. Thông tin ngày tháng của LOT (Hỗ trợ nhiều ngày cho Đóng gói, Sản xuất, Nhập NL) */}
