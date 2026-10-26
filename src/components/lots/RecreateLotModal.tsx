@@ -31,7 +31,7 @@ export function RecreateLotModal({ lot, onClose, onSuccess }: RecreateLotModalPr
     const originalNotes = rawData.notes || lot?.notes || ''
 
     // Items extraction
-    const itemsList: Array<{ productId: string; name: string; sku: string; quantity: number; unit: string }> = []
+    const itemsList: Array<{ productId: string; name: string; sku: string; quantity: number; unit: string; categoryId?: string | null }> = []
     if (rawData.lot_items && Array.isArray(rawData.lot_items) && rawData.lot_items.length > 0) {
         rawData.lot_items.forEach((item: any) => {
             itemsList.push({
@@ -39,7 +39,8 @@ export function RecreateLotModal({ lot, onClose, onSuccess }: RecreateLotModalPr
                 name: item.products?.name || item.product_name || 'Sản phẩm',
                 sku: item.products?.sku || item.product_sku || '-',
                 quantity: item.quantity || 0,
-                unit: item.unit || item.products?.unit || 'Đơn vị'
+                unit: item.unit || item.products?.unit || 'Đơn vị',
+                categoryId: item.category_id ?? null
             })
         })
     } else if (lot?.products) {
@@ -48,7 +49,8 @@ export function RecreateLotModal({ lot, onClose, onSuccess }: RecreateLotModalPr
             name: lot.products?.name || 'Sản phẩm',
             sku: lot.products?.sku || '-',
             quantity: lot.quantity || 0,
-            unit: lot.products?.unit || 'Đơn vị'
+            unit: lot.products?.unit || 'Đơn vị',
+            categoryId: lot.products?.category_id ?? null
         })
     }
 
@@ -147,7 +149,8 @@ export function RecreateLotModal({ lot, onClose, onSuccess }: RecreateLotModalPr
                         lot_id: newLotId,
                         product_id: it.productId,
                         quantity: Number(Number(it.quantity).toFixed(6)),
-                        unit: it.unit
+                        unit: it.unit,
+                        category_id: it.categoryId ?? null
                     }))
 
                 if (itemsToInsert.length > 0) {

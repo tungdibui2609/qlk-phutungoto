@@ -205,7 +205,8 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                             lot_id: newLot.id,
                             product_id: item.product_id,
                             quantity: selectedQty,
-                            unit: formatUnitWeight(selectedUnit, extractWeightFromName(selectedUnit) || 0)
+                            unit: formatUnitWeight(selectedUnit, extractWeightFromName(selectedUnit) || 0),
+                            category_id: item.category_id ?? null
                         })
                         .select()
                         .single()

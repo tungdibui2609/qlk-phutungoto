@@ -361,7 +361,7 @@ export const unbundleService = {
         // 1. Fetch relevant lot_items in those LOTs that have the base unit
         const { data: allLotItems, error: fetchErr } = await supabase
             .from('lot_items')
-            .select('id, lot_id, quantity, unit')
+            .select('id, lot_id, quantity, unit, category_id')
             .in('lot_id', lotIds)
             .eq('product_id', productId)
 
@@ -416,7 +416,8 @@ export const unbundleService = {
                     lot_id: item.lot_id,
                     product_id: productId,
                     quantity: addedQty,
-                    unit: reqUnit
+                    unit: reqUnit,
+                    category_id: item.category_id ?? null
                 } as any)
             }
 
@@ -696,7 +697,7 @@ export const unbundleService = {
         // 1. Fetch relevant lot_items in those LOTs that have the source unit
         const { data: allLotItems, error: fetchErr } = await supabase
             .from('lot_items')
-            .select('id, lot_id, quantity, unit')
+            .select('id, lot_id, quantity, unit, category_id')
             .in('lot_id', lotIds)
             .eq('product_id', productId)
 
@@ -751,7 +752,8 @@ export const unbundleService = {
                     lot_id: item.lot_id,
                     product_id: productId,
                     quantity: targetToAdd,
-                    unit: targetUnit
+                    unit: targetUnit,
+                    category_id: item.category_id ?? null
                 } as any)
             }
 

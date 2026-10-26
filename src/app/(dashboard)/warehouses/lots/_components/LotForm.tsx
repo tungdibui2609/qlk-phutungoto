@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Boxes, MapPin, Calendar, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock, Tag } from 'lucide-react'
+import { Boxes, MapPin, Calendar, CalendarClock, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock, Tag, Warehouse, Fingerprint, Images, FileText, type LucideIcon } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
@@ -11,6 +11,7 @@ import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '../_hooks/use
 import { useUser } from '@/contexts/UserContext'
 import Protected from '@/components/auth/Protected'
 import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, formatUnitWeight, convertUnit } from '@/lib/unitConversion'
+import { matchSearch } from '@/lib/searchUtils'
 import { useToast } from '@/components/ui/ToastProvider'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 import { layoutService } from '@/services/warehouse/layoutService'
@@ -23,6 +24,7 @@ interface LotItemInput {
     unit: string
     tag?: string
     productionLotId?: string
+    categoryId?: string | null
 }
 
 interface LotFormProps {
@@ -46,6 +48,47 @@ interface LotFormProps {
 }
 
 const PRODUCTION_FIELDS = '*, products:product_id(*), production_lots(*, products(*))'
+
+const SECTION_TONES = {
+    indigo: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300',
+    orange: 'bg-orange-100 text-orange-700 dark:bg-orange-500/20 dark:text-orange-300',
+    amber: 'bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300',
+    teal: 'bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-300',
+    sky: 'bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300',
+    violet: 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300',
+    emerald: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300',
+} as const
+
+type SectionTone = keyof typeof SECTION_TONES
+
+function LotSectionHeader({
+    icon: Icon,
+    title,
+    tone,
+    badge,
+    trailing,
+}: {
+    icon: LucideIcon
+    title: string
+    tone: SectionTone
+    badge?: React.ReactNode
+    trailing?: React.ReactNode
+}) {
+    return (
+        <div className="flex items-center justify-between gap-2 mb-3">
+            <div className="flex items-center gap-2.5">
+                <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${SECTION_TONES[tone]}`}>
+                    <Icon size={15} />
+                </span>
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 dark:text-zinc-200">
+                    {title}
+                </span>
+                {badge}
+            </div>
+            {trailing}
+        </div>
+    )
+}
 
 export function LotForm({
     isVisible,
@@ -110,12 +153,19 @@ export function LotForm({
     const [productionData, setProductionData] = useState<any>(null)
     const [isFetchingProduction, setIsFetchingProduction] = useState(false)
     const [warehouseLayouts, setWarehouseLayouts] = useState<any[]>([])
+    const [categories, setCategories] = useState<any[]>([])
 
     useEffect(() => {
         if (!currentSystem?.code) return
         layoutService.getLayouts(currentSystem.code).then(data => {
             if (data) setWarehouseLayouts(data)
         }).catch(err => console.error('Error fetching layouts for LotForm:', err))
+    }, [currentSystem?.code])
+
+    useEffect(() => {
+        if (!currentSystem?.code) return
+        supabase.from('categories').select('id, name').eq('system_type', currentSystem.code).order('name')
+            .then(({ data }) => setCategories(data || []))
     }, [currentSystem?.code])
 
     // Load extra production data if needed to ensure we have latest lots
@@ -373,7 +423,8 @@ export function LotForm({
                             quantity: item.quantity,
                             unit: matchedUnit,
                             tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || '',
-                            productionLotId: (editingLot as any).production_lot_id || ''
+                            productionLotId: (editingLot as any).production_lot_id || '',
+                            categoryId: item.category_id || product?.category_id || ''
                         }
                     }))
                 } else {
@@ -566,7 +617,10 @@ export function LotForm({
                             } else {
                                 setInboundDate(initialDate)
                             }
-                            if (parsed.lotItems) setLotItems(parsed.lotItems)
+                            if (parsed.lotItems) setLotItems(parsed.lotItems.map((it: any) => ({
+                                ...it,
+                                categoryId: it.categoryId || products.find(p => p.id === it.productId)?.category_id || ''
+                            })))
                             if (parsed.dailySeq) setDailySeq(parsed.dailySeq)
                         } else {
                             resetForm()
@@ -849,7 +903,8 @@ export function LotForm({
                         product_name: product?.name,
                         quantity: item.quantity,
                         unit: item.unit,
-                        price: (product as any)?.cost_price || 0
+                        price: (product as any)?.cost_price || 0,
+                        category_id: item.categoryId || null
                     }
                 })
 
@@ -911,7 +966,8 @@ export function LotForm({
                             product_name: product?.name,
                             quantity: item.quantity,
                             unit: item.unit,
-                            price: (product as any)?.cost_price || 0
+                            price: (product as any)?.cost_price || 0,
+                            category_id: item.categoryId || null
                         }
                     })
 
@@ -930,7 +986,8 @@ export function LotForm({
                     const oldItemsMap: Record<string, number> = {}
                     if (editingLot.lot_items) {
                         editingLot.lot_items.forEach((li: any) => {
-                            const key = `${li.product_id}|${(li as any).unit || ''}`
+                            const effCat = li.category_id || products.find(p => p.id === li.product_id)?.category_id || ''
+                            const key = `${li.product_id}|${(li as any).unit || ''}|${effCat}`
                             oldItemsMap[key] = (oldItemsMap[key] || 0) + li.quantity
                         })
                     }
@@ -938,7 +995,7 @@ export function LotForm({
                     // 2. Snapshot NEW items
                     const newItemsMap: Record<string, number> = {}
                     validItems.forEach(item => {
-                        const key = `${item.productId}|${item.unit || ''}`
+                        const key = `${item.productId}|${item.unit || ''}|${item.categoryId || ''}`
                         newItemsMap[key] = (newItemsMap[key] || 0) + item.quantity
                     })
 
@@ -957,7 +1014,8 @@ export function LotForm({
 
                         const parts = key.split('|')
                         const pId = parts[0]
-                        const unitName = parts.slice(1).join('|')
+                        const unitName = parts.slice(1, -1).join('|')
+                        const catId = parts[parts.length - 1] || null
                         const product = products.find(p => p.id === pId)
 
                         if (diff > 0.000001) {
@@ -967,7 +1025,8 @@ export function LotForm({
                                 product_name: product?.name,
                                 quantity: Number(diff.toFixed(6)),
                                 unit: unitName,
-                                price: (product as any)?.cost_price || 0
+                                price: (product as any)?.cost_price || 0,
+                                category_id: catId
                             }
                         } else if (diff < -0.000001) {
                             outboundAdjustmentItems[outIdx++] = {
@@ -976,7 +1035,8 @@ export function LotForm({
                                 product_name: product?.name,
                                 exported_quantity: Number(Math.abs(diff).toFixed(6)),
                                 unit: unitName,
-                                cost_price: (product as any)?.cost_price || 0
+                                cost_price: (product as any)?.cost_price || 0,
+                                category_id: catId
                             }
                         }
                     })
@@ -1152,7 +1212,8 @@ export function LotForm({
                     lot_id: lotId,
                     product_id: item.productId,
                     quantity: Number(Number(item.quantity).toFixed(6)),
-                    unit: formatUnitWeight(item.unit, weight)
+                    unit: formatUnitWeight(item.unit, weight),
+                    category_id: item.categoryId || null
                 };
             })
 
@@ -1163,7 +1224,8 @@ export function LotForm({
                     lot_id: lotId,
                     product_id: item.productId,
                     quantity: Number(Number(item.quantity).toFixed(6)),
-                    unit: formatUnitWeight(item.unit, weight)
+                    unit: formatUnitWeight(item.unit, weight),
+                    category_id: item.categoryId || null
                 };
             })
 
@@ -1175,7 +1237,8 @@ export function LotForm({
                 (supabase.from('lot_items') as any).update({
                     quantity: item.quantity,
                     unit: item.unit,
-                    product_id: item.product_id
+                    product_id: item.product_id,
+                    category_id: item.category_id
                 }).eq('id', item.id)
             )
 
@@ -1284,8 +1347,22 @@ export function LotForm({
         }
     }
 
+    // Lưới bố cục dòng sản phẩm: Mã phụ & Danh mục rộng cố định, Sản phẩm chiếm hết phần thừa
+    // để hàng luôn sát mép phải. Cột Danh mục / cột nút xóa chỉ tồn tại khi thực sự có dùng.
+    const hasCategories = categories.length > 0
+    const showRowDelete = lotItems.length > 1 && !editingLot?.is_locked
+    const rowGridClass =
+        hasCategories && showRowDelete
+            ? 'lg:grid-cols-[1.75rem_minmax(0,1fr)_5.5rem_7.5rem_11rem_12rem_2.25rem]'
+            : hasCategories
+                ? 'lg:grid-cols-[1.75rem_minmax(0,1fr)_5.5rem_7.5rem_11rem_12rem]'
+                : showRowDelete
+                    ? 'lg:grid-cols-[1.75rem_minmax(0,1fr)_5.5rem_7.5rem_11rem_2.25rem]'
+                    : 'lg:grid-cols-[1.75rem_minmax(0,1fr)_5.5rem_7.5rem_11rem]'
+
     return (
-        <div ref={formRef} className={`transition-all duration-500 ease-in-out overflow-hidden ${isVisible ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}>
+        <div ref={formRef} className={`grid transition-all duration-500 ease-in-out ${isVisible ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+            <div className="overflow-hidden min-w-0">
             <div className="bg-white dark:bg-slate-900 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-xl p-6 md:p-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
                     <div className="flex items-center gap-3">
@@ -1338,7 +1415,8 @@ export function LotForm({
                 )}
 
                 {/* Vùng thông tin chi tiết lô hàng - Bố cục phân nhóm thông minh & thích ứng với các module */}
-                <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isInfoExpanded ? 'max-h-[3000px] opacity-100 mb-8' : 'max-h-0 opacity-0 mb-0 pointer-events-none'}`}>
+                <div className={`grid transition-all duration-500 ease-in-out ${isInfoExpanded ? 'grid-rows-[1fr] opacity-100 mb-6' : 'grid-rows-[0fr] opacity-0 mb-0 pointer-events-none'}`}>
+                    <div className="overflow-hidden min-w-0">
                     {(() => {
                         // Tính toán số lượng & trạng thái module cho các nhóm bố cục thích ứng
                         const hasWarehouse = hasModule('warehouse_name') || hasModule('warehouse_layout_2d') || warehouseLayouts.length > 0
@@ -1364,9 +1442,11 @@ export function LotForm({
                         const hasExtraInfo = hasModule('extra_info')
 
                         return (
-                            <div className="space-y-5">
+                            <div className="space-y-4 pt-1">
                                 {/* 1. Thông tin định danh & Quản lý kho */}
-                                <div className={`grid gap-4 ${
+                                <div className="p-4 bg-slate-50/70 dark:bg-zinc-800/30 rounded-2xl border border-slate-200/70 dark:border-zinc-700/60">
+                                    <LotSectionHeader icon={Warehouse} tone="indigo" title="Định danh & Kho" />
+                                    <div className={`grid gap-4 ${
                                     generalFieldsCount === 1 ? 'grid-cols-1 md:max-w-md' :
                                     generalFieldsCount === 2 ? 'grid-cols-1 md:grid-cols-2' :
                                     generalFieldsCount === 3 ? 'grid-cols-1 md:grid-cols-3' :
@@ -1505,13 +1585,11 @@ export function LotForm({
                                         </div>
                                     )}
                                 </div>
+                                </div>
 
                                 {/* 2. Thông tin sản xuất */}
                                 <div className="p-4 bg-orange-50/40 dark:bg-orange-950/10 rounded-2xl border border-orange-200/80 dark:border-orange-900/30">
-                                    <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold text-xs uppercase tracking-wider mb-3">
-                                        <Factory size={14} />
-                                        <span>Thông tin sản xuất</span>
-                                    </div>
+                                    <LotSectionHeader icon={Factory} tone="orange" title="Thông tin sản xuất" />
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {/* LSX Nội bộ */}
@@ -1563,10 +1641,7 @@ export function LotForm({
                                 {/* 3. Tiến trình & Các mốc thời gian */}
                                 {hasAnyDateModule && (
                                     <div className="p-4 bg-slate-50/70 dark:bg-zinc-800/30 rounded-2xl border border-slate-200/70 dark:border-zinc-700/60">
-                                        <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-300 font-bold text-xs uppercase tracking-wider mb-3">
-                                            <Calendar size={14} className="text-amber-500" />
-                                            <span>Tiến trình & Mốc thời gian</span>
-                                        </div>
+                                        <LotSectionHeader icon={CalendarClock} tone="amber" title="Tiến trình & Mốc thời gian" />
 
                                         <div className={`grid gap-4 ${
                                             dateModulesCount === 1 ? 'grid-cols-1 md:max-w-md' :
@@ -1867,15 +1942,16 @@ export function LotForm({
                                 {/* 4. Truy xuất nguồn gốc & Thuộc tính mở rộng */}
                                 {hasAnyTraceModule && (
                                     <div className="p-4 bg-emerald-50/40 dark:bg-emerald-950/15 rounded-2xl border border-emerald-100 dark:border-emerald-900/40 shadow-xs">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-300 font-bold text-xs uppercase tracking-wider">
-                                                <MapPin size={14} className="text-emerald-600 dark:text-emerald-400" />
-                                                <span>Truy xuất nguồn gốc & Thông tin mở rộng</span>
-                                            </div>
-                                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                                                {traceModulesCount} trường kích hoạt
-                                            </span>
-                                        </div>
+                                        <LotSectionHeader
+                                            icon={Fingerprint}
+                                            tone="teal"
+                                            title="Truy xuất nguồn gốc & Thông tin mở rộng"
+                                            trailing={
+                                                <span className="text-[11px] font-bold text-teal-600 dark:text-teal-400">
+                                                    {traceModulesCount} trường kích hoạt
+                                                </span>
+                                            }
+                                        />
 
                                         <div className={`grid gap-4 ${
                                             traceModulesCount === 1 ? 'grid-cols-1 md:grid-cols-2' :
@@ -2197,10 +2273,7 @@ export function LotForm({
                                 {/* 5. Hình ảnh & Thông tin bổ sung */}
                                 {(hasImages || hasExtraInfo) && (
                                     <div className="p-4 bg-slate-50/50 dark:bg-zinc-800/20 rounded-2xl border border-slate-200/60 dark:border-zinc-700/50">
-                                        <div className="flex items-center gap-2 text-slate-700 dark:text-zinc-300 font-bold text-xs uppercase tracking-wider mb-3">
-                                            <Package size={14} className="text-blue-500" />
-                                            <span>Hình ảnh & Thông tin phụ</span>
-                                        </div>
+                                        <LotSectionHeader icon={Images} tone="sky" title="Hình ảnh & Thông tin phụ" />
 
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {hasImages && (
@@ -2236,10 +2309,8 @@ export function LotForm({
                                 )}
 
                                 {/* 6. Ghi chú chung của lô hàng */}
-                                <div className="space-y-1.5">
-                                    <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
-                                        Ghi chú lô hàng
-                                    </label>
+                                <div className="p-4 bg-slate-50/50 dark:bg-zinc-800/20 rounded-2xl border border-slate-200/60 dark:border-zinc-700/50">
+                                    <LotSectionHeader icon={FileText} tone="violet" title="Ghi chú lô hàng" />
                                     <textarea
                                         value={newLotNotes}
                                         onChange={(e) => setNewLotNotes(e.target.value)}
@@ -2251,27 +2322,49 @@ export function LotForm({
                             </div>
                         )
                     })()}
+                    </div>
                 </div>
 
             {/* Danh sách sản phẩm */}
-            <div className="col-span-1 md:col-span-2 lg:col-span-4 space-y-3">
-                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300 flex items-center justify-between">
-                            <span>Danh sách sản phẩm ({lotItems.length})</span>
-                            {!editingLot?.is_locked && (
+            <div className="space-y-3">
+                        <LotSectionHeader
+                            icon={Package}
+                            tone="emerald"
+                            title="Danh sách sản phẩm"
+                            badge={
+                                <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 tabular-nums">
+                                    {lotItems.length}
+                                </span>
+                            }
+                            trailing={!editingLot?.is_locked ? (
                                 <button
                                     onClick={() => setLotItems([...lotItems, { productId: '', quantity: '', unit: '', tag: '' }])}
-                                    className="text-xs flex items-center gap-1 text-orange-600 hover:text-orange-700 font-medium px-2 py-1 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors"
+                                    className="text-xs flex items-center gap-1 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800/50 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 font-bold hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors active:scale-95"
                                 >
                                     <Plus size={14} />
                                     Thêm dòng
                                 </button>
-                            )}
-                        </label>
+                            ) : undefined}
+                        />
 
-                        <div className="space-y-3">
+                        {/* Tiêu đề cột — chỉ hiện trên màn hình rộng */}
+                        <div className={`hidden lg:grid ${rowGridClass} gap-2 px-1 text-[10px] font-black uppercase tracking-wider text-slate-400`}>
+                            <span className="text-center">#</span>
+                            <span>Sản phẩm</span>
+                            <span>Số lượng</span>
+                            <span>Đơn vị</span>
+                            <span>Mã phụ</span>
+                            {hasCategories && <span>Danh mục</span>}
+                            {showRowDelete && <span></span>}
+                        </div>
+
+                        <div className="space-y-2">
                             {lotItems.map((item, index) => (
-                                <div key={index} className="flex flex-col md:flex-row gap-3 items-start md:items-center bg-zinc-50 dark:bg-zinc-800/50 p-3 rounded-xl border border-zinc-100 dark:border-zinc-800">
-                                    <div className="flex-1 w-full space-y-1">
+                                <div key={index} className={`flex flex-col lg:grid ${rowGridClass} gap-2 items-stretch lg:items-center bg-white dark:bg-zinc-900 p-2.5 rounded-xl border border-slate-200 dark:border-zinc-700 hover:border-emerald-300 dark:hover:border-emerald-700 transition-colors`}>
+                                    <span className="hidden lg:flex items-center justify-center h-6 w-6 rounded-md bg-slate-100 dark:bg-zinc-800 text-[11px] font-black text-slate-500 dark:text-zinc-400 tabular-nums">
+                                        {index + 1}
+                                    </span>
+                                    <div className="min-w-0">
                                         <div className="relative">
                                             <Combobox
                                                 disabled={!!editingLot?.is_locked}
@@ -2295,6 +2388,8 @@ export function LotForm({
                                                         sku: hasModule('internal_products') && (p as any).internal_code ? (p as any).internal_code : p.sku,
                                                         name: hasModule('internal_products') && (p as any).internal_name ? (p as any).internal_name : p.name,
                                                         aliases: (p as any).aliases || '',
+                                                        internal_code: (p as any).internal_code || '',
+                                                        internal_name: (p as any).internal_name || '',
                                                         originalSku: p.sku,
                                                         originalName: p.name
                                                     }))}
@@ -2362,7 +2457,8 @@ export function LotForm({
                                                             ...newItems[index], 
                                                             productId: productId || '',
                                                             unit: formattedUnit,
-                                                            productionLotId: lotId
+                                                            productionLotId: lotId,
+                                                            categoryId: product?.category_id || ''
                                                         }
                                                         return newItems
                                                     })
@@ -2377,32 +2473,57 @@ export function LotForm({
                                                         </div>
                                                     </div>
                                                 )}
-                                                renderOption={(option: any) => (
-                                                    <div className="flex flex-col text-left w-full py-0.5">
-                                                        <div className="flex items-center gap-2 mb-0.5">
-                                                            <div className="text-xs font-black text-zinc-900 dark:text-zinc-100 font-mono leading-none uppercase">
-                                                                {option.sku}
-                                                            </div>
-                                                            {option.lotCode && (
-                                                                <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-md font-bold">
-                                                                    LOT: {option.lotCode}
+                                                suggestionLabel="Gợi ý sản phẩm"
+                                                renderOption={(option: any, term: string) => {
+                                                    // Badge cho biết vì sao kết quả này hiện ra: tên gõ tắt khớp > mã nội bộ khớp > SKU khớp
+                                                    const aliasHit = option.aliases
+                                                        ? String(option.aliases)
+                                                            .split(/[,;\n]/)
+                                                            .map((s: string) => s.trim())
+                                                            .filter(Boolean)
+                                                            .find((a: string) => matchSearch(a, term))
+                                                        : undefined
+                                                    const skuText = option.originalSku || option.sku
+                                                    return (
+                                                        <div className="flex flex-col text-left w-full py-0.5 min-w-0">
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="font-semibold text-xs text-zinc-900 dark:text-zinc-100 truncate max-w-full">
+                                                                    {option.name || option.label}
                                                                 </span>
+                                                                {aliasHit && (
+                                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide shrink-0 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300">
+                                                                        ⚡ {aliasHit}
+                                                                    </span>
+                                                                )}
+                                                                {!aliasHit && option.internal_code && matchSearch(option.internal_code, term) && (
+                                                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-black tracking-wide shrink-0 bg-purple-100 dark:bg-purple-900/60 text-purple-700 dark:text-purple-300">
+                                                                        NB: {option.internal_code}
+                                                                    </span>
+                                                                )}
+                                                                {option.lotCode && (
+                                                                    <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded-md font-bold shrink-0">
+                                                                        LOT: {option.lotCode}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            {skuText && (
+                                                                <div className="text-[10px] text-zinc-500 dark:text-zinc-400 truncate mt-0.5 font-mono">
+                                                                    SKU: {skuText}
+                                                                </div>
                                                             )}
                                                         </div>
-                                                        <div className="text-[10px] text-zinc-500 dark:text-zinc-400 line-clamp-1 leading-tight font-medium">
-                                                            {option.name}
-                                                        </div>
-                                                    </div>
-                                                )}
+                                                    )
+                                                }}
                                             />
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-row gap-3 w-full md:w-auto">
-                                        <div className="flex-1 md:w-32 space-y-1">
+                                    <div className="flex flex-row gap-2 w-full lg:contents">
+                                        <div className="flex-1 lg:flex-none min-w-0">
                                             <QuantityInput
                                                 disabled={!!editingLot?.is_locked}
                                                 placeholder="SL"
+                                                className="h-10 py-0 text-center font-bold"
                                                 value={item.quantity}
                                                 onChange={(val) => {
                                                     setLotItems(prev => {
@@ -2415,7 +2536,7 @@ export function LotForm({
                                         </div>
 
                                         {/* Unit Selection */}
-                                        <div className="flex-1 md:w-28 space-y-1">
+                                        <div className="flex-1 lg:flex-none min-w-0">
                                             <select
                                                 disabled={!!editingLot?.is_locked}
                                                 value={item.unit}
@@ -2458,7 +2579,7 @@ export function LotForm({
                                                         return newItems
                                                     })
                                                 }}
-                                                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
+                                                className="w-full h-10 px-3 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
                                             >
                                                 {(() => {
                                                     const product = products.find(p => p.id === item.productId)
@@ -2501,7 +2622,7 @@ export function LotForm({
                                     </div>
 
                                     {/* Secondary Code (Tag) */}
-                                    <div className="w-full md:w-48 space-y-1">
+                                    <div className="w-full min-w-0">
                                         <div className="relative group">
                                             <input
                                                 disabled={!!editingLot?.is_locked}
@@ -2517,7 +2638,7 @@ export function LotForm({
                                                         return newItems
                                                     })
                                                 }}
-                                                className="w-full px-3 py-2 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all pr-8"
+                                                className="w-full h-10 px-3 pr-8 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all uppercase"
                                             />
                                             {!editingLot?.is_locked && (
                                                 <button
@@ -2542,10 +2663,32 @@ export function LotForm({
                                                 <option key={tag} value={tag} />
                                             ))}
                                         </datalist>
-                                        <p className="text-[9px] text-zinc-400 dark:text-zinc-500 italic mt-0.5">
-                                            Dùng <span className="font-bold text-zinc-500">@</span> cho SKU, <span className="font-bold text-zinc-500">&gt;</span> để phân tách.
-                                        </p>
                                     </div>
+
+                                    {/* Category Selection — mặc định theo khai báo sản phẩm, chỉnh được theo từng dòng */}
+                                    {hasCategories && (
+                                        <div className="w-full min-w-0">
+                                            <select
+                                                disabled={!!editingLot?.is_locked}
+                                                value={item.categoryId || ''}
+                                                onChange={(e) => {
+                                                    const val = e.target.value
+                                                    setLotItems(prev => {
+                                                        const newItems = [...prev]
+                                                        newItems[index] = { ...newItems[index], categoryId: val }
+                                                        return newItems
+                                                    })
+                                                }}
+                                                title="Danh mục của dòng hàng này"
+                                                className="w-full h-10 px-3 bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm transition-all"
+                                            >
+                                                <option value="">-- Danh mục --</option>
+                                                {categories.map(c => (
+                                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    )}
 
                                     {lotItems.length > 1 && !editingLot?.is_locked && (
                                         <button
@@ -2553,7 +2696,7 @@ export function LotForm({
                                                 const newItems = lotItems.filter((_, i) => i !== index)
                                                 setLotItems(newItems)
                                             }}
-                                            className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
+                                            className="h-10 w-9 shrink-0 self-end lg:self-center lg:justify-self-center flex items-center justify-center text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
                                             title="Xóa dòng"
                                         >
                                             <Trash2 size={16} />
@@ -2561,6 +2704,22 @@ export function LotForm({
                                     )}
                                 </div>
                             ))}
+
+                            {lotItems.length === 0 && (
+                                <div className="py-8 px-4 rounded-xl border border-dashed border-slate-300 dark:border-zinc-700 bg-slate-50/50 dark:bg-zinc-900/30 text-center">
+                                    <Package size={22} className="mx-auto text-slate-300 dark:text-zinc-600 mb-2" />
+                                    <p className="text-xs font-medium text-slate-400 dark:text-zinc-500">
+                                        Chưa có sản phẩm nào — bấm <span className="font-bold text-emerald-600">Thêm dòng</span> để bắt đầu.
+                                    </p>
+                                </div>
+                            )}
+
+                            {!editingLot?.is_locked && lotItems.length > 0 && (
+                                <p className="text-[10px] text-zinc-400 dark:text-zinc-500 italic px-1">
+                                    Mã phụ: dùng <span className="font-bold not-italic">@</span> để chèn mã SKU, <span className="font-bold not-italic">&gt;</span> để phân tách nhiều mã.
+                                    {hasCategories && <> Danh mục mặc định lấy theo khai báo của sản phẩm và có thể đổi riêng cho từng dòng.</>}
+                                </p>
+                            )}
                             
                             {editingLot?.is_locked && (
                                 <div className="p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg flex items-center gap-2 text-amber-700 dark:text-amber-400 text-xs font-medium">
@@ -2626,6 +2785,7 @@ export function LotForm({
                         </button>
                     </div>
                 </div>
+            </div>
             </div>
         </div>
     )

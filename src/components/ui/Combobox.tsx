@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronDown, Check, Search, X } from 'lucide-react'
+import { ChevronDown, Check, Search, X, Sparkles } from 'lucide-react'
 import { normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 
 export interface ComboboxOption {
@@ -25,8 +25,10 @@ interface ComboboxProps {
     emptyText?: string
     allowCustom?: boolean
     renderValue?: (option: ComboboxOption) => React.ReactNode
-    renderOption?: (option: ComboboxOption) => React.ReactNode
+    renderOption?: (option: ComboboxOption, searchTerm: string) => React.ReactNode
     hideSearchIcon?: boolean
+    /** Tiêu đề dải gợi ý, ví dụ "Gợi ý sản phẩm". Bỏ trống = không hiển thị dải tiêu đề. */
+    suggestionLabel?: string
 }
 
 export function Combobox({
@@ -44,10 +46,13 @@ export function Combobox({
     allowCustom = false,
     renderValue,
     renderOption,
-    hideSearchIcon = false
+    hideSearchIcon = false,
+    suggestionLabel
 }: ComboboxProps) {
     const [isOpen, setIsOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
+    const [highlightedIndex, setHighlightedIndex] = useState(0)
+    const [navTouched, setNavTouched] = useState(false)
     const containerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
     const dropdownRef = useRef<HTMLDivElement>(null)
@@ -114,8 +119,19 @@ export function Combobox({
             .map(item => item.option)
     }, [options, searchTerm])
 
-    const handleSelect = (option: ComboboxOption) => {
-        onChange(option.value)
+    useEffect(() => {
+        setHighlightedIndex(0)
+        setNavTouched(false)
+    }, [searchTerm, filteredOptions.length])
+
+    useEffect(() => {
+        if (!isOpen) return
+        dropdownRef.current
+            ?.querySelector(`[data-opt-index="${highlightedIndex}"]`)
+            ?.scrollIntoView({ block: 'nearest' })
+    }, [isOpen, highlightedIndex])
+
+    const handleSelect = (option: ComboboxOption) => {        onChange(option.value)
         setIsOpen(false)
         setSearchTerm('')
     }
@@ -182,6 +198,26 @@ export function Combobox({
                             if (onSearchChange) onSearchChange(e.target.value)
                         }}
                         onFocus={() => setIsOpen(true)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Escape') {
+                                setIsOpen(false)
+                                return
+                            }
+                            if (!isOpen || filteredOptions.length === 0) return
+
+                            if (e.key === 'ArrowDown') {
+                                e.preventDefault()
+                                setNavTouched(true)
+                                setHighlightedIndex(i => (i + 1) % filteredOptions.length)
+                            } else if (e.key === 'ArrowUp') {
+                                e.preventDefault()
+                                setNavTouched(true)
+                                setHighlightedIndex(i => (i - 1 + filteredOptions.length) % filteredOptions.length)
+                            } else if (e.key === 'Enter' && searchTerm.trim()) {
+                                e.preventDefault()
+                                handleSelect(filteredOptions[highlightedIndex])
+                            }
+                        }}
                         onPaste={onPaste}
                         disabled={disabled}
                     />
@@ -219,20 +255,36 @@ export function Combobox({
                     ) : filteredOptions.length === 0 ? (
                         <div className="p-4 text-center text-sm text-gray-500">{emptyText}</div>
                     ) : (
-                        <div className="p-1">
-                            {filteredOptions.map((option) => (
+                        <>
+                            {suggestionLabel && searchTerm.trim() && (
+                                <div className="sticky top-0 z-10 px-3 py-1.5 bg-slate-50 dark:bg-slate-800/90 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                    <span className="flex items-center gap-1 shrink-0">
+                                        <Sparkles size={12} />
+                                        {suggestionLabel} ({filteredOptions.length})
+                                    </span>
+                                    <span className="text-[10px] font-normal text-slate-400 truncate">
+                                        Dùng ↑↓ để chọn, Enter để xác nhận
+                                    </span>
+                                </div>
+                            )}
+                            <div className="p-1">
+                            {filteredOptions.map((option, idx) => (
                                 <button
                                     key={option.value}
+                                    data-opt-index={idx}
+                                    onMouseEnter={() => { setNavTouched(true); setHighlightedIndex(idx) }}
                                     className={`
                                         w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg text-left transition-colors
-                                        ${option.value === value
+                                        ${(idx === highlightedIndex && (searchTerm.trim() || navTouched))
+                                            ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-900 dark:text-emerald-100'
+                                            : option.value === value
                                             ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 font-medium'
                                             : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-zinc-700'}
                                     `}
                                     onClick={() => handleSelect(option)}
                                 >
                                     {renderOption ? (
-                                        renderOption(option)
+                                        renderOption(option, searchTerm)
                                     ) : (
                                         <div className="flex flex-col text-left py-0.5 min-w-0 flex-1 pr-2">
                                             <span className="truncate font-medium">{option.label}</span>
@@ -247,6 +299,7 @@ export function Combobox({
                                 </button>
                             ))}
                         </div>
+                        </>
                     )}
                 </div>,
                 document.body

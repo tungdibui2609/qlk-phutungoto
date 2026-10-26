@@ -234,7 +234,7 @@ export function useInventoryByLot(
                 sysRes
             ] = await Promise.all([
                 fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode).eq('status', 'active')),
-                fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, initial_quantity'),
+                fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, initial_quantity, category_id'),
                 fetchAll('products', '*', (q: any) => q.or(`system_code.eq.${sysCode},system_type.eq.${sysCode}`)),
                 fetchAll('suppliers', 'id, name'),
                 fetchAll('lot_tags', 'tag, lot_id, lot_item_id'),
@@ -364,7 +364,9 @@ export function useInventoryByLot(
     const groupedInventory = useMemo(() => {
         const searchVal = searchTerm || ''
         
-        const getCatNames = (p: any) => {
+        // Danh mục gán trên dòng LOT thắng tuyệt đối; chỉ suy từ sản phẩm khi dòng chưa được gán
+        const getCatNames = (p: any, lineCategoryId?: string | null) => {
+            if (lineCategoryId) return categoryMap[lineCategoryId] ? [categoryMap[lineCategoryId]] : []
             if (!p) return []
             const names: string[] = []
             if (p.category_id && categoryMap[p.category_id]) names.push(categoryMap[p.category_id])
@@ -376,7 +378,8 @@ export function useInventoryByLot(
             return names
         }
 
-        const getCatIds = (p: any) => {
+        const getCatIds = (p: any, lineCategoryId?: string | null) => {
+            if (lineCategoryId) return [lineCategoryId]
             if (!p) return []
             const ids: string[] = []
             if (p.category_id) ids.push(p.category_id)
@@ -388,7 +391,7 @@ export function useInventoryByLot(
             return ids
         }
 
-        const getSearchable = (p: any, l: any, mode: string) => {
+        const getSearchable = (p: any, l: any, mode: string, lineCategoryId?: string | null) => {
             const res: string[] = []
             if (mode === 'all' || mode === 'code') {
                 if (l.code) res.push(l.code)
@@ -413,7 +416,7 @@ export function useInventoryByLot(
                 l.positions?.forEach((pos: any) => res.push(pos.code))
             }
             if (mode === 'all' || mode === 'category') {
-                getCatNames(p).forEach(cn => res.push(cn))
+                getCatNames(p, lineCategoryId).forEach(cn => res.push(cn))
             }
             if (mode === 'all') {
                 if (l.suppliers?.name) res.push(l.suppliers.name)
@@ -505,12 +508,12 @@ export function useInventoryByLot(
             if (selectedCategoryIds.length > 0) {
                 const lotCatIds = getCatIds(lot.products)
                 const matchesCategory = lotCatIds.some(id => selectedCategoryIds.includes(id))
-                const matchesItemCategory = lot.lot_items?.some(item => getCatIds(item.products).some(id => selectedCategoryIds.includes(id)))
+                const matchesItemCategory = lot.lot_items?.some(item => getCatIds(item.products, item.category_id).some(id => selectedCategoryIds.includes(id)))
                 if (!matchesCategory && !matchesItemCategory) return false
             }
             if (!searchVal) return true
             const matchInLot = advancedMatchSearch(getSearchable(lot.products, lot, searchMode), searchVal)
-            const matchInItems = lot.lot_items?.some(item => advancedMatchSearch(getSearchable(item.products, lot, searchMode), searchVal))
+            const matchInItems = lot.lot_items?.some(item => advancedMatchSearch(getSearchable(item.products, lot, searchMode, item.category_id), searchVal))
             return matchInLot || matchInItems
         })
 
@@ -526,16 +529,19 @@ export function useInventoryByLot(
                 productId: string | null,
                 baseUnit: string | null,
                 categoryId: string | null,
-                productCategoryRel?: { category_id: string }[]
+                productCategoryRel?: { category_id: string }[],
+                lineCategoryId?: string | null
             ) => {
+                const primaryCategoryId = lineCategoryId || categoryId || ''
+
                 if (searchVal) {
-                    const itemSearchVals = getSearchable(productCategoryRel ? { name, sku, category_id: categoryId, product_category_rel: productCategoryRel } : { name, sku, category_id: categoryId }, lot, searchMode)
+                    const itemSearchVals = getSearchable(productCategoryRel ? { name, sku, category_id: categoryId, product_category_rel: productCategoryRel } : { name, sku, category_id: categoryId }, lot, searchMode, lineCategoryId)
                     if (!advancedMatchSearch(itemSearchVals, searchVal)) return
                 }
 
                 let displayQty = qty
                 let displayUnit = unit
-                let key = `${sku}__${canonicalizeUnit(unit)}`
+                let key = `${sku}__${canonicalizeUnit(unit)}__${primaryCategoryId}`
                 let isUnconvertible = false
 
                 const targetUnit = targetUnitId ? units.find(u => u.id === targetUnitId) : null
@@ -553,9 +559,9 @@ export function useInventoryByLot(
                     const suffix = (rate && rate > 1 && !targetUnit!.name.includes('(') && isKg(baseUnit)) ? ` (${rate}kg)` : ''
                     displayUnit = targetUnit!.name + suffix
                     displayQty = convertUnit(productId, unit, targetUnit!.name, qty, baseUnit)
-                    key = `${sku}__${targetUnitId}`
+                    key = `${sku}__${targetUnitId}__${primaryCategoryId}`
                 } else if (targetUnitId) {
-                    key = `${sku}__${canonicalizeUnit(unit)}__UNCONVERTIBLE`
+                    key = `${sku}__${canonicalizeUnit(unit)}__UNCONVERTIBLE__${primaryCategoryId}`
                     isUnconvertible = true
                 }
                 
@@ -580,11 +586,10 @@ export function useInventoryByLot(
                     }
                 }
 
-                const catIds: string[] = []
-                if (categoryId) catIds.push(categoryId)
-                productCategoryRel?.forEach(rel => {
-                    if (rel.category_id && !catIds.includes(rel.category_id)) catIds.push(rel.category_id)
-                })
+                const catIds: string[] = getCatIds(
+                    { category_id: categoryId, product_category_rel: productCategoryRel },
+                    lineCategoryId
+                )
 
                 if (!groups.has(key)) {
                     groups.set(key, {
@@ -646,16 +651,17 @@ export function useInventoryByLot(
                             item.products.sku,
                             item.products.name,
                             item.unit || item.products.unit,
-                             item.quantity || 0,
-                             item.id,
-                             item.product_id,
-                             item.products.unit,
-                             item.products.category_id ?? null,
-                             item.products.product_category_rel
-                         )
-                     }
-                 })
-             } else if (lot.products) {
+                            item.quantity || 0,
+                            item.id,
+                            item.product_id,
+                            item.products.unit,
+                            item.products.category_id ?? null,
+                            item.products.product_category_rel,
+                            item.category_id ?? null
+                        )
+                    }
+                })
+            } else if (lot.products) {
                  processItem(
                      lot.products.sku,
                      lot.products.name,

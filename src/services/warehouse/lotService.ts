@@ -257,7 +257,8 @@ export const lotService = {
                 lot_id: lotId,
                 product_id: item.product_id,
                 quantity: result.remainingQtyFractional,
-                unit: formatUnitWeight(result.remainingUnitFractional, extractWeightFromName(result.remainingUnitFractional) || 0)
+                unit: formatUnitWeight(result.remainingUnitFractional, extractWeightFromName(result.remainingUnitFractional) || 0),
+                category_id: item.category_id ?? null
             })
             if (insError) throw insError
         } else {

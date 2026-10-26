@@ -236,7 +236,8 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         exported_quantity: selectedQty,
                         unit: selectedUnit,
                         cost_price: item.products?.cost_price || 0,
-                        production_id: selectedProductionId
+                        production_id: selectedProductionId,
+                        category_id: item.category_id || item.products?.category_id || null
                     }
 
                     // 2. Prepare Production Inputs if linked

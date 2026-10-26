@@ -527,7 +527,8 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
 
             toSync.forEach(p => {
                 Object.values(p.items).forEach((item: any) => {
-                    const key = `${item.product_id}|${item.unit}`
+                    const categoryId = item.category_id || null
+                    const key = `${item.product_id}|${item.unit}|${categoryId || ''}`
                     const qty = item.exported_quantity || 0
 
                     if (aggregatedItemsMap.has(key)) {
@@ -546,6 +547,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
                             quantity: qty,
                             document_quantity: qty,
                             price: item.cost_price || 0,
+                            category_id: categoryId,
                             lots: [p.lot_code]
                         })
                     }

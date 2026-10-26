@@ -4302,39 +4302,45 @@ export default function PalletsPageContent() {
 
             {/* ── MODAL DUYỆT TẠO LOT MỚI TỪ PALLET QUÉT ─────────── */}
             {approveGroup && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-                    <div className="bg-white dark:bg-zinc-900 rounded-2xl w-full max-w-3xl p-6 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[92vh]">
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-zinc-900 rounded-3xl w-full max-w-4xl p-5 sm:p-6 shadow-2xl border border-stone-200 dark:border-zinc-800 flex flex-col max-h-[92vh]">
                         {/* Header */}
-                        <div className="flex items-center justify-between pb-4 border-b border-stone-100 dark:border-zinc-800">
+                        <div className="flex items-center justify-between pb-3.5 border-b border-stone-200/80 dark:border-zinc-800">
                             <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-indigo-100 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shadow-xs">
+                                <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-violet-500 text-white flex items-center justify-center shadow-md shadow-indigo-500/25 shrink-0">
                                     <Sparkles size={22} />
                                 </div>
                                 <div>
-                                    <h3 className="font-black text-base text-stone-900 dark:text-zinc-100 flex items-center gap-2">
-                                        <span>Duyệt Tạo LOT Mới Từ Pallet</span>
-                                        <span className="font-mono text-xs px-2 py-0.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                    <div className="flex items-center gap-2">
+                                        <h3 className="font-extrabold text-base sm:text-lg text-stone-900 dark:text-zinc-100 tracking-tight">
+                                            Duyệt Tạo LOT Mới Từ Pallet
+                                        </h3>
+                                        <span className="font-mono text-xs font-black px-2.5 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shadow-2xs">
                                             STT: {approveGroup.pallet_stt}
                                         </span>
-                                    </h3>
-                                    <p className="text-xs text-stone-500 dark:text-zinc-400">
-                                        Kế thừa tự động dữ liệu quét từ điện thoại ({approveGroup.boxes.length} thùng · {approveGroup.total_weight.toFixed(1)} Kg)
+                                    </div>
+                                    <p className="text-xs text-stone-500 dark:text-zinc-400 mt-0.5 flex flex-wrap items-center gap-1.5">
+                                        <span>Kế thừa tự động từ app quét</span>
+                                        <span className="text-stone-300 dark:text-zinc-600">•</span>
+                                        <span className="font-bold text-emerald-600 dark:text-emerald-400">{approveGroup.boxes.length} thùng</span>
+                                        <span className="text-stone-300 dark:text-zinc-600">•</span>
+                                        <span className="font-bold text-indigo-600 dark:text-indigo-400">{approveGroup.total_weight.toFixed(1)} Kg</span>
                                     </p>
                                 </div>
                             </div>
                             <button
                                 onClick={() => setApproveGroup(null)}
-                                className="text-stone-400 hover:text-stone-600 dark:hover:text-zinc-200 p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                                className="text-stone-400 hover:text-stone-700 dark:hover:text-zinc-200 p-2 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
                             >
                                 <X size={20} />
                             </button>
                         </div>
 
                         {/* Modal Body */}
-                        <div className="flex-1 overflow-y-auto py-4 space-y-4 pr-1">
+                        <div className="flex-1 overflow-y-auto py-3.5 space-y-3.5 pr-1">
                             {/* Cảnh báo nếu trùng STT với Lô đã có trong kho */}
                             {approveGroup.isConflict && approveGroup.matchedLot && (
-                                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200 shadow-2xs">
+                                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200 shadow-2xs">
                                     <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                                     <div>
                                         <p className="font-black text-amber-800 dark:text-amber-300">
@@ -4350,76 +4356,85 @@ export default function PalletsPageContent() {
                             )}
 
                             {/* 1. Định danh LOT & Mã Phụ (Tag) */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200/80 dark:border-zinc-700/60">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/60 shadow-2xs">
                                 <div>
-                                    <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1">
-                                        Mã LOT Định Danh: <span className="text-rose-500">*</span>
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
+                                            <span>Mã LOT Định Danh</span>
+                                            <span className="text-rose-500">*</span>
+                                        </label>
+                                        <span className="text-[10px] text-stone-400">Gắn STT: {approveGroup.pallet_stt}</span>
+                                    </div>
                                     <div className="flex items-center gap-1.5">
                                         <input
                                             type="text"
                                             value={proposedLotCode}
                                             onChange={e => setProposedLotCode(e.target.value.toUpperCase())}
                                             placeholder="VD: DL-LOT-G22..."
-                                            className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                            className="flex-1 px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-mono font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                                         />
                                         <button
                                             type="button"
                                             onClick={handleRegenerateLotCode}
                                             disabled={isGeneratingCode}
                                             title="Sinh lại mã ngẫu nhiên mới"
-                                            className="p-2 bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 rounded-xl text-stone-600 dark:text-zinc-300 cursor-pointer disabled:opacity-50"
+                                            className="p-2 bg-white dark:bg-zinc-800 hover:bg-stone-100 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 rounded-xl text-stone-600 dark:text-zinc-300 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
                                         >
-                                            <RefreshCw size={14} className={isGeneratingCode ? 'animate-spin' : ''} />
+                                            <RefreshCw size={14} className={isGeneratingCode ? 'animate-spin text-indigo-600' : ''} />
                                         </button>
                                     </div>
-                                    <span className="text-[10px] text-stone-400 mt-1 block">Tự động gắn Số Thứ Tự: {approveGroup.pallet_stt}</span>
                                 </div>
 
                                 <div>
-                                    <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 block mb-1 flex items-center gap-1">
-                                        <Tag size={13} className="text-orange-500" />
-                                        <span>Mã Phụ (Tag):</span>
-                                    </label>
+                                    <div className="flex items-center justify-between mb-1">
+                                        <label className="text-xs font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
+                                            <Tag size={13} className="text-amber-500" />
+                                            <span>Mã Phụ (Tag):</span>
+                                        </label>
+                                        <span className="text-[10px] text-stone-400">Đồng bộ từ app quét</span>
+                                    </div>
                                     <input
                                         type="text"
                                         value={customLotTag}
                                         onChange={e => setCustomLotTag(e.target.value.toUpperCase())}
                                         placeholder="VD: TAG-01, VUNG-TRONG-02..."
-                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                        className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-amber-500 transition-all"
                                     />
-                                    <span className="text-[10px] text-stone-400 mt-1 block">Đồng bộ từ trường Tag trên app quét</span>
                                 </div>
                             </div>
 
                             {/* 2. Danh Sách Sản Phẩm Của LOT (Hỗ trợ 1 hoặc nhiều sản phẩm trong cùng LOT) */}
-                            <div className="p-3.5 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-3">
+                            <div className="p-3.5 bg-gradient-to-b from-indigo-50/50 to-indigo-50/20 dark:from-indigo-950/20 dark:to-transparent rounded-2xl border border-indigo-200/80 dark:border-indigo-800/60 space-y-3">
                                 <div className="flex items-center justify-between">
-                                    <label className="text-xs font-bold text-indigo-950 dark:text-indigo-200 flex items-center gap-1.5">
-                                        <Package size={14} className="text-indigo-600 dark:text-indigo-400" />
-                                        <span>Danh Sách Sản Phẩm Của LOT ({approveProductLines.length}):</span>
+                                    <div className="flex items-center gap-2">
+                                        <div className="p-1 rounded-lg bg-indigo-600 text-white">
+                                            <Package size={14} />
+                                        </div>
+                                        <span className="text-xs font-black text-indigo-950 dark:text-indigo-200 uppercase tracking-wider">
+                                            Sản Phẩm Của LOT ({approveProductLines.length})
+                                        </span>
                                         <span className="text-rose-500">*</span>
-                                    </label>
+                                    </div>
                                     <button
                                         type="button"
                                         onClick={handleAddProductLine}
-                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[11px] font-bold cursor-pointer transition-all shadow-xs"
+                                        className="inline-flex items-center gap-1 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold cursor-pointer transition-all shadow-xs active:scale-95"
                                     >
-                                        <Plus size={12} />
+                                        <Plus size={13} />
                                         <span>Thêm sản phẩm</span>
                                     </button>
                                 </div>
 
                                 {approveProductLines.length > 1 && (
-                                    <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs shadow-2xs">
-                                        <Sparkles size={16} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
+                                    <div className="flex items-center gap-2 p-2.5 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300/80 dark:border-emerald-800 rounded-xl text-emerald-800 dark:text-emerald-200 text-xs shadow-2xs">
+                                        <Sparkles size={15} className="text-emerald-600 dark:text-emerald-400 shrink-0" />
                                         <div>
-                                            <span className="font-black">Phát hiện Pallet hỗn hợp ({approveProductLines.length} sản phẩm):</span> Hệ thống tự động phân loại {approveGroup.boxes.length} thùng theo con dấu / tem quét và tạo {approveProductLines.length} dòng sản phẩm (<code>lot_items</code>) riêng biệt cho LOT.
+                                            <span className="font-bold">Pallet hỗn hợp ({approveProductLines.length} sản phẩm):</span> Tự động tách {approveGroup.boxes.length} thùng thành {approveProductLines.length} dòng sản phẩm (<code>lot_items</code>) riêng biệt.
                                         </div>
                                     </div>
                                 )}
 
-                                <div className="space-y-3">
+                                <div className="space-y-2.5">
                                     {approveProductLines.map((line, index) => {
                                         const currentProd = warehouseProducts.find(p => p.id === line.product_id) || line.product
                                         const lineWeightPerBox = line.quantity > 0 ? (line.weight / line.quantity) : 20
@@ -4428,35 +4443,37 @@ export default function PalletsPageContent() {
                                         return (
                                             <div
                                                 key={line.id}
-                                                className="bg-white/95 dark:bg-zinc-900/95 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/40 space-y-2.5 shadow-2xs"
+                                                className="bg-white dark:bg-zinc-900 p-3.5 rounded-2xl border border-stone-200/90 dark:border-zinc-800 space-y-2.5 shadow-sm hover:border-indigo-300 dark:hover:border-indigo-700 transition-all"
                                             >
-                                                <div className="flex items-center justify-between gap-2 pb-1 border-b border-stone-100 dark:border-zinc-800/80">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-[11px] font-black px-2 py-0.5 rounded-md bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                {/* Top row of card */}
+                                                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-stone-100 dark:border-zinc-800">
+                                                    <div className="flex flex-wrap items-center gap-2">
+                                                        <span className="text-[11px] font-black px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white shadow-2xs">
                                                             {index === 0 ? 'Sản phẩm #1 (Chính)' : `Sản phẩm #${index + 1}`}
                                                         </span>
-                                                        {line.box_ids && line.box_ids.length > 0 && (
-                                                            <span className="text-[11px] font-bold text-stone-600 dark:text-zinc-300">
-                                                                · {line.box_ids.length} thùng
-                                                            </span>
-                                                        )}
+                                                        <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-stone-100 dark:bg-zinc-800 text-stone-700 dark:text-zinc-300 border border-stone-200/70 dark:border-zinc-700">
+                                                            {line.quantity} thùng ({line.weight.toFixed(1)} Kg)
+                                                        </span>
                                                         {line.stamp_code && (
-                                                            <span className="text-[10px] font-mono font-bold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200 dark:border-amber-800">
-                                                                Dấu: {line.stamp_code}
+                                                            <span className="text-[10px] font-mono font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-2 py-0.5 rounded-lg border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                                                                <span>Dấu:</span>
+                                                                <strong>{line.stamp_code}</strong>
                                                             </span>
                                                         )}
                                                     </div>
-                                                    <div className="flex items-center gap-1.5">
+
+                                                    <div className="flex items-center gap-2">
                                                         {line.matchReason && (
-                                                            <span className="hidden sm:inline-flex text-[10px] font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 items-center gap-1">
-                                                                <CheckCircle2 size={11} /> {line.matchReason}
+                                                            <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 truncate max-w-xs md:max-w-md" title={line.matchReason}>
+                                                                <CheckCircle2 size={11} className="text-emerald-600 shrink-0" />
+                                                                <span className="truncate">{line.matchReason}</span>
                                                             </span>
                                                         )}
                                                         {approveProductLines.length > 1 && (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleRemoveProductLine(line.id)}
-                                                                className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer"
+                                                                className="text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 cursor-pointer transition-colors"
                                                                 title="Xóa dòng sản phẩm này"
                                                             >
                                                                 <Trash2 size={14} />
@@ -4474,11 +4491,13 @@ export default function PalletsPageContent() {
                                                         placeholder="Tìm kiếm sản phẩm (theo tên, mã SKU, tên viết tắt)..."
                                                         className="w-full text-xs"
                                                         renderValue={(option) => (
-                                                            <div className="flex flex-col text-left w-full py-0.5">
-                                                                <div className="text-[10px] text-zinc-500 font-mono mb-0.5 leading-none">{option.sku}</div>
-                                                                <div className="font-bold text-xs text-zinc-900 dark:text-zinc-100 line-clamp-1 leading-tight">
+                                                            <div className="flex items-center justify-between w-full py-0.5 gap-2">
+                                                                <span className="font-bold text-xs text-stone-900 dark:text-zinc-100 truncate">
                                                                     {option.name}
-                                                                </div>
+                                                                </span>
+                                                                <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono font-bold bg-indigo-50 dark:bg-indigo-950/60 px-2 py-0.5 rounded shrink-0 border border-indigo-200/60 dark:border-indigo-800/40">
+                                                                    {option.sku}
+                                                                </span>
                                                             </div>
                                                         )}
                                                         renderOption={(option: any) => (
@@ -4501,21 +4520,11 @@ export default function PalletsPageContent() {
                                                     />
                                                 </div>
 
-                                                {/* Chi tiết đơn vị, số lượng, khối lượng */}
-                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                                                    {/* Mã SKU */}
-                                                    <div>
-                                                        <label className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block mb-1">
-                                                            Mã SKU:
-                                                        </label>
-                                                        <div className="h-9 px-2.5 bg-stone-100/80 dark:bg-zinc-800/80 rounded-xl flex items-center font-mono font-bold text-xs text-stone-900 dark:text-zinc-100 border border-stone-200/80 dark:border-zinc-700/80 truncate">
-                                                            {currentProd?.sku || '---'}
-                                                        </div>
-                                                    </div>
-
+                                                {/* 3 Điều khiển tinh chỉnh: Đơn vị tính, Số lượng, Khối lượng */}
+                                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 pt-1">
                                                     {/* Đơn vị tính */}
                                                     <div>
-                                                        <label className="text-[11px] font-bold text-stone-500 dark:text-zinc-400 block mb-1">
+                                                        <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
                                                             Đơn vị tính:
                                                         </label>
                                                         <select
@@ -4538,7 +4547,7 @@ export default function PalletsPageContent() {
 
                                                     {/* Số lượng */}
                                                     <div>
-                                                        <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                        <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
                                                             Số lượng ({line.unit || 'Thùng'}):
                                                         </label>
                                                         <input
@@ -4552,7 +4561,7 @@ export default function PalletsPageContent() {
 
                                                     {/* Khối lượng */}
                                                     <div>
-                                                        <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1">
+                                                        <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
                                                             Khối lượng (Kg):
                                                         </label>
                                                         <input
@@ -4570,26 +4579,26 @@ export default function PalletsPageContent() {
                                 </div>
 
                                 {/* Tổng kết toàn bộ dòng sản phẩm */}
-                                <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 bg-indigo-100/60 dark:bg-indigo-950/50 rounded-xl border border-indigo-200/60 dark:border-indigo-900/50 text-xs">
-                                    <span className="font-bold text-indigo-950 dark:text-indigo-200">
-                                        Tổng cộng Pallet:
-                                    </span>
-                                    <div className="flex items-center gap-3 font-mono font-black text-xs">
-                                        <span className="text-emerald-700 dark:text-emerald-300">
+                                <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-emerald-50/80 dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-emerald-950/40 rounded-2xl border border-indigo-200/70 dark:border-indigo-800/60 shadow-2xs">
+                                    <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                                        <Layers size={14} className="text-indigo-600" />
+                                        <span>Tổng cộng Pallet:</span>
+                                    </div>
+                                    <div className="flex items-center gap-2 font-mono font-black text-xs">
+                                        <span className="px-2.5 py-1 bg-white dark:bg-zinc-800 text-emerald-700 dark:text-emerald-300 rounded-xl border border-emerald-200/80 dark:border-emerald-800 shadow-2xs">
                                             {approveProductLines.reduce((sum, l) => sum + (Number(l.quantity) || 0), 0)} thùng
                                         </span>
-                                        <span className="text-stone-300 dark:text-zinc-600">·</span>
-                                        <span className="text-indigo-700 dark:text-indigo-300">
+                                        <span className="px-2.5 py-1 bg-white dark:bg-zinc-800 text-indigo-700 dark:text-indigo-300 rounded-xl border border-indigo-200/80 dark:border-indigo-800 shadow-2xs">
                                             {approveProductLines.reduce((sum, l) => sum + (Number(l.weight) || 0), 0).toFixed(1)} Kg
                                         </span>
                                     </div>
                                 </div>
                             </div>
 
-                            {/* 3. Thông tin ngày tháng của LOT (Hỗ trợ nhiều ngày cho Đóng gói, Sản xuất, Nhập NL) */}
+                            {/* 3. Thông tin ngày tháng của LOT */}
                             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                                 {/* Ngày nhập kho */}
-                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 flex flex-col justify-between shadow-2xs">
                                     <div>
                                         <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 block mb-1.5 flex items-center gap-1">
                                             <Calendar size={13} className="text-indigo-500 shrink-0" />
@@ -4599,14 +4608,14 @@ export default function PalletsPageContent() {
                                             type="date"
                                             value={customInboundDate}
                                             onChange={e => setCustomInboundDate(e.target.value)}
-                                            className="w-full h-8 px-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-lg text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                            className="w-full h-8 px-2 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-bold text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                         />
                                     </div>
                                     <span className="text-[10px] text-stone-400 mt-1 block">Ngày tạo LOT nhập kho</span>
                                 </div>
 
                                 {/* Ngày đóng gói */}
-                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 flex flex-col justify-between shadow-2xs">
                                     <div>
                                         <div className="flex items-center justify-between mb-1.5">
                                             <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
@@ -4624,7 +4633,7 @@ export default function PalletsPageContent() {
                                         {customPackagingDates.length > 0 && (
                                             <div className="flex flex-wrap gap-1 mb-1.5 max-h-20 overflow-y-auto">
                                                 {customPackagingDates.map(dStr => (
-                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-amber-300 dark:border-amber-800/60 rounded-md text-[11px] font-bold text-amber-900 dark:text-amber-200 shadow-2xs">
+                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-amber-300 dark:border-amber-800/60 rounded-lg text-[11px] font-bold text-amber-900 dark:text-amber-200 shadow-2xs">
                                                         <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
                                                         <button
                                                             type="button"
@@ -4662,7 +4671,7 @@ export default function PalletsPageContent() {
                                 </div>
 
                                 {/* Ngày sản xuất */}
-                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 flex flex-col justify-between shadow-2xs">
                                     <div>
                                         <div className="flex items-center justify-between mb-1.5">
                                             <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
@@ -4680,7 +4689,7 @@ export default function PalletsPageContent() {
                                         {customPeelingDates.length > 0 && (
                                             <div className="flex flex-wrap gap-1 mb-1.5 max-h-20 overflow-y-auto">
                                                 {customPeelingDates.map(dStr => (
-                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-orange-300 dark:border-orange-800/60 rounded-md text-[11px] font-bold text-orange-900 dark:text-orange-200 shadow-2xs">
+                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-orange-300 dark:border-orange-800/60 rounded-lg text-[11px] font-bold text-orange-900 dark:text-orange-200 shadow-2xs">
                                                         <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
                                                         <button
                                                             type="button"
@@ -4718,7 +4727,7 @@ export default function PalletsPageContent() {
                                 </div>
 
                                 {/* Ngày nhập NL */}
-                                <div className="p-2.5 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-stone-200 dark:border-zinc-700/80 flex flex-col justify-between">
+                                <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 flex flex-col justify-between shadow-2xs">
                                     <div>
                                         <div className="flex items-center justify-between mb-1.5">
                                             <label className="text-[11px] font-bold text-stone-700 dark:text-zinc-300 flex items-center gap-1">
@@ -4736,7 +4745,7 @@ export default function PalletsPageContent() {
                                         {customRawMaterialDates.length > 0 && (
                                             <div className="flex flex-wrap gap-1 mb-1.5 max-h-20 overflow-y-auto">
                                                 {customRawMaterialDates.map(dStr => (
-                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-emerald-300 dark:border-emerald-800/60 rounded-md text-[11px] font-bold text-emerald-900 dark:text-emerald-200 shadow-2xs">
+                                                    <span key={dStr} className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-zinc-800 border border-emerald-300 dark:border-emerald-800/60 rounded-lg text-[11px] font-bold text-emerald-900 dark:text-emerald-200 shadow-2xs">
                                                         <span>{new Date(dStr).toLocaleDateString('vi-VN')}</span>
                                                         <button
                                                             type="button"
@@ -4774,11 +4783,11 @@ export default function PalletsPageContent() {
                                 </div>
                             </div>
 
-                            {/* 4. Tổ đóng gói & Vùng nguyên liệu & Ghi chú */}
+                            {/* 4. Nơi sản xuất, Vùng nguyên liệu & Ghi chú */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                <div>
-                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
-                                        <Factory size={11} className="text-blue-500" />
+                                <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 shadow-2xs">
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1.5 flex items-center gap-1.5">
+                                        <Factory size={13} className="text-blue-500" />
                                         <span>Nơi sản xuất / Tổ đóng gói:</span>
                                     </label>
                                     <input
@@ -4786,13 +4795,13 @@ export default function PalletsPageContent() {
                                         value={customProductionPlace}
                                         onChange={e => setCustomProductionPlace(e.target.value)}
                                         placeholder="VD: Tổ 1, Xưởng Chánh Thu..."
-                                        className="w-full h-9 px-3 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none"
+                                        className="w-full h-9 px-3 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                                     />
                                 </div>
 
-                                <div>
-                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1 flex items-center gap-1">
-                                        <MapPin size={11} className="text-emerald-500" />
+                                <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 shadow-2xs">
+                                    <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1.5 flex items-center gap-1.5">
+                                        <MapPin size={13} className="text-emerald-500" />
                                         <span>Vùng nguyên liệu:</span>
                                     </label>
                                     <input
@@ -4800,13 +4809,13 @@ export default function PalletsPageContent() {
                                         value={customMaterialZone}
                                         onChange={e => setCustomMaterialZone(e.target.value)}
                                         placeholder="VD: Bến Tre, Tây Nguyên..."
-                                        className="w-full h-9 px-3 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none"
+                                        className="w-full h-9 px-3 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs font-medium text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                                     />
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1">
+                            <div className="p-3 bg-slate-50/80 dark:bg-zinc-800/40 rounded-2xl border border-slate-200/80 dark:border-zinc-700/80 shadow-2xs">
+                                <label className="text-[11px] font-bold text-stone-600 dark:text-zinc-400 block mb-1.5">
                                     Ghi chú LOT hàng:
                                 </label>
                                 <textarea
@@ -4814,21 +4823,22 @@ export default function PalletsPageContent() {
                                     onChange={e => setCustomNotes(e.target.value)}
                                     placeholder="Nhập ghi chú cho LOT hàng (nếu có)..."
                                     rows={2}
-                                    className="w-full px-3 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none resize-none placeholder:text-stone-400"
+                                    className="w-full px-3 py-2 bg-white dark:bg-zinc-900 border border-stone-300 dark:border-zinc-700 rounded-xl text-xs text-stone-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-none placeholder:text-stone-400"
                                 />
                             </div>
                         </div>
 
                         {/* Footer Buttons */}
-                        <div className="flex items-center justify-between pt-3 border-t border-stone-100 dark:border-zinc-800">
-                            <span className="text-[11px] text-stone-400">
-                                Khi duyệt, LOT sẽ được tạo trên Web và kết nối tự động toàn bộ {approveGroup.boxes.length} thùng.
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-3.5 border-t border-stone-200/80 dark:border-zinc-800">
+                            <span className="text-xs text-stone-500 dark:text-zinc-400 flex items-center gap-1.5">
+                                <CheckCircle2 size={13} className="text-emerald-600 shrink-0" />
+                                <span>Tự động liên kết và đồng bộ <strong>{approveGroup.boxes.length} thùng</strong> vào LOT</span>
                             </span>
                             <div className="flex items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => setApproveGroup(null)}
-                                    className="px-4 py-2 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer"
+                                    className="px-4 py-2.5 text-xs font-bold text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer transition-colors"
                                 >
                                     Hủy
                                 </button>
@@ -4836,9 +4846,9 @@ export default function PalletsPageContent() {
                                     type="button"
                                     onClick={handleConfirmCreateLot}
                                     disabled={isApproving}
-                                    className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs cursor-pointer disabled:opacity-50"
+                                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-xs font-black rounded-xl shadow-md shadow-indigo-500/25 cursor-pointer disabled:opacity-50 transition-all active:scale-95"
                                 >
-                                    {isApproving ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+                                    {isApproving ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
                                     <span>Tạo LOT & Kết Nối Ngay</span>
                                 </button>
                             </div>

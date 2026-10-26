@@ -287,7 +287,8 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
 
             toSync.forEach(p => {
                 Object.values(p.items).forEach((item: any) => {
-                    const key = `${item.product_id}|${item.unit}`
+                    const categoryId = item.category_id || null
+                    const key = `${item.product_id}|${item.unit}|${categoryId || ''}`
                     const qty = item.quantity || item.received_quantity || 0
 
                     if (aggregatedItemsMap.has(key)) {
@@ -306,6 +307,7 @@ export const LotInboundBuffer: React.FC<LotInboundBufferProps> = ({ isOpen, onCl
                             quantity: qty,
                             document_quantity: qty,
                             price: item.price || 0,
+                            category_id: categoryId,
                             lots: [p.lot_code]
                         })
                     }

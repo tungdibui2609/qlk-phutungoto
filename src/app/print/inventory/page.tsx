@@ -445,7 +445,7 @@ export default function PrintInventoryPage() {
                             suppliers(name),
                             productions(code),
                             lot_tags(tag),
-                            lot_items(id, quantity, unit, product_id, lot_tags(tag), products(name, sku, unit, category_id)),
+                            lot_items(id, quantity, unit, product_id, category_id, lot_tags(tag), products(name, sku, unit, category_id)),
                             positions!positions_lot_id_fkey(id, code)
                         `)
                         .eq('status', 'active')
@@ -532,7 +532,8 @@ export default function PrintInventoryPage() {
                             return lot.lot_items.map((item: any, idx: number) => {
                                 const itemTags = (item.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
                                 const productId = item.product_id || item.products?.product_code || ''
-                                const primaryCatId = item.products?.category_id || prodToPrimaryCatMap.get(productId) || (prodToCatMap.get(productId)?.[0])
+                                // Danh mục gán trên dòng LOT thắng tuyệt đối; chỉ suy từ sản phẩm khi dòng chưa được gán
+                                const primaryCatId = item.category_id || item.products?.category_id || prodToPrimaryCatMap.get(productId) || (prodToCatMap.get(productId)?.[0])
 
                                 return {
                                     ...lotData,

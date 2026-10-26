@@ -257,6 +257,7 @@ export interface Database {
           product_id: string
           quantity: number
           unit: string | null
+          category_id?: string | null
         }
         Insert: {
           id?: string
@@ -265,6 +266,7 @@ export interface Database {
           product_id: string
           quantity?: number
           unit?: string | null
+          category_id?: string | null
         }
         Update: {
           id?: string
@@ -273,6 +275,7 @@ export interface Database {
           product_id?: string
           quantity?: number
           unit?: string | null
+          category_id?: string | null
         }
       }
       products: {

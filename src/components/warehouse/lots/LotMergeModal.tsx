@@ -78,8 +78,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                         *,
                         positions(id, code),
                         lot_items(
-                            id, quantity, product_id, unit,
-                            products(name, sku, internal_name, internal_code, unit)
+                            id, quantity, product_id, unit, category_id,
+                            products(name, sku, internal_name, internal_code, unit, category_id)
                         ),
                         lot_tags(tag, lot_item_id),
                         suppliers(name),
@@ -155,8 +155,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                         *,
                         positions!positions_lot_id_fkey(id, code),
                         lot_items(
-                            id, quantity, product_id, unit,
-                            products(name, sku, internal_name, internal_code, unit)
+                            id, quantity, product_id, unit, category_id,
+                            products(name, sku, internal_name, internal_code, unit, category_id)
                         ),
                         lot_tags(tag, lot_item_id),
                         suppliers(name),
@@ -197,8 +197,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                         *,
                         positions!positions_lot_id_fkey(id, code, zone_positions!left(zone_id)),
                         lot_items(
-                            id, quantity, product_id, unit,
-                            products(name, sku, internal_name, internal_code, unit)
+                            id, quantity, product_id, unit, category_id,
+                            products(name, sku, internal_name, internal_code, unit, category_id)
                         ),
                         lot_tags(tag, lot_item_id),
                         suppliers(name),
@@ -431,7 +431,8 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                     lot_id: targetLot.id,
                     product_id: sourceItem.product_id as string,
                     quantity: entry.qty,
-                    unit: sourceItem.unit || sourceItem.products?.unit
+                    unit: sourceItem.unit || sourceItem.products?.unit,
+                    category_id: sourceItem.category_id ?? sourceItem.products?.category_id ?? null
                 }).select().single();
 
                 if (insertError) throw new Error('Lỗi khi gộp: ' + insertError.message);

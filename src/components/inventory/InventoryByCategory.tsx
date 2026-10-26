@@ -55,7 +55,7 @@ export default function InventoryByCategory({
         })
 
         return Object.values(summaries).sort((a, b) => a.name.localeCompare(b.name))
-    }, [groupedInventory, categoryMap])
+    }, [groupedInventory, categoryMap, selectedCategoryIds])
 
     const toggleExpand = (catName: string) => {
         const next = new Set(expandedCategories)

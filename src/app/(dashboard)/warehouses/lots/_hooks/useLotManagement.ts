@@ -14,7 +14,7 @@ import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
     lot_items: (Database['public']['Tables']['lot_items']['Row'] & {
-        products: { name: string; unit: string | null; product_code?: string; sku: string; weight_kg?: number | null; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null } | null
+        products: { name: string; unit: string | null; product_code?: string; sku: string; weight_kg?: number | null; cost_price?: number | null; internal_code?: string | null; internal_name?: string | null; category_id?: string | null } | null
         unit?: string | null
     })[] | null
     suppliers: { name: string } | null
@@ -392,14 +392,16 @@ export function useLotManagement() {
             aliases,
             product_code: id,
             weight_kg,
+            category_id,
             product_category_rel(categories(name))
         ),
-        unit
+        unit,
+        category_id
     ),
     suppliers(name),
     qc_info(name),
     lot_tags(tag, lot_item_id),
-    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, aliases, product_category_rel(categories(name))),
+    products(name, unit, sku, weight_kg, cost_price, internal_code, internal_name, aliases, category_id, product_category_rel(categories(name))),
     box_labels(id, code, quantity, unit, semi_finished_lot_code, finished_lot_code, status, metadata)
         `
 
@@ -1067,6 +1069,14 @@ export function useLotManagement() {
                              const { data: matchedCats } = await (supabase.from('categories') as any).select('id').or(`name.ilike.${partTerm},name.ilike.${partUnaccented}`).eq('system_type', currentSystem.code);
                              const catIds = matchedCats?.map((c: any) => c.id) || [];
                              if (catIds.length > 0) {
+                                 const { data: lineCategoryItems } = await (supabase.from('lot_items') as any)
+                                     .select('lot_id, lots!inner(id, system_code, status)')
+                                     .in('category_id', catIds)
+                                     .eq('lots.system_code', currentSystem.code)
+                                     .neq('lots.status', 'hidden')
+                                     .neq('lots.status', 'exported');
+                                 if (lineCategoryItems) currentMatchIds.push(...lineCategoryItems.map((i: any) => i.lot_id));
+
                                  const { data: rels } = await (supabase.from('product_category_rel') as any).select('product_id').in('category_id', catIds);
                                  const pIds = rels?.map((r: any) => r.product_id) || [];
                                  if (pIds.length > 0) {
@@ -1219,8 +1229,9 @@ export function useLotManagement() {
         id,
         quantity,
         product_id,
-        products(name, unit, sku, cost_price, internal_code, internal_name, product_code: id),
-        unit
+        products(name, unit, sku, cost_price, internal_code, internal_name, product_code: id, category_id),
+        unit,
+        category_id
     ),
     suppliers(name),
     qc_info(name),
@@ -1390,8 +1401,9 @@ export function useLotManagement() {
         id,
         quantity,
         product_id,
-        products(name, unit, sku, cost_price, internal_code, internal_name, product_code: id),
-        unit
+        products(name, unit, sku, cost_price, internal_code, internal_name, product_code: id, category_id),
+        unit,
+        category_id
     ),
     suppliers(name),
     qc_info(name),

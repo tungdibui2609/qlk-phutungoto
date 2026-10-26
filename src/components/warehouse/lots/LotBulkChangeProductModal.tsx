@@ -187,9 +187,10 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products, lotIds
                 } else {
                     // TRƯỜNG HỢP KHÔNG TRÙNG LẶP: Lot chỉ chứa sản phẩm nguồn
                     // -> Chỉ cần cập nhật product_id thành sản phẩm đích
+                    // Danh mục cấp dòng bị gỡ vì nó được chọn cho sản phẩm cũ
                     const { error: updateError } = await supabase
                         .from('lot_items')
-                        .update({ product_id: targetProductId })
+                        .update({ product_id: targetProductId, category_id: null })
                         .eq('id', sourceItem.id)
 
                     if (updateError) {
