@@ -10,6 +10,7 @@ interface InventoryTableProps {
     toggleExpand: (key: string) => void
     loading: boolean
     viewMode?: 'lot' | 'month'
+    categoryMap?: Record<string, string>
 }
 
 export function InventoryTable({
@@ -17,7 +18,8 @@ export function InventoryTable({
     expandedProducts,
     toggleExpand,
     loading,
-    viewMode = 'lot'
+    viewMode = 'lot',
+    categoryMap = {}
 }: InventoryTableProps) {
     const [expandedLsx, setExpandedLsx] = useState<Set<string>>(new Set())
     const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
@@ -58,7 +60,8 @@ export function InventoryTable({
         const hasVariants = item.variants.size > 0 && !hasOnlyNoTag
         return expandedProducts.has(item.key) && hasVariants
     })
-    const columnCount = hasAnyExpanded ? 5 : 4
+    const showCategoryCol = Object.keys(categoryMap).length > 0
+    const columnCount = (hasAnyExpanded ? 5 : 4) + (showCategoryCol ? 1 : 0)
 
     return (
         <div className="rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
@@ -68,6 +71,7 @@ export function InventoryTable({
                         <tr>
                             <th className="px-4 py-3">Mã SP</th>
                             <th className="px-4 py-3">Tên sản phẩm</th>
+                            {showCategoryCol && <th className="px-4 py-3">Danh mục</th>}
                             <th className="px-4 py-3 text-right">Số lượng</th>
                             {hasAnyExpanded && <th className="px-4 py-3 text-right w-28">SL chi tiết</th>}
                             <th className="px-4 py-3 text-center w-20">ĐVT</th>
@@ -88,6 +92,9 @@ export function InventoryTable({
                                 const hasOnlyNoTag = item.variants.size === 1 && variantKeys[0] === 'Không có mã phụ'
                                 const hasVariants = item.variants.size > 0 && !hasOnlyNoTag
                                 const variantCount = item.variants.size
+                                const rowCategories = (item.categoryIds || [])
+                                    .map(id => categoryMap[id])
+                                    .filter(Boolean) as string[]
 
                                 return (
                                     <React.Fragment key={item.key}>
@@ -112,6 +119,24 @@ export function InventoryTable({
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
+                                            {showCategoryCol && (
+                                                <td className="px-4 py-3">
+                                                    {rowCategories.length > 0 ? (
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {rowCategories.map((catName, cIdx) => (
+                                                                <span
+                                                                    key={`${catName}-${cIdx}`}
+                                                                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300 text-[11px] font-medium whitespace-nowrap"
+                                                                >
+                                                                    {catName}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-stone-400">—</span>
+                                                    )}
+                                                </td>
+                                            )}
                                             <td className="px-4 py-3 text-right font-bold text-stone-900 dark:text-stone-100">
                                                 {formatQuantityFull(item.totalQuantity)}
                                             </td>
@@ -163,7 +188,7 @@ export function InventoryTable({
                                                             className="bg-emerald-50/20 hover:bg-emerald-50/40 dark:bg-emerald-950/10 dark:hover:bg-emerald-950/20 transition-colors cursor-pointer border-l-2 border-emerald-400"
                                                             onClick={(e) => { e.stopPropagation(); toggleMonthExpand(monthKey); }}
                                                         >
-                                                            <td className="px-4 py-2 pl-10" colSpan={2}>
+                                                            <td className="px-4 py-2 pl-10" colSpan={showCategoryCol ? 3 : 2}>
                                                                 <div className="flex items-center gap-2 text-sm font-bold text-emerald-800 dark:text-emerald-400">
                                                                     {isMonthExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                                                     <Calendar size={14} className="text-emerald-600" />
@@ -213,7 +238,7 @@ export function InventoryTable({
                                                                     className="bg-orange-50/30 hover:bg-orange-100/40 dark:bg-orange-950/10 dark:hover:bg-orange-950/20 transition-colors cursor-pointer border-l-[3px] border-orange-300"
                                                                     onClick={(e) => { e.stopPropagation(); toggleLsxExpand(lsxKey); }}
                                                                 >
-                                                                    <td className="px-4 py-2 pl-14" colSpan={2}>
+                                                                    <td className="px-4 py-2 pl-14" colSpan={showCategoryCol ? 3 : 2}>
                                                                         <div className="flex items-center gap-2 text-xs font-semibold text-orange-700 dark:text-orange-400">
                                                                             {isLsxExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
                                                                             <TagDisplay tags={[lsxName]} />
@@ -232,7 +257,7 @@ export function InventoryTable({
                                                                     const isNoTag = subItem.tag === 'Không có mã phụ'
                                                                     rows.push(
                                                                         <tr key={`${lsxKey}-sub-${sIdx}`} className="bg-stone-50/30 dark:bg-stone-900/30 hover:bg-stone-100/30 transition-colors border-l border-orange-200">
-                                                                            <td className="px-4 py-1.5 pl-20" colSpan={2}>
+                                                                            <td className="px-4 py-1.5 pl-20" colSpan={showCategoryCol ? 3 : 2}>
                                                                                 <div className="flex items-center gap-1.5 text-xs">
                                                                                     <ChevronRight size={10} className="text-stone-300" />
                                                                                     {isNoTag ? (
@@ -257,7 +282,7 @@ export function InventoryTable({
                                                             const isNoTag = subItem.tag === 'Không có mã phụ'
                                                             rows.push(
                                                                 <tr key={`${monthKey}-nonlsx-${sIdx}`} className={`transition-colors ${isNoTag ? 'bg-amber-50/30 dark:bg-amber-950/10 border-l-[3px] border-amber-300' : 'bg-stone-50/20 dark:bg-stone-900/10 hover:bg-stone-100/20'}`}>
-                                                                    <td className="px-4 py-2 pl-14" colSpan={2}>
+                                                                    <td className="px-4 py-2 pl-14" colSpan={showCategoryCol ? 3 : 2}>
                                                                         <div className="flex items-center gap-2 text-xs">
                                                                             <ChevronRight size={12} className="text-stone-400" />
                                                                             {isNoTag ? (
@@ -314,7 +339,7 @@ export function InventoryTable({
                                                         className="bg-orange-50/40 hover:bg-orange-100/50 dark:bg-orange-900/20 dark:hover:bg-orange-900/30 transition-colors cursor-pointer border-l-2 border-orange-400"
                                                         onClick={(e) => { e.stopPropagation(); toggleLsxExpand(lsxKey); }}
                                                     >
-                                                        <td className="px-4 py-2 pl-10" colSpan={2}>
+                                                        <td className="px-4 py-2 pl-10" colSpan={showCategoryCol ? 3 : 2}>
                                                             <div className="flex items-center gap-2 text-sm font-bold text-orange-800 dark:text-orange-400">
                                                                 {isLsxExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
                                                                 <TagDisplay tags={[lsxName]} />
@@ -333,7 +358,7 @@ export function InventoryTable({
                                                         const isNoTag = subItem.tag === 'Không có mã phụ'
                                                         rows.push(
                                                             <tr key={`${lsxKey}-sub-${sIdx}`} className="bg-stone-50/50 dark:bg-stone-900/50 transition-colors hover:bg-stone-100/50 dark:hover:bg-stone-800/50 border-l border-orange-200 dark:border-orange-900/30">
-                                                                <td className="px-4 py-2 pl-16" colSpan={2}>
+                                                                <td className="px-4 py-2 pl-16" colSpan={showCategoryCol ? 3 : 2}>
                                                                     <div className="flex items-center gap-2 text-sm">
                                                                         <ChevronRight size={14} className="text-stone-300" />
                                                                         {isNoTag ? (
@@ -358,7 +383,7 @@ export function InventoryTable({
                                                 const isNoTag = subItem.tag === 'Không có mã phụ'
                                                 rows.push(
                                                     <tr key={`${item.key}-nonlsx-${sIdx}`} className={`transition-colors ${isNoTag ? 'bg-amber-50 dark:bg-amber-900/20 border-l-2 border-amber-400' : 'bg-stone-50/50 dark:bg-stone-900/50 hover:bg-stone-100/50 dark:hover:bg-stone-800/50'}`}>
-                                                        <td className="px-4 py-2 pl-10" colSpan={2}>
+                                                        <td className="px-4 py-2 pl-10" colSpan={showCategoryCol ? 3 : 2}>
                                                             <div className="flex items-center gap-2 text-sm">
                                                                 <ChevronRight size={14} className="text-stone-400" />
                                                                 {isNoTag ? (
@@ -387,7 +412,7 @@ export function InventoryTable({
                 </table>
             </div>
             <div className="text-xs text-stone-500 text-right mt-2 p-2">
-                * Dữ liệu được nhóm theo Sản phẩm và Mã phụ
+                * Dữ liệu được nhóm theo Sản phẩm{showCategoryCol ? ', Danh mục' : ''} và Mã phụ
             </div>
         </div>
     )

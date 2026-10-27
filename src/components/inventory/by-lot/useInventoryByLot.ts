@@ -4,6 +4,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeSearchString, advancedMatchSearch } from '@/lib/searchUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { resolveCategories } from '@/lib/productCategory'
 import { 
     normalizeUnit, 
     canonicalizeUnit,
@@ -365,31 +366,9 @@ export function useInventoryByLot(
         const searchVal = searchTerm || ''
         
         // Danh mục gán trên dòng LOT thắng tuyệt đối; chỉ suy từ sản phẩm khi dòng chưa được gán
-        const getCatNames = (p: any, lineCategoryId?: string | null) => {
-            if (lineCategoryId) return categoryMap[lineCategoryId] ? [categoryMap[lineCategoryId]] : []
-            if (!p) return []
-            const names: string[] = []
-            if (p.category_id && categoryMap[p.category_id]) names.push(categoryMap[p.category_id])
-            if (p.product_category_rel) {
-                p.product_category_rel.forEach((rel: any) => {
-                    if (rel.category_id && categoryMap[rel.category_id]) names.push(categoryMap[rel.category_id])
-                })
-            }
-            return names
-        }
+        const getCatNames = (p: any, lineCategoryId?: string | null) => resolveCategories(p, lineCategoryId, categoryMap).names
 
-        const getCatIds = (p: any, lineCategoryId?: string | null) => {
-            if (lineCategoryId) return [lineCategoryId]
-            if (!p) return []
-            const ids: string[] = []
-            if (p.category_id) ids.push(p.category_id)
-            if (p.product_category_rel) {
-                p.product_category_rel.forEach((rel: any) => {
-                    if (rel.category_id) ids.push(rel.category_id)
-                })
-            }
-            return ids
-        }
+        const getCatIds = (p: any, lineCategoryId?: string | null) => resolveCategories(p, lineCategoryId).ids
 
         const getSearchable = (p: any, l: any, mode: string, lineCategoryId?: string | null) => {
             const res: string[] = []

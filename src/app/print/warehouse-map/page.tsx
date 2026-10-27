@@ -16,6 +16,7 @@ import { exportWarehouseToExcel, exportWarehouseGridToExcel, exportWarehouseLobb
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { extractProductCategories } from '@/lib/productCategory'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -23,51 +24,6 @@ type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 
 interface PositionWithZone extends Position {
     zone_id?: string | null
-}
-
-function extractProductCategories(prod: any) {
-    const categoryNames: string[] = []
-    const categoryIds: string[] = []
-    let primary_category_id: string | null = null
-    let primary_category_name: string | null = null
-
-    if (!prod) return { categoryNames, categoryIds, primary_category_id, primary_category_name }
-
-    if (prod.product_category_rel && prod.product_category_rel.length > 0) {
-        prod.product_category_rel.forEach((rel: any) => {
-            const catId = rel.category_id || rel.categories?.id
-            const catName = rel.categories?.name
-            if (catId && !categoryIds.includes(catId)) categoryIds.push(catId)
-            if (catName && !categoryNames.includes(catName)) categoryNames.push(catName)
-            if (rel.is_primary) {
-                primary_category_id = catId || null
-                primary_category_name = catName || null
-            }
-        })
-        if (!primary_category_id && prod.product_category_rel[0]) {
-            const first = prod.product_category_rel[0]
-            primary_category_id = first.category_id || first.categories?.id || null
-            primary_category_name = first.categories?.name || null
-        }
-    }
-
-    if (prod.categories) {
-        const catId = prod.category_id || prod.categories.id
-        const catName = prod.categories.name
-        if (catId && !categoryIds.includes(catId)) categoryIds.push(catId)
-        if (catName && !categoryNames.includes(catName)) categoryNames.push(catName)
-        if (!primary_category_id) {
-            primary_category_id = catId || null
-            primary_category_name = catName || null
-        }
-    } else if (prod.category_id) {
-        if (!categoryIds.includes(prod.category_id)) categoryIds.push(prod.category_id)
-        if (!primary_category_id) {
-            primary_category_id = prod.category_id
-        }
-    }
-
-    return { categoryNames, categoryIds, primary_category_id, primary_category_name }
 }
 
 export default function WarehouseMapPrintPage() {
@@ -621,7 +577,7 @@ export default function WarehouseMapPrintPage() {
                 fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('display_order').order('code').order('id')),
                 fetchAll('zone_positions', q => q.select('zone_id, position_id, positions!inner(system_type)').eq('positions.system_type', systemType).order('zone_id', { ascending: true }).order('position_id', { ascending: true })),
                 fetchAll('zone_layouts', q => q.order('id')),
-                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)), product_units(unit_id, conversion_rate))), lot_tags(tag, lot_item_id)')
+                fetchAll('lots', q => q.order('id'), '*, suppliers(name), qc_info(name), products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name))), lot_items(id, product_id, quantity, unit, category_id, products(id, name, unit, sku, internal_code, internal_name, weight_kg, category_id, categories(id, name), product_category_rel(category_id, is_primary, categories(id, name)), product_units(unit_id, conversion_rate))), lot_tags(tag, lot_item_id)')
             ])
 
             const zpLookup: Record<string, string> = {}
@@ -647,7 +603,7 @@ export default function WarehouseMapPrintPage() {
                             .map((t: any) => t.tag.replace(/@/g, item.products?.sku || ''))
                             .filter((t: string) => !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
                         accumulatedTags.push(...itemTags)
-                        const catInfo = extractProductCategories(item.products)
+                        const catInfo = extractProductCategories(item.products, item.category_id)
 
                         return {
                             id: item.id,

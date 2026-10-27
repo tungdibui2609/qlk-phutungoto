@@ -31,7 +31,8 @@ export default function InventoryByLot({ units, hookData, hideFilters, viewMode 
         positionFilter,
         setPositionFilter,
         includeClosedLoose,
-        setIncludeClosedLoose
+        setIncludeClosedLoose,
+        categoryMap = {}
     } = activeHookData
 
     // Use company info for printing params (Managed here or could be moved to Filters)
@@ -73,6 +74,7 @@ export default function InventoryByLot({ units, hookData, hideFilters, viewMode 
                     expandedProducts={expandedProducts}
                     toggleExpand={toggleExpand}
                     viewMode={viewMode}
+                    categoryMap={categoryMap}
                 />
             </div>
 
@@ -84,6 +86,7 @@ export default function InventoryByLot({ units, hookData, hideFilters, viewMode 
                     toggleExpand={toggleExpand}
                     loading={loading}
                     viewMode={viewMode}
+                    categoryMap={categoryMap}
                 />
             </div>
         </div>

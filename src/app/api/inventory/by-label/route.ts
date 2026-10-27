@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import { Database } from "@/lib/database.types";
 import { getServerSupabaseUrl, AUTH_COOKIE_NAME } from "@/lib/supabaseUrl";
 import { convertUnit as convertUnitLogic, normalizeUnit, canonicalizeUnit, isKg, extractWeightFromName } from '@/lib/unitConversion'
+import { resolveCategories } from '@/lib/productCategory'
 
 export const dynamic = 'force-dynamic';
 
@@ -100,6 +101,7 @@ export async function GET(req: NextRequest) {
                         sku,
                         name,
                         unit,
+                        category_id,
                         product_category_rel(category_id)
                     ),
                     lots (
@@ -172,10 +174,7 @@ export async function GET(req: NextRequest) {
             const catIds = categoryIds.split(',').filter(Boolean);
             if (catIds.length > 0) {
                 filtered = filtered.filter((label: any) => {
-                    const rels = label.products?.product_category_rel;
-                    if (!rels) return false;
-                    const relArray = Array.isArray(rels) ? rels : [rels];
-                    return relArray.some((r: any) => catIds.includes(r.category_id));
+                    return resolveCategories(label.products).ids.some(id => catIds.includes(id));
                 });
             }
         }

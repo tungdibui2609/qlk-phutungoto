@@ -373,7 +373,8 @@ export async function GET(request: Request) {
         if (q) {
             result = result.filter(i => {
                 const prod = productMap.get(i.productId)
-                const categoryName = prod?.category_id ? categoryMap.get(prod.category_id) || '' : ''
+                // Ưu tiên danh mục đã lưu trên dòng phiếu (cùng nguồn với bộ lọc categoryIds bên dưới)
+                const categoryName = i.categoryName || (prod?.category_id ? categoryMap.get(prod.category_id) || '' : '')
                 
                 // Find lots for this product in this warehouse to check tags/positions
                 const relatedLots = (lotsData as any[]).filter(l => l.product_id === i.productId && l.warehouse_name === i.warehouse)

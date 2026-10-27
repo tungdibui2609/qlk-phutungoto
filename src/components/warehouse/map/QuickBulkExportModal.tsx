@@ -230,6 +230,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
                         exported_quantity: exportQty,
                         unit: selectedUnit,
                         cost_price: item.products?.cost_price || 0,
+                        category_id: item.category_id || item.products?.category_id || null,
                         production_id: selectedProductionId
                     }
 

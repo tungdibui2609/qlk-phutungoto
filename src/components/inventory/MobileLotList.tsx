@@ -12,6 +12,7 @@ interface GroupedProduct {
     totalQuantity: number
     variants: Map<string, number>
     lotCodes: string[]
+    categoryIds?: string[]
 }
 
 interface MobileLotListProps {
@@ -19,9 +20,10 @@ interface MobileLotListProps {
     expandedProducts: Set<string>
     toggleExpand: (key: string) => void
     viewMode?: 'lot' | 'month'
+    categoryMap?: Record<string, string>
 }
 
-export default function MobileLotList({ items, expandedProducts, toggleExpand, viewMode = 'lot' }: MobileLotListProps) {
+export default function MobileLotList({ items, expandedProducts, toggleExpand, viewMode = 'lot', categoryMap = {} }: MobileLotListProps) {
     const [expandedLsx, setExpandedLsx] = useState<Set<string>>(new Set())
     const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
 
@@ -59,6 +61,7 @@ export default function MobileLotList({ items, expandedProducts, toggleExpand, v
                 const hasOnlyNoTag = item.variants.size === 1 && variantKeys[0] === 'Không có mã phụ'
                 const hasVariants = item.variants.size > 0 && !hasOnlyNoTag
                 const variantCount = item.variants.size
+                const categoryNames = (item.categoryIds || []).map(id => categoryMap[id]).filter(Boolean) as string[]
 
                 return (
                     <div
@@ -84,6 +87,18 @@ export default function MobileLotList({ items, expandedProducts, toggleExpand, v
                                         )}
                                     </div>
                                     <h3 className="font-bold text-stone-900 leading-tight">{item.productName}</h3>
+                                    {categoryNames.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mt-1.5">
+                                            {categoryNames.map((catName, cIdx) => (
+                                                <span
+                                                    key={`${catName}-${cIdx}`}
+                                                    className="inline-flex items-center px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 text-[10px] font-medium"
+                                                >
+                                                    {catName}
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="text-right shrink-0">
                                     <div className="text-xl font-bold text-stone-900">{formatQuantityFull(item.totalQuantity)}</div>

@@ -8,6 +8,7 @@ import { formatQuantityFull } from '@/lib/numberUtils'
 import { useToast } from '@/components/ui/ToastProvider'
 import { parseClipboardText, parseClipboardQuantities, applyProductPaste, applyQuantityPaste } from '@/lib/orderPasteUtils'
 import { ExcelPasteModal } from '../shared/ExcelPasteModal'
+import { CategoryStockHint } from '../shared/CategoryStockHint'
 
 interface OutboundItemsTableProps {
     items: OrderItem[]
@@ -268,6 +269,7 @@ function OutboundItemsTableComponent({
                                                         <option key={c.id} value={c.id}>{c.name}</option>
                                                     ))}
                                                 </select>
+                                                <CategoryStockHint productId={item.productId} categoryId={item.categoryId} categories={categories} />
                                             </div>
                                         )}
                                     </td>
@@ -491,6 +493,7 @@ function OutboundItemsTableComponent({
                                                 <option key={c.id} value={c.id}>{c.name}</option>
                                             ))}
                                         </select>
+                                        <CategoryStockHint productId={item.productId} categoryId={item.categoryId} categories={categories} />
                                     </div>
                                 )}
                             </div>
