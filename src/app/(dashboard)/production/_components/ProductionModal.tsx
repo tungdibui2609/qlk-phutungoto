@@ -278,10 +278,11 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
         setLoadingCustomers(false)
     }
 
-    const fetchUnits = async () => {
-        const { data } = await supabase
-            .from('units')
+    const fetchUnits = async (sysCode: string) => {
+        const { data } = await (supabase.from('units') as any)
             .select('*')
+            .eq('system_code', sysCode)
+            .eq('is_active', true)
             .order('name')
         if (data) setUnits(data)
     }
@@ -647,7 +648,6 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     useEffect(() => {
         if (isOpen) {
             fetchCustomers()
-            fetchUnits()
             // Fetch product units for conversion logic
             fetchProductUnits()
             fetchFmBatches()
@@ -769,8 +769,10 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
     useEffect(() => {
         if (targetSystemCode) {
             fetchProducts(targetSystemCode)
+            fetchUnits(targetSystemCode)
         } else {
             setProducts([])
+            setUnits([])
         }
     }, [targetSystemCode])
 

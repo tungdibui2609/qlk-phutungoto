@@ -67,10 +67,6 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             setQuickCustomerId('')
             setQuickBranchName('')
             setQuickOrderTypeId('')
-
-            // Load saved unit
-            const savedUnit = localStorage.getItem('lot_export_target_unit')
-            setTargetUnit(savedUnit || '')
         }
     }, [isOpen])
 
@@ -81,7 +77,7 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             (supabase as any).from('order_types').select('*').or(`scope.eq.outbound,scope.eq.both`).or(`system_code.eq.${currentSystem.code},system_code.is.null`).eq('is_active', true).order('name'),
             supabase.from('customers').select('*').eq('system_code', currentSystem.code).order('name'),
             supabase.from('branches').select('*').order('is_default', { ascending: false }).order('name'),
-            supabase.from('units').select('*').eq('is_active', true).order('name')
+            supabase.from('units').select('*').eq('system_code', currentSystem.code).eq('is_active', true).order('name')
         ])
 
         if (typesRes.data) setOrderTypes(typesRes.data as any[])
@@ -92,7 +88,18 @@ export const LotExportBuffer: React.FC<LotExportBufferProps> = ({ isOpen, onClos
             const defaultBranch = branchData.find((b: any) => b.is_default) || branchData[0]
             if (defaultBranch) setQuickBranchName(defaultBranch.name)
         }
-        if (unitRes.data) setUnits(unitRes.data as any[])
+        if (unitRes.data) {
+            setUnits(unitRes.data as any[])
+            // Đơn vị lưu trong localStorage là theo TÊN và dùng chung mọi phân hệ,
+            // nên phải kiểm tra nó còn thuộc phân hệ hiện tại hay không.
+            const savedUnit = localStorage.getItem('lot_export_target_unit') || ''
+            if (!savedUnit || unitRes.data.some((u: any) => u.name === savedUnit)) {
+                setTargetUnit(savedUnit)
+            } else {
+                setTargetUnit('')
+                localStorage.removeItem('lot_export_target_unit')
+            }
+        }
     }
 
     const fetchPendingExports = async () => {

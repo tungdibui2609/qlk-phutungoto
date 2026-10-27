@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react"
-import { X, Plus } from "lucide-react"
+import { X, Plus, Layers, Check } from "lucide-react"
 import { TagDisplay } from "./TagDisplay"
 import { useSystem } from "@/contexts/SystemContext"
 import { supabase } from "@/lib/supabaseClient"
@@ -73,21 +73,44 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                     if (!groupedMap[key].lotIds.includes(i.lot_id)) {
                         groupedMap[key].lotIds.push(i.lot_id)
                     }
-                }            })
+                }
+            })
 
             const items = Object.values(groupedMap)
             setLotItems(items)
 
-            // Auto select if only 1 group
-            if (items.length === 1 && !selectedItemId) {
-                setSelectedItemId(items[0].id)
+            // Tự động chọn Tất Cả Sản Phẩm nếu có nhiều hơn 1 sản phẩm, hoặc chọn sản phẩm duy nhất
+            if (!selectedItemId) {
+                if (items.length > 1) {
+                    setSelectedItemId('ALL')
+                } else if (items.length === 1) {
+                    setSelectedItemId(items[0].id)
+                }
             }
 
-            const [masterRes, allTagsRes, currentRes] = await Promise.all([
+            const [masterRes, allTagsRes] = await Promise.all([
                 fetch(`/api/lot-tags/master?systemCode=${systemType}`).then(r => r.json()).catch(() => ({ ok: false })),
-                fetch("/api/lot-tags?all=1").then(r => r.json()).catch(() => ({ ok: false })),
-                fetch(`/api/lot-tags?lotId=${encodeURIComponent(lotIds[0])}`).then(r => r.json()).catch(() => ({ ok: false }))
+                fetch("/api/lot-tags?all=1").then(r => r.json()).catch(() => ({ ok: false }))
             ])
+
+            // Lấy tags của toàn bộ các lotIds
+            let fetchedLotTags: TagEntry[] = []
+            try {
+                const { data: tagsData } = await supabase
+                    .from('lot_tags')
+                    .select('tag, added_at, added_by, lot_item_id, lot_id')
+                    .in('lot_id', lotIds)
+
+                if (tagsData) {
+                    fetchedLotTags = tagsData.map((t: any) => ({
+                        tag: t.tag,
+                        added_at: t.added_at,
+                        lot_item_id: t.lot_item_id
+                    }))
+                }
+            } catch (err) {
+                console.error('Error fetching lot tags via Supabase:', err)
+            }
 
             const allUniqueTags = new Set<string>()
 
@@ -104,10 +127,7 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
             }
 
             setExistingTags(Array.from(allUniqueTags).sort())
-
-            if (currentRes?.ok && Array.isArray(currentRes.items)) {
-                setAllLotTags(currentRes.items)
-            }
+            setAllLotTags(fetchedLotTags)
 
         } catch (error) {
             console.error(error)
@@ -115,7 +135,7 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
             setLoading(false)
             setTimeout(() => inputRef.current?.focus(), 100)
         }
-    }, [lotId, systemType])
+    }, [lotIds, systemType, selectedItemId])
 
     useEffect(() => {
         if (lotIds && lotIds.length > 0) {
@@ -124,11 +144,30 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
         }
     }, [lotIds, loadData])
 
+    // Danh sách tag tổng hợp cho toàn bộ sản phẩm
+    const uniqueTagsForAll = useMemo(() => {
+        if (lotItems.length === 0) return []
+        const map = new Map<string, Set<string>>()
+        allLotTags.forEach(t => {
+            if (!map.has(t.tag)) map.set(t.tag, new Set())
+            if (t.lot_item_id) map.get(t.tag)!.add(t.lot_item_id)
+        })
+        return Array.from(map.entries()).map(([tag, set]) => ({
+            tag,
+            count: set.size
+        })).sort((a, b) => b.count - a.count)
+    }, [allLotTags, lotItems.length])
+
     // Filter current tags based on selection
-    const currentTags = useMemo(() => allLotTags.filter(t => {
-        if (selectedItemId) return t.lot_item_id === selectedItemId
-        return true
-    }).map(t => t.tag), [allLotTags, selectedItemId])
+    const currentTags = useMemo(() => {
+        if (selectedItemId === 'ALL') {
+            return uniqueTagsForAll.filter(t => t.count === lotItems.length).map(t => t.tag)
+        }
+        if (selectedItemId) {
+            return allLotTags.filter(t => t.lot_item_id === selectedItemId).map(t => t.tag)
+        }
+        return []
+    }, [allLotTags, selectedItemId, uniqueTagsForAll, lotItems.length])
 
     useEffect(() => {
         const trimmed = inputValue.trim().toUpperCase()
@@ -166,18 +205,24 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
         const trimmed = inputValue.trim().toUpperCase()
         if (!trimmed || !lotIds || lotIds.length === 0) return
 
-        // Validation: Must select item group if multiple exist
-        if (lotItems.length > 1 && !selectedItemId) {
-            showToast("Vui lòng chọn dòng sản phẩm để gán mã", 'warning')
+        // Xác định danh sách nhóm sản phẩm cần gán
+        let targetGroups: typeof lotItems = []
+        if (selectedItemId === 'ALL') {
+            targetGroups = lotItems
+        } else if (selectedItemId) {
+            const found = lotItems.find(i => i.id === selectedItemId)
+            if (found) targetGroups = [found]
+        } else if (lotItems.length === 1) {
+            targetGroups = [lotItems[0]]
+        }
+
+        if (targetGroups.length === 0) {
+            showToast("Vui lòng chọn sản phẩm để gán mã", 'warning')
             return
         }
 
-        // Find the selected group
-        const selectedGroup = lotItems.find(i => i.id === selectedItemId) || (lotItems.length === 1 ? lotItems[0] : null)
-        if (!selectedGroup) return
-
         if (currentTags.includes(trimmed)) {
-            showToast("Mã này đã được gắn rồi", 'warning')
+            showToast("Mã này đã được gắn cho tất cả sản phẩm đang chọn", 'warning')
             return
         }
 
@@ -199,41 +244,57 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                 }
             }
 
-            // 2. Add to all relevant lots/items in the group
-            const promises = selectedGroup.lotIds.map((lId: string, idx: number) => {
-                const itemId = selectedGroup.ids[idx] || selectedGroup.ids[0]
-                return fetch("/api/lot-tags", {
-                    method: "POST",
-                    body: JSON.stringify({
-                        lotId: lId,
-                        tag: trimmed,
-                        lotItemId: itemId
-                    })
-                }).then(r => r.json())
-            })
+            // 2. Add to all target groups
+            const newEntries: TagEntry[] = []
+            const promises: Promise<any>[] = []
+
+            for (const group of targetGroups) {
+                group.lotIds.forEach((lId: string, idx: number) => {
+                    const itemId = group.ids[idx] || group.ids[0]
+                    promises.push(
+                        fetch("/api/lot-tags", {
+                            method: "POST",
+                            body: JSON.stringify({
+                                lotId: lId,
+                                tag: trimmed,
+                                lotItemId: itemId
+                            })
+                        }).then(r => r.json()).then(res => {
+                            if (res.ok) {
+                                newEntries.push({
+                                    tag: trimmed,
+                                    added_at: new Date().toISOString(),
+                                    lot_item_id: group.id
+                                })
+                            }
+                            return res
+                        })
+                    )
+                })
+            }
 
             const results = await Promise.all(promises)
             const allOk = results.every((r: any) => r.ok)
 
-            if (allOk) {
+            if (allOk || results.some(r => r.ok)) {
                 // Optimistic update
-                const newEntry: TagEntry = {
-                    tag: trimmed,
-                    added_at: new Date().toISOString(),
-                    lot_item_id: selectedItemId
-                }
-                setAllLotTags([...allLotTags, newEntry])
-
+                setAllLotTags(prev => [...prev, ...newEntries])
                 setInputValue("")
                 setShowSuggestions(false)
                 setExistingTags(prev => {
                     const newSet = new Set([...prev, ...parts])
                     return Array.from(newSet).sort()
                 })
+                showToast(
+                    selectedItemId === 'ALL'
+                        ? `Đã gán mã phụ cho toàn bộ ${targetGroups.length} sản phẩm thành công!`
+                        : 'Đã gán mã phụ thành công!',
+                    'success'
+                )
                 onSuccess?.()
             } else {
                 const errors = results.filter(r => !r.ok).map(r => r.error).join(", ")
-                showToast(errors || "Lỗi khi lưu", 'error')
+                showToast(errors || "Lỗi khi lưu mã phụ", 'error')
             }
 
         } catch (error) {
@@ -246,25 +307,44 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
 
     const handleRemove = async (tag: string) => {
         if (!lotIds || lotIds.length === 0) return
-        if (!await showConfirm(`Xóa mã ${tag} khỏi tất cả các lô đã chọn?`)) return
 
-        const selectedGroup = lotItems.find(i => i.id === selectedItemId) || (lotItems.length === 1 ? lotItems[0] : null)
-        if (!selectedGroup) return
+        let targetGroups: typeof lotItems = []
+        if (selectedItemId === 'ALL') {
+            targetGroups = lotItems
+        } else if (selectedItemId) {
+            const found = lotItems.find(i => i.id === selectedItemId)
+            if (found) targetGroups = [found]
+        } else if (lotItems.length === 1) {
+            targetGroups = [lotItems[0]]
+        }
+
+        if (targetGroups.length === 0) return
+
+        const confirmMsg = selectedItemId === 'ALL'
+            ? `Xóa mã "${tag}" khỏi tất cả ${targetGroups.length} sản phẩm trong ${lotIds.length} lô đã chọn?`
+            : `Xóa mã "${tag}" khỏi sản phẩm đã chọn?`
+
+        if (!await showConfirm(confirmMsg)) return
 
         setSaving(true)
         try {
-            const promises = selectedGroup.lotIds.map((lId: string, idx: number) => {
-                const itemId = selectedGroup.ids[idx] || selectedGroup.ids[0]
-                let url = `/api/lot-tags?lotId=${encodeURIComponent(lId)}&tag=${encodeURIComponent(tag)}`
-                if (itemId) url += `&lotItemId=${encodeURIComponent(itemId)}`
-                return fetch(url, { method: "DELETE" }).then(r => r.json())
-            })
+            const promises: Promise<any>[] = []
+            for (const group of targetGroups) {
+                group.lotIds.forEach((lId: string, idx: number) => {
+                    const itemId = group.ids[idx] || group.ids[0]
+                    let url = `/api/lot-tags?lotId=${encodeURIComponent(lId)}&tag=${encodeURIComponent(tag)}`
+                    if (itemId) url += `&lotItemId=${encodeURIComponent(itemId)}`
+                    promises.push(fetch(url, { method: "DELETE" }).then(r => r.json()))
+                })
+            }
 
             const results = await Promise.all(promises)
             const allOk = results.every((r: any) => r.ok)
 
-            if (allOk) {
-                setAllLotTags(allLotTags.filter(t => !(t.tag === tag && t.lot_item_id === selectedItemId)))
+            if (allOk || results.some(r => r.ok)) {
+                const targetIds = new Set(targetGroups.map(g => g.id))
+                setAllLotTags(prev => prev.filter(t => !(t.tag === tag && (selectedItemId === 'ALL' || targetIds.has(t.lot_item_id || '')))))
+                showToast(`Đã xóa mã ${tag}`, 'success')
                 onSuccess?.()
             }
         } catch {
@@ -329,9 +409,20 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                             <label className="text-[11px] font-bold text-slate-400 uppercase tracking-widest">
                                 Danh sách sản phẩm
                             </label>
-                            <span className="bg-slate-200/50 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full text-[10px] font-bold">
-                                {lotItems.length}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                                {lotItems.length > 1 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedItemId(selectedItemId === 'ALL' ? null : 'ALL')}
+                                        className="text-[11px] text-teal-600 dark:text-teal-400 hover:underline font-bold px-1.5 py-0.5 rounded cursor-pointer transition-colors"
+                                    >
+                                        {selectedItemId === 'ALL' ? 'Bỏ chọn' : 'Chọn tất cả'}
+                                    </button>
+                                )}
+                                <span className="bg-slate-200/50 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                    {lotItems.length}
+                                </span>
+                            </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-3 space-y-2">
                             {lotItems.length === 0 && !loading && (
@@ -339,6 +430,47 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                                     Không có sản phẩm nào
                                 </div>
                             )}
+
+                            {/* Mục chọn Tất Cả Sản Phẩm */}
+                            {lotItems.length > 1 && (
+                                <div
+                                    onClick={() => setSelectedItemId('ALL')}
+                                    className={`group p-3 rounded-2xl border cursor-pointer transition-all duration-200 ${
+                                        selectedItemId === 'ALL'
+                                            ? "bg-white dark:bg-slate-800 border-teal-500 dark:border-teal-500 shadow-md ring-2 ring-teal-500/20"
+                                            : "bg-teal-50/50 dark:bg-teal-950/20 border-teal-200/70 dark:border-teal-900/40 hover:bg-teal-50 dark:hover:bg-teal-950/40"
+                                    }`}
+                                >
+                                    <div className="flex justify-between items-center">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <div className={`p-2 rounded-xl shrink-0 transition-colors ${
+                                                selectedItemId === 'ALL'
+                                                    ? "bg-teal-600 text-white"
+                                                    : "bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-300"
+                                            }`}>
+                                                <Layers size={18} />
+                                            </div>
+                                            <div className="min-w-0">
+                                                <div className={`font-bold text-sm truncate ${
+                                                    selectedItemId === 'ALL' ? "text-teal-700 dark:text-teal-300" : "text-slate-800 dark:text-slate-200"
+                                                }`}>
+                                                    Tất cả sản phẩm
+                                                </div>
+                                                <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 truncate">
+                                                    Gán đồng loạt {lotItems.length} sản phẩm ({lotIds?.length} lô)
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {selectedItemId === 'ALL' && (
+                                            <div className="w-5 h-5 rounded-full bg-teal-600 flex items-center justify-center shadow-md shadow-teal-600/30 shrink-0 ml-2 animate-in zoom-in-50 duration-200">
+                                                <Check size={12} className="text-white" strokeWidth={3} />
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Danh sách từng sản phẩm */}
                             {lotItems.map(item => {
                                 const itemTags = allLotTags.filter(t => t.lot_item_id === item.id);
 
@@ -392,7 +524,17 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                         <div className="p-4 border-b border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 flex justify-between items-center z-10">
                             <div className="flex flex-col gap-0.5">
                                 <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                                    {selectedItemId ? (
+                                    {selectedItemId === 'ALL' ? (
+                                        <>
+                                            <span className="p-1 bg-teal-50 dark:bg-teal-950/40 text-teal-600 rounded-lg">
+                                                <Layers size={16} />
+                                            </span>
+                                            <span>Mã phụ cho:</span>
+                                            <span className="text-teal-600 dark:text-teal-400 font-bold ml-1">
+                                                Tất cả sản phẩm ({lotItems.length} SP - {lotIds?.length} lô)
+                                            </span>
+                                        </>
+                                    ) : selectedItemId ? (
                                         <>
                                             Mã phụ cho:
                                             <span className="text-slate-900 dark:text-slate-100 ml-1">
@@ -403,15 +545,21 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                                         "Vui lòng chọn sản phẩm"
                                     )}
                                 </h4>
-                                {selectedItemId && (
+                                {selectedItemId === 'ALL' ? (
+                                    <span className="text-[10px] text-slate-400">
+                                        Mã phụ sẽ được áp dụng cho toàn bộ các sản phẩm và lô hàng đang chọn
+                                    </span>
+                                ) : selectedItemId ? (
                                     <span className="text-[10px] font-mono text-slate-400">
                                         SKU: {lotItems.find(i => i.id === selectedItemId)?.product_sku}
                                     </span>
-                                )}
+                                ) : null}
                             </div>
                             <div className="flex items-center gap-3">
                                 <span className="text-[11px] font-medium text-slate-500 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">
-                                    {allLotTags.filter(t => t.lot_item_id === selectedItemId).length} Đã gán
+                                    {selectedItemId === 'ALL'
+                                        ? `${uniqueTagsForAll.length} Mã phụ`
+                                        : `${allLotTags.filter(t => t.lot_item_id === selectedItemId).length} Đã gán`}
                                 </span>
                             </div>
                         </div>
@@ -419,7 +567,15 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                         {/* Current Tags Area */}
                         <div className="flex-1 overflow-y-auto p-6">
                             <div className="flex flex-wrap gap-2.5">
-                                {selectedItemId && allLotTags.filter(t => t.lot_item_id === selectedItemId).length === 0 && (
+                                {selectedItemId === 'ALL' && uniqueTagsForAll.length === 0 && (
+                                    <div className="w-full flex flex-col items-center justify-center py-12 text-slate-400">
+                                        <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3">
+                                            <Plus size={24} className="opacity-20" />
+                                        </div>
+                                        <p className="text-sm italic">Chưa có mã phụ chung nào được gắn cho các sản phẩm</p>
+                                    </div>
+                                )}
+                                {selectedItemId && selectedItemId !== 'ALL' && allLotTags.filter(t => t.lot_item_id === selectedItemId).length === 0 && (
                                     <div className="w-full flex flex-col items-center justify-center py-12 text-slate-400">
                                         <div className="w-12 h-12 rounded-full bg-slate-50 dark:bg-slate-800 flex items-center justify-center mb-3">
                                             <Plus size={24} className="opacity-20" />
@@ -429,10 +585,30 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                                 )}
                                 {!selectedItemId && (
                                     <div className="w-full flex flex-col items-center justify-center py-12 text-slate-400">
-                                        <p className="text-sm italic text-center">Chọn một sản phẩm từ danh sách bên trái<br />để xem và gán mã phụ</p>
+                                        <p className="text-sm italic text-center">Chọn một sản phẩm từ danh sách bên trái<br />hoặc bấm "Tất cả sản phẩm" để xem và gán mã phụ</p>
                                     </div>
                                 )}
-                                {selectedItemId && allLotTags
+                                {selectedItemId === 'ALL' && uniqueTagsForAll.map(({ tag, count }) => (
+                                    <div key={tag} className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-teal-200 dark:border-teal-800/60 rounded-xl pl-3 pr-1.5 py-1.5 shadow-sm hover:shadow-md transition-all group">
+                                        <TagDisplay tags={[tag]} placeholderMap={{ '@': 'SKU' }} />
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-mono ${
+                                            count === lotItems.length
+                                                ? "bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 font-bold"
+                                                : "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"
+                                        }`}>
+                                            {count}/{lotItems.length} SP
+                                        </span>
+                                        <button
+                                            onClick={() => handleRemove(tag)}
+                                            disabled={saving}
+                                            title="Xóa mã này khỏi tất cả sản phẩm"
+                                            className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                                        >
+                                            <X size={14} />
+                                        </button>
+                                    </div>
+                                ))}
+                                {selectedItemId && selectedItemId !== 'ALL' && allLotTags
                                     .filter(t => t.lot_item_id === selectedItemId)
                                     .map(t => (
                                         <div key={`${t.tag}-${t.added_at}`} className="flex items-center gap-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl pl-3 pr-1.5 py-1.5 shadow-sm hover:shadow-md transition-all group">
@@ -542,7 +718,11 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                                     )}
                                 </div>
                                 <p className="mt-4 text-[11px] text-slate-400 leading-relaxed text-center">
-                                    Nhập mã tự do hoặc chọn từ gợi ý. Dùng biểu tượng <strong>@</strong> để đại diện cho thông tin sản phẩm trong chuỗi ký tự.
+                                    {selectedItemId === 'ALL' ? (
+                                        <>Đang ở chế độ <strong>Gán cho tất cả ({lotItems.length} sản phẩm)</strong>. Nhập mã tự do hoặc dùng biểu tượng <strong>@</strong> để hệ thống tự động thay bằng mã SKU riêng của từng sản phẩm tương ứng.</>
+                                    ) : (
+                                        <>Nhập mã tự do hoặc chọn từ gợi ý. Dùng biểu tượng <strong>@</strong> để đại diện cho thông tin sản phẩm trong chuỗi ký tự.</>
+                                    )}
                                 </p>
                             </div>
                         )}

@@ -187,6 +187,19 @@ Tính năng chỉ **thêm một tab mới** vào trang danh sách lệnh xuất.
 | [exportOrderReportExcelExport.ts](file:///d:/chanh%20thu/web/src/lib/exportOrderReportExcelExport.ts) | Sinh file Excel 5 sheet bằng ExcelJS + file-saver |
 | [work/export-order/page.tsx](file:///d:/chanh%20thu/web/src/app/(dashboard)/work/export-order/page.tsx) | Thêm state `viewMode: 'LIST' \| 'STATS'` + deep link `?tab=stats` |
 
+## 🧮 4 Chế Độ Nhóm Bảng Thống Kê
+
+| Chế độ | Nguồn dữ liệu | Cột chính |
+|---|---|---|
+| **Theo ngày** | `export_tasks.created_at` | Số lệnh / Dòng hàng / Yêu cầu / Đã xuất / Hạ trong ngày / Hoàn thành (x/y) |
+| **Theo sản phẩm** | gộp theo `sku + name` | Số dòng / Yêu cầu / Đã xuất / Còn lại |
+| **Theo lệnh** | gộp theo `export_tasks.code` | Ngày tạo, Trạng thái, **Số mặt hàng (SKU distinct)**, Dòng hàng, **Dòng đã xong (x/y)**, Yêu cầu, Đã xuất, **Danh sách sản phẩm trong lệnh** |
+| **Theo giờ hạ** | `export_task_picks.created_at` | Khung giờ, Số lượt, Số lượng, Nhân viên |
+
+Quy tắc "Dòng đã xong": `exported_quantity >= quantity - 1e-6`, cùng ngưỡng `0.000001` mà [work/export-order/page.tsx:244](file:///d:/chanh%20thu/web/src/app/(dashboard)/work/export-order/page.tsx#L244) đang dùng để gắn cờ "CÒN HÀNG CHƯA HẠ" — nên số liệu thống kê khớp với cảnh báo ở danh sách lệnh.
+
+Thẻ "Số lệnh xuất" hiển thị thêm dòng phụ `Hoàn thành x/y` (đếm lệnh có `export_tasks.status = 'Completed'`), và sheet Excel `Theo lenh` xuất cùng bộ cột.
+
 ## 🗓 Ba Trục Thời Gian (không trộn lẫn)
 
 1. **Theo ngày / theo sản phẩm** → `export_task_items` join `export_tasks!inner`, lọc `export_tasks.created_at` trong kỳ (nguồn "lệnh xuất cái gì, bao nhiêu": `quantity` yêu cầu vs `exported_quantity` đã xuất).
@@ -214,3 +227,90 @@ Tính năng chỉ **thêm một tab mới** vào trang danh sách lệnh xuất.
 → Đã đổi sang `export_tasks!inner(code, status, notes, created_at, system_code)` và rename field `itemNotes` → `taskNotes` cho đúng bản chất dữ liệu.
 
 **Bài học**: Supabase client ở đây dùng bảng `export_task*` **không có trong `database.types.ts`**, nên PostgREST báo lỗi lúc chạy chứ `tsc` không bắt được → phải đối chiếu `CREATE TABLE`/`ALTER TABLE` trong `supabase/migrations/` trước khi chọn cột.
+
+---
+
+# Walkthrough: Lọc danh sách "Đơn vị quy đổi" theo phân hệ kho (`/reports/accounting-history`)
+
+## 🎯 Vấn đề
+
+Dropdown **"Đơn vị gốc"** trên báo cáo Nhập - Xuất - Tồn (KT) query `units` không kèm điều kiện lọc phân hệ:
+
+```ts
+await supabase.from('units').select('id, name').order('name')   // ❌ 75 dòng của MỌI hệ thống
+```
+
+Trong khi cột `units.system_code` đã tồn tại từ migration [20260128000000_add_system_code_to_units.sql](file:///d:/chanh%20thu/web/supabase/migrations/20260128000000_add_system_code_to_units.sql). Hệ quả thực đo trên DB: đang ở **Kho Đông Lạnh** (chỉ 5 đơn vị: Kg, Khay, Sọt, Thùng, Túi) nhưng danh sách thả ra 29 dòng, trong đó có bản trùng của phân hệ khác (`Kg` ×5, `Cái` ×4, `Hộp` ×4, `Chiếc` ×4, `Bộ` ×4, `Mét` ×4) cộng 24 đơn vị chưa phân loại.
+
+## 🛠 Giải pháp
+
+**File duy nhất thay đổi:** [page.tsx](file:///d:/chanh%20thu/web/src/app/(dashboard)/reports/accounting-history/page.tsx) — không migration, không đụng schema.
+
+1. **Query theo `system_code`** ([page.tsx:195](file:///d:/chanh%20thu/web/src/app/(dashboard)/reports/accounting-history/page.tsx#L195)): `.eq('system_code', systemType).eq('is_active', true)` — dùng `systemType` đang chọn, **không hardcode mã kho nào**. Kho nào tạo mới chỉ thấy đúng đơn vị của kho đó.
+2. **Reset đơn vị đích khi đổi phân hệ** ([page.tsx:110](file:///d:/chanh%20thu/web/src/app/(dashboard)/reports/accounting-history/page.tsx#L110)): thêm `setTargetUnitId(null)` vào effect theo `systemType`, tránh trạng thái "đơn vị của phân hệ trước" còn sót làm dropdown trắng và báo cáo hiểu nhầm là đã quy đổi.
+3. **So khớp đơn vị gốc bằng TÊN, không chỉ bằng ID** ([page.tsx:24](file:///d:/chanh%20thu/web/src/app/(dashboard)/reports/accounting-history/page.tsx#L24) `isSameUnitName`, dùng ở `isConvertible` và `VoucherDetailModal`): `unitNameMap` của `useUnitConversion` là **toàn cục** và tên trùng nhau giữa các phân hệ nên "last write wins" → sau khi lọc, ID của `Kg` toàn cục có thể không phải ID `Kg` của Kho Đông Lạnh, phép thử `baseUnitId === targetUnitId` sẽ fail và báo cáo mất luôn khả năng quy đổi về Kg. `isSameUnitName()` dùng `getMatchingUnitName()` (chuẩn hoá NFC, bỏ khoảng trắng, cắt hậu tố `(20kg)`) + `isKg()` nên khớp đúng bất kể trùng tên.
+
+## 🔒 Bảo toàn Kho Đông Lạnh
+
+- **Không đổi logic tính toán**: chỉ đổi *nguồn danh sách đơn vị hiển thị* + *điều kiện nhận diện "quy đổi được"*. Toàn bộ phép quy đổi vẫn đi qua `convertUnit()` của `useUnitConversion` (khớp theo tên, đã có fallback nhiều tầng).
+- **Không mất đường quy đổi nào**: kiểm tra DB — `product_units` của sản phẩm `KHO_DONG_LANH` có 111 dòng và **100% trỏ tới unit có `system_code = KHO_DONG_LANH`** (Thùng 105, Sọt 4, Khay 2). Không có dòng nào tham chiếu unit của phân hệ khác hay unit chưa phân loại → lọc strict không làm mất option nào mà dữ liệu thật đang cần.
+- **Đơn vị chưa phân loại (`system_code IS NULL`)** chủ động **không** hiển thị, theo đúng yêu cầu "chỉ hiện đơn vị đã cài ở phân hệ này". Nếu cần dùng, vào `/units` sửa nó: thao tác update ở [units/page.tsx:84](file:///d:/chanh%20thu/web/src/app/(dashboard)/units/page.tsx#L84) sẽ gán `system_code` về phân hệ đang làm việc (cơ chế "claim" sẵn có).
+- **Không rò rỉ dữ liệu liên phân hệ**: dropdown chỉ còn đơn vị của `systemType`; các query phiếu nhập/xuất vẫn giữ nguyên `.eq('order.system_type', systemType)` như trước.
+
+## ✅ Kiểm chứng
+
+- `npx tsc --noEmit`: không phát sinh lỗi trên file đã sửa.
+- Dev server `:3001` biên dịch lại `/reports/accounting-history` sạch (chỉ còn lỗi `manifest.webmanifest` tồn tại từ trước, không liên quan).
+- Đối chiếu số liệu DB bằng `psql`: trước 29 dòng / sau 5 dòng cho `KHO_DONG_LANH`.
+- **Còn mở**: xác nhận bằng mắt dropdown chỉ còn 5 dòng + bấm thử "Xuất Excel" cần phiên đăng nhập (agent không vượt được màn hình login).
+
+> Lưu ý mở rộng (chưa làm, chờ quyết định): `/inventory` ([page.tsx:139](file:///d:/chanh%20thu/web/src/app/(dashboard)/inventory/page.tsx#L139)) và một số chỗ khác vẫn query `units` không lọc phân hệ theo cùng kiểu.
+
+---
+
+# Walkthrough (mở rộng): Lọc "Đơn vị quy đổi" theo phân hệ ở 5 dropdown còn lại
+
+Quét toàn bộ 26 điểm query bảng `units` trong repo, phân loại theo **mục đích dùng**:
+
+## ✅ Đã sửa (danh sách cho người dùng chọn → phải theo phân hệ)
+
+| # | Route | Điểm sửa | Ghi chú |
+|---|-------|----------|---------|
+| 1 | `/reports/accounting-history` | [page.tsx:195](file:///d:/chanh%20thu/web/src/app/(dashboard)/reports/accounting-history/page.tsx#L195) | xem mục ở trên |
+| 2 | `/inventory` | [page.tsx:141](file:///d:/chanh%20thu/web/src/app/(dashboard)/inventory/page.tsx#L141) | một list nuôi 4 dropdown (tab Tổng hợp, tab Tồn theo lot qua `InventoryFilters`, 2 nút Excel). Effect cũ có deps `[]` nên **không bao giờ refetch khi đổi phân hệ** → đổi thành deps `[systemType]` + reset `targetUnitId`. |
+| 3 | `/warehouses/lots` (buffer nhập) | [LotInboundBuffer.tsx:79](file:///D:/chanh%20thu/web/src/components/warehouse/lots/LotInboundBuffer.tsx#L79) | select "Hiện quy đổi" lưu **theo TÊN** vào `localStorage.lot_inbound_target_unit` (key dùng chung mọi phân hệ). |
+| 4 | `/warehouses/lots` (buffer xuất) | [LotExportBuffer.tsx:80](file:///D:/chanh%20thu/web/src/components/warehouse/lots/LotExportBuffer.tsx#L80) | y như trên với `lot_export_target_unit`. |
+| 5 | `/operations/audit` | [CreateAuditModal.tsx:94](file:///D:/chanh%20thu/web/src/app/(dashboard)/operations/audit/_components/CreateAuditModal.tsx#L94) | chip "Bộ lọc đơn vị tính (Toàn cục)" — Kho Đông Lạnh trước đây hiện 29 chip với `Kg`×5, `Cái`×4… |
+| 6 | `/production` | [ProductionModal.tsx:282](file:///D:/chanh%20thu/web/src/app/(dashboard)/production/_components/ProductionModal.tsx#L282) | modal có **bộ chọn phân hệ đích** `targetSystemCode` (chip ở dòng 1663) nên đơn vị phải theo `targetSystemCode` chứ không theo `currentSystem` → `fetchUnits(sysCode)` gọi trong cùng effect với `fetchProducts(sysCode)`. |
+
+### Xử lý 2 key localStorage dùng chung phân hệ (#3, #4)
+
+Trước đây giá trị "Hiện quy đổi" được đọc trong effect `isOpen` → nếu chuyển từ Kho Dụng Cụ (đã chọn "Cái") sang Kho Đông Lạnh thì dropdown trắng nhưng `targetUnit` vẫn còn trong state và phép quy đổi vẫn âm thầm chạy. Nay việc đọc localStorage chuyển vào sau khi `fetchCommonData` lấy được đơn vị của phân hệ: tên không còn trong danh sách thì **xoá luôn key** và reset về rỗng.
+
+### Vì sao lọc strict (`system_code = <hệ>`, bỏ `IS NULL`) an toàn với Kho Đông Lạnh
+
+Đối chiếu trực tiếp trên DB `anywarehouse`:
+
+- `product_units` của sản phẩm từng phân hệ **100% trỏ tới unit cùng `system_code`** (FROZEN 111/111; Dụng Cụ 3/3; Vật tư & Bao bì 4/4). Không có dòng nào tham chiếu unit chưa phân loại.
+- Mọi chuỗi đơn vị thật sự xuất hiện trong `inbound_order_items` / `outbound_order_items` / `lot_items` của Kho Đông Lạnh đều thuộc 5 unit đã gán: `Kg, Khay, Sọt, Thùng, Túi` (dạng hậu tố `(20kg)` là do UI ghép vào tên, không phải tên trong bảng `units`).
+- 24 dòng `system_code IS NULL` chỉ là bản trùng tên `Bộ/Cái/Chiếc/Hộp/Kg/Mét` — tên nào cũng đã có bản được gán cho phân hệ đang dùng.
+
+## ⚪ Không phải lỗi (chỉ tra cứu id→name hoặc đã giới hạn theo sản phẩm)
+
+`(dashboard)/products`, `sanxuat/products`, `print/inbound`, `print/outbound`, `api/export/batch-inbound`, `api/export/batch-outbound`, `useUnitConversion` (toàn cục chủ đích), `LotCard`, `LotDetailsModal`, `LotExportModal`, `LotForm`, `PalletsPageContent` (`getAvailableUnitsForProduct`), `MobileExportTab`, `warehouses/scan/export`, `LotExportBuffer:275` (dictionary cho `unbundleService`).
+
+## 🔧 Đã lọc đúng chuẩn từ trước (không sửa)
+
+`useInboundOrder`, `useOutboundOrder`, `BankInboundOrderModal`, `BankOutboundOrderModal`, `useProductForm`, trang `/units`.
+
+> Các điểm này dùng `.or(system_code.eq.X, system_code.is.null)` — vẫn để lộ unit chưa phân loại. Chưa đổi sang strict để không phá luồng tạo phiếu đang vận hành; nếu muốn đồng nhất strict toàn app thì làm thành một đợt riêng.
+
+## 🗑 Ghi chú nợ kỹ thuật
+
+`/print/inventory` fetch `units` vào state `allUnits` ([page.tsx:156](file:///D:/chanh%20thu/web/src/app/print/inventory/page.tsx#L156)) rồi **không dùng ở đâu** — code chết, nên xoá ở đợt dọn sau.
+
+## ✅ Kiểm chứng đợt này
+
+- `npx tsc --noEmit`: không phát sinh lỗi mới trên 5 file đã sửa. Lỗi `type 'never'` trong `CreateAuditModal` và các lỗi ở `work/inventory/page.tsx` là **có sẵn từ trước** (đã đối chiếu: dòng 112 của HEAD lệch đúng +1 so với dòng 113 báo lỗi sau khi mình thêm 1 dòng).
+- Dev server `:3001` biên dịch lại sạch cả 5 route (`/inventory`, `/warehouses/lots`, `/operations/audit`, `/production`, `/work/inventory`).
+- **Còn mở**: nhìn tận mắt 5 dropdown sau khi lọc cần phiên đăng nhập localhost.

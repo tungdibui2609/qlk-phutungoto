@@ -20,6 +20,19 @@ export interface ExportReportProductRow {
     exportedQty: number;
 }
 
+export interface ExportReportTaskRow {
+    taskCode: string;
+    taskCreatedAt: string;
+    taskStatus: string;
+    skuCount: number;
+    lineCount: number;
+    doneLineCount: number;
+    requestedQty: number;
+    exportedQty: number;
+    products: string;
+    notes: string;
+}
+
 export interface ExportReportPickRow {
     date: string;
     hour: string;
@@ -60,6 +73,7 @@ export interface ExportOrderReportExcelOptions {
     summary: ExportReportSummaryRow[];
     dayRows: ExportReportDayRow[];
     productRows: ExportReportProductRow[];
+    taskRows: ExportReportTaskRow[];
     pickRows: ExportReportPickRow[];
     detailRows: ExportReportDetailRow[];
     companyInfo?: any;
@@ -135,7 +149,7 @@ function buildSheet(
 }
 
 export async function exportOrderReportToExcel(options: ExportOrderReportExcelOptions) {
-    const { systemName, dateFrom, dateTo, summary, dayRows, productRows, pickRows, detailRows, companyInfo } = options;
+    const { systemName, dateFrom, dateTo, summary, dayRows, productRows, taskRows, pickRows, detailRows, companyInfo } = options;
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Chanh Thu Smart WMS';
@@ -214,7 +228,33 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
     );
 
     // ==========================================
-    // SHEET 4: CHI TIẾT DÒNG LỆNH
+    // SHEET 4: THEO LỆNH XUẤT
+    // ==========================================
+    buildSheet(
+        workbook,
+        'Theo lenh',
+        'THỐNG KÊ THEO TỪNG LỆNH XUẤT',
+        [
+            { header: 'STT', key: 'stt', width: 6 },
+            { header: 'Mã lệnh xuất', key: 'taskCode', width: 18 },
+            { header: 'Ngày tạo lệnh', key: 'taskCreatedAt', width: 18 },
+            { header: 'Trạng thái', key: 'taskStatus', width: 14 },
+            { header: 'Số mặt hàng', key: 'skuCount', width: 13 },
+            { header: 'Dòng hàng', key: 'lineCount', width: 11 },
+            { header: 'Dòng đã xong', key: 'doneLineCount', width: 13 },
+            { header: 'SL yêu cầu', key: 'requestedQty', width: 13 },
+            { header: 'SL đã xuất', key: 'exportedQty', width: 13 },
+            { header: 'Sản phẩm trong lệnh', key: 'products', width: 60 },
+            { header: 'Ghi chú lệnh', key: 'notes', width: 24 },
+        ],
+        taskRows.map((t, i) => ({ stt: i + 1, ...t })),
+        rangeLabel,
+        companyName,
+        systemName
+    );
+
+    // ==========================================
+    // SHEET 5: CHI TIẾT DÒNG LỆNH
     // ==========================================
     buildSheet(
         workbook,
@@ -243,7 +283,7 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
     );
 
     // ==========================================
-    // SHEET 5: LỊCH SỬ HẠ HÀNG (PICK EVENTS)
+    // SHEET 6: LỊCH SỬ HẠ HÀNG (PICK EVENTS)
     // ==========================================
     if (pickRows.length > 0) {
         buildSheet(

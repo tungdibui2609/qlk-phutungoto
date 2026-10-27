@@ -12,7 +12,6 @@ import {
     Boxes,
     TrendingDown,
     Clock3,
-    Users,
     BarChart3,
 } from 'lucide-react'
 import { format, subDays, startOfMonth } from 'date-fns'
@@ -35,7 +34,15 @@ import { exportOrderReportToExcel } from '@/lib/exportOrderReportExcelExport'
 const FETCH_PAGE_SIZE = 1000
 const ROW_PAGE_SIZE = 50
 
-type GroupMode = 'DAY' | 'PRODUCT' | 'HOUR'
+const TASK_STATUS_LABELS: Record<string, string> = {
+    Pending: 'Chờ xử lý',
+    'In Progress': 'Đang xử lý',
+    Picked: 'Đã lấy hàng',
+    Completed: 'Hoàn thành',
+    Cancelled: 'Đã hủy',
+}
+
+type GroupMode = 'DAY' | 'PRODUCT' | 'TASK' | 'HOUR'
 
 interface StatItemRow {
     taskCode: string
@@ -95,6 +102,33 @@ interface HourGroup {
     pickers: Set<string>
     quantity: number
     unit: string
+}
+
+interface TaskGroup {
+    taskCode: string
+    taskStatus: string
+    taskCreatedAt: string
+    lineCount: number
+    skuCount: number
+    doneLineCount: number
+    requestedQty: number
+    exportedQty: number
+    products: Set<string>
+    notes: string
+}
+
+interface DetailCell {
+    label: string
+    value: string
+    title?: string
+    truncate?: boolean
+    strong?: boolean
+}
+
+interface DetailRow {
+    id: string
+    numericFrom: number
+    cells: DetailCell[]
 }
 
 export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
@@ -314,6 +348,29 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
         return Array.from(map.values()).sort((a, b) => b.exportedQty - a.exportedQty || b.requestedQty - a.requestedQty)
     }, [filteredItems])
 
+    const taskGroups = useMemo(() => {
+        const map = new Map<string, TaskGroup>()
+        filteredItems.forEach(r => {
+            if (!map.has(r.taskCode)) {
+                map.set(r.taskCode, {
+                    taskCode: r.taskCode, taskStatus: r.taskStatus, taskCreatedAt: r.taskCreatedAt,
+                    lineCount: 0, skuCount: 0, doneLineCount: 0, requestedQty: 0, exportedQty: 0,
+                    products: new Set<string>(), notes: r.taskNotes || '',
+                })
+            }
+            const g = map.get(r.taskCode)!
+            g.lineCount += 1
+            g.products.add(r.sku ? `${r.productName} (${r.sku})` : r.productName)
+            g.requestedQty += r.quantity
+            g.exportedQty += r.exportedQuantity
+            if (r.exportedQuantity >= r.quantity - 1e-6) g.doneLineCount += 1
+            if (!g.taskCreatedAt && r.taskCreatedAt) g.taskCreatedAt = r.taskCreatedAt
+            if (g.taskStatus !== 'Completed' && r.taskStatus === 'Completed') g.taskStatus = r.taskStatus
+        })
+        map.forEach(g => { g.skuCount = g.products.size })
+        return Array.from(map.values()).sort((a, b) => (b.taskCreatedAt || '').localeCompare(a.taskCreatedAt || ''))
+    }, [filteredItems])
+
     const hourGroups = useMemo(() => {
         const map = new Map<string, HourGroup>()
         filteredPicks.forEach(p => {
@@ -335,6 +392,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
         const exported = filteredItems.reduce((s, r) => s + r.exportedQuantity, 0)
         return {
             taskCount: new Set(filteredItems.map(r => r.taskCode)).size,
+            completedTaskCount: taskGroups.filter(t => t.taskStatus === 'Completed').length,
             lineCount: filteredItems.length,
             skuCount: new Set(filteredItems.map(r => r.sku || r.productName)).size,
             requested,
@@ -345,7 +403,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
             pickQty: filteredPicks.reduce((s, p) => s + p.quantity, 0),
             pickerCount: new Set(filteredPicks.map(p => p.pickerName)).size,
         }
-    }, [filteredItems, filteredPicks])
+    }, [filteredItems, filteredPicks, taskGroups])
 
     const chartData = useMemo(
         () => [...dayGroups].reverse().map(d => ({
@@ -356,7 +414,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
         [dayGroups]
     )
 
-    const detailSource = useMemo(() => {
+    const detailSource = useMemo<DetailRow[]>(() => {
         if (groupMode === 'DAY') {
             return dayGroups.map(d => ({
                 id: d.day,
@@ -387,6 +445,26 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                 ],
             }))
         }
+        if (groupMode === 'TASK') {
+            return taskGroups.map(t => {
+                const productsText = Array.from(t.products).join(', ')
+                return {
+                    id: t.taskCode,
+                    numericFrom: 4,
+                    cells: [
+                        { label: 'Mã lệnh', value: t.taskCode, strong: true },
+                        { label: 'Ngày tạo', value: t.taskCreatedAt ? format(new Date(t.taskCreatedAt), 'dd/MM/yyyy HH:mm') : '-' },
+                        { label: 'Trạng thái', value: TASK_STATUS_LABELS[t.taskStatus] || t.taskStatus },
+                        { label: 'Mặt hàng', value: String(t.skuCount) },
+                        { label: 'Dòng hàng', value: String(t.lineCount) },
+                        { label: 'Dòng đã xong', value: `${t.doneLineCount}/${t.lineCount}` },
+                        { label: 'Yêu cầu', value: formatQuantityFull(t.requestedQty) },
+                        { label: 'Đã xuất', value: formatQuantityFull(t.exportedQty) },
+                        { label: 'Sản phẩm trong lệnh', value: productsText || '-', title: productsText, truncate: true },
+                    ],
+                }
+            })
+        }
         return hourGroups.map(g => ({
             id: g.key,
             numericFrom: 2,
@@ -399,7 +477,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                 { label: 'Nhân viên', value: Array.from(g.pickers).join(', ') },
             ],
         }))
-    }, [groupMode, dayGroups, productGroups, hourGroups])
+    }, [groupMode, dayGroups, productGroups, taskGroups, hourGroups])
 
     const totalPages = Math.max(1, Math.ceil(detailSource.length / ROW_PAGE_SIZE))
     const safePage = Math.min(page, totalPages)
@@ -437,6 +515,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     { label: 'Kho (phân hệ)', value: currentSystem?.name || currentSystem?.code || '-' },
                     { label: 'Kỳ báo cáo', value: `${format(new Date(`${dateFrom}T00:00:00`), 'dd/MM/yyyy')} - ${format(new Date(`${dateTo}T23:59:59`), 'dd/MM/yyyy')}` },
                     { label: 'Tổng số lệnh xuất', value: summary.taskCount },
+                    { label: 'Số lệnh đã hoàn thành', value: summary.completedTaskCount },
                     { label: 'Tổng dòng hàng', value: summary.lineCount },
                     { label: 'Số mặt hàng (SKU)', value: summary.skuCount },
                     { label: 'Tổng SL yêu cầu', value: formatQuantityFull(summary.requested) },
@@ -462,6 +541,18 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     lineCount: p.lineCount,
                     requestedQty: p.requestedQty,
                     exportedQty: p.exportedQty,
+                })),
+                taskRows: taskGroups.map(t => ({
+                    taskCode: t.taskCode,
+                    taskCreatedAt: t.taskCreatedAt ? format(new Date(t.taskCreatedAt), 'dd/MM/yyyy HH:mm') : '-',
+                    taskStatus: TASK_STATUS_LABELS[t.taskStatus] || t.taskStatus,
+                    skuCount: t.skuCount,
+                    lineCount: t.lineCount,
+                    doneLineCount: t.doneLineCount,
+                    requestedQty: t.requestedQty,
+                    exportedQty: t.exportedQty,
+                    products: Array.from(t.products).join(', '),
+                    notes: t.notes,
                 })),
                 pickRows: filteredPicks.map(p => ({
                     date: format(new Date(p.createdAt), 'dd/MM/yyyy'),
@@ -589,10 +680,10 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     {/* Overview cards */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                         {[
-                            { label: 'Số lệnh xuất', value: formatQuantityFull(summary.taskCount), icon: FileStack, tone: 'blue' },
-                            { label: 'Dòng hàng', value: `${formatQuantityFull(summary.lineCount)} / ${summary.skuCount} SKU`, icon: Boxes, tone: 'violet' },
-                            { label: 'SL yêu cầu', value: formatQuantityFull(summary.requested), icon: Package, tone: 'amber' },
-                            { label: 'SL đã xuất', value: `${formatQuantityFull(summary.exported)} (${summary.rate}%)`, icon: TrendingDown, tone: 'emerald' },
+                            { label: 'Số lệnh xuất', value: formatQuantityFull(summary.taskCount), sub: `Hoàn thành ${summary.completedTaskCount}/${summary.taskCount}`, icon: FileStack, tone: 'blue' },
+                            { label: 'Dòng hàng', value: formatQuantityFull(summary.lineCount), sub: `${summary.skuCount} mặt hàng (SKU)`, icon: Boxes, tone: 'violet' },
+                            { label: 'SL yêu cầu', value: formatQuantityFull(summary.requested), sub: 'Tổng ghi trên lệnh xuất', icon: Package, tone: 'amber' },
+                            { label: 'SL đã xuất', value: formatQuantityFull(summary.exported), sub: `Đạt ${summary.rate}% kế hoạch`, icon: TrendingDown, tone: 'emerald' },
                         ].map((c, i) => (
                             <div key={i} className="bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm p-4 flex items-center gap-3">
                                 <div className={`p-2.5 rounded-lg ${cardTone(c.tone)}`}>
@@ -601,6 +692,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">{c.label}</p>
                                     <p className="text-lg font-black text-stone-800 dark:text-stone-100 truncate">{c.value}</p>
+                                    {c.sub && <p className="text-[11px] font-bold text-stone-400 truncate">{c.sub}</p>}
                                 </div>
                             </div>
                         ))}
@@ -608,10 +700,10 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
 
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                         {[
-                            { label: 'Chưa xuất còn lại', value: formatQuantityFull(summary.remaining), icon: Package, tone: 'amber' },
-                            { label: 'Lượt hạ hàng', value: formatQuantityFull(summary.pickCount), icon: Clock3, tone: 'blue' },
-                            { label: 'SL hạ theo lượt', value: formatQuantityFull(summary.pickQty), icon: TrendingDown, tone: 'emerald' },
-                            { label: 'Nhân viên tham gia', value: formatQuantityFull(summary.pickerCount), icon: Users, tone: 'violet' },
+                            { label: 'Chưa xuất còn lại', value: formatQuantityFull(summary.remaining), sub: 'Yêu cầu trừ thực xuất', icon: Package, tone: 'amber' },
+                            { label: 'Lượt hạ hàng', value: formatQuantityFull(summary.pickCount), sub: `${summary.pickerCount} nhân viên`, icon: Clock3, tone: 'blue' },
+                            { label: 'SL hạ theo lượt', value: formatQuantityFull(summary.pickQty), sub: 'Tính theo thời điểm hạ', icon: TrendingDown, tone: 'emerald' },
+                            { label: 'Số ngày có phát sinh', value: formatQuantityFull(dayGroups.length), sub: 'Trong kỳ báo cáo', icon: CalendarDays, tone: 'violet' },
                         ].map((c, i) => (
                             <div key={i} className="bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm p-4 flex items-center gap-3">
                                 <div className={`p-2.5 rounded-lg ${cardTone(c.tone)}`}>
@@ -620,6 +712,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                                 <div className="min-w-0">
                                     <p className="text-[11px] font-bold uppercase tracking-wider text-stone-400">{c.label}</p>
                                     <p className="text-lg font-black text-stone-800 dark:text-stone-100 truncate">{c.value}</p>
+                                    {c.sub && <p className="text-[11px] font-bold text-stone-400 truncate">{c.sub}</p>}
                                 </div>
                             </div>
                         ))}
@@ -664,7 +757,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     <div className="bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden">
                         <div className="p-4 flex flex-wrap items-center gap-3 border-b border-stone-100 dark:border-zinc-700">
                             <div className="flex bg-stone-100 dark:bg-zinc-900 p-1 rounded-lg overflow-x-auto">
-                                {([['DAY', 'Theo ngày'], ['PRODUCT', 'Theo sản phẩm'], ['HOUR', 'Theo giờ hạ']] as const).map(([key, label]) => (
+                                {([['DAY', 'Theo ngày'], ['PRODUCT', 'Theo sản phẩm'], ['TASK', 'Theo lệnh'], ['HOUR', 'Theo giờ hạ']] as const).map(([key, label]) => (
                                     <button
                                         key={key}
                                         onClick={() => setGroupMode(key)}
@@ -701,8 +794,8 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                                             {pagedRows.map(row => (
                                                 <tr key={row.id} className="hover:bg-blue-50/40 dark:hover:bg-zinc-700/40 transition-colors">
                                                     {row.cells.map((c, i) => (
-                                                        <td key={i} className={`px-4 py-3 font-medium text-stone-700 dark:text-stone-300 ${i >= row.numericFrom ? 'text-right tabular-nums' : 'text-left'}`}>
-                                                            <span className={i === 0 ? 'font-bold text-stone-900 dark:text-stone-100' : ''}>{c.value}</span>
+                                                        <td key={i} title={c.title} className={`px-4 py-3 font-medium text-stone-700 dark:text-stone-300 ${i >= row.numericFrom ? 'text-right tabular-nums' : 'text-left'}`}>
+                                                            <span className={`${(i === 0 || c.strong) ? 'font-bold text-stone-900 dark:text-stone-100' : ''} ${c.truncate ? 'block max-w-[320px] truncate align-bottom' : ''}`}>{c.value}</span>
                                                         </td>
                                                     ))}
                                                 </tr>

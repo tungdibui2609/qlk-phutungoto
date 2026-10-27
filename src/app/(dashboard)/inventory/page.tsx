@@ -133,14 +133,20 @@ export default function InventoryPage() {
         fetchBranches()
     }, [])
 
-    // Load Units
+    // Load Units của riêng phân hệ đang làm việc
     useEffect(() => {
+        if (!systemType) return
+        setTargetUnitId(null)
         async function fetchUnits() {
-            const { data } = await supabase.from('units').select('id, name')
+            const { data } = await (supabase.from('units') as any)
+                .select('id, name')
+                .eq('system_code', systemType)
+                .eq('is_active', true)
+                .order('name')
             if (data) setUnits(data)
         }
         fetchUnits()
-    }, [])
+    }, [systemType])
 
     // Load Categories
     useEffect(() => {

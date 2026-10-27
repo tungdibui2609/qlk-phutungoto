@@ -6,6 +6,7 @@ import { format, startOfMonth, endOfMonth, isBefore, parseISO } from 'date-fns'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { getMatchingUnitName, isKg, normalizeUnit } from '@/lib/unitConversion'
 import { Scale } from 'lucide-react'
 import { useToast } from '@/components/ui/ToastProvider'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
@@ -18,6 +19,13 @@ type OrderType = {
     name: string
     code: string
     scope: 'inbound' | 'outbound' | 'both'
+}
+
+// Bảng units có nhiều dòng trùng tên giữa các phân hệ nên không thể chỉ so khớp đơn vị gốc bằng ID.
+function isSameUnitName(a: string | null | undefined, b: string | null | undefined) {
+    const na = getMatchingUnitName(a)
+    const nb = getMatchingUnitName(b)
+    return (!!na && !!nb && na === nb) || (isKg(na) && isKg(nb))
 }
 
 type ProductMovement = {
@@ -102,6 +110,7 @@ export default function AccountingHistoryPage() {
     useEffect(() => {
         setSelectedCategoryIds([])
         setSelectedProductIds([])
+        setTargetUnitId(null)
     }, [systemType])
 
     useEffect(() => {
@@ -183,8 +192,12 @@ export default function AccountingHistoryPage() {
                 .or(`system_code.eq.${systemType},system_code.is.null`)
             setOrderTypes(typeData || [])
 
-            // 2b. Fetch All Units
-            const { data: unitData } = await supabase.from('units').select('id, name').order('name')
+            // 2b. Fetch Units đã được cài đặt cho phân hệ đang làm việc
+            const { data: unitData } = await (supabase.from('units') as any)
+                .select('id, name')
+                .eq('system_code', systemType)
+                .eq('is_active', true)
+                .order('name')
             setUnits(unitData || [])
 
             // 3. Fetch Inbound Movements (All history to calculate opening)
@@ -218,13 +231,14 @@ export default function AccountingHistoryPage() {
 
             // Helper to check if a product can be converted to the target unit
             const isConvertible = (productId: string) => {
-                if (!targetUnitId) return false
+                if (!targetUnitId || !targetUnit) return false
                 const prod = prodData.find((p: any) => p.id === productId)
                 if (!prod || !prod.unit) return false
 
-                const baseUnitId = unitNameMap.get(prod.unit.toLowerCase())
+                const baseUnitId = unitNameMap.get(normalizeUnit(prod.unit))
 
                 // Convertible if target is base unit OR a conversion rate exists
+                if (isSameUnitName(prod.unit, targetUnit.name)) return true
                 if (baseUnitId === targetUnitId) return true
                 const rates = conversionMap.get(productId)
                 return !!(rates && rates.has(targetUnitId))
@@ -1389,8 +1403,9 @@ function VoucherDetailModal({ isOpen, onClose, productId, unit, productName, sku
             const prod = products.find((p: any) => p.id === productId)
             const targetUnit = units.find((u: any) => u.id === targetUnitId)
 
-            const baseUnitId = (prod && prod.unit) ? unitNameMap.get(prod.unit.toLowerCase()) : null
-            const canConvert = targetUnitId && prod && (
+            const baseUnitId = (prod && prod.unit) ? unitNameMap.get(normalizeUnit(prod.unit)) : null
+            const canConvert = targetUnitId && prod && !!targetUnit && (
+                isSameUnitName(prod.unit, targetUnit.name) ||
                 baseUnitId === targetUnitId ||
                 (conversionMap.get(productId)?.has(targetUnitId))
             )

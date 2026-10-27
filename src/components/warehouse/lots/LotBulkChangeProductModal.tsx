@@ -1,13 +1,14 @@
 // @ts-nocheck
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { X, Save, Loader2, CheckCircle2, AlertTriangle, Layers } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { Product } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
+import { Combobox } from '@/components/ui/Combobox'
 
 interface LotBulkChangeProductModalProps {
     onClose: () => void
@@ -49,6 +50,26 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products, lotIds
     // Lọc danh sách sản phẩm thuộc hệ thống hiện tại (nếu có trường system_type hoặc system_code)
     // Hoặc đơn giản là hiển thị tất cả các sản phẩm có sẵn
     const activeProducts = products.filter(p => p.is_active !== false)
+
+    // Danh sách gợi ý sản phẩm đích (loại bỏ sản phẩm nguồn đang chọn)
+    const targetProductOptions = useMemo(() => {
+        return activeProducts
+            .filter(p => p.id !== sourceProductId)
+            .map(p => ({
+                value: p.id,
+                label: `[${p.sku}] ${p.name}`,
+                sku: p.sku,
+                name: p.name,
+                aliases: (p as any).aliases || '',
+            }))
+    }, [activeProducts, sourceProductId])
+
+    // Nếu mã nguồn trùng với mã đích đang chọn thì xóa mã đích
+    useEffect(() => {
+        if (targetProductId && targetProductId === sourceProductId) {
+            setTargetProductId('')
+        }
+    }, [sourceProductId, targetProductId])
 
     // 1. Kiểm tra số lượng LOT bị ảnh hưởng khi chọn sản phẩm nguồn
     useEffect(() => {
@@ -366,27 +387,48 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products, lotIds
                                 </div>
                             )}
 
-                            {/* Dropdown Sản phẩm đích */}
+                            {/* Combobox Sản phẩm đích */}
                             <div className="space-y-1.5">
                                 <label className="block text-sm font-bold text-slate-700 dark:text-slate-300">
                                     Mã sản phẩm mới (Đích)
                                 </label>
-                                <select
+                                <Combobox
+                                    options={targetProductOptions}
                                     value={targetProductId}
-                                    onChange={(e) => setTargetProductId(e.target.value)}
+                                    onChange={(val) => setTargetProductId(val || '')}
+                                    placeholder="-- Nhập mã hoặc tên sản phẩm để tìm kiếm --"
+                                    suggestionLabel="Gợi ý sản phẩm"
+                                    emptyText="Không tìm thấy sản phẩm phù hợp"
                                     disabled={loading}
-                                    required
-                                    className="w-full px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-teal-500/50 dark:focus:ring-teal-500/30 text-sm"
-                                >
-                                    <option value="">-- Chọn mã mới đổi sang --</option>
-                                    {activeProducts
-                                        .filter(p => p.id !== sourceProductId)
-                                        .map((p) => (
-                                            <option key={p.id} value={p.id}>
-                                                [{p.sku}] {p.name}
-                                            </option>
-                                        ))}
-                                </select>
+                                    className="w-full text-sm"
+                                    renderOption={(option) => (
+                                        <div className="flex flex-col text-left py-1 min-w-0 flex-1 pr-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="font-mono text-xs font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-1.5 py-0.5 rounded border border-teal-200/50 dark:border-teal-800/40 shrink-0">
+                                                    {option.sku}
+                                                </span>
+                                                <span className="truncate font-medium text-slate-800 dark:text-slate-200 text-sm">
+                                                    {option.name}
+                                                </span>
+                                            </div>
+                                            {option.aliases && (
+                                                <span className="text-[11px] text-slate-400 dark:text-slate-500 truncate mt-0.5">
+                                                    Viết tắt: {option.aliases}
+                                                </span>
+                                            )}
+                                        </div>
+                                    )}
+                                    renderValue={(option) => (
+                                        <div className="flex items-center gap-2 truncate">
+                                            <span className="font-mono text-xs font-bold text-teal-600 dark:text-teal-400 bg-teal-50 dark:bg-teal-950/40 px-1.5 py-0.5 rounded border border-teal-200/50 dark:border-teal-800/40 shrink-0">
+                                                {option.sku}
+                                            </span>
+                                            <span className="truncate font-medium text-slate-800 dark:text-slate-200 text-sm">
+                                                {option.name}
+                                            </span>
+                                        </div>
+                                    )}
+                                />
                             </div>
 
                             {/* Footer Actions */}
@@ -401,7 +443,7 @@ export function LotBulkChangeProductModal({ onClose, onSuccess, products, lotIds
                                 </button>
                                 <button
                                     type="submit"
-                                    disabled={loading || checking || affectedItems.length === 0}
+                                    disabled={loading || checking || affectedItems.length === 0 || !targetProductId}
                                     className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold transition-all text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-teal-600/10"
                                 >
                                     {loading ? (

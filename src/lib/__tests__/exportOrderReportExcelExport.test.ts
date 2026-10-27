@@ -21,6 +21,13 @@ const baseOptions = {
     productRows: [
         { productName: 'Thùng 5 lớp', sku: 'HH001', unit: 'Cái', lineCount: 2, requestedQty: 100, exportedQty: 80 },
     ],
+    taskRows: [
+        {
+            taskCode: 'XK-001', taskCreatedAt: '25/10/2026 09:00', taskStatus: 'Hoàn thành',
+            skuCount: 2, lineCount: 3, doneLineCount: 2, requestedQty: 150, exportedQty: 130,
+            products: 'Thùng 5 lớp (HH001), Nhãn cuộn (HH002)', notes: 'Giao ca sáng',
+        },
+    ],
     pickRows: [
         { date: '25/10/2026', hour: '14:20', pickerName: 'Nguyễn Văn A', productName: 'Thùng 5 lớp', sku: 'HH001', taskCode: 'XK-001', quantity: 80, unit: 'Cái', note: '' },
     ],
@@ -43,7 +50,7 @@ async function readWorkbook(blob: Blob) {
 describe('exportOrderReportToExcel', () => {
     beforeEach(() => saveAsMock.mockClear())
 
-    it('tạo file .xlsx với 5 sheet và gọi saveAs', async () => {
+    it('tạo file .xlsx với 6 sheet và gọi saveAs', async () => {
         const fileName = await exportOrderReportToExcel(baseOptions)
 
         expect(fileName).toContain('.xlsx')
@@ -52,7 +59,7 @@ describe('exportOrderReportToExcel', () => {
 
         const wb = await readWorkbook(saveAsMock.mock.calls[0][0] as Blob)
         expect(wb.worksheets.map(w => w.name)).toEqual([
-            'Tong hop', 'Theo ngay', 'Theo san pham', 'Chi tiet lenh xuat', 'Lịch sử hạ hàng',
+            'Tong hop', 'Theo ngay', 'Theo san pham', 'Theo lenh', 'Chi tiet lenh xuat', 'Lịch sử hạ hàng',
         ])
     })
 
@@ -71,6 +78,13 @@ describe('exportOrderReportToExcel', () => {
         const wsProduct = wb.getWorksheet('Theo san pham')!
         expect(wsProduct.getCell('B5').value).toBe('Thùng 5 lớp')
         expect(wsProduct.getCell('H5').value).toContain('20%')
+
+        const wsTask = wb.getWorksheet('Theo lenh')!
+        expect(wsTask.getCell('A1').value).toBe('THỐNG KÊ THEO TỪNG LỆNH XUẤT')
+        expect(wsTask.getCell('B5').value).toBe('XK-001')
+        expect(wsTask.getCell('E5').value).toBe(2)
+        expect(wsTask.getCell('G5').value).toBe(2)
+        expect(wsTask.getCell('J5').value).toContain('Nhãn cuộn')
     })
 
     it('bỏ qua sheet lịch sử hạ hàng khi phân hệ chưa có dữ liệu pick', async () => {
@@ -78,7 +92,7 @@ describe('exportOrderReportToExcel', () => {
         const wb = await readWorkbook(saveAsMock.mock.calls[0][0] as Blob)
 
         expect(wb.worksheets.map(w => w.name)).toEqual([
-            'Tong hop', 'Theo ngay', 'Theo san pham', 'Chi tiet lenh xuat',
+            'Tong hop', 'Theo ngay', 'Theo san pham', 'Theo lenh', 'Chi tiet lenh xuat',
         ])
     })
 })

@@ -90,9 +90,10 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
     }, [productSearch])
 
     const fetchAllUnits = async () => {
-        const { data } = await supabase
-            .from('units')
+        if (!currentSystem?.code) return
+        const { data } = await (supabase.from('units') as any)
             .select('id, name')
+            .eq('system_code', currentSystem.code)
             .eq('is_active', true)
             .order('name')
         if (data) setAllSystemUnits(data)
