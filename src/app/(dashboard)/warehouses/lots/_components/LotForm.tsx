@@ -422,7 +422,11 @@ export function LotForm({
                             productId: item.product_id,
                             quantity: item.quantity,
                             unit: matchedUnit,
-                            tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag || '',
+                            tag: editingLot.lot_tags?.find((t: any) => t.lot_item_id === item.id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag ||
+                                 editingLot.lot_tags?.find((t: any) => !t.lot_item_id && !t.tag.startsWith('MERGED_') && !t.tag.startsWith('SPLIT_'))?.tag ||
+                                 (editingLot.metadata as any)?.pallet_tag ||
+                                 (editingLot.metadata as any)?.tag ||
+                                 editingLot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || '',
                             productionLotId: (editingLot as any).production_lot_id || '',
                             categoryId: item.category_id || product?.category_id || ''
                         }

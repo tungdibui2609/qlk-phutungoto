@@ -1,7 +1,7 @@
 'use client'
 
 import React, { Suspense, useState, useEffect, useMemo } from 'react'
-import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User, ShieldAlert, Search } from 'lucide-react'
+import { FileText, LayoutList, Loader2, Trash2, Printer, CheckCircle, RotateCcw, PackageCheck, XCircle, MapPin, Clock, User, ShieldAlert, Search, BarChart3 } from 'lucide-react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { format } from 'date-fns'
@@ -9,6 +9,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { CreateExportTaskModal } from '@/components/export/CreateExportTaskModal'
 import { ExportItemSearchModal } from '@/components/export/ExportItemSearchModal'
+import ExportOrderStatsPanel from '@/components/export/ExportOrderStatsPanel'
 import { logActivity } from '@/lib/audit'
 
 // Types for DB Data
@@ -73,6 +74,7 @@ function ExportOrderContent() {
     const [loadingPicks, setLoadingPicks] = useState(false)
     const [approvingGroup, setApprovingGroup] = useState<string | null>(null)
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'RUNNING' | 'COMPLETED'>('RUNNING')
+    const [viewMode, setViewMode] = useState<'LIST' | 'STATS'>(searchParams.get('tab') === 'stats' ? 'STATS' : 'LIST')
 
     useEffect(() => {
         fetchTasks()
@@ -492,16 +494,26 @@ function ExportOrderContent() {
         })
     }, [tasks, statusFilter])
 
+    const switchView = (next: 'LIST' | 'STATS') => {
+        setViewMode(next)
+        const url = new URL(window.location.href)
+        if (next === 'STATS') url.searchParams.set('tab', 'stats')
+        else url.searchParams.delete('tab')
+        router.replace(`${url.pathname}${url.search}`)
+    }
+
     return (
         <div className="p-2 md:p-4 w-full mx-auto space-y-6 pb-24 h-full">
             {/* Header */}
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                     <h1 className="text-2xl font-bold text-stone-800 dark:text-stone-100 flex items-center gap-3">
-                        <LayoutList className="text-blue-600" />
-                        Danh sách Lệnh Xuất Kho
+                        {viewMode === 'STATS' ? <BarChart3 className="text-blue-600" /> : <LayoutList className="text-blue-600" />}
+                        {viewMode === 'STATS' ? 'Thống kê xuất kho' : 'Danh sách Lệnh Xuất Kho'}
                     </h1>
-                    <p className="text-stone-500 dark:text-stone-400 mt-1">Quản lý các yêu cầu xuất hàng từ kho</p>
+                    <p className="text-stone-500 dark:text-stone-400 mt-1">
+                        {viewMode === 'STATS' ? 'Khoảng thời gian xuất, sản lượng và báo cáo Excel theo phân hệ kho' : 'Quản lý các yêu cầu xuất hàng từ kho'}
+                    </p>
                 </div>
                 <div>
                     <button
@@ -514,29 +526,51 @@ function ExportOrderContent() {
                 </div>
             </div>
 
-            {/* Filter Tabs */}
+            {/* View Tabs */}
             <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-lg w-max overflow-x-auto">
                 <button
-                    onClick={() => setStatusFilter('ALL')}
-                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                    onClick={() => switchView('LIST')}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${viewMode === 'LIST' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
                 >
-                    Tất cả
+                    <LayoutList size={15} />
+                    Danh sách
                 </button>
                 <button
-                    onClick={() => setStatusFilter('RUNNING')}
-                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'RUNNING' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                    onClick={() => switchView('STATS')}
+                    className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${viewMode === 'STATS' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
                 >
-                    Đang chạy
-                </button>
-                <button
-                    onClick={() => setStatusFilter('COMPLETED')}
-                    className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'COMPLETED' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
-                >
-                    Hoàn thành
+                    <BarChart3 size={15} />
+                    Thống kê
                 </button>
             </div>
 
-            {/* Pick Requests Pending Approval */}
+            {viewMode === 'STATS' ? (
+                <ExportOrderStatsPanel active={true} />
+            ) : (
+                <>
+                    {/* Filter Tabs */}
+                    <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-lg w-max overflow-x-auto">
+                        <button
+                            onClick={() => setStatusFilter('ALL')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'ALL' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                        >
+                            Tất cả
+                        </button>
+                        <button
+                            onClick={() => setStatusFilter('RUNNING')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'RUNNING' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                        >
+                            Đang chạy
+                        </button>
+                        <button
+                            onClick={() => setStatusFilter('COMPLETED')}
+                            className={`px-4 py-2 rounded-md text-sm font-bold transition-colors whitespace-nowrap ${statusFilter === 'COMPLETED' ? 'bg-white dark:bg-zinc-700 text-blue-600 shadow-sm' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200'}`}
+                        >
+                            Hoàn thành
+                        </button>
+                    </div>
+
+                    {/* Pick Requests Pending Approval */}
             {pickGroups.length > 0 && (
                 <div className="space-y-4">
                     <div className="flex items-center gap-3">
@@ -729,6 +763,8 @@ function ExportOrderContent() {
                         ))
                     )}
                 </div>
+            )}
+                </>
             )}
 
             <CreateExportTaskModal

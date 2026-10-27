@@ -1229,7 +1229,7 @@ export default function PalletsPageContent() {
                     ((matched.existingBoxesCount || 0) > 0 || (matched.quantity || 0) > 0)
                 )
 
-                const palletTag = boxes.find(b => b.metadata?.tag)?.metadata?.tag || null
+                const palletTag = boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null
                 const palletNotes = boxes.map(b => b.metadata?.pallet_notes || b.metadata?.notes).find(Boolean) || null
 
                 groups.push({
@@ -1485,23 +1485,38 @@ export default function PalletsPageContent() {
             }
 
             // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
-            const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
+            const tagFromGroup = group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean)
             if (tagFromGroup && tagFromGroup.trim()) {
                 const cleanTag = tagFromGroup.trim().toUpperCase()
                 try {
-                    const { data: existTag } = await supabase
-                        .from('lot_tags')
+                    const { data: existingItems } = await supabase
+                        .from('lot_items')
                         .select('id')
                         .eq('lot_id', targetLot.id)
-                        .eq('tag', cleanTag)
-                        .maybeSingle()
 
-                    if (!existTag) {
-                        await (supabase.from('lot_tags') as any).insert({
-                            lot_id: targetLot.id,
-                            tag: cleanTag,
-                            added_at: new Date().toISOString()
-                        })
+                    const itemsList = existingItems && existingItems.length > 0 ? existingItems : [{ id: null }]
+
+                    for (const item of itemsList) {
+                        let query = supabase
+                            .from('lot_tags')
+                            .select('id')
+                            .eq('lot_id', targetLot.id)
+                            .eq('tag', cleanTag)
+                        if (item.id) {
+                            query = query.eq('lot_item_id', item.id)
+                        } else {
+                            query = query.is('lot_item_id', null)
+                        }
+                        const { data: existTag } = await query.maybeSingle()
+
+                        if (!existTag) {
+                            await (supabase.from('lot_tags') as any).insert({
+                                lot_id: targetLot.id,
+                                lot_item_id: item.id || null,
+                                tag: cleanTag,
+                                added_at: new Date().toISOString()
+                            })
+                        }
                     }
                 } catch (tErr) {
                     console.warn('Lỗi ghi lot_tags:', tErr)
@@ -1575,23 +1590,38 @@ export default function PalletsPageContent() {
             }
 
             // 6. Cập nhật tag nếu có
-            const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
+            const tagFromGroup = group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean)
             if (tagFromGroup && tagFromGroup.trim()) {
                 const cleanTag = tagFromGroup.trim().toUpperCase()
                 try {
-                    const { data: existTag } = await supabase
-                        .from('lot_tags')
+                    const { data: existingItems } = await supabase
+                        .from('lot_items')
                         .select('id')
                         .eq('lot_id', targetLot.id)
-                        .eq('tag', cleanTag)
-                        .maybeSingle()
 
-                    if (!existTag) {
-                        await (supabase.from('lot_tags') as any).insert({
-                            lot_id: targetLot.id,
-                            tag: cleanTag,
-                            added_at: new Date().toISOString()
-                        })
+                    const itemsList = existingItems && existingItems.length > 0 ? existingItems : [{ id: null }]
+
+                    for (const item of itemsList) {
+                        let query = supabase
+                            .from('lot_tags')
+                            .select('id')
+                            .eq('lot_id', targetLot.id)
+                            .eq('tag', cleanTag)
+                        if (item.id) {
+                            query = query.eq('lot_item_id', item.id)
+                        } else {
+                            query = query.is('lot_item_id', null)
+                        }
+                        const { data: existTag } = await query.maybeSingle()
+
+                        if (!existTag) {
+                            await (supabase.from('lot_tags') as any).insert({
+                                lot_id: targetLot.id,
+                                lot_item_id: item.id || null,
+                                tag: cleanTag,
+                                added_at: new Date().toISOString()
+                            })
+                        }
                     }
                 } catch (tErr) {
                     console.warn('Lỗi ghi lot_tags:', tErr)
@@ -1640,23 +1670,38 @@ export default function PalletsPageContent() {
                         .eq('id', targetLot.id)
 
                     // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
-                    const tagFromGroup = group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag
+                    const tagFromGroup = group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean)
                     if (tagFromGroup && tagFromGroup.trim()) {
                         const cleanTag = tagFromGroup.trim().toUpperCase()
                         try {
-                            const { data: existTag } = await supabase
-                                .from('lot_tags')
+                            const { data: existingItems } = await supabase
+                                .from('lot_items')
                                 .select('id')
                                 .eq('lot_id', targetLot.id)
-                                .eq('tag', cleanTag)
-                                .maybeSingle()
 
-                            if (!existTag) {
-                                await (supabase.from('lot_tags') as any).insert({
-                                    lot_id: targetLot.id,
-                                    tag: cleanTag,
-                                    added_at: new Date().toISOString()
-                                })
+                            const itemsList = existingItems && existingItems.length > 0 ? existingItems : [{ id: null }]
+
+                            for (const item of itemsList) {
+                                let query = supabase
+                                    .from('lot_tags')
+                                    .select('id')
+                                    .eq('lot_id', targetLot.id)
+                                    .eq('tag', cleanTag)
+                                if (item.id) {
+                                    query = query.eq('lot_item_id', item.id)
+                                } else {
+                                    query = query.is('lot_item_id', null)
+                                }
+                                const { data: existTag } = await query.maybeSingle()
+
+                                if (!existTag) {
+                                    await (supabase.from('lot_tags') as any).insert({
+                                        lot_id: targetLot.id,
+                                        lot_item_id: item.id || null,
+                                        tag: cleanTag,
+                                        added_at: new Date().toISOString()
+                                    })
+                                }
                             }
                         } catch (tErr) {
                             console.warn('Lỗi ghi lot_tags tự động:', tErr)
@@ -1776,7 +1821,7 @@ export default function PalletsPageContent() {
         setMatchInfo({ score: primaryMatch.matchScore, reason: primaryMatch.matchReason })
 
         // 3. Kế thừa mã phụ (Tag)
-        setCustomLotTag(group.pallet_tag || group.boxes.find(b => b.metadata?.tag)?.metadata?.tag || '')
+        setCustomLotTag(group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || '')
 
         // 4. Kế thừa số lượng thùng (đơn vị: Thùng) & tổng khối lượng (Kg)
         const totalQty = detectedLines.reduce((acc, l) => acc + (Number(l.quantity) || 0), 0)
@@ -2034,6 +2079,7 @@ export default function PalletsPageContent() {
                 metadata: {
                     created_from_pallet_stt: group.pallet_stt,
                     pallet_tag: customLotTag.trim() || null,
+                    tag: customLotTag.trim() || null,
                     unit: primaryLine.unit || 'Thùng',
                     total_weight_kg: totalLotWeight,
                     box_count: group.boxes.length,
@@ -2101,9 +2147,10 @@ export default function PalletsPageContent() {
                 return itemPayload
             })
 
-            const { error: itemErr } = await (supabase
+            const { data: insertedItems, error: itemErr } = await (supabase
                 .from('lot_items') as any)
                 .insert(itemPayloads)
+                .select('id, product_id')
 
             if (itemErr) {
                 console.warn('Cảnh báo thêm lot_items:', itemErr.message || itemErr)
@@ -2112,17 +2159,42 @@ export default function PalletsPageContent() {
             // 3. Ghi mã phụ vào lot_tags nếu có
             if (customLotTag && customLotTag.trim()) {
                 const cleanTag = customLotTag.trim().toUpperCase()
-                const tagPayload: any = {
-                    lot_id: newLotId,
-                    tag: cleanTag,
-                    added_at: new Date().toISOString()
-                }
-                if (profile?.company_id) {
-                    tagPayload.company_id = profile.company_id
-                }
-                const { error: tagErr } = await (supabase.from('lot_tags') as any).insert(tagPayload)
-                if (tagErr) {
-                    console.warn('Cảnh báo ghi lot_tags:', tagErr.message || tagErr)
+                try {
+                    let itemsToTag = (insertedItems && insertedItems.length > 0) ? insertedItems : []
+                    if (itemsToTag.length === 0) {
+                        const { data: refetchedItems } = await supabase
+                            .from('lot_items')
+                            .select('id, product_id')
+                            .eq('lot_id', newLotId)
+                        itemsToTag = refetchedItems || []
+                    }
+
+                    const tagInserts: any[] = []
+                    if (itemsToTag.length > 0) {
+                        itemsToTag.forEach((it: any) => {
+                            tagInserts.push({
+                                lot_id: newLotId,
+                                lot_item_id: it.id,
+                                tag: cleanTag,
+                                added_at: new Date().toISOString()
+                            })
+                        })
+                    }
+                    // Đồng thời thêm 1 bản ghi unassigned lot_id cho toàn bộ LOT
+                    tagInserts.push({
+                        lot_id: newLotId,
+                        lot_item_id: null,
+                        tag: cleanTag,
+                        added_at: new Date().toISOString()
+                    })
+
+                    // TUYỆT ĐỐI KHÔNG truyền company_id vào lot_tags (vì bảng lot_tags không có cột này)
+                    const { error: tagErr } = await (supabase.from('lot_tags') as any).insert(tagInserts)
+                    if (tagErr) {
+                        console.warn('Cảnh báo ghi lot_tags:', tagErr.message || tagErr)
+                    }
+                } catch (tErr) {
+                    console.warn('Lỗi ghi lot_tags:', tErr)
                 }
             }
 
@@ -2334,6 +2406,7 @@ export default function PalletsPageContent() {
                 ...(editingLinkedPallet.metadata || {}),
                 created_from_pallet_stt: editLotSTT.trim().toUpperCase(),
                 pallet_tag: customLotTag.trim() || null,
+                tag: customLotTag.trim() || null,
                 unit: primaryLine.unit || 'Thùng',
                 total_weight_kg: totalLotWeight,
                 box_count: totalLotBoxes,
@@ -2377,6 +2450,7 @@ export default function PalletsPageContent() {
             if (lotUpdateErr) throw lotUpdateErr
 
             // 2. Cập nhật lại lot_items
+            let insertedLotItems: any[] = []
             try {
                 await (supabase.from('lot_items') as any).delete().eq('lot_id', editingLinkedPallet.id)
 
@@ -2393,7 +2467,11 @@ export default function PalletsPageContent() {
                     }
                     return itemPayload
                 })
-                await (supabase.from('lot_items') as any).insert(itemPayloads)
+                const { data: newItems, error: itemErr } = await (supabase.from('lot_items') as any)
+                    .insert(itemPayloads)
+                    .select('id')
+                if (newItems) insertedLotItems = newItems
+                if (itemErr) console.warn('Cảnh báo cập nhật lot_items:', itemErr)
             } catch (itemErr) {
                 console.warn('Cảnh báo cập nhật lot_items:', itemErr)
             }
@@ -2402,20 +2480,27 @@ export default function PalletsPageContent() {
             if (customLotTag && customLotTag.trim()) {
                 const cleanTag = customLotTag.trim().toUpperCase()
                 try {
-                    const { data: existingTag } = await (supabase.from('lot_tags') as any)
-                        .select('id')
-                        .eq('lot_id', editingLinkedPallet.id)
-                        .eq('tag', cleanTag)
-                        .maybeSingle()
+                    let itemsToTag = insertedLotItems
+                    if (!itemsToTag || itemsToTag.length === 0) {
+                        const { data: refetched } = await supabase.from('lot_items').select('id').eq('lot_id', editingLinkedPallet.id)
+                        itemsToTag = refetched || []
+                    }
 
-                    if (!existingTag) {
-                        const tagPayload: any = {
-                            lot_id: editingLinkedPallet.id,
-                            tag: cleanTag,
-                            added_at: new Date().toISOString()
+                    const itemsList = itemsToTag.length > 0 ? itemsToTag : [{ id: null }]
+                    for (const item of itemsList) {
+                        let query = supabase.from('lot_tags').select('id').eq('lot_id', editingLinkedPallet.id).eq('tag', cleanTag)
+                        if (item.id) query = query.eq('lot_item_id', item.id)
+                        else query = query.is('lot_item_id', null)
+                        const { data: existingTag } = await query.maybeSingle()
+
+                        if (!existingTag) {
+                            await (supabase.from('lot_tags') as any).insert({
+                                lot_id: editingLinkedPallet.id,
+                                lot_item_id: item.id || null,
+                                tag: cleanTag,
+                                added_at: new Date().toISOString()
+                            })
                         }
-                        if (profile?.company_id) tagPayload.company_id = profile.company_id
-                        await (supabase.from('lot_tags') as any).insert(tagPayload)
                     }
                 } catch (tagErr) {
                     console.warn('Cảnh báo ghi lot_tags:', tagErr)

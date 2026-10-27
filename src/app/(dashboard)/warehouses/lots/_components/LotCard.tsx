@@ -884,24 +884,51 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                                         </div>
 
                                                         {/* Inline Tags */}
-                                                        {lot.lot_tags && (
-                                                            <div className="flex flex-wrap gap-1">
-                                                                <TagDisplay
-                                                                    tags={lot.lot_tags
-                                                                        .filter((t: any) =>
-                                                                            t.lot_item_id === item.id &&
-                                                                            !t.tag.startsWith('MERGED_FROM:') &&
-                                                                            !t.tag.startsWith('MERGED_DATA:') &&
-                                                                            !t.tag.startsWith('SPLIT_FROM:') &&
-                                                                            !t.tag.startsWith('SPLIT_DATA:')
-                                                                        )
-                                                                        .map((t: any) => t.tag)}
-                                                                    placeholderMap={{
-                                                                        '@': (showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || 'SẢN PHẨM'
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        )}
+                                                        {(() => {
+                                                            const itemTags = (lot.lot_tags || [])
+                                                                .filter((t: any) =>
+                                                                    t.lot_item_id === item.id &&
+                                                                    !t.tag.startsWith('MERGED_FROM:') &&
+                                                                    !t.tag.startsWith('MERGED_DATA:') &&
+                                                                    !t.tag.startsWith('SPLIT_FROM:') &&
+                                                                    !t.tag.startsWith('SPLIT_DATA:')
+                                                                )
+                                                                .map((t: any) => t.tag)
+
+                                                            // Fallback nếu item chưa có tag gắn trực tiếp vào lot_item_id:
+                                                            const unassignedTags = (lot.lot_tags || [])
+                                                                .filter((t: any) =>
+                                                                    !t.lot_item_id &&
+                                                                    !t.tag.startsWith('SPLIT_TO:') &&
+                                                                    !t.tag.startsWith('MERGED_TO:') &&
+                                                                    !t.tag.startsWith('MERGED_FROM:') &&
+                                                                    !t.tag.startsWith('SPLIT_FROM:')
+                                                                )
+                                                                .map((t: any) => t.tag)
+
+                                                            const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null
+                                                            const boxTag = lot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null
+                                                            const fallbackTag = metaTag || boxTag
+
+                                                            const finalTags = Array.from(new Set([
+                                                                ...itemTags,
+                                                                ...(itemTags.length === 0 ? unassignedTags : []),
+                                                                ...(itemTags.length === 0 && unassignedTags.length === 0 && fallbackTag ? [fallbackTag] : [])
+                                                            ]))
+
+                                                            if (finalTags.length === 0) return null
+
+                                                            return (
+                                                                <div className="flex flex-wrap gap-1">
+                                                                    <TagDisplay
+                                                                        tags={finalTags}
+                                                                        placeholderMap={{
+                                                                            '@': (showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku) || 'SẢN PHẨM'
+                                                                        }}
+                                                                    />
+                                                                </div>
+                                                            )
+                                                        })()}
                                                     </div>
                                                 </div>
                                             )
@@ -912,11 +939,19 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                                 <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
                                                     <div className="flex-1 min-w-0">
                                                         <div className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">{showInternal && lot.products.internal_name ? lot.products.internal_name : lot.products.name}</div>
-                                                        {lot.lot_tags && (
-                                                            <div className="mt-1">
-                                                                <TagDisplay tags={lot.lot_tags.map((t: any) => t.tag)} />
-                                                            </div>
-                                                        )}
+                                                        {(() => {
+                                                            const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null
+                                                            const boxTag = lot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null
+                                                            const tags = (lot.lot_tags && lot.lot_tags.length > 0)
+                                                                ? lot.lot_tags.map((t: any) => t.tag)
+                                                                : (metaTag || boxTag ? [metaTag || boxTag] : [])
+                                                            if (tags.length === 0) return null
+                                                            return (
+                                                                <div className="mt-1">
+                                                                    <TagDisplay tags={tags} />
+                                                                </div>
+                                                            )
+                                                        })()}
                                                     </div>
                                                     <span className="font-mono text-xs bg-zinc-200 dark:bg-zinc-700 px-1.5 py-0.5 rounded text-zinc-600 dark:text-zinc-300 h-fit">
                                                         {formatQuantityFull(lot.quantity)} {formatUnitWithWeight(lot.product_id, lot.products.unit)}
@@ -951,22 +986,37 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                 </div>
 
                 {/* Tags (Unassigned) */}
-                {lot.lot_tags && lot.lot_tags.filter((t: any) => !t.lot_item_id).length > 0 && (
-                    <div className="mt-2 text-xs">
-                        <TagDisplay
-                            tags={lot.lot_tags
-                                .filter((t: any) =>
-                                    !t.lot_item_id &&
-                                    !t.tag.startsWith('SPLIT_TO:') &&
-                                    !t.tag.startsWith('MERGED_TO:')
-                                )
-                                .map((t: any) => t.tag)}
-                            placeholderMap={{
-                                '@': (showInternal && lot.products?.internal_code ? lot.products.internal_code : lot.products?.sku) || lot.products?.name || 'SẢN PHẨM'
-                            }}
-                        />
-                    </div>
-                )}
+                {(() => {
+                    const unassigned = (lot.lot_tags || []).filter((t: any) =>
+                        !t.lot_item_id &&
+                        !t.tag.startsWith('SPLIT_TO:') &&
+                        !t.tag.startsWith('MERGED_TO:')
+                    )
+                    const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null
+                    const boxTag = lot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null
+                    const fallbackTag = metaTag || boxTag
+
+                    // Nếu đã có itemTags hiển thị ở từng dòng sản phẩm thì không cần lặp lại ở unassigned nếu trùng
+                    const hasItemTags = (lot.lot_tags || []).some((t: any) => t.lot_item_id)
+                    if (unassigned.length === 0 && (hasItemTags || !fallbackTag)) return null
+
+                    const displayTags = unassigned.length > 0
+                        ? unassigned.map((t: any) => t.tag)
+                        : (fallbackTag ? [fallbackTag] : [])
+
+                    if (displayTags.length === 0) return null
+
+                    return (
+                        <div className="mt-2 text-xs">
+                            <TagDisplay
+                                tags={displayTags}
+                                placeholderMap={{
+                                    '@': (showInternal && lot.products?.internal_code ? lot.products.internal_code : lot.products?.sku) || lot.products?.name || 'SẢN PHẨM'
+                                }}
+                            />
+                        </div>
+                    )
+                })()}
 
                 {/* Xem tem thùng / Dữ liệu OCR điện thoại đã gắn */}
                 <div className="mt-2 flex items-center justify-between p-2 rounded-xl bg-slate-50 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-850 text-xs">

@@ -74,6 +74,13 @@ Hệ thống sẽ mở rộng thêm một bậc phân tầng nữa là **Khách 
 - Kiểm tra tính tương thích ngược: Đảm bảo Phân hệ Kho Đông Lạnh hoạt động trơn tru không thay đổi.
 - Tạo `walkthrough.md` mô tả rõ cách tính năng mới tuân thủ kiến trúc phân hệ của dự án.
 
+## 🔑 Tài Khoản Test Localhost (Để Xác Minh UI)
+- Khi cần xác minh UI thật (bấm tab, xuất Excel, kiểm tra dữ liệu), đăng nhập tại `http://localhost:3001/login` (dev) bằng tài khoản test.
+- **Email + mật khẩu test KHÔNG được ghi trực tiếp vào bất kỳ file nào trong repo** (repo có remote GitHub — ghi plaintext = lộ thông tin đăng nhập thật).
+- Thông tin đăng nhập lưu trong file `.env.test.local` ở thư mục gốc dự án. File này **đã được `.gitignore` bỏ qua** qua quy tắc `.env*`, chỉ tồn tại trên máy local, tuyệt đối không commit/push.
+- Nếu `.env.test.local` chưa có mật khẩu (mới clone về máy khác): **người dùng tự dán mật khẩu vào biến `TEST_LOGIN_PASSWORD=`**, hoặc hỏi chủ repo. Agent KHÔNG tự động độn secret vào file.
+- **Lưu ý cho agent:** lớp bảo mật của agent chặn việc tự nhập mật khẩu vào form đăng nhập. Vì vậy bước "đăng nhập rồi bấm thử UI" thường phải nhờ người dùng thực hiện thủ công; agent chỉ kiểm chứng được tới mức `tsc --noEmit`, `npm run build`, và unit test (vitest).
+
 ---
 *Ghi chú: Luôn ưu tiên sự an toàn của dữ liệu và tính linh hoạt của hệ thống.*
 
