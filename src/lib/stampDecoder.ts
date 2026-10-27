@@ -4,8 +4,9 @@
 export const DEFAULT_STAMP_DICT: Record<string, Record<string, string>> = {
     fruit_type: {
         '1': 'TP cấp đông sầu riêng',
-        '2': 'Sầu riêng tươi',
-        '3': 'Xoài cấp đông'
+        '2': 'TP cấp đông mít',
+        '3': 'TP cấp đông dưa hấu',
+        '4': 'TP cấp đông nhãn'
     },
     freeze_style: {
         '01': 'Cấp đông nguyên trái',
@@ -53,6 +54,26 @@ export const DEFAULT_STAMP_DICT: Record<string, Record<string, string>> = {
         '67': 'Đắk Nông',
         '68': 'Lâm Đồng',
         '64': 'Gia Lai',
+        '62': 'Kon Tum',
+        '77': 'Bà Rịa - Vũng Tàu',
+        '79': 'Hồ Chí Minh',
+        '80': 'Long An',
+        '82': 'Tiền Giang',
+        '84': 'Trà Vinh',
+        '86': 'Vĩnh Long',
+        '87': 'Đồng Tháp',
+        '89': 'An Giang',
+        '91': 'Kiên Giang',
+        '92': 'Cần Thơ',
+        '93': 'Hậu Giang',
+        '94': 'Sóc Trăng',
+        '95': 'Bạc Liêu',
+        '96': 'Cà Mau',
+        '60': 'Bình Thuận',
+        '58': 'Ninh Thuận',
+        '56': 'Khánh Hòa',
+        '54': 'Phú Yên',
+        '52': 'Bình Định',
         '09': 'Tỉnh mã 09',
         '63': 'Tiền Giang'
     },

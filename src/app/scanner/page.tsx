@@ -1134,6 +1134,80 @@ export default function WebScannerPage() {
     }
   }
 
+  // ── Làm mới / Xoá toàn bộ thùng của Pallet đang chọn (Khớp Mobile App) ─────
+  const handleResetActivePallet = async (targetStt?: string) => {
+    const stt = (targetStt || activePalletStt || '').trim().toUpperCase()
+    if (!stt) return
+    const boxCount = currentBoxes.length
+    const totalW = currentBoxes.reduce((s, b) => s + (b.quantity || 20), 0)
+
+    if (!targetStt && !confirm(`Xoá thùng Pallet ${stt}?\n\nBạn có chắc chắn muốn xoá toàn bộ ${boxCount} thùng (${totalW.toFixed(1)} Kg) của Pallet ${stt} để quét lại từ đầu không?`)) {
+      return
+    }
+
+    try {
+      // 1. Xóa trên Cloud
+      if (typeof navigator !== 'undefined' && navigator.onLine) {
+        const { error } = await supabase
+          .from('box_labels')
+          .delete()
+          .filter('metadata->>pallet_stt', 'eq', stt)
+        if (error) console.warn('Lỗi xoá thùng trên Supabase:', error)
+      }
+
+      // 2. Xoá trong Pending offline nếu có
+      const pending = await getPendingPallets()
+      const match = pending.find(p => p.stt === stt)
+      if (match) {
+        await removePendingPallet(match.client_id)
+        const updated = await getPendingPallets()
+        setPendingPallets(updated)
+      }
+
+      setCurrentBoxes([])
+      triggerToast(`Đã làm mới Pallet ${stt} về 0 thùng!`)
+      loadAllPallets().catch(() => {})
+    } catch (err: any) {
+      alert(`Lỗi làm mới Pallet: ${err.message}`)
+    }
+  }
+
+  // ── Xử lý chuyển Pallet thông minh (Khớp cảnh báo tồn tại như Mobile App) ─
+  const handleSwitchToStt = async (cleanStt: string, tagVal: string, notesVal: string, targetVal: number) => {
+    const existing = palletsList.find(p => p.stt === cleanStt)
+    if (existing && existing.boxes_count > 0) {
+      const wantReset = confirm(
+        `⚠️ STT ${cleanStt} ĐÃ CÓ TRONG HỆ THỐNG!\n\n` +
+        `STT ${cleanStt} hiện đang có ${existing.boxes_count} thùng (${existing.total_weight.toFixed(1)} Kg).\n\n` +
+        `Pallet này có bị xáo trộn hàng và bạn cần quét lại từ đầu không?\n\n` +
+        `• Bấm [OK] để: 🔄 Quét lại từ đầu (Xoá thùng cũ về 0)\n` +
+        `• Bấm [Cancel / Hủy] để: Tiếp tục quét thêm vào Pallet này`
+      )
+
+      if (wantReset) {
+        await handleResetActivePallet(cleanStt)
+        setActivePalletStt(cleanStt)
+        setActivePalletTag(tagVal || existing.tag || '')
+        setActivePalletNotes(notesVal || existing.notes || '')
+        setTargetQty(targetVal || 30)
+        setCurrentBoxes([])
+        localStorage.setItem('last_worked_pallet_stt', cleanStt)
+        setIsSwitchPalletModal(false)
+        triggerToast(`Đã làm mới STT ${cleanStt} về 0 thùng để quét lại!`)
+        return
+      }
+    }
+
+    setActivePalletStt(cleanStt)
+    setActivePalletTag(tagVal || existing?.tag || '')
+    setActivePalletNotes(notesVal || existing?.notes || '')
+    setTargetQty(targetVal || 30)
+    loadCurrentPalletBoxes(cleanStt)
+    localStorage.setItem('last_worked_pallet_stt', cleanStt)
+    setIsSwitchPalletModal(false)
+    triggerToast(`Đã chuyển sang Pallet ${cleanStt}`)
+  }
+
 
   // ── Load All Pallets for Tab 3 ────────────────────────────────
   const loadAllPallets = useCallback(async () => {
@@ -1717,12 +1791,24 @@ export default function WebScannerPage() {
           {activePalletStt ? (
             <div className="mt-1.5 space-y-1">
               <div className="flex items-center justify-between text-[11px]">
-                <span className="text-slate-400">
-                  Tiến độ: <strong className={activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
-                  {currentBoxes.length >= targetQty && (
-                    <span className="ml-1 text-[10px] text-emerald-400 font-bold">✓ Đủ chỉ tiêu</span>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400">
+                    Tiến độ: <strong className={activeTab === 'stamp' ? 'text-amber-400' : 'text-emerald-400'}>{currentBoxes.length}</strong> / {targetQty} thùng
+                    {currentBoxes.length >= targetQty && (
+                      <span className="ml-1 text-[10px] text-emerald-400 font-bold">✓ Đủ chỉ tiêu</span>
+                    )}
+                  </span>
+                  {currentBoxes.length > 0 && (
+                    <button
+                      onClick={() => handleResetActivePallet()}
+                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-500/15 border border-rose-500/50 text-rose-400 text-[10px] font-bold hover:bg-rose-500/25 transition active:scale-95 shadow-xs"
+                      title="Xóa toàn bộ thùng của Pallet này để quét lại từ đầu"
+                    >
+                      <RotateCw size={10} className="text-rose-400" />
+                      <span>Làm mới</span>
+                    </button>
                   )}
-                </span>
+                </div>
                 <span className="text-slate-400">
                   Tổng: <strong className="text-white font-mono">{currentTotalWeight.toFixed(1)}</strong> Kg
                 </span>
@@ -3687,14 +3773,7 @@ export default function WebScannerPage() {
                         return
                       }
                       const clean = newSttInput.trim().toUpperCase()
-                      setActivePalletStt(clean)
-                      setActivePalletTag(newTagInput.trim())
-                      setActivePalletNotes(newNotesInput.trim())
-                      setTargetQty(newTargetQtyInput || 30)
-                      loadCurrentPalletBoxes(clean)
-                      localStorage.setItem('last_worked_pallet_stt', clean)
-                      setIsSwitchPalletModal(false)
-                      triggerToast(`Đã chuyển sang Pallet ${clean}`)
+                      handleSwitchToStt(clean, newTagInput.trim(), newNotesInput.trim(), newTargetQtyInput || 30)
                     }}
                     className="flex-1 py-2.5 rounded-lg bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition shadow-lg shadow-emerald-600/30"
                   >
@@ -3714,13 +3793,7 @@ export default function WebScannerPage() {
                       <button
                         key={p.id}
                         onClick={() => {
-                          setActivePalletStt(p.stt)
-                          setActivePalletTag(p.tag || '')
-                          setActivePalletNotes(p.notes || '')
-                          loadCurrentPalletBoxes(p.stt)
-                          localStorage.setItem('last_worked_pallet_stt', p.stt)
-                          setIsSwitchPalletModal(false)
-                          triggerToast(`Đã chuyển sang Pallet ${p.stt}`)
+                          handleSwitchToStt(p.stt, p.tag || '', p.notes || '', 30)
                         }}
                         className={`w-full p-2.5 rounded-xl border flex items-center justify-between text-left transition ${
                           p.stt === activePalletStt
