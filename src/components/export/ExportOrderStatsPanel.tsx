@@ -50,7 +50,7 @@ interface StatItemRow {
     exportedQuantity: number
     unit: string
     lineStatus: string
-    itemNotes: string
+    taskNotes: string
     day: string
 }
 
@@ -133,8 +133,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                         exported_quantity,
                         unit,
                         status,
-                        notes,
-                        export_tasks!inner(code, status, created_at, system_code),
+                        export_tasks!inner(code, status, notes, created_at, system_code),
                         products(name, sku),
                         lots(code, production_code),
                         positions(code)
@@ -163,7 +162,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                         exportedQuantity: Number(r.exported_quantity) || 0,
                         unit: r.unit || '',
                         lineStatus: r.status || 'N/A',
-                        itemNotes: r.notes || '',
+                        taskNotes: task?.notes || '',
                         day: task?.created_at ? format(new Date(task.created_at), 'yyyy-MM-dd') : '',
                     })
                 })
@@ -488,7 +487,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     exportedQty: r.exportedQuantity,
                     unit: r.unit,
                     lineStatus: r.lineStatus,
-                    itemNotes: r.itemNotes,
+                    taskNotes: r.taskNotes,
                 })),
             })
             showToast('Xuất Excel báo cáo thành công', 'success')

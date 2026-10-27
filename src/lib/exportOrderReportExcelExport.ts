@@ -45,7 +45,7 @@ export interface ExportReportDetailRow {
     exportedQty: number;
     unit: string;
     lineStatus: string;
-    itemNotes: string;
+    taskNotes: string;
 }
 
 export interface ExportReportSummaryRow {
@@ -234,7 +234,7 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
             { header: 'SL đã xuất', key: 'exportedQty', width: 13 },
             { header: 'ĐVT', key: 'unit', width: 9 },
             { header: 'Trạng thái dòng', key: 'lineStatus', width: 14 },
-            { header: 'Ghi chú', key: 'itemNotes', width: 24 },
+            { header: 'Ghi chú lệnh xuất', key: 'taskNotes', width: 24 },
         ],
         detailRows.map((d, i) => ({ stt: i + 1, ...d })),
         rangeLabel,

@@ -28,7 +28,7 @@ const baseOptions = {
         {
             taskCode: 'XK-001', taskCreatedAt: '25/10/2026 09:00', taskStatus: 'Completed',
             productName: 'Thùng 5 lớp', sku: 'HH001', productionCode: 'L015DD260-TN', lotCode: 'DL-LOT-280526-013',
-            positionCode: 'K1D1A01T101', requestedQty: 100, exportedQty: 80, unit: 'Cái', lineStatus: 'Exported', itemNotes: '',
+            positionCode: 'K1D1A01T101', requestedQty: 100, exportedQty: 80, unit: 'Cái', lineStatus: 'Exported', taskNotes: '',
         },
     ],
     companyInfo: { name: 'CÔNG TY TNHH XNK TRÁI CÂY CHÁNH THU' },
