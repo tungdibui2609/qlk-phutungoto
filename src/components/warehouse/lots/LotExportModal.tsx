@@ -10,6 +10,7 @@ import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { lotService } from '@/services/warehouse/lotService'
 import { parseQuantity, formatQuantityFull } from '@/lib/numberUtils'
+import { groupQtyByNormalizedUnit } from '@/lib/unitConversion'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 
 interface LotExportModalProps {
@@ -523,14 +524,12 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         <div className="flex flex-wrap gap-1">
                             {(() => {
                                 const items = lot.lot_items || [];
-                                const summary = items.reduce((acc: Record<string, number>, item: any) => {
-                                    const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
-                                    acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
-                                    return acc;
-                                }, {});
-                                return Object.entries(summary).map(([unit, total]) => (
-                                    <span key={unit} className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
-                                        TỔNG SL GỐC: {formatQuantityFull(total as number)} {unit}
+                                return groupQtyByNormalizedUnit(items,
+                                    (item: any) => item.unit || item.products?.unit || 'Đơn vị',
+                                    (item: any) => item.quantity
+                                ).map(({ key, display, qty }) => (
+                                    <span key={key} className="text-[10px] font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-2 py-0.5 rounded-lg border border-orange-100 dark:border-orange-900/10">
+                                        TỔNG SL GỐC: {formatQuantityFull(qty)} {display}
                                     </span>
                                 ));
                             })()}
@@ -538,17 +537,13 @@ export const LotExportModal: React.FC<LotExportModalProps> = ({ lot, onClose, on
                         {Object.values(exportQuantities).some(v => v > 0) && (
                             <div className="flex flex-wrap gap-1 justify-end">
                                 {(() => {
-                                    const items = lot.lot_items || [];
-                                    const summary = items.reduce((acc: Record<string, number>, item: any) => {
-                                        const qty = exportQuantities[item.id] || 0
-                                        if (qty === 0) return acc
-                                        const unit = exportUnits[item.id] || (item as any).unit || item.products?.unit || 'Đơn vị';
-                                        acc[unit] = (acc[unit] || 0) + qty;
-                                        return acc;
-                                    }, {});
-                                    return Object.entries(summary).map(([unit, total]) => (
-                                        <span key={unit} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-800">
-                                            XUẤT RA: {formatQuantityFull(total as number)} {unit}
+                                    const items = (lot.lot_items || []).filter((item: any) => (exportQuantities[item.id] || 0) > 0);
+                                    return groupQtyByNormalizedUnit(items,
+                                        (item: any) => exportUnits[item.id] || item.unit || item.products?.unit || 'Đơn vị',
+                                        (item: any) => exportQuantities[item.id]
+                                    ).map(({ key, display, qty }) => (
+                                        <span key={key} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                                            XUẤT RA: {formatQuantityFull(qty)} {display}
                                         </span>
                                     ));
                                 })()}

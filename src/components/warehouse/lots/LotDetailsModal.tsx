@@ -10,7 +10,7 @@ import Protected from '@/components/auth/Protected'
 import { useUser } from '@/contexts/UserContext'
 import { getProductColorStyle } from '@/lib/warehouseUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
+import { normalizeUnit, formatUnitWeight, groupQtyByNormalizedUnit } from '@/lib/unitConversion'
 import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { formatMaterialZoneList } from '@/lib/provinces'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -580,14 +580,12 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                 <div className="flex flex-wrap gap-1">
                                     {(() => {
                                         const items = lot.lot_items || [];
-                                        const summary = items.reduce((acc: Record<string, number>, item: any) => {
-                                            const unit = formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit || 'Đơn vị');
-                                            acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
-                                            return acc;
-                                        }, {});
-                                        return Object.entries(summary).map(([unit, total]) => (
-                                            <span key={unit} className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
-                                                {formatQuantityFull(total as number)} {unit}
+                                        return groupQtyByNormalizedUnit(items,
+                                            (item: any) => formatUnitWithWeight(item.product_id, item.unit || item.products?.unit || 'Đơn vị'),
+                                            (item: any) => item.quantity
+                                        ).map(({ key, display, qty }) => (
+                                            <span key={key} className="text-[10px] font-bold text-emerald-800 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-lg border border-emerald-200 dark:border-emerald-800/40">
+                                                {formatQuantityFull(qty)} {display}
                                             </span>
                                         ));
                                     })()}

@@ -7,7 +7,7 @@ import { TagDisplay } from '@/components/lots/TagDisplay'
 import { LotMergeHistoryModal } from '@/components/warehouse/lots/LotMergeHistoryModal'
 import Protected from '@/components/auth/Protected'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
+import { normalizeUnit, formatUnitWeight, groupQtyByNormalizedUnit } from '@/lib/unitConversion'
 import React from 'react'
 import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { formatMaterialZoneList } from '@/lib/provinces'
@@ -767,15 +767,12 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                         <span className="text-xs font-bold text-slate-400 uppercase">Sản phẩm ({lot.lot_items?.length || 0})</span>
                         <div className="flex flex-wrap gap-1 justify-end">
                             {lot.lot_items && lot.lot_items.length > 0 ? (
-                                Object.entries(
-                                    lot.lot_items.reduce((acc: Record<string, number>, item: any) => {
-                                        const unit = formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit || 'Đơn vị');
-                                        acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
-                                        return acc;
-                                    }, {})
-                                ).map(([unit, total]: [string, any]) => (
-                                    <span key={unit} className="text-emerald-900 dark:text-emerald-200 font-black text-sm bg-emerald-100/70 dark:bg-emerald-950/40 px-2 py-0.5 rounded-lg border border-emerald-300/80 dark:border-emerald-800/60 shadow-xs">
-                                        {formatQuantityFull(total)} <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">{unit}</span>
+                                groupQtyByNormalizedUnit(lot.lot_items,
+                                    (item: any) => formatUnitWithWeight(item.product_id, item.unit || item.products?.unit || 'Đơn vị'),
+                                    (item: any) => item.quantity
+                                ).map(({ key, display, qty }) => (
+                                    <span key={key} className="text-emerald-900 dark:text-emerald-200 font-black text-sm bg-emerald-100/70 dark:bg-emerald-950/40 px-2 py-0.5 rounded-lg border border-emerald-300/80 dark:border-emerald-800/60 shadow-xs">
+                                        {formatQuantityFull(qty)} <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">{display}</span>
                                     </span>
                                 ))
                             ) : (

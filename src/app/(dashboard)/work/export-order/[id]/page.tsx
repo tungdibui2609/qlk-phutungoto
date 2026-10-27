@@ -20,6 +20,7 @@ import { EditExportTaskModal } from '@/components/export/EditExportTaskModal'
 import { AddExportItemsModal } from '@/components/export/AddExportItemsModal'
 import { lotService } from '@/services/warehouse/lotService'
 import { decodeSTT } from '@/lib/numberUtils'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 interface ExportOrderItem {
     id?: string
@@ -170,7 +171,7 @@ function ExportOrderDetailContent() {
             const unit = item.unit || ''
             const qty = item.quantity || 0
 
-            const key = `${sku}|${productName}|${unit}`
+            const key = `${canonicalizeUnit(sku)}|${canonicalizeUnit(productName)}|${canonicalizeUnit(unit)}`
 
             if (!groups[key]) {
                 groups[key] = {
@@ -192,9 +193,13 @@ function ExportOrderDetailContent() {
     }, [task, selectedPositionIds])
 
     const totalByUnit = useMemo(() => {
-        const units: Record<string, number> = {}
+        const units: Record<string, { display: string, qty: number }> = {}
         aggregatedItems.forEach(item => {
-            units[item.unit] = Number(((units[item.unit] || 0) + item.totalQuantity).toFixed(10))
+            const key = canonicalizeUnit(item.unit)
+            units[key] = {
+                display: units[key]?.display || item.unit,
+                qty: Number(((units[key]?.qty || 0) + item.totalQuantity).toFixed(10))
+            }
         })
         return units
     }, [aggregatedItems])
@@ -1684,13 +1689,13 @@ function ExportOrderDetailContent() {
                                 <div className="flex items-center gap-2 mb-2 pb-2 border-b border-stone-100 dark:border-zinc-800">
                                     <span className="text-[10px] font-bold text-stone-400 uppercase tracking-widest">Tổng hợp số lượng:</span>
                                     <div className="flex flex-wrap gap-3">
-                                        {Object.entries(totalByUnit).map(([unit, qty], i) => (
-                                            <div key={i} className="flex items-center gap-1.5">
+                                        {Object.entries(totalByUnit).map(([unitKey, { display, qty }]) => (
+                                            <div key={unitKey} className="flex items-center gap-1.5">
                                                 <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums">
-                                                    {Number(qty?.toFixed(6))}
+                                                    {Number(qty.toFixed(6))}
                                                 </span>
                                                 <span className="text-[10px] font-bold text-stone-500 uppercase">
-                                                    {unit}
+                                                    {display}
                                                 </span>
                                             </div>
                                         ))}

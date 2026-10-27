@@ -8,6 +8,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { lotService } from '@/services/warehouse/lotService'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 import { logActivity } from '@/lib/audit'
 
 interface QuickBulkExportModalProps {
@@ -118,7 +119,7 @@ export const QuickBulkExportModal: React.FC<QuickBulkExportModalProps> = ({
             const info = lotInfo[id]
             if (!info) return
             info.items.forEach(item => {
-                const key = `${item.sku}|${item.product_name}|${item.unit}`
+                const key = `${canonicalizeUnit(item.sku)}|${canonicalizeUnit(item.product_name)}|${canonicalizeUnit(item.unit)}`
                 if (!groups[key]) {
                     groups[key] = { sku: item.sku, name: item.product_name, unit: item.unit, totalQty: 0 }
                 }

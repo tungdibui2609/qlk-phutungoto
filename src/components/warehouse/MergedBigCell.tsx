@@ -2,6 +2,7 @@
 import React from 'react'
 import { Maximize2, Eye, Package, MoreHorizontal, Layers, Bookmark, Lock } from 'lucide-react'
 import { advancedMatchSearch } from '@/lib/searchUtils'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 const MergedBigCell = React.memo<{
     pos: any,
@@ -353,14 +354,18 @@ const MergedBigCell = React.memo<{
  
                             {aggregatedItems.length > (isMobile ? 3 : 5) && (() => {
                                 const others = aggregatedItems.slice(isMobile ? 3 : 5);
-                                const unitSums = others.reduce((acc: any, curr: any) => {
+                                const unitSums: Record<string, { display: string, qty: number }> = {};
+                                others.forEach((curr: any) => {
                                     const unit = curr.unit || '-';
-                                    acc[unit] = (acc[unit] || 0) + curr.quantity;
-                                    return acc;
-                                }, {} as Record<string, number>);
- 
-                                const summaryText = Object.entries(unitSums)
-                                    .map(([unit, qty]) => `${qty} ${unit}`)
+                                    const key = canonicalizeUnit(unit);
+                                    unitSums[key] = {
+                                        display: unitSums[key]?.display || unit,
+                                        qty: (unitSums[key]?.qty || 0) + curr.quantity
+                                    };
+                                });
+
+                                const summaryText = Object.values(unitSums)
+                                    .map(({ display, qty }) => `${qty} ${display}`)
                                     .join(' và ');
  
                                 return (

@@ -6,6 +6,7 @@ import { TagDisplay } from "./TagDisplay"
 import { useSystem } from "@/contexts/SystemContext"
 import { supabase } from "@/lib/supabaseClient"
 import { useToast } from "@/components/ui/ToastProvider"
+import { canonicalizeUnit } from "@/lib/unitConversion"
 
 interface LotTagModalProps {
     lotIds: string[] | null
@@ -56,7 +57,7 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                 const name = i.products?.name || 'Unknown'
                 const sku = i.products?.sku || ''
                 const unit = (i as any).unit || i.products?.unit || ''
-                const key = `${name}|${sku}|${unit}`
+                const key = `${canonicalizeUnit(name)}|${canonicalizeUnit(sku)}|${canonicalizeUnit(unit)}`
 
                 if (!groupedMap[key]) {
                     groupedMap[key] = {
@@ -72,8 +73,7 @@ export function LotTagModal({ lotIds, lotCodeDisplay, onClose, onSuccess }: LotT
                     if (!groupedMap[key].lotIds.includes(i.lot_id)) {
                         groupedMap[key].lotIds.push(i.lot_id)
                     }
-                }
-            })
+                }            })
 
             const items = Object.values(groupedMap)
             setLotItems(items)

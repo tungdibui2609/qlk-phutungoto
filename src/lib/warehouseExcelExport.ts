@@ -632,7 +632,7 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
                     const summary: Record<string, { name: string, qty: number, unit: string, lotCodes: Set<string> }> = {};
                     allSanhItems.forEach(it => {
                         const normUnit = normalizeUnit(it.unit);
-                        const key = `${it.sku || it.productName}_${normUnit}`;
+                        const key = `${normalizeUnit(it.sku || it.productName)}_${normUnit}`;
                         if (!summary[key]) summary[key] = { name: it.productName, qty: 0, unit: normUnit, lotCodes: new Set() };
                         summary[key].qty += (Number(it.quantity) || 0);
                         if (it.lotCode) summary[key].lotCodes.add(it.lotCode);
@@ -710,7 +710,7 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
             grid.cells.forEach((c: any) => {
                 c.items.forEach((it: any) => {
                     const normUnit = normalizeUnit(it.unit);
-                    const key = `${it.sku || it.productName}_${normUnit}`;
+                    const key = `${normalizeUnit(it.sku || it.productName)}_${normUnit}`;
                     if (!gridSummary[key]) {
                         gridSummary[key] = { sku: it.sku, name: it.productName, unit: normUnit, qty: 0 };
                     }
@@ -761,7 +761,7 @@ export async function exportWarehouseGridToExcel(data: ExportWarehouseGridData) 
         grid.cells.forEach((c: any) => {
             c.items.forEach((it: any) => {
                 const normUnit = normalizeUnit(it.unit);
-                const key = `${it.sku || it.productName}_${normUnit}`;
+                const key = `${normalizeUnit(it.sku || it.productName)}_${normUnit}`;
                 if (!globalSummary[key]) {
                     globalSummary[key] = { sku: it.sku, name: it.productName, unit: normUnit, qty: 0 };
                 }
@@ -976,7 +976,7 @@ export async function exportWarehouseLobbyDetailToExcel(data: ExportWarehouseLob
                 const batch = it.batchCode || '';
                 const lot = it.lotCode || '';
                 const normUnit = normalizeUnit(it.unit);
-                const key = `${it.sku || it.productName}_${normUnit}_${batch}_${tagsStr}`;
+                const key = `${normalizeUnit(it.sku || it.productName)}_${normUnit}_${batch}_${tagsStr}`;
 
                 if (!lobbySummary[key]) {
                     lobbySummary[key] = { sku: it.sku, name: it.productName, batchCode: batch, tags: tagsStr, unit: normUnit, qty: 0, lots: new Set() };

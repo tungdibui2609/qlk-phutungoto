@@ -11,6 +11,7 @@ import { format } from 'date-fns'
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { normalizeSearchString } from '@/lib/searchUtils'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 // Types
 interface Session {
@@ -942,7 +943,7 @@ export default function InternalInventoryPage() {
             if (!lot || !lot.items) return
             lot.items.forEach((it: any) => {
                 const tag = lot.tags?.[0] || ''
-                const groupKey = `${it.sku}|${it.quantity}|${it.unit}|${tag}`;
+                const groupKey = `${canonicalizeUnit(it.sku)}|${it.quantity}|${canonicalizeUnit(it.unit)}|${tag}`;
                 const res = itemsMap[p.id] || { checked: false, note: null }
                 if (!groups[groupKey]) {
                     groups[groupKey] = {

@@ -14,6 +14,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { format, subDays, parseISO, startOfDay, endOfDay, startOfMonth } from 'date-fns'
 import { exportLotHistoryToExcel } from '@/lib/lotHistoryExcelExport'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 import { RecreateLotModal } from '@/components/lots/RecreateLotModal'
 
 type LotActionData = {
@@ -432,7 +433,7 @@ export default function LotHistoryPage() {
             if (actionData.type === 'export' && lastExport?.items) {
                 Object.values(lastExport.items).forEach((item: any) => {
                     const sku = item.product_sku || '-'
-                    const key = `${item.product_id}_${item.unit || 'Đơn vị'}`
+                    const key = `${item.product_id}_${canonicalizeUnit(item.unit)}`
                     if (!summary[key]) {
                         summary[key] = {
                             name: item.product_name || 'Sản phẩm không tên',
@@ -441,6 +442,7 @@ export default function LotHistoryPage() {
                             totalQty: 0
                         }
                     }
+                    summary[key].unit = summary[key].unit || item.unit || 'Đơn vị'
                     summary[key].totalQty += (item.exported_quantity || 0)
                 })
                 return
@@ -451,7 +453,7 @@ export default function LotHistoryPage() {
                 lot.lot_items.forEach((item: any) => {
                     const sku = item.products?.sku || '-'
                     const u = item.unit || item.products?.unit || 'Đơn vị'
-                    const key = `${item.product_id}_${u}`
+                    const key = `${item.product_id}_${canonicalizeUnit(u)}`
                     if (!summary[key]) {
                         summary[key] = {
                             name: item.products?.name || 'Sản phẩm không tên',
@@ -460,12 +462,13 @@ export default function LotHistoryPage() {
                             totalQty: 0
                         }
                     }
+                    if (!summary[key].unit) summary[key].unit = u
                     summary[key].totalQty += (item.quantity || 0)
                 })
             } else {
                 const sku = lot.products?.sku || '-'
                 const u = lot.products?.unit || 'Đơn vị'
-                const key = `${lot.product_id}_${u}`
+                const key = `${lot.product_id}_${canonicalizeUnit(u)}`
                 if (!summary[key]) {
                     summary[key] = {
                         name: lot.products?.name || 'Sản phẩm không tên',

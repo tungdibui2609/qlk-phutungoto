@@ -26,6 +26,7 @@ import {
     SearchReportExcelItem 
 } from '@/lib/warehouseSearchReportExcelExport'
 import { decodeSTT } from '@/lib/numberUtils'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 export type SortByField = 'date' | 'position' | 'product_name' | 'sku' | 'quantity'
 export type SortOrder = 'asc' | 'desc'
@@ -301,15 +302,19 @@ export function WarehouseSearchReportModal({
         let totalQty = 0
         let oldest: string | null = null
         let newest: string | null = null
-        const unitMap: Record<string, number> = {}
+        const unitMap: Record<string, { display: string, qty: number }> = {}
 
         rawItems.forEach(it => {
             if (it.positionCode) uniquePos.add(it.positionCode)
-            if (it.sku || it.productName) uniqueSkus.add(it.sku || it.productName)
+            if (it.sku || it.productName) uniqueSkus.add(canonicalizeUnit(it.sku || it.productName))
             const q = Number(it.quantity) || 0
             totalQty += q
             if (it.unit) {
-                unitMap[it.unit] = (unitMap[it.unit] || 0) + q
+                const uKey = canonicalizeUnit(it.unit)
+                unitMap[uKey] = {
+                    display: unitMap[uKey]?.display || it.unit,
+                    qty: (unitMap[uKey]?.qty || 0) + q
+                }
             }
             if (it.date) {
                 if (!oldest || it.date < oldest) oldest = it.date
@@ -317,8 +322,8 @@ export function WarehouseSearchReportModal({
             }
         })
 
-        const unitsSummary = Object.entries(unitMap)
-            .map(([unit, qty]) => `${Math.round(qty * 1000) / 1000} ${unit}`)
+        const unitsSummary = Object.values(unitMap)
+            .map(({ display, qty }) => `${Math.round(qty * 1000) / 1000} ${display}`)
             .join(' | ')
 
         return {
@@ -339,7 +344,7 @@ export function WarehouseSearchReportModal({
             dateFormatted: string;
             positions: Set<string>;
             totalQty: number;
-            units: Set<string>;
+            units: Map<string, string>;
             productCount: Set<string>;
         }>()
 
@@ -351,15 +356,18 @@ export function WarehouseSearchReportModal({
                     dateFormatted: key,
                     positions: new Set(),
                     totalQty: 0,
-                    units: new Set(),
+                    units: new Map(),
                     productCount: new Set()
                 })
             }
             const g = map.get(key)!
             if (it.positionCode) g.positions.add(it.positionCode)
             g.totalQty += (Number(it.quantity) || 0)
-            if (it.unit) g.units.add(it.unit)
-            g.productCount.add(it.sku || it.productName)
+            if (it.unit) {
+                const uKey = canonicalizeUnit(it.unit)
+                if (!g.units.has(uKey)) g.units.set(uKey, it.unit)
+            }
+            g.productCount.add(canonicalizeUnit(it.sku || it.productName))
         })
 
         const arr = Array.from(map.values())
@@ -389,7 +397,7 @@ export function WarehouseSearchReportModal({
 
         rawItems.forEach(it => {
             const peelingKey = it.peelingDateFormatted || '-'
-            const key = `${it.sku || ''}_${it.productName}_${peelingKey}`
+            const key = `${canonicalizeUnit(it.sku || '')}_${canonicalizeUnit(it.productName)}_${peelingKey}`
             if (!map.has(key)) {
                 map.set(key, {
                     sku: it.sku || '',
@@ -404,6 +412,7 @@ export function WarehouseSearchReportModal({
                 })
             }
             const g = map.get(key)!
+            if (!g.unit && it.unit) g.unit = it.unit
             if (it.positionCode) g.positions.add(it.positionCode)
             g.totalQty += (Number(it.quantity) || 0)
             if (it.date) {
@@ -953,7 +962,7 @@ export function WarehouseSearchReportModal({
                                                 {g.totalQty.toLocaleString()}
                                             </td>
                                             <td className="py-2.5 px-3 text-center text-slate-500">
-                                                {Array.from(g.units).join(', ')}
+                                                {Array.from(g.units.values()).join(', ')}
                                             </td>
                                             <td className="py-2.5 px-3 text-center text-slate-600 dark:text-slate-300">
                                                 {g.productCount.size} loại SP

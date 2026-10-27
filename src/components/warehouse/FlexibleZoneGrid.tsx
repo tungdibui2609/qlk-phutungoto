@@ -5,6 +5,7 @@ import { Database } from '@/lib/database.types'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { InView } from 'react-intersection-observer'
 import { sortPositionsByBinPriority } from '@/lib/warehouseUtils'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -632,7 +633,7 @@ export default function FlexibleZoneGrid({
                             const lot = p.lot_id ? lotInfo[p.lot_id] : null
                             if (lot?.items) {
                                 lot.items.forEach((item: any) => {
-                                    const key = `${item.sku || ''}_${item.unit || ''}`
+                                    const key = `${canonicalizeUnit(item.sku || '')}_${canonicalizeUnit(item.unit || '')}`
                                     const existing = levelItemMap.get(key)
                                     if (existing) {
                                         existing.quantity += (item.quantity || 0)
@@ -677,7 +678,7 @@ export default function FlexibleZoneGrid({
                     const prodCode = lot.productions?.code
                     const prodLotCode = lot.production_lot_code
                     lot.items.forEach((item: any) => {
-                        const key = `${item.sku || ''}_${item.unit || ''}_${prodName || ''}_${prodLotCode || ''}`
+                        const key = `${canonicalizeUnit(item.sku || '')}_${canonicalizeUnit(item.unit || '')}_${canonicalizeUnit(prodName || '')}_${canonicalizeUnit(prodLotCode || '')}`
                         const existing = itemMap.get(key)
                         if (existing) {
                             existing.quantity += (item.quantity || 0)

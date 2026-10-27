@@ -6,6 +6,7 @@ import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { supabase } from '@/lib/supabaseClient'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { parseQuantity, formatQuantityFull } from '@/lib/numberUtils'
+import { groupQtyByNormalizedUnit } from '@/lib/unitConversion'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { useSystem } from '@/contexts/SystemContext'
 
@@ -635,14 +636,12 @@ export const LotMergeModal: React.FC<LotMergeModalProps> = ({ targetLot, lots, i
                                                     <div className="flex flex-wrap gap-1">
                                                         {(() => {
                                                             const items = lot.lot_items || [];
-                                                            const summary = items.reduce((acc: Record<string, number>, item: any) => {
-                                                                const unit = (item as any).unit || item.products?.unit || 'Đơn vị';
-                                                                acc[unit] = (acc[unit] || 0) + (item.quantity || 0);
-                                                                return acc;
-                                                            }, {});
-                                                            return Object.entries(summary).map(([unit, total]) => (
-                                                                <span key={unit} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
-                                                                    TỔNG SL: {formatQuantityFull(total as number)} {unit}
+                                                            return groupQtyByNormalizedUnit(items,
+                                                                (item: any) => item.unit || item.products?.unit || 'Đơn vị',
+                                                                (item: any) => item.quantity
+                                                            ).map(({ key, display, qty }) => (
+                                                                <span key={key} className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 px-2 py-0.5 rounded-lg border border-emerald-100 dark:border-emerald-900/30">
+                                                                    TỔNG SL: {formatQuantityFull(qty)} {display}
                                                                 </span>
                                                             ));
                                                         })()}

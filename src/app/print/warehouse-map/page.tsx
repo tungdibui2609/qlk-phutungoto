@@ -17,6 +17,7 @@ import { advancedMatchSearch } from '@/lib/searchUtils'
 import { FileSpreadsheet } from 'lucide-react'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { extractProductCategories } from '@/lib/productCategory'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -823,7 +824,7 @@ export default function WarehouseMapPrintPage() {
                         filteredPositions.filter(p => p.zone_id === zoneId).forEach(p => {
                             const lot = p.lot_id ? lotInfo[p.lot_id] : null
                             if (lot?.items) lot.items.forEach((it: any) => { 
-                                const key = `${it.sku || it.product_id}_${it.unit}`; 
+                                const key = `${canonicalizeUnit(it.sku || it.product_id)}_${canonicalizeUnit(it.unit)}`;
                                 const existing = aggregated.get(key); 
                                 if (existing) {
                                     existing.quantity += (Number(it.quantity) || 0);
@@ -854,7 +855,7 @@ export default function WarehouseMapPrintPage() {
                         if (targetZoneId) filteredPositions.filter(p => p.zone_id === targetZoneId).forEach(p => { 
                             const lot = p.lot_id ? lotInfo[p.lot_id] : null; 
                             if (lot?.items) lot.items.forEach((it: any) => { 
-                                const key = `${it.sku || it.product_id}_${it.unit}`; 
+                                const key = `${canonicalizeUnit(it.sku || it.product_id)}_${canonicalizeUnit(it.unit)}`;
                                 const existing = aggregated.get(key); 
                                 if (existing) {
                                     existing.quantity += (Number(it.quantity) || 0);

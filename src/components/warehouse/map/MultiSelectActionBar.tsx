@@ -2,6 +2,7 @@
 import { useMemo, useState, useRef, useEffect } from 'react'
 import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock, Calendar, PackageOpen } from 'lucide-react'
 import { Database } from '@/lib/database.types'
+import { canonicalizeUnit } from '@/lib/unitConversion'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -185,6 +186,9 @@ export default function MultiSelectActionBar({
 
     // Aggregate selected items for display
     const aggregatedItems = useMemo(() => {
+        // Nhóm theo mã SKU + tên hàng + đơn vị đã chuẩn hóa,
+        // tránh tách dòng chỉ vì khác hoa/thường hay khoảng trắng ("Thùng (20 Kg)" vs "Thùng (20kg)")
+        const normKey = (s: string) => canonicalizeUnit(s)
         const groups: Record<string, {
             sku: string,
             productName: string,
@@ -205,7 +209,7 @@ export default function MultiSelectActionBar({
                 const unit = item.unit || ''
                 const qty = item.quantity || 0
 
-                const key = `${sku}|${productName}|${unit}`
+                const key = `${normKey(sku)}|${normKey(productName)}|${normKey(unit)}`
 
                 if (!groups[key]) {
                     groups[key] = {
@@ -223,7 +227,7 @@ export default function MultiSelectActionBar({
                 groups[key].lotCodes.add(lot.code)
             })
 
-            const uniqueKeysInLot = new Set(lot.items.map(i => `${i.sku || ''}|${i.product_name || lot.code}|${i.unit || ''}`))
+            const uniqueKeysInLot = new Set(lot.items.map(i => `${normKey(i.sku || '')}|${normKey(i.product_name || lot.code)}|${normKey(i.unit || '')}`))
             uniqueKeysInLot.forEach(key => {
                 if (groups[key]) groups[key].positionCount += 1
             })
@@ -234,9 +238,14 @@ export default function MultiSelectActionBar({
 
     // Calculate higher level summary (Total by Unit)
     const totalByUnit = useMemo(() => {
-        const units: Record<string, number> = {}
+        const units: Record<string, { display: string, qty: number }> = {}
         aggregatedItems.forEach(item => {
-            units[item.unit] = Number(((units[item.unit] || 0) + item.totalQuantity).toFixed(3))
+            const key = canonicalizeUnit(item.unit)
+            const existing = units[key]
+            units[key] = {
+                display: existing?.display || item.unit,
+                qty: Number(((existing?.qty || 0) + item.totalQuantity).toFixed(3))
+            }
         })
         return units
     }, [aggregatedItems])
@@ -744,13 +753,13 @@ export default function MultiSelectActionBar({
                         <div className="flex items-center gap-2 mb-2 pb-2 border-b border-gray-200/60 dark:border-gray-800">
                             <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Tổng hợp số lượng:</span>
                             <div className="flex flex-wrap gap-3">
-                                {Object.entries(totalByUnit).map(([unit, qty], i) => (
-                                    <div key={i} className="flex items-center gap-1.5">
+                                {Object.entries(totalByUnit).map(([unitKey, { display, qty }]) => (
+                                    <div key={unitKey} className="flex items-center gap-1.5">
                                         <span className="text-sm font-black text-blue-600 dark:text-blue-400 tabular-nums">
                                             {qty}
                                         </span>
                                         <span className="text-[10px] font-bold text-gray-500 uppercase">
-                                            {unit}
+                                            {display}
                                         </span>
                                     </div>
                                 ))}

@@ -428,3 +428,25 @@ export const enrichUnitName = (
 
     return unitName;
 };
+
+/**
+ * Cộng dồn số lượng theo đơn vị đã chuẩn hóa, giữ nguyên chuỗi đơn vị lần đầu gặp để hiển thị.
+ * Dùng cho các thanh tổng hợp/báo cáo, tránh tách dòng chỉ vì "Thùng (20 Kg)" khác "Thùng (20kg)".
+ */
+export const groupQtyByNormalizedUnit = <T>(
+    items: T[],
+    getUnit: (item: T) => string | null | undefined,
+    getQty: (item: T) => number | null | undefined
+): Array<{ key: string; display: string; qty: number }> => {
+    const groups = new Map<string, { display: string; qty: number }>();
+    items.forEach(item => {
+        const unit = getUnit(item) || '';
+        const key = canonicalizeUnit(unit);
+        const existing = groups.get(key);
+        groups.set(key, {
+            display: existing?.display || unit,
+            qty: Number((((existing?.qty || 0) + (Number(getQty(item)) || 0))).toFixed(10))
+        });
+    });
+    return Array.from(groups.entries()).map(([key, g]) => ({ key, ...g }));
+};
