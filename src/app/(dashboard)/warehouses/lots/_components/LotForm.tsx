@@ -345,6 +345,9 @@ export function LotForm({
     }, [productUnits])
 
     const formRef = useRef<HTMLDivElement>(null)
+    const initializedKeyRef = useRef<string | null>(null)
+    const hasUserEditedSttRef = useRef(false)
+    const sttRequestIdRef = useRef(0)
 
     // Separate Effect for initialProductionCode to ensure it's always applied in Create Mode
     useEffect(() => {
@@ -353,8 +356,30 @@ export function LotForm({
         }
     }, [isVisible, editingLot, initialProductionCode])
 
-    // Reset or Initialize Form
+    // Bổ sung kho mặc định nếu danh sách chi nhánh tải xong sau khi mở form
     useEffect(() => {
+        if (isVisible && !editingLot && !warehouseName && branches && branches.length > 0) {
+            const defaultBranch = branches.find(b => b.is_default)
+            setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+        }
+    }, [isVisible, editingLot, warehouseName, branches])
+
+    // Reset or Initialize Form (chỉ khởi tạo 1 lần khi mở form hoặc khi đổi editingLot/system)
+    useEffect(() => {
+        if (!isVisible) {
+            initializedKeyRef.current = null
+            hasUserEditedSttRef.current = false
+            setIsInitialized(false)
+            return
+        }
+
+        const currentInitKey = `${editingLot ? editingLot.id : 'CREATE'}_${currentSystem?.code || ''}`
+        if (initializedKeyRef.current === currentInitKey) {
+            return
+        }
+        initializedKeyRef.current = currentInitKey
+        hasUserEditedSttRef.current = false
+
         if (isVisible) {
             if (editingLot) {
                 // Edit Mode
@@ -625,7 +650,7 @@ export function LotForm({
                                 ...it,
                                 categoryId: it.categoryId || products.find(p => p.id === it.productId)?.category_id || ''
                             })))
-                            if (parsed.dailySeq) setDailySeq(parsed.dailySeq)
+                            setDailySeq('')
                         } else {
                             resetForm()
                             setInboundDate(initialDate)
@@ -741,14 +766,7 @@ export function LotForm({
         currentSystem
     ])
 
-    // ĐÃ TÁCH BIỆT STT VÀ MÃ LOT: useEffect đồng bộ STT sang Code đã được gỡ bỏ.
-
-    // Tự động cập nhật mã LOT và STT dán thùng khi ngày nhập kho thay đổi ở chế độ tạo mới
-    useEffect(() => {
-        if (isVisible && !editingLot && isInitialized && inboundDate) {
-            generateLotCode(inboundDate)
-        }
-    }, [inboundDate, isVisible, editingLot, isInitialized])
+    // ĐÃ TÁCH BIỆT STT VÀ MÃ LOT: Không tự động chạy lại generateLotCode khi chỉnh sửa ngày nhập kho hoặc thông tin khác để tránh ghi đè STT người dùng đã nhập.
 
     function resetForm() {
         setNewLotCode('')
@@ -783,49 +801,61 @@ export function LotForm({
     async function generateLotCode(targetInboundDate?: string) {
         if (!currentSystem?.name) return;
 
+        const currentReqId = ++sttRequestIdRef.current
+
         const uniqueCode = await generateUniqueLotCode(supabase, currentSystem.name)
+        if (currentReqId !== sttRequestIdRef.current) return
         setNewLotCode(uniqueCode)
 
-        // -- TÍNH TOÁN STT DÁN THÙNG (TỰ ĐỘNG TĂNG LIÊN TỤC TRÊN TOÀN PHÂN HỆ, KHÔNG TRÙNG LẶP) --
-        // Để tránh STT bị nhảy vọt theo tem in của sản xuất (thành phẩm tự động nhập kho có đuôi mã dài 6 ký tự như 101904),
-        // hệ thống sẽ chỉ lấy STT từ các lô tạo bằng tay có phần đuôi mã lô chỉ dài tối đa 3 ký tự (dưới 1000).
+        // -- TÍNH TOÁN STT DÁN THÙNG (DỰA TRÊN STT GẦN NHẤT ĐỂ TĂNG LÊN, KHÔNG TRÙNG LẶP) --
         const { data: recentLots } = await supabase
             .from('lots')
-            .select('daily_seq, code')
+            .select('daily_seq, code, created_at')
             .eq('system_code', currentSystem.code)
             .neq('status', 'hidden')
             .neq('status', 'exported')
             .not('daily_seq', 'is', null)
             .order('created_at', { ascending: false })
-            .limit(300)
+            .limit(1000)
+
+        if (currentReqId !== sttRequestIdRef.current || hasUserEditedSttRef.current) return
 
         let nextDailySeq = 1
         if (recentLots && recentLots.length > 0) {
-            // Lọc các lô tạo bằng tay: phần số sau dấu gạch ngang cuối cùng có độ dài <= 3 ký tự
-            const manualLots = recentLots.filter((l: any) => {
-                if (!l.code) return false
-                const parts = l.code.split('-')
-                const lastPart = parts[parts.length - 1]
-                return lastPart && !isNaN(Number(lastPart)) && lastPart.length <= 3
+            const usedSeqs = new Set<number>(
+                recentLots
+                    .map((l: any) => Number(l.daily_seq))
+                    .filter((s: number) => !isNaN(s) && s > 0)
+            )
+
+            // Lọc các lô hợp lệ (hỗ trợ cả mã LOT ngẫu nhiên mới DL-LOT-XXXXXX và mã cũ,
+            // chỉ loại bỏ các lô tự động sinh từ tem in sản xuất có đuôi mã >= 4 chữ số trùng với daily_seq như ...-101904)
+            const validRecentLots = recentLots.filter((l: any) => {
+                const seq = Number(l.daily_seq)
+                if (!seq || isNaN(seq) || seq <= 0 || seq >= 2700000) return false
+                if (l.code) {
+                    const parts = String(l.code).split('-')
+                    const lastPart = parts[parts.length - 1] || ''
+                    if (/^\d{4,}$/.test(lastPart) && Number(lastPart) === seq) {
+                        return false
+                    }
+                }
+                return true
             })
 
-            if (manualLots.length > 0) {
-                const seqs = manualLots.map((l: any) => Number(l.daily_seq)).filter(s => !isNaN(s))
-                if (seqs.length > 0) {
-                    const maxSeq = Math.max(...seqs)
-                    nextDailySeq = maxSeq + 1
-                }
-            } else {
-                // Fallback nếu không lọc được lô tạo tay nào, lấy lô có daily_seq nhỏ hơn 2700000 (ngưỡng Z99999) gần nhất
-                const validSeqs = recentLots
-                    .map((l: any) => Number(l.daily_seq))
-                    .filter(s => !isNaN(s) && s < 2700000)
-                if (validSeqs.length > 0) {
-                    nextDailySeq = Math.max(...validSeqs) + 1
+            if (validRecentLots.length > 0) {
+                // Lấy STT của lô được tạo gần nhất và tăng lên 1 (nếu trùng với lô đang tồn tại thì tiếp tục tăng)
+                const latestSeq = Number((validRecentLots[0] as any).daily_seq)
+                nextDailySeq = latestSeq + 1
+                while (usedSeqs.has(nextDailySeq)) {
+                    nextDailySeq++
                 }
             }
         }
-        setDailySeq(decodeSTT(nextDailySeq))
+
+        if (!hasUserEditedSttRef.current) {
+            setDailySeq(decodeSTT(nextDailySeq))
+        }
     }
 
     const handleAddPeelingDate = (dateToAdd?: string) => {
@@ -1182,10 +1212,9 @@ export function LotForm({
             if (checkError) throw checkError
             
             if (count && count > 0) {
-                showToast(`Mã định danh ${newLotCode} vừa được ai đó tạo mới hoặc lưu trước bạn. Hệ thống sẽ tự cấp STT mới, vui lòng bấm lưu thêm 1 lần nữa!`, 'warning')
-                await generateLotCode(inboundDate)
-                setIsSubmitting(false)
-                return
+                const retryCode = await generateUniqueLotCode(supabase, currentSystem?.name)
+                setNewLotCode(retryCode)
+                lotData.code = retryCode
             }
             // ------------------------------------
 
@@ -1390,7 +1419,10 @@ export function LotForm({
                                 type="text"
                                 autoCapitalize="characters"
                                 value={dailySeq}
-                                onChange={(e) => setDailySeq(e.target.value.toUpperCase())}
+                                onChange={(e) => {
+                                    hasUserEditedSttRef.current = true
+                                    setDailySeq(e.target.value.toUpperCase())
+                                }}
                                 className="w-12 bg-transparent text-sm font-black outline-none border-b border-white/30 focus:border-white transition-all text-center uppercase"
                                 placeholder="..."
                             />

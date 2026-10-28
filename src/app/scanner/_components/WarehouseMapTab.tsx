@@ -739,9 +739,11 @@ export default function WarehouseMapTab() {
 
   // Search state (searchQuery drives the map, while typing is fully isolated in WarehouseSearchBar)
   const [searchQuery, setSearchQuery] = useState<string>('')
-  const [searchTab, setSearchTab] = useState<'map' | 'breakdown'>('map')
+  const [searchTab, setSearchTab] = useState<'map' | 'breakdown'>('breakdown')
   const [expandedWhIds, setExpandedWhIds] = useState<Set<string>>(new Set())
   const [expandedAisleIds, setExpandedAisleIds] = useState<Set<string>>(new Set())
+  const [expandedSlotIds, setExpandedSlotIds] = useState<Set<string>>(new Set())
+  const [expandedBreakdownTierIds, setExpandedBreakdownTierIds] = useState<Set<string>>(new Set())
   const [expandedTierIds, setExpandedTierIds] = useState<Set<string>>(new Set())
   const [highlightedPosId, setHighlightedPosId] = useState<string | null>(null)
 
@@ -846,7 +848,7 @@ export default function WarehouseMapTab() {
       const lotMap = new Map<string, any>()
 
       if (occupiedLotIds.length > 0) {
-        const CHUNK_SIZE = 250
+        const CHUNK_SIZE = 80
         const chunkPromises: Promise<any>[] = []
         for (let i = 0; i < occupiedLotIds.length; i += CHUNK_SIZE) {
           const chunk = occupiedLotIds.slice(i, i + CHUNK_SIZE)
@@ -1300,22 +1302,103 @@ export default function WarehouseMapTab() {
     setFilterStartDate('')
     setFilterEndDate('')
     setFilterRegion('all')
-    setSearchTab('map')
+    setSearchTab('breakdown')
   }, [])
 
   // Thực hiện tìm kiếm (cập nhật searchQuery để sơ đồ lọc và đếm vị trí)
   const handleExecuteSearch = useCallback((term: string) => {
     const q = term.trim()
     setSearchQuery(q)
+    if (q) {
+      setSearchTab('breakdown')
+    }
   }, [])
 
   const handleClearSearch = useCallback(() => {
     setSearchQuery('')
     setHighlightedPosId(null)
-    setSearchTab('map')
+    setSearchTab('breakdown')
   }, [])
 
-  // ── Search & Filter Logic (High Performance with Pre-Scoring) ──
+  // 1. Warehouses (Level 1: parent_id is null)
+  const warehouses = useMemo(
+    () => sortZones(activeZones.filter(z => !z.parent_id)),
+    [activeZones]
+  )
+
+  // ── Pre-compute Hierarchy Map & Ancestor Lookup ONCE in O(N) ──
+  const { zoneHierarchyMap, realToActiveAncestorsMap } = useMemo(() => {
+    const hierMap = new Map<string, { wh: ZoneItem; aisle: ZoneItem; slot: ZoneItem; tier?: ZoneItem }>()
+    const ancestorsMap = new Map<string, string[]>()
+
+    const activeChildrenByParent = new Map<string, ZoneItem[]>()
+    for (let i = 0; i < activeZones.length; i++) {
+      const z = activeZones[i]
+      if (z.parent_id) {
+        const list = activeChildrenByParent.get(z.parent_id)
+        if (list) list.push(z)
+        else activeChildrenByParent.set(z.parent_id, [z])
+      }
+    }
+
+    const addAncestor = (realZid: string, activeZid: string) => {
+      const list = ancestorsMap.get(realZid)
+      if (list) {
+        if (!list.includes(activeZid)) list.push(activeZid)
+      } else {
+        ancestorsMap.set(realZid, [activeZid])
+      }
+    }
+
+    warehouses.forEach(wh => {
+      const whDesc = zoneDescendantsMap.get(wh.id)
+      if (whDesc) whDesc.forEach(zid => addAncestor(zid, wh.id))
+
+      const whAisles = activeChildrenByParent.get(wh.id) || []
+      whAisles.forEach(aisle => {
+        const aisleDesc = zoneDescendantsMap.get(aisle.id)
+        if (aisleDesc) aisleDesc.forEach(zid => addAncestor(zid, aisle.id))
+
+        const aisleSlots = activeChildrenByParent.get(aisle.id) || []
+        if (aisleSlots.length > 0) {
+          aisleSlots.forEach(slot => {
+            const desc = zoneDescendantsMap.get(slot.id)
+            if (desc) {
+              desc.forEach(zid => {
+                hierMap.set(zid, { wh, aisle, slot })
+                addAncestor(zid, slot.id)
+              })
+            }
+            const slotTiers = activeChildrenByParent.get(slot.id) || []
+            slotTiers.forEach(tier => {
+              const tierDesc = zoneDescendantsMap.get(tier.id)
+              if (tierDesc) {
+                tierDesc.forEach(zid => {
+                  hierMap.set(zid, { wh, aisle, slot, tier })
+                  addAncestor(zid, tier.id)
+                })
+              }
+            })
+          })
+        } else {
+          if (aisleDesc) {
+            aisleDesc.forEach(zid => {
+              hierMap.set(zid, { wh, aisle, slot: aisle })
+            })
+          }
+        }
+      })
+    })
+
+    return { zoneHierarchyMap: hierMap, realToActiveAncestorsMap: ancestorsMap }
+  }, [warehouses, activeZones, zoneDescendantsMap])
+
+  const exactProductNamesSet = useMemo(
+    () => new Set(uniqueProducts.map(up => up.name)),
+    [uniqueProducts]
+  )
+
+  // ── Search & Filter Logic (High Performance 0ms Fast-Path) ──
   const isSearchActive = !!searchQuery.trim() || hasActiveFilters
 
   const matchingPositions = useMemo(() => {
@@ -1326,11 +1409,22 @@ export default function WarehouseMapTab() {
 
     if (!hasQuery && !hasDateFilter && !hasRegionFilter) return []
 
-    // Pre-calculate score only for matched positions (eliminates ~50,000 repeated calculations in sort)
+    const isExactProductQuery = hasQuery && exactProductNamesSet.has(q)
+    const isSttPrefixQuery = hasQuery && /^(#|stt[:\s-#]+)/i.test(q)
+    const cleanSttQuery = isSttPrefixQuery
+      ? normalizeSearchString(q, true).replace(/^(#|stt[:\s-#]*)/i, '').trim()
+      : ''
+    const isLikelyPositionCodeQuery = hasQuery && /^k\d/i.test(q)
+    const normRegionFilter = hasRegionFilter ? normalizeSearchString(filterRegion, true) : ''
+
     const matched: { pos: PositionItem; score: number }[] = []
 
     for (let i = 0; i < positions.length; i++) {
       const p = positions[i]
+
+      if (!p.lot_id && (hasDateFilter || hasRegionFilter || !isLikelyPositionCodeQuery)) {
+        continue
+      }
 
       // 1. Lọc theo Mốc ngày (Đóng gói, Sản xuất, Nguyên liệu, Nhập kho)
       if (hasDateFilter) {
@@ -1350,16 +1444,33 @@ export default function WarehouseMapTab() {
         const pZones = p.material_zones && p.material_zones.length > 0 ? p.material_zones : (p.material_zone ? [p.material_zone] : [])
         if (pZones.length === 0) continue
 
-        const normFilter = normalizeSearchString(filterRegion, true)
         const matchedRegion = pZones.some(z => {
           const normZ = normalizeSearchString(z, true)
-          return normZ.includes(normFilter) || normFilter.includes(normZ)
+          return normZ.includes(normRegionFilter) || normRegionFilter.includes(normZ)
         })
         if (!matchedRegion) continue
       }
 
       // 3. Lọc theo Từ khóa tìm kiếm (Sản phẩm, LOT, vị trí...)
       if (hasQuery) {
+        if (isExactProductQuery) {
+          if (p.product_name && p.product_name.trim() === q) {
+            matched.push({ pos: p, score: 2000 })
+          }
+          continue
+        }
+
+        if (isSttPrefixQuery) {
+          if (p.stt) {
+            const sttNorm = String(p.stt).trim().toLowerCase()
+            if (!cleanSttQuery || sttNorm.includes(cleanSttQuery)) {
+              const score = sttNorm === cleanSttQuery ? 5000 : sttNorm.startsWith(cleanSttQuery) ? 3800 : 2600
+              matched.push({ pos: p, score })
+            }
+          }
+          continue
+        }
+
         if (matchPalletSearch(p, q)) {
           const score = calculateSearchScore(p, q, {
             name: p.product_name,
@@ -1374,79 +1485,55 @@ export default function WarehouseMapTab() {
       }
     }
 
-    if (hasQuery) {
+    if (hasQuery && !isExactProductQuery) {
       matched.sort((a, b) => b.score - a.score)
     }
     return matched.map(m => m.pos)
-  }, [positions, searchQuery, filterDateType, filterStartDate, filterEndDate, filterRegion])
+  }, [positions, searchQuery, filterDateType, filterStartDate, filterEndDate, filterRegion, exactProductNamesSet])
 
   const matchingPosIds = useMemo(() => {
     return new Set(matchingPositions.map(p => p.id))
   }, [matchingPositions])
 
-  // Fast count matches per zone (only loops over matching positions, NOT all positions)
+  // Fast count matches per zone in O(matchingPositions)
   const zoneMatchCountMap = useMemo(() => {
     const map = new Map<string, number>()
-    if (!isSearchActive || activeZones.length === 0 || matchingPositions.length === 0) return map
+    if (!isSearchActive || matchingPositions.length === 0) return map
 
-    activeZones.forEach(z => {
-      const descSet = zoneDescendantsMap.get(z.id)
-      if (!descSet) return
-      let matchCount = 0
-      for (let i = 0; i < matchingPositions.length; i++) {
-        const p = matchingPositions[i]
-        if (p.zone_ids.some(zid => descSet.has(zid))) {
-          matchCount++
+    for (let i = 0; i < matchingPositions.length; i++) {
+      const p = matchingPositions[i]
+      const countedForPos = new Set<string>()
+      for (let j = 0; j < p.zone_ids.length; j++) {
+        const ancestors = realToActiveAncestorsMap.get(p.zone_ids[j])
+        if (ancestors) {
+          for (let k = 0; k < ancestors.length; k++) {
+            countedForPos.add(ancestors[k])
+          }
         }
       }
-      if (matchCount > 0) map.set(z.id, matchCount)
-    })
+      countedForPos.forEach(azId => {
+        map.set(azId, (map.get(azId) || 0) + 1)
+      })
+    }
     return map
-  }, [isSearchActive, activeZones, matchingPositions, zoneDescendantsMap])
+  }, [isSearchActive, matchingPositions, realToActiveAncestorsMap])
 
-  // 1. Warehouses (Level 1: parent_id is null)
-  const warehouses = useMemo(
-    () => sortZones(activeZones.filter(z => !z.parent_id)),
-    [activeZones]
-  )
-
-  // ── Thống kê phân bổ kết quả tìm kiếm (Báo cáo Kế toán: Kho -> Dãy -> Ô) ──
+  // ── Thống kê phân bổ kết quả tìm kiếm (Báo cáo Kế toán: Kho -> Dãy -> Ô -> Tầng) ──
   const breakdownReport = useMemo(() => {
     if (!isSearchActive || matchingPositions.length === 0) return null
 
-    // 1. Ánh xạ nhanh: zone_id thực -> { wh: Kho, aisle: Dãy, slot: Ô }
-    const zoneHierarchyMap = new Map<string, { wh: ZoneItem; aisle: ZoneItem; slot: ZoneItem }>()
-
-    warehouses.forEach(wh => {
-      const whAisles = activeZones.filter(z => z.parent_id === wh.id)
-      whAisles.forEach(aisle => {
-        const aisleSlots = activeZones.filter(z => z.parent_id === aisle.id)
-        if (aisleSlots.length > 0) {
-          aisleSlots.forEach(slot => {
-            const desc = zoneDescendantsMap.get(slot.id)
-            if (desc) {
-              desc.forEach(zid => {
-                zoneHierarchyMap.set(zid, { wh, aisle, slot })
-              })
-            }
-          })
-        } else {
-          // Khu vực Sảnh hoặc Dãy không chia ô: vị trí gắn trực tiếp vào Aisle/Sảnh
-          const desc = zoneDescendantsMap.get(aisle.id)
-          if (desc) {
-            desc.forEach(zid => {
-              zoneHierarchyMap.set(zid, { wh, aisle, slot: aisle })
-            })
-          }
-        }
-      })
-    })
-
+    interface TierAcc {
+      tier: ZoneItem
+      unitsMap: Map<string, number>
+      positionCount: number
+      positions: PositionItem[]
+    }
     interface SlotAcc {
       slot: ZoneItem
       unitsMap: Map<string, number>
       positionCount: number
       positions: PositionItem[]
+      tiersMap: Map<string, TierAcc>
     }
     interface AisleAcc {
       aisle: ZoneItem
@@ -1473,12 +1560,12 @@ export default function WarehouseMapTab() {
       const unitCat = getCleanUnitCategory(p.unit)
       addQtyToMap(grandUnitsMap, unitCat, qty)
 
-      let hier: { wh: ZoneItem; aisle: ZoneItem; slot: ZoneItem } | undefined
+      let hier: { wh: ZoneItem; aisle: ZoneItem; slot: ZoneItem; tier?: ZoneItem } | undefined
       for (let i = 0; i < p.zone_ids.length; i++) {
         const found = zoneHierarchyMap.get(p.zone_ids[i])
         if (found) {
           hier = found
-          break
+          if (found.tier) break
         }
       }
 
@@ -1501,12 +1588,23 @@ export default function WarehouseMapTab() {
 
         let slotAcc = aisleAcc.slotsMap.get(hier.slot.id)
         if (!slotAcc) {
-          slotAcc = { slot: hier.slot, unitsMap: new Map(), positionCount: 0, positions: [] }
+          slotAcc = { slot: hier.slot, unitsMap: new Map(), positionCount: 0, positions: [], tiersMap: new Map() }
           aisleAcc.slotsMap.set(hier.slot.id, slotAcc)
         }
         addQtyToMap(slotAcc.unitsMap, unitCat, qty)
         slotAcc.positionCount++
         slotAcc.positions.push(p)
+
+        if (hier.tier) {
+          let tierAcc = slotAcc.tiersMap.get(hier.tier.id)
+          if (!tierAcc) {
+            tierAcc = { tier: hier.tier, unitsMap: new Map(), positionCount: 0, positions: [] }
+            slotAcc.tiersMap.set(hier.tier.id, tierAcc)
+          }
+          addQtyToMap(tierAcc.unitsMap, unitCat, qty)
+          tierAcc.positionCount++
+          tierAcc.positions.push(p)
+        }
       }
     })
 
@@ -1524,6 +1622,31 @@ export default function WarehouseMapTab() {
                 const ob = b.slot.display_order ?? 0
                 if (oa !== ob) return oa - ob
                 return (a.slot.name || '').localeCompare(b.slot.name || '', undefined, { numeric: true })
+              })
+              .map(slotAcc => {
+                const sortedTiers = Array.from(slotAcc.tiersMap.values())
+                  .sort((a, b) => {
+                    const oa = a.tier.display_order ?? 0
+                    const ob = b.tier.display_order ?? 0
+                    if (oa !== ob) return oa - ob
+                    return (a.tier.name || '').localeCompare(b.tier.name || '', undefined, { numeric: true })
+                  })
+                  .map(tierAcc => ({
+                    ...tierAcc,
+                    positions: [...tierAcc.positions].sort((pa, pb) =>
+                      (pa.code || '').localeCompare(pb.code || '', undefined, { numeric: true })
+                    )
+                  }))
+
+                return {
+                  slot: slotAcc.slot,
+                  unitsMap: slotAcc.unitsMap,
+                  positionCount: slotAcc.positionCount,
+                  positions: [...slotAcc.positions].sort((pa, pb) =>
+                    (pa.code || '').localeCompare(pb.code || '', undefined, { numeric: true })
+                  ),
+                  tiers: sortedTiers
+                }
               })
             return {
               aisle: aisleAcc.aisle,
@@ -1548,7 +1671,7 @@ export default function WarehouseMapTab() {
       totalPositions: matchingPositions.length,
       warehouses: sortedWhs
     }
-  }, [isSearchActive, matchingPositions, warehouses, activeZones, zoneDescendantsMap])
+  }, [isSearchActive, matchingPositions, zoneHierarchyMap])
 
   // Tự động mở rộng các kho có hàng khi tìm kiếm
   useEffect(() => {
@@ -1557,6 +1680,8 @@ export default function WarehouseMapTab() {
       const allAisles = new Set<string>()
       breakdownReport.warehouses.forEach(w => w.aisles.forEach(a => allAisles.add(a.aisle.id)))
       setExpandedAisleIds(allAisles)
+      setExpandedSlotIds(new Set())
+      setExpandedBreakdownTierIds(new Set())
     }
   }, [breakdownReport])
 
@@ -1578,19 +1703,51 @@ export default function WarehouseMapTab() {
     })
   }, [])
 
+  const toggleSlotExpand = useCallback((slotId: string) => {
+    setExpandedSlotIds(prev => {
+      const next = new Set(prev)
+      if (next.has(slotId)) next.delete(slotId)
+      else next.add(slotId)
+      return next
+    })
+  }, [])
+
+  const toggleBreakdownTierExpand = useCallback((tierId: string) => {
+    setExpandedBreakdownTierIds(prev => {
+      const next = new Set(prev)
+      if (next.has(tierId)) next.delete(tierId)
+      else next.add(tierId)
+      return next
+    })
+  }, [])
+
   const handleExpandAll = useCallback(() => {
     if (breakdownReport) {
       setExpandedWhIds(new Set(breakdownReport.warehouses.map(w => w.warehouse.id)))
       const allAisles = new Set<string>()
-      breakdownReport.warehouses.forEach(w => w.aisles.forEach(a => allAisles.add(a.aisle.id)))
+      const allSlots = new Set<string>()
+      breakdownReport.warehouses.forEach(w =>
+        w.aisles.forEach(a => {
+          allAisles.add(a.aisle.id)
+          a.slots.forEach(s => allSlots.add(s.slot.id))
+        })
+      )
       setExpandedAisleIds(allAisles)
+      setExpandedSlotIds(allSlots)
     }
   }, [breakdownReport])
 
   const handleCollapseAll = useCallback(() => {
     setExpandedWhIds(new Set())
     setExpandedAisleIds(new Set())
+    setExpandedSlotIds(new Set())
+    setExpandedBreakdownTierIds(new Set())
   }, [])
+
+  const visibleWarehouses = useMemo(() => {
+    if (!isSearchActive) return warehouses
+    return warehouses.filter(wh => (zoneMatchCountMap.get(wh.id) || 0) > 0)
+  }, [warehouses, isSearchActive, zoneMatchCountMap])
 
   // 2. Aisles / Halls (Level 2: parent_id === selectedWarehouseId)
   const aisles = useMemo(() => {
@@ -1605,12 +1762,14 @@ export default function WarehouseMapTab() {
     }
 
     if (isSearchActive) {
-      return [...list].sort((a, b) => {
-        const countA = zoneMatchCountMap.get(a.id) || 0
-        const countB = zoneMatchCountMap.get(b.id) || 0
-        if (countB !== countA) return countB - countA
-        return compareAisles(a, b)
-      })
+      return list
+        .filter(z => (zoneMatchCountMap.get(z.id) || 0) > 0)
+        .sort((a, b) => {
+          const countA = zoneMatchCountMap.get(a.id) || 0
+          const countB = zoneMatchCountMap.get(b.id) || 0
+          if (countB !== countA) return countB - countA
+          return compareAisles(a, b)
+        })
     }
     return [...list].sort(compareAisles)
   }, [activeZones, selectedWarehouseId, isSearchActive, zoneMatchCountMap])
@@ -1620,15 +1779,17 @@ export default function WarehouseMapTab() {
     if (!selectedAisleId) return []
     const list = activeZones.filter(z => z.parent_id === selectedAisleId)
     if (isSearchActive) {
-      return [...list].sort((a, b) => {
-        const countA = zoneMatchCountMap.get(a.id) || 0
-        const countB = zoneMatchCountMap.get(b.id) || 0
-        if (countB !== countA) return countB - countA
-        const oa = a.display_order ?? 0
-        const ob = b.display_order ?? 0
-        if (oa !== ob) return oa - ob
-        return (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true })
-      })
+      return list
+        .filter(z => (zoneMatchCountMap.get(z.id) || 0) > 0)
+        .sort((a, b) => {
+          const countA = zoneMatchCountMap.get(a.id) || 0
+          const countB = zoneMatchCountMap.get(b.id) || 0
+          if (countB !== countA) return countB - countA
+          const oa = a.display_order ?? 0
+          const ob = b.display_order ?? 0
+          if (oa !== ob) return oa - ob
+          return (a.name || a.code || '').localeCompare(b.name || b.code || '', undefined, { numeric: true })
+        })
     }
     return sortZones(list)
   }, [activeZones, selectedAisleId, isSearchActive, zoneMatchCountMap])
@@ -1641,21 +1802,25 @@ export default function WarehouseMapTab() {
 
   const isSelectedAisleHall = useMemo(() => {
     if (!selectedAisle) return false
-    return isHallZone(selectedAisle) || slots.length === 0
-  }, [selectedAisle, slots.length])
+    const hasRealChildSlots = activeZones.some(z => z.parent_id === selectedAisle.id)
+    return isHallZone(selectedAisle) || !hasRealChildSlots
+  }, [selectedAisle, activeZones])
 
   // 4. Tiers (Level 4: parent_id === selectedSlotId) -> Tầng của Ô gộp
   // Sắp xếp tầng từ thấp đến cao (Tầng 1 -> Tầng 5)
   const tiers = useMemo(() => {
     if (!selectedSlotId) return []
-    const list = activeZones.filter(z => z.parent_id === selectedSlotId)
+    let list = activeZones.filter(z => z.parent_id === selectedSlotId)
+    if (isSearchActive && onlyShowMatches) {
+      list = list.filter(z => (zoneMatchCountMap.get(z.id) || 0) > 0)
+    }
     return [...list].sort((a, b) => {
       const oa = a.display_order ?? 0
       const ob = b.display_order ?? 0
       if (oa !== ob) return oa - ob
       return (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
     })
-  }, [activeZones, selectedSlotId])
+  }, [activeZones, selectedSlotId, isSearchActive, onlyShowMatches, zoneMatchCountMap])
 
   // ── Thu gọn / Mở rộng các Tầng ───────────────────────────────────
   const toggleTierExpand = useCallback((tierId: string) => {
@@ -1701,7 +1866,7 @@ export default function WarehouseMapTab() {
     }
   }, [selectedSlotId, highlightedPosId, isSearchActive, tiers, positions, getDescendantZoneIds, zoneMatchCountMap])
 
-  // ── Stats Calculator (Total, Occupied, Empty) per Zone (O(1) Set Lookups) ──
+  // ── Stats Calculator (Total, Occupied, Empty) per Zone (O(Positions) Single-Pass) ──
   const zoneStatsMap = useMemo(() => {
     const map = new Map<
       string,
@@ -1709,30 +1874,43 @@ export default function WarehouseMapTab() {
     >()
     if (activeZones.length === 0 || positions.length === 0) return map
 
-    activeZones.forEach(z => {
-      const descSet = zoneDescendantsMap.get(z.id)
-      let total = 0
-      let occupied = 0
+    for (let i = 0; i < activeZones.length; i++) {
+      map.set(activeZones[i].id, { total: 0, occupied: 0, empty: 0 })
+    }
 
-      if (descSet) {
-        for (let i = 0; i < positions.length; i++) {
-          const p = positions[i]
-          if (p.zone_ids.some(zid => descSet.has(zid))) {
-            total++
-            if (p.lot_id) occupied++
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i]
+      const isOcc = Boolean(p.lot_id)
+      const seenActiveZones = new Set<string>()
+
+      for (let j = 0; j < p.zone_ids.length; j++) {
+        const realZid = p.zone_ids[j]
+        const ancestors = realToActiveAncestorsMap.get(realZid)
+        if (ancestors) {
+          for (let k = 0; k < ancestors.length; k++) {
+            seenActiveZones.add(ancestors[k])
           }
+        }
+        if (map.has(realZid)) {
+          seenActiveZones.add(realZid)
         }
       }
 
-      map.set(z.id, {
-        total,
-        occupied,
-        empty: Math.max(0, total - occupied)
+      seenActiveZones.forEach(azId => {
+        const st = map.get(azId)
+        if (st) {
+          st.total++
+          if (isOcc) st.occupied++
+        }
       })
+    }
+
+    map.forEach(st => {
+      st.empty = Math.max(0, st.total - st.occupied)
     })
 
     return map
-  }, [activeZones, positions, zoneDescendantsMap])
+  }, [activeZones, positions, realToActiveAncestorsMap])
 
   // Thống kê phân loại (Kệ vs Sảnh) cho từng Kho (đặt sau zoneStatsMap)
   const getWhBreakdown = useCallback((whId: string) => {
@@ -2036,19 +2214,8 @@ export default function WarehouseMapTab() {
             </button>
           </div>
 
-          {/* Dòng 2: Chuyển đổi giữa 2 tab: [Sơ đồ vị trí] và [Thống kê phân bổ] */}
+          {/* Dòng 2: Chuyển đổi giữa 2 tab: [Thống kê phân bổ] và [Sơ đồ vị trí] */}
           <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-900/90 rounded-xl border border-slate-800">
-            <button
-              type="button"
-              onClick={() => setSearchTab('map')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${searchTab === 'map'
-                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
-                  : 'text-slate-400 hover:text-slate-200'
-                }`}
-            >
-              <MapPin size={13} />
-              <span>Sơ đồ vị trí</span>
-            </button>
             <button
               type="button"
               onClick={() => setSearchTab('breakdown')}
@@ -2065,6 +2232,17 @@ export default function WarehouseMapTab() {
                   {formatUnitsSummary(breakdownReport.grandUnitsMap, { short: true })}
                 </span>
               )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchTab('map')}
+              className={`py-1.5 px-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition active:scale-95 ${searchTab === 'map'
+                  ? 'bg-cyan-500 text-slate-950 shadow-md shadow-cyan-500/20 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+                }`}
+            >
+              <MapPin size={13} />
+              <span>Sơ đồ vị trí</span>
             </button>
           </div>
 
@@ -2410,64 +2588,215 @@ export default function WarehouseMapTab() {
                                 </div>
                               </div>
 
-                              {/* Danh sách Ô trong dãy */}
+                              {/* Danh sách Ô trong dãy (bấm vào Ô để xổ chi tiết từng Tầng 1, Tầng 2...) */}
                               {isAisleExpanded && (
-                                <div className="p-1.5 space-y-1 border-t border-slate-800/50 bg-[#080e1a]">
-                                  {aisleAcc.slots.map(slotAcc => (
-                                    <div
-                                      key={slotAcc.slot.id}
-                                      className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/60 border border-slate-800/60 hover:border-cyan-500/30 transition text-xs"
-                                    >
-                                      <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                        <div className="w-1.5 h-1.5 rounded-full bg-cyan-400 shrink-0" />
-                                        <span className="font-semibold text-slate-300 truncate">
-                                          {slotAcc.slot.name}
-                                        </span>
-                                        {slotAcc.positionCount > 1 && (
-                                          <span className="text-[10px] text-slate-500">
-                                            ({slotAcc.positionCount}p)
-                                          </span>
-                                        )}
-                                        {slotAcc.positions[0]?.material_zone && (
-                                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium">
-                                            {slotAcc.positions[0].material_zone}
-                                          </span>
-                                        )}
-                                        {slotAcc.positions[0]?.packaging_date && (
-                                          <span className="text-[9px] text-slate-400 font-mono">
-                                            {slotAcc.positions[0].packaging_date.split('-').reverse().slice(0, 2).join('/')}
-                                          </span>
-                                        )}
-                                      </div>
+                                <div className="p-1.5 space-y-1.5 border-t border-slate-800/50 bg-[#080e1a]">
+                                  {aisleAcc.slots.map(slotAcc => {
+                                    const isSlotExpanded = expandedSlotIds.has(slotAcc.slot.id)
+                                    const hasTiers = slotAcc.tiers && slotAcc.tiers.length > 0
+                                    return (
+                                      <div
+                                        key={slotAcc.slot.id}
+                                        className={`rounded-lg border transition overflow-hidden ${
+                                          isSlotExpanded
+                                            ? 'bg-[#0c1629] border-cyan-500/40'
+                                            : 'bg-slate-900/60 border-slate-800/60 hover:border-cyan-500/30'
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between px-2.5 py-1.5 text-xs gap-2">
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleSlotExpand(slotAcc.slot.id)}
+                                            className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                                          >
+                                            <span className={isSlotExpanded ? 'text-cyan-400' : 'text-slate-500'}>
+                                              {isSlotExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                            </span>
+                                            <span
+                                              className={`font-semibold truncate ${
+                                                isSlotExpanded ? 'text-cyan-300' : 'text-slate-300'
+                                              }`}
+                                            >
+                                              {slotAcc.slot.name}
+                                            </span>
+                                            <span className="text-[10px] text-slate-500">
+                                              ({slotAcc.positionCount} vị trí{hasTiers ? ` · ${slotAcc.tiers.length} tầng` : ''})
+                                            </span>
+                                          </button>
 
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <div className="text-right font-mono">
-                                          <span className="font-bold text-emerald-400">
-                                            {formatUnitsSummary(slotAcc.unitsMap, { short: true })}
-                                          </span>
+                                          <div className="flex items-center gap-2 shrink-0">
+                                            <button
+                                              type="button"
+                                              onClick={() => toggleSlotExpand(slotAcc.slot.id)}
+                                              className="text-right font-mono"
+                                            >
+                                              <span className="font-bold text-emerald-400">
+                                                {formatUnitsSummary(slotAcc.unitsMap, { short: true })}
+                                              </span>
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setSelectedWarehouseId(whAcc.warehouse.id)
+                                                setSelectedAisleId(aisleAcc.aisle.id)
+                                                if (isHallZone(aisleAcc.aisle) || slotAcc.slot.id === aisleAcc.aisle.id) {
+                                                  setSelectedSlotId(null)
+                                                } else {
+                                                  setSelectedSlotId(slotAcc.slot.id)
+                                                }
+                                                setSelectedTierId(null)
+                                                setSearchTab('map')
+                                              }}
+                                              className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline px-1 py-0.5 active:scale-95 transition"
+                                              title="Nhảy đến vị trí này trên sơ đồ"
+                                            >
+                                              Xem vị trí
+                                            </button>
+                                          </div>
                                         </div>
 
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedWarehouseId(whAcc.warehouse.id)
-                                            setSelectedAisleId(aisleAcc.aisle.id)
-                                            if (isHallZone(aisleAcc.aisle) || slotAcc.slot.id === aisleAcc.aisle.id) {
-                                              setSelectedSlotId(null)
-                                            } else {
-                                              setSelectedSlotId(slotAcc.slot.id)
-                                            }
-                                            setSelectedTierId(null)
-                                            setSearchTab('map')
-                                          }}
-                                          className="text-[10px] font-bold text-cyan-400 hover:text-cyan-300 hover:underline px-1 py-0.5 active:scale-95 transition"
-                                          title="Nhảy đến vị trí này trên sơ đồ"
-                                        >
-                                          Xem vị trí
-                                        </button>
+                                        {/* Danh sách TẦNG bên trong Ô (bấm vào Tầng để xổ chi tiết Mã vị trí & Số lượng) */}
+                                        {isSlotExpanded && (
+                                          <div className="px-2 pb-2 pt-1.5 space-y-1.5 border-t border-slate-800/70 bg-[#060b16]">
+                                            {hasTiers ? (
+                                              slotAcc.tiers.map(tierAcc => {
+                                                const isTierExpanded = expandedBreakdownTierIds.has(tierAcc.tier.id)
+
+                                                return (
+                                                  <div
+                                                    key={tierAcc.tier.id}
+                                                    className={`rounded-lg border transition overflow-hidden ${
+                                                      isTierExpanded
+                                                        ? 'bg-[#111b2e] border-amber-500/40'
+                                                        : 'bg-[#0d1729] border-slate-800/80 hover:border-amber-500/30'
+                                                    }`}
+                                                  >
+                                                    <div className="flex items-center justify-between px-2 py-1.5 gap-2">
+                                                      <button
+                                                        type="button"
+                                                        onClick={() => toggleBreakdownTierExpand(tierAcc.tier.id)}
+                                                        className="flex items-center gap-1.5 min-w-0 flex-1 text-left"
+                                                      >
+                                                        <span className={isTierExpanded ? 'text-amber-400' : 'text-slate-400'}>
+                                                          {isTierExpanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                                                        </span>
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/60 border border-amber-500/40 text-[10.5px] font-extrabold text-amber-300">
+                                                          <Layers size={11} className="text-amber-400" />
+                                                          {tierAcc.tier.name}
+                                                        </span>
+                                                        <span className="text-[10px] text-slate-400">
+                                                          ({tierAcc.positionCount} vị trí)
+                                                        </span>
+                                                      </button>
+
+                                                      <div className="flex items-center gap-2 shrink-0">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => toggleBreakdownTierExpand(tierAcc.tier.id)}
+                                                          className="text-xs font-extrabold text-amber-400 font-mono"
+                                                        >
+                                                          {formatUnitsSummary(tierAcc.unitsMap, { short: true })}
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            setSelectedWarehouseId(whAcc.warehouse.id)
+                                                            setSelectedAisleId(aisleAcc.aisle.id)
+                                                            setSelectedSlotId(slotAcc.slot.id)
+                                                            setSelectedTierId(tierAcc.tier.id)
+                                                            setExpandedTierIds(new Set([tierAcc.tier.id]))
+                                                            if (tierAcc.positions[0]) {
+                                                              setHighlightedPosId(tierAcc.positions[0].id)
+                                                            }
+                                                            setSearchTab('map')
+                                                          }}
+                                                          className="px-1.5 py-0.5 rounded bg-cyan-950/80 border border-cyan-800/70 text-[10px] font-bold text-cyan-300 hover:bg-cyan-500 hover:text-slate-950 transition"
+                                                        >
+                                                          Xem tầng
+                                                        </button>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Bấm vào Tầng mới hiện chi tiết từng Mã vị trí + Số lượng */}
+                                                    {isTierExpanded && (
+                                                      <div className="px-2 pb-2 pt-1.5 space-y-1 border-t border-slate-800/70 bg-[#070c17]">
+                                                        {tierAcc.positions.map(pos => (
+                                                          <button
+                                                            key={pos.id}
+                                                            type="button"
+                                                            onClick={() => setSelectedPosDetail(pos)}
+                                                            className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md bg-slate-900/90 hover:bg-slate-800 border border-slate-800/80 text-xs transition"
+                                                          >
+                                                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                                              <MapPin size={11} className="text-sky-400 shrink-0" />
+                                                              <span className="font-mono font-extrabold text-sky-300">
+                                                                {pos.code}
+                                                              </span>
+                                                              {pos.stt && (
+                                                                <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40 font-bold">
+                                                                  #{pos.stt}
+                                                                </span>
+                                                              )}
+                                                              {pos.material_zone && (
+                                                                <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30 font-medium">
+                                                                  {pos.material_zone}
+                                                                </span>
+                                                              )}
+                                                              {pos.packaging_date && (
+                                                                <span className="text-[9px] text-slate-400 font-mono">
+                                                                  {pos.packaging_date.split('-').reverse().slice(0, 2).join('/')}
+                                                                </span>
+                                                              )}
+                                                            </div>
+                                                            <span className="font-mono font-extrabold text-emerald-400 shrink-0">
+                                                              {pos.quantity || 0}{' '}
+                                                              {getCleanUnitCategory(pos.unit) === 'Thùng'
+                                                                ? 'th'
+                                                                : getCleanUnitCategory(pos.unit)}
+                                                            </span>
+                                                          </button>
+                                                        ))}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                )
+                                              })
+                                            ) : (
+                                              <div className="space-y-1 pt-0.5">
+                                                {slotAcc.positions.map(pos => (
+                                                  <button
+                                                    key={pos.id}
+                                                    type="button"
+                                                    onClick={() => setSelectedPosDetail(pos)}
+                                                    className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-md bg-slate-900/90 hover:bg-slate-800 border border-slate-800/80 text-xs transition"
+                                                  >
+                                                    <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                                                      <MapPin size={11} className="text-sky-400 shrink-0" />
+                                                      <span className="font-mono font-extrabold text-sky-300">
+                                                        {pos.code}
+                                                      </span>
+                                                      {pos.stt && (
+                                                        <span className="text-[9px] px-1.5 py-0.2 rounded bg-amber-500/15 text-amber-300 border border-amber-500/40 font-bold">
+                                                          #{pos.stt}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    <span className="font-mono font-extrabold text-emerald-400 shrink-0">
+                                                      {pos.quantity || 0}{' '}
+                                                      {getCleanUnitCategory(pos.unit) === 'Thùng'
+                                                        ? 'th'
+                                                        : getCleanUnitCategory(pos.unit)}
+                                                    </span>
+                                                  </button>
+                                                ))}
+                                              </div>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
-                                    </div>
-                                  ))}
+                                    )
+                                  })}
                                 </div>
                               )}
                             </div>
@@ -2489,12 +2818,12 @@ export default function WarehouseMapTab() {
                 <span>CHỌN KHO (TẤT CẢ KHO):</span>
               </span>
               <span className="text-[10px] text-slate-500 font-mono">
-                {warehouses.length} kho
+                {visibleWarehouses.length} kho
               </span>
             </div>
 
             <div className="grid grid-cols-1 gap-2.5">
-              {warehouses.map(wh => {
+              {visibleWarehouses.map(wh => {
                 const stats = zoneStatsMap.get(wh.id) || { total: 0, occupied: 0, empty: 0 }
                 const pct = stats.total > 0 ? Math.round((stats.occupied / stats.total) * 100) : 0
                 const whMatchCount = zoneMatchCountMap.get(wh.id) || 0
@@ -3066,11 +3395,6 @@ export default function WarehouseMapTab() {
                                     )}
                                   </div>
                                   <div className="flex items-center gap-1 shrink-0">
-                                    {isMatched && (
-                                      <span className="px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
-                                        ⭐ Khớp
-                                      </span>
-                                    )}
                                     {isOccupied ? (
                                       <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
                                         #{pos.stt || 'LOT'}
@@ -3157,11 +3481,6 @@ export default function WarehouseMapTab() {
                             )}
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            {isMatched && (
-                              <span className="px-1 py-0.2 rounded bg-amber-400 text-slate-950 font-black text-[8px] animate-pulse">
-                                ⭐ Khớp
-                              </span>
-                            )}
                             {isOccupied ? (
                               <span className="px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 font-mono font-black text-[9px] shadow-xs">
                                 #{pos.stt || 'LOT'}
