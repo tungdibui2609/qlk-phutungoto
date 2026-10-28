@@ -987,17 +987,24 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
 
                 {/* Tags (Unassigned) */}
                 {(() => {
+                    const assignedTags = (lot.lot_tags || [])
+                        .filter((t: any) => t.lot_item_id)
+                        .map((t: any) => t.tag)
+                    const assignedTagSet = new Set(assignedTags)
+
                     const unassigned = (lot.lot_tags || []).filter((t: any) =>
                         !t.lot_item_id &&
                         !t.tag.startsWith('SPLIT_TO:') &&
-                        !t.tag.startsWith('MERGED_TO:')
+                        !t.tag.startsWith('MERGED_TO:') &&
+                        !assignedTagSet.has(t.tag)
                     )
                     const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null
                     const boxTag = lot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null
-                    const fallbackTag = metaTag || boxTag
+                    const fallbackTag = (metaTag && !assignedTagSet.has(metaTag) ? metaTag : null) || 
+                                      (boxTag && !assignedTagSet.has(boxTag) ? boxTag : null)
 
                     // Nếu đã có itemTags hiển thị ở từng dòng sản phẩm thì không cần lặp lại ở unassigned nếu trùng
-                    const hasItemTags = (lot.lot_tags || []).some((t: any) => t.lot_item_id)
+                    const hasItemTags = assignedTags.length > 0
                     if (unassigned.length === 0 && (hasItemTags || !fallbackTag)) return null
 
                     const displayTags = unassigned.length > 0

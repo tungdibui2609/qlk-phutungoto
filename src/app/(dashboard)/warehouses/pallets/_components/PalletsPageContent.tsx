@@ -2179,14 +2179,15 @@ export default function PalletsPageContent() {
                                 added_at: new Date().toISOString()
                             })
                         })
+                    } else {
+                        // Nếu chưa có item con nào, mới gắn tag vào cấp lot (unassigned)
+                        tagInserts.push({
+                            lot_id: newLotId,
+                            lot_item_id: null,
+                            tag: cleanTag,
+                            added_at: new Date().toISOString()
+                        })
                     }
-                    // Đồng thời thêm 1 bản ghi unassigned lot_id cho toàn bộ LOT
-                    tagInserts.push({
-                        lot_id: newLotId,
-                        lot_item_id: null,
-                        tag: cleanTag,
-                        added_at: new Date().toISOString()
-                    })
 
                     // TUYỆT ĐỐI KHÔNG truyền company_id vào lot_tags (vì bảng lot_tags không có cột này)
                     const { error: tagErr } = await (supabase.from('lot_tags') as any).insert(tagInserts)
