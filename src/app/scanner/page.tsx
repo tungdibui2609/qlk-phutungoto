@@ -562,23 +562,33 @@ export default function WebScannerPage() {
         const matching = pending.filter(p => p.stt === cleanStt)
         if (matching.length > 0) {
           const offlineBoxes: BoxItem[] = []
+          let overallIdx = 1
           matching.forEach(p => {
-            p.boxes.forEach((b, idx) => {
+            p.boxes.forEach((b) => {
+              const meta = b.metadata || {}
               offlineBoxes.push({
                 id: b.code,
                 code: b.code,
-                box_index: String(idx + 1),
+                box_index: String(meta.box_index || overallIdx++),
                 quantity: b.weight,
                 unit: 'Kg',
-                sku: p.sku || 'SKU',
-                product_name: p.product_name || 'Hàng lưu ngoại tuyến',
-                lot_code: p.lot_code || 'LOT',
-                spec: '',
-                shift_group: '',
-                region: '',
-                production_date: '',
-                packaging_date: '',
-                scan_type: 'label',
+                sku: meta.sku || p.sku || 'SKU',
+                product_name: meta.product_name || p.product_name || 'Hàng lưu ngoại tuyến',
+                lot_code: meta.lot_code || meta.stamp_line2 || p.lot_code || 'LOT',
+                spec: meta.spec || '',
+                shift_group: meta.shift_group || '',
+                region: meta.region || '',
+                production_date: meta.production_date || '',
+                packaging_date: meta.packaging_date || '',
+                raw_material_date: meta.raw_material_date || '',
+                supplier: meta.supplier || '',
+                supplier_name: meta.supplier ? `Mã NCC ${meta.supplier}` : '',
+                scan_type: (meta.scan_type as any) || 'label',
+                stamp_line1: meta.stamp_line1,
+                stamp_line2: meta.stamp_line2,
+                is_special_12: meta.is_special_12,
+                special_12_code: meta.special_12_code,
+                special_12_name: meta.special_12_name,
                 created_at: b.time
               })
             })
@@ -625,23 +635,33 @@ export default function WebScannerPage() {
         const matching = pending.filter(p => p.stt === cleanStt)
         if (matching.length > 0) {
           const offlineBoxes: BoxItem[] = []
+          let overallIdx = 1
           matching.forEach(p => {
-            p.boxes.forEach((b, idx) => {
+            p.boxes.forEach((b) => {
+              const meta = b.metadata || {}
               offlineBoxes.push({
                 id: b.code,
                 code: b.code,
-                box_index: String(idx + 1),
+                box_index: String(meta.box_index || overallIdx++),
                 quantity: b.weight,
                 unit: 'Kg',
-                sku: p.sku || 'SKU',
-                product_name: p.product_name || 'Hàng lưu ngoại tuyến',
-                lot_code: p.lot_code || 'LOT',
-                spec: '',
-                shift_group: '',
-                region: '',
-                production_date: '',
-                packaging_date: '',
-                scan_type: 'label',
+                sku: meta.sku || p.sku || 'SKU',
+                product_name: meta.product_name || p.product_name || 'Hàng lưu ngoại tuyến',
+                lot_code: meta.lot_code || meta.stamp_line2 || p.lot_code || 'LOT',
+                spec: meta.spec || '',
+                shift_group: meta.shift_group || '',
+                region: meta.region || '',
+                production_date: meta.production_date || '',
+                packaging_date: meta.packaging_date || '',
+                raw_material_date: meta.raw_material_date || '',
+                supplier: meta.supplier || '',
+                supplier_name: meta.supplier ? `Mã NCC ${meta.supplier}` : '',
+                scan_type: (meta.scan_type as any) || 'label',
+                stamp_line1: meta.stamp_line1,
+                stamp_line2: meta.stamp_line2,
+                is_special_12: meta.is_special_12,
+                special_12_code: meta.special_12_code,
+                special_12_name: meta.special_12_name,
                 created_at: b.time
               })
             })
@@ -791,16 +811,43 @@ export default function WebScannerPage() {
 
     try {
       const mode = activeTab === 'stamp' ? 'stamp' : 'label'
-      const res = await fetch('/api/ocr', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ image: base64, mode }),
-        signal: controller.signal
-      })
+      let json: any = null
+
+      const isOfflineMode = typeof navigator !== 'undefined' && !navigator.onLine
+
+      if (!isOfflineMode) {
+        try {
+          const res = await fetch('/api/ocr', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64, mode }),
+            signal: controller.signal
+          })
+          if (res.ok) {
+            json = await res.json()
+          }
+        } catch (netErr: any) {
+          console.warn('[OCR] Server fetch /api/ocr thất bại, tự động chuyển Client OCR offline:', netErr)
+        }
+      }
+
+      // Fallback sang Client-Side OCR chạy trực tiếp trên trình duyệt bằng Tesseract Web Worker offline
+      if (!json || !json.success) {
+        try {
+          const { recognizeClientSide } = await import('@/lib/clientOcr')
+          json = await recognizeClientSide(base64, mode, stampDictMap)
+        } catch (clientErr: any) {
+          console.error('[OCR] Nhận diện offline client-side thất bại:', clientErr)
+          throw new Error(json?.error || clientErr.message || 'Không thể nhận diện văn bản (cả server lẫn client offline)')
+        }
+      }
+
       clearTimeout(timeoutId)
 
-      const json = await res.json()
-      if (!json.success) throw new Error(json.error || 'Nhận diện thất bại')
+      if (!json || !json.success) throw new Error(json?.error || 'Nhận diện thất bại')
+
+      playScanSound()
+      triggerHaptic()
 
       if (mode === 'stamp') {
         const stampData = json.data

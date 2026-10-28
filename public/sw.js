@@ -1,10 +1,12 @@
 // Chánh Thu PWA Service Worker for Web Push Notifications, App Badge & Offline Scanner
 
-const CACHE_NAME = 'chanhthu-scanner-cache-v2'
+const CACHE_NAME = 'chanhthu-scanner-cache-v3'
 const PRECACHE_URLS = [
     '/scanner',
     '/logoanywarehouse.png',
-    '/manifest.webmanifest'
+    '/manifest.webmanifest',
+    '/tessdata/worker.min.js',
+    '/tessdata/eng.traineddata'
 ]
 
 self.addEventListener('install', (event) => {
@@ -70,8 +72,8 @@ self.addEventListener('fetch', (event) => {
         return
     }
 
-    // 2. Next.js Static Assets & Images (Cache-First with Network Fallback)
-    if (url.pathname.startsWith('/_next/static/') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg') || url.pathname.endsWith('.ico') || url.pathname.endsWith('.woff2')) {
+    // 2. Next.js Static Assets, OCR Tessdata & Images (Cache-First with Network Fallback)
+    if (url.pathname.startsWith('/_next/static/') || url.pathname.startsWith('/tessdata/') || url.pathname.endsWith('.wasm') || url.pathname.endsWith('.wasm.js') || url.pathname.endsWith('.traineddata') || url.pathname.endsWith('.png') || url.pathname.endsWith('.svg') || url.pathname.endsWith('.ico') || url.pathname.endsWith('.woff2')) {
         event.respondWith(
             caches.match(event.request).then((cachedResponse) => {
                 if (cachedResponse) {

@@ -41,9 +41,13 @@ export interface OfflinePendingPallet {
         code: string
         weight: number
         time: string
+        system_code?: string
+        metadata?: any
     }>
     product_name?: string
     sku?: string
+    tag?: string
+    scan_type?: 'stamp' | 'label'
     notes?: string
     created_at: string
     status: 'pending_create' | 'pending_link' | 'syncing' | 'failed'
