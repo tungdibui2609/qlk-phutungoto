@@ -11,10 +11,12 @@
 """
 
 import os
+import re
 import sys
 import time
 import socket
 import shutil
+import tempfile
 import threading
 import subprocess
 import webbrowser
@@ -46,6 +48,99 @@ PORTS = {
     "supabase_studio": 64323,
     "supabase_mail": 64324,
 }
+
+SUPABASE_DB_CONTAINER = "supabase_db_anywarehouse"
+
+# Bảng nội bộ của chính các dịch vụ Supabase (GoTrue / Storage).
+# Không nằm trong file backup nhưng nếu xóa theo thì dịch vụ sẽ hỏng.
+RESTORE_PROTECTED_TABLES = {
+    "auth.schema_migrations",
+    "storage.migrations",
+}
+
+# Các schema nghiệp vụ chịu sự quản lý của chức năng Sao lưu / Phục hồi
+RESTORE_SCHEMAS = ("public", "auth", "storage")
+
+
+def build_migration_checklist_text(archive_name, dump_name, archive_mb, db_tables, db_rows, pg_image):
+    """Soạn nội dung CHECKLIST_CHUYEN_MAY.txt đặt cạnh file nén.
+
+    db_tables / db_rows là số bảng và tổng số dòng đúng của ảnh chụp CSDL vừa nhúng
+    vào gói nén - người dùng máy mới lấy con số này để đối chiếu với messagebox sau khi nạp.
+    """
+    return f"""========================================================================
+  BỘ DI CHUYỂN MÁY - MODULAR WMS / ANYWAREHOUSE
+========================================================================
+
+Gói nén          : {archive_name} ({archive_mb} MB)
+Ảnh CSDL kèm theo: {dump_name}  (ĐÃ nằm BÊN TRONG gói nén này)
+Số bảng          : {db_tables}
+Tổng số dòng     : {db_rows:,}
+Image PostgreSQL : {pg_image}
+
+------------------------------------------------------------------------
+GÓI NÀY CHỮ GÌ / KHÔNG CHỮ GÌ
+------------------------------------------------------------------------
+CÓ   : toàn bộ src, supabase/migrations, config.toml, roles.sql, docker-compose.yml
+CÓ   : .env.local + .env.test.local (Windows không đặt thuộc tính ẩn cho 2 file này)
+CÓ   : node_modules (máy mới KHÔNG cần chạy npm install)
+CÓ   : ảnh CSDL {dump_name}
+KHÔNG: .next      -> máy mới phải bấm "Build Production" trong launcher
+KHÔNG: dist_installer, các file .rar/.zip cũ (tránh nén lồng trong nén)
+
+VỊ TRÍ ẢNH CSDL SAU KHI GIẢI NÉN: backups\\{dump_name} nếu gói là .rar,
+                       hoặc nằm ngay ở gốc thư mục nếu gói là .zip.
+
+CẢNH BÁO: .env.local chứa mật khẩu Gmail app, Google Drive refresh token,
+          Cloudinary và SUPABASE_SERVICE_ROLE_KEY. Hãy coi gói nén này là
+          một phong bì bí mật - chỉ giữ ở vùng riêng tư, tuyệt đối không
+          commit lên git, không chia sẻ link công khai.
+
+------------------------------------------------------------------------
+ĐIỀU KIỆN Ở MÁY MỚI (cài ĐÚNG vị trí như máy cũ)
+------------------------------------------------------------------------
+  Docker Desktop       C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe
+  cloudflared          C:\\Program Files\\cloudflared\\cloudflared.exe
+                       (hoặc C:\\Program Files (x86)\\cloudflared\\)
+  WinRAR (tuỳ chọn)    C:\\Program Files\\WinRAR\\Rar.exe
+  Inno Setup 6 (t. c.)  C:\\Program Files\\Inno Setup 6\\ISCC.exe
+  Node.js 24.x, Python 3.x, Git
+  Supabase CLI: lấy từ package.json của dự án qua npx (máy cũ đang dùng v2.113.0)
+
+------------------------------------------------------------------------
+TRÌNH TỰ 7 BƯỚC TRÊN MÁY MỚI
+------------------------------------------------------------------------
+1. Cài đủ phần mềm ở trên, khởi động Docker Desktop (chờ nó chạy xong hẳn).
+2. Giải nén gói này vào ĐƯỜNG DẪN NÀO CŨNG ĐƯỢC. Đường dẫn không quan trọng:
+   tên các Docker volume lấy từ project_id = "anywarehouse" trong config.toml.
+3. Mở cmd trong thư mục dự án, chạy:  npx supabase start
+4. LẤY KEY MỚI, chạy:                  npx supabase status
+   -> chép 2 giá trị anon_key và service_role vào .env.local, GHI ĐÈ key cũ.
+   LÝ DO: JWT secret của Supabase Local được sinh NGẪU NHIÊN theo từng máy
+   và nằm trong Docker volume của máy cũ, KHÔNG nằm trong thư mục dự án.
+   Đem key cũ sang máy mới = mọi request báo 401 (nhìn như app hỏng).
+5. Mở CHAY_SERVER.bat -> bấm "Build Production" (vì .next đã bị loại khỏi gói).
+6. Mở launcher -> bấm "NẠP / PHỤC HỒI CSDL" -> chọn file {dump_name}.
+   Launcher sẽ TỰ ĐẾM số dòng từng bảng sau khi nạp xong.
+   CON SỐ PHẢI KHỚP: {db_tables} bảng, {db_rows:,} dòng.
+   Nếu hộp thoại báo LỆCH: đừng hoảng - launcher đã lưu sẵn bản
+   pre_restore_<timestamp>.sql ngay trước khi ghi đè, nạp lại bản đó là về cũ.
+7. Kiểm tra cuối: đăng nhập được, mở từng phân hệ kho, xác nhận các module
+   bật/tắt vẫn đúng như máy cũ; ảnh sản phẩm vẫn hiển thị vì ảnh nằm trên
+   Google Drive (không phụ thuộc máy) - chỉ cần refresh token ở bước trên còn hạn.
+
+------------------------------------------------------------------------
+VẾT CẦN LƯU Ý
+------------------------------------------------------------------------
+- Phiên đăng nhập cũ bị vô hiệu sau bước 4 (đổi JWT) - hoàn toàn bình thường.
+- Nếu KHÔNG muốn đổi key, thay bước 3-4 bằng cách bê nguyên Docker volume:
+    máy cũ : docker run --rm -v supabase_db_anywarehouse:/from alpine tar czf db.tar -C /from .
+    máy mới: chạy supabase start MỘT lần rồi dừng stack, giải tar ngược vào
+             volume cùng tên. Cách này mang theo cả dữ liệu lẫn secret, nhưng
+             bắt buộc trùng image PostgreSQL ({pg_image}).
+- Sau khi máy mới chạy ổn, nhớ bật lại lịch sao lưu tự động 12:20 trên máy mới.
+========================================================================
+"""
 
 URLS = {
     "web_local": f"http://localhost:{PORTS['nextjs']}",
@@ -368,8 +463,16 @@ class ServerManagerGUI:
     def __init__(self, root: tk.Tk):
         self.root = root
         self.root.title("Modular WMS - Server Controller & Environment Suite")
-        self.root.geometry("900x780")
-        self.root.minsize(820, 640)
+        # Tự bám theo độ lớn màn hình: bảng nút đã gom gọn nên phần chiều dọc
+        # thừa dồn hết cho khung nhật ký (trước đây bị 8 hàng nút chiếm gần hết).
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        win_w = max(1000, min(1260, sw - 24))
+        # Trừ 100px cho thanh title + taskbar: nếu cửa sổ cao bằng màn hình thì
+        # đáy khung nhật ký nằm khuất sau taskbar, nhìn vẫn như bị cụt.
+        win_h = max(600, min(900, sh - 100))
+        self.root.geometry(f"{win_w}x{win_h}+{max(0, (sw - win_w) // 2)}+8")
+        self.root.minsize(min(940, sw - 40), min(560, sh - 140))
         self.root.configure(bg="#0f172a")
 
         self.proc_nextjs = None
@@ -562,7 +665,7 @@ class ServerManagerGUI:
 
     def _build_ui(self):
         # 1. HEADER
-        header_frame = tk.Frame(self.root, bg="#1e293b", height=70, padx=20, pady=12)
+        header_frame = tk.Frame(self.root, bg="#1e293b", height=70, padx=20, pady=6)
         header_frame.pack(fill=tk.X, side=tk.TOP)
 
         title_lbl = tk.Label(
@@ -584,7 +687,7 @@ class ServerManagerGUI:
         subtitle_lbl.pack(anchor="w")
 
         # 2. MAIN CONTAINER
-        main_container = tk.Frame(self.root, bg="#0f172a", padx=16, pady=12)
+        main_container = tk.Frame(self.root, bg="#0f172a", padx=16, pady=8)
         main_container.pack(fill=tk.BOTH, expand=True)
 
         # 2.1 BẢNG ĐIỀU KHIỂN & CHỌN CHẾ ĐỘ
@@ -593,7 +696,9 @@ class ServerManagerGUI:
 
         # Cột trái: Điều khiển & Chế độ chạy
         actions_card = tk.Frame(top_grid, bg="#1e293b", padx=14, pady=12, highlightthickness=1, highlightbackground="#334155")
-        actions_card.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 8))
+        # fill=Y (không expand) để thẻ này giữ đúng bề rộng tự nhiên của 3 cột nút,
+        # cột phải nhận phần còn lại. Nếu cho expand, nút dài nhất sẽ bị cắt chữ.
+        actions_card.pack(side=tk.LEFT, fill=tk.Y, padx=(0, 8))
 
         tk.Label(actions_card, text="🎮 ĐIỀU KHIỂN HỆ THỐNG", font=("Segoe UI", 10, "bold"), fg="#f1f5f9", bg="#1e293b").pack(anchor="w", pady=(0, 6))
 
@@ -610,78 +715,51 @@ class ServerManagerGUI:
         btn_box = tk.Frame(actions_card, bg="#1e293b")
         btn_box.pack(fill=tk.X, pady=2)
 
-        # Hàng nút khởi động: Hệ thống (Prod :3000) & Khởi chạy Dev (:3001)
-        btn_launch_row = tk.Frame(btn_box, bg="#1e293b")
-        btn_launch_row.pack(fill=tk.X, pady=(0, 6))
+        # 15 nút chia đều 3 cột x 5 hàng. Trước đây mỗi hàng 2 nút = 8 hàng,
+        # khung nhật ký bị dồn xuống còn non một dòng nên không đọc được gì.
+        btn_grid = tk.Frame(btn_box, bg="#1e293b")
+        btn_grid.pack(fill=tk.X)
+        for col in range(3):
+            btn_grid.columnconfigure(col, weight=1, uniform="btn_cell")
 
-        self.btn_start_all = ttk.Button(btn_launch_row, text="🚀 CHẠY HỆ THỐNG (:3000)", style="Primary.TButton", command=self.start_all_services)
-        self.btn_start_all.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 3))
+        self.btn_start_all = ttk.Button(btn_grid, text="🚀 CHẠY HỆ THỐNG (:3000)", style="Primary.TButton", command=self.start_all_services)
+        self.btn_dev = ttk.Button(btn_grid, text="🛠️ BẬT DEV (:3001)", style="Dev.TButton", command=self.toggle_dev_server)
+        self.btn_stop_all = ttk.Button(btn_grid, text="🛑 DỪNG TẤT CẢ", style="Danger.TButton", command=self.stop_all_services)
 
-        self.btn_dev = ttk.Button(btn_launch_row, text="🛠️ BẬT DEV (:3001)", style="Dev.TButton", command=self.toggle_dev_server)
-        self.btn_dev.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(3, 0))
+        self.btn_build = ttk.Button(btn_grid, text="🔨 Build Lại Web", style="Link.TButton", command=self.build_production)
+        self.btn_backup = ttk.Button(btn_grid, text="💾 SAO LƯU (Tự động 12:20)", style="Backup.TButton", command=self.backup_database)
+        self.btn_restore = ttk.Button(btn_grid, text="📥 NẠP / PHỤC HỒI CSDL", style="Success.TButton", command=self.restore_database)
 
-        btn_sub_row = tk.Frame(btn_box, bg="#1e293b")
-        btn_sub_row.pack(fill=tk.X)
+        self.btn_doctor = ttk.Button(btn_grid, text="🩺 BÁC SĨ MÔI TRƯỜNG", style="Doctor.TButton", command=self.open_environment_doctor)
+        self.btn_domain = ttk.Button(btn_grid, text="🌐 QUẢN LÝ TÊN MIỀN", style="Domain.TButton", command=self.open_domain_manager)
+        self.btn_optimize_dns = ttk.Button(btn_grid, text="⚡ TỐI ƯU DNS & XOÁ CACHE", style="Dns.TButton", command=self.optimize_dns_and_flush_cache)
 
-        self.btn_stop_all = ttk.Button(btn_sub_row, text="🛑 DỪNG TẤT CẢ", style="Danger.TButton", command=self.stop_all_services)
-        self.btn_stop_all.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self.btn_restart_tunnel = ttk.Button(btn_grid, text="🔄 KHỞI ĐỘNG LẠI TUNNEL", style="Link.TButton", command=self.restart_tunnel)
+        self.btn_open_backup = ttk.Button(btn_grid, text="📂 Xem Thư Mục Backup", style="Link.TButton", command=self.open_backup_folder)
+        self.btn_open_guide = ttk.Button(btn_grid, text="📖 Hướng Dẫn Cloudflare", style="Link.TButton", command=self.open_docs_guide)
 
-        self.btn_build = ttk.Button(btn_sub_row, text="🔨 Build Lại Web", style="Link.TButton", command=self.build_production)
-        self.btn_build.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
+        self.btn_pack_exe = ttk.Button(btn_grid, text="📦 ĐÓNG GÓI CÀI ĐẶT (EXE)", style="Pack.TButton", command=self.create_installer_exe)
+        self.btn_pack_drive = ttk.Button(btn_grid, text="🗜️ NÉN CHO DRIVE (RAR/ZIP)", style="Archive.TButton", command=self.pack_project_for_drive)
+        # Nút chuyển máy khác nút DRIVE ở chỗ nó KHÔNG loại trừ thư mục backups/
+        self.btn_pack_move = ttk.Button(btn_grid, text="🚚 NÉN ĐỂ CHUYỂN MÁY (KÈM CSDL)", style="Archive.TButton", command=self.pack_project_for_migration)
 
-        # Hàng nút CSDL: Sao Lưu & Nạp CSDL
-        btn_db_row = tk.Frame(btn_box, bg="#1e293b")
-        btn_db_row.pack(fill=tk.X, pady=(6, 0))
+        hang_nut = [
+            [self.btn_start_all, self.btn_dev, self.btn_stop_all],
+            [self.btn_build, self.btn_backup, self.btn_restore],
+            [self.btn_doctor, self.btn_domain, self.btn_optimize_dns],
+            [self.btn_restart_tunnel, self.btn_open_backup, self.btn_open_guide],
+            [self.btn_pack_exe, self.btn_pack_drive, self.btn_pack_move],
+        ]
+        for r, hang in enumerate(hang_nut):
+            for c, nut in enumerate(hang):
+                nut.grid(row=r, column=c, sticky="ew", padx=3, pady=3)
 
-        self.btn_backup = ttk.Button(btn_db_row, text="💾 SAO LƯU (Tự động 12:20)", style="Backup.TButton", command=self.backup_database)
-        self.btn_backup.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        # Cột phải: Bảng trạng thái dịch vụ + phím tắt truy cập nhanh
+        right_col = tk.Frame(top_grid, bg="#0f172a")
+        right_col.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
 
-        self.btn_restore = ttk.Button(btn_db_row, text="📥 NẠP / PHỤC HỒI CSDL", style="Success.TButton", command=self.restore_database)
-        self.btn_restore.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-
-        # Hàng nút Tiện ích 1: Bác Sĩ Môi Trường & Quản Lý Tên Miền
-        btn_tools_row = tk.Frame(btn_box, bg="#1e293b")
-        btn_tools_row.pack(fill=tk.X, pady=(6, 0))
-
-        self.btn_doctor = ttk.Button(btn_tools_row, text="🩺 BÁC SĨ MÔI TRƯỜNG", style="Doctor.TButton", command=self.open_environment_doctor)
-        self.btn_doctor.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-
-        self.btn_domain = ttk.Button(btn_tools_row, text="🌐 QUẢN LÝ TÊN MIỀN", style="Domain.TButton", command=self.open_domain_manager)
-        self.btn_domain.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-
-        # Hàng nút Tiện ích 2: Mở Thư Mục Backup & Tài Liệu Hướng Dẫn
-        btn_tools_row2 = tk.Frame(btn_box, bg="#1e293b")
-        btn_tools_row2.pack(fill=tk.X, pady=(6, 0))
-
-        self.btn_open_backup = ttk.Button(btn_tools_row2, text="📂 Xem Thư Mục Backup", style="Link.TButton", command=self.open_backup_folder)
-        self.btn_open_backup.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-
-        self.btn_open_guide = ttk.Button(btn_tools_row2, text="📖 Hướng Dẫn Cloudflare", style="Link.TButton", command=self.open_docs_guide)
-        self.btn_open_guide.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-
-        # Hàng nút Tiện ích 3: Tối Ưu DNS (1.1.1.1) & Khởi Động Lại Tunnel
-        btn_net_row = tk.Frame(btn_box, bg="#1e293b")
-        btn_net_row.pack(fill=tk.X, pady=(6, 0))
-
-        self.btn_optimize_dns = ttk.Button(btn_net_row, text="⚡ TỐI ƯU DNS & XOÁ CACHE", style="Dns.TButton", command=self.optimize_dns_and_flush_cache)
-        self.btn_optimize_dns.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-
-        self.btn_restart_tunnel = ttk.Button(btn_net_row, text="🔄 KHỞI ĐỘNG LẠI TUNNEL", style="Link.TButton", command=self.restart_tunnel)
-        self.btn_restart_tunnel.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-
-        # Hàng nút Đóng Gói & Đồng Bộ: Tạo File Cài Đặt (EXE) & Nén Google Drive (RAR/ZIP)
-        btn_pack_row = tk.Frame(btn_box, bg="#1e293b")
-        btn_pack_row.pack(fill=tk.X, pady=(6, 0))
-
-        self.btn_pack_exe = ttk.Button(btn_pack_row, text="📦 ĐÓNG GÓI CÀI ĐẶT (EXE)", style="Pack.TButton", command=self.create_installer_exe)
-        self.btn_pack_exe.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
-
-        self.btn_pack_drive = ttk.Button(btn_pack_row, text="🗜️ NÉN CHO DRIVE (RAR/ZIP)", style="Archive.TButton", command=self.pack_project_for_drive)
-        self.btn_pack_drive.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(4, 0))
-
-        # Cột phải: Bảng trạng thái dịch vụ (Status Dashboard)
-        status_card = tk.Frame(top_grid, bg="#1e293b", padx=14, pady=12, highlightthickness=1, highlightbackground="#334155")
-        status_card.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(8, 0))
+        status_card = tk.Frame(right_col, bg="#1e293b", padx=14, pady=8, highlightthickness=1, highlightbackground="#334155")
+        status_card.pack(fill=tk.X)
 
         tk.Label(status_card, text="📊 TRẠNG THÁI DỊCH VỤ", font=("Segoe UI", 10, "bold"), fg="#f1f5f9", bg="#1e293b").pack(anchor="w", pady=(0, 6))
 
@@ -703,24 +781,33 @@ class ServerManagerGUI:
             lbl_val.pack(side=tk.RIGHT)
             self.status_labels[key] = lbl_val
 
-        # 2.2 THANH PHÍM TẮT TRUY CẬP NHANH (QUICK ACCESS LINKS)
-        links_card = tk.Frame(main_container, bg="#1e293b", padx=14, pady=10, highlightthickness=1, highlightbackground="#334155")
-        links_card.pack(fill=tk.X, pady=(0, 10))
+        # 2.2 PHÍM TẮT TRUY CẬP NHANH - nằm gọn trong cột phải để dành chiều dọc cho nhật ký
+        links_card = tk.Frame(right_col, bg="#1e293b", padx=14, pady=8, highlightthickness=1, highlightbackground="#334155")
+        links_card.pack(fill=tk.X, pady=(10, 0))
 
         tk.Label(links_card, text="🔗 TRUY CẬP NHANH TRÊN TRÌNH DUYỆT", font=("Segoe UI", 9, "bold"), fg="#94a3b8", bg="#1e293b").pack(anchor="w", pady=(0, 6))
 
-        links_row = tk.Frame(links_card, bg="#1e293b")
-        links_row.pack(fill=tk.X)
+        links_grid = tk.Frame(links_card, bg="#1e293b")
+        links_grid.pack(fill=tk.X)
+        for c in range(3):
+            links_grid.columnconfigure(c, weight=1, uniform="link_cell")
 
-        ttk.Button(links_row, text="⚡ Web Prod (:3000)", style="Link.TButton", command=lambda: webbrowser.open(URLS["web_local"])).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(links_row, text="🛠️ Web Dev (:3001)", style="Link.TButton", command=lambda: webbrowser.open(URLS["web_dev"])).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(links_row, text="🗄️ Supabase Studio", style="Link.TButton", command=lambda: webbrowser.open(URLS["studio_local"])).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(links_row, text="🌍 chanhthu.click", style="Link.TButton", command=lambda: webbrowser.open(URLS["domain_chanhthu"])).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(links_row, text="🌍 sarita.click", style="Link.TButton", command=lambda: webbrowser.open(URLS["domain_sarita"])).pack(side=tk.LEFT, padx=(0, 6))
-        ttk.Button(links_row, text="📧 Test Mailpit", style="Link.TButton", command=lambda: webbrowser.open(URLS["mail_local"])).pack(side=tk.LEFT)
+        quick_links = [
+            ("⚡ Web Prod (:3000)", "web_local"),
+            ("🛠️ Web Dev (:3001)", "web_dev"),
+            ("🗄️ Supabase Studio", "studio_local"),
+            ("📧 Test Mailpit", "mail_local"),
+            ("🌍 chanhthu.click", "domain_chanhthu"),
+            ("🌍 sarita.click", "domain_sarita"),
+        ]
+        for i, (label, url_key) in enumerate(quick_links):
+            ttk.Button(
+                links_grid, text=label, style="Link.TButton",
+                command=lambda k=url_key: webbrowser.open(URLS[k])
+            ).grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=2)
 
         # 2.3 KHUNG NHẬT KÝ (LOG VIEWER)
-        logs_card = tk.Frame(main_container, bg="#1e293b", padx=14, pady=10, highlightthickness=1, highlightbackground="#334155")
+        logs_card = tk.Frame(main_container, bg="#1e293b", padx=14, pady=6, highlightthickness=1, highlightbackground="#334155")
         logs_card.pack(fill=tk.BOTH, expand=True)
 
         log_head = tk.Frame(logs_card, bg="#1e293b")
@@ -733,6 +820,7 @@ class ServerManagerGUI:
             bg="#0b0f19",
             fg="#e2e8f0",
             font=("Consolas", 9),
+            height=12,
             relief="flat",
             padx=8,
             pady=6
@@ -816,6 +904,131 @@ class ServerManagerGUI:
         self.btn_backup.configure(state="disabled")
         threading.Thread(target=self._backup_database_worker, daemon=True).start()
 
+    def _run_supabase_dump(self, backup_file: Path) -> tuple[bool, str]:
+        """Chạy Supabase CLI xuất toàn bộ dữ liệu (data-only) ra file .sql. Trả về (thành_công, thông_báo_lỗi)."""
+        # Dọn file tạm telemetry để tránh lỗi FileSystem.rename của Supabase CLI trên Windows
+        try:
+            supabase_home = Path.home() / ".supabase"
+            if supabase_home.exists():
+                for tmp_f in supabase_home.glob("telemetry.json.tmp.*"):
+                    try:
+                        tmp_f.unlink(missing_ok=True)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        dump_env = os.environ.copy()
+        dump_env["DO_NOT_TRACK"] = "1"
+        dump_env["SUPABASE_TELEMETRY"] = "false"
+
+        cmd = f'cmd.exe /c npx.cmd supabase db dump --local --data-only -f "{str(backup_file)}"'
+        res = subprocess.run(
+            cmd,
+            cwd=str(PROJECT_DIR),
+            shell=True,
+            capture_output=True,
+            text=True,
+            env=dump_env,
+            timeout=180
+        )
+
+        if res.returncode == 0 and backup_file.exists() and backup_file.stat().st_size > 0:
+            return True, ""
+        return False, (res.stderr or res.stdout or "Không xuất được file")
+
+    def _psql_local(self, sql: str, timeout: int = 120) -> subprocess.CompletedProcess:
+        """Chạy câu SQL trên PostgreSQL Local và trả kết quả về máy host."""
+        return subprocess.run(
+            ["docker", "exec", "-i", SUPABASE_DB_CONTAINER, "psql",
+             "-U", "postgres", "-d", "postgres", "-t", "-A", "-F", "|"],
+            input=sql,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout
+        )
+
+    def _list_db_tables(self) -> set:
+        """Liệt kê toàn bộ bảng nghiệp vụ đang tồn tại trong CSDL Local (dạng schema.bang)."""
+        schema_list = "','".join(RESTORE_SCHEMAS)
+        sql = (
+            "select n.nspname||'.'||c.relname from pg_class c "
+            "join pg_namespace n on n.oid = c.relnamespace "
+            f"where n.nspname in ('{schema_list}') and c.relkind in ('r','p');"
+        )
+        res = self._psql_local(sql)
+        if res.returncode != 0:
+            return set()
+        return {ln.strip() for ln in (res.stdout or "").splitlines() if ln.strip()}
+
+    @staticmethod
+    def _parse_backup_tables(file_path: str) -> dict:
+        """Đọc file backup, trả về {tên_bảng: số_dòng_mà_file_đáng_lẽ_sinh_ra}.
+
+        pg_dump chế độ data-only viết mỗi bảng thành một câu INSERT nhiều dòng,
+        mỗi dòng dữ liệu nằm trên một dòng bắt đầu bằng TAB.
+        """
+        pattern = re.compile(r'^INSERT INTO "([A-Za-z0-9_]+)"\."([A-Za-z0-9_]+)"')
+        counts = {}
+        current = None
+        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = pattern.match(line)
+                if m:
+                    current = f"{m.group(1)}.{m.group(2)}"
+                    counts[current] = 0
+                    if line.rstrip().endswith(");"):
+                        counts[current] = 1
+                        current = None
+                    continue
+                if current is None:
+                    continue
+                if line.startswith("\t"):
+                    counts[current] += 1
+                if line.rstrip().endswith(";"):
+                    current = None
+        return counts
+
+    def _verify_restore(self, expected: dict, wipe_tables: list) -> tuple:
+        """Đối chiếu số dòng thực tế trong CSDL với số dòng file backup đáng lẽ phải sinh ra.
+
+        Trả về (danh_sách_lệch, tổng_dong_kỳ_vọng, tổng_dong_thực_tế).
+        Danh sách rỗng nghĩa là phục hồi khớp tuyệt đối.
+        """
+        tables = sorted(set(expected) | set(wipe_tables))
+        parts = [
+            f"select '{t}' as tbl, count(*) as n from \"{t.split('.', 1)[0]}\".\"{t.split('.', 1)[1]}\""
+            for t in tables
+        ]
+        res = self._psql_local(" union all ".join(parts) + ";", timeout=300)
+        if res.returncode != 0:
+            return [("? - không đếm được: " + (res.stderr or "").strip()[:120])], 0, 0
+
+        actual = {}
+        for line in (res.stdout or "").splitlines():
+            if "|" not in line:
+                continue
+            tbl, _, n = line.strip().rpartition("|")
+            try:
+                actual[tbl] = int(n)
+            except ValueError:
+                continue
+
+        mismatches = []
+        for t in tables:
+            want = expected.get(t, 0)
+            got = actual.get(t)
+            if got is None:
+                mismatches.append(f"{t}: không đọc được số dòng")
+            elif got != want:
+                mismatches.append(f"{t}: kỳ vọng {want}, thực tế {got}")
+
+        total_want = sum(expected.get(t, 0) for t in tables)
+        total_got = sum(actual.get(t, 0) for t in tables)
+        return mismatches, total_want, total_got
+
     def _backup_database_worker(self, is_auto: bool = False):
         log_prefix = "⏰ [TỰ ĐỘNG 12:20]" if is_auto else "💾"
         self.log(f"{log_prefix} ================= BẮT ĐẦU SAO LƯU DỮ LIỆU CSDL =================")
@@ -826,34 +1039,9 @@ class ServerManagerGUI:
 
             self.log(f"📦 Đang xuất dữ liệu từ Supabase Local ra: {backup_file.name}...")
 
-            # Dọn dẹp file tạm telemetry nếu có để tránh lỗi FileSystem.rename của Supabase CLI trên Windows
-            try:
-                supabase_home = Path.home() / ".supabase"
-                if supabase_home.exists():
-                    for tmp_f in supabase_home.glob("telemetry.json.tmp.*"):
-                        try:
-                            tmp_f.unlink(missing_ok=True)
-                        except Exception:
-                            pass
-            except Exception:
-                pass
+            ok, err_msg = self._run_supabase_dump(backup_file)
 
-            dump_env = os.environ.copy()
-            dump_env["DO_NOT_TRACK"] = "1"
-            dump_env["SUPABASE_TELEMETRY"] = "false"
-
-            cmd = f'cmd.exe /c npx.cmd supabase db dump --local --data-only -f "{str(backup_file)}"'
-            res = subprocess.run(
-                cmd,
-                cwd=str(PROJECT_DIR),
-                shell=True,
-                capture_output=True,
-                text=True,
-                env=dump_env,
-                timeout=180
-            )
-
-            if res.returncode == 0 and backup_file.exists() and backup_file.stat().st_size > 0:
+            if ok:
                 file_size_kb = round(backup_file.stat().st_size / 1024, 2)
                 self.log(f"✅ {log_prefix} Sao lưu CSDL THÀNH CÔNG! Dung lượng: {file_size_kb} KB")
                 self.log(f"📁 File đã lưu tại: {str(backup_file)}")
@@ -891,60 +1079,184 @@ class ServerManagerGUI:
 
         backup_dir = self.get_backup_dir()
         file_path = filedialog.askopenfilename(
-            title="Chọn file sao lưu CSDL (.sql) để nạp vào hệ thống",
+            title="Chọn file sao lưu CSDL (.sql) để phục hồi vào hệ thống",
             filetypes=[("SQL Files (*.sql)", "*.sql"), ("Tất Cả Các File (*.*)", "*.*")],
             initialdir=str(backup_dir)
         )
         if not file_path:
             return
 
+        # Kiểm tra tiền đề TRƯỚC khi cho phép ghi: file này có gì, CSDL hiện tại có nhận được không
+        try:
+            backup_tables = self._parse_backup_tables(file_path)
+        except Exception as e:
+            messagebox.showerror("Lỗi Đọc File", f"Không đọc được file backup:\n{e}")
+            return
+
+        if not backup_tables:
+            messagebox.showerror(
+                "File Không Hợp Lệ",
+                "Không tìm thấy câu INSERT dữ liệu nào trong file này.\n\nFile có thể rỗng, hoặc được tạo bởi công cụ khác không phải nút SAO LƯU."
+            )
+            return
+
+        db_tables = self._list_db_tables()
+        if not db_tables:
+            messagebox.showerror("Lỗi Kết Nối", "Không đọc được danh sách bảng từ CSDL Supabase Local.")
+            return
+
+        missing = sorted(t for t in backup_tables if t not in db_tables)
+        if missing:
+            preview = "\n".join(missing[:10]) + ("\n..." if len(missing) > 10 else "")
+            messagebox.showerror(
+                "Không Tương Thích Với Cấu Trúc Hiện Tại",
+                f"File backup này cần {len(missing)} bảng mà CSDL hiện tại không có:\n\n{preview}\n\n"
+                "File được sao lưu từ một phiên bản cấu trúc khác.\n"
+                "KHÔNG THỂ phục hồi bằng nút này — cần chạy migration đúng phiên bản trước."
+            )
+            return
+
+        wipe_tables = sorted(db_tables - RESTORE_PROTECTED_TABLES)
+        only_now = sorted(set(wipe_tables) - set(backup_tables))
+
+        note = ""
+        if only_now:
+            note = (f"\n\n{len(only_now)} bảng KHÔNG có trong file backup nên sau khi phục hồi sẽ ở trạng thái rỗng\n"
+                    f"(ở thời điểm sao lưu chúng chưa có dữ liệu). Nếu chúng đang có dữ liệu tạo sau đó, phần này sẽ mất:\n"
+                    + ", ".join(only_now[:8]) + ("\n..." if len(only_now) > 8 else ""))
+
         confirm = messagebox.askyesno(
-            "Xác Nhận Nạp CSDL",
-            f"Bạn có chắc muốn nạp dữ liệu từ file:\n{Path(file_path).name}\n\nvào hệ thống Supabase Local không?\n(Dữ liệu từ file này sẽ được phục hồi vào CSDL hiện tại)"
+            "Xác Nhận Phục Hồi CSDL",
+            f"File nguồn: {Path(file_path).name}\n"
+            f"Số bảng sẽ được phục hồi: {len(backup_tables)}\n\n"
+            f"⚠️ TOÀN BỘ dữ liệu hiện tại của {len(wipe_tables)} bảng sẽ bị XÓA trước khi nạp.\n"
+            f"Hệ thống sẽ trở về đúng trạng thái lúc sao lưu. Mọi dữ liệu tạo sau đó sẽ mất.\n"
+            f"Ứng dụng web sẽ tạm thời không truy vấn được trong lúc nạp."
+            + note
+            + "\n\n(Tự động sao lưu trạng thái hiện tại trước khi ghi để có thể hoàn tác.)"
         )
         if not confirm:
+            self.log("⛔ Đã hủy: người dùng không xác nhận phục hồi CSDL.")
+            return
+
+        typed = messagebox.askstring(
+            "Xác Nhận Lần Cuối",
+            "Thao tác này XÓA toàn bộ dữ liệu hiện tại.\n\nGõ đúng chữ NAP để tiếp tục:",
+            parent=self.root
+        )
+        if (typed or "").strip().upper() != "NAP":
+            self.log("⛔ Đã hủy: không có xác nhận NAP.")
             return
 
         self.is_restoring = True
         self.btn_restore.configure(state="disabled")
-        threading.Thread(target=self._restore_database_worker, args=(file_path,), daemon=True).start()
+        threading.Thread(target=self._restore_database_worker, args=(file_path, wipe_tables, backup_tables), daemon=True).start()
 
-    def _restore_database_worker(self, file_path: str):
+    def _restore_database_worker(self, file_path: str, wipe_tables: list, expected: dict):
         p = Path(file_path)
-        self.log(f"📥 ================= BẮT ĐẦU NẠP CSDL TỪ: {p.name} =================")
+        self.log(f"📥 ================= BẮT ĐẦU PHỤC HỒI CSDL TỪ: {p.name} =================")
+        err_file = None
         try:
-            file_size_kb = round(p.stat().st_size / 1024, 2)
-            self.log(f"📦 Kích thước file: {file_size_kb} KB. Đang nạp vào Supabase PostgreSQL container...")
-
-            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-                res = subprocess.run(
-                    ["docker", "exec", "-i", "supabase_db_anywarehouse", "psql", "-U", "postgres", "-d", "postgres"],
-                    stdin=f,
-                    capture_output=True,
-                    text=True,
-                    timeout=300
-                )
-
-            err_out = res.stderr or ""
-            if res.returncode == 0:
-                self.log(f"✅ Nạp CSDL THÀNH CÔNG 100%! Dữ liệu từ {p.name} đã được phục hồi.")
-                self.root.after(0, lambda: messagebox.showinfo(
-                    "Nạp CSDL Thành Công",
-                    f"Đã phục hồi dữ liệu thành công từ file:\n{p.name}\n\nToàn bộ dữ liệu mới đã sẵn sàng sử dụng!"
+            # BƯỚC 1 - An toàn: phải có bản sao lưu trạng thái hiện tại trước khi ghi đè
+            safety_file = self.get_backup_dir() / f"pre_restore_{time.strftime('%Y%m%d_%H%M%S')}.sql"
+            self.log(f"🛡️ Đang sao lưu dữ liệu hiện tại để phòng hoàn tác: {safety_file.name}...")
+            ok, err_msg = self._run_supabase_dump(safety_file)
+            if not ok:
+                self.log(f"❌ KHÔNG THỂ sao lưu dữ liệu hiện tại: {err_msg}\n>>> Dừng lại, CSDL chưa bị thay đổi một dòng nào.")
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Đã Hủy Phục Hồi",
+                    f"Không sao lưu được dữ liệu hiện tại nên hệ thống KHÔNG ghi gì cả.\n\n{err_msg[:300]}"
                 ))
-            else:
-                self.log(f"⚠️ Quá trình nạp hoàn tất với mã {res.returncode}. Thông báo:\n{err_out[:500]}")
-                if "FATAL" in err_out.upper() or "ERROR:" in err_out:
-                    self.root.after(0, lambda: messagebox.showwarning(
-                        "Thông Báo Nạp CSDL",
-                        f"Nạp hoàn tất với một số lưu ý:\n\n{err_out[:350]}..."
+                return
+            self.log(f"✅ Đã giữ lại trạng thái hiện tại tại: {safety_file.name}")
+
+            # BƯỚC 2 - Nạp: làm trống rồi ghi lại, TẤT CẢ TRONG MỘT TRANSACTION
+            preamble = (
+                "SET session_replication_role = replica;\n"
+                "TRUNCATE TABLE "
+                + ", ".join(f'"{s}"."{t}"' for s, t in (w.split(".", 1) for w in wipe_tables))
+                + ";\n"
+            )
+
+            file_size_kb = round(p.stat().st_size / 1024, 2)
+            self.log(f"📦 Kích thước file: {file_size_kb} KB. Đang nạp (transaction đơn, dừng ngay khi có lỗi)...")
+
+            err_fd, err_path = tempfile.mkstemp(prefix="restore_err_", suffix=".txt")
+            err_file = Path(err_path)
+            started = time.time()
+            with os.fdopen(err_fd, "wb") as err_stream, open(file_path, "rb") as sql_stream:
+                proc = subprocess.Popen(
+                    ["docker", "exec", "-i", SUPABASE_DB_CONTAINER, "psql",
+                     "-U", "postgres", "-d", "postgres",
+                     "-v", "ON_ERROR_STOP=1", "--single-transaction", "-q"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.DEVNULL,
+                    stderr=err_stream,
+                )
+                try:
+                    proc.stdin.write(preamble.encode("utf-8"))
+                    shutil.copyfileobj(sql_stream, proc.stdin, 1024 * 1024)
+                except BrokenPipeError:
+                    pass
+                finally:
+                    try:
+                        proc.stdin.close()
+                    except Exception:
+                        pass
+                try:
+                    rc = proc.wait(timeout=900)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    raise RuntimeError("Quá trình nạp vượt quá 900 giây và đã bị dừng.")
+            elapsed = round(time.time() - started, 1)
+
+            err_out = err_file.read_text(encoding="utf-8", errors="replace")
+            error_lines = [ln for ln in err_out.splitlines() if ln.startswith("ERROR:")]
+
+            # BƯỚC 3 - Phán quyết dựa trên lỗi THỰC TẾ, không chỉ mã thoát
+            if rc == 0 and not error_lines:
+                self.log(f"✅ Nạp xong sau {elapsed}s. Đang ĐỐI CHIẾU SỐ DÒNG từng bảng với file backup...")
+                mismatches, want_total, got_total = self._verify_restore(expected, wipe_tables)
+                checked = len(set(expected) | set(wipe_tables))
+                if not mismatches:
+                    self.log(f"✅ PHỤC HỒI THÀNH CÔNG & KHỚP TUYỆT ĐỐI: {checked} bảng, {got_total} dòng, "
+                             f"không bảng nào lệch so với file {p.name}.")
+                    self.root.after(0, lambda: messagebox.showinfo(
+                        "Phục Hồi Thành Công (đã kiểm chứng)",
+                        f"Đã đối chiếu tự động {checked} bảng với file backup:\n"
+                        f"Tổng số dòng khớp tuyệt đối: {got_total:,} dòng\n\n"
+                        f"Không có bảng nào bị lệch. Thời gian: {elapsed}s\n\n"
+                        f"Nếu đây KHÔNG phải dữ liệu bạn muốn, trạng thái trước khi nạp nằm ở:\n{safety_file.name}"
                     ))
                 else:
-                    self.root.after(0, lambda: messagebox.showinfo("Nạp CSDL Thành Công", f"Đã nạp dữ liệu xong từ {p.name}!"))
+                    preview = "\n".join(mismatches[:12]) + ("\n..." if len(mismatches) > 12 else "")
+                    self.log(f"⚠️ Nạp xong nhưng LỆCH {len(mismatches)}/{checked} bảng. "
+                             f"Kỳ vọng {want_total} dòng, thực tế {got_total}:\n{preview}")
+                    self.root.after(0, lambda: messagebox.showwarning(
+                        "Phục Hồi XONG nhưng SỐ LIỆU LỆCH",
+                        f"{len(mismatches)}/{checked} bảng có số dòng KHÁC file backup:\n\n{preview}\n\n"
+                        f"Tổng kỳ vọng: {want_total:,} dòng | Thực tế: {got_total:,} dòng\n\n"
+                        f"Dữ liệu đã ghi thành công nhưng KHÔNG trùng bản sao lưu.\n"
+                        f"Trạng thái TRƯỚC khi nạp vẫn còn ở: {safety_file.name}\n"
+                        f"Nếu muốn hoàn tác, nạp lại chính file đó."
+                    ))
+            else:
+                reason = error_lines[0] if error_lines else f"psql thoát với mã {rc}"
+                self.log(f"❌ PHỤC HỒI THẤT BẠI sau {elapsed}s: {reason}\n>>> Toàn bộ thay đổi đã được ROLLBACK, CSDL vẫn nguyên như trước.")
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Phục Hồi THẤT BẠI (đã hoàn tác)",
+                    f"CSDL của bạn VẪN NGUYÊN trạng thái cũ vì giao dịch đã bị rollback.\n\nLỗi đầu tiên:\n{reason[:400]}\n\n"
+                    f"Bản sao lưu dự phòng: {safety_file.name}"
+                ))
         except Exception as e:
             self.log(f"❌ Ngoại lệ khi nạp CSDL: {e}")
             self.root.after(0, lambda: messagebox.showerror("Lỗi Nạp CSDL", f"Không thể nạp dữ liệu: {e}"))
         finally:
+            if err_file is not None:
+                try:
+                    err_file.unlink(missing_ok=True)
+                except Exception:
+                    pass
             self.is_restoring = False
             self.root.after(0, lambda: self.btn_restore.configure(state="normal"))
 
@@ -1102,6 +1414,128 @@ class ServerManagerGUI:
         finally:
             self.is_archiving_project = False
             self.root.after(0, lambda: self.btn_pack_drive.configure(state="normal"))
+
+    def pack_project_for_migration(self):
+        """Đóng gói CẢ thư mục dự án lẫn ảnh chụp CSDL để bê sang máy tính khác"""
+        if self.is_archiving_project:
+            return
+        self.is_archiving_project = True
+        self.btn_pack_drive.configure(state="disabled")
+        self.btn_pack_move.configure(state="disabled")
+        threading.Thread(target=self._pack_project_for_migration_worker, daemon=True).start()
+
+    def _pg_image_tag(self) -> str:
+        res = subprocess.run(
+            ["docker", "inspect", SUPABASE_DB_CONTAINER, "--format", "{{.Config.Image}}"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
+        )
+        return (res.stdout or "").strip() or "không đọc được"
+
+    def _pack_project_for_migration_worker(self):
+        self.log("🚚 ================= BẮT ĐẦU NÉN ĐỂ CHUYỂN MÁY (KÈM CSDL) =================")
+        try:
+            backup_dir = self.get_backup_dir()
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            dump_file = backup_dir / f"migration_dump_{timestamp}.sql"
+
+            # BƯỚC 1 - Ảnh chụp CSDL. Thiếu nó thì gói nén chỉ là mã nguồn: kho trống rỗng.
+            self.log(f"📦 [1/3] Đang xuất ảnh chụp CSDL ra: {dump_file.name} ...")
+            ok, err_msg = self._run_supabase_dump(dump_file)
+            if not ok:
+                self.log(f"❌ KHÔNG xuất được ảnh CSDL: {err_msg}\n>>> Dừng lại, chưa tạo gói nén nào.")
+                self.root.after(0, lambda: messagebox.showerror(
+                    "Chưa tạo gói chuyển máy",
+                    f"Không xuất được ảnh CSDL nên gói nén sẽ vô nghĩa (máy mới chỉ có mã nguồn, kho trống).\n\n"
+                    f"Lỗi: {err_msg}\n\nKiểm tra Supabase Local đã chạy chưa rồi bấm lại."
+                ))
+                return
+
+            expected = self._parse_backup_tables(str(dump_file))
+            db_tables = len(expected)
+            db_rows = sum(expected.values())
+            self.log(f"✅ Ảnh CSDL OK: {db_tables} bảng có dữ liệu, {db_rows} dòng, {round(dump_file.stat().st_size/1024/1024, 1)} MB")
+
+            # BƯỚC 2 - Gói nén: KHÔNG loại trừ backups/, nhưng loại archive cũ để tránh nén lồng nén
+            winrar_exe = None
+            for p in (Path(r"C:\Program Files\WinRAR\Rar.exe"),
+                      Path(r"C:\Program Files\WinRAR\WinRAR.exe"),
+                      Path(r"C:\Program Files (x86)\WinRAR\Rar.exe")):
+                if p.exists():
+                    winrar_exe = p
+                    break
+
+            checklist_file = backup_dir / "CHECKLIST_CHUYEN_MAY.txt"
+            pg_image = self._pg_image_tag()
+
+            if winrar_exe:
+                out_file = backup_dir / f"ModularWMS_ChuyenMay_{timestamp}.rar"
+                self.log("🗜️ [2/3] WinRAR: nén mã nguồn + node_modules + cả ảnh CSDL (bỏ .next, .rar/.zip cũ)...")
+                cmd = (
+                    f'"{str(winrar_exe)}" a -r -s -m3 -ep1 '
+                    f'-x"backups\\*.rar" -x"backups\\*.zip" -x"backups\\.tmp.driveupload*" '
+                    f'-x"dist_installer\\*" -x".next\\*" "{str(out_file)}" *'
+                )
+            else:
+                out_file = backup_dir / f"ModularWMS_ChuyenMay_{timestamp}.zip"
+                self.log("🗜️ [2/3] Không có WinRAR, dùng PowerShell ZIP (ảnh CSDL nằm ở gốc file zip)...")
+                ps = (
+                    "$dest = '" + str(out_file) + "'; "
+                    "$root = @(Get-ChildItem -Force -Path '.' | Where-Object { $_.Name -notin @('backups','dist_installer','.next') }); "
+                    "$data = @(Get-ChildItem -Path 'backups\\*' -Include '*.sql','CHECKLIST_CHUYEN_MAY.txt' -Force); "
+                    "Compress-Archive -Path ($root + $data) -DestinationPath $dest -CompressionLevel Optimal"
+                )
+                cmd = f'powershell.exe -NoProfile -Command "{ps}"'
+
+            # Checklist ghi TRƯỚC để nó được nén vào luôn
+            checklist_file.write_text(
+                build_migration_checklist_text(
+                    out_file.name, dump_file.name, 0, db_tables, db_rows, pg_image
+                ),
+                encoding="utf-8-sig",
+            )
+            self.log(f"📝 Đã ghi {checklist_file.name} (số MB sẽ cập nhật sau khi nén xong)")
+
+            proc = subprocess.run(cmd, cwd=str(PROJECT_DIR), shell=True, capture_output=True, text=True,
+                                  encoding="utf-8", errors="replace", timeout=5400)
+
+            if not (out_file.exists() and out_file.stat().st_size > 0):
+                err_msg = (proc.stderr or proc.stdout or "Không tạo được file nén").strip()
+                self.log(f"❌ Lỗi khi nén: {err_msg[:400]}")
+                self.root.after(0, lambda: messagebox.showerror("Lỗi Nén Chuyển Máy", f"Không tạo được gói nén:\n{err_msg[:800]}"))
+                return
+
+            # Ghi lại checklist lần cuối với dung lượng thật
+            size_mb = round(out_file.stat().st_size / (1024 * 1024), 2)
+            checklist_file.write_text(
+                build_migration_checklist_text(
+                    out_file.name, dump_file.name, size_mb, db_tables, db_rows, pg_image
+                ),
+                encoding="utf-8-sig",
+            )
+
+            self.log(f"✅ GÓI CHUYỂN MÁY SẴN SÀNG: {out_file.name} ({size_mb} MB)")
+            self.log(f"   Bên trong có: {dump_file.name} ({db_tables} bảng có dữ liệu / {db_rows} dòng) + CHECKLIST_CHUYEN_MAY.txt")
+            self.log(f"📁 {str(out_file)}")
+            if sys.platform == "win32":
+                os.startfile(str(backup_dir))
+            self.root.after(0, lambda: messagebox.showinfo(
+                "Gói Chuyển Máy Đã Xong",
+                f"{out_file.name}\nDung lượng: {size_mb} MB\n\n"
+                f"ĐÃ NHÚNG BÊN TRONG:\n• {dump_file.name}  ({db_tables} bảng, {db_rows} dòng)\n"
+                f"• CHECKLIST_CHUYEN_MAY.txt (7 bước chạy trên máy mới)\n\n"
+                f"HAI BẪY PHẢI LÀM TRÊN MÁY MỚI (checklist nhắc lại):\n"
+                f"1) Key Supabase Local gắn với máy cũ -> phải chạy `npx supabase status`\n"
+                f"   rồi dán anon_key + service_role mới vào .env.local, nếu không sẽ 401.\n"
+                f"2) .next không có trong gói -> bấm 'Build Production' một lần.\n\n"
+                f"Chú ý: file nén chứa mật khẩu/refresh token. Giữ riêng tư, không commit."
+            ))
+        except Exception as e:
+            self.log(f"❌ Ngoại lệ khi nén chuyển máy: {e}")
+            self.root.after(0, lambda: messagebox.showerror("Lỗi Ngoại Lệ", f"Lỗi: {e}"))
+        finally:
+            self.is_archiving_project = False
+            self.root.after(0, lambda: self.btn_pack_drive.configure(state="normal"))
+            self.root.after(0, lambda: self.btn_pack_move.configure(state="normal"))
 
     def build_production(self):
         """Build lại bản production Next.js"""

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
-import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle, Edit } from 'lucide-react'
+import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle, Edit, ShieldCheck, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
 import { useSystem } from '@/contexts/SystemContext'
@@ -30,7 +30,7 @@ interface Session {
     warehouse_path?: string
     participants?: string[]
     participant_names?: string[]
-    stats?: { total: number; checked: number; discrepancy: number }
+    stats?: { total: number; checked: number; discrepancy: number; modified: number; resolved: number }
 }
 
 interface InvItem {
@@ -44,6 +44,7 @@ interface InvItem {
     checked_at: string | null
     lot_id_snapshot: string | null
     is_modified?: boolean
+    resolved?: boolean
 }
 
 interface Zone {
@@ -160,6 +161,8 @@ export default function InternalInventoryPage() {
     // Lot Edit State
     const [editingLot, setEditingLot] = useState<Lot | null>(null)
     const [editingPositionId, setEditingPositionId] = useState<string | null>(null)
+    const [dismissedNotePos, setDismissedNotePos] = useState<string | null>(null)
+    const [refreshingPosId, setRefreshingPosId] = useState<string | null>(null)
     const [showLotEdit, setShowLotEdit] = useState(false)
 
     // Common Data for LotForm
@@ -239,10 +242,10 @@ export default function InternalInventoryPage() {
             }
 
             const sessionIds = (data || []).map(s => s.id)
-            let statsMap: Record<string, { total: number; checked: number; discrepancy: number }> = {}
+            let statsMap: Record<string, { total: number; checked: number; discrepancy: number; modified: number; resolved: number }> = {}
 
             if (sessionIds.length > 0) {
-                const allItems = await fetchAll((supabase as any).from('internal_inventory_items').select('session_id, checked, note').in('session_id', sessionIds))
+                const allItems = await fetchAll((supabase as any).from('internal_inventory_items').select('session_id, checked, note, is_modified, resolved').in('session_id', sessionIds))
 
                 data?.forEach(s => {
                     let virtualWhId: string | null = null
@@ -260,13 +263,15 @@ export default function InternalInventoryPage() {
                     } else {
                         total = groupedPos.length
                     }
-                    statsMap[s.id] = { total, checked: 0, discrepancy: 0 }
+                    statsMap[s.id] = { total, checked: 0, discrepancy: 0, modified: 0, resolved: 0 }
                 })
 
                 allItems?.forEach((item: any) => {
                     if (statsMap[item.session_id]) {
                         if (item.checked) statsMap[item.session_id].checked++
-                        if (item.note) statsMap[item.session_id].discrepancy++
+                        if (item.note && !item.resolved) statsMap[item.session_id].discrepancy++
+                        if (item.note && item.resolved) statsMap[item.session_id].resolved++
+                        if (item.is_modified) statsMap[item.session_id].modified++
                     }
                 })
             }
@@ -318,7 +323,7 @@ export default function InternalInventoryPage() {
                     warehouse_path: getZonePath(effectiveWhId),
                     participants,
                     participant_names: participants.map(id => memberMap[id] || 'N/A').filter(n => n !== 'N/A'),
-                    stats: statsMap[s.id] || { total: 0, checked: 0, discrepancy: 0 }
+                    stats: statsMap[s.id] || { total: 0, checked: 0, discrepancy: 0, modified: 0, resolved: 0 }
                 }
             }))
         } catch (e: any) {
@@ -395,7 +400,7 @@ export default function InternalInventoryPage() {
 
             try {
                 const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData] = await Promise.all([
-                    fetchAllPaginated('products', q => q.eq('system_code', systemType).order('name')),
+                    fetchAllPaginated('products', q => q.eq('system_type', systemType).order('name')),
                     fetchAllPaginated('suppliers', q => q.eq('system_code', systemType).order('name')),
                     fetchAllPaginated('qc_info', q => q.eq('system_code', systemType).order('name')),
                     fetchAllPaginated('branches', q => q.order('is_default', { ascending: false }).order('name')),
@@ -584,6 +589,7 @@ export default function InternalInventoryPage() {
 
     const handleEditLot = (lotId: string, positionId: string) => {
         setEditingPositionId(positionId)
+        setDismissedNotePos(null)
         // Fetch full lot details if needed, or construct from lotInfo
         const loadFullLot = async () => {
             const { data, error } = await (supabase as any)
@@ -606,6 +612,13 @@ export default function InternalInventoryPage() {
         loadFullLot()
     }
 
+    const handleCreateLotAtPosition = (positionId: string) => {
+        setEditingPositionId(positionId)
+        setDismissedNotePos(null)
+        setEditingLot(null)
+        setShowLotEdit(true)
+    }
+
     const onLotEditSuccess = async (updatedLot: any) => {
         if (!selectedSession || !profile) return
         const posId = editingPositionId
@@ -619,22 +632,34 @@ export default function InternalInventoryPage() {
         const affectedPosId = posId || positions.find(p => p.lot_id === updatedLot.id)?.id
         if (!affectedPosId) return
 
-        // Update is_modified in internal_inventory_items
         try {
             const existing = items.find(i => i.position_id === affectedPosId)
             const pos = positions.find(p => p.id === affectedPosId)
+
+            // Vị trí trống được tạo LOT mới từ bút → gán lot vào vị trí và tự tích kiểm
+            const isNewAssignment = !pos?.lot_id && !!updatedLot?.id
+            if (isNewAssignment) {
+                const { error: linkErr } = await (supabase as any)
+                    .from('positions')
+                    .update({ lot_id: updatedLot.id })
+                    .eq('id', affectedPosId)
+                if (linkErr) {
+                    showToast('Lỗi gán LOT vào vị trí: ' + linkErr.message, 'error')
+                    return
+                }
+            }
 
             const { data, error } = await (supabase as any).from('internal_inventory_items' as any).upsert({
                 session_id: selectedSession.id,
                 position_id: affectedPosId,
                 zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
-                checked: existing?.checked || false,
+                checked: existing?.checked || isNewAssignment,
                 note: existing?.note || null,
                 checked_by: profile.id,
                 checked_at: new Date().toISOString(),
-                lot_id_snapshot: pos?.lot_id || null,
+                lot_id_snapshot: updatedLot?.id || pos?.lot_id || null,
                 is_modified: true
-            }, { onConflict: 'session_id,position_id' }).select()
+            }, { onConflict: 'session_id,position_id' })
 
             if (error) {
                 showToast('Lỗi cập nhật trạng thái: ' + error.message, 'error')
@@ -645,7 +670,7 @@ export default function InternalInventoryPage() {
 
             // Refresh detailed data silently to preserve UX
             loadDetail(selectedSession, true)
-            showToast('Đã cập nhật thông tin LOT thành công', 'success')
+            showToast(isNewAssignment ? 'Đã tạo LOT, gán vào vị trí và đánh dấu đã kiểm' : 'Đã cập nhật thông tin LOT thành công', 'success')
         } catch (e: any) {
             console.error('Catch error:', e)
             showToast('Lỗi cập nhật trạng thái: ' + e.message, 'error')
@@ -701,9 +726,11 @@ export default function InternalInventoryPage() {
             return
         }
         const existing = items.find(i => i.position_id === positionId)
+        // Sửa/xóa ghi chú coi như phát sinh lại sai lệch -> phải xác nhận xử lý lại
+        const newResolved = note !== (existing?.note || '') ? false : (existing?.resolved || false)
 
         setItems(prev => {
-            if (existing) return prev.map(i => i.position_id === positionId ? { ...i, note } : i)
+            if (existing) return prev.map(i => i.position_id === positionId ? { ...i, note, resolved: newResolved } : i)
             const pos = positions.find(p => p.id === positionId)
             return [...prev, {
                 id: crypto.randomUUID(),
@@ -726,12 +753,40 @@ export default function InternalInventoryPage() {
                 zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
                 checked: existing?.checked || false,
                 note,
+                resolved: newResolved,
                 checked_by: profile.id,
                 checked_at: new Date().toISOString(),
                 lot_id_snapshot: pos?.lot_id || null,
             }, { onConflict: 'session_id,position_id' })
         } catch (e) {
             console.error('Note update error:', e)
+        }
+    }
+
+    const toggleResolved = async (positionId: string, resolved: boolean) => {
+        if (!selectedSession || !profile) return
+        if (selectedSession.status === 'completed') {
+            showToast('Phiếu đã được khóa, không thể chỉnh sửa', 'warning')
+            return
+        }
+        const existing = items.find(i => i.position_id === positionId)
+        setItems(prev => prev.map(i => i.position_id === positionId ? { ...i, resolved } : i))
+
+        try {
+            const pos = positions.find(p => p.id === positionId)
+            await (supabase as any).from('internal_inventory_items').upsert({
+                session_id: selectedSession.id,
+                position_id: positionId,
+                zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
+                checked: existing?.checked || false,
+                note: existing?.note || null,
+                resolved,
+                checked_by: profile.id,
+                checked_at: new Date().toISOString(),
+                lot_id_snapshot: pos?.lot_id || null,
+            }, { onConflict: 'session_id,position_id' })
+        } catch (e) {
+            console.error('Resolve toggle error:', e)
         }
     }
 
@@ -886,9 +941,12 @@ export default function InternalInventoryPage() {
         const total = zonePos.length
         const occupied = zonePos.filter(p => p.lot_id).length
         const checked = zonePos.filter(p => itemsMap[p.id]?.checked).length
-        const discrepancy = zonePos.filter(p => itemsMap[p.id]?.note).length
+        // Sai lệch = còn ghi chú CHƯA được bấm "Đã xử lý" (tích V tiến độ không ảnh hưởng)
+        const discrepancy = zonePos.filter(p => itemsMap[p.id]?.note && !itemsMap[p.id]?.resolved).length
+        const resolved = zonePos.filter(p => itemsMap[p.id]?.note && itemsMap[p.id]?.resolved).length
+        const modified = zonePos.filter(p => itemsMap[p.id]?.is_modified).length
         const pct = total > 0 ? Math.round((checked / total) * 100) : 0
-        return { total, occupied, checked, discrepancy, pct }
+        return { total, occupied, checked, discrepancy, resolved, modified, pct }
     }, [getDescendantIds, groupedData.positions, itemsMap])
 
     const buildingChildren = useMemo(() => {
@@ -995,25 +1053,83 @@ export default function InternalInventoryPage() {
         setExpandedZones(new Set())
     }
 
+    const copyQuick = async (text: string, label: string) => {        if (!text) return
+        try {
+            await navigator.clipboard.writeText(text)
+            showToast(`Đã copy ${label}: ${text}`, 'success')
+        } catch (e) {
+            console.error('Copy error:', e)
+            showToast('Không thể copy', 'error')
+        }
+    }
+
+    const refreshPositionLot = async (pos: any) => {
+        if (refreshingPosId) return
+        setRefreshingPosId(pos.id)
+        try {
+            const { data: fresh, error } = await (supabase as any)
+                .from('positions')
+                .select('id, code, lot_id, zone_id')
+                .eq('id', pos.id)
+                .single()
+            if (error || !fresh) {
+                showToast('Không tải được dữ liệu ô này', 'error')
+                return
+            }
+            setPositions(prev => prev.map(p => p.id === fresh.id ? { ...p, ...fresh } : p))
+
+            if (fresh.lot_id) {
+                const { data: lot } = await (supabase as any)
+                    .from('lots')
+                    .select('id, code, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)')
+                    .eq('id', fresh.lot_id)
+                    .single()
+                if (lot) {
+                    setLotInfo(prev => ({
+                        ...prev,
+                        [lot.id]: {
+                            code: lot.code,
+                            tags: lot.lot_tags?.map((t: any) => t.tag) || [],
+                            items: lot.lot_items?.map((li: any) => ({
+                                product_name: li.products?.name,
+                                sku: li.products?.sku,
+                                product_color: li.products?.color,
+                                quantity: li.quantity,
+                                unit: li.unit || li.products?.unit,
+                            })) || []
+                        }
+                    }))
+                }
+            }
+            showToast(`Đã tải lại ô ${fresh.code}`, 'success')
+        } catch (e: any) {
+            showToast('Lỗi tải lại ô: ' + e.message, 'error')
+        } finally {
+            setRefreshingPosId(null)
+        }
+    }
+
     const renderInventoryPosition = (pos: any, isHall: boolean = false) => {
         const item = itemsMap[pos.id]
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null
         const isChecked = item?.checked
         const hasNote = !!item?.note
+        const isResolved = !!item?.resolved
+        const isDiscrepancy = hasNote && !isResolved
         const isModified = !!item?.is_modified
         const locked = selectedSession?.status === 'completed'
 
         const tone = locked
             ? 'bg-stone-50 border-stone-200 opacity-70'
-            : isChecked
-                ? 'bg-emerald-50/70 border-emerald-300'
-                : hasNote
-                    ? 'bg-red-50/70 border-red-300'
+            : isDiscrepancy
+                ? 'bg-red-50/70 border-red-300'
+                : isChecked
+                    ? 'bg-emerald-50/70 border-emerald-300'
                     : isModified
                         ? 'bg-blue-50/70 border-blue-300'
                         : 'bg-white border-stone-200 hover:border-stone-300 hover:shadow-sm'
 
-        const dotColor = isChecked ? 'bg-emerald-500' : hasNote ? 'bg-red-500' : isModified ? 'bg-blue-500' : 'bg-stone-200'
+        const dotColor = isDiscrepancy ? 'bg-red-500' : isChecked ? 'bg-emerald-500' : isModified ? 'bg-blue-500' : 'bg-stone-200'
 
         return (
             <div
@@ -1025,16 +1141,59 @@ export default function InternalInventoryPage() {
                 {/* Dòng 1: trạng thái | mã vị trí | mã LOT | hành động */}
                 <div className="flex items-center gap-1.5 min-w-0">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
-                    <span className="text-[11px] font-bold text-stone-800 tracking-tight whitespace-nowrap shrink-0">{pos.code}</span>
-                    {lot && <span className="text-[10px] font-semibold text-amber-600 truncate min-w-0 flex-1" title={lot.code}>{lot.code}</span>}
+                    <span
+                        onClick={(e) => { e.stopPropagation(); copyQuick(pos.code, 'Mã vị trí') }}
+                        className="text-[11px] font-bold text-stone-800 tracking-tight whitespace-nowrap shrink-0 cursor-copy hover:text-blue-600 hover:underline decoration-dotted underline-offset-2"
+                        title="Bấm để copy mã vị trí"
+                    >{pos.code}</span>
+                    {lot && (
+                        <span
+                            onClick={(e) => { e.stopPropagation(); copyQuick(lot.code, 'Mã LOT') }}
+                            className="text-[10px] font-semibold text-amber-600 truncate min-w-0 flex-1 cursor-copy hover:text-blue-600 hover:underline decoration-dotted underline-offset-2"
+                            title={`${lot.code} — bấm để copy mã LOT`}
+                        >{lot.code}</span>
+                    )}
                     <span className="ml-auto flex items-center gap-1 shrink-0">
                         {isModified && <span className="text-[8px] font-bold text-blue-600 uppercase tracking-tight">Đã sửa</span>}
+                        {hasNote && (
+                            isResolved ? (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); toggleResolved(pos.id, false) }}
+                                    className="flex items-center gap-0.5 px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 hover:bg-emerald-200 transition-all"
+                                    title="Đã xác nhận xử lý — bấm để bỏ xác nhận"
+                                >
+                                    <ShieldCheck size={12} />
+                                    <span className="text-[8px] font-bold uppercase tracking-tight">Đã xử lý</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); toggleResolved(pos.id, true) }}
+                                    className="p-0.5 rounded text-red-400 hover:text-white hover:bg-emerald-500 transition-all"
+                                    title="Xác nhận đã xử lý sai lệch (sau khi đã gán lại vị trí trong Quản lý LOT)"
+                                >
+                                    <ShieldCheck size={14} />
+                                </button>
+                            )
+                        )}
                         {isChecked && <CheckCircle2 size={13} className="text-emerald-500" />}
-                        {lot && !locked && (
+                        {!locked && (
                             <button
-                                onClick={(e) => { e.stopPropagation(); handleEditLot(pos.lot_id, pos.id) }}
-                                className="p-0.5 rounded text-stone-300 opacity-0 group-hover/pos:opacity-100 hover:text-blue-600 hover:bg-blue-100/60 transition-all"
-                                title="Sửa LOT"
+                                onClick={(e) => { e.stopPropagation(); refreshPositionLot(pos) }}
+                                className="p-0.5 rounded text-stone-300 hover:text-emerald-600 hover:bg-emerald-100/60 transition-all"
+                                title="Tải lại dữ liệu ô này từ máy chủ"
+                            >
+                                <RefreshCw size={12} className={refreshingPosId === pos.id ? 'animate-spin' : ''} />
+                            </button>
+                        )}
+                        {!locked && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    if (lot) handleEditLot(pos.lot_id, pos.id)
+                                    else handleCreateLotAtPosition(pos.id)
+                                }}
+                                className="p-0.5 rounded text-stone-300 hover:text-blue-600 hover:bg-blue-100/60 transition-all"
+                                title={lot ? 'Sửa LOT' : 'Tạo LOT cho vị trí này'}
                             >
                                 <Edit size={12} />
                             </button>
@@ -1042,21 +1201,21 @@ export default function InternalInventoryPage() {
                     </span>
                 </div>
 
-                {/* Dòng 2+: sản phẩm | số lượng */}
+                {/* Dòng 2+: sản phẩm (hiện đầy đủ, tự xuống dòng) | số lượng ở dòng dưới */}
                 {lot ? (
-                    <div className="mt-0.5 pl-3 space-y-0.5">
+                    <div className="mt-0.5 pl-3 space-y-1">
                         {lot.items?.map((li: any, i: number) => (
-                            <div key={i} className="flex items-start justify-between gap-2 min-w-0" title={`${li.sku} — ${li.product_name || ''}`}>
-                                <div className="min-w-0">
-                                    <p className="text-[11px] leading-tight text-stone-700 truncate">{li.product_name || li.sku}</p>
-                                    <p className="text-[9px] leading-tight text-stone-400 font-mono truncate">
-                                        {li.sku}
+                            <div key={i} className="min-w-0" title={`${li.sku} — ${li.product_name || ''}`}>
+                                <p className="text-[11px] leading-tight text-stone-700 break-words">{li.product_name || li.sku}</p>
+                                <div className="flex items-baseline justify-between gap-2 min-w-0">
+                                    <p className="text-[9px] leading-tight text-stone-400 font-mono truncate min-w-0">
+                                        {li.product_name ? li.sku : ''}
                                         {(lot.tags?.length ?? 0) > 0 && <span className="ml-1 not-italic">{lot.tags.join(' / ')}</span>}
                                     </p>
+                                    <p className="text-[11px] font-bold text-stone-900 tabular-nums whitespace-nowrap shrink-0">
+                                        {li.quantity} <span className="text-[9px] font-semibold text-stone-400 uppercase">{li.unit}</span>
+                                    </p>
                                 </div>
-                                <p className="text-[11px] font-bold text-stone-900 tabular-nums whitespace-nowrap shrink-0">
-                                    {li.quantity} <span className="text-[9px] font-semibold text-stone-400 uppercase">{li.unit}</span>
-                                </p>
                             </div>
                         ))}
                     </div>
@@ -1076,7 +1235,7 @@ export default function InternalInventoryPage() {
                         onBlur={(e) => updateNote(pos.id, e.target.value)}
                         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
                         placeholder="Ghi chú sai lệch…"
-                        className={`w-full min-w-0 bg-transparent text-[10px] italic outline-none border-t pt-0.5 ${hasNote ? 'text-red-600 border-red-200' : 'text-stone-500 border-stone-100 placeholder:text-stone-300 focus:text-stone-700'}`}
+                        className={`w-full min-w-0 bg-transparent text-[10px] italic outline-none border-t pt-0.5 ${hasNote ? (isDiscrepancy ? 'text-red-600 border-red-200' : 'text-emerald-600 border-emerald-200') : 'text-stone-500 border-stone-100 placeholder:text-stone-300 focus:text-stone-700'}`}
                     />
                 </div>
             </div>
@@ -1152,6 +1311,8 @@ export default function InternalInventoryPage() {
                                     <div className={`h-full ${hasErr ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${s.pct}%` }} />
                                 </div>
                                 <span className={`text-[10px] font-bold ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.pct}%</span>
+                                {s.modified > 0 && <span className="text-[9px] font-bold bg-blue-600 text-white px-1.5 py-0.5 rounded ml-1">{s.modified} ĐÃ SỬA</span>}
+                                {s.resolved > 0 && <span className="text-[9px] font-bold bg-emerald-600 text-white px-1.5 py-0.5 rounded ml-1">{s.resolved} ĐÃ XỬ LÝ</span>}
                                 {hasErr && <span className="text-[9px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded ml-1">SAI LỆCH</span>}
                             </div>
                         </div>
@@ -1189,6 +1350,16 @@ export default function InternalInventoryPage() {
                             <span className={`${hasErr ? 'bg-red-600' : 'bg-stone-400'} text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1`}>
                                 {s.total} vị trí {hasErr && '• SAI LỆCH'}
                             </span>
+                            {s.modified > 0 && (
+                                <span className="bg-blue-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                    {s.modified} đã sửa LOT
+                                </span>
+                            )}
+                            {s.resolved > 0 && (
+                                <span className="bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+                                    {s.resolved} đã xử lý
+                                </span>
+                            )}
                         </div>
                     </div>
                     {isExpanded && (
@@ -1215,6 +1386,16 @@ export default function InternalInventoryPage() {
                             <h3 className={`text-[11px] font-bold font-mono uppercase tracking-tight ${hasErr ? 'text-red-600' : 'text-stone-500'}`}>
                                 {bcText} | {s.total} VỊ TRÍ {hasErr && '• CÓ SAI LỆCH'}
                             </h3>
+                            {s.modified > 0 && (
+                                <span className="text-[9px] font-bold text-blue-600 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded-full uppercase tracking-tight">
+                                    {s.modified} đã sửa
+                                </span>
+                            )}
+                            {s.resolved > 0 && (
+                                <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-full uppercase tracking-tight">
+                                    {s.resolved} đã xử lý
+                                </span>
+                            )}
                         </div>
                         <div className="flex items-center gap-2">
                             {isExpanded ? <ChevronUp size={14} className={hasErr ? 'text-red-400' : 'text-stone-300'} /> : <ChevronDown size={14} className={hasErr ? 'text-red-400' : 'text-stone-300'} />}
@@ -1248,6 +1429,8 @@ export default function InternalInventoryPage() {
                     </div>
                     <div className="flex items-center gap-2 text-[10px]">
                         <span className="bg-stone-100 px-2 py-0.5 rounded font-bold text-stone-400">TIẾN ĐỘ: {s.checked}/{s.total}</span>
+                        {s.modified > 0 && <span className="bg-blue-500 text-white px-2 py-0.5 rounded font-bold">{s.modified} sửa</span>}
+                        {s.resolved > 0 && <span className="bg-emerald-500 text-white px-2 py-0.5 rounded font-bold">{s.resolved} xử lý</span>}
                         {s.discrepancy > 0 && <span className="bg-red-500 text-white px-2 py-0.5 rounded font-bold">{s.discrepancy} !</span>}
                         <span className={`font-bold ${s.pct === 100 ? 'text-green-600' : 'text-stone-400'}`}>{s.pct}%</span>
                     </div>
@@ -1328,12 +1511,16 @@ export default function InternalInventoryPage() {
                         {(() => {
                             const total = positions.length
                             const checked = items.filter(i => i.checked).length
-                            const disc = items.filter(i => i.note).length
+                            const disc = items.filter(i => i.note && !i.resolved).length
+                            const done = items.filter(i => i.note && i.resolved).length
+                            const mod = items.filter(i => i.is_modified).length
                             const pct = total > 0 ? Math.round((checked / total) * 100) : 0
                             return (
                                 <div className="flex items-center gap-6 text-center">
                                     <div><div className="text-2xl font-black text-purple-600">{pct}%</div><div className="text-[10px] text-stone-400 font-bold uppercase">Tiến độ</div></div>
                                     <div><div className="text-lg font-black text-stone-800">{checked}/{total}</div><div className="text-[10px] text-stone-400 font-bold uppercase">Vị trí</div></div>
+                                    {mod > 0 && <div><div className="text-lg font-black text-blue-600">{mod}</div><div className="text-[10px] text-stone-400 font-bold uppercase">Đã sửa LOT</div></div>}
+                                    {done > 0 && <div><div className="text-lg font-black text-emerald-600">{done}</div><div className="text-[10px] text-stone-400 font-bold uppercase">Đã xử lý</div></div>}
                                     {disc > 0 && <div><div className="text-lg font-black text-red-600">{disc}</div><div className="text-[10px] text-stone-400 font-bold uppercase">Sai lệch</div></div>}
 
                                     <div className="h-10 w-px bg-stone-100 mx-2" />
@@ -1378,9 +1565,11 @@ export default function InternalInventoryPage() {
                                     return (
                                         <button key={zone.id} onClick={() => setExpandedZones(prev => new Set(prev).add(zone.id))} className="p-3 rounded-xl border border-stone-200 bg-white hover:shadow-sm transition-all text-left group">
                                             <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-stone-800">{zone.name}</h3><span className={`text-xs font-bold ${s.pct === 100 ? 'text-green-600' : 'text-purple-600'}`}>{s.pct}%</span></div>
-                                            <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                                            <div className="grid grid-cols-5 gap-2 text-center text-[10px]">
                                                 <div><div className="text-base font-bold text-stone-800 tabular-nums">{s.total}</div><div className="text-stone-400 font-semibold uppercase">Tổng</div></div>
                                                 <div><div className="text-base font-bold text-green-600 tabular-nums">{s.checked}</div><div className="text-stone-400 font-semibold uppercase">Đã kiểm</div></div>
+                                                <div><div className={`text-base font-bold tabular-nums ${s.modified > 0 ? 'text-blue-600' : 'text-stone-300'}`}>{s.modified}</div><div className="text-stone-400 font-semibold uppercase">Đã sửa</div></div>
+                                                <div><div className={`text-base font-bold tabular-nums ${s.resolved > 0 ? 'text-emerald-600' : 'text-stone-300'}`}>{s.resolved}</div><div className="text-stone-400 font-semibold uppercase">Xử lý</div></div>
                                                 <div><div className={`text-base font-bold tabular-nums ${s.discrepancy > 0 ? 'text-red-600' : 'text-stone-300'}`}>{s.discrepancy}</div><div className="text-stone-400 font-semibold uppercase">Sai lệch</div></div>
                                             </div>
                                         </button>
@@ -1532,7 +1721,7 @@ export default function InternalInventoryPage() {
                 ) : (
                     <div className="grid gap-3">
                         {sessions.map(session => {
-                            const s = session.stats || { total: 0, checked: 0, discrepancy: 0 }
+                            const s = session.stats || { total: 0, checked: 0, discrepancy: 0, modified: 0, resolved: 0 }
                             const pct = s.total > 0 ? Math.round((s.checked / s.total) * 100) : 0
                             return (
                                 <div
@@ -1578,6 +1767,18 @@ export default function InternalInventoryPage() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-4 shrink-0">
+                                        {s.modified > 0 && (
+                                            <div className="text-center px-3 border-r border-blue-100">
+                                                <div className="text-lg font-black text-blue-600">{s.modified}</div>
+                                                <div className="text-[8px] font-bold text-blue-400 uppercase tracking-widest leading-none">Đã sửa</div>
+                                            </div>
+                                        )}
+                                        {s.resolved > 0 && (
+                                            <div className="text-center px-3 border-r border-emerald-100">
+                                                <div className="text-lg font-black text-emerald-600">{s.resolved}</div>
+                                                <div className="text-[8px] font-bold text-emerald-400 uppercase tracking-widest leading-none">Đã xử lý</div>
+                                            </div>
+                                        )}
                                         {s.discrepancy > 0 && (
                                             <div className="text-center px-3 border-r border-red-100">
                                                 <div className="text-lg font-black text-red-600">-{s.discrepancy}</div>
@@ -1608,8 +1809,10 @@ export default function InternalInventoryPage() {
                         <LotForm
                             isVisible={showLotEdit}
                             editingLot={editingLot}
-                            onClose={() => { setShowLotEdit(false); setEditingLot(null) }}
+                            onClose={() => { setShowLotEdit(false); setEditingLot(null); setEditingPositionId(null) }}
                             onSuccess={onLotEditSuccess}
+                            autoFillStt={false}
+                            collapseDetailsByDefault
                             products={commonData.products}
                             suppliers={commonData.suppliers}
                             qcList={commonData.qcList}
@@ -1619,6 +1822,29 @@ export default function InternalInventoryPage() {
                             existingTags={commonData.existingTags}
                         />
                     </div>
+                </div>
+            )}
+
+            {/* Bong bóng nổi ghi chú kiểm kê — luôn giữa màn hình khi cuộn trong modal LOT */}
+            {showLotEdit && editingPositionId && itemsMap[editingPositionId]?.note && dismissedNotePos !== editingPositionId && (
+                <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[70] pointer-events-none max-w-[92vw]">
+                    <div className="pointer-events-auto flex items-start gap-2.5 bg-amber-500 text-white shadow-2xl shadow-amber-500/40 rounded-2xl px-4 py-3 border border-amber-300/60">
+                        <MessageSquare size={16} className="shrink-0 mt-0.5 text-amber-100" />
+                        <div className="min-w-0">
+                            <p className="text-[10px] font-black uppercase tracking-widest text-amber-100 leading-none mb-1">
+                                Ghi chú kiểm kê — vị trí {positions.find(p => p.id === editingPositionId)?.code}
+                            </p>
+                            <p className="text-sm font-bold leading-snug break-words">"{itemsMap[editingPositionId]?.note}"</p>
+                        </div>
+                        <button
+                            onClick={() => setDismissedNotePos(editingPositionId)}
+                            className="shrink-0 p-1 -mr-1 rounded-lg hover:bg-white/25 transition-all"
+                            title="Đóng ghi chú"
+                        >
+                            <X size={14} />
+                        </button>
+                    </div>
+                    <div className="mx-auto -mt-1.5 h-3 w-3 rotate-45 bg-amber-500 border-b border-r border-amber-300/60 shadow-lg shadow-amber-500/30" />
                 </div>
             )}
 

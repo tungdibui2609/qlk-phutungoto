@@ -43,6 +43,10 @@ interface LotFormProps {
     branches: any[]
     existingTags?: string[]
     initialProductionCode?: string
+    /** Mặc định true: tự tính STT tăng dần khi mở form tạo mới. Truyền false để ô STT bỏ trống. */
+    autoFillStt?: boolean
+    /** Mặc định false: mở form tạo mới ở chế độ "Thu gọn chi tiết". */
+    collapseDetailsByDefault?: boolean
     productions?: any[]
     managePermission?: string
 }
@@ -104,6 +108,8 @@ export function LotForm({
     existingTags = [],
     onDelete,
     initialProductionCode = '',
+    autoFillStt = true,
+    collapseDetailsByDefault = false,
     productions = [],
     managePermission
 }: LotFormProps) {
@@ -696,6 +702,10 @@ export function LotForm({
                 generateLotCode(initialDate)
             }
 
+            if (collapseDetailsByDefault) {
+                setIsInfoExpanded(false)
+            }
+
             setIsInitialized(true)
 
             // Scroll to form
@@ -806,6 +816,8 @@ export function LotForm({
         const uniqueCode = await generateUniqueLotCode(supabase, currentSystem.name)
         if (currentReqId !== sttRequestIdRef.current) return
         setNewLotCode(uniqueCode)
+
+        if (!autoFillStt) return
 
         // -- TÍNH TOÁN STT DÁN THÙNG (DỰA TRÊN STT GẦN NHẤT ĐỂ TĂNG LÊN, KHÔNG TRÙNG LẶP) --
         const { data: recentLots } = await supabase

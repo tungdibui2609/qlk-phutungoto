@@ -17,11 +17,12 @@ interface LotAssignPositionModalProps {
 
 export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPositionModalProps) {
     const { showToast, showConfirm } = useToast()
-    const { currentSystem } = useSystem()
+    const { currentSystem, hasModule } = useSystem()
     const [loading, setLoading] = useState(false)
+    const isStagingEnabled = hasModule('warehouse_staging_area') || hasModule('warehouse_layout_2d')
     const initialPosCode = typeof lot.positions?.[0] === 'string'
         ? lot.positions[0]
-        : (lot.positions?.[0] as any)?.code || lot.warehouse_name || ''
+        : (lot.positions?.[0] as any)?.code || (isStagingEnabled ? lot.warehouse_name : '') || ''
     const [code, setCode] = useState<string>(initialPosCode)
     const [searchTerm, setSearchTerm] = useState('')
     const [positions, setPositions] = useState<ComboboxOption[]>([])
@@ -76,10 +77,10 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                     return lCode.includes(s) || lName.includes(s)
                 })
 
-                const layoutOptions: ComboboxOption[] = matchingLayouts.map((l: any) => ({
+                const layoutOptions: ComboboxOption[] = isStagingEnabled ? matchingLayouts.map((l: any) => ({
                     value: l.code || l.name,
                     label: `🏢 [KHO] ${l.code ? `${l.code} - ` : ''}${l.name} (Khu vực Chờ)`
-                }))
+                })) : []
 
                 let query = (supabase.from('positions') as any)
                     .select('id, code')
@@ -305,10 +306,10 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
             }
 
             // Case: Check if targetCode matches a Warehouse Layout (e.g. KBB1, KBB2, Kho Bao Bì)
-            const matchedLayout = warehouseLayouts.find((l: any) => 
+            const matchedLayout = isStagingEnabled ? warehouseLayouts.find((l: any) => 
                 (l.code && l.code.trim().toUpperCase() === targetCode) ||
                 (l.name && l.name.trim().toUpperCase() === targetCode)
-            )
+            ) : null
 
             if (matchedLayout) {
                 // Target is a warehouse staging queue
@@ -835,7 +836,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                                 </p>
 
                                 {/* Gợi ý gán nhanh kho */}
-                                {warehouseLayouts.length > 0 && (
+                                {isStagingEnabled && warehouseLayouts.length > 0 && (
                                     <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
                                         <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                             <Building2 size={13} className="text-orange-500" />

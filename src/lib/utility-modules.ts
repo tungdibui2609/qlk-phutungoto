@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes, Building2 } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -134,6 +134,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         name: 'Sơ đồ kho 2D (AutoCAD)',
         description: 'Kích hoạt công cụ thiết kế mặt bằng kho 2D, thay thế hoàn toàn cấu trúc sơ đồ phân cấp mặc định.',
         icon: HardHat,
+        category: 'specialized',
+        default_enabled: false
+    },
+    {
+        id: 'warehouse_staging_area',
+        name: 'Hàng chờ xếp kho (Khu vực Chờ)',
+        description: 'Hiển thị trạng thái lô hàng đang ở khu vực chờ xếp của kho và phân loại hàng chờ trên sơ đồ kho.',
+        icon: Building2,
         category: 'specialized',
         default_enabled: false
     },

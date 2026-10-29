@@ -563,7 +563,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                             <span className="whitespace-nowrap">{lot.positions[0].code}</span>
                             {lot.positions.length > 1 && <span className="ml-0.5 text-[9px] opacity-75 font-normal shrink-0">+{lot.positions.length - 1}</span>}
                         </button>
-                    ) : lot.warehouse_name ? (
+                    ) : (isUtilityEnabled('warehouse_staging_area') || isUtilityEnabled('warehouse_layout_2d')) && lot.warehouse_name ? (
                         <button
                             onClick={() => {
                                 if (lot.is_locked) {

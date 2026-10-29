@@ -4,6 +4,7 @@ import {
     Map,
     Activity,
     TrendingUp,
+    CalendarClock,
     LucideIcon
 } from 'lucide-react'
 
@@ -49,6 +50,13 @@ export const REPORT_MODULES: ReportModule[] = [
         name: 'Năng suất lấy hàng',
         description: 'Báo cáo hiệu suất, tốc độ lấy hàng và năng suất làm việc của nhân sự',
         icon: TrendingUp,
+        is_basic: true
+    },
+    {
+        id: 'report_inventory_aging',
+        name: 'Tồn kho lâu ngày',
+        description: 'Báo cáo tuổi tồn kho theo ngưỡng tuỳ chỉnh (90/180 ngày), chọn mốc ngày nhập kho, sản xuất, nguyên liệu hoặc đóng gói',
+        icon: CalendarClock,
         is_basic: true
     }
 ]

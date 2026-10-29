@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard } from 'lucide-react'
+import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -143,6 +143,7 @@ const menuItems: MenuItem[] = [
         icon: BarChart3,
         children: [
             { id: 'inventory_report', name: 'Tồn kho', href: '/inventory', icon: Package, requiredPermission: 'inventory.view' },
+            { id: 'inventory_aging', name: 'Tồn kho lâu ngày', href: '/reports/inventory-aging', icon: CalendarClock, requiredPermission: 'report.view', requiredModule: 'report_inventory_aging' },
             { id: 'warehouse_status', name: 'Trạng thái kho', href: '/warehouses/status', icon: PieChart, requiredPermission: 'warehouse.view' },
             { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: LayoutGrid, requiredPermission: 'warehouse.view', requiredModule: 'report_hall_summary' },
             { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: Layers, requiredPermission: 'report.view', requiredModule: 'report_floor_1' },
