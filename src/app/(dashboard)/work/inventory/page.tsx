@@ -1001,197 +1001,82 @@ export default function InternalInventoryPage() {
         const isChecked = item?.checked
         const hasNote = !!item?.note
         const isModified = !!item?.is_modified
+        const locked = selectedSession?.status === 'completed'
 
-        if (isHall) {
-            return (
-                <div
-                    key={pos.id}
-                    onClick={() => toggleCheck(pos.id)}
-                    className={`group/pos border-2 rounded-2xl p-4 transition-all cursor-pointer shadow-sm relative flex flex-col gap-3 min-h-[160px] ${selectedSession?.status === 'completed'
-                        ? 'bg-stone-50/50 border-stone-200 pointer-events-none opacity-80'
-                        : isChecked
-                            ? 'bg-emerald-50/30 border-emerald-500 ring-4 ring-emerald-100/20'
-                            : hasNote
-                                ? 'bg-red-50/50 border-red-500 ring-4 ring-red-100/20'
-                                : isModified
-                                    ? 'bg-blue-50/50 border-blue-500 hover:border-blue-700'
-                                    : 'bg-orange-50/10 border-orange-200 hover:border-orange-400 hover:shadow-md'
-                        }`}
-                >
-                    {/* Header: Code & Status */}
-                    <div className="flex justify-between items-start border-b border-orange-100 pb-2">
-                        <div className="flex flex-col">
-                            <span className="text-sm font-black text-indigo-700 tracking-tight uppercase leading-none">{pos.code}</span>
-                            {lot && <span className="text-[10px] font-bold text-stone-400 mt-1">LOT: <span className="text-amber-600">{lot.code}</span></span>}
-                        </div>
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isChecked ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-200' : 'bg-white border-2 border-stone-100 text-stone-100'}`}>
-                            <CheckCircle2 size={18} />
-                        </div>
-                        {lot && selectedSession?.status !== 'completed' && (
-                            <div className="flex items-center gap-2 absolute top-2 right-2 z-10">
-                                {isModified && (
-                                    <div className="flex items-center gap-1 bg-blue-600 text-white text-[8px] font-black px-2 py-1 rounded-full uppercase tracking-tighter shadow-lg border border-white">
-                                        Đã sửa
-                                    </div>
-                                )}
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); handleEditLot(pos.lot_id, pos.id) }}
-                                    className="w-8 h-8 rounded-full bg-white border border-stone-200 text-stone-400 hover:text-blue-600 hover:border-blue-200 flex items-center justify-center transition-all"
-                                >
-                                    <Edit size={14} />
-                                </button>
-                            </div>
-                        )}
-                    </div>
+        const tone = locked
+            ? 'bg-stone-50 border-stone-200 opacity-70'
+            : isChecked
+                ? 'bg-emerald-50/70 border-emerald-300'
+                : hasNote
+                    ? 'bg-red-50/70 border-red-300'
+                    : isModified
+                        ? 'bg-blue-50/70 border-blue-300'
+                        : 'bg-white border-stone-200 hover:border-stone-300 hover:shadow-sm'
 
-                    {/* Content: Product Information */}
-                    <div className="flex-1 flex flex-col justify-center gap-1.5">
-                        {lot ? (
-                            lot.items?.map((li: any, i: number) => (
-                                <div key={i} className="text-center">
-                                    <h4 className="text-[13px] font-black text-stone-800 uppercase leading-tight line-clamp-2 mb-1">{li.product_name || li.sku}</h4>
-                                    <div className="flex items-center justify-center gap-2">
-                                        <span className="text-[10px] font-bold text-stone-400 font-mono italic">{li.sku}</span>
-                                        <div className="w-1 h-1 bg-stone-200 rounded-full" />
-                                        <div className="text-sm font-black text-stone-900">
-                                            {li.quantity} <span className="text-[10px] text-stone-500 font-bold uppercase">{li.unit}</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))
-                        ) : (
-                            <div className="flex flex-col items-center opacity-20">
-                                <Package size={24} className="text-stone-300" />
-                                <span className="text-[10px] font-black uppercase tracking-widest italic">Vị trí trống</span>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Footer: Notes */}
-                    <div
-                        className={`p-2 rounded-xl border transition-all text-center ${hasNote ? 'bg-red-50 border-red-200' : 'bg-orange-100/20 border-orange-100/50 group-hover/pos:bg-white'}`}
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <input
-                            type="text"
-                            defaultValue={item?.note || ''}
-                            onBlur={(e) => updateNote(pos.id, e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                            placeholder="Ghi chú sai lệch..."
-                            className={`w-full bg-transparent text-[11px] font-bold italic outline-none placeholder:text-stone-200 ${hasNote ? 'text-red-600' : 'text-stone-400'}`}
-                        />
-                    </div>
-                </div>
-            )
-        }
+        const dotColor = isChecked ? 'bg-emerald-500' : hasNote ? 'bg-red-500' : isModified ? 'bg-blue-500' : 'bg-stone-200'
 
         return (
             <div
                 key={pos.id}
                 onClick={() => toggleCheck(pos.id)}
-                className={`p-3 pb-1.5 rounded-xl border-2 shadow-sm relative flex flex-col items-center gap-y-2 min-h-[150px] text-center overflow-hidden transition-all cursor-pointer ${selectedSession?.status === 'completed'
-                    ? 'bg-stone-50/50 border-stone-100 pointer-events-none opacity-80'
-                    : isChecked
-                        ? 'bg-emerald-50/50 border-emerald-500'
-                        : hasNote
-                            ? 'bg-red-50/80 border-red-500 ring-1 ring-red-200'
-                            : isModified
-                                ? 'bg-blue-50/50 border-blue-500'
-                                : 'bg-white border-stone-900'
-                    }`}
+                title={isHall ? 'Nhấn để tích kiểm tra' : undefined}
+                className={`group/pos relative overflow-hidden rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all min-w-0 ${tone} ${locked ? 'pointer-events-none' : ''}`}
             >
-                {/* 1. Header: Mã vị trí | Mã LOT (Color Coded) */}
-                <div className="w-full flex items-center justify-center relative border-b border-stone-100 pb-1">
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-[13px] font-black text-indigo-600 uppercase tracking-tight">
-                            {pos.code}
-                        </span>
-                        {lot && (
-                            <>
-                                <span className="text-stone-300">|</span>
-                                <span className="text-[12px] font-bold text-amber-600 uppercase tracking-tight">
-                                    LOT: {lot.code}
-                                </span>
-                            </>
-                        )}
-                    </div>
-                    {isChecked && <div className="absolute right-0 top-0 text-emerald-500"><CheckCircle2 size={16} /></div>}
-                </div>
-
-                {/* 2 -> 5 Content Area (Vertical & Centered) */}
-                <div className="flex-1 w-full py-1 flex flex-col justify-center items-center gap-0.5">
-                    {lot ? (
-                        <div className="w-full flex flex-col items-center space-y-1">
-                            {lot.items?.map((li: any, i: number) => (
-                                <div key={i} className="flex flex-col items-center w-full space-y-0.5">
-                                    {/* Tên sản phẩm */}
-                                    <p className="text-[12px] font-extrabold text-stone-900 uppercase tracking-tight w-full px-2 leading-tight">
-                                        {li.product_name || li.sku}
-                                    </p>
-
-                                    {/* Mã sản phẩm | Mã phụ (Tags) */}
-                                    <div className="flex items-center justify-center gap-2 flex-wrap">
-                                        <p className="text-[10px] font-black text-stone-400 uppercase tracking-tighter">{li.sku}</p>
-                                        {lot.tags && lot.tags.length > 0 && (
-                                            <div className="flex gap-0.5">
-                                                {lot.tags.map((t: string, idx: number) => (
-                                                    <span key={idx} className="text-[7px] font-black bg-stone-100 text-stone-900 border border-stone-200 px-1 rounded uppercase">
-                                                        {t}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Số lượng : Đơn vị */}
-                                    <p className="text-[14px] font-black text-stone-900">
-                                        SL: {li.quantity} <span className="text-[10px] font-bold text-stone-500 uppercase">{li.unit}</span>
-                                    </p>
-                                </div>
-                            ))}
-                        </div>
-                    ) : (
-                        <div className="flex flex-col items-center gap-1 opacity-20 py-2">
-                            <Package size={28} className="text-stone-300" />
-                            <span className="text-[11px] font-black uppercase tracking-[0.2em] italic text-stone-900">Vị trí hiện trống</span>
-                        </div>
-                    )}
-
-                    {lot && selectedSession?.status !== 'completed' && (
-                        <div className="flex items-center gap-2 mt-1">
+                {/* Dòng 1: trạng thái | mã vị trí | mã LOT | hành động */}
+                <div className="flex items-center gap-1.5 min-w-0">
+                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+                    <span className="text-[11px] font-bold text-stone-800 tracking-tight whitespace-nowrap shrink-0">{pos.code}</span>
+                    {lot && <span className="text-[10px] font-semibold text-amber-600 truncate min-w-0 flex-1" title={lot.code}>{lot.code}</span>}
+                    <span className="ml-auto flex items-center gap-1 shrink-0">
+                        {isModified && <span className="text-[8px] font-bold text-blue-600 uppercase tracking-tight">Đã sửa</span>}
+                        {isChecked && <CheckCircle2 size={13} className="text-emerald-500" />}
+                        {lot && !locked && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleEditLot(pos.lot_id, pos.id) }}
-                                className="p-1 px-3 rounded-full border border-stone-100 text-stone-400 hover:text-blue-600 hover:border-blue-200 hover:bg-blue-50 transition-all flex items-center gap-1.5"
+                                className="p-0.5 rounded text-stone-300 opacity-0 group-hover/pos:opacity-100 hover:text-blue-600 hover:bg-blue-100/60 transition-all"
+                                title="Sửa LOT"
                             >
-                                <Edit size={10} />
-                                <span className="text-[9px] font-black uppercase tracking-tighter">Sửa LOT</span>
+                                <Edit size={12} />
                             </button>
-                            {isModified && (
-                                <span className="text-[8px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 uppercase tracking-tighter">
-                                    Đã sửa
-                                </span>
-                            )}
-                        </div>
-                    )}
+                        )}
+                    </span>
                 </div>
 
-                {/* 6. Ghi chú sai lệch (Direct Input - Footer Fixed) */}
+                {/* Dòng 2+: sản phẩm | số lượng */}
+                {lot ? (
+                    <div className="mt-0.5 pl-3 space-y-0.5">
+                        {lot.items?.map((li: any, i: number) => (
+                            <div key={i} className="flex items-start justify-between gap-2 min-w-0" title={`${li.sku} — ${li.product_name || ''}`}>
+                                <div className="min-w-0">
+                                    <p className="text-[11px] leading-tight text-stone-700 truncate">{li.product_name || li.sku}</p>
+                                    <p className="text-[9px] leading-tight text-stone-400 font-mono truncate">
+                                        {li.sku}
+                                        {(lot.tags?.length ?? 0) > 0 && <span className="ml-1 not-italic">{lot.tags.join(' / ')}</span>}
+                                    </p>
+                                </div>
+                                <p className="text-[11px] font-bold text-stone-900 tabular-nums whitespace-nowrap shrink-0">
+                                    {li.quantity} <span className="text-[9px] font-semibold text-stone-400 uppercase">{li.unit}</span>
+                                </p>
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    <p className="mt-0.5 pl-3 text-[10px] italic text-stone-300">Vị trí trống</p>
+                )}
+
+                {/* Ghi chú sai lệch: hiện khi có note hoặc hover */}
                 <div
-                    className={`w-full mt-auto pt-1 border-t border-stone-100 px-2 pb-1 rounded-md transition-colors shrink-0 ${hasNote ? 'bg-red-50/50 border-red-200' : 'bg-transparent border-transparent'}`}
                     onClick={(e) => e.stopPropagation()}
+                    className={`mt-1 pl-3 transition-opacity ${hasNote ? '' : 'opacity-0 group-hover/pos:opacity-100'}`}
                 >
                     <input
                         key={pos.id}
                         type="text"
                         defaultValue={item?.note || ''}
                         onBlur={(e) => updateNote(pos.id, e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                                (e.target as HTMLInputElement).blur();
-                            }
-                        }}
-                        placeholder="Nhập ghi chú..."
-                        className={`w-full bg-transparent text-[10px] font-extrabold italic text-center outline-none placeholder:text-stone-200 py-1 transition-colors ${hasNote ? 'text-red-500' : 'text-stone-300 focus:text-stone-900'}`}
+                        onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                        placeholder="Ghi chú sai lệch…"
+                        className={`w-full min-w-0 bg-transparent text-[10px] italic outline-none border-t pt-0.5 ${hasNote ? 'text-red-600 border-red-200' : 'text-stone-500 border-stone-100 placeholder:text-stone-300 focus:text-stone-700'}`}
                     />
                 </div>
             </div>
@@ -1243,43 +1128,39 @@ export default function InternalInventoryPage() {
             return (
                 <div key={zoneId} className="mb-4">
                     <div
-                        className={`flex items-center justify-between p-4 border rounded-2xl cursor-pointer transition-all shadow-sm ${hasErr ? 'bg-red-50 border-red-200 hover:bg-red-100/50' : 'bg-emerald-50/50 border-emerald-100 hover:bg-emerald-100/50'}`}
+                        className={`flex items-center justify-between p-2.5 border rounded-xl cursor-pointer transition-all shadow-sm ${hasErr ? 'bg-red-50 border-red-200 hover:bg-red-100/50' : 'bg-emerald-50/50 border-emerald-100 hover:bg-emerald-100/50'}`}
                         onClick={() => toggleExpand(zoneId)}
                     >
-                        <div className="flex items-center gap-4">
-                            <div className={`w-1.5 h-10 rounded-full ${hasErr ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
-                            <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3">
+                            <div className={`w-1 h-7 rounded-full ${hasErr ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                            <div className="flex items-center gap-2.5">
                                 {isExpanded ? (
-                                    <ChevronDown size={24} className={hasErr ? 'text-red-600' : 'text-emerald-600'} />
+                                    <ChevronDown size={18} className={hasErr ? 'text-red-600' : 'text-emerald-600'} />
                                 ) : (
-                                    <ChevronRight size={24} className={hasErr ? 'text-red-600' : 'text-emerald-600'} />
+                                    <ChevronRight size={18} className={hasErr ? 'text-red-600' : 'text-emerald-600'} />
                                 )}
                                 <div>
-                                    <h2 className="text-lg font-black text-stone-900 tracking-tight uppercase">{zone.name}</h2>
-                                    <p className="text-xs font-bold text-stone-500">{s.total} vị trí</p>
+                                    <h2 className="text-sm font-bold text-stone-900 tracking-tight uppercase">{zone.name}</h2>
+                                    <p className="text-[11px] font-semibold text-stone-500">{s.total} vị trí</p>
                                 </div>
                             </div>
                         </div>
                         <div className="flex items-center gap-3">
-                            <div className={`hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl border ${hasErr ? 'bg-red-100/50 border-red-200' : 'bg-white/80 border-emerald-100'}`}>
-                                <span className={`text-[10px] font-black ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.checked}/{s.total}</span>
-                                <div className={`w-20 h-1.5 rounded-full overflow-hidden ${hasErr ? 'bg-red-200' : 'bg-emerald-100'}`}>
+                            <div className={`hidden sm:flex items-center gap-2 px-2.5 py-1 rounded-lg border ${hasErr ? 'bg-red-100/50 border-red-200' : 'bg-white/80 border-emerald-100'}`}>
+                                <span className={`text-[10px] font-bold ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.checked}/{s.total}</span>
+                                <div className={`w-16 h-1.5 rounded-full overflow-hidden ${hasErr ? 'bg-red-200' : 'bg-emerald-100'}`}>
                                     <div className={`h-full ${hasErr ? 'bg-red-500' : 'bg-emerald-500'}`} style={{ width: `${s.pct}%` }} />
                                 </div>
-                                <span className={`text-[10px] font-black ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.pct}%</span>
-                                {hasErr && <span className="text-[10px] font-black bg-red-600 text-white px-1.5 py-0.5 rounded ml-1 animate-pulse">SAI LỆCH</span>}
+                                <span className={`text-[10px] font-bold ${hasErr ? 'text-red-600' : 'text-emerald-600'}`}>{s.pct}%</span>
+                                {hasErr && <span className="text-[9px] font-bold bg-red-600 text-white px-1.5 py-0.5 rounded ml-1">SAI LỆCH</span>}
                             </div>
                         </div>
                     </div>
                     {isExpanded && (
-                        <div className={`mt-4 ${isGroupingEnabled ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-4'}`}>
+                        <div className={`mt-2 ${isGroupingEnabled ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-3'}`}>
                             {filteredChildren.map(child => renderZoneTree(child.id, depth + 1, isGroupingEnabled ? currentBreadcrumb : []))}
                             {hasDirectPositions && (
-                                <div className={
-                                    zone.is_hall
-                                        ? "col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4 py-3 px-2"
-                                        : "flex flex-col gap-2 px-2"
-                                }>
+                                <div className={`grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2 py-2 px-1 ${zone.is_hall ? 'col-span-full' : ''}`}>
                                     {filteredPos.map(pos => (
                                         <div key={pos.id} className="w-full">
                                             {renderInventoryPosition(pos, !!zone.is_hall)}
@@ -1297,21 +1178,21 @@ export default function InternalInventoryPage() {
         if (isBigBin) {
             const hasErr = s.discrepancy > 0
             return (
-                <div key={zoneId} className={`border rounded-2xl p-4 shadow-sm hover:shadow-md transition-all ${hasErr ? 'bg-red-50/50 border-red-200 ring-1 ring-red-100' : 'bg-white border-stone-100'}`}>
+                <div key={zoneId} className={`border rounded-xl p-3 shadow-sm hover:shadow transition-all ${hasErr ? 'bg-red-50/60 border-red-200' : 'bg-white border-stone-200'}`}>
                     <div
-                        className="flex items-center justify-between mb-4 cursor-pointer"
+                        className="flex items-center justify-between mb-2 cursor-pointer"
                         onClick={() => toggleExpand(zoneId)}
                     >
                         <div className={`flex items-center gap-2 ${hasErr ? 'text-red-700' : 'text-stone-900'}`}>
-                            {isExpanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
-                            <span className="text-base font-black tracking-tight">{zone.name}</span>
-                            <span className={`${hasErr ? 'bg-red-600' : 'bg-blue-500'} text-white text-[10px] font-black px-2 py-0.5 rounded-full ml-1 animate-pulse`}>
+                            {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                            <span className="text-sm font-bold tracking-tight">{zone.name}</span>
+                            <span className={`${hasErr ? 'bg-red-600' : 'bg-stone-400'} text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1`}>
                                 {s.total} vị trí {hasErr && '• SAI LỆCH'}
                             </span>
                         </div>
                     </div>
                     {isExpanded && (
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                             {filteredChildren.map(child => renderZoneTree(child.id, depth + 1, currentBreadcrumb))}
                         </div>
                     )}
@@ -1324,14 +1205,14 @@ export default function InternalInventoryPage() {
             const bcText = currentBreadcrumb.join(' • ')
             const hasErr = s.discrepancy > 0
             return (
-                <div key={zoneId} className={`space-y-3 p-2 rounded-xl transition-colors ${hasErr ? 'bg-red-50/30' : ''}`}>
+                <div key={zoneId} className={`space-y-2 p-2 rounded-lg transition-colors ${hasErr ? 'bg-red-50/40' : ''}`}>
                     <div
-                        className={`flex items-center justify-between border-b pb-2 cursor-pointer group ${hasErr ? 'border-red-200' : 'border-stone-100'}`}
+                        className={`flex items-center justify-between border-b pb-1.5 cursor-pointer group ${hasErr ? 'border-red-200' : 'border-stone-100'}`}
                         onClick={() => toggleExpand(zoneId)}
                     >
                         <div className="flex items-center gap-2">
-                            <div className={`w-1 h-6 rounded-full ${hasErr ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
-                            <h3 className={`text-[11px] font-black font-mono uppercase tracking-tighter ${hasErr ? 'text-red-600' : 'text-stone-500'}`}>
+                            <div className={`w-1 h-5 rounded-full ${hasErr ? 'bg-red-500' : 'bg-emerald-500'}`} />
+                            <h3 className={`text-[11px] font-bold font-mono uppercase tracking-tight ${hasErr ? 'text-red-600' : 'text-stone-500'}`}>
                                 {bcText} | {s.total} VỊ TRÍ {hasErr && '• CÓ SAI LỆCH'}
                             </h3>
                         </div>
@@ -1340,11 +1221,7 @@ export default function InternalInventoryPage() {
                         </div>
                     </div>
                     {isExpanded && (
-                        <div className={
-                            zone.is_hall
-                                ? "col-span-full grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6 gap-4 px-2"
-                                : "flex flex-col gap-2"
-                        }>
+                        <div className={`grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2 px-1 ${zone.is_hall ? 'col-span-full' : ''}`}>
                             {filteredPos.map(pos => (
                                 <div key={pos.id} className="w-full">
                                     {renderInventoryPosition(pos, !!zone.is_hall)}
@@ -1380,11 +1257,7 @@ export default function InternalInventoryPage() {
                     <div className="mt-1">
                         {filteredChildren.map(child => renderZoneTree(child.id, depth + 1, currentBreadcrumb))}
                         {hasDirectPositions && (
-                            <div className={
-                                zone.is_hall
-                                    ? 'flex flex-row overflow-x-auto gap-2 py-3 px-2 scrollbar-hide'
-                                    : 'grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 py-2 px-2'
-                            }>
+                            <div className="grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2 py-2 px-1">
                                 {filteredPos.map(pos => renderInventoryPosition(pos))}
                             </div>
                         )}
@@ -1413,13 +1286,13 @@ export default function InternalInventoryPage() {
             {selectedSession ? (
                 <div className="space-y-4">
                     {selectedSession.status === 'completed' && (
-                        <div className="bg-amber-50 border-2 border-amber-200 rounded-3xl p-6 flex items-center gap-6 shadow-xl shadow-amber-500/5 animate-in fade-in slide-in-from-top-4 duration-700">
-                            <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center text-white shrink-0 shadow-lg shadow-amber-200 ring-4 ring-white">
-                                <AlertTriangle size={32} />
+                        <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center gap-4 shadow-sm">
+                            <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-white shrink-0 ring-2 ring-white">
+                                <AlertTriangle size={20} />
                             </div>
                             <div className="flex-1">
-                                <h4 className="text-xl font-black text-amber-900 leading-tight uppercase tracking-tight mb-1">KIỂM KÊ ĐÃ ĐƯỢC KHÓA</h4>
-                                <p className="text-sm font-bold text-amber-600 leading-relaxed max-w-2xl italic">Tất cả dữ liệu trong phiếu này đã được chốt và đồng bộ. Mọi thao tác chỉnh sửa (Tích chọn, Ghi chú, Xóa...) đều đã bị vô hiệu hóa để bảo vệ tính chính xác của dữ liệu.</p>
+                                <h4 className="text-base font-bold text-amber-900 leading-tight tracking-tight mb-0.5">KIỂM KÊ ĐÃ ĐƯỢC KHÓA</h4>
+                                <p className="text-[11px] font-semibold text-amber-600 leading-relaxed max-w-2xl">Toàn bộ dữ liệu phiếu này đã chốt và đồng bộ — tích chọn, ghi chú và chỉnh sửa đều bị vô hiệu hóa.</p>
                             </div>
                             <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-white rounded-xl border border-amber-200 text-amber-600 font-black text-xs uppercase italic">
                                 Chế độ xem an toàn
@@ -1503,12 +1376,12 @@ export default function InternalInventoryPage() {
                                 {buildingChildren.map(zone => {
                                     const s = getZoneStats(zone.id)
                                     return (
-                                        <button key={zone.id} onClick={() => setExpandedZones(prev => new Set(prev).add(zone.id))} className="p-4 rounded-xl border border-stone-200 bg-white hover:shadow-md transition-all text-left group">
-                                            <div className="flex items-center justify-between mb-3"><h3 className="font-bold text-stone-800">{zone.name}</h3><span className={`text-sm font-black ${s.pct === 100 ? 'text-green-600' : 'text-purple-600'}`}>{s.pct}%</span></div>
-                                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                                                <div><div className="text-lg font-black text-stone-800">{s.total}</div><div className="text-stone-400 font-bold uppercase">Tổng</div></div>
-                                                <div><div className="text-lg font-black text-green-600">{s.checked}</div><div className="text-stone-400 font-bold uppercase">Đã kiểm</div></div>
-                                                <div><div className={`text-lg font-black ${s.discrepancy > 0 ? 'text-red-600' : 'text-stone-300'}`}>{s.discrepancy}</div><div className="text-stone-400 font-bold uppercase">Sai lệch</div></div>
+                                        <button key={zone.id} onClick={() => setExpandedZones(prev => new Set(prev).add(zone.id))} className="p-3 rounded-xl border border-stone-200 bg-white hover:shadow-sm transition-all text-left group">
+                                            <div className="flex items-center justify-between mb-2"><h3 className="text-sm font-bold text-stone-800">{zone.name}</h3><span className={`text-xs font-bold ${s.pct === 100 ? 'text-green-600' : 'text-purple-600'}`}>{s.pct}%</span></div>
+                                            <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
+                                                <div><div className="text-base font-bold text-stone-800 tabular-nums">{s.total}</div><div className="text-stone-400 font-semibold uppercase">Tổng</div></div>
+                                                <div><div className="text-base font-bold text-green-600 tabular-nums">{s.checked}</div><div className="text-stone-400 font-semibold uppercase">Đã kiểm</div></div>
+                                                <div><div className={`text-base font-bold tabular-nums ${s.discrepancy > 0 ? 'text-red-600' : 'text-stone-300'}`}>{s.discrepancy}</div><div className="text-stone-400 font-semibold uppercase">Sai lệch</div></div>
                                             </div>
                                         </button>
                                     )
@@ -1558,88 +1431,64 @@ export default function InternalInventoryPage() {
                                 </div>
                                 <div className="p-4 min-h-[100px]">
                                     {showHallSummary ? (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5">
                                             {hallSummary.map((group, idx) => {
                                                 const allChecked = group.checkedCount === group.count;
                                                 const hasErr = group.notes.length > 0;
                                                 const firstNote = group.notes[0] || '';
                                                 return (
-                                                    <div key={idx} className={`border-2 rounded-[2rem] p-6 shadow-sm hover:shadow-xl transition-all relative group/card flex flex-col gap-4 overflow-hidden ${hasErr ? 'bg-red-50 border-red-200' : 'bg-white border-stone-100'}`}>
-                                                        {/* Top Decoration Bar */}
-                                                        <div className={`absolute top-0 left-0 right-0 h-1.5 ${hasErr ? 'bg-red-500 animate-pulse' : allChecked ? 'bg-emerald-500' : 'bg-orange-500'}`} />
+                                                    <div key={idx} className={`border rounded-xl p-3 shadow-sm hover:shadow-md transition-all relative group/card flex flex-col gap-2 overflow-hidden ${hasErr ? 'bg-red-50/70 border-red-200' : 'bg-white border-stone-200'}`}>
+                                                        {/* Thanh trạng thái trên đầu */}
+                                                        <div className={`absolute top-0 left-0 right-0 h-1 ${hasErr ? 'bg-red-500' : allChecked ? 'bg-emerald-500' : 'bg-orange-400'}`} />
 
-                                                        {/* Header: SKU, Status & Action */}
-                                                        <div className="flex justify-between items-start">
-                                                            <div className="flex items-center gap-4">
+                                                        {/* Header: ô tích chọn + SKU + số lượng */}
+                                                        <div className="flex justify-between items-start gap-2 pt-0.5">
+                                                            <div className="flex items-center gap-2 min-w-0">
                                                                 <button
                                                                     onClick={() => {
                                                                         bulkCheck(group.positionIds, !allChecked)
                                                                     }}
-                                                                    className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${selectedSession.status === 'completed'
-                                                                        ? 'bg-stone-100 text-stone-300 cursor-not-allowed border-none pointer-events-none'
+                                                                    className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 transition-all ${selectedSession.status === 'completed'
+                                                                        ? 'bg-stone-100 text-stone-300 cursor-not-allowed pointer-events-none'
                                                                         : allChecked
-                                                                            ? 'bg-green-500 text-white shadow-lg shadow-green-100'
-                                                                            : 'bg-stone-50 border-2 border-stone-100 text-stone-200 hover:border-stone-300'
+                                                                            ? 'bg-emerald-500 text-white shadow-sm'
+                                                                            : 'bg-white border border-stone-200 text-stone-200 hover:border-emerald-300 hover:text-emerald-400'
                                                                         }`}
                                                                 >
-                                                                    <CheckCircle2 size={24} />
+                                                                    <CheckCircle2 size={16} />
                                                                 </button>
-                                                                <div>
-                                                                    <div className="flex items-center gap-2 mb-1">
-                                                                        <h4 className="text-lg font-black text-stone-900 tracking-tight leading-none">{group.sku}</h4>
-                                                                    </div>
-                                                                    <div className="flex flex-col gap-1">
-                                                                        {group.tag && (
-                                                                            <span className="text-[10px] font-bold text-orange-600 uppercase tracking-tight leading-tight">
-                                                                                {group.tag}
-                                                                            </span>
-                                                                        )}
-                                                                        <p className="text-[9px] font-bold text-stone-300 uppercase tracking-widest leading-none">MÃ SẢN PHẨM • SKU</p>
-                                                                    </div>
+                                                                <div className="min-w-0">
+                                                                    <h4 className="text-[13px] font-bold text-stone-900 tracking-tight leading-none truncate" title={group.sku}>{group.sku}</h4>
+                                                                    {group.tag && (
+                                                                        <span className="block text-[9px] font-semibold text-orange-600 uppercase tracking-tight truncate mt-0.5">{group.tag}</span>
+                                                                    )}
                                                                 </div>
                                                             </div>
-                                                            <div className="text-right">
-                                                                <div className="text-2xl font-black text-orange-600 leading-none">{group.quantity}</div>
-                                                                <div className="text-[10px] font-bold text-stone-400 uppercase mt-1 tracking-tighter">{group.unit}</div>
+                                                            <div className="text-right shrink-0">
+                                                                <div className="text-base font-bold text-orange-600 leading-none tabular-nums">{group.quantity}</div>
+                                                                <div className="text-[9px] font-semibold text-stone-400 uppercase mt-0.5">{group.unit}</div>
                                                             </div>
                                                         </div>
 
-                                                        {/* Body: Product Name */}
-                                                        <div className={`rounded-2xl p-4 border min-h-[80px] flex items-center gap-3 ${hasErr ? 'bg-white/60 border-red-100' : 'bg-stone-50/50 border-stone-100'}`}>
-                                                            <div className="w-10 h-10 rounded-xl bg-white border border-stone-100 flex items-center justify-center text-stone-300">
-                                                                <Package size={20} />
-                                                            </div>
-                                                            <p className="text-sm font-extrabold text-stone-800 leading-[1.4] line-clamp-2 uppercase">
-                                                                {group.name}
-                                                            </p>
+                                                        {/* Tên sản phẩm */}
+                                                        <div className="flex items-center gap-1.5 pl-1">
+                                                            <Package size={14} className="text-stone-300 shrink-0" />
+                                                            <p className="text-[11px] font-semibold text-stone-700 leading-snug line-clamp-2" title={group.name}>{group.name}</p>
                                                         </div>
 
-                                                        {/* Stats Grid */}
-                                                        <div className="grid grid-cols-3 gap-1 px-1">
-                                                            <div className="text-center">
-                                                                <div className="text-base font-black text-stone-800 leading-none">{group.count}</div>
-                                                                <div className="text-[8px] font-bold text-stone-400 uppercase mt-1 tracking-widest">TỔNG LOT</div>
-                                                            </div>
-                                                            <div className="text-center border-x border-stone-100">
-                                                                <div className="text-base font-black text-green-600 leading-none">{group.checkedCount}</div>
-                                                                <div className="text-[8px] font-bold text-stone-400 uppercase mt-1 tracking-widest">ĐÃ KIỂM</div>
-                                                            </div>
-                                                            <div className="text-center">
-                                                                <div className={`text-base font-black leading-none ${group.notes.length > 0 ? 'text-red-500' : 'text-stone-300'}`}>
-                                                                    {group.notes.length}
-                                                                </div>
-                                                                <div className="text-[8px] font-bold text-stone-400 uppercase mt-1 tracking-widest">GHI CHÚ</div>
-                                                            </div>
+                                                        {/* Thống kê cụm */}
+                                                        <div className="flex items-center gap-3 text-[10px] font-semibold text-stone-400 border-t border-stone-100 pt-1.5">
+                                                            <span>Tổng <span className="text-stone-700 font-bold tabular-nums">{group.count}</span></span>
+                                                            <span>Đã kiểm <span className="text-emerald-600 font-bold tabular-nums">{group.checkedCount}</span></span>
+                                                            <span>Ghi chú <span className={`font-bold tabular-nums ${group.notes.length > 0 ? 'text-red-500' : 'text-stone-400'}`}>{group.notes.length}</span></span>
                                                         </div>
 
-                                                        {/* Batch Note Input */}
-                                                        <div className={`group/note flex items-center gap-3 p-1 rounded-2xl border-2 transition-all ${firstNote ? 'bg-red-50/50 border-red-200 ring-4 ring-red-50' : 'bg-stone-50 border-stone-50 hover:bg-white hover:border-stone-100'}`}>
-                                                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all ${firstNote ? 'bg-red-500 text-white shadow-lg shadow-red-100' : 'bg-white border border-stone-100 text-stone-300'}`}>
-                                                                <MessageSquare size={16} />
-                                                            </div>
+                                                        {/* Ghi chú chung */}
+                                                        <div className={`flex items-center gap-1.5 border-t pt-1.5 ${firstNote ? 'border-red-100' : 'border-stone-100'}`}>
+                                                            <MessageSquare size={12} className={`shrink-0 ${firstNote ? 'text-red-500' : 'text-stone-300'}`} />
                                                             <input
                                                                 type="text"
-                                                                placeholder="Nhập ghi chú chung cho cụm này..."
+                                                                placeholder="Ghi chú chung cho cụm…"
                                                                 defaultValue={firstNote}
                                                                 onBlur={(e) => {
                                                                     const val = e.target.value;
@@ -1649,7 +1498,7 @@ export default function InternalInventoryPage() {
                                                                     }
                                                                 }}
                                                                 onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-                                                                className={`flex-1 bg-transparent text-xs font-bold italic outline-none placeholder:text-stone-300 ${firstNote ? 'text-red-600' : 'text-stone-500'}`}
+                                                                className={`flex-1 min-w-0 bg-transparent text-[11px] italic outline-none placeholder:text-stone-300 ${firstNote ? 'text-red-600' : 'text-stone-500 focus:text-stone-700'}`}
                                                             />
                                                         </div>
                                                     </div>
@@ -1867,3 +1716,4 @@ export default function InternalInventoryPage() {
         </div>
     )
 }
+
