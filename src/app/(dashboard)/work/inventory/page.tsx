@@ -111,7 +111,7 @@ async function fetchAll(query: any) {
  * Fetch data in chunks using .in('id', ids) to avoid large URL issues 
  * and bypass Supabase's 1000-row limit by fetching each chunk fully.
  */
-async function fetchInChunks(table: string, field: string, values: string[], select = '*', chunkSize = 500) {
+async function fetchInChunks(table: string, field: string, values: string[], select = '*', chunkSize = 60) {
     if (!values.length) return [];
     let allResults: any[] = [];
     
@@ -190,18 +190,19 @@ export default function InternalInventoryPage() {
         if (!systemType) return
         setLoading(true)
         try {
-            const [sessionsRes, rawZones, rawSysPos] = await Promise.all([
-                fetchAll(supabase.from('internal_inventory_sessions').select('*').eq('system_code', systemType).order('created_at', { ascending: false })),
+            const [sessionsRes, rawZones, rawSysPos, rawZP] = await Promise.all([
+                fetchAll((supabase as any).from('internal_inventory_sessions').select('*').eq('system_code', systemType).order('created_at', { ascending: false })),
                 fetchAll(supabase.from('zones').select('id, name, parent_id, display_order, is_hall').eq('system_type', systemType)),
-                fetchAll(supabase.from('positions').select('id, system_type, lot_id').eq('system_type', systemType))
+                fetchAll(supabase.from('positions').select('id, system_type, lot_id').eq('system_type', systemType)),
+                fetchAll(supabase.from('zone_positions').select('zone_id, position_id'))
             ])
 
             if (!sessionsRes) throw new Error('Cannot fetch sessions')
             const data = sessionsRes
             
-            // Optimized: Fetch zone_positions ONLY for the relevant positions
-            const posIds = rawSysPos.map(p => p.id)
-            const rawZP = await fetchInChunks('zone_positions', 'position_id', posIds, 'zone_id, position_id')
+
+
+
 
             const userIds = [...new Set((data || []).map(s => s.created_by).filter(Boolean))]
             let userMap: Record<string, string> = {}
@@ -241,7 +242,7 @@ export default function InternalInventoryPage() {
             let statsMap: Record<string, { total: number; checked: number; discrepancy: number }> = {}
 
             if (sessionIds.length > 0) {
-                const allItems = await fetchAll(supabase.from('internal_inventory_items').select('session_id, checked, note').in('session_id', sessionIds))
+                const allItems = await fetchAll((supabase as any).from('internal_inventory_items').select('session_id, checked, note').in('session_id', sessionIds))
 
                 data?.forEach(s => {
                     let virtualWhId: string | null = null
@@ -429,7 +430,7 @@ export default function InternalInventoryPage() {
         const isVirtual = lastSelectionId?.startsWith('v-')
 
         try {
-            const { data, error } = await supabase
+            const { data, error } = await (supabase as any)
                 .from('internal_inventory_sessions')
                 .insert({
                     name: newName.trim() || `Phiếu kiểm ${format(new Date(), 'dd/MM/yyyy HH:mm')}`,
@@ -461,7 +462,7 @@ export default function InternalInventoryPage() {
         const ok = await showConfirm('Xóa phiếu kiểm này? Dữ liệu sẽ bị mất vĩnh viễn.')
         if (!ok) return
         try {
-            const { error } = await supabase.from('internal_inventory_sessions').delete().eq('id', id)
+            const { error } = await (supabase as any).from('internal_inventory_sessions').delete().eq('id', id)
             if (error) throw error
             showToast('Đã xóa phiếu kiểm', 'success')
             if (selectedSession?.id === id) setSelectedSession(null)
@@ -484,15 +485,16 @@ export default function InternalInventoryPage() {
                 }
             } catch (e) { }
 
-            const [rawZonesData, rawPosData, itemsData] = await Promise.all([
+            const [rawZonesData, rawPosData, itemsData, zpData] = await Promise.all([
                 fetchAll(supabase.from('zones').select('id, name, code, parent_id, level, display_order, is_hall, system_type').eq('system_type', systemType)),
                 fetchAll(supabase.from('positions').select('id, code, lot_id, system_type').eq('system_type', systemType)),
-                fetchAll(supabase.from('internal_inventory_items').select('*').eq('session_id', session.id)),
+                fetchAll((supabase as any).from('internal_inventory_items').select('*').eq('session_id', session.id)),
+                fetchAll(supabase.from('zone_positions').select('zone_id, position_id')),
             ])
 
-            // Optimized: Fetch zone_positions ONLY for positions in this system
-            const posIds = rawPosData.map(p => p.id)
-            const zpData = await fetchInChunks('zone_positions', 'position_id', posIds, 'zone_id, position_id')
+
+
+
 
             // Map zones to positions before grouping
             const rawZPMap: Record<string, string> = {}
@@ -584,7 +586,7 @@ export default function InternalInventoryPage() {
         setEditingPositionId(positionId)
         // Fetch full lot details if needed, or construct from lotInfo
         const loadFullLot = async () => {
-            const { data, error } = await supabase
+            const { data, error } = await (supabase as any)
                 .from('lots')
                 .select(`
                     *,
@@ -622,7 +624,7 @@ export default function InternalInventoryPage() {
             const existing = items.find(i => i.position_id === affectedPosId)
             const pos = positions.find(p => p.id === affectedPosId)
 
-            const { data, error } = await supabase.from('internal_inventory_items').upsert({
+            const { data, error } = await (supabase as any).from('internal_inventory_items' as any).upsert({
                 session_id: selectedSession.id,
                 position_id: affectedPosId,
                 zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
@@ -677,7 +679,7 @@ export default function InternalInventoryPage() {
 
         try {
             const pos = positions.find(p => p.id === positionId)
-            await supabase.from('internal_inventory_items').upsert({
+            await (supabase as any).from('internal_inventory_items').upsert({
                 session_id: selectedSession.id,
                 position_id: positionId,
                 zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
@@ -718,7 +720,7 @@ export default function InternalInventoryPage() {
 
         try {
             const pos = positions.find(p => p.id === positionId)
-            await supabase.from('internal_inventory_items').upsert({
+            await (supabase as any).from('internal_inventory_items').upsert({
                 session_id: selectedSession.id,
                 position_id: positionId,
                 zone_id: (pos?.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
@@ -779,7 +781,7 @@ export default function InternalInventoryPage() {
         })
 
         try {
-            await supabase.from('internal_inventory_items').upsert(upserts, { onConflict: 'session_id,position_id' })
+            await (supabase as any).from('internal_inventory_items').upsert(upserts, { onConflict: 'session_id,position_id' })
             showToast(`Đã ${checked ? 'kiểm' : 'bỏ kiểm'} ${pids.length} vị trí`, 'success')
         } catch (e: any) {
             showToast('Lỗi tích hàng loạt: ' + e.message, 'error')
@@ -798,7 +800,7 @@ export default function InternalInventoryPage() {
         const newStatus = isLocked ? 'active' : 'completed'
 
         try {
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('internal_inventory_sessions')
                 .update({
                     status: newStatus,

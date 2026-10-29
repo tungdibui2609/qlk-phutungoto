@@ -154,6 +154,41 @@ export const formatPositionQtyUnit = (qty?: number | null, unit?: string | null)
   return `${formattedQty} ${displayUnit}`
 }
 
+/**
+ * Sắp xếp các vị trí trong cùng 1 Ô / Tầng theo quy chuẩn thực tế kho:
+ * 1. 2 số cuối cùng của mã vị trí: Nhóm 02 trước, nhóm 01 sau (xếp giảm dần 02 -> 01)
+ * 2. Cùng số cuối: Xếp theo chữ cái kệ A -> B -> C
+ * Kết quả: A02, B02, C02 rồi đến A01, B01, C01
+ */
+export function sortPositionsByDepthAndCol<T extends { code?: string | null }>(list: T[]): T[] {
+  return [...list].sort((pa, pb) => {
+    const codeA = (pa.code || '').trim().toUpperCase()
+    const codeB = (pb.code || '').trim().toUpperCase()
+
+    // 1. Lấy 2 số cuối cùng (ví dụ K1D1A08T502 -> 2, K1D1B08T501 -> 1)
+    const matchA = codeA.match(/(\d{2})$/)
+    const matchB = codeB.match(/(\d{2})$/)
+    const depthA = matchA ? parseInt(matchA[1], 10) : 0
+    const depthB = matchB ? parseInt(matchB[1], 10) : 0
+
+    if (depthA !== depthB) {
+      return depthB - depthA
+    }
+
+    // 2. Nếu cùng số cuối (cùng là 02 hoặc cùng là 01): xếp theo chữ cái kệ A -> B -> C
+    const colMatchA = codeA.match(/D\d+([A-Z])/i) || codeA.match(/([A-Z])\d{2}T/i) || codeA.match(/([A-Z])\d+/i)
+    const colMatchB = codeB.match(/D\d+([A-Z])/i) || codeB.match(/([A-Z])\d{2}T/i) || codeB.match(/([A-Z])\d+/i)
+    const colA = colMatchA ? colMatchA[1].toUpperCase() : ''
+    const colB = colMatchB ? colMatchB[1].toUpperCase() : ''
+
+    if (colA && colB && colA !== colB) {
+      return colA.localeCompare(colB)
+    }
+
+    return codeA.localeCompare(codeB, undefined, { numeric: true })
+  })
+}
+
 
 
 interface PositionItem {
@@ -1633,18 +1668,14 @@ export default function WarehouseMapTab() {
                   })
                   .map(tierAcc => ({
                     ...tierAcc,
-                    positions: [...tierAcc.positions].sort((pa, pb) =>
-                      (pa.code || '').localeCompare(pb.code || '', undefined, { numeric: true })
-                    )
+                    positions: sortPositionsByDepthAndCol(tierAcc.positions)
                   }))
 
                 return {
                   slot: slotAcc.slot,
                   unitsMap: slotAcc.unitsMap,
                   positionCount: slotAcc.positionCount,
-                  positions: [...slotAcc.positions].sort((pa, pb) =>
-                    (pa.code || '').localeCompare(pb.code || '', undefined, { numeric: true })
-                  ),
+                  positions: sortPositionsByDepthAndCol(slotAcc.positions),
                   tiers: sortedTiers
                 }
               })
@@ -1673,13 +1704,11 @@ export default function WarehouseMapTab() {
     }
   }, [isSearchActive, matchingPositions, zoneHierarchyMap])
 
-  // Tự động mở rộng các kho có hàng khi tìm kiếm
+  // Mặc định THU GỌN HẾT các kho khi tìm kiếm (gọn gàng, dễ nhìn theo từng thẻ Kho)
   useEffect(() => {
     if (breakdownReport?.warehouses) {
-      setExpandedWhIds(new Set(breakdownReport.warehouses.map(w => w.warehouse.id)))
-      const allAisles = new Set<string>()
-      breakdownReport.warehouses.forEach(w => w.aisles.forEach(a => allAisles.add(a.aisle.id)))
-      setExpandedAisleIds(allAisles)
+      setExpandedWhIds(new Set())
+      setExpandedAisleIds(new Set())
       setExpandedSlotIds(new Set())
       setExpandedBreakdownTierIds(new Set())
     }
@@ -2721,7 +2750,7 @@ export default function WarehouseMapTab() {
                                                     {/* Bấm vào Tầng mới hiện chi tiết từng Mã vị trí + Số lượng */}
                                                     {isTierExpanded && (
                                                       <div className="px-2 pb-2 pt-1.5 space-y-1 border-t border-slate-800/70 bg-[#070c17]">
-                                                        {tierAcc.positions.map(pos => (
+                                                        {sortPositionsByDepthAndCol(tierAcc.positions).map(pos => (
                                                           <button
                                                             key={pos.id}
                                                             type="button"
@@ -2764,7 +2793,7 @@ export default function WarehouseMapTab() {
                                               })
                                             ) : (
                                               <div className="space-y-1 pt-0.5">
-                                                {slotAcc.positions.map(pos => (
+                                                {sortPositionsByDepthAndCol(slotAcc.positions).map(pos => (
                                                   <button
                                                     key={pos.id}
                                                     type="button"
