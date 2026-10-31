@@ -217,6 +217,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             if (lot.qc_name) res.push(lot.qc_name)
                             if (lot.notes) res.push(lot.notes)
                             if (lot.warehouse_name) res.push(lot.warehouse_name)
+                            if (lot.staging_area_code) res.push(lot.staging_area_code)
                         }
                     }
 

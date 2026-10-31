@@ -153,6 +153,7 @@ export const LotSplitModal: React.FC<LotSplitModalProps> = ({ lot, onClose, onSu
                     peeling_date: lot.peeling_date,
                     packaging_date: lot.packaging_date,
                     warehouse_name: lot.warehouse_name,
+                    staging_area_code: lot.staging_area_code ?? null,
                     batch_code: lot.batch_code,
                     status: 'active',
                     system_code: lot.system_code,

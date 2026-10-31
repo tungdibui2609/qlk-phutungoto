@@ -9,7 +9,7 @@ import Protected from '@/components/auth/Protected'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { normalizeUnit, formatUnitWeight, groupQtyByNormalizedUnit } from '@/lib/unitConversion'
 import React from 'react'
-import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
+import { formatQuantityFull, parseQuantity, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { formatMaterialZoneList } from '@/lib/provinces'
 import { LotBoxLabelsModal } from '@/components/warehouse/lots/LotBoxLabelsModal'
 import { LotOcrScanModal } from '@/components/warehouse/lots/LotOcrScanModal'
@@ -35,11 +35,12 @@ interface LotCardProps {
     onAssignLocation?: (lot: Lot) => void
     onToggleLock?: (id: string, currentLocked: boolean) => Promise<boolean>
     onQuickUpdateSTT?: (lotId: string, newStt: string) => Promise<boolean>
+    onQuickUpdateQuantity?: (lotId: string, itemId: string, newQuantity: number) => Promise<boolean>
     managePermission?: string
     searchTerm?: string
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, onToggleSelect, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, onQuickUpdateSTT, managePermission, searchTerm }: LotCardProps) {
+export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, onToggleSelect, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, onQuickUpdateSTT, onQuickUpdateQuantity, managePermission, searchTerm }: LotCardProps) {
     const router = useRouter()
     const pathname = usePathname()
     const { showToast } = useToast()
@@ -195,6 +196,51 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
             }
         } finally {
             setIsSavingSTT(false)
+        }
+    }
+
+    const [editingQuantityItemId, setEditingQuantityItemId] = useState<string | null>(null)
+    const [editQuantityValue, setEditQuantityValue] = useState('')
+    const [isSavingQuantity, setIsSavingQuantity] = useState(false)
+    const quantityInputRef = useRef<HTMLInputElement>(null)
+
+    const handleStartEditQuantity = (e: React.MouseEvent, item: any) => {
+        e.stopPropagation()
+        if (lot.is_locked) {
+            showToast('Lô hàng đã bị khóa. Vui lòng mở khóa để sửa số lượng.', 'warning')
+            return
+        }
+        setEditingQuantityItemId(item.id)
+        setEditQuantityValue(String(item.quantity).replace('.', ','))
+        setTimeout(() => {
+            quantityInputRef.current?.focus()
+            quantityInputRef.current?.select()
+        }, 50)
+    }
+
+    const handleCancelEditQuantity = (e?: React.MouseEvent) => {
+        if (e) e.stopPropagation()
+        setEditingQuantityItemId(null)
+        setEditQuantityValue('')
+    }
+
+    const handleSaveQuantity = async (e?: React.MouseEvent | React.FormEvent) => {
+        if (e) e.stopPropagation()
+        if (isSavingQuantity || !editingQuantityItemId || !onQuickUpdateQuantity) return
+
+        const newQuantity = parseQuantity(editQuantityValue)
+        if (!editQuantityValue.trim() || !Number.isFinite(newQuantity) || newQuantity <= 0) {
+            showToast('Số lượng phải là một số lớn hơn 0.', 'warning')
+            quantityInputRef.current?.focus()
+            return
+        }
+
+        setIsSavingQuantity(true)
+        try {
+            const success = await onQuickUpdateQuantity(lot.id, editingQuantityItemId, newQuantity)
+            if (success) handleCancelEditQuantity()
+        } finally {
+            setIsSavingQuantity(false)
         }
     }
 
@@ -563,7 +609,7 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                             <span className="whitespace-nowrap">{lot.positions[0].code}</span>
                             {lot.positions.length > 1 && <span className="ml-0.5 text-[9px] opacity-75 font-normal shrink-0">+{lot.positions.length - 1}</span>}
                         </button>
-                    ) : (isUtilityEnabled('warehouse_staging_area') || isUtilityEnabled('warehouse_layout_2d')) && lot.warehouse_name ? (
+                    ) : (isUtilityEnabled('warehouse_staging_area') || isUtilityEnabled('warehouse_layout_2d')) && lot.staging_area_code ? (
                         <button
                             onClick={() => {
                                 if (lot.is_locked) {
@@ -575,10 +621,10 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                 }
                             }}
                             className={`h-6.5 flex-auto min-w-fit inline-flex items-center justify-center gap-1.5 px-2.5 rounded-full text-[10px] sm:text-[11px] font-bold tracking-tight bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-800/80 ${!isSanxuat && !lot.is_locked ? 'hover:bg-amber-100 dark:hover:bg-amber-900/50 cursor-pointer' : 'opacity-70 cursor-default'} transition-colors shadow-2xs`}
-                            title={`Kho: ${lot.warehouse_name} (Đang ở hàng chờ nhập kho, chưa xếp vào ô kệ)`}
+                            title={`Khu vực Chờ: ${lot.staging_area_code} (Chưa xếp vào ô kệ)`}
                         >
                             <Building2 size={11} className="text-amber-600 dark:text-amber-400 shrink-0" />
-                            <span className="whitespace-nowrap">{lot.warehouse_name} (Chờ xếp)</span>
+                            <span className="whitespace-nowrap">{lot.staging_area_code} (Chờ xếp)</span>
                         </button>
                     ) : (
                         <button
@@ -841,10 +887,82 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                                                 <div className={`px-2 py-0.5 rounded border font-mono font-bold text-xs shrink-0 ${showInternal && item.products?.internal_code ? 'bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 border-violet-100 dark:border-violet-800' : 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 border-indigo-100 dark:border-indigo-800'}`}>
                                                                     {showInternal && item.products?.internal_code ? item.products.internal_code : item.products?.sku}
                                                                 </div>
-                                                                <div className="flex items-center gap-1 font-mono text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 shrink-0 font-bold">
-                                                                    <span className="font-extrabold">{formatQuantityFull(item.quantity)}</span>
-                                                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
-                                                                </div>
+                                                                <Protected
+                                                                    permission={managePermission || 'lot.manage'}
+                                                                    fallback={(
+                                                                        <div className="flex items-center gap-1 font-mono text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 shrink-0 font-bold">
+                                                                            <span className="font-extrabold">{formatQuantityFull(item.quantity)}</span>
+                                                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
+                                                                        </div>
+                                                                    )}
+                                                                >
+                                                                    {editingQuantityItemId === item.id ? (
+                                                                        <div
+                                                                            onClick={(e) => e.stopPropagation()}
+                                                                            className="flex items-center gap-1 font-mono text-xs bg-white dark:bg-slate-900 text-emerald-800 dark:text-emerald-300 p-0.5 pl-2 rounded-lg border border-emerald-500 shrink-0 font-bold shadow-sm"
+                                                                        >
+                                                                            <input
+                                                                                ref={quantityInputRef}
+                                                                                type="text"
+                                                                                inputMode="decimal"
+                                                                                value={editQuantityValue}
+                                                                                onChange={(e) => {
+                                                                                    if (/^[0-9]*[,.]?[0-9]*$/.test(e.target.value) || e.target.value === '') {
+                                                                                        setEditQuantityValue(e.target.value)
+                                                                                    }
+                                                                                }}
+                                                                                onKeyDown={(e) => {
+                                                                                    if (e.key === 'Enter') {
+                                                                                        e.preventDefault()
+                                                                                        handleSaveQuantity()
+                                                                                    } else if (e.key === 'Escape') {
+                                                                                        e.preventDefault()
+                                                                                        handleCancelEditQuantity()
+                                                                                    }
+                                                                                }}
+                                                                                disabled={isSavingQuantity}
+                                                                                className="w-20 h-6 px-1.5 py-0 text-xs font-extrabold text-slate-900 dark:text-white bg-emerald-50/50 dark:bg-emerald-950/40 rounded border border-emerald-300 dark:border-emerald-700 outline-none focus:ring-1 focus:ring-emerald-500"
+                                                                                aria-label={`Số lượng ${item.products?.name || 'sản phẩm'}`}
+                                                                                autoFocus
+                                                                            />
+                                                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 whitespace-nowrap">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={handleSaveQuantity}
+                                                                                disabled={isSavingQuantity}
+                                                                                className="w-6 h-6 flex items-center justify-center rounded-md bg-emerald-600 hover:bg-emerald-700 text-white disabled:opacity-50 transition-colors cursor-pointer"
+                                                                                title="Lưu số lượng (Enter)"
+                                                                            >
+                                                                                {isSavingQuantity ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} className="stroke-[3]" />}
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={handleCancelEditQuantity}
+                                                                                disabled={isSavingQuantity}
+                                                                                className="w-6 h-6 flex items-center justify-center rounded-md bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-300 disabled:opacity-50 transition-colors cursor-pointer"
+                                                                                title="Hủy (Esc)"
+                                                                            >
+                                                                                <X size={12} />
+                                                                            </button>
+                                                                        </div>
+                                                                    ) : onQuickUpdateQuantity && !isSanxuat && !lot.is_locked ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={(e) => handleStartEditQuantity(e, item)}
+                                                                            className="group/qty flex items-center gap-1 font-mono text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 shrink-0 font-bold hover:bg-emerald-100 hover:border-emerald-400 dark:hover:bg-emerald-900/50 transition-colors cursor-pointer"
+                                                                            title="Bấm để sửa số lượng"
+                                                                        >
+                                                                            <span className="font-extrabold">{formatQuantityFull(item.quantity)}</span>
+                                                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
+                                                                            <Pencil size={10} className="ml-0.5 opacity-0 group-hover/qty:opacity-100 group-focus-visible/qty:opacity-100 transition-opacity" />
+                                                                        </button>
+                                                                    ) : (
+                                                                        <div className="flex items-center gap-1 font-mono text-xs bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/50 shrink-0 font-bold">
+                                                                            <span className="font-extrabold">{formatQuantityFull(item.quantity)}</span>
+                                                                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">{formatUnitWithWeight(item.product_id, (item as any).unit || item.products?.unit)}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </Protected>
                                                                 {(parsedHistory || originTag) && (
                                                                     <div
                                                                         className={`flex items-center gap-1 px-2 py-0.5 rounded border text-[10px] font-bold ${isSplit ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border-amber-200 dark:border-amber-800' : 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800'}`}

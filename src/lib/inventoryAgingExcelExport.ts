@@ -133,7 +133,7 @@ export async function exportInventoryAgingToExcel(data: AgingExportData) {
         { header: 'Kho', key: 'warehouse', width: 16 },
         { header: data.dateTypeLabel, key: 'date', width: 16 },
         { header: 'Số ngày tồn', key: 'days', width: 12 },
-        { header: 'Nhóm tuổi', key: 'bucket', width: 18 },
+        { header: 'Thời gian lưu kho', key: 'bucket', width: 22 },
         { header: 'Trạng thái', key: 'lock', width: 12 },
     ];
     wsLot.columns = lotCols.map(c => ({ key: c.key as string, width: c.width }));
@@ -169,7 +169,7 @@ export async function exportInventoryAgingToExcel(data: AgingExportData) {
     });
 
     // ===== Sheet 3: Tóm tắt theo nhóm tuổi =====
-    const wsSummary = workbook.addWorksheet('Tóm tắt nhóm tuổi');
+    const wsSummary = workbook.addWorksheet('Tóm tắt thời gian lưu kho');
     wsSummary.columns = [
         { key: 'bucket', width: 22 },
         { key: 'lotCount', width: 12 },
@@ -179,7 +179,7 @@ export async function exportInventoryAgingToExcel(data: AgingExportData) {
     ];
     addMeta(wsSummary, 'E');
     const sumHeader = wsSummary.getRow(4);
-    sumHeader.values = ['Nhóm tuổi', 'Số LOT', 'Số lượng tồn', 'Quy đổi (Kg)', '% số LOT'];
+    sumHeader.values = ['Thời gian lưu kho', 'Số LOT', 'Số lượng tồn', 'Quy đổi (Kg)', '% số LOT'];
     styleHeader(sumHeader);
 
     const totalLots = data.stats.lotCount || 1;

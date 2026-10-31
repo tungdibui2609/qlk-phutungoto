@@ -19,6 +19,7 @@ import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 import { syncDatesFromBoxesToLot } from '@/lib/lotDateSync'
 import { Combobox } from '@/components/ui/Combobox'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
+import { fetchDefaultBranchName } from '@/lib/branches'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import { parseDateToISO } from '@/lib/dateUtils'
 import { DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
@@ -2062,10 +2063,14 @@ export default function PalletsPageContent() {
             const cleanRaw = cleanRawDates.length > 0 ? cleanRawDates[0] : cleanDateForDB(customRawMaterialDate)
             const cleanPeeling = cleanPeelingDates.length > 0 ? cleanPeelingDates[0] : cleanDateForDB(customPeelingDate)
 
+            // LOT bắt buộc mang chi nhánh: dùng chi nhánh mặc định của công ty (khai báo tại Cài đặt → Chi nhánh)
+            const defaultBranchName = await fetchDefaultBranchName(supabase, currentSystem.company_id || profile?.company_id)
+
             // 1. Tạo mới bản ghi Lô (lots)
             const lotPayload: any = {
                 code: finalLotCode,
                 system_code: currentSystem.code,
+                warehouse_name: defaultBranchName || null,
                 company_id: profile?.company_id || null,
                 product_id: primaryProductId,
                 daily_seq: dailySeqVal,

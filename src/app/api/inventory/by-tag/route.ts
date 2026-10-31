@@ -58,6 +58,7 @@ export async function GET(req: NextRequest) {
                 const { data, error } = await supabase
                     .from(tableName as any)
                     .select(selectCols)
+                    .order('id')
                     .range(currentFrom, currentFrom + LIMIT - 1);
                 if (error) throw error;
                 if (!data || data.length === 0) break;
@@ -89,9 +90,6 @@ export async function GET(req: NextRequest) {
                     code,
                     warehouse_name,
                     status,
-                    production_code,
-                    batch_code,
-                    productions (code),
                     lot_items (
                         id,
                         product_id,
@@ -104,6 +102,7 @@ export async function GET(req: NextRequest) {
                     )
                 `)
                 .neq('status', 'hidden')
+                .order('id')
                 .range(from, from + PAGE_SIZE - 1);
 
             if (normalizedSystemType) {
@@ -195,11 +194,6 @@ export async function GET(req: NextRequest) {
             const generalTags = (lot.lot_tags || [])
                 .filter((t: any) => !t.lot_item_id)
                 .map((t: any) => t.tag);
-                
-            const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
-            if (sxCode) {
-                generalTags.push(`LSX: ${sxCode}`)
-            }
 
             const itemTagsMap = new Map<string, string[]>();
             (lot.lot_tags || []).filter((t: any) => t.lot_item_id).forEach((t: any) => {
@@ -307,6 +301,7 @@ export async function GET(req: NextRequest) {
                     quantity: product.quantity,
                     unit: product.unit,
                     lotCount: product.lotCodes.length,
+                    lotCodes: product.lotCodes,
                     isUnconvertible: product.isUnconvertible
                 });
                 if (!product.isUnconvertible) {

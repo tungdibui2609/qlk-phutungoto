@@ -22,7 +22,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
     const isStagingEnabled = hasModule('warehouse_staging_area') || hasModule('warehouse_layout_2d')
     const initialPosCode = typeof lot.positions?.[0] === 'string'
         ? lot.positions[0]
-        : (lot.positions?.[0] as any)?.code || (isStagingEnabled ? lot.warehouse_name : '') || ''
+        : (lot.positions?.[0] as any)?.code || (isStagingEnabled ? lot.staging_area_code : '') || ''
     const [code, setCode] = useState<string>(initialPosCode)
     const [searchTerm, setSearchTerm] = useState('')
     const [positions, setPositions] = useState<ComboboxOption[]>([])
@@ -264,9 +264,9 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
 
                 if (unassignError) throw unassignError
 
-                // Clear warehouse_name on lot
+                // Clear staging area on lot (chi nhánh trong warehouse_name được giữ nguyên)
                 await (supabase.from('lots') as any)
-                    .update({ warehouse_name: null })
+                    .update({ staging_area_code: null })
                     .eq('id', lot.id)
 
                 // Log Activity for Audit Trail
@@ -293,7 +293,8 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                         entity_id: lot.id,
                         details: {
                             previous_positions: currentPositions?.map((p: any) => p.code) || [],
-                            previous_warehouse: lot.warehouse_name
+                            previous_staging_area: lot.staging_area_code,
+                            branch: lot.warehouse_name
                         }
                     } as any;
 
@@ -338,11 +339,11 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                     }
                 }
 
-                // 2. Set warehouse_name on lot
-                const targetWarehouseCode = matchedLayout.code || matchedLayout.name
+                // 2. Set staging_area_code on lot (warehouse_name giữ nguyên = chi nhánh nhập hàng)
+                const targetStagingCode = matchedLayout.code || matchedLayout.name
                 const { error: lotUpdateError } = await (supabase.from('lots') as any)
                     .update({ 
-                        warehouse_name: targetWarehouseCode
+                        staging_area_code: targetStagingCode
                     })
                     .eq('id', lot.id)
 
@@ -354,8 +355,8 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                     tableName: 'lots',
                     recordId: lot.id,
                     action: 'UPDATE',
-                    oldData: { warehouse_name: lot.warehouse_name },
-                    newData: { warehouse_name: targetWarehouseCode },
+                    oldData: { staging_area_code: lot.staging_area_code },
+                    newData: { staging_area_code: targetStagingCode },
                     systemCode: currentSystem?.code || ''
                 })
 
@@ -368,15 +369,15 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                         details: {
                             warehouse_code: matchedLayout.code,
                             warehouse_name: matchedLayout.name,
-                            target: targetWarehouseCode,
-                            previous_warehouse: lot.warehouse_name,
+                            target: targetStagingCode,
+                            previous_staging_area: lot.staging_area_code,
                             previous_positions: currentPositions?.map((p: any) => p.code) || []
                         }
                     } as any;
                     await (supabase as any).from('operation_history').insert(historyObj);
                 } catch {}
 
-                showToast(`Đã đưa lô hàng vào Khu vực Chờ của Kho ${matchedLayout.name} (${matchedLayout.code || targetWarehouseCode})!`, 'success')
+                showToast(`Đã đưa lô hàng vào Khu vực Chờ của Kho ${matchedLayout.name} (${matchedLayout.code || targetStagingCode})!`, 'success')
                 onSuccess()
                 return
             }
@@ -578,6 +579,13 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                 throw assignError
             }
 
+            // LOT đã nằm trong ô kệ thật → không còn ở Khu vực Chờ
+            if (lot.staging_area_code) {
+                await (supabase.from('lots') as any)
+                    .update({ staging_area_code: null })
+                    .eq('id', lot.id)
+            }
+
             // Log Audit for NEW assignment
             await logActivity({
                 supabase,
@@ -715,6 +723,13 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
 
             if (assignError) throw assignError;
 
+            // LOT đã nằm trong ô vị trí thật → không còn ở Khu vực Chờ
+            if (lot.staging_area_code) {
+                await (supabase.from('lots') as any)
+                    .update({ staging_area_code: null })
+                    .eq('id', lot.id);
+            }
+
             // 5. Log history (Legacy)
             const historyObj = {
                 system_code: currentSystem.code,
@@ -801,11 +816,18 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                             <div className="font-mono text-sm font-bold text-slate-800 dark:text-slate-200">
                                 {lot.code}
                             </div>
-                            {lot.warehouse_name && (
-                                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/60">
-                                    Kho: {lot.warehouse_name}
-                                </span>
-                            )}
+                            <div className="flex flex-wrap items-center justify-end gap-1.5">
+                                {lot.staging_area_code && (
+                                    <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-orange-100 text-orange-800 dark:bg-orange-950/60 dark:text-orange-300 border border-orange-300/60">
+                                        Chờ: {lot.staging_area_code}
+                                    </span>
+                                )}
+                                {lot.warehouse_name && (
+                                    <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-300/60">
+                                        Chi nhánh: {lot.warehouse_name}
+                                    </span>
+                                )}
+                            </div>
                         </div>
                     </div>
 
@@ -813,7 +835,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                         <form onSubmit={handleAssign} className="space-y-4">
                             <div>
                                 <label className="text-xs text-slate-500 font-medium mb-1 uppercase tracking-wider block">
-                                    Mã vị trí (Ô/Kệ) hoặc Mã kho
+                                    Mã vị trí (Ô/Kệ){isStagingEnabled ? ' hoặc Mã Khu vực Chờ' : ''}
                                 </label>
                                 <Combobox
                                     options={positions}
@@ -826,13 +848,17 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                                         setSearchTerm(val)
                                         setCode(val)
                                     }}
-                                    placeholder="Nhập mã vị trí (VD: A-1-1) hoặc mã kho (VD: KBB1)"
+                                    placeholder={isStagingEnabled
+                                        ? 'Nhập mã vị trí (VD: A-1-1) hoặc mã Khu vực Chờ (VD: KBB1)'
+                                        : 'Nhập mã vị trí (VD: A-1-1)'}
                                     className="w-full"
                                     isLoading={loadingPositions || loadingLayouts}
                                     allowCustom={true}
                                 />
                                 <p className="mt-1 text-[10px] text-slate-400 italic">
-                                    Nhập mã kho (VD: KBB1) để đưa vào Khu vực Chờ của kho đó, hoặc nhập mã ô kệ cụ thể. Để trống để xóa vị trí.
+                                    {isStagingEnabled
+                                        ? 'Nhập mã Khu vực Chờ (VD: KBB1) để đưa lô hàng vào hàng chờ xếp của kho đó, hoặc nhập mã ô kệ cụ thể. Để trống để xóa vị trí.'
+                                        : 'Nhập mã ô kệ cụ thể. Để trống để xóa vị trí.'}
                                 </p>
 
                                 {/* Gợi ý gán nhanh kho */}
@@ -840,7 +866,7 @@ export function LotAssignPositionModal({ lot, onClose, onSuccess }: LotAssignPos
                                     <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800">
                                         <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                             <Building2 size={13} className="text-orange-500" />
-                                            Gợi ý gán vào Kho (Khu vực Chờ):
+                                            Gợi ý gán vào Khu vực Chờ:
                                         </div>
                                         <div className="flex flex-wrap gap-2">
                                             {warehouseLayouts.map((l: any) => {

@@ -160,6 +160,7 @@ export default function PrintInventoryPage() {
     const [lotItems, setLotItems] = useState<LotItem[]>([])
     const [groupedLots, setGroupedLots] = useState<GroupedLot[]>([])
     const [reconcileItems, setReconcileItems] = useState<ReconciliationItem[]>([])
+    const [productionItems, setProductionItems] = useState<any[]>([])
     const dataLoadedFromSessionRef = React.useRef(false)
 
     // Unit Conversion Support
@@ -248,6 +249,7 @@ export default function PrintInventoryPage() {
         else if (reportType === 'lot') setEditReportTitle('BÁO CÁO TỒN KHO THEO LOT')
         else if (reportType === 'category') setEditReportTitle('BÁO CÁO TỒN KHO THEO DANH MỤC')
         else if (reportType === 'tags') setEditReportTitle('BÁO CÁO TỒN KHO THEO MÃ PHỤ')
+        else if (reportType === 'production') setEditReportTitle('BÁO CÁO TỒN KHO THEO LỆNH SẢN XUẤT')
         else if (reportType === 'labels') setEditReportTitle('BÁO CÁO TỒN KHO THEO TEM NHÃN')
         else if (reportType === 'reconciliation') setEditReportTitle('BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN')
 
@@ -435,6 +437,23 @@ export default function PrintInventoryPage() {
                 if (data.ok) setBoxLabelItems(data.items)
                 else throw new Error(data.error || 'Unknown error')
             }
+            else if (type === 'production') {
+                const params = new URLSearchParams()
+                if (systemType) params.set('systemType', systemType)
+                if (warehouse) params.set('warehouse', warehouse)
+                if (searchTerm) params.set('q', searchTerm)
+                if (searchModeParam) params.set('searchMode', searchModeParam)
+                if (targetUnitId) params.set('targetUnitId', targetUnitId)
+
+                const res = await fetch(`/api/inventory/by-production?${params.toString()}`, { headers })
+                if (!res.ok) {
+                    const errText = await res.text().catch(() => '')
+                    throw new Error(`Fetch failed: ${res.status} ${errText}`)
+                }
+                const data = await res.json()
+                if (data.ok) setProductionItems(data.items)
+                else throw new Error(data.error || 'Unknown error')
+            }
             else if (type === 'lot' || type === 'category' || type === 'tags') {
                 let allLots: any[] = []
                 let lotsFrom = 0
@@ -444,7 +463,7 @@ export default function PrintInventoryPage() {
                             products(name, unit, sku, system_type, internal_code, internal_name, category_id),
                             suppliers(name),
                             productions(code),
-                            lot_tags(tag),
+                            lot_tags(tag, lot_item_id),
                             lot_items(id, quantity, unit, product_id, category_id, lot_tags(tag), products(name, sku, unit, category_id)),
                             positions!positions_lot_id_fkey(id, code)
                         `)
@@ -511,10 +530,15 @@ export default function PrintInventoryPage() {
                             if (lot.positions && lot.positions.length > 0) return []
                         }
 
-                        const lotTags = (lot.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
-                        const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
-                        if (sxCode) {
-                            lotTags.push(`LSX: ${sxCode}`)
+                        // Chỉ lot_tags không gắn vào dòng nào (cấp thẻ LOT) mới được áp cho mọi dòng.
+                        // Nếu lấy hết thì mã phụ của dòng này sẽ bị gán nhầm cho dòng khác cùng pallet.
+                        const lotTags = (lot.lot_tags || []).filter((t: any) => !t.lot_item_id).map((t: any) => t.tag).filter(Boolean) as string[]
+                        // Mã LOT sản xuất không phải là mã phụ, nên báo cáo theo Mã phụ không được nhóm theo nó.
+                        if (type !== 'tags') {
+                            const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
+                            if (sxCode) {
+                                lotTags.push(`LSX: ${sxCode}`)
+                            }
                         }
                         const lotData = {
                             lotCode: lot.code,
@@ -920,7 +944,7 @@ export default function PrintInventoryPage() {
             positionFilter: positionFilter as any,
             dateTitle,
             warehouse: warehouse || 'Tất cả',
-            items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems)),
+            items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'production' ? productionItems : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems))),
             companyInfo
         })
     }
@@ -928,7 +952,7 @@ export default function PrintInventoryPage() {
     // Auto-export if requested via URL
     useEffect(() => {
         const exportType = searchParams.get('export')
-        if (!loading && !error && (accountingItems.length > 0 || groupedLots.length > 0 || reconcileItems.length > 0) && exportType === 'excel') {
+        if (!loading && !error && (accountingItems.length > 0 || groupedLots.length > 0 || productionItems.length > 0 || reconcileItems.length > 0) && exportType === 'excel') {
             const timer = setTimeout(() => {
                 handleExportExcel()
                 // Remove the export param from URL to prevent infinite loop on refresh
@@ -938,7 +962,7 @@ export default function PrintInventoryPage() {
             }, 500)
             return () => clearTimeout(timer)
         }
-    }, [loading, error, accountingItems, groupedLots, reconcileItems])
+    }, [loading, error, accountingItems, groupedLots, productionItems, reconcileItems])
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
 
@@ -1447,6 +1471,62 @@ export default function PrintInventoryPage() {
                                     )
                                 })
                             )}
+                        </tbody>
+                    </table>
+                )}
+
+                {type === 'production' && (
+                    <table className="w-full border-collapse border border-black text-[12px]">
+                        <thead>
+                            <tr className="bg-gray-100">
+                                <th className="border border-black p-2 w-10 text-center font-bold">STT</th>
+                                <th className="border border-black p-2 w-32 font-bold">Mã Lot SX</th>
+                                <th className="border border-black p-2 w-28 font-bold">Mã SP</th>
+                                <th className="border border-black p-2 font-bold min-w-[200px]">Tên sản phẩm</th>
+                                <th className="border border-black p-2 w-20 text-center font-bold">ĐVT</th>
+                                <th className="border border-black p-2 w-24 text-right font-bold">Số lượng</th>
+                                <th className="border border-black p-2 w-16 text-center font-bold">Số kiện</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {productionItems.length === 0 ? (
+                                <tr><td colSpan={7} className="border border-black p-4 text-center text-stone-500">Không có dữ liệu</td></tr>
+                            ) : (() => {
+                                const rows: React.ReactNode[] = []
+                                let stt = 1
+                                productionItems.forEach((order: any) => {
+                                    const palletCount = order.lots.reduce((s: number, l: any) => s + l.products.reduce((ps: number, p: any) => ps + (p.lotCodes?.length || 0), 0), 0)
+                                    rows.push(
+                                        <tr key={`ord-${order.orderCode}`} className="bg-orange-100 font-bold border-t-2 border-black">
+                                            <td className="border border-black p-2 text-orange-800" colSpan={7}>
+                                                <div className="flex justify-between items-center">
+                                                    <span>◆ LỆNH SX: {order.orderCode}{order.orderName ? ` — ${order.orderName}` : ''}</span>
+                                                    <span className="text-[11px] font-normal italic">{order.lots.length} mã lot SX • {palletCount} kiện</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )
+                                    order.lots.forEach((lot: any) => {
+                                        lot.products.forEach((p: any) => {
+                                            rows.push(
+                                                <tr key={`row-${order.orderCode}-${lot.lotCode}-${p.productCode}-${p.unit}`} className="h-8">
+                                                    <td className="border border-black p-1 text-center text-stone-500">{stt++}</td>
+                                                    <td className="border border-black p-1">
+                                                        <div>{lot.lotCode}</div>
+                                                        {lot.productionDate && <div className="text-[10px] text-stone-500">{formatDateStr(lot.productionDate)}</div>}
+                                                    </td>
+                                                    <td className="border border-black p-1">{p.productCode}</td>
+                                                    <td className="border border-black p-1">{p.productName}{p.isUnconvertible ? ' *' : ''}</td>
+                                                    <td className="border border-black p-1 text-center text-stone-600">{p.unit}</td>
+                                                    <td className="border border-black p-1 text-right font-medium">{formatQuantityFull(p.quantity)}</td>
+                                                    <td className="border border-black p-1 text-center text-stone-600">{p.lotCodes?.length || 0}</td>
+                                                </tr>
+                                            )
+                                        })
+                                    })
+                                })
+                                return <>{rows}</>
+                            })()}
                         </tbody>
                     </table>
                 )}

@@ -7,6 +7,7 @@ import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import InventoryByLot from '@/components/inventory/InventoryByLot'
 import InventoryByTag from '@/components/inventory/InventoryByTag'
+import InventoryByProduction from '@/components/inventory/InventoryByProduction'
 import InventoryReconciliation from '@/components/inventory/InventoryReconciliation'
 import InventoryByCategory from '@/components/inventory/InventoryByCategory'
 import MobileInventoryList from '@/components/inventory/MobileInventoryList'
@@ -41,13 +42,13 @@ interface Branch {
 }
 
 export default function InventoryPage() {
-    const { systemType } = useSystem()
+    const { systemType, hasModule } = useSystem()
     const { profile } = useUser()
     const { companyInfo, loading: loadingCompany } = usePrintCompanyInfo({
         orderCompanyId: profile?.company_id
     })
 
-    const [activeTab, setActiveTab] = useState<'accounting' | 'category' | 'lot' | 'tags' | 'reconciliation' | 'labels'>('accounting')
+    const [activeTab, setActiveTab] = useState<'accounting' | 'category' | 'lot' | 'tags' | 'production' | 'reconciliation' | 'labels'>('accounting')
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
@@ -248,6 +249,8 @@ export default function InventoryPage() {
                         { id: 'category', name: 'Tồn theo danh mục' },
                         { id: 'lot', name: 'Tồn kho theo LOT' },
                         { id: 'tags', name: 'Tồn theo Mã phụ' },
+                        // Module bật/tắt theo phân hệ: Cài đặt phân hệ → Tính năng → "Tồn theo Lệnh sản xuất"
+                        ...(hasModule('report_inventory_by_production') ? [{ id: 'production', name: 'Tồn theo Lệnh SX' }] : []),
                         { id: 'labels', name: 'Tồn theo Tem nhãn' },
                         { id: 'reconciliation', name: 'Đối chiếu' },
                     ].map((tab) => (
@@ -269,7 +272,7 @@ export default function InventoryPage() {
             </div>
 
             {/* Global Filters - Visible for Accounting, Category, Lot tabs */}
-            {(activeTab === 'accounting' || activeTab === 'category' || activeTab === 'lot' || activeTab === 'labels') && (
+            {(activeTab === 'accounting' || activeTab === 'category' || activeTab === 'lot' || activeTab === 'production' || activeTab === 'labels') && (
                 <div className="flex flex-col gap-4 bg-white dark:bg-stone-900 p-4 rounded-lg border border-stone-200 dark:border-stone-800 shadow-sm">
                     {/* Row 1: Search - Full Width */}
                     <div className="w-full">
@@ -714,6 +717,29 @@ export default function InventoryPage() {
                         targetUnitId={targetUnitId}
                         searchTerm={q}
                         searchMode={searchMode}
+                        onClearFilters={() => {
+                            setQ('')
+                            setSearchMode('all')
+                            setTargetUnitId(null)
+                            setSelectedBranch('Tất cả')
+                        }}
+                    />
+                )}
+
+                {activeTab === 'production' && (
+                    <InventoryByProduction
+                        units={units}
+                        systemType={systemType}
+                        selectedBranch={selectedBranch}
+                        targetUnitId={targetUnitId}
+                        searchTerm={q}
+                        searchMode={searchMode}
+                        onClearFilters={() => {
+                            setQ('')
+                            setSearchMode('all')
+                            setTargetUnitId(null)
+                            setSelectedBranch('Tất cả')
+                        }}
                     />
                 )}
 

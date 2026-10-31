@@ -1224,7 +1224,7 @@ function WarehouseMapContent() {
             const { data, error } = await supabase
                 .from('lots')
                 .select(`
-                    id, code, inbound_date, created_at, batch_code, warehouse_name, metadata, status,
+                    id, code, inbound_date, created_at, batch_code, warehouse_name, staging_area_code, metadata, status,
                     lot_items(id, quantity, unit, products(id, name, sku, unit)),
                     lot_tags(tag, lot_id, lot_item_id)
                 `)
@@ -1256,6 +1256,7 @@ function WarehouseMapContent() {
                     tag,
                     batchCode: l.batch_code,
                     warehouseName: l.warehouse_name,
+                    stagingAreaCode: l.staging_area_code,
                     inboundDate: l.inbound_date || l.created_at,
                     systemType: sysCode
                 };

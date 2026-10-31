@@ -5,6 +5,7 @@ import { SearchHelpModal } from '@/components/shared/SearchHelpModal'
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 import { calculateSearchScore, matchSearch } from '@/lib/searchUtils'
+import { BRANCH_FILTER_ALL, BRANCH_FILTER_NONE } from '@/lib/branches'
 
 interface LotFilterProps {
     searchTerm: string
@@ -17,6 +18,9 @@ interface LotFilterProps {
     onLockFilterChange: (value: 'all' | 'unlocked' | 'locked') => void
     sttFilter: 'all' | 'has_stt' | 'no_stt'
     onSttFilterChange: (value: 'all' | 'has_stt' | 'no_stt') => void
+    branchFilter: string
+    onBranchFilterChange: (value: string) => void
+    branches?: any[]
     selectedZoneId: string | null
     onZoneSelect: (zoneId: string | null) => void
     dateFilterField: DateFilterField
@@ -42,6 +46,9 @@ export function LotFilter({
     onLockFilterChange,
     sttFilter,
     onSttFilterChange,
+    branchFilter,
+    onBranchFilterChange,
+    branches,
     selectedZoneId,
     onZoneSelect,
     dateFilterField,
@@ -453,6 +460,28 @@ export function LotFilter({
 
                         {/* Quick filter pills right next to Khu vực / Dãy hàng */}
                         <div className={`${showMobileFilters ? 'flex' : 'hidden sm:flex'} flex-wrap items-center gap-2`}>
+                            {/* Branch filter — chi nhánh là cấp công ty, hiện khi công ty có khai báo chi nhánh */}
+                            {branches && branches.length > 0 && (
+                                <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border min-w-[135px] transition-colors ${
+                                    branchFilter !== BRANCH_FILTER_ALL
+                                        ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-800 text-blue-800 dark:text-blue-200'
+                                        : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200'
+                                }`}>
+                                    <MapPin size={12} className={branchFilter !== BRANCH_FILTER_ALL ? 'text-blue-600' : 'text-slate-500'} />
+                                    <select
+                                        value={branchFilter}
+                                        onChange={(e) => onBranchFilterChange(e.target.value)}
+                                        className="bg-transparent border-none text-[11px] font-bold focus:ring-0 cursor-pointer p-0 appearance-none pr-3 w-full text-inherit"
+                                    >
+                                        <option value={BRANCH_FILTER_ALL}>Chi nhánh: Tất cả</option>
+                                        {branches.map(b => (
+                                            <option key={b.id} value={b.name}>{b.name}</option>
+                                        ))}
+                                        <option value={BRANCH_FILTER_NONE}>Chưa gắn chi nhánh</option>
+                                    </select>
+                                </div>
+                            )}
+
                             {/* Position Assignment Status */}
                             <div className="flex items-center gap-1.5 bg-emerald-50/50 dark:bg-emerald-950/20 px-2.5 py-1 rounded-xl border border-emerald-200 dark:border-emerald-800/50 min-w-[115px]">
                                 <Warehouse size={12} className="text-emerald-600 shrink-0" />

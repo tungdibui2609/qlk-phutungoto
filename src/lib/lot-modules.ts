@@ -17,8 +17,8 @@ export const LOT_MODULES: LotModule[] = [
     },
     {
         id: 'warehouse_name',
-        name: 'Kho nhập hàng',
-        description: 'Hiển thị và cho phép chọn kho nhập hàng (chi nhánh).',
+        name: 'Chi nhánh nhập hàng',
+        description: 'Hiển thị và cho phép chọn chi nhánh nhập hàng (cấp công ty, bắt buộc khi công ty có khai báo chi nhánh). Không dùng cho khu vực chờ xếp.',
         icon: MapPin,
         is_basic: true
     },

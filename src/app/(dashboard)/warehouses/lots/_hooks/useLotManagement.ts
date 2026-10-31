@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
 import { useSystem } from '@/contexts/SystemContext'
+import { useUser } from '@/contexts/UserContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { matchSearch, advancedMatchSearch, normalizeSearchString, calculateSearchScore } from '@/lib/searchUtils'
 import { matchDateRange } from '@/lib/dateUtils'
@@ -10,6 +11,7 @@ import { DateFilterField } from '@/components/warehouse/DateRangeFilter'
 import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilters'
 import { encodeSTT, decodeSTT, setLastUpdatedSTT, getLastUpdatedSTT, getNextSTT } from '@/lib/numberUtils'
 import { logLotsDeletion } from '@/lib/lotDeleteLogger'
+import { getBranchesOfCompany, getDefaultBranchName, BRANCH_FILTER_ALL, BRANCH_FILTER_NONE } from '@/lib/branches'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -35,6 +37,7 @@ export type Lot = Database['public']['Tables']['lots']['Row'] & {
     qc_id?: string | null
     packaging_date?: string | null
     warehouse_name?: string | null
+    staging_area_code?: string | null
     raw_material_date?: string | null
     production_code?: string | null
     production_id?: string | null
@@ -60,6 +63,7 @@ export type ProductUnit = any
 
 export function useLotManagement() {
     const { currentSystem, hasModule } = useSystem()
+    const { profile } = useUser()
     const { showToast, showConfirm } = useToast()
     const [lots, setLots] = useState<Lot[]>([])
     const [loading, setLoading] = useState(true)
@@ -75,6 +79,7 @@ export function useLotManagement() {
     const [positionFilter, setPositionFilter] = useState<'all' | 'assigned' | 'unassigned'>('all')
     const [lockFilter, setLockFilter] = useState<'all' | 'unlocked' | 'locked'>('all')
     const [sttFilter, setSttFilter] = useState<'all' | 'has_stt' | 'no_stt'>('all')
+    const [branchFilter, setBranchFilter] = useState<string>(BRANCH_FILTER_ALL)
     const [selectedZoneId, setSelectedZoneId] = useState<string | null>(null)
     const [dateFilterField, setDateFilterField] = useState<DateFilterField>('created_at')
     const [startDate, setStartDate] = useState<string>('')
@@ -149,7 +154,7 @@ export function useLotManagement() {
         }, 500)
 
         return () => clearTimeout(timer)
-    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter, sttFilter])
+    }, [searchTerm, searchMode, positionFilter, selectedZoneId, dateFilterField, startDate, endDate, fifoActive, lockFilter, sttFilter, branchFilter])
 
     // Effect for page change ONLY
     useEffect(() => {
@@ -193,7 +198,11 @@ export function useLotManagement() {
         setProducts(prodData)
         setSuppliers(suppData)
         setQCList(qcData)
-        setBranches(branchData)
+        // Chi nhánh là cấp công ty → kho nào trong công ty cũng chọn được (cô lập multi-tenant)
+        const companyBranches = getBranchesOfCompany(branchData, currentSystem.company_id)
+        setBranches(companyBranches)
+        // Bộ lọc chi nhánh mặc định: chọn sẵn chi nhánh mặc định của công ty (VD: CN Cư M'gar)
+        setBranchFilter(getDefaultBranchName(companyBranches, currentSystem.company_id) || BRANCH_FILTER_ALL)
         setUnits(unitData)
         setProductUnits(pUnitData)
         setProductions(productionData)
@@ -507,6 +516,14 @@ export function useLotManagement() {
                 query = query.not('daily_seq', 'is', null)
             } else if (sttFilter === 'no_stt') {
                 query = query.is('daily_seq', null)
+            }
+
+            if (branchFilter !== BRANCH_FILTER_ALL) {
+                if (branchFilter === BRANCH_FILTER_NONE) {
+                    query = query.is('warehouse_name', null)
+                } else {
+                    query = query.eq('warehouse_name', branchFilter)
+                }
             }
 
             // Implementation Strategy for filters:
@@ -1831,6 +1848,179 @@ export function useLotManagement() {
         return true
     }
 
+    async function handleQuickUpdateQuantity(lotId: string, itemId: string, newQuantity: number): Promise<boolean> {
+        const targetLot = lots.find(l => l.id === lotId)
+        const targetItem = targetLot?.lot_items?.find(item => item.id === itemId)
+
+        if (!targetLot || !targetItem) {
+            showToast('Không tìm thấy dòng sản phẩm cần cập nhật.', 'error')
+            return false
+        }
+        if (targetLot.is_locked) {
+            showToast('Lô hàng đã bị khóa. Vui lòng mở khóa để sửa số lượng.', 'warning')
+            return false
+        }
+        if (!Number.isFinite(newQuantity) || newQuantity <= 0) {
+            showToast('Số lượng phải là một số lớn hơn 0.', 'warning')
+            return false
+        }
+
+        const normalizedQuantity = Number(newQuantity.toFixed(6))
+        const previousQuantity = Number(targetItem.quantity) || 0
+        if (Math.abs(previousQuantity - normalizedQuantity) < 0.000001) return true
+
+        const updatedItems = (targetLot.lot_items || []).map(item =>
+            item.id === itemId ? { ...item, quantity: normalizedQuantity } : item
+        )
+        const totalQuantity = Number(updatedItems.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0).toFixed(6))
+        const unit = targetItem.unit || targetItem.products?.unit || ''
+        const sku = targetItem.products?.sku || 'Sản phẩm'
+        const metadata = targetLot.metadata && typeof targetLot.metadata === 'object' ? { ...targetLot.metadata } : {}
+        const systemHistory = metadata.system_history && typeof metadata.system_history === 'object'
+            ? { ...metadata.system_history }
+            : { exports: [], inbound: [] }
+
+        systemHistory.edits = [
+            ...(Array.isArray(systemHistory.edits) ? systemHistory.edits : []),
+            {
+                id: crypto.randomUUID(),
+                date: new Date().toISOString(),
+                actor: profile?.full_name || profile?.email || 'Unknown',
+                description: 'Cập nhật nhanh số lượng lô hàng',
+                changes: [`${sku}: ${previousQuantity} → ${normalizedQuantity} ${unit}`.trim()]
+            }
+        ]
+
+        if (hasModule('lot_accounting_sync')) {
+            systemHistory.inbound = Array.isArray(systemHistory.inbound) ? [...systemHistory.inbound] : []
+            const freshCreationDraftIdx = systemHistory.inbound.findIndex((inb: any) => inb.draft === true && !inb.is_adjustment)
+
+            if (freshCreationDraftIdx >= 0) {
+                const inboundItems: Record<string, any> = {}
+                updatedItems.filter(item => item.quantity > 0).forEach((item, idx) => {
+                    const product = products.find(p => p.id === item.product_id) || item.products
+                    inboundItems[idx] = {
+                        product_id: item.product_id,
+                        product_sku: product?.sku,
+                        product_name: product?.name,
+                        quantity: item.quantity,
+                        unit: item.unit || product?.unit || '',
+                        price: (product as any)?.cost_price || 0,
+                        category_id: (item as any).category_id || (product as any)?.category_id || null
+                    }
+                })
+                systemHistory.inbound[freshCreationDraftIdx] = {
+                    ...systemHistory.inbound[freshCreationDraftIdx],
+                    items: inboundItems,
+                    is_edit: true,
+                    updated_at: new Date().toISOString()
+                }
+            } else {
+                const product = products.find(p => p.id === targetItem.product_id) || targetItem.products
+                const difference = Number((normalizedQuantity - previousQuantity).toFixed(6))
+                const adjustmentItem = {
+                    product_id: targetItem.product_id,
+                    product_sku: product?.sku,
+                    product_name: product?.name,
+                    unit,
+                    category_id: (targetItem as any).category_id || (product as any)?.category_id || null
+                }
+
+                systemHistory.accounting_sync = systemHistory.accounting_sync && typeof systemHistory.accounting_sync === 'object'
+                    ? { ...systemHistory.accounting_sync }
+                    : {}
+
+                if (difference > 0) {
+                    systemHistory.accounting_sync.inbound = [
+                        ...(Array.isArray(systemHistory.accounting_sync.inbound) ? systemHistory.accounting_sync.inbound : []),
+                        {
+                            id: crypto.randomUUID(),
+                            date: new Date().toISOString(),
+                            supplier_id: targetLot.supplier_id || null,
+                            supplier_name: targetLot.suppliers?.name || 'N/A',
+                            items: {
+                                0: {
+                                    ...adjustmentItem,
+                                    quantity: difference,
+                                    price: (product as any)?.cost_price || 0
+                                }
+                            },
+                            draft: true,
+                            is_edit: true,
+                            is_adjustment: true,
+                            description: `Điều chỉnh tăng số lượng LOT ${targetLot.code}`
+                        }
+                    ]
+                } else {
+                    systemHistory.accounting_sync.exports = [
+                        ...(Array.isArray(systemHistory.accounting_sync.exports) ? systemHistory.accounting_sync.exports : []),
+                        {
+                            id: crypto.randomUUID(),
+                            date: new Date().toISOString(),
+                            customer: 'Hệ thống (Điều chỉnh)',
+                            description: `Điều chỉnh giảm số lượng LOT ${targetLot.code}`,
+                            location_code: targetLot.warehouse_name || null,
+                            items: {
+                                0: {
+                                    ...adjustmentItem,
+                                    exported_quantity: Math.abs(difference),
+                                    cost_price: (product as any)?.cost_price || 0
+                                }
+                            },
+                            draft: true,
+                            is_edit: true,
+                            is_adjustment: true
+                        }
+                    ]
+                }
+            }
+        }
+
+        const updatedMetadata = { ...metadata, system_history: systemHistory }
+        const { data: updatedItem, error: itemError } = await (supabase.from('lot_items') as any)
+            .update({ quantity: normalizedQuantity })
+            .eq('id', itemId)
+            .eq('lot_id', lotId)
+            .select('id')
+            .maybeSingle()
+
+        if (itemError || !updatedItem) {
+            showToast('Lỗi cập nhật số lượng: ' + (itemError?.message || 'Dòng sản phẩm không tồn tại hoặc không thể chỉnh sửa.'), 'error')
+            return false
+        }
+
+        const { data: updatedLot, error: lotError } = await (supabase.from('lots') as any)
+            .update({ quantity: totalQuantity, metadata: updatedMetadata })
+            .eq('id', lotId)
+            .eq('system_code', currentSystem?.code || '')
+            .select('id')
+            .maybeSingle()
+
+        if (lotError || !updatedLot) {
+            await (supabase.from('lot_items') as any)
+                .update({ quantity: previousQuantity })
+                .eq('id', itemId)
+                .eq('lot_id', lotId)
+            showToast('Lỗi đồng bộ tổng số lượng LOT: ' + (lotError?.message || 'LOT không tồn tại trong phân hệ hiện tại.'), 'error')
+            fetchLots(false)
+            return false
+        }
+
+        setLots(prev => prev.map(lot => lot.id === lotId
+            ? {
+                ...lot,
+                quantity: totalQuantity,
+                metadata: updatedMetadata,
+                lot_items: lot.lot_items
+                    ? lot.lot_items.map(item => item.id === itemId ? { ...item, quantity: normalizedQuantity } : item)
+                    : null
+            }
+            : lot
+        ))
+        showToast(`Đã cập nhật số lượng ${sku} thành công.`, 'success')
+        return true
+    }
+
     const handleToggleStar = async (lot: Lot) => {
         const metadata = lot.metadata ? { ...lot.metadata } : {};
         metadata.is_starred = !metadata.is_starred;
@@ -1865,6 +2055,8 @@ export function useLotManagement() {
         setLockFilter,
         sttFilter,
         setSttFilter,
+        branchFilter,
+        setBranchFilter,
         setSelectedZoneId, // Zone filter effectively disabled for now or needs updates
         dateFilterField,
         setDateFilterField,
@@ -1903,6 +2095,7 @@ export function useLotManagement() {
         handleBulkToggleLock,
         handleBulkClearSTT,
         handleQuickUpdateSTT,
+        handleQuickUpdateQuantity,
         handleToggleStar,
         isModuleEnabled: hasModule,
         isUtilityEnabled: hasModule,

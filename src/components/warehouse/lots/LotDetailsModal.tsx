@@ -373,9 +373,14 @@ export const LotDetailsModal: React.FC<LotDetailsModalProps> = ({ lot, onClose, 
                                     )}
                                 </div>
                             </div>
+                            {lot.staging_area_code && (
+                                <span className="text-[11px] font-bold text-amber-700 dark:text-amber-300 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-amber-200 dark:border-amber-800">
+                                    Khu vực Chờ: {lot.staging_area_code}
+                                </span>
+                            )}
                             {lot.warehouse_name && (
                                 <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2.5 py-1 rounded-xl border border-slate-200 dark:border-slate-700">
-                                    Kho: {lot.warehouse_name}
+                                    Chi nhánh: {lot.warehouse_name}
                                 </span>
                             )}
                         </div>

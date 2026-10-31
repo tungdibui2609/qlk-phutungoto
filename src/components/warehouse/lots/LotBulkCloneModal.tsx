@@ -4,6 +4,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { Lot } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { useSystem } from '@/contexts/SystemContext'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
+import { fetchDefaultBranchName } from '@/lib/branches'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
 
 interface LotBulkCloneModalProps {
@@ -127,6 +128,9 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
 
             const { lot_items, lot_tags, id: originalId, code: originalCode, created_at, ...lotDataWithoutIds } = fullLot
 
+            // LOT nhân bản phải giữ được chi nhánh; LOT gốc thiếu thì lấy chi nhánh mặc định của công ty
+            const clonedWarehouseName = lotDataWithoutIds.warehouse_name || await fetchDefaultBranchName(supabase, currentSystem.company_id)
+
             const commonMetadata = {
                 ...(typeof lotDataWithoutIds.metadata === 'object' && lotDataWithoutIds.metadata !== null ? lotDataWithoutIds.metadata : {}),
                 system_history: {
@@ -148,6 +152,7 @@ export function LotBulkCloneModal({ lot, onClose, onSuccess }: LotBulkCloneModal
                         metadata: commonMetadata,
                         quantity: lotDataWithoutIds.quantity || 0,
                         system_code: currentSystem.code,
+                        warehouse_name: clonedWarehouseName || null,
                     }
                 })
             )

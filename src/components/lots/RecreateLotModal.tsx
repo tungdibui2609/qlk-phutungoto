@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabaseClient'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useSystem } from '@/contexts/SystemContext'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
+import { fetchDefaultBranchName } from '@/lib/branches'
 
 interface RecreateLotModalProps {
     lot: any | null
@@ -14,7 +15,7 @@ interface RecreateLotModalProps {
 }
 
 export function RecreateLotModal({ lot, onClose, onSuccess }: RecreateLotModalProps) {
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem()
     const { showToast } = useToast()
 
     // Original data extraction
@@ -104,12 +105,18 @@ export function RecreateLotModal({ lot, onClose, onSuccess }: RecreateLotModalPr
             const totalQuantity = items.reduce((sum, it) => sum + (it.quantity || 0), 0)
             const primaryProductId = items[0]?.productId || rawData.product_id || null
 
+            // LOT khôi phục không được để trống chi nhánh: dùng chi nhánh mặc định của công ty
+            const fallbackBranchName = await fetchDefaultBranchName(
+                supabase,
+                currentSystem?.company_id || rawData.company_id
+            )
+
             // 1. Prepare lot payload
             const lotPayload: any = {
                 code: code.trim(),
                 status: 'active',
                 system_code: systemType || rawData.system_code || 'KHO_DONG_LANH',
-                warehouse_name: rawData.warehouse_name || "CN Cư M'gar",
+                warehouse_name: rawData.warehouse_name || fallbackBranchName || null,
                 company_id: rawData.company_id || null,
                 supplier_id: originalSupplierId,
                 product_id: primaryProductId,

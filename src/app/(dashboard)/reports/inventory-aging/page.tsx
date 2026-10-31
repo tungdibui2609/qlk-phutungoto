@@ -66,6 +66,8 @@ export default function InventoryAgingReportPage() {
     const [minDays, setMinDays] = useState<number | null>(null)
     const [bucketFilter, setBucketFilter] = useState<number | null>(null)
     const [showUndated, setShowUndated] = useState(true)
+    const [closedLooseLots, setClosedLooseLots] = useState<Set<string>>(new Set())
+    const [includeClosedLoose, setIncludeClosedLoose] = useState(false)
 
     const [searchTerm, setSearchTerm] = useState('')
     const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
@@ -129,7 +131,7 @@ export default function InventoryAgingReportPage() {
             if (sysCode === 'FROZEN') sysCode = 'KHO_DONG_LANH'
             else if (sysCode === 'DRY') sysCode = 'KHO_VAT_TU_BAO_BI'
 
-            const [allLots, allLotItems, allProducts, allCatRels, allCategories, allProductionLots, allPositions] = await Promise.all([
+            const [allLots, allLotItems, allProducts, allCatRels, allCategories, allProductionLots, allPositions, sysRes] = await Promise.all([
                 fetchAll('lots', 'id, code, production_code, batch_code, warehouse_name, is_locked, status, quantity, product_id, inbound_date, peeling_date, raw_material_date, packaging_date, metadata, production_lot_id',
                     (q: any) => q.eq('system_code', sysCode).eq('status', 'active')),
                 fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, category_id'),
@@ -138,7 +140,9 @@ export default function InventoryAgingReportPage() {
                 fetchAll('product_category_rel', 'product_id, category_id', (q: any) => q.eq('system_type', sysCode)),
                 fetchAll('categories', 'id, name', (q: any) => q.eq('system_type', sysCode)),
                 fetchAll('production_lots', 'id, lot_code, production_date'),
-                fetchAll('positions', 'id, code, lot_id', (q: any) => q.eq('system_type', sysCode))
+                fetchAll('positions', 'id, code, lot_id', (q: any) => q.eq('system_type', sysCode)),
+                // Cấu hình ô vị trí lẻ đang ĐÓNG của phân hệ — cùng nguồn với tab Tồn theo LOT
+                supabase.from('systems' as any).select('modules').eq('code', sysCode).single()
             ])
 
             const cMap: Record<string, string> = {}
@@ -162,11 +166,21 @@ export default function InventoryAgingReportPage() {
                 itemsByLot.get(item.lot_id)!.push({ ...item, products: productMap.get(item.product_id) || null })
             })
 
-            const posByLot = new Map<string, { code: string }[]>()
+            const looseCfg = (((sysRes as any)?.data as any)?.modules || {})?.loose_positions || {}
+            const closedLoosePosIds = new Set<string>(
+                Object.entries(looseCfg)
+                    .filter(([, cfg]: [string, any]) => cfg?.isClosed)
+                    .map(([pid]) => pid)
+            )
+            const closedLots = new Set<string>()
+            const activeLotIds = new Set(allLots.map((l: any) => l.id))
+
+            const posByLot = new Map<string, { id: string; code: string }[]>()
             allPositions.forEach((p: any) => {
                 if (!p.lot_id) return
                 if (!posByLot.has(p.lot_id)) posByLot.set(p.lot_id, [])
-                posByLot.get(p.lot_id)!.push({ code: p.code })
+                posByLot.get(p.lot_id)!.push({ id: p.id, code: p.code })
+                if (closedLoosePosIds.has(p.id) && activeLotIds.has(p.lot_id)) closedLots.add(p.lot_id)
             })
 
             const prodLotDateMap = new Map<string, string>()
@@ -174,6 +188,7 @@ export default function InventoryAgingReportPage() {
                 if (pl.production_date) prodLotDateMap.set(pl.id, pl.production_date)
             })
 
+            setClosedLooseLots(closedLots)
             setLots(allLots.map((lot: any) => ({
                 ...lot,
                 products: productMap.get(lot.product_id) || null,
@@ -230,6 +245,7 @@ export default function InventoryAgingReportPage() {
             if (lockFilter === 'locked' && !l.isLocked) return false
             if (lockFilter === 'unlocked' && l.isLocked) return false
             if (!showUndated && l.bucketIndex === null) return false
+            if (!includeClosedLoose && closedLooseLots.has(l.lotId)) return false
             if (minDays !== null && (l.days === null || l.days <= minDays)) return false
             if (bucketFilter !== null && l.bucketIndex !== bucketFilter) return false
             if (selectedCategoryIds.length > 0 && !l.categoryIds.some(id => selectedCategoryIds.includes(id))) return false
@@ -240,7 +256,7 @@ export default function InventoryAgingReportPage() {
             ]
             return advancedMatchSearch(haystack.filter(Boolean), q)
         })
-    }, [lines, searchTerm, warehouseFilter, lockFilter, showUndated, minDays, bucketFilter, selectedCategoryIds])
+    }, [lines, searchTerm, warehouseFilter, lockFilter, showUndated, includeClosedLoose, closedLooseLots, minDays, bucketFilter, selectedCategoryIds])
 
     const lotRows = useMemo(() => {
         const rows = summarizeByLot(filteredLines)
@@ -400,7 +416,7 @@ export default function InventoryAgingReportPage() {
                         <div className="flex flex-col lg:flex-row lg:items-end gap-6">
                             <div className="space-y-2">
                                 <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                                    Mốc ngày để tính tuổi
+                                    Mốc ngày tính thời gian lưu kho
                                 </label>
                                 <div className="flex flex-wrap gap-2">
                                     {dateOptions.map(opt => (
@@ -440,7 +456,7 @@ export default function InventoryAgingReportPage() {
 
                             <div className="space-y-2 flex-1">
                                 <label className="text-[11px] font-bold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-                                    Ngưỡng nhóm tuổi (ngày)
+                                    Ngưỡng thời gian lưu kho (ngày)
                                 </label>
                                 <div className="flex flex-wrap items-center gap-2">
                                     {thresholdInputs.map((raw, i) => (
@@ -507,6 +523,18 @@ export default function InventoryAgingReportPage() {
                                     className="rounded border-zinc-300 text-orange-600 focus:ring-orange-500"
                                 />
                                 Hiển thị LOT chưa có {activeDateLabel.toLowerCase()}
+                            </label>
+                            <label
+                                className="flex items-center gap-2 text-xs font-bold text-zinc-600 dark:text-zinc-300 cursor-pointer"
+                                title="Tích vào đây nếu bạn muốn đối soát cả các LOT đang nằm ở ô hàng lẻ đã ĐÓNG (tạm ẩn) — mặc định tắt để khớp với tab Tồn theo LOT"
+                            >
+                                <input
+                                    type="checkbox"
+                                    checked={includeClosedLoose}
+                                    onChange={e => setIncludeClosedLoose(e.target.checked)}
+                                    className="rounded border-zinc-300 text-amber-600 focus:ring-amber-500"
+                                />
+                                Xem cả ô lẻ đang đóng{closedLooseLots.size > 0 ? ` (${closedLooseLots.size} LOT)` : ''}
                             </label>
                         </div>
                     </div>
@@ -644,7 +672,7 @@ export default function InventoryAgingReportPage() {
                         <div className="flex flex-col items-center justify-center py-24 text-center">
                             <Boxes size={40} className="text-zinc-300 mb-4" />
                             <p className="text-lg font-bold text-zinc-600 dark:text-zinc-300">Không có dòng nào khớp bộ lọc</p>
-                            <p className="text-sm text-zinc-400 mt-1">Thử bỏ lọc nhóm tuổi / mốc "Tồn trên N ngày", kiểm tra lại {activeDateLabel.toLowerCase()} hoặc đổi bộ lọc.</p>
+                            <p className="text-sm text-zinc-400 mt-1">Thử bỏ lọc thời gian lưu kho / mốc "Tồn trên N ngày", kiểm tra lại {activeDateLabel.toLowerCase()} hoặc đổi bộ lọc.</p>
                         </div>
                     ) : (
                         <div className="bg-white dark:bg-zinc-900 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-sm overflow-hidden">
@@ -662,7 +690,7 @@ export default function InventoryAgingReportPage() {
                                                 {sortHeader('Quy đổi (Kg)', lotSort.field === 'kg', lotSort.dir, () => setLotSort(p => ({ field: 'kg', dir: p.field === 'kg' && p.dir === 'desc' ? 'asc' : 'desc' })), 'right')}
                                                 <th className="px-3 py-3 text-left text-[11px] font-bold uppercase text-zinc-500">{activeDateLabel}</th>
                                                 {sortHeader('Số ngày tồn', lotSort.field === 'days', lotSort.dir, () => setLotSort(p => ({ field: 'days', dir: p.field === 'days' && p.dir === 'asc' ? 'desc' : 'asc' })), 'right')}
-                                                <th className="px-3 py-3 text-left text-[11px] font-bold uppercase text-zinc-500">Nhóm tuổi</th>
+                                                <th className="px-3 py-3 text-left text-[11px] font-bold uppercase text-zinc-500">Thời gian lưu kho</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">

@@ -399,7 +399,7 @@ export default function MobileCreateLotTab({ onCloseTab }: { onCloseTab?: () => 
                                         {lot.warehouse_name && (
                                             <div className="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mt-2">
                                                 <MapPin size={12} className="text-zinc-400" />
-                                                <span>Kho: <span className="font-medium text-zinc-700 dark:text-zinc-300">{lot.warehouse_name}</span></span>
+                                                <span>Chi nhánh: <span className="font-medium text-zinc-700 dark:text-zinc-300">{lot.warehouse_name}</span></span>
                                             </div>
                                         )}
                                     </div>

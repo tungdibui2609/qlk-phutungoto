@@ -46,6 +46,8 @@ export function LotPageManager() {
         setLockFilter,
         sttFilter,
         setSttFilter,
+        branchFilter,
+        setBranchFilter,
         dateFilterField,
         setDateFilterField,
         startDate,
@@ -63,6 +65,7 @@ export function LotPageManager() {
         handleBulkToggleLock,
         handleBulkClearSTT,
         handleQuickUpdateSTT,
+        handleQuickUpdateQuantity,
         handleToggleStar,
         isModuleEnabled,
         isUtilityEnabled,
@@ -500,6 +503,9 @@ export function LotPageManager() {
                 onLockFilterChange={setLockFilter}
                 sttFilter={sttFilter}
                 onSttFilterChange={setSttFilter}
+                branchFilter={branchFilter}
+                onBranchFilterChange={setBranchFilter}
+                branches={branches}
                 selectedZoneId={selectedZoneId}
                 onZoneSelect={setSelectedZoneId}
                 dateFilterField={dateFilterField}
@@ -574,6 +580,7 @@ export function LotPageManager() {
                     onBulkClone={handleBulkClone}
                     onAssignLocation={setAssigningLot}
                     onQuickUpdateSTT={handleQuickUpdateSTT}
+                    onQuickUpdateQuantity={handleQuickUpdateQuantity}
                     searchTerm={searchTerm}
                 />
 

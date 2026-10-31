@@ -140,7 +140,7 @@ export const UTILITY_MODULES: UtilityModule[] = [
     {
         id: 'warehouse_staging_area',
         name: 'Hàng chờ xếp kho (Khu vực Chờ)',
-        description: 'Hiển thị trạng thái lô hàng đang ở khu vực chờ xếp của kho và phân loại hàng chờ trên sơ đồ kho.',
+        description: 'Hiển thị trạng thái lô hàng đang ở khu vực chờ xếp của kho (cột staging_area_code) và phân loại hàng chờ trên sơ đồ kho. Không ảnh hưởng chi nhánh nhập hàng.',
         icon: Building2,
         category: 'specialized',
         default_enabled: false

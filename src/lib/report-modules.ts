@@ -5,6 +5,7 @@ import {
     Activity,
     TrendingUp,
     CalendarClock,
+    Factory,
     LucideIcon
 } from 'lucide-react'
 
@@ -55,8 +56,15 @@ export const REPORT_MODULES: ReportModule[] = [
     {
         id: 'report_inventory_aging',
         name: 'Tồn kho lâu ngày',
-        description: 'Báo cáo tuổi tồn kho theo ngưỡng tuỳ chỉnh (90/180 ngày), chọn mốc ngày nhập kho, sản xuất, nguyên liệu hoặc đóng gói',
+        description: 'Báo cáo thời gian lưu kho theo ngưỡng tuỳ chỉnh (90/180 ngày), chọn mốc ngày nhập kho, sản xuất, nguyên liệu hoặc đóng gói',
         icon: CalendarClock,
+        is_basic: true
+    },
+    {
+        id: 'report_inventory_by_production',
+        name: 'Tồn theo Lệnh sản xuất',
+        description: 'Tab tồn kho gom theo lệnh sản xuất › mã lot sản xuất › sản phẩm. Dành cho kho có truy xuất nguồn gốc theo lệnh SX.',
+        icon: Factory,
         is_basic: true
     }
 ]

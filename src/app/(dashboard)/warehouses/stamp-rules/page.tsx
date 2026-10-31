@@ -671,7 +671,7 @@ export default function StampRulesPage() {
     const handleSaveRule = async (e: React.FormEvent) => {
         e.preventDefault()
         if (!formCode.trim() || !formName.trim()) {
-            showToast('Vui lòng nhập đầy đủ mã và diễn giải', 'warning')
+            showToast('Vui lòng nhập đầy đủ mã và tên', 'warning')
             return
         }
 
@@ -1754,7 +1754,7 @@ export default function StampRulesPage() {
                                             <th className="px-4 py-3.5">Danh mục phân cấp</th>
                                             <th className="px-4 py-3.5">Vị trí ký tự</th>
                                             <th className="px-4 py-3.5 text-center">Ký hiệu / Mã</th>
-                                            <th className="px-4 py-3.5">Diễn giải tiếng Việt</th>
+                                            <th className="px-4 py-3.5">{selectedCategory === 'special_12' ? 'Tên sản phẩm' : 'Diễn giải tiếng Việt'}</th>
                                             <th className="px-4 py-3.5">Mã SKU Kho (Duyệt LOT)</th>
                                             <th className="px-4 py-3.5">Mô tả chi tiết</th>
                                             <th className="px-4 py-3.5 text-center">Trạng thái</th>
@@ -3015,13 +3015,13 @@ export default function StampRulesPage() {
 
                                     <div className="col-span-2 space-y-1">
                                         <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                                            Tên / Diễn giải tiếng Việt <span className="text-red-500">*</span>
+                                            {formCategory === 'special_12' ? 'Tên sản phẩm' : 'Tên / Diễn giải tiếng Việt'} <span className="text-red-500">*</span>
                                         </label>
                                         <input
                                             type="text"
                                             value={formName}
                                             onChange={(e) => setFormName(e.target.value)}
-                                            placeholder="vd: Cấp đông múi, Monthong..."
+                                            placeholder={formCategory === 'special_12' ? 'vd: TP cấp đông sầu riêng trái Ri-6 loại A - Nito' : 'vd: Cấp đông múi, Monthong...'}
                                             required
                                             className="w-full px-3 py-2 rounded-xl text-xs font-medium bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-white outline-none focus:ring-2 focus:ring-purple-500"
                                         />

@@ -860,11 +860,11 @@ export default function WarehouseLayoutViewer({
                         {/* Khay Hàng Chờ Xếp Vị Trí (Inbound Staging Buffer Panel) */}
                         {(() => {
                             const layoutUnassignedLots = unassignedLots.filter(item => {
-                                if (!item.warehouseName || !item.warehouseName.trim()) return true;
-                                const target = item.warehouseName.trim().toLowerCase();
+                                const staging = (item.stagingAreaCode || '').trim().toLowerCase();
+                                if (!staging) return true;
                                 const lCode = (layout.code || '').trim().toLowerCase();
                                 const lName = (layout.name || '').trim().toLowerCase();
-                                return (lCode && target === lCode) || (lName && target === lName);
+                                return (lCode && staging === lCode) || (lName && staging === lName);
                             });
 
                             return (

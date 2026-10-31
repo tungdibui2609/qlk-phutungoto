@@ -479,7 +479,7 @@ export default function LotLabelBindingPage() {
                                 </div>
                             </div>
                             <div className="p-3 bg-stone-50/50 dark:bg-zinc-800/20 rounded-2xl border border-stone-100/40 dark:border-zinc-850/50">
-                                <div className="text-[10px] font-bold text-stone-400 uppercase mb-0.5">Kho Lưu Hàng</div>
+                                <div className="text-[10px] font-bold text-stone-400 uppercase mb-0.5">Chi nhánh nhập hàng</div>
                                 <div className="font-bold text-stone-800 dark:text-zinc-300 text-sm">{selectedLot.warehouse_name || '---'}</div>
                             </div>
                         </div>

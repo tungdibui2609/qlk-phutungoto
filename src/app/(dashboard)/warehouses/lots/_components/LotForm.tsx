@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { Boxes, MapPin, Calendar, CalendarClock, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock, Tag, Warehouse, Fingerprint, Images, FileText, type LucideIcon } from 'lucide-react'
+import { Boxes, MapPin, Building2, Calendar, CalendarClock, Factory, ShieldCheck, Package, Hash, Layers, X, Plus, Trash2, ChevronDown, Loader2, Lock, Tag, Warehouse, Fingerprint, Images, FileText, type LucideIcon } from 'lucide-react'
 import { Combobox } from '@/components/ui/Combobox'
 import { ImageUpload } from '@/components/ui/ImageUpload'
 import { supabase } from '@/lib/supabaseClient'
@@ -16,6 +16,7 @@ import { useToast } from '@/components/ui/ToastProvider'
 import { generateUniqueLotCode } from '@/lib/lotCodeGenerator'
 import { layoutService } from '@/services/warehouse/layoutService'
 import { formatMaterialZoneProvince } from '@/lib/provinces'
+import { getBranchesOfCompany } from '@/lib/branches'
 
 interface LotItemInput {
     id?: string
@@ -138,7 +139,8 @@ export function LotForm({
     const [packagingDate, setPackagingDate] = useState('')
     const [packagingDates, setPackagingDates] = useState<string[]>([])
     const [newPackagingDateInput, setNewPackagingDateInput] = useState('')
-    const [warehouseName, setWarehouseName] = useState('') // Add warehouseName state
+    const [warehouseName, setWarehouseName] = useState('') // Chi nhánh nhập hàng (lots.warehouse_name)
+    const [stagingAreaCode, setStagingAreaCode] = useState('') // Khu vực chờ xếp (lots.staging_area_code)
     const [batchCode, setBatchCode] = useState('')
     const [customerName, setCustomerName] = useState('')
     const [productionPlace, setProductionPlace] = useState('')
@@ -167,6 +169,28 @@ export function LotForm({
             if (data) setWarehouseLayouts(data)
         }).catch(err => console.error('Error fetching layouts for LotForm:', err))
     }, [currentSystem?.code])
+
+    const companyId = currentSystem?.company_id || profile?.company_id
+
+    const scopedBranches = useMemo(
+        () => getBranchesOfCompany(branches, companyId),
+        [branches, companyId]
+    )
+
+    // Giá trị gợi ý mặc định: chi nhánh is_default của công ty (CN Cư M'gar với Chánh Thu)
+    const defaultBranchName = useMemo(() => {
+        const defaultBranch = scopedBranches.find(b => b.is_default) || scopedBranches[0]
+        return defaultBranch?.name || ''
+    }, [scopedBranches])
+
+    const hasWarehouse = hasModule('warehouse_name') || hasModule('warehouse_layout_2d') || warehouseLayouts.length > 0
+
+    // "Hàng chờ xếp kho (Khu vực Chờ)" là module riêng, không liên quan chi nhánh
+    const hasStaging = hasModule('warehouse_staging_area')
+
+    // Công ty có khai báo chi nhánh ⇒ mọi LOT (kho nào cũng vậy) bắt buộc mang chi nhánh.
+    // Tenant chưa khai báo chi nhánh → giữ nguyên hành vi cũ, không chặn lưu.
+    const requireBranch = hasWarehouse && scopedBranches.length > 0
 
     useEffect(() => {
         if (!currentSystem?.code) return
@@ -363,12 +387,12 @@ export function LotForm({
     }, [isVisible, editingLot, initialProductionCode])
 
     // Bổ sung kho mặc định nếu danh sách chi nhánh tải xong sau khi mở form
+    // (áp dụng cả LOT cũ đang thiếu chi nhánh để sửa lại ngay khi mở form)
     useEffect(() => {
-        if (isVisible && !editingLot && !warehouseName && branches && branches.length > 0) {
-            const defaultBranch = branches.find(b => b.is_default)
-            setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+        if (isVisible && !warehouseName && defaultBranchName && (!editingLot || !editingLot.warehouse_name)) {
+            setWarehouseName(defaultBranchName)
         }
-    }, [isVisible, editingLot, warehouseName, branches])
+    }, [isVisible, editingLot, warehouseName, defaultBranchName])
 
     // Reset or Initialize Form (chỉ khởi tạo 1 lần khi mở form hoặc khi đổi editingLot/system)
     useEffect(() => {
@@ -522,7 +546,8 @@ export function LotForm({
                 }
                 setPackagingDates(initialPackDates)
                 setNewPackagingDateInput('')
-                setWarehouseName(editingLot.warehouse_name || '')
+                setWarehouseName(editingLot.warehouse_name || defaultBranchName)
+                setStagingAreaCode(editingLot.staging_area_code || '')
                 setBatchCode(editingLot.batch_code || '')
                 setProductionCode(editingLot.production_code || '')
 
@@ -615,9 +640,8 @@ export function LotForm({
                             // Validate and restore Warehouse
                             if (parsed.warehouseName && branches.some(b => b.name === parsed.warehouseName)) {
                                 setWarehouseName(parsed.warehouseName)
-                            } else if (branches && branches.length > 0) {
-                                const defaultBranch = branches.find(b => b.is_default)
-                                setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                            } else if (defaultBranchName) {
+                                setWarehouseName(defaultBranchName)
                             }
 
                             if (parsed.productionCode && currentSystem?.code === 'SANXUAT') {
@@ -665,9 +689,8 @@ export function LotForm({
                             setPackagingDate(initialDate)
                             setPackagingDates([initialDate])
 
-                            if (branches && branches.length > 0) {
-                                const defaultBranch = branches.find(b => b.is_default)
-                                setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
+                            if (defaultBranchName) {
+                                setWarehouseName(defaultBranchName)
                             }
                         }
                     } catch (e) {
@@ -682,12 +705,11 @@ export function LotForm({
                     setPeelingDates([initialDate])
                     setPackagingDate(initialDate)
 
-                    if (branches && branches.length > 0) {
-                        const defaultBranch = branches.find(b => b.is_default)
-                        setWarehouseName(defaultBranch ? defaultBranch.name : branches[0].name)
-                        if (currentSystem?.code !== 'SANXUAT') {
-                            setProductionCode('')
-                        }
+                    if (defaultBranchName) {
+                        setWarehouseName(defaultBranchName)
+                    }
+                    if (currentSystem?.code !== 'SANXUAT') {
+                        setProductionCode('')
                     }
                 }
 
@@ -794,6 +816,7 @@ export function LotForm({
         setPackagingDates([])
         setNewPackagingDateInput('')
         setWarehouseName('')
+        setStagingAreaCode('')
         setBatchCode('')
         setCustomerName('')
         setProductionPlace('')
@@ -923,6 +946,13 @@ export function LotForm({
 
     async function handleSubmit() {
         if (!newLotCode.trim() || isSubmitting) return
+
+        if (requireBranch && !warehouseName.trim()) {
+            setIsInfoExpanded(true)
+            showToast('Bắt buộc chọn Chi nhánh nhập hàng trước khi lưu LOT', 'error')
+            return
+        }
+
         setIsSubmitting(true)
 
         try {
@@ -979,7 +1009,10 @@ export function LotForm({
                     const newQ = qcList.find(q => q.id === selectedQCId)?.name || 'N/A'
                     changes.push(`QC: ${oldQ} → ${newQ}`)
                 }
-                if (editingLot.warehouse_name !== warehouseName) changes.push(`Kho: ${editingLot.warehouse_name || 'N/A'} → ${warehouseName || 'N/A'}`)
+                if (editingLot.warehouse_name !== warehouseName) changes.push(`Chi nhánh: ${editingLot.warehouse_name || 'N/A'} → ${warehouseName || 'N/A'}`)
+                if (hasStaging && ((editingLot.staging_area_code || '') !== stagingAreaCode.trim())) {
+                    changes.push(`Khu vực Chờ: ${(editingLot.staging_area_code || 'Trống').toUpperCase()} → ${(stagingAreaCode.trim() || 'Trống').toUpperCase()}`)
+                }
                 if (editingLot.batch_code !== batchCode) changes.push(`Batch NCC: ${editingLot.batch_code || 'N/A'} → ${batchCode || 'N/A'}`)
                 const oldCust = (editingLot.metadata as any)?.customer_name || ''
                 if (oldCust !== customerName) changes.push(`Khách OEM: ${oldCust || 'N/A'} → ${customerName || 'N/A'}`)
@@ -1136,6 +1169,8 @@ export function LotForm({
             peeling_date: primaryPeelingDate,
             packaging_date: primaryPackagingDate,
             warehouse_name: warehouseName || null,
+            // Chỉ ghi khi phân hệ bật module "Hàng chờ xếp kho" → không đụng tới dữ liệu phân hệ chưa bật
+            ...(hasStaging ? { staging_area_code: stagingAreaCode.trim().toUpperCase() || null } : {}),
             batch_code: batchCode || null,
             production_code: productionCode || null,
             production_id: selectedProductionId || null,
@@ -1467,7 +1502,6 @@ export function LotForm({
                     <div className="overflow-hidden min-w-0">
                     {(() => {
                         // Tính toán số lượng & trạng thái module cho các nhóm bố cục thích ứng
-                        const hasWarehouse = hasModule('warehouse_name') || hasModule('warehouse_layout_2d') || warehouseLayouts.length > 0
                         const hasQC = hasModule('qc_info')
                         const hasSupplier = hasModule('supplier_info')
                         const generalFieldsCount = 1 + (hasWarehouse ? 1 : 0) + (hasSupplier ? 1 : 0) + (hasQC ? 1 : 0)
@@ -1520,15 +1554,18 @@ export function LotForm({
                                         </div>
                                     </div>
 
-                                    {/* Kho nhập hàng / Mã kho đích */}
+                                    {/* Chi nhánh nhập hàng (lots.warehouse_name) */}
                                     {hasWarehouse && (
                                         <div className="space-y-1.5">
                                             <div className="flex items-center justify-between">
                                                 <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
                                                     <MapPin size={13} className="text-blue-500" />
-                                                    Kho nhập hàng / Mã kho đích
+                                                    Chi nhánh nhập hàng
+                                                    {requireBranch && (
+                                                        <span className="text-rose-500" title="Bắt buộc — LOT không được để trống chi nhánh">*</span>
+                                                    )}
                                                 </label>
-                                                {warehouseName && (
+                                                {warehouseName && !requireBranch && (
                                                     <button
                                                         type="button"
                                                         onClick={() => setWarehouseName('')}
@@ -1542,31 +1579,30 @@ export function LotForm({
                                                 <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
                                                 <input
                                                     type="text"
-                                                    list="warehouse-layouts-datalist"
+                                                    list="lot-branch-datalist"
                                                     value={warehouseName}
                                                     onChange={(e) => setWarehouseName(e.target.value)}
-                                                    placeholder="Nhập mã kho (VD: kbb1) hoặc chọn kho..."
-                                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm font-medium transition-all"
+                                                    placeholder={requireBranch ? "Bắt buộc: chọn chi nhánh nhập hàng..." : "Chọn chi nhánh nhập hàng (để trống nếu chưa có)..."}
+                                                    className={`w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border rounded-xl focus:ring-2 focus:ring-blue-500/20 outline-none text-zinc-900 dark:text-zinc-100 text-sm font-medium transition-all ${
+                                                        requireBranch && !warehouseName.trim()
+                                                            ? 'border-rose-400 dark:border-rose-600 focus:border-rose-500'
+                                                            : 'border-zinc-200 dark:border-zinc-700 focus:border-blue-500'
+                                                    }`}
                                                 />
-                                                <datalist id="warehouse-layouts-datalist">
-                                                    {warehouseLayouts.map(l => (
-                                                        <option key={l.id} value={l.code || l.name}>
-                                                            {l.code ? `[${l.code}] ${l.name}` : l.name}
-                                                        </option>
-                                                    ))}
-                                                    {branches.map(b => (
+                                                <datalist id="lot-branch-datalist">
+                                                    {scopedBranches.map(b => (
                                                         <option key={b.id} value={b.name}>{b.name}</option>
                                                     ))}
                                                 </datalist>
                                             </div>
-                                            {warehouseLayouts.length > 0 && (
+                                            {scopedBranches.length > 0 && (
                                                 <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                                    {warehouseLayouts.map(l => {
-                                                        const val = l.code || l.name;
-                                                        const isSelected = warehouseName.toLowerCase() === val.toLowerCase();
+                                                    {scopedBranches.map(b => {
+                                                        const val = b.name;
+                                                        const isSelected = warehouseName.trim().toLowerCase() === val.toLowerCase();
                                                         return (
                                                             <button
-                                                                key={l.id}
+                                                                key={b.id}
                                                                 type="button"
                                                                 onClick={() => setWarehouseName(val)}
                                                                 className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
@@ -1575,13 +1611,73 @@ export function LotForm({
                                                                         : 'bg-stone-50 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-zinc-700 hover:border-blue-400'
                                                                 }`}
                                                             >
-                                                                {l.code ? <span className="font-mono text-amber-500 mr-1">[{l.code}]</span> : null}
-                                                                <span>{l.name}</span>
+                                                                {b.is_default ? <span className="mr-1">★</span> : null}
+                                                                <span>{val}</span>
                                                             </button>
                                                         );
                                                     })}
                                                 </div>
                                             )}
+                                        </div>
+                                    )}
+
+                                    {/* Hàng chờ xếp kho (Khu vực Chờ) — lots.staging_area_code */}
+                                    {hasStaging && warehouseLayouts.length > 0 && (
+                                        <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+                                                    <Building2 size={13} className="text-amber-500" />
+                                                    Hàng chờ xếp kho (Khu vực Chờ)
+                                                </label>
+                                                {stagingAreaCode && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setStagingAreaCode('')}
+                                                        className="text-[11px] text-rose-500 hover:text-rose-600 hover:underline cursor-pointer"
+                                                    >
+                                                        Xóa
+                                                    </button>
+                                                )}
+                                            </div>
+                                            <div className="relative">
+                                                <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={17} />
+                                                <input
+                                                    type="text"
+                                                    list="lot-staging-datalist"
+                                                    value={stagingAreaCode}
+                                                    onChange={(e) => setStagingAreaCode(e.target.value)}
+                                                    placeholder="Nhập mã khu chờ (VD: KBB1) hoặc chọn khu..."
+                                                    className="w-full pl-10 pr-4 py-2.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 outline-none text-zinc-900 dark:text-zinc-100 text-sm font-medium uppercase transition-all"
+                                                />
+                                                <datalist id="lot-staging-datalist">
+                                                    {warehouseLayouts.map(l => (
+                                                        <option key={l.id} value={l.code || l.name}>
+                                                            {l.code ? `[${l.code}] ${l.name}` : l.name}
+                                                        </option>
+                                                    ))}
+                                                </datalist>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                {warehouseLayouts.map(l => {
+                                                    const val = (l.code || l.name || '').toUpperCase();
+                                                    const isSelected = stagingAreaCode.trim().toUpperCase() === val;
+                                                    return (
+                                                        <button
+                                                            key={l.id}
+                                                            type="button"
+                                                            onClick={() => setStagingAreaCode(isSelected ? '' : val)}
+                                                            className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                                                                isSelected 
+                                                                    ? 'bg-amber-500 text-white border-amber-500 shadow-xs' 
+                                                                    : 'bg-stone-50 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border-stone-200 dark:border-zinc-700 hover:border-amber-400'
+                                                            }`}
+                                                        >
+                                                            <span className="font-mono mr-1">{val}</span>
+                                                            <span>{l.name}</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
                                     )}
 

@@ -1,9 +1,10 @@
 import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { CompanyInfo } from '@/hooks/usePrintCompanyInfo';
+import { canonicalizeUnit } from '@/lib/unitConversion';
 
 interface InventoryReportExportData {
-    type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags' | 'labels';
+    type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags' | 'production' | 'labels';
     viewMode?: 'lot' | 'month';
     positionFilter?: 'all' | 'has_position' | 'no_position';
     dateTitle: string;
@@ -16,6 +17,17 @@ interface InventoryReportExportData {
 function cleanNum(val: any): number {
     const n = Number(val) || 0;
     return Math.round(n * 100) / 100; // Round to 2 decimal places
+}
+
+// Helper: dd/MM/yyyy mà không phụ thuộc locale của máy chạy code
+function formatDmy(raw: any): string {
+    if (!raw) return '';
+    const iso = String(raw).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    const p = (n: number) => String(n).padStart(2, '0');
+    return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 export async function exportInventoryReportToExcel(data: InventoryReportExportData) {
@@ -63,6 +75,18 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
             { header: 'ĐVT', key: 'unit', width: 10 },
             { header: 'Số lượng', key: 'quantity', width: 15 },
             { header: 'Quy đổi (Kg)', key: 'kg', width: 15 },
+        ];
+    } else if (data.type === 'production') {
+        cols = [
+            { header: 'STT', key: 'stt', width: 6 },
+            { header: 'Mã Lệnh SX', key: 'orderCode', width: 18 },
+            { header: 'Mã Lot SX', key: 'lotCode', width: 20 },
+            { header: 'Ngày SX', key: 'productionDate', width: 12 },
+            { header: 'Mã SP', key: 'productCode', width: 20 },
+            { header: 'Tên sản phẩm', key: 'productName', width: 40 },
+            { header: 'ĐVT', key: 'unit', width: 12 },
+            { header: 'Số lượng', key: 'quantity', width: 14 },
+            { header: 'Số kiện', key: 'palletCount', width: 9 },
         ];
     } else if (data.type === 'labels') {
         cols = [
@@ -121,13 +145,17 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
     // 3. Report Title
     const title = data.type === 'accounting' 
         ? 'BÁO CÁO TỔNG HỢP NHẬP XUẤT TỒN' 
-        : (data.type === 'lot' || data.type === 'tags')
+        : (data.type === 'lot')
             ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO LOT') 
-            : data.type === 'category'
-                ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO DANH MỤC')
-                : data.type === 'labels'
-                    ? 'BÁO CÁO TỒN KHO THEO TEM NHÃN'
-                    : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
+            : data.type === 'tags'
+                ? 'BÁO CÁO TỒN KHO THEO MÃ PHỤ'
+                : data.type === 'category'
+                    ? (isLotSummary ? 'BÁO CÁO TỔNG HỢP TỒN KHO' : 'BÁO CÁO TỒN KHO THEO DANH MỤC')
+                    : data.type === 'production'
+                        ? 'BÁO CÁO TỒN KHO THEO LỆNH SẢN XUẤT'
+                        : data.type === 'labels'
+                            ? 'BÁO CÁO TỒN KHO THEO TEM NHÃN'
+                            : 'BẢNG ĐỐI CHIẾU TỒN KHO VS KẾ TOÁN';
     
     const lastCol = String.fromCharCode(65 + cols.length - 1);
     worksheet.mergeCells(`A${currentRow}:${lastCol}${currentRow}`);
@@ -716,6 +744,64 @@ function buildWorksheet(worksheet: ExcelJS.Worksheet, data: InventoryReportExpor
                 }
             }
         });
+    } else if (data.type === 'production') {
+        let stt = 1;
+        data.items.forEach((order: any) => {
+            (order.lots || []).forEach((lot: any) => {
+                (lot.products || []).forEach((p: any) => {
+                    const row = worksheet.addRow([
+                        stt++,
+                        order.orderCode,
+                        lot.lotCode,
+                        formatDmy(lot.productionDate),
+                        p.productCode,
+                        p.productName,
+                        p.unit,
+                        cleanNum(p.quantity),
+                        (p.lotCodes || []).length,
+                    ]);
+                    row.eachCell((cell, colIdx) => {
+                        cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                        if (colIdx === 8) {
+                            cell.alignment = { horizontal: 'right' };
+                            cell.numFmt = Number.isInteger(cell.value) ? '#,##0' : '#,##0.###';
+                        }
+                        if (colIdx === 9) cell.alignment = { horizontal: 'center' };
+                    });
+                });
+            });
+        });
+
+        // Cộng dồn theo từng đơn vị tính, tuyệt đối không cộng xuyên đơn vị
+        const unitTotals = new Map<string, { display: string, qty: number }>();
+        data.items.forEach((order: any) => {
+            (order.lots || []).forEach((lot: any) => {
+                (lot.products || []).forEach((p: any) => {
+                    const key = canonicalizeUnit(p.unit || '');
+                    const current = unitTotals.get(key);
+                    if (current) current.qty += (p.quantity || 0);
+                    else unitTotals.set(key, { display: p.unit || 'Không rõ ĐVT', qty: (p.quantity || 0) });
+                });
+            });
+        });
+
+        Array.from(unitTotals.values())
+            .sort((a, b) => b.qty - a.qty)
+            .forEach(({ display, qty }) => {
+                const totalRow = worksheet.addRow([
+                    '', '', '', '', '',
+                    `TỔNG CỘNG (${display})`,
+                    display,
+                    cleanNum(qty),
+                    '',
+                ]);
+                totalRow.font = { bold: true };
+                totalRow.getCell(8).alignment = { horizontal: 'right' };
+                totalRow.getCell(8).numFmt = '#,##0.###';
+                totalRow.eachCell(cell => {
+                    cell.border = { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } };
+                });
+            });
     } else if (data.type === 'labels') {
         let stt = 1;
         data.items.forEach((item) => {

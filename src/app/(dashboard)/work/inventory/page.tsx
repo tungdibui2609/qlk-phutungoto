@@ -12,6 +12,7 @@ import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { normalizeSearchString } from '@/lib/searchUtils'
 import { canonicalizeUnit } from '@/lib/unitConversion'
+import { decodeSTT } from '@/lib/numberUtils'
 
 // Types
 interface Session {
@@ -561,13 +562,14 @@ export default function InternalInventoryPage() {
                     'lots', 
                     'id', 
                     lotIds, 
-                    'id, code, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)'
+                    'id, code, daily_seq, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)'
                 )
 
                 const infoMap: Record<string, any> = {}
                 lots?.forEach((l: any) => {
                     infoMap[l.id] = {
                         code: l.code,
+                        stt: decodeSTT(l.daily_seq),
                         tags: l.lot_tags?.map((t: any) => t.tag) || [],
                         items: l.lot_items?.map((li: any) => ({
                             product_name: li.products?.name,
@@ -1069,11 +1071,11 @@ export default function InternalInventoryPage() {
         try {
             const { data: fresh, error } = await (supabase as any)
                 .from('positions')
-                .select('id, code, lot_id, zone_id')
+                .select('id, code, lot_id')
                 .eq('id', pos.id)
                 .single()
             if (error || !fresh) {
-                showToast('Không tải được dữ liệu ô này', 'error')
+                showToast('Không tải được dữ liệu ô này' + (error ? `: ${error.message}` : ''), 'error')
                 return
             }
             setPositions(prev => prev.map(p => p.id === fresh.id ? { ...p, ...fresh } : p))
@@ -1081,7 +1083,7 @@ export default function InternalInventoryPage() {
             if (fresh.lot_id) {
                 const { data: lot } = await (supabase as any)
                     .from('lots')
-                    .select('id, code, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)')
+                    .select('id, code, daily_seq, lot_items(id, quantity, unit, products(name, sku, color)), lot_tags(tag)')
                     .eq('id', fresh.lot_id)
                     .single()
                 if (lot) {
@@ -1089,6 +1091,7 @@ export default function InternalInventoryPage() {
                         ...prev,
                         [lot.id]: {
                             code: lot.code,
+                            stt: decodeSTT(lot.daily_seq),
                             tags: lot.lot_tags?.map((t: any) => t.tag) || [],
                             items: lot.lot_items?.map((li: any) => ({
                                 product_name: li.products?.name,
@@ -1138,7 +1141,7 @@ export default function InternalInventoryPage() {
                 title={isHall ? 'Nhấn để tích kiểm tra' : undefined}
                 className={`group/pos relative overflow-hidden rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all min-w-0 ${tone} ${locked ? 'pointer-events-none' : ''}`}
             >
-                {/* Dòng 1: trạng thái | mã vị trí | mã LOT | hành động */}
+                {/* Dòng 1: trạng thái | mã vị trí | STT | mã LOT | hành động */}
                 <div className="flex items-center gap-1.5 min-w-0">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
                     <span
@@ -1146,6 +1149,12 @@ export default function InternalInventoryPage() {
                         className="text-[11px] font-bold text-stone-800 tracking-tight whitespace-nowrap shrink-0 cursor-copy hover:text-blue-600 hover:underline decoration-dotted underline-offset-2"
                         title="Bấm để copy mã vị trí"
                     >{pos.code}</span>
+                    {lot?.stt && (
+                        <span
+                            className="shrink-0 px-1 rounded bg-amber-100/80 text-amber-700 text-[9px] font-bold tabular-nums leading-tight"
+                            title={`STT LOT: ${lot.stt}`}
+                        >{lot.stt}</span>
+                    )}
                     {lot && (
                         <span
                             onClick={(e) => { e.stopPropagation(); copyQuick(lot.code, 'Mã LOT') }}
