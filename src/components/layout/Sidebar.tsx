@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard } from 'lucide-react'
+import { LayoutDashboard, Package, Truck, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -62,6 +62,7 @@ const menuItems: MenuItem[] = [
             { id: 'infrastructure', name: 'Hạ tầng', href: '/warehouses', icon: Warehouse, requiredPermission: 'warehouse.view' },
             { id: 'warehouse_map', name: 'Sơ đồ kho', href: '/warehouses/map', icon: Map, requiredPermission: 'warehousemap.manage' },
             { id: 'lots', name: 'Quản lý LOT', href: '/warehouses/lots', icon: Boxes, requiredPermission: 'warehouse_lot.view' },
+            { id: 'hall_lots', name: 'LOT ở Sảnh', href: '/warehouses/hall-lots', icon: Truck, requiredPermission: 'warehouse_lot.view', requiredModule: 'hall_lot_management' },
             { id: 'warehouse_assign', name: 'Gán vị trí', href: '/warehouses/assign', icon: MapPin, requiredPermission: 'warehouse.view' },
             { id: 'assignment_approval', name: 'Duyệt gán vị trí', href: '/production-lot/assignments', icon: ClipboardCheck, requiredPermission: 'warehouse.view' },
             { id: 'requisitions', name: 'Phiếu xuất SX', href: '/warehouses/requisitions', icon: ArrowUpFromLine, requiredPermission: 'inventory.manage' },

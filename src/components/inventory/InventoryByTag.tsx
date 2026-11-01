@@ -251,25 +251,26 @@ export default function InventoryByTag({
                                 <th className="px-4 py-3 text-center">Đơn vị</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {hierarchicalTags.length === 0 ? (
+                        {hierarchicalTags.length === 0 ? (
+                            <tbody>
                                 <tr>
                                     <td colSpan={3} className="px-4 py-8 text-center text-stone-500">
                                         Không tìm thấy dữ liệu tồn kho theo mã phụ
                                     </td>
                                 </tr>
-                            ) : (
-                                hierarchicalTags.map(root => (
-                                    <TagTreeNode
-                                        key={root.fullPath}
-                                        node={root}
-                                        expandedTags={expandedTags}
-                                        onToggle={toggleExpand}
-                                        level={0}
-                                    />
-                                ))
-                            )}
-                        </tbody>
+                            </tbody>
+                        ) : (
+                            hierarchicalTags.map((root, idx) => (
+                                <TagTreeNode
+                                    key={root.fullPath}
+                                    node={root}
+                                    expandedTags={expandedTags}
+                                    onToggle={toggleExpand}
+                                    level={0}
+                                    index={idx}
+                                />
+                            ))
+                        )}
                     </table>
                 </div>
             </div>
@@ -277,11 +278,12 @@ export default function InventoryByTag({
     )
 }
 
-function TagTreeNode({ node, expandedTags, onToggle, level }: {
+function TagTreeNode({ node, expandedTags, onToggle, level, index }: {
     node: HierarchyNode
     expandedTags: Set<string>
     onToggle: (path: string) => void
     level: number
+    index: number
 }) {
     const isExpanded = expandedTags.has(node.fullPath)
     const hasChildren = node.children.length > 0
@@ -289,19 +291,25 @@ function TagTreeNode({ node, expandedTags, onToggle, level }: {
         .sort((a, b) => b.qty - a.qty)
         .map(v => [v.display, v.qty] as [string, number])
 
+    // Xen kẽ theo NHÓM tag. Mỗi nhóm là một <tbody> riêng để:
+    // - sơn nền trực tiếp lên <td> (ăn chắc hơn nền <tr> khi có ô rowSpan)
+    // - group-hover/tag: cả nhóm sáng cùng nhau khi rê chuột vào bất kỳ ô nào
+    const cellCls = `transition-colors ${node.isSkuLevel
+        ? 'bg-stone-50/70 dark:bg-stone-800/30'
+        : level === 0
+            ? (index % 2 === 1 ? 'bg-stone-100/70 dark:bg-stone-800/40' : 'bg-white dark:bg-stone-900')
+            : ''} group-hover/tag:bg-stone-200/60 dark:group-hover/tag:bg-stone-800/60`
+
     return (
         <>
+            <tbody className="group/tag">
             {unitRows.map(([unitName, unitQty], rowIdx) => (
             <tr
                 key={`${node.fullPath}__${unitName}`}
-                className={`
-                    border-b border-stone-100 dark:border-stone-800 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors
-                    ${level === 0 ? 'bg-white dark:bg-stone-900 font-semibold' : ''}
-                    ${node.isSkuLevel ? 'bg-stone-50/70 dark:bg-stone-800/30' : ''}
-                `}
+                className={`border-b border-stone-100 dark:border-stone-800 ${level === 0 ? 'font-semibold' : ''}`}
             >
                 {rowIdx === 0 && (
-                    <td className="px-4 py-3 align-middle" rowSpan={unitRows.length}>
+                    <td className={`px-4 py-3 align-middle ${cellCls}`} rowSpan={unitRows.length}>
                         <div
                             className="flex items-center gap-2 cursor-pointer select-none"
                             style={{ paddingLeft: `${level * 20}px` }}
@@ -347,24 +355,26 @@ function TagTreeNode({ node, expandedTags, onToggle, level }: {
                         </div>
                     </td>
                 )}
-                <td className="px-4 py-3 text-right font-mono font-medium text-stone-900 dark:text-stone-100 italic">
+                <td className={`px-4 py-3 text-right font-mono font-medium text-stone-900 dark:text-stone-100 italic ${cellCls}`}>
                     {formatQuantityFull(unitQty)}
                 </td>
-                <td className="px-4 py-3 text-center text-stone-500 font-medium">
+                <td className={`px-4 py-3 text-center text-stone-500 font-medium ${cellCls}`}>
                     {unitName || '—'}
                 </td>
             </tr>
             ))}
+            </tbody>
 
             {isExpanded && (
                 <>
-                    {node.children.map(child => (
+                    {node.children.map((child, childIdx) => (
                         <TagTreeNode
                             key={child.fullPath}
                             node={child}
                             expandedTags={expandedTags}
                             onToggle={onToggle}
                             level={level + 1}
+                            index={childIdx}
                         />
                     ))}
                 </>

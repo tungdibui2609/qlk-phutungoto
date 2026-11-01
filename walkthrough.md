@@ -1455,3 +1455,66 @@ Trước khi kiểm toán, tab này **không có** đường xuất nào: `type=
 - Kho Đông Lạnh: fix (a)+(b) **có** thay đổi số liệu tab Mã phụ — theo hướng sửa số sai thành số đúng (378 sản phẩm bị gán nhầm). Toàn bộ loại báo cáo khác (`lot`, `category`, `accounting`, `labels`) giữ nguyên từng cột; đã chốt bằng test tiêu đề + baseline đối chiếu.
 - Cô lập phân hệ: route `by-production` lọc `system_code` server-side bằng `.eq('system_code', systemType)`; chỉ thêm module `report` vào `app_modules`/`systems.report_modules`.
 - Không đụng dữ liệu: không xóa `productions` / `production_lots`; không migration nào sửa cột hay dòng dữ liệu tồn kho.
+
+# Walkthrough: Menu tác vụ nhanh LOT (gỡ / xuất / xóa) trên ô vị trí kiểm kê
+
+## Bối cảnh
+Người dùng yêu cầu thêm 1 nút xóa nhanh LOT ngay trong ô vị trí của trang Kiểm kê nội bộ. Trước khi code đã xác nhận ngữ nghĩa: chọn **menu 3 hành động** và **tự tích đã kiểm + is_modified** sau khi thao tác.
+
+## Thay đổi (`src/app/(dashboard)/work/inventory/page.tsx`)
+- State mới: `quickActionPosId` (ô đang mở menu), `isQuickActionBusy` (chặn bấm đúp khi đang ghi DB).
+- Nút `Trash2` ở cụm icon dòng 1 của card, **chỉ hiện khi ô có LOT và phiếu chưa khóa** (`!locked && lot`). Bấm để mở/đóng menu.
+- Menu render **inline trong card** (không dùng popover absolute) vì card có `overflow-hidden` sẽ cắt popover; menu phụ có `stopPropagation` để không bấm nhầm vào tích kiểm.
+- 3 hành động:
+  1. **Gỡ vị trí** `handleUnassignLot`: `positions.update({lot_id:null}).eq('id', pos.id)` — LOT vẫn còn trong Quản lý LOT, chỉ rời khỏi ô.
+  2. **Xuất kho** `handleExportLotAtPosition`: `router.push('/work/export-order?posIds=..&lotIds=..')` — dùng đúng deep link mà `PositionActionManager.tsx:243` của sơ đồ kho đang dùng (trang `/work/export-order` đọc `searchParams.posIds/lotIds` ở dòng 85-100).
+  3. **Xóa LOT** `handleDeleteLotAtPosition`: `logLotsDeletion()` → `positions.update({lot_id:null}).eq('lot_id', lotId)` (giải phóng **mọi** ô đang giữ LOT) → xóa `lot_tags` → `lot_items` → `lots`. Cùng thứ tự dọn quan hệ như `handleBulkDeleteLot` ở `warehouses/map/page.tsx:664`.
+- Sau "gỡ" và "xóa": `markPositionHandled(pos)` upsert `internal_inventory_items` với `checked: true, is_modified: true, lot_id_snapshot: null` (giữ nguyên `note` cũ), rồi `loadDetail(session, true)` để tải lại sơ đồ + chip STT.
+- Audit: mỗi lần gỡ liên kết đều `logActivity({tableName:'positions', action:'UPDATE', oldData:{lot_id}, newData:{lot_id:null}, systemCode: currentSystem?.code})`; trước khi xóa LOT có snapshot vào `audit_logs` (`logLotsDeletion`) nên khôi phục được.
+- `toggleCheck` giờ đóng menu tác vụ để không còn menu "treo" khi bấm sang ô khác.
+
+## Tuân thủ kiến trúc
+- **Không hardcode mã kho**: không có điều kiện theo `systemType`/mã kho nào; hành động chỉ dựa trên dữ liệu của ô đang bấm.
+- **Cô lập phân hệ**: `pos.id`/`lotId` lấy từ `positions`/`lots` đã lọc theo `system_type` của phiên kiểm kê (`loadDetail`), nên không thao tác chéo phân hệ.
+- **Kho Đông Lạnh**: không sửa luồng ghi có sẵn (`toggleCheck`, `updateNote`, `toggleResolved`, `onLotEditSuccess`); nút mới là thành phần phụ, phiếu `completed` thì ẩn hoàn toàn. Hành động xóa đã có `showConfirm` bắt buộc xác nhận.
+- **Cờ module**: không cần module mới vì đây là thao tác dữ liệu LOT/vị trí, không phải tính năng báo cáo; tương đương 100% với menu chuột phải đã có trên sơ đồ kho.
+
+## Kiểm chứng
+- `npx tsc --noEmit` → 0 lỗi trên file này.
+- Chưa kiểm chứng UI: hiện chỉ còn server `:3000` (bản build prod cũ) đang chạy, dev `:3001` đã tắt, và agent không có phiên đăng nhập.
+
+# Walkthrough: Xen kẽ màu nền giữa các dòng tag — tab "Tồn theo Mã phụ"
+
+## Thay đổi (`src/components/inventory/InventoryByTag.tsx`)
+- Bảng này mỗi tag cấp 1 có thể chiếm **nhiều dòng `<tr>`** (mỗi ĐVT một dòng, ô tên dùng `rowSpan`), nên không dùng `odd:`/`even:` của CSS được — phải tính theo **nhóm tag**.
+- Thêm prop `index` cho `TagTreeNode`: `hierarchicalTags.map((root, idx) => ... index={idx})` và truyền `index={childIdx}` khi đệ quy con.
+- Tách biến `rowBg` mới: `node.isSkuLevel` → nền đá như cũ; `level === 0` và `index` lẻ → `bg-stone-100/70` (`dark:bg-stone-800/40`); `index` chẵn → `bg-white`. Trước đây `bg-white` (level 0) và `bg-stone-50/70` (SKU) cùng bị gán trên một `<tr>` nên màu nào thắng phụ thuộc thứ tự CSS — nay chỉ còn 1 lớp nền được tính.
+- Hover đổi thành `hover:bg-stone-200/60` để vẫn thấy rõ trên nền đã tint (hover cũ `stone-50` sẽ làm dòng lẻ sáng ngược khi rê chuột).
+- Dòng con (`level > 0`, không phải SKU) giữ nguyên không có nền → chỉ các nhóm tag cấp 1 mới xen kẽ, đúng yêu cầu.
+
+## Phạm vi & an toàn
+- Chỉ sửa class trình bày trong một component của tab `tags` trên `/inventory`; không đụng query, không đụng `/api/inventory/by-tag`, không đổi dữ liệu.
+- Trang in `/print/inventory?type=tags` và tab LOT (`by-lot/InventoryTable.tsx`) là markup riêng → **không đổi** theo, nếu muốn đồng nhất phải yêu cầu riêng.
+- Không liên quan Kho Đông Lạnh hay module bật/tắt: không có điều kiện theo `systemType`/mã kho.
+
+## Kiểm chứng
+- `npx tsc --noEmit` → 0 lỗi trên file này; `TagTreeNode` là hàm nội bộ nên không có nơi gọi nào khác phải cập nhật.
+
+# Walkthrough (tiếp): Mỗi nhóm tag là một `<tbody>` — xen kẽ + hover cả nhóm
+
+## Vì phải đổi cấu trúc
+Ô tên dùng `rowSpan` nên các dòng ĐVT của cùng một tag không "dính" nhau về mặt nền/hover khi tất cả nằm chung một `<tbody>`. Muốn cả nhóm cùng màu và cùng sáng khi rê chuột thì phải tách mỗi nhóm thành một `<tbody>` riêng.
+
+## Thay đổi (`src/components/inventory/InventoryByTag.tsx`)
+- `<table>` không còn `<tbody>` bọc ngoài nữa: `hierarchicalTags.map()` trả trực tiếp các `<tbody>` (mỗi node một tbody), nên DOM là `<table> > <tbody> × N` — HTML hợp lệ. `<tbody>` bọc ngoài chỉ còn cho dòng "Không tìm thấy dữ liệu".
+- `TagTreeNode` trả `<><tbody className="group/tag">…các <tr> của node…</tbody>{con cái đệ quy}</>`. Con cái là `<tbody>` **kề cạnh**, không lồng trong tbody cha.
+- Nền vẫn sơn trên `<td>` qua biến `cellCls` (`bg-white` / `bg-stone-100/70` theo `index % 2`).
+- Hover đổi từ `hover:` sang `group-hover/tag:` → rê vào bất kỳ ô nào của nhóm (kể cả ô tên đang `rowSpan`) làm **toàn bộ ô của nhóm** sáng `bg-stone-200/60`.
+
+## Kiểm chứng đã làm (không phải suy đoán)
+1. Giả thuyết "nền `<tr>` không sơn được vùng `rowSpan`" đã bị **bác bỏ**: dựng bảng tối giản mở bằng Chrome thật, cả 2 dòng đều tô đúng.
+2. Xác định vì sao ảnh của người dùng vẫn cũ: `:3000` là `next start` chạy build lúc **21:04** (`.next/BUILD_ID`), trong khi source sửa lúc **21:45** → port đó không có code mới; `:3001` là `next dev` và chunk `.next/dev/.../inventory/page.js` đã chứa `cellCls`, không còn `rowBg`.
+3. Xác nhận Tailwind v4 (project dùng `@import "tailwindcss"`, không có tailwind.config) sinh đúng class named-group: chạy `@tailwindcss/postcss` trên markup thật của component → CSS có `.group-hover\/tag\:bg-stone-200\/60 { &:is(:where(.group\/tag):hover *) }` và bản dark.
+4. Mở chính markup component + CSS vừa sinh bằng Chrome, đọc computed style 5 ô của nhóm "ĐÃ RW (2 đơn vị)": tất cả đều `oklab(0.97 … / 0.7)` (stone-100/70) — không còn ô trắng ở dòng ĐVT thứ hai; nhóm "ĐẮK LẮK" trắng.
+- Chưa chụp được ảnh lúc hover vì tool `hover` của browser-use lỗi (`this.scrollIntoView is not a function`); cơ chế group-hover đã được xác minh ở cấp CSS selector + cấu trúc DOM.
+- `npx tsc --noEmit` → 0 lỗi trên file này.

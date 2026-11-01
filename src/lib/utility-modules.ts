@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes, Building2 } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes, Building2, Truck } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -180,6 +180,14 @@ export const UTILITY_MODULES: UtilityModule[] = [
         category: 'automation',
         is_basic: true,
         default_enabled: false
+    },
+    {
+        id: 'hall_lot_management',
+        name: 'Quản lý LOT ở Sảnh',
+        description: 'Ghi nhận và quản lý danh sách các LOT đang tập kết tại Sảnh được cập nhật nhanh từ ứng dụng di động.',
+        icon: Truck,
+        category: 'specialized',
+        default_enabled: true
     }
 ]
 

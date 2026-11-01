@@ -13,6 +13,9 @@ import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashbo
 import { normalizeSearchString } from '@/lib/searchUtils'
 import { canonicalizeUnit } from '@/lib/unitConversion'
 import { decodeSTT } from '@/lib/numberUtils'
+import { useRouter } from 'next/navigation'
+import { logActivity } from '@/lib/audit'
+import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 
 // Types
 interface Session {
@@ -135,6 +138,7 @@ export default function InternalInventoryPage() {
     const { profile } = useUser()
     const { showToast, showConfirm } = useToast()
     const { hasModule } = useSystem()
+    const router = useRouter()
 
     const [loading, setLoading] = useState(true)
     const [sessions, setSessions] = useState<Session[]>([])
@@ -165,6 +169,8 @@ export default function InternalInventoryPage() {
     const [dismissedNotePos, setDismissedNotePos] = useState<string | null>(null)
     const [refreshingPosId, setRefreshingPosId] = useState<string | null>(null)
     const [showLotEdit, setShowLotEdit] = useState(false)
+    const [quickActionPosId, setQuickActionPosId] = useState<string | null>(null)
+    const [isQuickActionBusy, setIsQuickActionBusy] = useState(false)
 
     // Common Data for LotForm
     const [commonData, setCommonData] = useState<{
@@ -681,6 +687,7 @@ export default function InternalInventoryPage() {
 
     const toggleCheck = async (positionId: string) => {
         if (!selectedSession || !profile) return
+        setQuickActionPosId(null)
         if (selectedSession.status === 'completed') {
             showToast('Phiếu đã được khóa, không thể chỉnh sửa', 'warning')
             return
@@ -1112,6 +1119,110 @@ export default function InternalInventoryPage() {
         }
     }
 
+    // === Thao tác nhanh với LOT ngay trên ô vị trí: gỡ vị trí / xuất kho / xóa LOT ===
+    const markPositionHandled = async (pos: any) => {
+        if (!selectedSession || !profile) return
+        const existing = items.find(i => i.position_id === pos.id)
+        await (supabase as any).from('internal_inventory_items').upsert({
+            session_id: selectedSession.id,
+            position_id: pos.id,
+            zone_id: (pos.zone_id && !pos.zone_id.startsWith('v-')) ? pos.zone_id : null,
+            checked: true,
+            note: existing?.note || null,
+            checked_by: profile.id,
+            checked_at: new Date().toISOString(),
+            lot_id_snapshot: null,
+            is_modified: true
+        }, { onConflict: 'session_id,position_id' })
+    }
+
+    const handleUnassignLot = async (pos: any) => {
+        const lotId = pos.lot_id
+        if (!lotId || isQuickActionBusy) return
+        const lotCode = lotInfo[lotId]?.code || ''
+        if (!await showConfirm(`Gỡ LOT ${lotCode} khỏi ô ${pos.code}? LOT vẫn nằm trong Quản lý LOT và chuyển sang trạng thái chưa gán vị trí.`)) return
+
+        setIsQuickActionBusy(true)
+        try {
+            const { error } = await (supabase as any)
+                .from('positions')
+                .update({ lot_id: null })
+                .eq('id', pos.id)
+            if (error) throw error
+
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: pos.id,
+                action: 'UPDATE',
+                oldData: { lot_id: lotId },
+                newData: { lot_id: null },
+                systemCode: currentSystem?.code || ''
+            })
+
+            await markPositionHandled(pos)
+            setQuickActionPosId(null)
+            showToast(`Đã gỡ LOT ${lotCode} khỏi ô ${pos.code}`, 'success')
+            if (selectedSession) loadDetail(selectedSession, true)
+        } catch (e: any) {
+            showToast('Lỗi gỡ LOT: ' + (e?.message || 'không xác định'), 'error')
+        } finally {
+            setIsQuickActionBusy(false)
+        }
+    }
+
+    const handleDeleteLotAtPosition = async (pos: any) => {
+        const lotId = pos.lot_id
+        if (!lotId || isQuickActionBusy) return
+        const lotCode = lotInfo[lotId]?.code || ''
+        if (!await showConfirm(`Xóa hẳn LOT ${lotCode} khỏi ô ${pos.code}? LOT sẽ bị xóa khỏi Quản lý LOT (đã lưu snapshot vào Nhật ký xuất nhập LOT để khôi phục).`)) return
+
+        setIsQuickActionBusy(true)
+        try {
+            await logLotsDeletion(supabase as any, [lotId])
+
+            const { error: posError } = await (supabase as any)
+                .from('positions')
+                .update({ lot_id: null })
+                .eq('lot_id', lotId)
+            if (posError) throw posError
+
+            await logActivity({
+                supabase,
+                tableName: 'positions',
+                recordId: pos.id,
+                action: 'UPDATE',
+                oldData: { lot_id: lotId },
+                newData: { lot_id: null },
+                systemCode: currentSystem?.code || ''
+            })
+
+            const { error: tagError } = await (supabase as any).from('lot_tags').delete().eq('lot_id', lotId)
+            if (tagError) console.warn('Không xóa được lot_tags:', tagError)
+
+            const { error: itemError } = await (supabase as any).from('lot_items').delete().eq('lot_id', lotId)
+            if (itemError) throw itemError
+
+            const { error: lotError } = await (supabase as any).from('lots').delete().eq('id', lotId)
+            if (lotError) throw lotError
+
+            await markPositionHandled(pos)
+            setQuickActionPosId(null)
+            showToast(`Đã xóa LOT ${lotCode}`, 'success')
+            if (selectedSession) loadDetail(selectedSession, true)
+        } catch (e: any) {
+            showToast('Lỗi xóa LOT: ' + (e?.message || 'không xác định'), 'error')
+        } finally {
+            setIsQuickActionBusy(false)
+        }
+    }
+
+    const handleExportLotAtPosition = (pos: any) => {
+        if (!pos.lot_id) return
+        setQuickActionPosId(null)
+        router.push(`/work/export-order?posIds=${pos.id}&lotIds=${pos.lot_id}`)
+    }
+
     const renderInventoryPosition = (pos: any, isHall: boolean = false) => {
         const item = itemsMap[pos.id]
         const lot = pos.lot_id ? lotInfo[pos.lot_id] : null
@@ -1207,8 +1318,53 @@ export default function InternalInventoryPage() {
                                 <Edit size={12} />
                             </button>
                         )}
+                        {!locked && lot && (
+                            <button
+                                onClick={(e) => {
+                                    e.stopPropagation()
+                                    setQuickActionPosId(quickActionPosId === pos.id ? null : pos.id)
+                                }}
+                                disabled={isQuickActionBusy}
+                                className={`p-0.5 rounded transition-all disabled:opacity-40 ${quickActionPosId === pos.id ? 'text-red-600 bg-red-100' : 'text-stone-300 hover:text-red-600 hover:bg-red-100/60'}`}
+                                title="Gỡ / xuất / xóa LOT khỏi ô này"
+                            >
+                                <Trash2 size={12} />
+                            </button>
+                        )}
                     </span>
                 </div>
+
+                {/* Menu tác vụ nhanh LOT: mở ngay trong ô vì card có overflow-hidden */}
+                {quickActionPosId === pos.id && lot && (
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-1 flex flex-wrap items-center gap-1"
+                    >
+                        <button
+                            onClick={() => handleUnassignLot(pos)}
+                            disabled={isQuickActionBusy}
+                            className="px-1.5 py-0.5 rounded border border-stone-300 text-stone-600 hover:bg-stone-100 text-[9px] font-bold uppercase tracking-tight transition-all disabled:opacity-40"
+                            title="Chỉ gỡ liên kết, LOT vẫn còn trong Quản lý LOT"
+                        >Gỡ vị trí</button>
+                        <button
+                            onClick={() => handleExportLotAtPosition(pos)}
+                            disabled={isQuickActionBusy}
+                            className="px-1.5 py-0.5 rounded border border-blue-300 text-blue-700 hover:bg-blue-50 text-[9px] font-bold uppercase tracking-tight transition-all disabled:opacity-40"
+                            title="Lập phiếu xuất cho LOT này"
+                        >Xuất kho</button>
+                        <button
+                            onClick={() => handleDeleteLotAtPosition(pos)}
+                            disabled={isQuickActionBusy}
+                            className="px-1.5 py-0.5 rounded border border-red-300 text-red-700 hover:bg-red-50 text-[9px] font-bold uppercase tracking-tight transition-all disabled:opacity-40"
+                            title="Xóa hẳn LOT khỏi Quản lý LOT"
+                        >Xóa LOT</button>
+                        <button
+                            onClick={() => setQuickActionPosId(null)}
+                            className="ml-auto p-0.5 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-all"
+                            title="Đóng"
+                        ><X size={11} /></button>
+                    </div>
+                )}
 
                 {/* Dòng 2+: sản phẩm (hiện đầy đủ, tự xuống dòng) | số lượng ở dòng dưới */}
                 {lot ? (
