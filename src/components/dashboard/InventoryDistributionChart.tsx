@@ -1,13 +1,20 @@
 'use client'
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { supabase } from '@/lib/supabaseClient'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { Loader2, RefreshCw, Settings2 } from 'lucide-react'
+import { ChevronDown, FolderTree, Layers, Loader2, RefreshCw, Scale, Settings2 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { Database } from '@/lib/database.types'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { fetchAllPaged } from '@/lib/supabasePaged'
+import { buildZoneLookup } from '@/lib/warehouseFillRate'
+import {
+    buildCategoryPositionStats,
+    buildLotCategoryMap,
+    type CatStatLot
+} from '@/lib/categoryPositionStats'
 
 type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
     unit: string | null
@@ -57,6 +64,21 @@ export default function InventoryDistributionChart() {
     const [showCategoryFilter, setShowCategoryFilter] = useState(false)
     const [showSettings, setShowSettings] = useState(false)
     const [isLegendExpanded, setIsLegendExpanded] = useState(false)
+
+    // Tab "Theo danh mục (vị trí)": thống kê số ô vị trí theo danh mục, dùng chung cấu hình với /warehouses/status
+    const [view, setView] = useState<'kg' | 'position'>('kg')
+    const [positionLoading, setPositionLoading] = useState(false)
+    const [positionError, setPositionError] = useState<string | null>(null)
+    const [positionRows, setPositionRows] = useState<Array<{ id: string; lot_id: string | null; zone_id: string | null }>>([])
+    const [zoneRows, setZoneRows] = useState<Array<{ id: string; code: string | null; name: string | null; parent_id: string | null; level: number | null }>>([])
+    const [lotCategories, setLotCategories] = useState<Map<string, string[]>>(new Map())
+    const [positionLoaded, setPositionLoaded] = useState(false)
+    const [statWarehouseId, setStatWarehouseId] = useState<string | null>(null)
+    const [statCategoryIds, setStatCategoryIds] = useState<string[]>([])
+    const [showStatConfig, setShowStatConfig] = useState(false)
+    const [tempStatIds, setTempStatIds] = useState<string[]>([])
+    const [savingStatConfig, setSavingStatConfig] = useState(false)
+
     const { getBaseAmount: toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
 
     // Fetch Data
@@ -160,39 +182,150 @@ export default function InventoryDistributionChart() {
         }
     }, [systemType, currentSystem])
 
-    // Save configuration to Database (systems table)
-    const saveToDatabase = async (newAllowedIds: string[] | null) => {
+    // Ghi cấu hình vào bảng systems (jsonb `modules`) mà không xoá các cấu hình khác
+    const patchSystemModules = async (build: (currentModules: any) => Record<string, any>) => {
         if (!currentSystem?.id) return
 
+        // Lấy modules mới nhất để không ghi đè cấu hình vừa được sửa ở tab khác
+        const { data: sysData } = await (supabase
+            .from('systems') as any)
+            .select('modules')
+            .eq('id', currentSystem.id)
+            .single()
+
+        const currentModules = (sysData?.modules as any) || {}
+
+        const { error } = await (supabase
+            .from('systems') as any)
+            .update({ modules: { ...currentModules, ...build(currentModules) } })
+            .eq('id', currentSystem.id)
+
+        if (error) throw error
+
+        // Refresh systems context to sync globally
+        refreshSystems()
+    }
+
+    const saveToDatabase = async (newAllowedIds: string[] | null) => {
         try {
-            // Get latest modules to avoid overwritting other configs
-            const { data: sysData } = await (supabase
-                .from('systems') as any)
-                .select('modules')
-                .eq('id', currentSystem.id)
-                .single()
-            
-            const currentModules = (sysData?.modules as any) || {}
-            
-            const updatedModules = {
-                ...currentModules,
+            await patchSystemModules(modules => ({
                 dashboard_config: {
-                    ...currentModules.dashboard_config,
+                    ...modules.dashboard_config,
                     allowed_category_ids: newAllowedIds
                 }
-            }
-
-            const { error } = await (supabase
-                .from('systems') as any)
-                .update({ modules: updatedModules })
-                .eq('id', currentSystem.id)
-
-            if (error) throw error
-            
-            // Refresh systems context to sync globally
-            refreshSystems()
+            }))
         } catch (error) {
             console.error('Error saving dashboard config to database:', error)
+        }
+    }
+
+    // Đọc/fresh dữ liệu vị trí cho tab "Theo danh mục (vị trí)"
+    const fetchPositionData = useCallback(async () => {
+        if (!systemType) return
+        setPositionLoading(true)
+        setPositionError(null)
+        try {
+            const [posRows, zoneList, linkRows] = await Promise.all([
+                fetchAllPaged<{ id: string; lot_id: string | null }>((from, to) =>
+                    (supabase.from('positions') as any)
+                        .select('id, lot_id')
+                        .eq('system_type', systemType)
+                        .order('id')
+                        .range(from, to)
+                ),
+                fetchAllPaged<{ id: string; code: string | null; name: string | null; parent_id: string | null; level: number | null }>((from, to) =>
+                    (supabase.from('zones') as any)
+                        .select('id, code, name, parent_id, level')
+                        .eq('system_type', systemType)
+                        .order('level')
+                        .order('code')
+                        .range(from, to)
+                ),
+                fetchAllPaged<{ zone_id: string; position_id: string }>((from, to) =>
+                    (supabase.from('zone_positions') as any)
+                        .select('zone_id, position_id, positions!inner(*)')
+                        .eq('positions.system_type', systemType)
+                        .order('zone_id')
+                        .order('position_id')
+                        .range(from, to)
+                )
+            ])
+
+            const zoneLookup = buildZoneLookup(linkRows)
+            const positionsWithZone = posRows.map(p => ({ ...p, zone_id: zoneLookup.get(p.id) || null }))
+
+            // Chỉ lấy đúng các LOT đang chiếm ô (không lọc status) — giống trang trạng thái kho.
+            const occupiedLotIds = Array.from(new Set(posRows.map(p => p.lot_id).filter((id): id is string => !!id)))
+            const lotsForCategories: CatStatLot[] = []
+            const chunkSize = 150
+            for (let i = 0; i < occupiedLotIds.length; i += chunkSize) {
+                const chunk = occupiedLotIds.slice(i, i + chunkSize)
+                const { data, error } = await (supabase.from('lots') as any)
+                    .select('id, lot_items(category_id, products(sku, name, category_id, product_category_rel(category_id)))')
+                    .in('id', chunk)
+                if (error) throw error
+                if (data) lotsForCategories.push(...(data as CatStatLot[]))
+            }
+
+            setPositionRows(positionsWithZone)
+            setZoneRows(zoneList)
+            setLotCategories(buildLotCategoryMap(lotsForCategories))
+            setPositionLoaded(true)
+        } catch (err: any) {
+            console.error('Error fetching category position stats:', err)
+            setPositionError(err?.message || 'Không tải được dữ liệu vị trí kho.')
+        } finally {
+            setPositionLoading(false)
+        }
+    }, [systemType])
+
+    useEffect(() => {
+        if (view === 'position' && !positionLoaded && !positionLoading) fetchPositionData()
+    }, [view, positionLoaded, positionLoading, fetchPositionData])
+
+    // Cấu hình danh mục theo dõi: dùng chung key với trang /warehouses/status
+    useEffect(() => {
+        if (!currentSystem || categories.length === 0) return
+        const dbIds = (currentSystem.modules as any)?.warehouse_status_config?.selected_category_ids
+        setStatCategoryIds(Array.isArray(dbIds) ? dbIds : categories.map(c => c.id))
+    }, [currentSystem, categories])
+
+    const warehouses = useMemo(
+        () => zoneRows.filter(z => z.level === 0 || !z.parent_id),
+        [zoneRows]
+    )
+
+    const positionResult = useMemo(
+        () => buildCategoryPositionStats({
+            categories,
+            positions: positionRows,
+            lotCategories,
+            zones: zoneRows,
+            warehouseId: statWarehouseId
+        }),
+        [categories, positionRows, lotCategories, zoneRows, statWarehouseId]
+    )
+
+    const visiblePositionStats = useMemo(
+        () => positionResult.stats.filter(s => statCategoryIds.includes(s.categoryId)),
+        [positionResult, statCategoryIds]
+    )
+
+    const saveStatConfig = async (ids: string[]) => {
+        setSavingStatConfig(true)
+        try {
+            await patchSystemModules(modules => ({
+                warehouse_status_config: {
+                    ...modules.warehouse_status_config,
+                    selected_category_ids: ids
+                }
+            }))
+            setStatCategoryIds(ids)
+            setShowStatConfig(false)
+        } catch (error) {
+            console.error('Error saving category stats config:', error)
+        } finally {
+            setSavingStatConfig(false)
         }
     }
 
@@ -300,49 +433,73 @@ export default function InventoryDistributionChart() {
         )
     }
 
-    if (processedData.length === 0) {
-        return (
-            <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[400px] flex flex-col items-center justify-center text-stone-400">
-                <p>Chưa có dữ liệu tồn kho (KG)</p>
-            </div>
-        )
-    }
-
     return (
         <div className="bg-white rounded-2xl p-6 border border-stone-200">
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between mb-5">
                 <h2 className="text-xl font-semibold text-stone-800">Tỉ lệ phân bố hàng hóa tồn kho</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                    {/* Tab: khối lượng KG (theo sản phẩm) / số ô vị trí (theo danh mục) */}
+                    <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl">
+                        <button
+                            onClick={() => setView('kg')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                view === 'kg'
+                                    ? 'bg-white text-orange-600 shadow-sm'
+                                    : 'text-stone-500 hover:text-stone-700'
+                            }`}
+                        >
+                            <Scale size={14} />
+                            Theo khối lượng (KG)
+                        </button>
+                        <button
+                            onClick={() => setView('position')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                                view === 'position'
+                                    ? 'bg-white text-indigo-600 shadow-sm'
+                                    : 'text-stone-500 hover:text-stone-700'
+                            }`}
+                        >
+                            <Layers size={14} />
+                            Theo danh mục (vị trí)
+                        </button>
+                    </div>
+                    {view === 'kg' && (
+                        <>
+                            <button
+                                onClick={() => {
+                                    setShowCategoryFilter(!showCategoryFilter)
+                                    if (showSettings) setShowSettings(false)
+                                }}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
+                                    showCategoryFilter || selectedCategoryIds.length > 0
+                                        ? 'bg-orange-50 border-orange-200 text-orange-600'
+                                        : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
+                                }`}
+                            >
+                                <Loader2 className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+                                Danh mục {selectedCategoryIds.length > 0 && `(${selectedCategoryIds.length})`}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowSettings(!showSettings)
+                                    if (showCategoryFilter) setShowCategoryFilter(false)
+                                }}
+                                className={`p-1.5 rounded-lg border transition-all ${
+                                    showSettings
+                                        ? 'bg-indigo-100 border-indigo-200 text-indigo-600'
+                                        : 'bg-white border-stone-200 text-stone-400 hover:text-stone-600 hover:border-stone-300'
+                                }`}
+                                title="Cài đặt danh mục hiển thị"
+                            >
+                                <Settings2 size={18} />
+                            </button>
+                        </>
+                    )}
                     <button
                         onClick={() => {
-                            setShowCategoryFilter(!showCategoryFilter)
-                            if (showSettings) setShowSettings(false)
+                            fetchData()
+                            if (view === 'position') fetchPositionData()
                         }}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                            showCategoryFilter || selectedCategoryIds.length > 0
-                                ? 'bg-orange-50 border-orange-200 text-orange-600'
-                                : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300'
-                        }`}
-                    >
-                        <Loader2 className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                        Danh mục {selectedCategoryIds.length > 0 && `(${selectedCategoryIds.length})`}
-                    </button>
-                    <button
-                        onClick={() => {
-                            setShowSettings(!showSettings)
-                            if (showCategoryFilter) setShowCategoryFilter(false)
-                        }}
-                        className={`p-1.5 rounded-lg border transition-all ${
-                            showSettings 
-                                ? 'bg-indigo-100 border-indigo-200 text-indigo-600' 
-                                : 'bg-white border-stone-200 text-stone-400 hover:text-stone-600 hover:border-stone-300'
-                        }`}
-                        title="Cài đặt danh mục hiển thị"
-                    >
-                        <Settings2 size={18} />
-                    </button>
-                    <button
-                        onClick={fetchData}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white border border-stone-200 text-stone-600 hover:border-stone-300 transition-all"
                     >
                         <RefreshCw size={14} />
@@ -352,6 +509,7 @@ export default function InventoryDistributionChart() {
             </div>
 
             {/* Category selection area */}
+            {view === 'kg' && (<>
             {showCategoryFilter && (
                 <div className="mb-6 p-4 bg-stone-50 rounded-xl border border-stone-200 animate-in fade-in slide-in-from-top-2 duration-200">
                     <div className="flex items-center justify-between mb-3">
@@ -492,8 +650,183 @@ export default function InventoryDistributionChart() {
                     </div>
                 </div>
             )}
+            </>
+            )}
 
-            <div className="h-[300px] w-full relative">
+            {view === 'position' ? (
+                <div className="space-y-4">
+                    {/* Chọn kho + cấu hình danh mục theo dõi */}
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-stone-200 bg-stone-50/60 p-2.5">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] font-black text-stone-500 uppercase tracking-widest">Phạm vi</span>
+                            <div className="relative">
+                                <select
+                                    value={statWarehouseId || ''}
+                                    onChange={e => setStatWarehouseId(e.target.value || null)}
+                                    className="appearance-none pl-3 pr-8 py-1.5 rounded-lg bg-white border border-stone-200 text-xs font-bold text-stone-700 focus:outline-none focus:border-indigo-300"
+                                >
+                                    <option value="">TẤT CẢ KHO ({formatQuantityFull(positionRows.length, 0)})</option>
+                                    {warehouses.map(w => (
+                                        <option key={w.id} value={w.id}>{(w.name || w.code || '(không tên)').toUpperCase()}</option>
+                                    ))}
+                                </select>
+                                <ChevronDown size={13} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400" />
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => {
+                                setTempStatIds([...statCategoryIds])
+                                setShowStatConfig(v => !v)
+                            }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold uppercase tracking-wider border transition-all ${
+                                showStatConfig
+                                    ? 'bg-indigo-600 border-indigo-600 text-white'
+                                    : 'bg-white border-stone-200 text-stone-600 hover:border-indigo-300 hover:text-indigo-600'
+                            }`}
+                        >
+                            <Settings2 size={13} />
+                            Cấu hình {statCategoryIds.length > 0 && `(${statCategoryIds.length})`}
+                        </button>
+                    </div>
+
+                    {showStatConfig && (
+                        <div className="p-4 rounded-xl border border-indigo-100 bg-indigo-50/50">
+                            <p className="text-[11px] font-bold text-indigo-900 mb-0.5">Danh mục cần theo dõi</p>
+                            <p className="text-[10px] text-indigo-600 font-medium mb-3">
+                                Danh sách dùng chung với trang Sơ đồ trạng thái kho — sửa một lần, cả hai nơi cùng đổi.
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                                {categories.map(cat => {
+                                    const checked = tempStatIds.includes(cat.id)
+                                    return (
+                                        <label key={cat.id} className="flex items-center gap-2 cursor-pointer group">
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => setTempStatIds(prev => checked ? prev.filter(id => id !== cat.id) : [...prev, cat.id])}
+                                                className="w-4 h-4 rounded border-stone-300 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-xs text-stone-700 group-hover:text-indigo-700 transition-colors truncate">{cat.name}</span>
+                                        </label>
+                                    )
+                                })}
+                                {categories.length === 0 && (
+                                    <div className="col-span-full text-center py-3 text-stone-400 text-[10px] font-bold">
+                                        Không có danh mục nào để chọn
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-3 pt-2 border-t border-indigo-100 flex justify-end gap-2">
+                                <button
+                                    onClick={() => setShowStatConfig(false)}
+                                    className="px-3 py-1.5 text-[10px] font-bold text-stone-500 hover:text-stone-700 uppercase tracking-wider"
+                                >
+                                    Bỏ qua
+                                </button>
+                                <button
+                                    onClick={() => saveStatConfig(tempStatIds)}
+                                    disabled={savingStatConfig}
+                                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-[10px] rounded-lg uppercase tracking-wider transition-all"
+                                >
+                                    {savingStatConfig ? 'Đang lưu...' : 'Lưu hệ thống'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {positionError && (
+                        <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/60 flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-bold text-rose-700">{positionError}</span>
+                            <button
+                                onClick={fetchPositionData}
+                                className="px-3 py-1 rounded-lg bg-rose-600 text-white text-[11px] font-bold hover:bg-rose-700 transition-colors"
+                            >
+                                Thử lại
+                            </button>
+                        </div>
+                    )}
+
+                    {positionLoading && positionRows.length === 0 ? (
+                        <div className="h-[200px] flex items-center justify-center">
+                            <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+                        </div>
+                    ) : positionRows.length === 0 ? (
+                        <div className="p-6 rounded-xl border border-dashed border-stone-200 text-sm text-stone-400 text-center">
+                            Phân hệ này chưa có ô vị trí nào trong sơ đồ — hãy quy hoạch khu vực ở phần Quản lý kho.
+                        </div>
+                    ) : categories.length === 0 ? (
+                        <div className="p-6 rounded-xl border border-dashed border-stone-200 text-sm text-stone-400 text-center">
+                            Phân hệ này chưa có danh mục sản phẩm nào nên không thống kê được theo danh mục.
+                        </div>
+                    ) : visiblePositionStats.length === 0 ? (
+                        <div className="p-6 rounded-xl border border-dashed border-stone-200 text-xs font-bold text-stone-400 text-center flex flex-col items-center gap-2">
+                            <FolderTree size={26} className="text-stone-300" />
+                            Chưa cấu hình danh mục để theo dõi. Nhấp "Cấu hình" để thêm.
+                        </div>
+                    ) : (
+                        <>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                                {visiblePositionStats.map(stat => (
+                                    <div key={stat.categoryId} className="relative overflow-hidden rounded-2xl border border-stone-200 bg-stone-50/50 p-3.5 hover:border-indigo-200 transition-colors">
+                                        <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 rounded-full -mr-6 -mt-6" />
+                                        <div className="relative z-10 flex items-start justify-between gap-2 mb-2.5">
+                                            <div className="flex items-center gap-2 min-w-0">
+                                                <FolderTree size={14} className="text-indigo-500 shrink-0" />
+                                                <span className="text-xs font-black text-stone-700 truncate uppercase" title={stat.name}>
+                                                    {stat.name}
+                                                </span>
+                                            </div>
+                                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-wider shrink-0">
+                                                {formatQuantityFull(stat.count, 0)} vị trí
+                                            </span>
+                                        </div>
+                                        <div className="relative z-10 space-y-2">
+                                            <div className="w-full bg-stone-200/80 h-1.5 rounded-full overflow-hidden">
+                                                <div
+                                                    className="bg-gradient-to-r from-indigo-500 to-violet-600 h-full rounded-full transition-all duration-500"
+                                                    style={{ width: `${Math.min(stat.pctOfOccupied, 100)}%` }}
+                                                />
+                                            </div>
+                                            <div className="flex flex-col gap-0.5 text-[9px] font-bold text-stone-400 tracking-wider">
+                                                <div className="flex justify-between items-center">
+                                                    <span>TỈ LỆ HÀNG HOÁ:</span>
+                                                    <span className="text-stone-700 font-black">{stat.pctOfOccupied.toFixed(1)}%</span>
+                                                </div>
+                                                <div className="flex justify-between items-center">
+                                                    <span>TỈ LỆ CÔNG SUẤT:</span>
+                                                    <span className="text-stone-700 font-black">{stat.pctOfTotal.toFixed(1)}%</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="text-[11px] text-stone-500 space-y-1 border-t border-stone-100 pt-3">
+                                <p>
+                                    Đang tính trên{' '}
+                                    <span className="font-bold text-stone-700">{formatQuantityFull(positionResult.occupiedPositions, 0)}</span> ô đang chứa hàng /{' '}
+                                    <span className="font-bold text-stone-700">{formatQuantityFull(positionResult.totalPositions, 0)}</span> ô quy hoạch
+                                    {statWarehouseId ? ' (thuộc kho đã chọn)' : ' (toàn bộ phân hệ)'}.
+                                </p>
+                                <p>Một LOT có thể mang nhiều danh mục nên tổng các tỉ lệ hàng hoá có thể vượt 100%.</p>
+                                {positionResult.unclassifiedOccupied > 0 && (
+                                    <p>
+                                        <span className="font-bold text-stone-700">{formatQuantityFull(positionResult.unclassifiedOccupied, 0)}</span> ô chứa LOT
+                                        chưa có dòng nào gắn danh mục — chỉ nằm ở mẫu số, không rơi vào danh mục nào.
+                                    </p>
+                                )}
+                            </div>
+                        </>
+                    )}
+                </div>
+            ) : processedData.length === 0 ? (
+                <div className="h-[300px] flex flex-col items-center justify-center text-stone-400 border border-dashed border-stone-200 rounded-2xl">
+                    <p>Chưa có dữ liệu tồn kho (KG)</p>
+                </div>
+            ) : (
+                <>
+                    <div className="h-[300px] w-full relative">
                 {/* Center Label */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none z-10">
                     <p className="text-sm text-stone-500 font-medium">Tổng tồn kho</p>
@@ -578,6 +911,8 @@ export default function InventoryDistributionChart() {
                     <li>Dữ liệu được cập nhật từ các lô hàng đang hoạt động</li>
                 </ul>
             </div>
+                </>
+            )}
         </div>
     )
 }

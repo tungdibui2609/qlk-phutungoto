@@ -1518,3 +1518,158 @@ Người dùng yêu cầu thêm 1 nút xóa nhanh LOT ngay trong ô vị trí c�
 4. Mở chính markup component + CSS vừa sinh bằng Chrome, đọc computed style 5 ô của nhóm "ĐÃ RW (2 đơn vị)": tất cả đều `oklab(0.97 … / 0.7)` (stone-100/70) — không còn ô trắng ở dòng ĐVT thứ hai; nhóm "ĐẮK LẮK" trắng.
 - Chưa chụp được ảnh lúc hover vì tool `hover` của browser-use lỗi (`this.scrollIntoView is not a function`); cơ chế group-hover đã được xác minh ở cấp CSS selector + cấu trúc DOM.
 - `npx tsc --noEmit` → 0 lỗi trên file này.
+
+# Walkthrough: Module Dashboard "Tỉ lệ lấp đầy kho" (`warehouse_fill_rate`)
+
+## Mục tiêu
+Khối thống kê mới trên trang Dashboard `/` cho thấy tỉ lệ ô vị trí đang chứa LOT theo từng kho / khu vực, drill-down được xuống các cấp khu vực, kèm cảnh báo khu sắp đầy. Số liệu phải đối soát được 1:1 với 4 ô thống kê ở trang `/warehouses/status`.
+
+## Thay đổi
+- `src/lib/warehouseFillRate.ts` (mới): toàn bộ logic tổng hợp, không import Supabase nên test được.
+  - `buildFillStats(zones, positions)`: mỗi vị trí chỉ thuộc MỘT khu vực (đúng cách `/warehouses/status` dựng `zone_id` cho position), cấp cha = ô của chính nó + cộng dồn toàn bộ cây con. Trả `byZone`, `roots`, `unassigned*` và `totals`.
+  - Vị trí chưa gán khu vực (hoặc trỏ zone đã bị xoá) KHÔNG bị bỏ: vẫn nằm trong `totals` để tổng toàn kho khớp với trang trạng thái, và được báo riêng ở dòng ghi chú.
+  - `classifyFill(pct)`: ngưỡng 90% (sắp đầy) / 70% (cao) / >0 / 0; `fillPct` chặn chia 0.
+  - Vòng lặp cha-con trong dữ liệu zone được chặn bằng `visiting` + cache nên không treo.
+- `src/components/dashboard/WarehouseFillRateChart.tsx` (mới): 4 thẻ KPI (Tổng / Đã lấp đầy / Còn trống / Tỉ lệ), thanh breadcrumb theo cấp đang xem, danh sách khu vực có thanh % bấm được để đi xuống khu con, chip cảnh báo khu ≥ 90%, nút Làm mới và link sang `/warehouses/status`.
+  - Query chỉ lấy `positions(id, lot_id)`, `zones(id, code, name, parent_id, level)`, `zone_positions` phân trang 1000 dòng/lần và **lọc `system_type = systemType`** ở cả ba bảng (kể cả `positions!inner` khi lấy link) nên không thấy dữ liệu phân hệ khác.
+  - Nếu phân hệ chỉ có MỘT kho cấp 0 thì tự hạ xuống cấp khu để biểu đồ có ý nghĩa so sánh (không tự hạ khi người dùng quay lại "Toàn kho").
+- `src/lib/dashboard-modules.ts`: thêm module `warehouse_fill_rate` với `is_basic: true`; `scripts/sync_modules.mjs` bổ sung định nghĩa tương ứng để đồng bộ `app_modules`.
+- `src/app/(dashboard)/page.tsx`: render card sau `hasModule('warehouse_fill_rate')` và thêm id này vào điều kiện `hasModules` (không còn hiện thông báo "chưa có module Dashboard" sai lệch).
+- `supabase/migrations/20261101100000_add_warehouse_fill_rate_module.sql`: upsert `app_modules` (`category='dashboard'`, `is_basic=true`) và nối module vào `systems.dashboard_modules` **chỉ** cho phân hệ đang có mảng không rỗng.
+
+## Tuân thủ kiến trúc phân hệ
+- Không hardcode mã kho: hoàn toàn không so sánh `systemType === '...'`; card chỉ hiện khi module `warehouse_fill_rate` được bật cho phân hệ.
+- Cô lập dữ liệu: mọi query đều gắn `system_type`, cùng cách lọc mà `/warehouses/status` đang dùng.
+- Kho Đông Lạnh: thêm module mới là thay đổi cộng thêm (thêm block UI + thêm một phần tử vào mảng dashboard_modules); không sửa logic nhập/xuất, không đổi schema bảng nghiệp vụ, không đụng cột nào của `positions`/`zones`.
+
+## Kiểm chứng đã làm
+- `npx vitest run src/lib/__tests__/warehouseFillRate.test.ts` → pass (cộng dồn cây con, vị trí chưa gán khu, khu trống không chia 0, phân loại ngưỡng, một vị trí một khu, cấp hiển thị & thứ tự, zone mồ côi vẫn là gốc, dữ liệu vòng lặp không treo). Số test hiện là 13 (xem mục "tách Lô kệ / Sảnh" bên dưới).
+- `npx tsc --noEmit` → không phát sinh lỗi trên `warehouseFillRate.ts`, `WarehouseFillRateChart.tsx`, `dashboard-modules.ts`, `app/(dashboard)/page.tsx`.
+- Chưa tự bấm thử trên trình duyệt: agent không có phiên đăng nhập (`:3000` là bản build cũ, `:3001` cần credentials), nên phần hiển thị thực tế cần người dùng reload sau khi chạy migration.
+
+# Walkthrough (tiếp): Tách bạch chỉ số LÔ KỆ và SẢNH tạm kết trong `warehouse_fill_rate`
+
+## Yêu cầu dẫn tới thay đổi
+Trang `/warehouses/status` gộp "Tổng vị trí = Lô kệ + Sảnh" (ví dụ 7820 = 6744 kệ + 1076 sảnh) nên tỉ lệ chung 26,5% bị kéo xuống bởi sảnh — trong khi sảnh chỉ là khu tạm kết, không được quy hoạch là vị trí lưu và công ty ra quyết định dựa trên chỉ số **Lô kệ** (29,8%). Card mới phải đặt Lô kệ làm chỉ số chính và để sảnh ở khối riêng.
+
+## `src/lib/warehouseFillRate.ts`
+- Mỗi `ZoneFillStat` giờ giữ **hai bộ đếm độc lập**: `rackPositions/rackOccupied` (+ `ownRack*` cho ô của chính khu) và `hallPositions/hallOccupied` (+ `ownHall*`). Cộng dồn lên cây cha cũng tách riêng hai loại, không bao giờ gộp.
+- `pct` **chỉ còn nghĩa là tỉ lệ lấp đầy Lô kệ**; tỉ lệ sảnh là `hallPct` riêng.
+- `totals` trả `{ rack, hall, all }`; `all` giữ nguyên để đối soát 1:1 với 4 thẻ KPI của `/warehouses/status` nếu cần (giá trị tổng 7820/2073 vẫn khớp công thức cũ).
+- `buildHallDetector(zones)`: sao chép **đúng nguyên văn** luật nhận diện sảnh của trang status — cờ `zones.is_hall` HOẶC tên (của chính khu hoặc bất kỳ khu cha nào) bắt đầu/chứa `SẢNH`/`SÀNH`/`SANH`. Luật này tồn tại 3 bản inline trong repo; tôi không refactor trang status vì nó thuộc phân hệ Kho Đông Lạnh (cấm đụng). **Rủi ro:** nếu sau này trang status đổi luật nhận diện sảnh thì card này lệch theo, phải sửa cả hai nơi.
+- Vị trí chưa gán khu / trỏ khu đã xoá → tính là **Lô kệ** (khớp cách status xếp ô "chưa quy hoạch" vào nhóm kệ) và vẫn báo riêng qua `unassigned*`.
+- `hallRoots`: danh sách khu sảnh "ngồi trên cùng" (khu là sảnh nhưng cha không phải sảnh, và có ô sảnh > 0) để khối sảnh không lặp lại cha-con.
+- `childStatsOf(stats, parentId, scope)` với `scope = 'rack' | 'hall' | 'all'`: lọc bỏ khu không thuộc scope và khu có 0 ô trong scope đó, sắp theo số ô giảm dần.
+- `drillableChildCount(stats, zoneId, scope)` trả số khu con **cùng scope** → nút "N khu con" không còn hiện trên khu sảnh cha chỉ có con là Lô kệ.
+
+## `src/components/dashboard/WarehouseFillRateChart.tsx`
+- Tiêu đề + mô tả nói rõ đây là chỉ số Lô kệ và sảnh bị loại ra khỏi các con số chính.
+- 4 thẻ KPI, danh sách khu vực, breadcrumb "Toàn kho › …", thanh % và chip cảnh báo ≥90% **toàn bộ chỉ dùng số Lô kệ**.
+- Sảnh dồn vào một dải màu vàng gấp gọn: "Sảnh tạm kết (không tính vào chỉ số Lô kệ)" hiển thị `đã chứa/tổng · còn trống` + `hallPct`; bấm "Xem N khu sảnh" để mở.
+- Đường dẫn drill của sảnh dùng state `hallPath` **riêng**, có breadcrumb "Toàn bộ sảnh › …" trong dải vàng, và hàng đầu tiên của danh sách là chính khu đang xem (để thấy dòng "Riêng khu này") — không bao giờ dùng chung `path` với Lô kệ, tránh hai cây pha vào nhau.
+- Query `zones` lấy thêm cột `is_hall`; vẫn giữ nguyên bộ lọc `system_type` ở cả `positions`, `zones`, `zone_positions` (`positions!inner`).
+
+## Tên & mô tả module
+`dashboard-modules.ts`, `scripts/sync_modules.mjs` và migration đặt tên thống nhất là "Tỉ lệ lấp đầy Lô kệ" với mô tả nêu rõ phần sảnh tách riêng.
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/warehouseFillRate.test.ts` → **13/13 pass**, trong đó có các case mới: cộng dồn cha giữ Lô kệ/sảnh riêng biệt và `pct` chỉ tính kệ; danh sách kệ loại khu sảnh và danh sách sảnh giữ mỗi khu sảnh; `hallRoots` khử trùng lặp cha-con; `drillableChildCount` theo scope; detector nhận sảnh theo cờ, theo tên và theo tên khu cha.
+- `npx tsc --noEmit` → không lỗi trên 4 file liên quan; xác nhận `lucide-react` bản đang cài có export `Gauge`, `Forklift`, `ChevronDown`, `ChevronUp`.
+- Bước phía người dùng: mở `http://localhost:3001/admin/modules` bấm "Đồng bộ từ Code" (hàm `syncAppModulesWithCode()` chỉ ghi `app_modules`, **không** tự nối `systems.dashboard_modules`), rồi bật "Tỉ lệ lấp đầy Lô kệ" trong Cấu hình phân hệ → Tính năng → Dashboard nếu phân hệ đó từng lưu danh sách Dashboard tường minh; file migration chưa áp là bước tương đương cho trường hợp này.
+
+# Walkthrough (tiếp): Đổi khối sảnh gấp gọn thành 3 TAB ngang hàng (Lô kệ / Sảnh / Tổng)
+
+## Yêu cầu
+Bản trước chỉ làm Lô kệ nổi bật còn sảnh nhét vào dải vàng gấp gọn. Người dùng yêu cầu **tab rõ ràng, đầy đủ**: Lô kệ, Sảnh và cả mức Tổng để đối soát.
+
+## `src/lib/warehouseFillRate.ts`
+- `metricsOf(row, scope)` và `ownMetricsOf(row, scope)` ([dòng 274](src/lib/warehouseFillRate.ts)) là nguồn số duy nhất cho mọi chỗ hiển thị: `rack`/`hall` đọc hai bộ đếm tách sẵn, `all` cộng `rackPositions + hallPositions` (và phần occupied tương ứng). Component không còn tự cộng thủ công ở đâu nữa.
+- `rowsForScope(stats, parentId, scope)`: tab Sảnh khi ở cấp cao nhất phải trả `hallRoots` (khu sảnh đầu ngành) vì khu sảnh là CON của một kho không phải sảnh, nếu đi `childStatsOf(stats, null, 'hall')` sẽ trả về rỗng. Hai tab còn lại dùng `childStatsOf` như cũ.
+- `childStatsOf` bổ sung phạm vi `all`: giữ cả khu kệ lẫn khu sảnh, chỉ ẩn khu có 0 ô trong phạm vi đó. `drillableChildCount` chuyển sang gọi `rowsForScope` để số "N khu con" khớp đúng thứ mà tab hiển thị.
+- Luật tách bạch vẫn giữ: tab Lô kệ chỉ khu `!isHall`, tab Sảnh chỉ khu `isHall`.
+
+## `src/components/dashboard/WarehouseFillRateChart.tsx`
+- `SCOPE_TABS` (3 tab) thay cho dải vàng: **Lô kệ** (xanh lá), **Sảnh tạm kết** (hổ phách), **Tổng (kệ + sảnh)** (xám đá). Mỗi tab hiện ngay trên nhãn: `pct%` và `đã chứa/tổng ô` → nhìn là thấy lô kệ 29,8% khác hẳn sảnh 5,9% và tổng 26,5% mà không cần bấm.
+- Dưới tab là một dòng giải thích mục đích từng phạm vi (kệ = chỉ số quyết định; sảnh = trung chuyển, không quy hoạch; tổng = khớp trang Sơ đồ trạng thái kho).
+- 4 thẻ KPI, breadcrumb, danh sách khu, chip cảnh báo và chú thích đều đọc theo `scope` đang chọn → cùng một khu vực nhưng ba tab cho ba con số khác nhau, không bao giờ trộn.
+- `paths: Record<FillScope, string[]>`: **mỗi tab nhớ vị trí drill riêng** (đang xem Dãy 6 ở tab Lô kệ, chuyển sang tab Sảnh rồi quay lại vẫn còn ở Dãy 6). Breadcrumb tab Sảnh ghi "Toàn bộ sảnh" vì cấp cao nhất của nó là các khu sảnh, không phải kho.
+- Hàng "khu đang xem" được ghim đầu danh sách (nhãn `Đang xem`, không hiện nút drill vô dụng) để thấy dòng "Riêng khu này: x/y ô" — trước đây xuống tới lá thì mất hẳn số của chính khu đó.
+- Khu sảnh hiện trong tab Tổng có nhãn "Sảnh" để không nhầm với kệ.
+- Tự hạ một cấp khi chỉ có một kho cấp 0: áp cho tab Lô kệ và Tổng, bỏ qua tab Sảnh.
+- Tab có 0 ô (ví dụ kho không có sảnh) vẫn hiện tab, thân card ghi rõ "chưa có ô Sảnh nào" thay vì ẩn tab.
+
+## Đối soát số liệu
+Với đúng các con số trên trang `/warehouses/status` (kệ 6744/2010, sảnh 1076/63): tab Tổng phải ra 7820 ô · 2073 đã chứa · 26,5% (6744+1076=7820, 2010+63=2073) — cùng công thức `metricsOf(..., 'all')` nên khớp 1:1, còn tab Lô kệ giữ nguyên 29,8% là chỉ số công ty dùng để quyết định.
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/warehouseFillRate.test.ts` → **18/18 pass**; 5 case mới cho bộ ba tab: `metricsOf` ba phạm vi khớp `totals.all`, `ownMetricsOf` gộp đúng ô của riêng khu, tab Tổng giữ cả kệ lẫn sảnh ở cùng cấp (`[KHU_A, SANH]`), tab Sảnh mở đầu bằng khu sảnh đầu ngành, khu sảnh 0 ô bị ẩn.
+- `npx tsc --noEmit` → không lỗi trên `warehouseFillRate.ts` và `WarehouseFillRateChart.tsx`; xác nhận `LayoutGrid` có export trong `lucide-react` bản đang cài; grep sạch, không còn `showHalls`/`hallPath`/`ChevronDown`/`ChevronUp` sót sau khi bỏ dải vàng.
+- Đổi tên module thành "Tỉ lệ lấp đầy kho" + mô tả nêu ba tab, đồng bộ cả `dashboard-modules.ts`, `scripts/sync_modules.mjs`, migration (vẫn chưa áp — người dùng bấm "Đồng bộ từ Code" ở `/admin/modules`).
+
+# Walkthrough (tiếp): Thứ tự khu vực trong card phải khớp sơ đồ kho
+
+## Vấn đề người dùng báo
+Ảnh chụp tab Tổng cho thấy danh sách xếp KHO 2 → KHO 3 → KHO 5 → KHO 1 → KHO 4 → KHO TẠM vì lib sắp theo **số ô giảm dần**. Sơ đồ kho lại hiển thị KHO 1, KHO 2, ... nên đối chiếu bằng mắt bị vênh.
+
+## Nguồn quy tắc (không tự nghĩ ra)
+`src/components/warehouse/status/WarehouseStatusMap.tsx:205-228` — cây khu vực của sơ đồ sắp siblings và roots theo `display_order ?? 0`, nếu bằng nhau thì `(code || '').localeCompare(code || '', undefined, { numeric: true })`. Cột `zones.display_order` do `supabase/migrations/20260621000002_add_display_order_to_zones.sql` thêm và có trong `src/lib/database.types.ts:109`.
+
+## Thay đổi
+- `src/lib/warehouseFillRate.ts`:
+  - `FillZoneLike` nhận thêm `display_order`; `ZoneFillStat` mang thêm `code` và `displayOrder` để comparator chạy được mà không cần tra lại bảng zone.
+  - `compareZoneOrder(a, b)` (export) chép **đúng** comparator của sơ đồ: `display_order` trước, bằng nhau thì so mã kiểu tự nhiên → KHO 2 đứng trước KHO 10 (so sánh chuỗi thuần sẽ xếp KHO 10 trước KHO 2).
+  - `childStatsOf` bỏ sắp theo số ô, dùng `compareZoneOrder`; `hallRoots` (danh sách tab Sảnh) cũng đổi sang cùng thứ tự.
+- `src/components/dashboard/WarehouseFillRateChart.tsx`: query `zones` select thêm `display_order` (vẫn giữ nguyên `.eq('system_type', systemType)` và các bảng khác).
+
+## Hệ quả
+- Số ô lớn không còn được đẩy lên đầu; muốn ưu tiên khu đầy nhất thì nhìn chip cảnh báo "sắp đầy (≥90%)" ở cuối card, còn danh sách phải phản ánh đúng sơ đồ để đối chiếu.
+- Khu chưa đặt `display_order` (giá trị NULL) coi như 0 → xếp theo mã, không bị đẩy ra cuối một cách khó giải thích.
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/warehouseFillRate.test.ts` → **21/21 pass**. 3 case mới: `['u1','k1','k2','k9','k10']` (khu `display_order=-5` lên đầu, KHO 2 trước KHO 9 trước KHO 10); tab Sảnh tôn trọng `display_order` dù mã 'SANH 2' > 'SANH 1'; toàn bộ `display_order` NULL thì vẫn ra `['DAY A','DAY B']`.
+- Test cũ về tab Tổng (`[KHU_A, SANH]`) vẫn pass vì mã 'K1A' < 'S1'.
+- `npx tsc --noEmit` → không lỗi trên 2 file touched.
+
+# Walkthrough (tiếp): Tab "Theo danh mục (vị trí)" trong module Tỉ lệ phân bố hàng hóa tồn kho
+
+## Yêu cầu
+Ảnh chụp khối "THỐNG KÊ CHI TIẾT THEO DANH MỤC" ở trang `/warehouses/status` (MÍT 13 vị trí, SẦU RIÊNG 1414 vị trí, XOÀI 193 vị trí kèm TỈ LỆ HÀNG HOÁ / TỈ LỆ CÔNG SUẤT) — người dùng muốn đưa đúng thống kê đó vào card Dashboard `inventory_distribution`.
+Ba quyết định người dùng chọn qua câu hỏi khảo sát: (1) **2 tab trong cùng card**, (2) mẫu số **giống trang status: mọi ô** (không chỉ ô có kệ), (3) danh mục theo dõi **dùng chung cấu hình với trang status**.
+
+## Nguồn quy tắc sao chép (không tự đặt công thức mới)
+`src/app/(dashboard)/warehouses/status/page.tsx`:
+- `categoryStats` dòng 488-534: một ô được tính cho danh mục C nếu LOT đang bám trên ô có ≥1 dòng mà `category_id` suy ra của dòng đó nằm trong C.
+- Hai mẫu số: `pctOfOccupied` = đếm được / **ô đang chứa hàng** ("TỈ LỆ HÀNG HOÁ"), `pctOfTotal` = đếm được / **toàn bộ ô quy hoạch** ("TỈ LỆ CÔNG SUẤT").
+- `buildZoneLookup` (một ô chỉ thuộc một khu) và phạm vi "theo kho" = subtree của khu cấp 0, ô không gán khu bị loại khi chọn kho.
+- Key cấu hình danh mục: `systems.modules.warehouse_status_config.selected_category_ids` (dòng 77, 112-115).
+
+## Thay đổi
+- `src/lib/categoryPositionStats.ts` (mới, thuần JS, không đụng Supabase):
+  - `warehouseScopeZoneIds(zones, warehouseId?)` → `Set` các khu thuộc kho đang chọn; trả `null` nghĩa là "không lọc" (TẤT CẢ KHO). Duyệt bằng stack, có `visited` nên chuỗi `parent_id` vòng lặp không làm treo.
+  - `buildLotCategoryMap(lots)` → `lot_id -> string[] categoryIds`, suy danh mục qua `resolveCategories(product, line.category_id)` của `src/lib/productCategory.ts` — **danh mục gán trên dòng LOT thắng tuyệt đối**, đúng như trang status.
+  - `buildCategoryPositionStats({categories, positions, lotCategories, zones, warehouseId})` → `{stats:[{categoryId,name,count,pctOfOccupied,pctOfTotal}], totalPositions, occupiedPositions, unclassifiedOccupied}`.
+- `src/lib/supabasePaged.ts` (mới): `SUPABASE_PAGE_SIZE = 1000` + `fetchAllPaged<T>(build)`. Tách ra để dùng chung thay vì tạo bản sao thứ ba của hàm phân trang.
+- `src/components/dashboard/InventoryDistributionChart.tsx`:
+  - State `view: 'kg' | 'position'`; nhóm 2 tab ở header (icon `Scale` / `Layers`). Các nút chỉ thuộc khối Kg (làm mới theo khối lượng, lọc, cài `allowed_category_ids`) được đóng gói `{view === 'kg' && (...)}` để không lẫn ngữ nghĩa.
+  - `fetchPositionData` (load lười — chỉ chạy khi bật tab, dòng 283): paged `positions(id, lot_id)`, `zones(...)`, `zone_positions(zone_id, position_id, positions!inner(*))`, **cả ba đều lọc `system_type`**. Lots lấy theo `occupiedLotIds` (chỉ LOT đang chiếm ô), **không lọc `status='active'`**, chunk 150 id để tránh "URI Too Long" — chiến lược dữ liệu giống hệt trang status nên số đối soát được 1:1.
+  - `saveStatConfig(ids)` ghi `warehouse_status_config.selected_category_ids` qua `patchSystemModules` (đọc `systems.modules` mới nhất rồi merge, không ghi đè các key module khác). Đọc lại cùng key khi `currentSystem` đổi; chưa cấu hình thì mặc định hiện toàn bộ danh mục.
+  - Nút "Cấu hình" trong tab vị trí có ghi chú rõ: thay đổi này ảnh hưởng cả trang `/warehouses/status`.
+  - `src/lib/dashboard-modules.ts:20-22` và `scripts/sync_modules.mjs:62`: mô tả module nêu "Hai tab: biểu đồ tròn khối lượng (Kg) theo sản phẩm và thống kê số ô vị trí đang chứa hàng theo danh mục". `seed.sql` và migration lịch sử `20260201140001_create_app_modules_table.sql` cố ý không sửa (dữ liệu đã đóng băng).
+
+## Tuân thủ kiến trúc phân hệ
+- Mọi query mới (positions / zones / zone_positions / lots theo id) đều có `.eq('system_type', systemType)` hoặc `.eq('positions.system_type', systemType)`; danh mục cũng lọc `system_type`. Không có đường nào đọc chéo phân hệ.
+- Không hardcode mã kho: tab render từ `zones` của phân hệ đang chọn, danh sách "Phạm vi" lấy `level === 0 || !parent_id`. Kho nào không có ô vị trí → empty state riêng ("phân hệ này chưa có ô vị trí"), Kho Đông Lạnh giữ nguyên biểu đồ Kg như trước.
+- Không sửa trang `/warehouses/status`, không đổi schema, không thêm migration: chỉ đọc các bảng đã có.
+- Công thức thống kê đặt trong lib thuần để dùng lại; việc **không** refactor trang status sang lib này là có ý — trang đó phục vụ vận hành thực tế, đụng vào là vi phạm quy tắc bảo toàn Kho Đông Lạnh. Rủi ro lệch về sau: nếu ai đó đổi công thức ở trang status mà không đổi `categoryPositionStats.ts` thì hai số sẽ tách nhau; cả hai file đều có chú dẫn nguồn ở đầu file.
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/categoryPositionStats.test.ts src/lib/__tests__/warehouseFillRate.test.ts` → **28/28 pass** (7 test mới): hai mẫu số cùng lúc (2/4 ô → 100% hàng hoá, 20% công suất); một LOT nhiều danh mục nên tổng tỉ lệ có thể >100%; `category_id` trên dòng LOT thắng `category_id` trên sản phẩm; lọc theo subtree của kho; LOT cũ không có dòng vẫn nằm ở mẫu số và được đếm vào `unclassifiedOccupied`; 0 ô → 0% chứ không NaN; `parent_id` vòng lặp không treo.
+- `npx tsc --noEmit` lọc trên `InventoryDistributionChart|categoryPositionStats|supabasePaged|WarehouseFillRateChart|warehouseFillRate` → **không lỗi**; xác nhận `Layers`/`Scale`/`ChevronDown`/`FolderTree` có trong `lucide-react` bản đang cài.
+- 4 lỗi `TS18047 'positionResult' is possibly 'null'` phát sinh khi tách empty state đã sửa bằng cách cho memo luôn trả kết quả (`buildCategoryPositionStats` chịu được input rỗng) và rẻ nhánh theo `positionRows.length === 0` / `categories.length === 0`.
+
+## Chốt lại tên tab (phản hồi của người dùng)
+Tab mới ban đầu đặt tên "Theo vị trí kho" → người dùng bác: nội dung thống kê là **theo danh mục**, còn "vị trí" chỉ là đơn vị đếm. Đã đổi nhãn thành **"Theo danh mục (vị trí)"** (kèm unit trong ngoặc, đối xứng với "Theo khối lượng (KG)"), cập nhật luôn comment trong card và mô tả module ở `src/lib/dashboard-modules.ts` + `scripts/sync_modules.mjs`. Không đổi công thức/dữ liệu, chỉ đổi nhãn.
+
+## Cách xem thử
+1. Bấm "Đồng bộ từ Code" tại `http://localhost:3001/admin/modules` để module `inventory_distribution` mang mô tả mới.
+2. Mở `/` → card "Tỉ lệ phân bố hàng hóa tồn kho" → tab "Theo danh mục (vị trí)"; chọn Phạm vi (TẤT CẢ KHO hoặc từng kho), bấm "Cấu hình" để chọn danh mục, rồi đối chiếu với khối "THỐNG KÊ CHI TIẾT THEO DANH MỤC" ở `/warehouses/status` cùng phân hệ — các con số phải trùng nhau.

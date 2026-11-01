@@ -19,11 +19,23 @@ import {
     AlertCircle,
     ChevronRight,
     ArrowUpDown,
-    Download
+    Download,
+    FileSpreadsheet,
+    FileText
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { format } from 'date-fns'
+import ExcelJS from 'exceljs'
+import { saveAs } from 'file-saver'
+
+export interface ExcelLotRow {
+    id?: string
+    seq?: string | number
+    info?: string
+    tag?: string
+    date?: string
+}
 
 interface HallLotRecord {
     id: string
@@ -31,7 +43,7 @@ interface HallLotRecord {
     company_id: string | null
     hall_id: string | null
     hall_name: string
-    lot_seqs: number[]
+    lot_seqs: (string | number | ExcelLotRow)[]
     total_lots: number
     created_by: string | null
     created_by_name: string | null
@@ -67,7 +79,7 @@ export default function HallLotsPage() {
 
     // Detail Modal
     const [selectedRecord, setSelectedRecord] = useState<HallLotRecord | null>(null)
-    const [matchedLots, setMatchedLots] = useState<Record<number, MatchedLotInfo | null>>({})
+    const [matchedLots, setMatchedLots] = useState<Record<string, MatchedLotInfo | null>>({})
     const [loadingLotMatch, setLoadingLotMatch] = useState(false)
 
     const isModuleEnabled = !currentSystem || hasModule('hall_lot_management')
@@ -107,6 +119,13 @@ export default function HallLotsPage() {
         return Array.from(set).sort()
     }, [records])
 
+    // Helper kiểm tra xem bản ghi có phải được nhập từ Bảng Kê Chi Tiết (Excel) hay không
+    const isExcelRecord = useCallback((record: HallLotRecord | null | undefined): boolean => {
+        if (!record || !Array.isArray(record.lot_seqs) || record.lot_seqs.length === 0) return false
+        const first = record.lot_seqs[0]
+        return typeof first === 'object' && first !== null && ('info' in first || 'tag' in first || 'date' in first)
+    }, [])
+
     // Filtered records
     const filteredRecords = useMemo(() => {
         return records.filter(r => {
@@ -123,7 +142,18 @@ export default function HallLotsPage() {
                 const inHall = (r.hall_name || '').toLowerCase().includes(q)
                 const inUser = (r.created_by_name || '').toLowerCase().includes(q)
                 const inNotes = (r.notes || '').toLowerCase().includes(q)
-                const inSeqs = (r.lot_seqs || []).some(seq => String(seq).includes(q))
+                const inSeqs = (r.lot_seqs || []).some(item => {
+                    if (typeof item === 'object' && item !== null) {
+                        const row = item as ExcelLotRow
+                        return (
+                            String(row.seq || '').toLowerCase().includes(q) ||
+                            String(row.info || '').toLowerCase().includes(q) ||
+                            String(row.tag || '').toLowerCase().includes(q) ||
+                            String(row.date || '').toLowerCase().includes(q)
+                        )
+                    }
+                    return String(item).toLowerCase().includes(q)
+                })
                 if (!inHall && !inUser && !inNotes && !inSeqs) return false
             }
 
@@ -150,9 +180,9 @@ export default function HallLotsPage() {
     // Handle update status
     const handleUpdateStatus = async (id: string, newStatus: 'PENDING' | 'PROCESSED' | 'CANCELLED') => {
         try {
-            const { error } = await supabase
-                .from('hall_lot_updates' as any)
-                .update({ status: newStatus, updated_at: new Date().toISOString() } as any)
+            const { error } = await (supabase as any)
+                .from('hall_lot_updates')
+                .update({ status: newStatus, updated_at: new Date().toISOString() })
                 .eq('id', id)
             if (error) throw error
 
@@ -165,12 +195,101 @@ export default function HallLotsPage() {
         }
     }
 
+    // Xuất file Excel (.xlsx) chuẩn form theo đúng bảng chụp
+    const handleExportExcel = async (record: HallLotRecord) => {
+        const isExcel = isExcelRecord(record)
+        const workbook = new ExcelJS.Workbook()
+        const sheetName = (record.hall_name || 'LOT_Sanh').replace(/[:*?\/\\\[\]]/g, '_')
+        const worksheet = workbook.addWorksheet(sheetName)
+
+        if (isExcel) {
+            // Đúng mẫu 4 cột: # | thông tin | tag | ngày
+            worksheet.columns = [
+                { header: '#', key: 'seq', width: 8 },
+                { header: 'thông tin', key: 'info', width: 42 },
+                { header: 'tag', key: 'tag', width: 22 },
+                { header: 'ngày', key: 'date', width: 16 }
+            ]
+
+            const headerRow = worksheet.getRow(1)
+            headerRow.font = { bold: true, color: { argb: '000000' }, size: 11 }
+            headerRow.alignment = { vertical: 'middle', horizontal: 'left' }
+            headerRow.height = 24
+
+            const rows = (record.lot_seqs || []) as ExcelLotRow[]
+            rows.forEach((r, idx) => {
+                const addedRow = worksheet.addRow({
+                    seq: r.seq || (idx + 1),
+                    info: r.info || '',
+                    tag: r.tag || '',
+                    date: r.date || ''
+                })
+                addedRow.height = 22
+                addedRow.alignment = { vertical: 'middle' }
+            })
+        } else {
+            // Bảng STT đối soát LOT
+            worksheet.columns = [
+                { header: 'STT Pallet', key: 'seq', width: 14 },
+                { header: 'Mã Pallet', key: 'code', width: 22 },
+                { header: 'Mã Sản Xuất', key: 'prodCode', width: 22 },
+                { header: 'Sản Phẩm', key: 'prodName', width: 36 },
+                { header: 'Số Lượng', key: 'quantity', width: 14 },
+                { header: 'Tình Trạng', key: 'status', width: 20 }
+            ]
+
+            const headerRow = worksheet.getRow(1)
+            headerRow.font = { bold: true, color: { argb: '000000' }, size: 11 }
+            headerRow.alignment = { vertical: 'middle', horizontal: 'left' }
+            headerRow.height = 24
+
+            const seqs = (record.lot_seqs || []) as (string | number)[]
+            seqs.forEach(seq => {
+                const match = matchedLots[String(seq)]
+                const addedRow = worksheet.addRow({
+                    seq: `#${seq}`,
+                    code: match?.code || '',
+                    prodCode: match?.production_code || '',
+                    prodName: match?.product_name || '',
+                    quantity: match?.quantity ? `${match.quantity} kg` : '',
+                    status: match ? 'Đã tìm thấy LOT' : 'Chỉ có STT'
+                })
+                addedRow.height = 22
+                addedRow.alignment = { vertical: 'middle' }
+            })
+        }
+
+        // Kẻ khung viền mỏng chuẩn Excel
+        worksheet.eachRow((row) => {
+            row.eachCell((cell) => {
+                cell.border = {
+                    top: { style: 'thin', color: { argb: 'CBD5E1' } },
+                    left: { style: 'thin', color: { argb: 'CBD5E1' } },
+                    bottom: { style: 'thin', color: { argb: 'CBD5E1' } },
+                    right: { style: 'thin', color: { argb: 'CBD5E1' } }
+                }
+            })
+        })
+
+        const buffer = await workbook.xlsx.writeBuffer()
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+        const safeHallName = (record.hall_name || 'Sanh').replace(/[^a-zA-Z0-9_\u00C0-\u1EF9]/g, '_')
+        const fileName = `Bang_Ke_LOT_${safeHallName}_${format(new Date(record.created_at || Date.now()), 'yyyyMMdd_HHmm')}.xlsx`
+        saveAs(blob, fileName)
+    }
+
     // Load matching lot details when modal opens
     const openDetailModal = async (record: HallLotRecord) => {
         setSelectedRecord(record)
-        setLoadingLotMatch(true)
+        setLoadingLotMatch(false)
         setMatchedLots({})
 
+        // Nếu là dạng bảng Excel thì không cần query bảng lots
+        if (isExcelRecord(record)) {
+            return
+        }
+
+        setLoadingLotMatch(true)
         try {
             const seqs = record.lot_seqs || []
             if (seqs.length === 0) {
@@ -178,8 +297,25 @@ export default function HallLotsPage() {
                 return
             }
 
-            // Find lots in database with matching daily_seq in this system_code
-            const { data: lotsData, error } = await supabase
+            const numSeqs = seqs
+                .map(s => Number(s))
+                .filter(n => !isNaN(n) && n > 0)
+            const strTokens = seqs
+                .map(s => String(s).trim())
+                .filter(s => s.length > 0)
+
+            // Build dynamic filters
+            const filters: string[] = []
+            if (numSeqs.length > 0) {
+                filters.push(`daily_seq.in.(${numSeqs.join(',')})`)
+            }
+            if (strTokens.length > 0) {
+                const safeCodes = strTokens.map(c => `"${c.replace(/"/g, '')}"`).join(',')
+                filters.push(`code.in.(${safeCodes})`)
+                filters.push(`production_code.in.(${safeCodes})`)
+            }
+
+            let query = supabase
                 .from('lots' as any)
                 .select(`
                     id,
@@ -198,33 +334,48 @@ export default function HallLotsPage() {
                     )
                 `)
                 .eq('system_code', systemType)
-                .in('daily_seq', seqs)
+
+            if (filters.length > 0) {
+                query = query.or(filters.join(','))
+            }
+
+            const { data: lotsData, error } = await query
 
             if (error) throw error
 
-            const matchMap: Record<number, MatchedLotInfo | null> = {}
+            const matchMap: Record<string, MatchedLotInfo | null> = {}
             seqs.forEach(seq => {
-                matchMap[seq] = null
+                matchMap[String(seq)] = null
             });
 
             const items = (lotsData || []) as any[]
             items.forEach((lot: any) => {
-                const s = lot.daily_seq
-                if (s !== null && s !== undefined) {
-                    const firstItem = lot.lot_items?.[0]
-                    const prodName = firstItem?.products?.name || 'N/A'
-                    const prodSku = firstItem?.products?.sku || ''
+                const firstItem = lot.lot_items?.[0]
+                const prodName = firstItem?.products?.name || 'N/A'
+                const prodSku = firstItem?.products?.sku || ''
 
-                    matchMap[s] = {
-                        id: lot.id,
-                        daily_seq: lot.daily_seq,
-                        code: lot.code,
-                        production_code: lot.production_code,
-                        quantity: lot.quantity,
-                        product_name: prodName,
-                        sku: prodSku,
-                        status: lot.status
-                    }
+                const info: MatchedLotInfo = {
+                    id: lot.id,
+                    daily_seq: lot.daily_seq,
+                    code: lot.code,
+                    production_code: lot.production_code,
+                    quantity: lot.quantity,
+                    product_name: prodName,
+                    sku: prodSku,
+                    status: lot.status
+                }
+
+                if (lot.daily_seq !== null && lot.daily_seq !== undefined) {
+                    const k = String(lot.daily_seq)
+                    if (k in matchMap) matchMap[k] = info
+                }
+                if (lot.code) {
+                    const k = String(lot.code)
+                    if (k in matchMap) matchMap[k] = info
+                }
+                if (lot.production_code) {
+                    const k = String(lot.production_code)
+                    if (k in matchMap) matchMap[k] = info
                 }
             })
 
@@ -461,26 +612,58 @@ export default function HallLotsPage() {
                                             </div>
                                         </td>
                                         <td className="py-4 px-5 text-center whitespace-nowrap">
-                                            <span className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-xl text-xs font-black bg-amber-500 text-white shadow-sm shadow-amber-500/20">
-                                                {rec.total_lots} LOT
-                                            </span>
+                                            {isExcelRecord(rec) ? (
+                                                <span className="inline-flex items-center gap-1 min-w-[28px] h-7 px-2.5 rounded-xl text-xs font-black bg-emerald-600 text-white shadow-sm shadow-emerald-600/20">
+                                                    <FileSpreadsheet size={12} />
+                                                    {rec.total_lots} Dòng
+                                                </span>
+                                            ) : (
+                                                <span className="inline-flex items-center justify-center min-w-[28px] h-7 px-2 rounded-xl text-xs font-black bg-amber-500 text-white shadow-sm shadow-amber-500/20">
+                                                    {rec.total_lots} LOT
+                                                </span>
+                                            )}
                                         </td>
                                         <td className="py-4 px-5 max-w-md">
-                                            <div className="flex flex-wrap gap-1.5 max-h-14 overflow-hidden">
-                                                {(rec.lot_seqs || []).slice(0, 15).map(seq => (
-                                                    <span
-                                                        key={seq}
-                                                        className="px-2 py-0.5 rounded-lg text-xs font-mono font-bold bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-200/60 dark:border-stone-700"
-                                                    >
-                                                        #{seq}
-                                                    </span>
-                                                ))}
-                                                {(rec.lot_seqs || []).length > 15 && (
-                                                    <span className="px-2 py-0.5 rounded-lg text-xs font-bold text-stone-400">
-                                                        +{rec.lot_seqs.length - 15} nữa...
-                                                    </span>
-                                                )}
-                                            </div>
+                                            {isExcelRecord(rec) ? (
+                                                <div className="flex flex-col gap-1 max-h-16 overflow-hidden">
+                                                    {((rec.lot_seqs || []) as ExcelLotRow[]).slice(0, 3).map((row, idx) => (
+                                                        <div key={idx} className="flex items-center gap-2 text-xs truncate">
+                                                            <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.2 rounded text-[11px] shrink-0 border border-emerald-200/50 dark:border-emerald-800/50">
+                                                                #{row.seq || idx + 1}
+                                                            </span>
+                                                            <span className="text-stone-800 dark:text-stone-200 font-medium truncate">
+                                                                {row.info || '—'}
+                                                            </span>
+                                                            {row.tag ? (
+                                                                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 shrink-0">
+                                                                    {row.tag}
+                                                                </span>
+                                                            ) : null}
+                                                        </div>
+                                                    ))}
+                                                    {(rec.lot_seqs || []).length > 3 && (
+                                                        <span className="text-[11px] font-bold text-stone-400">
+                                                            +{(rec.lot_seqs.length - 3)} dòng nữa...
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="flex flex-wrap gap-1.5 max-h-14 overflow-hidden">
+                                                    {(rec.lot_seqs || []).slice(0, 15).map((seq, sIdx) => (
+                                                        <span
+                                                            key={`${seq}-${sIdx}`}
+                                                            className="px-2 py-0.5 rounded-lg text-xs font-mono font-bold bg-stone-100 dark:bg-stone-800 text-stone-800 dark:text-stone-200 border border-stone-200/60 dark:border-stone-700"
+                                                        >
+                                                            #{String(seq)}
+                                                        </span>
+                                                    ))}
+                                                    {(rec.lot_seqs || []).length > 15 && (
+                                                        <span className="px-2 py-0.5 rounded-lg text-xs font-bold text-stone-400">
+                                                            +{rec.lot_seqs.length - 15} nữa...
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            )}
                                         </td>
                                         <td className="py-4 px-5 whitespace-nowrap">
                                             {rec.status === 'PROCESSED' ? (
@@ -532,16 +715,24 @@ export default function HallLotsPage() {
                         {/* Modal Header */}
                         <div className="p-6 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center">
-                                    <Truck size={24} />
+                                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${
+                                    isExcelRecord(selectedRecord)
+                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                                        : 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                }`}>
+                                    {isExcelRecord(selectedRecord) ? <FileSpreadsheet size={24} /> : <Truck size={24} />}
                                 </div>
                                 <div>
                                     <div className="flex items-center gap-2">
                                         <h2 className="text-xl font-black text-stone-900 dark:text-stone-100">
-                                            Chi Tiết LOT Tại {selectedRecord.hall_name}
+                                            {isExcelRecord(selectedRecord) ? 'Bảng Kê Chi Tiết Tại' : 'Chi Tiết LOT Tại'} {selectedRecord.hall_name}
                                         </h2>
-                                        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                                            {selectedRecord.total_lots} LOT
+                                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                                            isExcelRecord(selectedRecord)
+                                                ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300'
+                                                : 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                                        }`}>
+                                            {selectedRecord.total_lots} {isExcelRecord(selectedRecord) ? 'Dòng Kê Khai' : 'LOT'}
                                         </span>
                                     </div>
                                     <div className="flex items-center gap-3 text-xs text-stone-400 mt-1">
@@ -552,15 +743,25 @@ export default function HallLotsPage() {
                                 </div>
                             </div>
 
-                            <button
-                                onClick={() => setSelectedRecord(null)}
-                                className="w-10 h-10 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 flex items-center justify-center transition-colors"
-                            >
-                                <X size={18} />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => handleExportExcel(selectedRecord)}
+                                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-2xl bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-300/50 dark:border-emerald-700/50 font-bold text-xs transition-colors shadow-xs"
+                                    title="Tải file Excel .xlsx về máy"
+                                >
+                                    <Download size={14} />
+                                    <span>Xuất Excel (.xlsx)</span>
+                                </button>
+                                <button
+                                    onClick={() => setSelectedRecord(null)}
+                                    className="w-10 h-10 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 flex items-center justify-center transition-colors"
+                                >
+                                    <X size={18} />
+                                </button>
+                            </div>
                         </div>
 
-                        {/* Modal Body: Danh sách LOT & Đối soát hệ thống */}
+                        {/* Modal Body: Danh sách LOT & Đối soát hệ thống hoặc Bảng Excel */}
                         <div className="p-6 overflow-y-auto flex-1 space-y-6">
                             {selectedRecord.notes && (
                                 <div className="p-4 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-900/40 rounded-2xl text-xs text-amber-900 dark:text-amber-200">
@@ -568,78 +769,135 @@ export default function HallLotsPage() {
                                 </div>
                             )}
 
-                            <div>
-                                <div className="flex items-center justify-between mb-3">
-                                    <h3 className="text-sm font-black text-stone-800 dark:text-stone-200 uppercase tracking-wider">
-                                        Đối soát Danh Sách STT Với Kho Dữ Liệu
-                                    </h3>
-                                    {loadingLotMatch && (
-                                        <div className="flex items-center gap-1.5 text-xs text-amber-600 font-bold">
-                                            <RotateCw size={12} className="animate-spin" />
-                                            Đang tra cứu hệ thống...
+                            {isExcelRecord(selectedRecord) ? (
+                                /* BẢNG PHONG CÁCH EXCEL CHUẨN MẪU: # | thông tin | tag | ngày */
+                                <div>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <FileSpreadsheet size={16} className="text-emerald-600 dark:text-emerald-400" />
+                                            <h3 className="text-sm font-black text-stone-800 dark:text-stone-200 uppercase tracking-wider">
+                                                Bảng Kê Hàng Hóa Sảnh (Theo Biểu Mẫu Excel)
+                                            </h3>
                                         </div>
-                                    )}
-                                </div>
+                                        <span className="text-xs text-stone-400 font-medium">
+                                            {selectedRecord.total_lots} dòng dữ liệu
+                                        </span>
+                                    </div>
 
-                                <div className="border border-stone-200/80 dark:border-stone-800 rounded-2xl overflow-hidden">
-                                    <table className="w-full text-left text-sm">
-                                        <thead>
-                                            <tr className="bg-stone-50 dark:bg-stone-800/60 text-[11px] font-black text-stone-400 uppercase tracking-wider border-b border-stone-100 dark:border-stone-800">
-                                                <th className="py-2.5 px-4">STT Nhập</th>
-                                                <th className="py-2.5 px-4">Mã Pallet / Mã LOT</th>
-                                                <th className="py-2.5 px-4">Mã Sản Xuất</th>
-                                                <th className="py-2.5 px-4">Sản Phẩm</th>
-                                                <th className="py-2.5 px-4 text-center">Số lượng</th>
-                                                <th className="py-2.5 px-4 text-center">Tình trạng đối soát</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                                            {(selectedRecord.lot_seqs || []).map(seq => {
-                                                const match = matchedLots[seq]
-                                                return (
-                                                    <tr key={seq} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30">
-                                                        <td className="py-3 px-4 font-mono font-black text-amber-600 dark:text-amber-400">
-                                                            #{seq}
+                                    <div className="border border-stone-300 dark:border-stone-700 rounded-2xl overflow-hidden shadow-xs bg-white dark:bg-stone-900">
+                                        <table className="w-full text-left text-sm border-collapse">
+                                            <thead>
+                                                <tr className="bg-stone-100 dark:bg-stone-800/80 text-stone-700 dark:text-stone-200 text-xs font-black border-b border-stone-300 dark:border-stone-700">
+                                                    <th className="py-2.5 px-4 w-16 text-center font-mono border-r border-stone-200 dark:border-stone-700">#</th>
+                                                    <th className="py-2.5 px-4 border-r border-stone-200 dark:border-stone-700">thông tin</th>
+                                                    <th className="py-2.5 px-4 w-48 border-r border-stone-200 dark:border-stone-700">tag</th>
+                                                    <th className="py-2.5 px-4 w-36">ngày</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
+                                                {((selectedRecord.lot_seqs || []) as ExcelLotRow[]).map((row, idx) => (
+                                                    <tr key={row.id || idx} className="hover:bg-amber-50/20 dark:hover:bg-stone-800/30 transition-colors">
+                                                        <td className="py-3 px-4 text-center font-mono font-bold text-stone-800 dark:text-stone-200 border-r border-stone-200 dark:border-stone-700 bg-stone-50/40 dark:bg-stone-800/20">
+                                                            {row.seq || (idx + 1)}
                                                         </td>
-                                                        <td className="py-3 px-4 font-mono font-bold text-stone-800 dark:text-stone-200">
-                                                            {match ? match.code : '—'}
+                                                        <td className="py-3 px-4 border-r border-stone-200 dark:border-stone-700 font-medium text-stone-900 dark:text-stone-100">
+                                                            {row.info || <span className="text-stone-400 italic">Chưa nhập thông tin</span>}
                                                         </td>
-                                                        <td className="py-3 px-4 font-mono text-xs text-stone-600 dark:text-stone-300">
-                                                            {match?.production_code || '—'}
-                                                        </td>
-                                                        <td className="py-3 px-4 text-xs font-medium text-stone-700 dark:text-stone-300">
-                                                            {match?.product_name ? (
-                                                                <div>
-                                                                    <div className="font-bold">{match.product_name}</div>
-                                                                    {match.sku && <div className="text-[10px] text-stone-400">{match.sku}</div>}
-                                                                </div>
-                                                            ) : (
-                                                                <span className="text-stone-400 italic">Chưa khớp với LOT trên web</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 px-4 text-center font-mono font-bold text-xs">
-                                                            {match?.quantity ? `${match.quantity} kg` : '—'}
-                                                        </td>
-                                                        <td className="py-3 px-4 text-center">
-                                                            {match ? (
-                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                                                                    <CheckCircle2 size={11} />
-                                                                    Đã tìm thấy LOT
+                                                        <td className="py-3 px-4 border-r border-stone-200 dark:border-stone-700">
+                                                            {row.tag ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-50 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60">
+                                                                    <Tag size={11} />
+                                                                    {row.tag}
                                                                 </span>
                                                             ) : (
-                                                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
-                                                                    <AlertCircle size={11} />
-                                                                    Chỉ có STT
-                                                                </span>
+                                                                <span className="text-stone-400 text-xs">—</span>
                                                             )}
+                                                        </td>
+                                                        <td className="py-3 px-4 text-xs font-mono text-stone-600 dark:text-stone-400">
+                                                            {row.date || '—'}
                                                         </td>
                                                     </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                /* BẢNG ĐỐI SOÁT STT PALLET VỚI HỆ THỐNG KHO */
+                                <div>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <h3 className="text-sm font-black text-stone-800 dark:text-stone-200 uppercase tracking-wider">
+                                            Đối soát Danh Sách STT Với Kho Dữ Liệu
+                                        </h3>
+                                        {loadingLotMatch && (
+                                            <div className="flex items-center gap-1.5 text-xs text-amber-600 font-bold">
+                                                <RotateCw size={12} className="animate-spin" />
+                                                Đang tra cứu hệ thống...
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="border border-stone-200/80 dark:border-stone-800 rounded-2xl overflow-hidden">
+                                        <table className="w-full text-left text-sm">
+                                            <thead>
+                                                <tr className="bg-stone-50 dark:bg-stone-800/60 text-[11px] font-black text-stone-400 uppercase tracking-wider border-b border-stone-100 dark:border-stone-800">
+                                                    <th className="py-2.5 px-4">STT Nhập</th>
+                                                    <th className="py-2.5 px-4">Mã Pallet / Mã LOT</th>
+                                                    <th className="py-2.5 px-4">Mã Sản Xuất</th>
+                                                    <th className="py-2.5 px-4">Sản Phẩm</th>
+                                                    <th className="py-2.5 px-4 text-center">Số lượng</th>
+                                                    <th className="py-2.5 px-4 text-center">Tình trạng đối soát</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                                                {(selectedRecord.lot_seqs || []).map((item, idx) => {
+                                                    const seqStr = typeof item === 'object' && item !== null ? String(item.seq || idx + 1) : String(item)
+                                                    const match = matchedLots[seqStr]
+                                                    return (
+                                                        <tr key={`${seqStr}-${idx}`} className="hover:bg-stone-50/50 dark:hover:bg-stone-800/30">
+                                                            <td className="py-3 px-4 font-mono font-black text-amber-600 dark:text-amber-400">
+                                                                #{seqStr}
+                                                            </td>
+                                                            <td className="py-3 px-4 font-mono font-bold text-stone-800 dark:text-stone-200">
+                                                                {match ? match.code : '—'}
+                                                            </td>
+                                                            <td className="py-3 px-4 font-mono text-xs text-stone-600 dark:text-stone-300">
+                                                                {match?.production_code || '—'}
+                                                            </td>
+                                                            <td className="py-3 px-4 text-xs font-medium text-stone-700 dark:text-stone-300">
+                                                                {match?.product_name ? (
+                                                                    <div>
+                                                                        <div className="font-bold">{match.product_name}</div>
+                                                                        {match.sku && <div className="text-[10px] text-stone-400">{match.sku}</div>}
+                                                                    </div>
+                                                                ) : (
+                                                                    <span className="text-stone-400 italic">Chưa khớp với LOT trên web</span>
+                                                                )}
+                                                            </td>
+                                                            <td className="py-3 px-4 text-center font-mono font-bold text-xs">
+                                                                {match?.quantity ? `${match.quantity} kg` : '—'}
+                                                            </td>
+                                                            <td className="py-3 px-4 text-center">
+                                                                {match ? (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                                                                        <CheckCircle2 size={11} />
+                                                                        Đã tìm thấy LOT
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                                                                        <AlertCircle size={11} />
+                                                                        Chỉ có STT
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    )
+                                                })}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Modal Footer */}

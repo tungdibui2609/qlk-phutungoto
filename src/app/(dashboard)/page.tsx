@@ -6,6 +6,7 @@ import { Package, TrendingUp, AlertTriangle, Boxes, ArrowUpRight, LayoutDashboar
 import { useSystem } from '@/contexts/SystemContext'
 import InventoryDistributionChart from '@/components/dashboard/InventoryDistributionChart'
 import ContainerStockChart from '@/components/dashboard/ContainerStockChart'
+import WarehouseFillRateChart from '@/components/dashboard/WarehouseFillRateChart'
 
 type Category = Database['public']['Tables']['categories']['Row']
 type Product = Database['public']['Tables']['products']['Row']
@@ -20,6 +21,7 @@ export default function Home() {
     const hasModules = hasModule('stats_overview') ||
         hasModule('inventory_distribution') ||
         hasModule('container_distribution') ||
+        hasModule('warehouse_fill_rate') ||
         hasModule('categories_summary') ||
         hasModule('recent_products')
 
@@ -157,6 +159,13 @@ export default function Home() {
             {hasModule('container_distribution') && (
                 <div>
                     <ContainerStockChart />
+                </div>
+            )}
+
+            {/* WAREHOUSE FILL RATE */}
+            {hasModule('warehouse_fill_rate') && (
+                <div>
+                    <WarehouseFillRateChart />
                 </div>
             )}
 
