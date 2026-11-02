@@ -23,6 +23,7 @@ import {
     AlertCircle, 
     ChevronDown, 
     ChevronUp,
+    Download,
     ExternalLink,
     Filter,
     ArrowUpDown,
@@ -35,6 +36,8 @@ import {
 import { useSystem } from '@/contexts/SystemContext'
 import { Database } from '@/lib/database.types'
 import { formatQuantity } from '@/lib/numberUtils'
+import { exportDashboardChart } from '@/lib/dashboardExcelExport'
+import { containerExportSpec } from '@/lib/dashboardExcelSpecs'
 import Link from 'next/link'
 
 type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
@@ -167,7 +170,7 @@ export default function ContainerStockChart() {
 }
 
 function ContainerStockChartInner() {
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem()
     const [loading, setLoading] = useState(true)
     const [lots, setLots] = useState<Lot[]>([])
     const [categories, setCategories] = useState<{ id: string, name: string }[]>([])
@@ -181,6 +184,7 @@ function ContainerStockChartInner() {
     const [topN, setTopN] = useState<number>(DEFAULT_TOP_N)
     const [activeChartCategoryTab, setActiveChartCategoryTab] = useState<string>('')
     const [isChartExpanded, setIsChartExpanded] = useState<boolean>(false)
+    const [exporting, setExporting] = useState<boolean>(false)
     const [showPicker, setShowPicker] = useState(false)
     const [pickerSearch, setPickerSearch] = useState('')
 
@@ -490,6 +494,34 @@ function ContainerStockChartInner() {
         return list
     }, [lots, conversionLoading, selectedCategoryIds, onlyConfigured, sortBy, convertUnit, getBaseAmount])
 
+    // Bảng số xuất ra là toàn bộ danh sách đang lọc; ảnh biểu đồ lấy Top 15 cho dễ đọc.
+    const handleExport = async () => {
+        setExporting(true)
+        try {
+            const filterLabel = selectedCategoryIds.length === 0
+                ? 'Tất cả danh mục'
+                : selectedCategoryIds
+                    .map(id => categories.find(c => c.id === id)?.name || 'Chưa phân loại')
+                    .join(', ')
+            const { spec, chart } = containerExportSpec({
+                systemName: currentSystem?.name || systemType || '',
+                filterLabel,
+                items: processedData
+            })
+            await exportDashboardChart({
+                spec,
+                chart,
+                filePrefix: 'Uoc tinh container ton kho',
+                fileExtra: onlyConfigured ? 'Co dinh muc' : 'Tat ca'
+            })
+        } catch (err) {
+            console.error('Lỗi xuất Excel container tồn kho:', err)
+            alert('Không xuất được file Excel. Vui lòng thử lại.')
+        } finally {
+            setExporting(false)
+        }
+    }
+
     // KPI Metrics
     const metrics = useMemo(() => {
         let totalContainers = 0
@@ -650,6 +682,17 @@ function ContainerStockChartInner() {
                             <option value="name">Tên A-Z</option>
                         </select>
                     </div>
+
+                    {/* Export Excel */}
+                    <button
+                        onClick={handleExport}
+                        disabled={exporting || processedData.length === 0}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-emerald-300 hover:text-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Xuất danh sách đang lọc ra Excel (biểu đồ + bảng số)"
+                    >
+                        {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                        Xuất Excel
+                    </button>
 
                     {/* Refresh */}
                     <button

@@ -6,6 +6,7 @@ import {
     Boxes,
     ChevronLeft,
     ChevronRight,
+    Download,
     Forklift,
     Gauge,
     LayoutGrid,
@@ -20,6 +21,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchAllPaged } from '@/lib/supabasePaged'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantity } from '@/lib/numberUtils'
+import { exportDashboardChart } from '@/lib/dashboardExcelExport'
+import { fillRateExportSpec, SCOPE_LABEL } from '@/lib/dashboardExcelSpecs'
 import {
     buildFillStats,
     buildZoneLookup,
@@ -86,12 +89,13 @@ type ScopePaths = Record<FillScope, string[]>
 const EMPTY_PATHS: ScopePaths = { rack: [], hall: [], all: [] }
 
 export default function WarehouseFillRateChart() {
-    const { systemType } = useSystem()
+    const { systemType, currentSystem } = useSystem()
     const [stats, setStats] = useState<FillStats | null>(null)
     const [loading, setLoading] = useState(true)
     const [errorMsg, setErrorMsg] = useState<string | null>(null)
     const [scope, setScope] = useState<FillScope>('rack')
     const [paths, setPaths] = useState<ScopePaths>(EMPTY_PATHS)
+    const [exporting, setExporting] = useState(false)
 
     const fetchData = useCallback(async () => {
         if (!systemType) return
@@ -168,6 +172,33 @@ export default function WarehouseFillRateChart() {
         [rows, currentZone, scope]
     )
 
+    // Xuất đúng tab đang chọn và đúng cấp khu đang drill — những gì thấy là những gì tải về.
+    const handleExport = async () => {
+        if (!stats) return
+        setExporting(true)
+        try {
+            const { spec, chart } = fillRateExportSpec({
+                systemName: currentSystem?.name || systemType || '',
+                scope,
+                pathLabels: path.map(id => stats.byZone.get(id)?.label || ''),
+                stats,
+                rows,
+                currentZoneId: currentZone?.zoneId || null
+            })
+            await exportDashboardChart({
+                spec,
+                chart,
+                filePrefix: 'Tỉ lệ lấp đầy kho',
+                fileExtra: SCOPE_LABEL[scope]
+            })
+        } catch (err) {
+            console.error('Lỗi xuất Excel tỉ lệ lấp đầy:', err)
+            alert('Không xuất được file Excel. Vui lòng thử lại.')
+        } finally {
+            setExporting(false)
+        }
+    }
+
     if (loading) {
         return (
             <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[320px] flex items-center justify-center">
@@ -232,6 +263,15 @@ export default function WarehouseFillRateChart() {
                         <MapIcon size={11} />
                         Sơ đồ chi tiết
                     </Link>
+                    <button
+                        onClick={handleExport}
+                        disabled={exporting}
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-emerald-300 hover:text-emerald-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                        title="Xuất tab và cấp khu đang xem ra Excel (biểu đồ + bảng số)"
+                    >
+                        {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                        Xuất Excel
+                    </button>
                     <button
                         onClick={fetchData}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-stone-300 hover:text-stone-900 transition-all"

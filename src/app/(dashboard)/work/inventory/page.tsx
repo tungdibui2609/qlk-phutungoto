@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { ClipboardCheck, Plus, Loader2, ChevronRight, ChevronDown, ChevronUp, Layers, Check, Trash2, X, Calendar, User, Users, BarChart3, CheckCircle2, LayoutGrid, Eye, Package, MessageSquare, Lock, Unlock, AlertTriangle, Edit, ShieldCheck, RefreshCw } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { buildHallStats, HALL_ALL_TAB_ID, type HallScope } from '@/lib/hallInventoryStats'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { useToast } from '@/components/ui/ToastProvider'
@@ -11,7 +12,6 @@ import { format } from 'date-fns'
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
 import { Lot, Product, Supplier, QCInfo, Unit, ProductUnit } from '@/app/(dashboard)/warehouses/lots/_hooks/useLotManagement'
 import { normalizeSearchString } from '@/lib/searchUtils'
-import { canonicalizeUnit } from '@/lib/unitConversion'
 import { decodeSTT } from '@/lib/numberUtils'
 import { useRouter } from 'next/navigation'
 import { logActivity } from '@/lib/audit'
@@ -151,6 +151,7 @@ export default function InternalInventoryPage() {
     const [lotInfo, setLotInfo] = useState<Record<string, any>>({})
     const [detailLoading, setDetailLoading] = useState(false)
     const [showHallSummary, setShowHallSummary] = useState(false)
+    const [activeHallTab, setActiveHallTab] = useState<string>(HALL_ALL_TAB_ID)
     const [isGroupingEnabled, setIsGroupingEnabled] = useState(true)
 
     // Create modal
@@ -997,46 +998,22 @@ export default function InternalInventoryPage() {
         return sortedZones.some(z => ids.includes(z.id) && z.is_hall)
     }, [selectedWh, effectiveWhId, getDescendantIds, sortedZones])
 
-    const hallSummary = useMemo(() => {
-        if (!hasHallInScope || !selectedWh) return []
-        const groups: Record<string, any> = {}
+    const hallStats = useMemo(() => {
+        if (!hasHallInScope || !selectedWh) return { halls: [] as HallScope[], all: null as HallScope | null }
         const scopeIds = effectiveWhId ? getDescendantIds(effectiveWhId) : getDescendantIds(selectedWh)
-        const hallZoneIds = sortedZones.filter(z => scopeIds.includes(z.id) && z.is_hall).map(z => z.id)
-
-        // Target positions are those inside any identified hall zone
-        const targetZoneIds = hallZoneIds.flatMap(hzid => getDescendantIds(hzid))
-        const dPositions = groupedData.positions.filter(p => p.zone_id && targetZoneIds.includes(p.zone_id))
-
-        dPositions.forEach((p: any) => {
-            const lot = p.lot_id ? lotInfo[p.lot_id] : null
-            if (!lot || !lot.items) return
-            lot.items.forEach((it: any) => {
-                const tag = lot.tags?.[0] || ''
-                const groupKey = `${canonicalizeUnit(it.sku)}|${it.quantity}|${canonicalizeUnit(it.unit)}|${tag}`;
-                const res = itemsMap[p.id] || { checked: false, note: null }
-                if (!groups[groupKey]) {
-                    groups[groupKey] = {
-                        groupKey,
-                        sku: it.sku,
-                        name: it.product_name,
-                        quantity: it.quantity,
-                        unit: it.unit,
-                        tag,
-                        count: 1,
-                        positionIds: [p.id],
-                        checkedCount: res.checked ? 1 : 0,
-                        notes: res.note ? [res.note] : []
-                    }
-                } else {
-                    groups[groupKey].count++
-                    groups[groupKey].positionIds.push(p.id)
-                    if (res.checked) groups[groupKey].checkedCount++
-                    if (res.note) groups[groupKey].notes.push(res.note)
-                }
-            })
+        return buildHallStats({
+            zones: sortedZones,
+            positions: groupedData.positions,
+            lotInfo,
+            itemsMap,
+            scopeIds
         })
-        return Object.values(groups).sort((a: any, b: any) => a.sku.localeCompare(b.sku))
-    }, [selectedWh, sortedZones, groupedData.positions, lotInfo, itemsMap, getDescendantIds, effectiveWhId])
+    }, [selectedWh, sortedZones, groupedData.positions, lotInfo, itemsMap, getDescendantIds, effectiveWhId, hasHallInScope])
+
+    const activeHallScope = useMemo(() => {
+        const candidates = [hallStats.all, ...hallStats.halls].filter((h): h is HallScope => !!h)
+        return candidates.find(h => h.id === activeHallTab) || candidates[0] || null
+    }, [hallStats, activeHallTab])
 
     const toggleExpand = (id: string) => {
         setExpandedZones(prev => {
@@ -1252,8 +1229,8 @@ export default function InternalInventoryPage() {
                 title={isHall ? 'Nhấn để tích kiểm tra' : undefined}
                 className={`group/pos relative overflow-hidden rounded-lg border px-2.5 py-1.5 cursor-pointer transition-all min-w-0 ${tone} ${locked ? 'pointer-events-none' : ''}`}
             >
-                {/* Dòng 1: trạng thái | mã vị trí | STT | mã LOT | hành động */}
-                <div className="flex items-center gap-1.5 min-w-0">
+                {/* Dòng 1: trạng thái | mã vị trí | STT | mã LOT | hành động (cụm hành động tự xuống dòng khi ô hẹp để không bị cắt icon) */}
+                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
                     <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
                     <span
                         onClick={(e) => { e.stopPropagation(); copyQuick(pos.code, 'Mã vị trí') }}
@@ -1273,7 +1250,7 @@ export default function InternalInventoryPage() {
                             title={`${lot.code} — bấm để copy mã LOT`}
                         >{lot.code}</span>
                     )}
-                    <span className="ml-auto flex items-center gap-1 shrink-0">
+                    <span className="ml-auto flex items-center justify-end gap-1 shrink-0 flex-wrap">
                         {isModified && <span className="text-[8px] font-bold text-blue-600 uppercase tracking-tight">Đã sửa</span>}
                         {hasNote && (
                             isResolved ? (
@@ -1486,7 +1463,7 @@ export default function InternalInventoryPage() {
                         <div className={`mt-2 ${isGroupingEnabled ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3' : 'space-y-3'}`}>
                             {filteredChildren.map(child => renderZoneTree(child.id, depth + 1, isGroupingEnabled ? currentBreadcrumb : []))}
                             {hasDirectPositions && (
-                                <div className={`grid grid-cols-[repeat(auto-fill,minmax(170px,1fr))] gap-2 py-2 px-1 ${zone.is_hall ? 'col-span-full' : ''}`}>
+                                <div className={`grid gap-2 py-2 px-1 ${zone.is_hall ? 'col-span-full grid-cols-[repeat(auto-fill,minmax(250px,1fr))]' : 'grid-cols-[repeat(auto-fill,minmax(170px,1fr))]'}`}>
                                     {filteredPos.map(pos => (
                                         <div key={pos.id} className="w-full">
                                             {renderInventoryPosition(pos, !!zone.is_hall)}
@@ -1785,8 +1762,33 @@ export default function InternalInventoryPage() {
                                 </div>
                                 <div className="p-4 min-h-[100px]">
                                     {showHallSummary ? (
-                                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5">
-                                            {hallSummary.map((group, idx) => {
+                                        <div className="space-y-3">
+                                            {hallStats.halls.length > 0 && (
+                                                <div className="flex flex-wrap items-center gap-1.5">
+                                                    {[hallStats.all, ...hallStats.halls].filter((h): h is HallScope => !!h).map(h => {
+                                                        const isActive = activeHallScope?.id === h.id
+                                                        return (
+                                                            <button
+                                                                key={h.id}
+                                                                onClick={() => setActiveHallTab(h.id)}
+                                                                title={h.id === HALL_ALL_TAB_ID ? 'Tổng mọi sảnh trong kho (để đối soát)' : h.name}
+                                                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${isActive ? 'bg-orange-500 border-orange-500 text-white shadow-sm' : 'bg-white border-stone-200 text-stone-500 hover:border-orange-300 hover:text-orange-600'}`}
+                                                            >
+                                                                <span className="max-w-[180px] truncate">{h.name}</span>
+                                                                <span className={`rounded-md px-1.5 py-0.5 text-[10px] tabular-nums ${isActive ? 'bg-white/25 text-white' : 'bg-stone-100 text-stone-500'}`}>{h.positionCount}</span>
+                                                            </button>
+                                                        )
+                                                    })}
+                                                </div>
+                                            )}
+                                            {!activeHallScope && (
+                                                <p className="py-8 text-center font-bold text-stone-400">Chưa có lô nào trong khu sảnh của kho này.</p>
+                                            )}
+                                            {activeHallScope && activeHallScope.groups.length === 0 && (
+                                                <p className="py-8 text-center font-bold text-stone-400">{activeHallScope.name} đang trống — không có ô nào chứa lô.</p>
+                                            )}
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4 gap-2.5">
+                                                {activeHallScope?.groups.map((group, idx) => {
                                                 const allChecked = group.checkedCount === group.count;
                                                 const hasErr = group.notes.length > 0;
                                                 const firstNote = group.notes[0] || '';
@@ -1858,6 +1860,7 @@ export default function InternalInventoryPage() {
                                                     </div>
                                                 );
                                             })}
+                                            </div>
                                         </div>
                                     ) : buildingChildren.length > 0 ? (
                                         buildingChildren.map(zone => {

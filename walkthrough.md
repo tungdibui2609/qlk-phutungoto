@@ -1673,3 +1673,98 @@ Tab mới ban đầu đặt tên "Theo vị trí kho" → người dùng bác: n
 ## Cách xem thử
 1. Bấm "Đồng bộ từ Code" tại `http://localhost:3001/admin/modules` để module `inventory_distribution` mang mô tả mới.
 2. Mở `/` → card "Tỉ lệ phân bố hàng hóa tồn kho" → tab "Theo danh mục (vị trí)"; chọn Phạm vi (TẤT CẢ KHO hoặc từng kho), bấm "Cấu hình" để chọn danh mục, rồi đối chiếu với khối "THỐNG KÊ CHI TIẾT THEO DANH MỤC" ở `/warehouses/status` cùng phân hệ — các con số phải trùng nhau.
+
+# Walkthrough: Nút "Xuất Excel" (kèm ảnh biểu đồ) cho 3 card thống kê Dashboard
+
+## Yêu cầu
+"Mỗi cái module thống kê của Dashboard tạo thêm chức năng xuất file Excel, xuất ra biểu đồ trên Excel."
+Ba quyết định người dùng chốt qua khảo sát: (1) biểu đồ trong file là **ảnh + sheet dữ liệu**, (2) phạm vi **3 card** (phân bố hàng hóa, lấp đầy kho, container), (3) **mỗi card một nút, một file riêng**.
+
+## Phát hiện kỹ thuật quan trọng (đã probe trực tiếp, không đoán)
+- `exceljs@4.4.0` **không có** `worksheet.addChart` → không thể vẽ biểu đồ Excel *thật* bằng thư viện đang cài. Probe: `typeof ws.addChart === 'undefined'`, trong khi `workbook.addImage` và `addConditionalFormatting({type:'dataBar'})` đều tồn tại và chạy được.
+- Thư viện tạo chart thật (`xlsx-chart`) bản cuối 2022, không được bảo trì → không kéo thêm dependency chỉ để đổi lấy biểu đồ chỉnh sửa được.
+- Card "Tỉ lệ lấp đầy kho" và tab "Theo danh mục (vị trí)" **không có SVG nào** (lưới KPI + thanh HTML), nên phương án "chụp ảnh recharts" (serialize SVG) không áp dụng được cho 2/4 view → chuyển sang **vẽ PNG từ dữ liệu bằng canvas 2D**, một đường code cho cả 4 view, màu lấy theo palette dashboard.
+
+## Thay đổi
+- `src/lib/chartImage.ts` (mới, chỉ chạy trên trình duyệt): `renderChartPng(spec)` trả `{base64, width, height}` cho 2 kiểu `donut` và `hbar`; `percentAxis` để vẽ trục 0-100% và `barColors` để tô theo mức lấp đầy; `legendLimit` gộp đuôi donut thành "Khác (n mục)"; `chartHeightFor()` tính cao độ theo số dòng.
+- `src/lib/dashboardExcelWorkbook.ts` (mới, **không import canvas/file-saver** → test được bằng node): `buildDashboardWorkbook(spec)` dựng 2 sheet —
+  - `Bieu do`: tiêu đề, khối metadata (Phân hệ kho, Tab, Cấp đang xem, Tổng ô, Xuất lúc…), ảnh PNG neo bằng `addImage({editAs:'oneCell'})`; nếu không có ảnh thì ghi dòng hướng dẫn thay vì file lỗi.
+  - `Du lieu`: header đậm, xen kẽ nền, `frozen ySplit:1`, `autoFilter`, `numFmt` theo cột (`#,##0` / `#,##0.0` / `#,##0.0"%"` — giá trị % lưu thô 29.8, không nhân 100), dòng tổng in đậm gạch trên, ghi chú italic dưới bảng, và **data bar** conditional formatting trên cột % (tặng thêm hiệu ứng thanh ngay trong ô).
+  - `excelFileName()` chuẩn hoá tên file không dấu, bỏ ký tự cấm, kèm mốc thời gian.
+- `src/lib/dashboardExcelSpecs.ts` (mới, thuần dữ liệu): 4 hàm dựng nội dung — `fillRateExportSpec` (theo `scope` + cấp đang drill, cột % + trạng thái theo ngưỡng 90/70), `distributionKgExportSpec` (pie KG + tỉ lệ trên tổng đang lọc), `categoryPositionExportSpec` (2 tỉ lệ hàng hoá/công suất + ghi chú LOT chưa phân loại), `containerExportSpec` (để trống container mặt hàng chưa khai định mức và không cộng vào tổng).
+- `src/lib/dashboardExcelExport.ts` (mới, cầu nối client): `exportDashboardChart()` = vẽ PNG → dựng workbook → `saveAs` Blob.
+- 3 card có nút "Xuất Excel" ở header, cạnh nút "Làm mới": `WarehouseFillRateChart.tsx` (xuất đúng tab Lô kệ/Sảnh/Tổng + đúng khu đang drill), `InventoryDistributionChart.tsx` (xuất đúng tab KG/Danh mục, tab danh mục chỉ xuất danh mục đang hiện theo cấu hình chung), `ContainerStockChart.tsx` (bảng = toàn bộ danh sách đang lọc, ảnh = Top 15). Nút disabled khi dữ liệu rỗng, hiện spinner khi đang xuất, `try/catch` + `alert` nếu thất bại.
+
+## Tuân thủ kiến trúc phân hệ
+- Không thêm module mới: nút nằm trong chính card đã được gate bằng `hasModule('warehouse_fill_rate' | 'inventory_distribution' | 'container_distribution')`, nên kho nào tắt card thì đương nhiên không có nút xuất.
+- Không query mới: file Excel dựng từ dữ liệu card đang giữ trong state — dữ liệu đó đã lọc `system_type` ngay từ lúc fetch, nên không có đường nào lộ số giữa hai phân hệ.
+- Không đụng Kho Đông Lạnh: chỉ thêm nút + lib mới, không sửa schema, không sửa trang `/warehouses/status`, không đổi công thức nào (`fillRateExportSpec` gọi lại `metricsOf`/`classifyFill` của `warehouseFillRate.ts`, `categoryPositionExportSpec` nhận nguyên `CategoryPositionResult`).
+- Tên file và metadata ghi rõ phân hệ + phạm vi để hai người dùng hai kho không gửi nhầm số cho nhau.
+
+## Kiểm chứng
+- `npx vitest run` trên 4 file liên quan → **41/41 pass**, gồm 9 test Excel mới: build workbook → `writeBuffer` → **load lại bằng exceljs** để assert tên sheet `['Bieu do','Du lieu']`, đúng header, đúng giá trị ô (`KHO 1 · 40%`), `numFmt` có `%`, `autoFilter`, `views` frozen, `conditionalFormattings[0].ref === 'E2:E3'` và rule `dataBar`, và ảnh nhúng thật (`xl/media/image1.png` + `xl/drawings/drawing1.xml` có trong zip).
+- 4 test `chartImage`: stub `document.createElement` để chạy hết luồng vẽ trên node, sau đó **bắt mọi toạ độ phải hữu hạn** (`Number.isFinite`) — đây là cách duy nhất phát hiện NaN từ dữ liệu rỗng/`values` ngắn hơn `labels`; kèm case tổng = 0 không chia cho 0 và môi trường không có trình duyệt thì báo lỗi rõ.
+- `npx tsc --noEmit` → sạch trên 8 file touched (`chartImage`, `dashboardExcelWorkbook`, `dashboardExcelSpecs`, `dashboardExcelExport`, 3 card, 2 file test); xác nhận `Download` có export trong `lucide-react` bản đang cài.
+- **Chưa kiểm chứng trên trình duyệt**: dev server không chạy và agent không có phiên đăng nhập (mật khẩu nằm ở `.env.test.local`, agent không tự nhập). Người dùng cần bấm thử 3 nút và mở file bằng Excel/LibreOffice để xác nhận ảnh biểu đồ hiển thị đúng.
+
+## Cách xem thử
+Vào `/` → mỗi card thống kê bấm "Xuất Excel" → file `.xlsx` tải về có sheet `Bieu do` (ảnh) và `Du lieu` (bảng lọc được). Đổi tab (Lô kệ/Sảnh/Tổng, KG/Danh mục) hoặc drill xuống một khu rồi xuất lại — nội dung file phải khớp đúng thứ đang hiển thị.
+
+# Walkthrough: Thống kê Sảnh trên `/work/inventory` tách theo TỪNG sảnh (SẢNH 1, 2, 3…)
+
+## Vấn đề người dùng báo
+Bật nút "Thống kê Sảnh" trong trang kiểm kê `/work/inventory` chỉ ra một bảng gộp: mọi sảnh của kho (SẢNH 1, SẢNH 2, SẢNH 3) bị cộng dồn thành một cụm SKU duy nhất, không nhìn riêng được từng sảnh.
+
+## Nguyên nhân
+`useMemo hallSummary` (trang `src/app/(dashboard)/work/inventory/page.tsx`) lấy TẤT CẢ khu `is_hall` trong phạm vi kho, gom hết ô của chúng rồi gán khóa nhóm chỉ gồm `sku|số lượng|đơn vị|tag` — **không có chiều sảnh trong khóa**, nên mọi sảnh dồn vào một bản ghi.
+
+## Quyết định của người dùng (chốt qua 3 câu hỏi, không suy từ code)
+1. Bố cục: **tab ngang hàng từng sảnh** (không dùng khối dọc, không matrix).
+2. **Giữ tab "Tất cả sảnh"** để đối soát; số từng sảnh phải cộng ra đúng số tab tổng.
+3. Tích "đã kiểm" / sửa ghi chú trên một thẻ **chỉ tác động trong sảnh đang xem**.
+
+## Cách triển khai
+### `src/lib/hallInventoryStats.ts` (mới, logic thuần)
+- `hallRootsInScope(zones, scopeIds)`: lấy khu **sảnh "đầu ngành"** (`is_hall` và cha không phải sảnh). Mỗi ô vì thế thuộc đúng MỘT sảnh → số các sảnh cộng lại bằng số tổng, không đếm trùng khi có sảnh lồng sảnh.
+- `topHallOfZone(zones, zoneId)`: đi hết chuỗi cha để tìm sảnh đầu ngành (có `seen` chống vòng lặp), trả `null` với ô ngoài sảnh → ô kệ bị loại khỏi thống kê.
+- `buildHallStats({zones, positions, lotInfo, itemsMap, scopeIds})`: một vòng lặp duy nhất vừa gom theo từng sảnh (`byHall[hallId]`) vừa gom toàn sảnh (`allGroups`) → khóa nhóm giữ nguyên công thức cũ `canonicalizeUnit(sku)|qty|canonicalizeUnit(unit)|tag`, nên tab "Tất cả sảnh" cho ra đúng con số như trước khi sửa.
+- Badge trên tab là **số ô đang chứa lô**; tab tổng = tổng các badge (khả cộng, kiểm chứng được bằng mắt).
+- Thứ tự tab theo `display_order` rồi so tên kiểu tự nhiên — **thứ tự sơ đồ kho** (SẢNH 1 order 2 → SẢNH 2 order 5 → SẢNH 3 order 8), không xếp theo độ đầy.
+- **Sảnh trống vẫn hiện tab** với badge 0 và dòng "SẢNH 3 đang trống — không có ô nào chứa lô" (theo yêu cầu tab phải "rõ ràng, đầy đủ", không ẩn khu).
+
+### `src/app/(dashboard)/work/inventory/page.tsx`
+- `hallStats` chỉ còn gọi `buildHallStats`; `activeHallScope` suy ra từ `activeHallTab` và tự rơi về tab "Tất cả sảnh" khi đổi kho (không có state cũ treo).
+- Lưới thẻ cụm dùng `activeHallScope.groups`, nên `positionIds` của mỗi thẻ chỉ chứa ô **trong sảnh đang chọn** → `bulkCheck` và `updateNote` (việc ghi DB không đổi) tự động chỉ chạm ô của sảnh đó.
+- Lấy `zone_id` từ `zone_positions` như trang đang dùng; không thêm query mới, không đổi schema.
+
+## Tuân thủ kiến trúc phân hệ
+- **Không hardcode mã kho/tên sảnh**: chỉ dùng cờ `zones.is_hall` (bật/tắt theo phân hệ), kho nào có khu sảnh thì tab tự xuất hiện.
+- **Cô lập theo phân hệ + theo kho**: chỉ số lấy từ `groupedData.positions` và lọc `scopeIds` của kho đang chọn. Test `không lộ ô của sảnh thuộc kho khác` chứng minh một ô nằm ở sảnh thuộc KHO 3 không xuất hiện trong thống kê của KHO 2.
+- **Không đụng Kho Đông Lạnh ở chiều phá vỡ**: trang status và `/warehouses/hall-summary` giữ nguyên; luật nhận diện sảnh của `/work/inventory` vẫn là cờ `is_hall` như cũ (không đổi sang regex tên), nên tập sảnh hiển thị không đổi — chỉ thêm chiều tách.
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/hallInventoryStats.test.ts` → **6/6 pass**: thứ tự tab theo sơ đồ kho + sảnh trống vẫn còn tab, sảnh con gộp về sảnh đầu ngành, tổng từng sảnh = tab "Tất cả sảnh" (cả số ô lẫn số cụm SKU), không lộ ô kho khác, gộp đúng `checkedCount`/`notes`, và `hallRootsInScope`/`topHallOfZone` trả đúng.
+- `npx tsc --noEmit` → không có lỗi trên `page.tsx` và `hallInventoryStats.ts` (lọc output theo 2 file touched).
+- Đối soát số liệu thật trên DB local (`KHO_DONG_LANH`): 12 khu `is_hall`, **0 ô nào thuộc nhiều hơn một sảnh** → khả cộng theo sảnh được bảo đảm. Ví dụ KHO 2: SẢNH 1 = 6 ô có hàng, SẢNH 2 = 39, SẢNH 3 = 0, tab tổng = 45.
+- **Chưa kiểm chứng trên trình duyệt**: agent không có phiên đăng nhập. PORT = 3000 là bản `next build` cũ nên **phải rebuild mới thấy thay đổi**; bản dev `:3001` (`npm run dev`) tự nạp code mới.
+
+## Cách xem thử
+Mở `/work/inventory` → vào một phiên kiểm kê của kho có khu sảnh → bấm nút **"Thống kê Sảnh"**. Kiểm tra: hàng tab `[Tất cả sảnh] [SẢNH 1] [SẢNH 2] [SẢNH 3]` theo đúng thứ tự sơ đồ kho; bấm từng tab thấy số ô và cụm riêng; cộng badge các sảnh bằng badge "Tất cả sảnh"; tích V trên một thẻ ở tab SẢNH 2 không làm ô cùng SKU ở SẢNH 1 đổi trạng thái.
+
+# Walkthrough (tiếp): Ô vị trí trong sảnh bị cắt icon thao tác (sửa / xóa)
+
+## Vấn đề
+Thẻ ô ở khu sảnh (ví dụ `K2S1A10T101`) hẹp nên hàng tiêu đề bị tràn ngang: thẻ có `overflow-hidden`, còn mã vị trí (`whitespace-nowrap shrink-0`) và cụm icon (`shrink-0`) đều không co lại → icon **Tải lại / Sửa LOT / Xóa LOT** bị cắt mất, không bấm được.
+
+## Sửa
+- `renderInventoryPosition`: hàng tiêu đề thêm `flex-wrap`, cụm hành động thêm `justify-end flex-wrap` → khi không đủ chỗ, cả cụm **xuống dòng riêng** thay vì bị cắt. Không còn trạng thái icon biến mất ở bất kỳ bề rộng nào.
+- Lưới ô trong khu sảnh (STYLE 1 "DÃY / SẢNH") đổi `minmax(170px,1fr)` → `minmax(250px,1fr)` khi `zone.is_hall`, để hàng tiêu đề đủ chỗ nằm gọn một dòng. Ô kệ giữ nguyên 170px → **không đổi layout của khu kệ Kho Đông Lạnh**.
+- Không đổi logic ghi dữ liệu: `toggleCheck`/`toggleResolved`/`refreshPositionLot`/`handleEditLot`/`handleDeleteLotAtPosition` giữ nguyên, chỉ đổi cách bố trí.
+
+## Kiểm chứng (đo bằng browser thật trên markup sao chép)
+Dựng đúng markup thẻ ô (cùng class Tailwind) rồi đo `getBoundingClientRect` từng icon trong thẻ:
+- 250px (ô sảnh): `clipped = 0`, cụm icon **cùng dòng** với mã vị trí, chiều cao thẻ 109px.
+- 250px kèm cả STT + mã LOT dài: vẫn `clipped = 0`, một dòng (mã LOT tự `truncate` vì `flex-1 min-w-0`).
+- 200px và 170px (ô kệ): `clipped = 0` — cụm icon xuống dòng thứ hai, thẻ cao thêm ~22px, **không còn icon nào bị cắt**.
+- `npx tsc --noEmit` sạch trên file touched.
+- **Chưa xem trên trang thật** (agent không có phiên đăng nhập); `:3000` là bản build cũ nên phải reload bản dev `:3001` hoặc rebuild.

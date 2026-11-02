@@ -4,12 +4,14 @@ import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import { supabase } from '@/lib/supabaseClient'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
-import { ChevronDown, FolderTree, Layers, Loader2, RefreshCw, Scale, Settings2 } from 'lucide-react'
+import { ChevronDown, Download, FolderTree, Layers, Loader2, RefreshCw, Scale, Settings2 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { Database } from '@/lib/database.types'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { fetchAllPaged } from '@/lib/supabasePaged'
 import { buildZoneLookup } from '@/lib/warehouseFillRate'
+import { exportDashboardChart } from '@/lib/dashboardExcelExport'
+import { categoryPositionExportSpec, distributionKgExportSpec } from '@/lib/dashboardExcelSpecs'
 import {
     buildCategoryPositionStats,
     buildLotCategoryMap,
@@ -73,6 +75,7 @@ export default function InventoryDistributionChart() {
     const [zoneRows, setZoneRows] = useState<Array<{ id: string; code: string | null; name: string | null; parent_id: string | null; level: number | null }>>([])
     const [lotCategories, setLotCategories] = useState<Map<string, string[]>>(new Map())
     const [positionLoaded, setPositionLoaded] = useState(false)
+    const [exporting, setExporting] = useState(false)
     const [statWarehouseId, setStatWarehouseId] = useState<string | null>(null)
     const [statCategoryIds, setStatCategoryIds] = useState<string[]>([])
     const [showStatConfig, setShowStatConfig] = useState(false)
@@ -425,6 +428,56 @@ export default function InventoryDistributionChart() {
 
     const { data: processedData, totalWeight } = chartData || { data: [], totalWeight: 0 }
 
+    // Xuất Excel theo đúng tab đang xem: KG → pie phân bố; danh mục → bar số ô.
+    const handleExport = async () => {
+        setExporting(true)
+        try {
+            const systemName = currentSystem?.name || systemType || ''
+            if (view === 'kg') {
+                const filterLabel = selectedCategoryIds.length === 0
+                    ? 'Tất cả danh mục'
+                    : selectedCategoryIds
+                        .map(id => categories.find(c => c.id === id)?.name || 'Chưa phân loại')
+                        .join(', ')
+                const { spec, chart } = distributionKgExportSpec({
+                    systemName,
+                    filterLabel,
+                    items: processedData,
+                    totalWeight
+                })
+                await exportDashboardChart({
+                    spec,
+                    chart,
+                    filePrefix: 'Tỉ lệ phân bố hàng hóa',
+                    fileExtra: 'Khối lượng KG'
+                })
+            } else {
+                const warehouse = statWarehouseId
+                    ? zoneRows.find(z => z.id === statWarehouseId)
+                    : null
+                const { spec, chart } = categoryPositionExportSpec({
+                    systemName,
+                    warehouseLabel: warehouse
+                        ? (warehouse.name || warehouse.code || 'Kho đã chọn')
+                        : 'Tất cả kho',
+                    result: { ...positionResult, stats: visiblePositionStats },
+                    visibleOnly: statCategoryIds.length > 0
+                })
+                await exportDashboardChart({
+                    spec,
+                    chart,
+                    filePrefix: 'Tỉ lệ phân bố hàng hóa',
+                    fileExtra: 'Theo danh mục'
+                })
+            }
+        } catch (err) {
+            console.error('Lỗi xuất Excel phân bố hàng hóa:', err)
+            alert('Không xuất được file Excel. Vui lòng thử lại.')
+        } finally {
+            setExporting(false)
+        }
+    }
+
     if (loading || conversionLoading) {
         return (
             <div className="bg-white rounded-2xl p-6 border border-stone-200 h-[400px] flex items-center justify-center">
@@ -463,6 +516,15 @@ export default function InventoryDistributionChart() {
                             Theo danh mục (vị trí)
                         </button>
                     </div>
+                    <button
+                        onClick={handleExport}
+                        disabled={exporting || (view === 'kg' ? processedData.length === 0 : visiblePositionStats.length === 0)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Xuất tab đang xem ra Excel (biểu đồ + bảng số)"
+                    >
+                        {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+                        Xuất Excel
+                    </button>
                     {view === 'kg' && (
                         <>
                             <button
