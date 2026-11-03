@@ -35,20 +35,20 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
     try {
         const body = await request.json()
-        const { name, systemCode } = body
+        const { name, systemCode, append_to_product_name } = body
 
         if (!name || !systemCode) {
             return NextResponse.json({ ok: false, error: 'Missing name or systemCode' }, { status: 400 })
         }
 
         const supabase = await createClient()
-        // const { data: { user } } = await supabase.auth.getUser()
 
         const { error } = await supabase
             .from('master_tags')
             .insert({
                 name: name.toUpperCase().trim(),
-                system_code: systemCode
+                system_code: systemCode,
+                append_to_product_name: Boolean(append_to_product_name)
             })
             .select()
 
@@ -59,6 +59,35 @@ export async function POST(request: Request) {
             }
             throw error
         }
+
+        return NextResponse.json({ ok: true })
+
+    } catch (error: any) {
+        return NextResponse.json({ ok: false, error: error.message }, { status: 500 })
+    }
+}
+
+// PATCH: Update master tag (toggle append_to_product_name)
+export async function PATCH(request: Request) {
+    try {
+        const body = await request.json()
+        const { name, systemCode, append_to_product_name } = body
+
+        if (!name || !systemCode || append_to_product_name === undefined) {
+            return NextResponse.json({ ok: false, error: 'Missing name, systemCode or append_to_product_name' }, { status: 400 })
+        }
+
+        const supabase = await createClient()
+
+        const { error } = await supabase
+            .from('master_tags')
+            .update({
+                append_to_product_name: Boolean(append_to_product_name)
+            })
+            .eq('name', name)
+            .eq('system_code', systemCode)
+
+        if (error) throw error
 
         return NextResponse.json({ ok: true })
 

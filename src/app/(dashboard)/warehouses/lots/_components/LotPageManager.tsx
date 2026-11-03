@@ -88,7 +88,8 @@ export function LotPageManager() {
         isFifoActive,
         toggleFifo,
         productions,
-        zones
+        zones,
+        affixTagSet
     } = useLotManagement()
 
     const { currentSystem } = useSystem()
@@ -558,6 +559,7 @@ export function LotPageManager() {
                     </label>
                 )}
                 <LotList
+                    affixTagSet={affixTagSet}
                     loading={loading}
                     lots={lots}
                     isModuleEnabled={isModuleEnabled}
@@ -567,6 +569,7 @@ export function LotPageManager() {
                     onSelectAll={handleSelectAll}
                     onClearSelection={handleClearSelection}
                     managePermission="warehouse_lot.manage"
+                affixTagSet={affixTagSet}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onView={setViewingLot}

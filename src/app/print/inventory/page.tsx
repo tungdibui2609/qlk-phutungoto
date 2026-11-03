@@ -14,6 +14,7 @@ import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { exportInventoryReportToExcel } from '@/lib/inventoryReportExcelExport'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { canonicalizeUnit } from '@/lib/unitConversion'
+import { fetchAffixTagSet, resolveDisplayProductName, buildAffixedGroupKey } from '@/lib/productNameResolver'
 
 const normalizeWarehouseName = (name: string) => {
     if (!name) return ''
@@ -455,6 +456,8 @@ export default function PrintInventoryPage() {
                 else throw new Error(data.error || 'Unknown error')
             }
             else if (type === 'lot' || type === 'category' || type === 'tags') {
+                const activeSys = systemType || (typeof window !== 'undefined' ? localStorage.getItem('systemType') : null) || 'KHO_DONG_LANH'
+                const affixTagSet = await fetchAffixTagSet(supabase, activeSys)
                 let allLots: any[] = []
                 let lotsFrom = 0
                 while (true) {
@@ -554,7 +557,9 @@ export default function PrintInventoryPage() {
 
                         if (lot.lot_items && lot.lot_items.length > 0) {
                             return lot.lot_items.map((item: any, idx: number) => {
-                                const itemTags = (item.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
+                                const itemDirectTags = (item.lot_tags || []).map((t: any) => t.tag).filter(Boolean) as string[]
+                                const itemFromLotTags = (lot.lot_tags || []).filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag).filter(Boolean) as string[]
+                                const itemTags = Array.from(new Set([...itemDirectTags, ...itemFromLotTags]))
                                 const productId = item.product_id || item.products?.product_code || ''
                                 // Danh mục gán trên dòng LOT thắng tuyệt đối; chỉ suy từ sản phẩm khi dòng chưa được gán
                                 const primaryCatId = item.category_id || item.products?.category_id || prodToPrimaryCatMap.get(productId) || (prodToCatMap.get(productId)?.[0])
@@ -705,8 +710,10 @@ export default function PrintInventoryPage() {
                         itemCatIds.forEach(catId => {
                             const category = catId ? (fetchedCategories as any[]).find(c => c.id === catId) : null
                             const groupHeader = (category as any)?.name || 'Chưa phân loại'
-                            const groupKey = `${groupHeader}__${item.productSku}__${canonicalizeUnit(displayUnit)}`
-                            addToGroups(groupKey, groupHeader, displayUnit, displayQty, item, groupsMap)
+                            const resolvedName = resolveDisplayProductName(item.productName, item.tags || [], affixTagSet)
+                            let groupKey = `${groupHeader}__${item.productSku}__${canonicalizeUnit(displayUnit)}`
+                            groupKey = buildAffixedGroupKey(groupKey, item.tags || [], affixTagSet)
+                            addToGroups(groupKey, groupHeader, displayUnit, displayQty, item, groupsMap, resolvedName)
                         })
                     })
 
@@ -845,12 +852,12 @@ export default function PrintInventoryPage() {
     }
 
     // Helper function for grouping lots
-    function addToGroups(groupKey: string, groupHeader: string, displayUnit: string, displayQty: number, item: LotItem, groupsMap: Map<string, GroupedLot>) {
+    function addToGroups(groupKey: string, groupHeader: string, displayUnit: string, displayQty: number, item: LotItem, groupsMap: Map<string, GroupedLot>, resolvedProductName?: string) {
         if (!groupsMap.has(groupKey)) {
             groupsMap.set(groupKey, {
                 key: groupKey,
                 productSku: item.productSku,
-                productName: item.productName,
+                productName: resolvedProductName || item.productName,
                 internalCode: item.internalCode,
                 internalName: item.internalName,
                 productUnit: displayUnit,

@@ -1,3 +1,4 @@
+import { fetchAffixTagSet } from '@/lib/productNameResolver'
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -57,6 +58,7 @@ export default function InventoryAgingReportPage() {
     const { getBaseAmount, getBaseToKgRate } = useUnitConversion()
 
     const [lots, setLots] = useState<AgingLotSource[]>([])
+    const [affixTagSet, setAffixTagSet] = useState<Set<string>>(new Set())
     const [categoryMap, setCategoryMap] = useState<Record<string, string>>({})
     const [loading, setLoading] = useState(true)
 
@@ -131,7 +133,7 @@ export default function InventoryAgingReportPage() {
             if (sysCode === 'FROZEN') sysCode = 'KHO_DONG_LANH'
             else if (sysCode === 'DRY') sysCode = 'KHO_VAT_TU_BAO_BI'
 
-            const [allLots, allLotItems, allProducts, allCatRels, allCategories, allProductionLots, allPositions, sysRes] = await Promise.all([
+            const [allLots, allLotItems, allProducts, allCatRels, allCategories, allProductionLots, allPositions, allTags, sysRes, loadedAffixTags] = await Promise.all([
                 fetchAll('lots', 'id, code, production_code, batch_code, warehouse_name, is_locked, status, quantity, product_id, inbound_date, peeling_date, raw_material_date, packaging_date, metadata, production_lot_id',
                     (q: any) => q.eq('system_code', sysCode).eq('status', 'active')),
                 fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, category_id'),
@@ -141,13 +143,16 @@ export default function InventoryAgingReportPage() {
                 fetchAll('categories', 'id, name', (q: any) => q.eq('system_type', sysCode)),
                 fetchAll('production_lots', 'id, lot_code, production_date'),
                 fetchAll('positions', 'id, code, lot_id', (q: any) => q.eq('system_type', sysCode)),
+                fetchAll('lot_tags', 'tag, lot_id, lot_item_id'),
                 // Cấu hình ô vị trí lẻ đang ĐÓNG của phân hệ — cùng nguồn với tab Tồn theo LOT
-                supabase.from('systems' as any).select('modules').eq('code', sysCode).single()
+                supabase.from('systems' as any).select('modules').eq('code', sysCode).single(),
+                fetchAffixTagSet(supabase, sysCode)
             ])
 
             const cMap: Record<string, string> = {}
             allCategories.forEach((c: any) => { cMap[c.id] = c.name })
             setCategoryMap(cMap)
+            setAffixTagSet(loadedAffixTags)
 
             const relMap = new Map<string, { category_id: string }[]>()
             allCatRels.forEach((r: any) => {
@@ -158,6 +163,12 @@ export default function InventoryAgingReportPage() {
             const productMap = new Map<string, any>()
             allProducts.forEach((p: any) => {
                 productMap.set(p.id, { ...p, product_category_rel: relMap.get(p.id) || [] })
+            })
+
+            const tagsByLot = new Map<string, any[]>()
+            allTags.forEach((t: any) => {
+                if (!tagsByLot.has(t.lot_id)) tagsByLot.set(t.lot_id, [])
+                tagsByLot.get(t.lot_id)!.push(t)
             })
 
             const itemsByLot = new Map<string, any[]>()
@@ -224,8 +235,9 @@ export default function InventoryAgingReportPage() {
         asOfDate,
         buckets,
         categoryMap,
-        kgOf
-    }), [lots, dateType, asOfDate, buckets, categoryMap, kgOf])
+        kgOf,
+        affixTagSet
+    }), [lots, dateType, asOfDate, buckets, categoryMap, kgOf, affixTagSet])
 
     const warehouseOptions = useMemo(() => {
         const set = new Set<string>()

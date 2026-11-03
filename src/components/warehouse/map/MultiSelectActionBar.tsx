@@ -1,6 +1,6 @@
 'use client'
 import { useMemo, useState, useRef, useEffect } from 'react'
-import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock, Calendar, PackageOpen } from 'lucide-react'
+import { FileOutput, ArrowDownToLine, ArrowRightLeft, PackageMinus, X, Tag, Trash2, ChevronDown, Printer, Zap, MapPinOff, MapPin, Layers, Copy, Bookmark, FileSpreadsheet, Briefcase, Wrench, Lock, Unlock, Calendar, PackageOpen, Scale } from 'lucide-react'
 import { Database } from '@/lib/database.types'
 import { canonicalizeUnit } from '@/lib/unitConversion'
 
@@ -31,6 +31,7 @@ interface MultiSelectActionBarProps {
     onOpenAutoAssignWarehouse?: () => void
     onCloneLot?: (lotId: string) => void
     onBulkChangeProduct?: (lotIds: string[]) => void
+    onBulkChangeUnit?: (lotIds: string[]) => void
     onToggleMark?: (posIds: string[]) => void
     onOpenMarkModal?: (posIds: string[]) => void
     onUnmarkPositions?: (posIds: string[]) => void
@@ -59,6 +60,7 @@ export default function MultiSelectActionBar({
     onOpenAutoAssignWarehouse,
     onCloneLot,
     onBulkChangeProduct,
+    onBulkChangeUnit,
     onToggleMark,
     onOpenMarkModal,
     onUnmarkPositions,
@@ -683,6 +685,22 @@ export default function MultiSelectActionBar({
                                                 <div className="flex flex-col min-w-0">
                                                     <span className="font-bold">Đổi mã hàng loạt</span>
                                                     <span className="text-[10px] text-gray-400 font-normal">Đổi mã sản phẩm cho nhiều LOT</span>
+                                                </div>
+                                            </button>
+                                        )}
+
+                                        {onBulkChangeUnit && (
+                                            <button
+                                                onClick={() => {
+                                                    onBulkChangeUnit(Array.from(selectedLotIds))
+                                                    setIsTagMenuOpen(false)
+                                                }}
+                                                className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-gray-700 dark:text-gray-200 hover:bg-amber-50 dark:hover:bg-amber-900/40 rounded-xl transition-colors text-left group"
+                                            >
+                                                <Scale size={16} className="text-amber-600 dark:text-amber-400 group-hover:scale-110 transition-transform shrink-0" />
+                                                <div className="flex flex-col min-w-0">
+                                                    <span className="font-bold">Đổi đơn vị tính</span>
+                                                    <span className="text-[10px] text-gray-400 font-normal">Đổi đơn vị nhiều LOT, giữ nguyên số lượng</span>
                                                 </div>
                                             </button>
                                         )}

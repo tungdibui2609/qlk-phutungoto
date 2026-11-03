@@ -1,3 +1,4 @@
+import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 'use client'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
@@ -151,7 +152,7 @@ export default function WarehouseMovementsSnapshotPage() {
                         id, code, production_code, production_lot_id, inbound_date, quantity, daily_seq,
                         products(name, sku, unit, weight_kg),
                         productions(code, production_lots(lot_code)),
-                        lot_items(quantity, unit, products(name, sku))
+                        lot_items(id, quantity, unit, products(name, sku)), lot_tags(tag, lot_item_id)
                     `).in('id', chunk)
                     if (error) throw error
                     chunks.push(...(data || []))
@@ -159,10 +160,11 @@ export default function WarehouseMovementsSnapshotPage() {
                 return chunks
             }
 
-            const [usersData, posData, allLots] = await Promise.all([
+            const [usersData, posData, allLots, affixTagSet] = await Promise.all([
                 fetchInChunks('user_profiles', 'id, full_name, email', userIds),
                 fetchInChunks('positions', 'id, code', posIds),
-                fetchLots(lotIds)
+                fetchLots(lotIds),
+                fetchAffixTagSet(supabase, currentSystem.code)
             ])
 
             console.log(`DEBUG: Requested ${lotIds.length} lots, found ${allLots.length} lots`)
@@ -176,7 +178,7 @@ export default function WarehouseMovementsSnapshotPage() {
                 
                 if (l.products) {
                     products.push({
-                        name: l.products.name || 'Unknown',
+                        name: resolveDisplayProductName(l.products.name, l.lot_tags, affixTagSet) || 'Unknown',
                         sku: l.products.sku || 'N/A',
                         quantity: l.quantity || 0,
                         unit: l.products.unit || 'Kg'
@@ -186,7 +188,7 @@ export default function WarehouseMovementsSnapshotPage() {
                 l.lot_items?.forEach((li: any) => {
                     if (li.products) {
                         products.push({
-                            name: li.products.name || 'Unknown',
+                            name: resolveDisplayProductName(li.products.name, (l.lot_tags || []).filter((t: any) => !t.lot_item_id || t.lot_item_id === li.id), affixTagSet) || 'Unknown',
                             sku: li.products.sku || 'N/A',
                             quantity: li.quantity,
                             unit: li.unit || 'Kg'

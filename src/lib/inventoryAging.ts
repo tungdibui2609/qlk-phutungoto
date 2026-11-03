@@ -1,3 +1,4 @@
+import { resolveDisplayProductName } from './productNameResolver'
 /**
  * Logic tính "tuổi tồn kho" (aging) cho báo cáo hàng tồn lâu ngày.
  *
@@ -156,6 +157,7 @@ export interface AgingLotSource {
     metadata?: { peeling_dates?: string[] } | null
     products?: AgingProductSource | null
     lot_items?: AgingLotItemSource[]
+    lot_tags?: { tag: string; lot_item_id?: string | null }[] | null
     positions?: { code?: string | null }[]
 }
 
@@ -207,10 +209,11 @@ export interface BuildAgingLinesOptions {
     categoryMap: Record<string, string>
     /** hàm quy đổi ra Kg của đơn vị sản phẩm; trả 0/không số nếu không quy đổi được */
     kgOf?: (args: { productId: string | null; unit: string; qty: number; baseUnit: string | null }) => number
+    affixTagSet?: Set<string>
 }
 
 export function buildAgingLines(lots: AgingLotSource[], opts: BuildAgingLinesOptions): AgingLine[] {
-    const { dateType, asOfDate, buckets, categoryMap, kgOf } = opts
+    const { dateType, asOfDate, buckets, categoryMap, kgOf, affixTagSet } = opts
     const lines: AgingLine[] = []
 
     lots.forEach(lot => {
@@ -221,7 +224,7 @@ export function buildAgingLines(lots: AgingLotSource[], opts: BuildAgingLinesOpt
             .map(p => p?.code)
             .filter((c): c is string => Boolean(c))
 
-        const pushLine = (product: AgingProductSource | null, qty: number, unit: string | null, lineCategoryId: string | null) => {
+        const pushLine = (product: AgingProductSource | null, qty: number, unit: string | null, lineCategoryId: string | null, itemId?: string | null) => {
             if (!product && !lot.products) return
             const p = product || lot.products || {}
             if (qty <= 0) return
@@ -242,7 +245,7 @@ export function buildAgingLines(lots: AgingLotSource[], opts: BuildAgingLinesOpt
                 positionCodes,
                 productId: p.id || null,
                 sku: p.sku || '---',
-                name: p.name || '(Chưa đặt tên)',
+                name: resolveDisplayProductName(p.name, (lot.lot_tags || []).filter((t: any) => !t.lot_item_id || t.lot_item_id === itemId), affixTagSet) || '(Chưa đặt tên)',
                 unit: resolvedUnit,
                 quantity: qty,
                 kg: kgOf ? kgOf({ productId: p.id || null, unit: resolvedUnit, qty, baseUnit: p.unit || null }) : 0,
@@ -260,7 +263,8 @@ export function buildAgingLines(lots: AgingLotSource[], opts: BuildAgingLinesOpt
                     item.products || null,
                     Number(item.quantity) || 0,
                     item.unit || item.products?.unit || null,
-                    item.category_id ?? null
+                    item.category_id ?? null,
+                    item.id
                 )
             })
         } else {

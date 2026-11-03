@@ -123,4 +123,50 @@ describe('exportInventoryReportToExcel - tiêu đề theo loại báo cáo', () 
         })
         expect(rows.flat()).toContain('BÁO CÁO TỒN KHO THEO LOT')
     })
+
+    it('sheet Tổng hợp của tab LOT hiển thị đúng tên sản phẩm đã gắn mã phụ', async () => {
+        savedBlobs.length = 0
+        const mockGroupedLots = [
+            {
+                key: 'HÀNG HÓA KÝ GỬI__HH101020104.001__Thùng (20kg)',
+                productSku: 'HH101020104.001',
+                productName: 'Sầu riêng cấp đông múi Dona/Monthong C- Hàng không hạt',
+                productUnit: 'Thùng (20kg)',
+                categoryName: 'HÀNG HÓA KÝ GỬI',
+                totalQuantity: 60,
+                totalKg: 1200,
+                variants: new Map(),
+                items: []
+            },
+            {
+                key: 'HÀNG HÓA KÝ GỬI__HH101020104.001__Thùng (20kg)__TRUNG HÙNG',
+                productSku: 'HH101020104.001',
+                productName: 'Sầu riêng cấp đông múi Dona/Monthong C- Hàng không hạt (TRUNG HÙNG)',
+                productUnit: 'Thùng (20kg)',
+                categoryName: 'HÀNG HÓA KÝ GỬI',
+                totalQuantity: 8,
+                totalKg: 160,
+                variants: new Map(),
+                items: []
+            }
+        ]
+
+        await exportInventoryReportToExcel({
+            type: 'lot',
+            dateTitle: 'Tính đến ngày: 03/11/2026',
+            warehouse: 'Tất cả',
+            items: mockGroupedLots,
+            companyInfo: null
+        })
+
+        const workbook = new ExcelJS.Workbook()
+        await workbook.xlsx.load(await savedBlobs[0].arrayBuffer())
+        const wsSummary = workbook.getWorksheet('Tổng hợp')
+        expect(wsSummary).toBeDefined()
+
+        const summaryRows = (wsSummary!.getRows(1, wsSummary!.rowCount)?.map(r => r.values) || []) as any[][]
+        const flatSummary = summaryRows.flat()
+        expect(flatSummary).toContain('Sầu riêng cấp đông múi Dona/Monthong C- Hàng không hạt')
+        expect(flatSummary).toContain('Sầu riêng cấp đông múi Dona/Monthong C- Hàng không hạt (TRUNG HÙNG)')
+    })
 })

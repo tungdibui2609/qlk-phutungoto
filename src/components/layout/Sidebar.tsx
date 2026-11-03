@@ -149,6 +149,7 @@ const menuItems: MenuItem[] = [
             { id: 'hall_summary', name: 'Thống kê sảnh', href: '/warehouses/hall-summary', icon: LayoutGrid, requiredPermission: 'warehouse.view', requiredModule: 'report_hall_summary' },
             { id: 'floor_1_report', name: 'Báo cáo tầng 1', href: '/reports/floor-1', icon: Layers, requiredPermission: 'report.view', requiredModule: 'report_floor_1' },
             { id: 'warehouse_map_log', name: 'Nhật ký sơ đồ kho', href: '/reports/warehouse-map-log', icon: Map, requiredPermission: 'report.view', requiredModule: 'report_warehouse_map_log' },
+            { id: 'stocktake_diff', name: 'Đối chiếu kiểm kê', href: '/reports/stocktake-diff', icon: Scale, requiredPermission: 'report.view', requiredModule: 'report_stocktake_diff' },
             { id: 'warehouse_movements', name: 'Diễn biến kho (Sạch)', href: '/reports/warehouse-movements', icon: TrendingUp, requiredPermission: 'report.view', requiredModule: 'report_warehouse_movements' },
             { id: 'history', name: 'Lịch sử thao tác', href: '/operation-history', icon: Clock, requiredPermission: 'report.view' },
             { id: 'customer_docs', name: 'Chứng từ khách hàng', href: '/reports/customer-docs', icon: FileCheck, requiredPermission: 'report.view' },

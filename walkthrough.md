@@ -1768,3 +1768,256 @@ Dựng đúng markup thẻ ô (cùng class Tailwind) rồi đo `getBoundingClien
 - 200px và 170px (ô kệ): `clipped = 0` — cụm icon xuống dòng thứ hai, thẻ cao thêm ~22px, **không còn icon nào bị cắt**.
 - `npx tsc --noEmit` sạch trên file touched.
 - **Chưa xem trên trang thật** (agent không có phiên đăng nhập); `:3000` là bản build cũ nên phải reload bản dev `:3001` hoặc rebuild.
+
+# Walkthrough: Module "Đối chiếu kiểm kê" (`report_stocktake_diff`)
+
+## Nghiệp vụ
+Người dùng kiểm kê thủ công theo luồng cũ: vào `/print/warehouse-map` → xuất **Excel (Bảng)** + **Excel (Lưới)** (mốc TRƯỚC) → cầm giấy đi đếm → chỉnh ở `/warehouses/map` (di chuyển LOT) và `/warehouses/lots` (sửa số lượng) → xuất lại 2 file (mốc SAU). Module mới nhận **2 file cùng định dạng** của 2 mốc, chỉ ra chỗ lệch số lượng theo vị trí và xuất báo cáo Excel.
+
+- Khoá so khớp (file Bảng): `Kho | Dãy | Ô | Tầng | Mã vị trí | Số lô | Mã SP | ĐVT`.
+- Khoá so khớp (file Lưới): `Khu vực | Dãy | Ô | Tầng | Tên hàng | ĐVT` (file Lưới không chứa mã vị trí lẫn mã lot).
+- Kết quả chia 2 tab ngang hàng: **Dạng Bảng** và **Dạng Lưới**, mỗi tab một cặp file độc lập.
+- File báo cáo luôn kèm **2 sheet sơ đồ đầy đủ** của 2 mốc (không cắt còn mỗi dòng lệch) để nộp cùng bảng sai lệch; chỗ lệch tô nền đỏ nhạt `#FFC7CE`: dạng Bảng tô **cả dòng**, dạng Lưới tô **nguyên ô của tầng** có mặt hàng lệch (kể cả ô merge thì tô cả khối). Việc tô đỏ lấy theo toàn bộ sai lệch của phép đối chiếu, không phụ thuộc bộ lọc đang hiển thị trên màn hình.
+
+## Tuân thủ kiến trúc dự án
+- **Modular-first, không hardcode mã kho**: tính năng gate bằng `hasModule('report_stocktake_diff')` (`src/lib/report-modules.ts`), menu gate bằng `requiredModule` (`src/components/layout/Sidebar.tsx`). Không có điều kiện theo `systemType === '...'`.
+- **Cô lập phân hệ**: module **không truy vấn DB**, chỉ đọc file người dùng nạp nên không có đường nào để dữ liệu kho này lộ sang kho khác. Khi đọc, parser lấy `Hệ thống:`/`Kho:` ngay dòng tiêu đề file; nếu tên phân hệ trong file khác `currentSystem.code` đang làm việc thì trang cảnh báo đỏ để không đối chiếu nhầm kho.
+- **Bảo toàn Kho Đông Lạnh**: không sửa logic xuất file, không sửa schema, không đụng luồng nhập/xuất. Thay đổi duy nhất trên code cũ là thêm chữ `export` cho hàm `normalizeUnit` có sẵn (`src/lib/warehouseExcelExport.ts:10`) để dùng lại đúng cách chuẩn hoá ĐVT — hành vi không đổi. Module TẮT (mặc định với kho chưa bật) → hệ thống giữ nguyên trạng thái cũ.
+
+## File mới / đã sửa
+| File | Vai trò |
+| --- | --- |
+| `src/lib/stocktakeSnapshotParser.ts` | Nhận diện và đọc file Bảng (dò dòng header theo "Mã vị trí", map cột theo tên chịu lỗi dấu) và file Lưới (duyệt sheet "Sơ đồ mặt bằng": banner `KHU VỰC:`, hàng nền vàng = Dãy/Sảnh, ô richText `• [BATCH] Tên : SL ĐVT (N PL)`, separator `------` và `   \|   `). |
+| `src/lib/stocktakeReconciliation.ts` | Full outer join 2 mốc theo khoá, phân loại `changed` / `only_before` / `only_after`, tổng hợp **theo từng ĐVT** (không cộng xuyên đơn vị), sinh cảnh báo. |
+| `src/lib/stocktakeDiffExcelExport.ts` | Báo cáo 6 sheet: *Sơ đồ TRƯỚC*, *Sơ đồ SAU* (chép nguyên bản sheet sơ đồ của 2 file gốc — giá trị, font, nền, merge, bề rộng cột, chiều cao hàng — rồi tô đỏ chỗ lệch), *Chi tiết sai lệch*, *Tổng hợp theo SP*, *Tổng hợp theo vị trí*, *Thông tin đối chiếu*. |
+| `src/app/(dashboard)/reports/stocktake-diff/page.tsx` | Trang UI: 2 tab Bảng/Lưới, 2 ô nạp file trước/sau, thẻ thống kê, bộ lọc (tìm kiếm / loại sai lệch / ngưỡng lệch), bảng kết quả, nút xuất Excel. |
+| `src/lib/__tests__/stocktakeReconciliation.test.ts` | 9 test vòng kín: gọi **hàm xuất Excel thật** → đọc lại bằng parser → đối chiếu → assert. |
+| `src/lib/warehouseExcelExport.ts` | Chỉ thêm `export` cho `normalizeUnit`. |
+| `src/lib/report-modules.ts`, `src/components/layout/Sidebar.tsx` | Đăng ký module + mục menu "Đối chiếu kiểm kê" trong nhóm Báo cáo. |
+| `supabase/migrations/20261102100000_add_report_stocktake_diff_module.sql` | Upsert `app_modules` (`category='report'`, `is_basic=true`) + bật sẵn cho `KHO_DONG_LANH` trong `systems.report_modules`. Migration idempotent nên `db push` lại không gây trùng. |
+
+## Giới hạn đã chốt với người dùng
+1. Chỉ tính **chênh số lượng**. Dòng chỉ xuất hiện ở một mốc vẫn được đưa vào bảng (nhãn *Mất ở mốc sau* / *Phát sinh ở mốc sau*) — nếu ẩn đi thì tổng hai mốc không khớp nhau và báo cáo sai bản chất; có thể lọc bỏ bằng combobox "Loại sai lệch".
+2. File Lưới không có mã vị trí/mã lot → chỉ truy vết tới cấp Dãy/Ô/Tầng theo tên hàng; muốn định danh pallet thì dùng tab Dạng Bảng.
+3. Parser tự dò dòng header (dòng 4 hay 5 tuỳ có "Lọc theo") và tự bỏ dòng `TỔNG CỘNG`; nếu 2 file xuất với bộ lọc/khu vực/cấu hình "Mã nội bộ" khác nhau, trang sẽ cảnh báo chứ không âm thầm ra kết quả sai.
+
+## Cách bật và xem thử
+1. **Đã áp sẵn trên máy local** (2026-11-02): chạy migration `20261102100000_add_report_stocktake_diff_module.sql` vào DB Supabase local và ghi lịch sử `supabase_migrations.schema_migrations`. Vì vậy **không cần** bấm "Đồng bộ module" ở `/admin/modules` nữa (bấm cũng không đổi gì vì text đã khớp).
+2. `KHO_DONG_LANH` đã được bật sẵn trong `systems.report_modules`. Kho khác muốn dùng thì vào **Cài đặt phân hệ → Tính năng → nhóm Báo cáo** → bật **Đối chiếu kiểm kê**.
+3. Sidebar → **Báo cáo → Đối chiếu kiểm kê** (`/reports/stocktake-diff`).
+4. Ở tab **Dạng Bảng**: nạp file Bảng xuất trước kiểm kê vào ô "Mốc TRƯỚC", file xuất sau vào ô "Mốc SAU" → bảng sai lệch hiện ra → bấm **Xuất Excel sai lệch**. Lặp lại ở tab **Dạng Lưới** với 2 file lưới.
+
+## Kiểm chứng đã chạy
+- `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` → **11/11 pass**, gồm: đọc đúng cột ĐVT (bắt ra lỗi `foldText` không gỡ được chữ `Đ`), bỏ dòng TỔNG CỘNG, tách nhiều sản phẩm trong một ô lưới, hàng Sảnh gộp `|`, toạ độ Khu vực/Dãy/Ô/Tầng, 3 nhóm sai lệch, tổng theo từng ĐVT, từ chối 2 file khác định dạng, cảnh báo khác phân hệ, file báo cáo đọc lại đủ 6 sheet, 2 sheet sơ đồ chép đủ số dòng gốc + tô đỏ đúng dòng lệch (Bảng) và đúng ô × tầng lệch (Lưới), dòng không đổi vẫn giữ nội dung gốc và không bị tô.
+- `npx tsc --noEmit` → sạch trên toàn bộ file touched.
+- `npx vitest run` (toàn bộ) → 120/122 pass; 2 lỗi còn lại là fail cũ có sẵn của `WarehouseSearchReportModal.test.tsx`, không liên quan module này.
+- Đối chiếu nguồn file: trang In sơ đồ gọi đúng `exportWarehouseToExcel` (nút "Excel (Bảng)") và `exportWarehouseGridToExcel` (nút "Excel (Lưới)") — `src/app/print/warehouse-map/page.tsx:776,883` — nên test vòng kín đi đúng định dạng file người dùng tải về.
+- Đọc lại DB sau migration: `app_modules` có `report_stocktake_diff` (`is_basic = true`, tên/mô tả tiếng Việt không lỗi font) và `systems.report_modules` của `KHO_DONG_LANH` đã chứa module.
+- **Chưa bấm thử trên UI thật** (agent không có phiên đăng nhập `:3001`); `:3000` là bản build cũ nên cần reload bản dev hoặc rebuild để thấy menu.
+
+# Walkthrough (tiếp): Đối chiếu thêm file **tồn kho theo LOT** (tab thứ 3)
+
+## Bổ sung nghiệp vụ
+Người dùng yêu cầu đủ bộ 3 file cho một lượt kiểm kê: ngoài 2 file sơ đồ kho còn có file **tồn kho theo LOT** xuất từ `/inventory` (tab "Theo LOT" → nút Xuất Excel, đường thật là `/print/inventory?type=lot&export=excel&...` → `exportInventoryReportToExcel`). Trang `/reports/stocktake-diff` giờ có **3 tab ngang hàng**: Dạng Bảng / Dạng Lưới / Tồn theo LOT, mỗi tab vẫn là một cặp file độc lập (mỗi lượt một file báo cáo riêng).
+
+## 3 quyết định người dùng đã chốt
+1. **Chỉ so ở cấp Sản phẩm × ĐVT.** Báo cáo tồn theo LOT *không chứa mã LOT lẫn vị trí* — nó gộp toàn bộ pallet của một sản phẩm trong kho thành một dòng chính, bên dưới là các dòng con (tháng nhập, `LSX:`, mã phụ, `Gốc ( còn lại )`). Nên khoá so khớp là `Mã SP | Tên SP | ĐVT`, các dòng con bị bỏ qua vì 2 mốc rất dễ khác nhau ở dòng con dù tổng không đổi.
+2. **Mỗi lượt một file báo cáo riêng** — không gộp 3 lượt vào một workbook.
+3. **Không** làm lượt đối chiếu theo từng mã LOT từ `/warehouses/lots`; chỉ dùng file `/inventory`.
+
+## Cách nhận diện và đọc file LOT
+- Nhận diện bằng **cả tiêu đề sheet** (`BÁO CÁO TỒN KHO THEO LOT`, chỉ quét 10 dòng đầu) **và** bộ cột `STT + Số lượng + (Mã SP | Tên sản phẩm)`. Điều kiện tiêu đề là bắt buộc để không nhận nhầm báo cáo *Theo mã phụ* / *Theo danh mục* (dùng chung khung cột, chỉ khác tiêu đề) thành file LOT — parser sẽ báo lỗi rõ ràng thay vì âm thầm đối chiếu sai bản chất.
+- Với workbook LOT có 2 sheet (*Chi tiết* + *Tổng hợp*), parser lấy sheet *Chi tiết*: sheet này có banner `DANH MỤC: ...` (merge A:D) nên `hasLotReportTitle` chỉ khớp sheet đó.
+- Chỉ giữ dòng có ô STT là số nguyên dương → loại banner DANH MỤC và mọi dòng con. Mỗi dòng ghi lại `srcRow` để tô đỏ, `category` để hiển thị cột **Danh mục** (một sản phẩm xuất hiện ở nhiều khối thì gộp `"A | B"`).
+- `Kho:` của file LOT là **tên chi nhánh** chứ không phải mã phân hệ → `systemName` để trống (không cảnh báo nhầm "khác phân hệ"), tên chi nhánh đưa vào `zoneName` và dùng làm nhãn `Kho:` trên tiêu đề báo cáo.
+
+## Kết quả & file báo cáo cho lượt LOT
+- Cùng một engine `reconcileStocktake`, chỉ khác khoá và cách trình bày. `positionCount` với file LOT là **số sản phẩm có sai lệch** (thay vì số vị trí).
+- Báo cáo LOT có **5 sheet**: `Tồn kho TRƯỚC`, `Tồn kho SAU` (chép nguyên bản 2 file gốc, **tô đỏ cả dòng** sản phẩm lệch — dòng con không tô), `Chi tiết sai lệch` (bộ cột `STT | Danh mục | Mã SP (SKU) | Sản phẩm | ĐVT | SL trước | SL sau | Chênh lệch | Loại sai lệch`), `Tổng hợp theo SP` (cột cuối đổi thành `Số danh mục`), `Thông tin đối chiếu`. Sheet `Tổng hợp theo vị trí` **được bỏ** vì lượt LOT không có vị trí.
+- Hai cảnh báo luôn kèm theo lượt LOT: chỉ truy vết tới cấp Sản phẩm × ĐVT (không chỉ được pallet nào) và đã bỏ qua các dòng con.
+- Tên file: `Doi_Chieu_Kiem_Ke_Lot_<kho>_<YYYY-MM-DD>.xlsx`.
+- Bảng trên màn hình ẩn "Tổng đọc được" với tab LOT (không cộng số lượng xuyên đơn vị — quy tắc đã chốt của dự án), thay bằng số mục và số đơn vị tính.
+
+## Kiến trúc
+Vẫn không query DB, không hardcode mã kho, gate bằng `hasModule('report_stocktake_diff')` như cũ. Code cũ chỉ sửa ở `src/lib/stocktakeReconciliation.ts` (khoá + cảnh báo phân nhánh theo format) và `stocktakeDiffExcelExport.ts` (bảng cột chi tiết dựng theo format); `report-modules.ts` cập nhật lại mô tả module cho đúng 3 loại file.
+
+## Kiểm chứng đã chạy
+- `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` → **15/15 pass**, thêm 4 test: gọi `exportInventoryReportToExcel({type:'lot'})` thật → đọc lại bằng parser (2 dòng chính, bỏ banner + 3 dòng con mỗi nhóm, đúng `category`/`zoneName`/`exportDate`); từ chối file *Theo mã phụ*; đối chiếu SP × ĐVT ra đủ 3 nhóm lệch + 3 sản phẩm lệch + 2 cảnh báo và **không** cảnh báo khác phân hệ; báo cáo đọc lại đúng 5 sheet, đúng bộ cột LOT, vị trí tô đỏ theo `srcRow`, dòng con không bị tô; từ chối ghép LOT với Bảng (thông báo nêu rõ `tồn theo LOT vs dạng Bảng`).
+- `npx tsc --noEmit` → sạch trên các file touched.
+- `npx vitest run` toàn bộ → 126/128; 2 fail còn lại là của `WarehouseSearchReportModal.test.tsx` (có sẵn từ trước, không liên quan).
+- Chạy lại migration → `app_modules.description` đã cập nhật, `systems.report_modules` của `KHO_DONG_LANH` vẫn chỉ có một bản module (câu `UPDATE` guard `NOT (... = ANY ...)` trả `UPDATE 0`).
+- **Vẫn chưa bấm thử UI thật** cho cả 3 tab (agent không có phiên đăng nhập `:3001`).
+
+# Walkthrough (tiếp): Lượt đối chiếu LOT đọc từ sheet "Tổng hợp"
+
+User chốt lại cho gọn: file tồn theo LOT có 2 sheet (*Chi tiết* nhiều dòng con và *Tổng hợp* mỗi sản phẩm một dòng), và chỉ cần dựa vào sheet **"Tổng hợp"**.
+
+- Bộ đọc giờ nhận diện file LOT bằng **tên sheet** (`Tổng hợp`) thay vì bằng tiêu đề in trong sheet — `LOT_SUMMARY_SHEET` + `locateLotHeader()` trong `src/lib/stocktakeSnapshotParser.ts`. Vì tiêu đề của sheet này là "BÁO CÁO TỔNG HỢP TỒN KHO" nên guard cũ (khớp chữ "tồn kho theo LOT") đã bỏ; việc loại báo cáo *Theo mã phụ* / *Theo danh mục* nay do chính tên sheet đảm nhiệm (2 báo cáo đó chỉ có một sheet `Bao Cao Ton Kho`).
+- Vẫn giữ quy tắc chỉ lấy dòng có STT nguyên dương và vẫn đọc banner `DANH MỤC:` để đổ cột **Danh mục** — sheet Tổng hợp vẫn có banner này, và quy tắc STT giúp đọc được cả file cũ còn dòng con.
+- 2 sheet chép vào file báo cáo (`Tồn kho TRƯỚC` / `Tồn kho SAU`) giờ là sheet Tổng hợp của 2 file gốc: gọn, đúng một dòng cho một sản phẩm lệch được tô đỏ, không còn các dòng LSX/mã phụ chen giữa.
+- Cảnh báo trên màn hình và trong sheet *Thông tin đối chiếu* nói rõ nguồn là sheet "Tổng hợp" nên **không thấy** tháng nhập / LSX / mã phụ nào lệch; muốn soi chi tiết đó thì dùng lượt Dạng Bảng.
+- Kiểm chứng: `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` → **16/16 pass**, thêm test chứng minh cùng một file LOT có 2 sheet (Chi tiết dài hơn Tổng hợp) mà parser chọn đúng sheet Tổng hợp và chỉ trả về 1 dòng sản phẩm.
+
+# Walkthrough (tiếp): Sheet "Biên bản kiểm kê" trong file báo cáo đối chiếu LOT
+
+User bổ sung: lượt đối chiếu **tồn kho theo LOT** phải xuất thêm **1 sheet biên bản kiểm kê tồn kho** — một bản tổng hợp hàng hóa, số lượng TRƯỚC / SAU / CHÊNH LỆCH ngay trên cùng một trang, kèm chữ ký phía dưới để in và ký nộp. Ba câu hỏi thiết kế (liệt kê dòng nào, mấy ô chữ ký, có phần kết luận không) user trả lời "không yêu cầu riêng" nên giữ phương án đề xuất.
+
+## Nội dung sheet `Biên bản kiểm kê` (mặc định là sheet đầu tiên của file báo cáo LOT)
+- **Khổ A4 ngang, fit-to-width 1 trang** (`pageSetup` paperSize 9, orientation landscape, `fitToPage/fitToWidth: 1, fitToHeight: 0`, lề trái/phải 0.75"). Chọn in ngang vì bảng có 8 cột (tên hàng 38 + cột ghi chú 28 ≈ 133 đơn vị bề rộng); in đứng sẽ bị Excel ép chữ xuống ~60% và khó ký.
+- **Quốc hiệu – tiêu ngữ**: tên phân hệ + tên công ty (từ `companyInfo`) ở góc trên trái, `CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM` / `Độc lập - Tự do - Hạnh phúc` ở góc trên phải (dòng dưới kẻ viền đôi). Không có `companyInfo` thì vẫn in được, chỉ thiếu dòng tên công ty.
+- Tiêu đề **BIÊN BẢN KIỂM KÊ TỒN KHO**, dòng "v/v: đối chiếu số liệu tồn kho giữa 2 mốc xuất file …", dòng `Kho / chi nhánh: … • Ngày lập biên bản: …`, rồi 2 dòng tóm tắt (số sản phẩm đã đối chiếu, số sản phẩm có sai lệch, tổng lệch theo từng ĐVT) — người ký nhìn được quy mô buổi kiểm kê mà không cần mở sheet chi tiết.
+- **Bảng hàng hóa 8 cột**: `STT | Mã SP | Tên sản phẩm | ĐVT | SL trước kiểm kê | SL sau kiểm kê | Chênh lệch | Ghi chú / nguyên nhân chênh lệch`. Liệt kê **đúng tập dòng đang hiện trên màn hình** (đã trừ dòng "không đổi"), tức biên bản luôn khớp với sheet *Chi tiết sai lệch* — không tự ý thêm hàng không lệch làm biên bản dài vô ích.
+- Cột **Ghi chú** tự điền sẵn `Mất ở mốc sau` / `Phát sinh ở mốc sau` cho dòng một-mốc, để **trống** cho dòng lệch số lượng để người kiểm kê tự tay viết nguyên nhân (hư hỏng, xuất quên, sai vị trí…).
+- Cộng theo **từng ĐVT** (`TỔNG TRONG ĐƠN VỊ Kg`, `TỔNG TRONG ĐƠN VỊ Thùng`, …) — không cộng xuyên đơn vị, đúng quy tắc dự án.
+- Khối **Kết luận** (nêu số sản phẩm khớp/lệch và tổng chênh từng ĐVT) + dòng **Chứng từ kèm theo** có 4 ô checkbox (`□ Phiếu kiểm kê thực tế □ File tồn kho theo LOT 2 mốc □ Sơ đồ kho dạng Bảng □ Khác: …`) để tick khi nộp.
+- **4 ô chữ ký** bố cục 2×2 đúng biên bản hành chính: `NGƯỜI KIỂM KÊ | THỦ KHO` rồi `KẾ TOÁN TRƯỞNG | GIÁM ĐỐC`, mỗi ô cách 4 dòng trắng cho chỗ ký, kèm dòng `Họ và tên: ................................`. Phía trên là dòng `Ngày …… tháng …… năm ……` để ghi ngày ký.
+
+## Tuân thủ kiến trúc
+- Sheet này **chỉ sinh ra với lượt đối chiếu LOT** (`format === 'lot'`) — hai lượt Bảng/Lưới giữ nguyên file báo cáo cũ, không đổi hành vi.
+- Tên công ty lấy qua hook có sẵn `usePrintCompanyInfo` (trang gọi `exportStocktakeDiffToExcel(result, rows, { companyInfo })`), không hardcode, nên mọi phân hệ khi bật module đều tự lấy đúng thông tin in của phân hệ đó.
+- Module vẫn gate bằng `hasModule('report_stocktake_diff')`; Kho Đông Lạnh không bật module thì không có đường nào chạm tới luồng in này.
+
+## Đã sửa / đã thêm
+| File | Thay đổi |
+| --- | --- |
+| `src/lib/stocktakeDiffExcelExport.ts` | Thêm `buildInventoryMinutesSheet()` (quốc hiệu, tiêu đề, bảng 8 cột, tổng theo ĐVT, kết luận, 4 ô chữ ký), tham số thứ ba `options?: { companyInfo?: CompanyInfo \| null }`, và gắn sheet Biên bản làm sheet đầu tiên khi `format === 'lot'`; sheet *Thông tin đối chiếu* bổ sung dòng mô tả sheet biên bản. |
+| `src/app/(dashboard)/reports/stocktake-diff/page.tsx` | Nạp `usePrintCompanyInfo()` và truyền `companyInfo` vào hàm xuất; thêm dòng thông tin trong tab LOT hướng dẫn "file báo cáo mở đầu bằng sheet Biên bản kiểm kê khổ A4". |
+| `src/lib/__tests__/stocktakeReconciliation.test.ts` | Test mới `sheet Biên bản kiểm kê: khổ A4, đúng 3 dòng lệch, cột ghi chú và 4 ô chữ ký` (giấy A4, tiêu đề, 3 dòng lệch + không lẫn hàng khớp, SL trước/sau/chênh đúng, ghi chú prefill, tổng theo từng ĐVT không cộng xuyên đơn vị, thứ tự chữ ký 2×2). Test đếm sheet cũ cập nhật thành `['Biên bản kiểm kê', 'Tồn kho TRƯỚC', 'Tồn kho SAU', 'Chi tiết sai lệch', 'Tổng hợp theo SP', 'Thông tin đối chiếu']`. |
+
+## Bẫy kỹ thuật đã gặp
+Gán `worksheet.columns = [{ header, key, width }]` khiến **exceljs tự viết tên cột xuống dòng 1** — trong biên bản, dòng 1 là chỗ của quốc hiệu nên tên cột lọt sang các ô chưa merge (D1/E1…), làm lệch toàn khung trên. Cách xử lý: `ws.columns` chỉ set `key` + `width`, còn tên cột thì ghi bằng dòng header thủ công ở dòng 9 (dự án đã dùng đúng workaround này ở `inventoryReportExcelExport.ts`).
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` → **17/17 pass**; `npx tsc --noEmit` sạch trên các file chạm tới.
+- Dump toàn bộ sheet biên bản của file thật để đọc bằng mắt: đúng 32 dòng, merge `A1:C1`/`F1:H1`/`A4:H4`/`A8:H8`, bảng 8 cột ở dòng 9, 3 dòng lệch ở dòng 10–12 (`120 → 118 = -2`, `Mất ở mốc sau`, `Phát sinh ở mốc sau`), `TỔNG TRONG ĐƠN VỊ Kg` ở dòng 13, Kết luận dòng 15, chứng từ dòng 16, ngày dòng 18, chữ ký dòng 20 và 27, `Họ và tên` dòng 25 và 32 → khớp bố cục biên bản hành chính.
+- File test tạm dùng để dump đã xoá; không còn scratch trong `src/lib/__tests__/`.
+- **User bấm thử trên UI giúp**: agent không có phiên đăng nhập `:3001`, `:3000` là bản build cũ.
+
+# Walkthrough (tiếp): Biên bản kiểm kê là BẢN LIỆT KÊ ĐẦY ĐỦ (theo đúng sheet Tổng hợp)
+
+User xem file báo cáo thật rồi chốt lại: sheet **Biên bản kiểm kê** phải "đầy đủ như trong hình" — tức là bảng tồn của sheet *Tổng hợp* (mọi sản phẩm, có nhóm `DANH MỤC:`), chỉ khác là thay cột "Số lượng" đơn bằng **SL trước / SL sau / Chênh lệch**. Ba lựa chọn user xác nhận: (1) liệt kê tất cả sản phẩm, giữ nhóm DANH MỤC, tô đỏ dòng lệch; (2) giữ cột **Quy đổi (Kg)** lấy theo mốc SAU; (3) tổng theo **từng danh mục** và cả tổng theo **từng ĐVT** ở cuối biên bản.
+
+## Thay đổi nghiệp vụ so với bản trước
+- Biên bản không còn lấy "tập dòng đang lọc trên màn hình" mà lấy **toàn bộ `reconciliation.allRows`** (kể cả hàng không đổi). Hàng không đổi vẫn in, nền trắng, ghi chú trống; hàng lệch tô đỏ `#FFC7CE` cả dòng. Sheet *Chi tiết sai lệch* vẫn theo bộ lọc như cũ — hai sheet phục vụ hai việc khác nhau.
+- 9 cột: `STT | Mã SP | Tên sản phẩm | ĐVT | SL trước kiểm kê | SL sau kiểm kê | Chênh lệch | Quy đổi (Kg) sau kiểm kê | Ghi chú / nguyên nhân chênh lệch`. Quốc hiệu dịch sang `G1:I1`, tên đơn vị `A1:D1`, khối chữ ký 2 tầng thành `A:D` và `E:I`.
+- Trong mỗi nhóm có dòng **`TỔNG QUY ĐỔI (Kg) — DANH MỤC: <tên nhóm>`** đặt ở 3 cột SL (Kg trước → Kg sau → chênh Kg). Cộng Kg thì không lẫn đơn vị nên con số này có nghĩa; vẫn KHÔNG có "Tổng SL" xuyên đơn vị — muốn theo từng đơn vị thì nhìn khối `TỔNG TRONG ĐƠN VỊ ...` cuối biên bản (giờ tính trên toàn bộ hàng, không riêng hàng lệch).
+
+## Thay đổi kỹ thuật dây kèm
+- `src/lib/stocktakeSnapshotParser.ts`: `StocktakeRow` thêm `kg?: number` (chỉ file LOT có cột "Quy đổi (Kg)"), map cột mới `kg: ['quy doi', 'quy doi (kg)', 'quy doi kg']`. File Bảng/Lưới không có cột này → `undefined`, không đổi hành vi.
+- `src/lib/stocktakeReconciliation.ts`: `StocktakeDiffRow` thêm `beforeKg`/`afterKg` (gom theo cùng khoá sản phẩm × ĐVT) và `srcRow` (dòng trên file gốc). `sortDiffRows(rows, format)` nay lấy **thứ tự dòng trong file** làm khoá sắp cuối cùng *riêng với định dạng LOT*, nhờ vậy biên bản xếp đúng thứ tự người dùng thấy trên sheet Tổng hợp và trên giấy đếm; thứ tự của tab Bảng/Lưới giữ nguyên như trước.
+- `src/lib/stocktakeDiffExcelExport.ts`: `buildInventoryMinutesSheet(workbook, reconciliation, companyInfo)` — bỏ tham số danh sách dòng vì biên bản luôn là bản đầy đủ; thêm helper `fillRow`/`writeGroupTotal`; dòng `V/v`, `Kết luận` và sheet *Thông tin đối chiếu* viết lại cho khớp nội dung mới.
+- `src/app/(dashboard)/reports/stocktake-diff/page.tsx`: chỉ đổi dòng chữ hướng dẫn ở tab LOT ("liệt kê toàn bộ hàng hóa theo nhóm danh mục…").
+
+## Kiểm chứng
+- `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` → **17/17 pass**. Test biên bản đổi thành: `Tổng số mục sản phẩm liệt kê: 4`, header đúng 9 cột, hàng không đổi (TP05) **có mặt** và không tô đỏ, hàng lệch tô đỏ, cột H = Kg mốc SAU (14 = 7×2), `DANH MỤC: RAU`, `TỔNG QUY ĐỔI (Kg) — DANH MỤC: Trái cây` = 36 → 30 = −6, `TỔNG TRONG ĐƠN VỊ Kg` = 23 → 19 = −4, không có tổng xuyên đơn vị, thứ tự 4 ô chữ ký.
+- `npx tsc --noEmit` sạch trên các file chạm tới; `npx vitest run` toàn dự án **128/130 pass** (2 lỗi còn lại là fail cũ có sẵn của `WarehouseSearchReportModal.test.tsx`).
+- Dump bố cục bằng dữ liệu gần file thật (2 danh mục, 4 loại ĐVT: `Thùng`, `Thùng (20kg)`, `Thùng (13kg)`, `Kg`): đúng thứ tự dòng của file gốc (L-SP009 → NL… → TP1010102 → TP1010101), banner + tổng Kg từng danh mục (`182.936 → 182.860 = −76`), 4 dòng tổng theo ĐVT, 4 ô chữ ký. File dump tạm đã xoá.
+- **User mở lại file báo cáo giúp**: cần 2 file tồn theo LOT xuất trước/sau kiểm kê thật → tab **Tồn theo LOT** → **Xuất Excel sai lệch** → xem sheet đầu tiên và thử `Ctrl+P` (A4 ngang).
+
+# Walkthrough (tiếp): Đầu "Báo cáo kiểm kê" chép đúng header của báo cáo gốc
+
+User đối chiếu file thật và yêu cầu phần đầu biên bản làm **giống hệt header của báo cáo xuất từ `/inventory`** (công ty → địa chỉ → email/ĐT → dòng trống → tiêu đề → mốc ngày → `Kho:`), chỉ đổi chữ trong tiêu đề. Kết quả trong `buildInventoryMinutesSheet()`:
+
+| Dòng | Nội dung | Lấy từ |
+| --- | --- | --- |
+| 1–3 | `A1:C1` tên công ty (in hoa, đậm) · `A2:C2` "Địa chỉ: …" · `A3:C3` "Email: … \| ĐT: …" | `companyInfo` (hook `usePrintCompanyInfo`), đúng thứ tự và font như `inventoryReportExcelExport.ts` |
+| 4 | dòng trống | — |
+| 5 | **BÁO CÁO KIỂM KÊ** (cỡ 16, đậm, căn giữa, merge hết 9 cột) — thay cho "BÁO CÁO TỒN KHO THEO LOT" ở file gốc | hằng số trong sheet biên bản |
+| 6 | mốc ngày in nghiêng căn giữa, ví dụ "Tính đến ngày: 02/11/2026" | `exportDate` đọc từ file SAU (fallback: file TRƯỚC, rồi "Ngày lập biên bản: hôm nay") |
+| 7 | `Kho: CN Cư M'gar` (đậm, không merge) | `zoneName` của file LOT |
+
+Bỏ khối quốc hiệu – tiêu ngữ "CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM / Độc lập - Tự do - Hạnh phúc" và dòng "V/v: …" của bản trước vì không nằm trong bố cục user muốn; dòng mở đầu "Hôm nay, chúng tôi tiến hành kiểm kê…" và dòng thống kê đẩy xuống dòng 8–9, bảng số liệu bắt đầu từ dòng 10 (header) / 11 (dữ liệu). Khối kết luận và 4 ô chữ ký giữ nguyên.
+
+Kiểm chứng: test biên bản đổi sang chốt `A1` = tên công ty in hoa, `A2` = "Địa chỉ: …", `A3` = "Email: … | ĐT: …", `A5` = "BÁO CÁO KIỂM KÊ", `A6` chứa "Tính đến ngày", `A7` = "Kho: Chi nhánh 1" → `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` **17/17 pass**; dump đầu sheet bằng dữ liệu thật (công ty Chánh Thu, 2 danh mục) để đọc bằng mắt rồi xoá file dump tạm.
+
+# Walkthrough (tiếp): Biên bản bỏ khối chữ mở đầu, font/màu theo đúng báo cáo LOT
+
+User xem file thật và chốt hai điểm: **(1) bỏ** dòng "Hôm nay, chúng tôi tiến hành kiểm kê…" và dòng thống kê "Tổng số mục sản phẩm liệt kê: … | Tăng: … | Giảm: …"; **(2) màu sắc – font chữ** của bảng phải giống sheet *Tổng hợp* của báo cáo tồn kho theo LOT, không dùng dải header xanh tím.
+
+- Bảng giờ bắt đầu ngay sau dòng `Kho:` — header ở **dòng 8**, dữ liệu từ **dòng 9**.
+- Header: chữ **đen, đậm**, căn giữa, viền mảnh, nền **xám nhạt `F2F2F2`** (đúng `inventoryReportExcelExport.ts`), thay cho nền xanh chữ trắng của `writeHeader()` chung.
+- Dòng sản phẩm: **in đậm toàn hàng** như báo cáo gốc; bỏ luôn màu đỏ/xanh ở cột "Chênh lệch" (trước đây `writeQtyCell(..., emphasize)`) — dấu hiệu lệch nay chỉ còn **nền đỏ `FFC7CE`** trên cả dòng, giống cách báo cáo gốc tô.
+- Banner `DANH MỤC:` giữ nền vàng `FFF2CC` đúng như file gốc; các dòng `TỔNG QUY ĐỔI (Kg)` / `TỔNG TRONG ĐƠN VỊ` in đậm nghiêng.
+- Test biên bản bổ sung: `findRow('Hôm nay, chúng tôi') === -1`, `findRow('Tổng số mục sản phẩm') === -1`, header nằm ở dòng 8, `fill.fgColor.argb === 'FFF2F2F2'`, font header đậm và `font.color === undefined`, dòng sản phẩm `row.font.bold === true`, cột Chênh lệch không tô màu chữ → **17/17 pass**; `npx tsc --noEmit` sạch; dump style từng dòng để mắt thấy rồi xoá file tạm.
+
+# Walkthrough (tiếp): Biên bản bỏ khối "TỔNG TRONG ĐƠN VỊ", Kết luận và Chứng từ kèm theo
+
+User xem file biên bản thật và chỉ định **"bỏ phần trong ảnh"**: toàn bộ cụm dòng `TỔNG TRONG ĐƠN VỊ …` chạy dài ở cuối bảng (Kg, Sọt (30kg), Thùng, Thùng (9.6kg), Thùng (10kg), …), dòng `Kết luận: Hai bên thống nhất lấy số liệu kiểm kê thực tế…` và dòng `Chứng từ kèm theo: □ Phiếu kiểm kê thực tế □ File tồn kho theo LOT 2 mốc …`.
+
+- Trong `buildInventoryMinutesSheet()`: xoá khối gom `byUnit` (Map đơn vị → before/after) và vòng lặp in dòng `TỔNG TRONG ĐƠN VỊ`, xoá luôn 2 dòng `mergeLine` "Kết luận:" / "Chứng từ kèm theo:" cùng các dòng `ws.getRow(r).height` / `r += 2` ăn theo.
+- Biên bản giờ đi thẳng: đầu (dòng 1–7) → header (dòng 8) → các nhóm `DANH MỤC:` kèm dòng `TỔNG QUY ĐỔI (Kg)` của từng nhóm → **1 dòng trống** → `Ngày …… tháng …… năm ……` → 4 ô chữ ký (Người kiểm kê / Thủ kho / Kế toán trưởng / Giám đốc).
+- Lý do bỏ không ảnh hưởng nguyên tắc số liệu: tổng **theo từng ĐVT** vẫn còn đầy đủ ở sheet *Chi tiết sai lệch* và *Thông tin đối chiếu*; trong biên bản chỉ giữ tổng quy đổi Kg theo danh mục (cộng được vì cùng một đơn vị Kg), đúng quy tắc "không cộng xuyên đơn vị".
+^- Cập nhật câu mô tả ở sheet *Thông tin đối chiếu* (mục `Biên bản kiểm kê`): bỏ hai cụm "tổng trong từng ĐVT" và "khối Kết luận".
+- Test: thay các assertion `TỔNG TRONG ĐƠN VỊ Kg` / `Kết luận:` bằng chiều phủ định `findRow('TỔNG TRONG ĐƠN VỊ') === -1`, `findRow('Kết luận:') === -1`, `findRow('Chứng từ kèm theo') === -1`; vẫn giữ thứ tự chữ ký sau dòng tổng Kg → `npx vitest run src/lib/__tests__/stocktakeReconciliation.test.ts` **17/17 pass**, `npx tsc --noEmit` sạch trên các file vừa sửa.
+
+# Walkthrough (tiếp): Đổi đơn vị tính hàng loạt từ sơ đồ kho (/warehouses/map)
+
+User yêu cầu: tích nhiều ô vị trí trên sơ đồ kho → menu **Quản lý mã** có thêm **Đổi đơn vị tính**. Nếu trong các ô đã chọn có hơn 1 sản phẩm thì phải hiển thị tách rõ **A, B, C…** mỗi sản phẩm một ô chọn đơn vị mới. Ràng buộc do user nêu rõ: **chỉ đổi đơn vị, tuyệt đối không đổi số lượng**.
+
+Ba quyết định user chốt trước khi viết mã:
+
+1. **Nhóm theo sản phẩm + đơn vị hiện tại** (không gộp 2 đơn vị khác nhau của cùng sản phẩm vào một dòng) → đổi đúng nhóm cần đổi, không đụng nhóm khác.
+2. **Danh sách đơn vị lấy theo cấu hình sản phẩm** (đơn vị gốc `products.unit` + `product_units` quy đổi, hiển thị kèm khối lượng `Thùng (12kg)`) — đúng cách `LotForm` đang render ô chọn đơn vị khi sửa 1 LOT.
+3. **Chọn 1 phần vị trí của LOT vẫn đổi toàn bộ LOT**, vì đơn vị lưu theo dòng LOT chứ không lưu theo ô vị trí; modal phải cảnh báo rõ LOT nào mới chọn 1 phần.
+
+## Triển khai
+
+- `src/components/warehouse/lots/LotBulkChangeUnitModal.tsx` (mới):
+  - Đọc `lot_items` của các LOT đã chọn theo từng chập 200 id, filter `lots!inner(code, system_code)` = `currentSystem.code` → **không có đường nào để dữ liệu phân hệ khác lọt vào**.
+  - Nhóm theo `product_id + canonicalizeUnit(unit)` (dùng `canonicalizeUnit` chung với `MultiSelectActionBar`, nên `Thùng (20kg)` và `Thùng (20 Kg)` là một nhóm). Mỗi nhóm gán nhãn A, B, C… kèm SKU, tổng số lượng, số LOT và mã LOT (nếu ≤ 3).
+  - `buildUnitOptions()` mô phỏng đúng `LotForm`: `formatUnitWeight(products.unit, weight_kg)` + các `product_units` (`conversion_rate × weight_kg`), bỏ đơn vị trùng tên với đơn vị gốc, khử trùng lặp theo `canonicalizeUnit`, và luôn nhét đơn vị hiện tại vào danh sách để không bao giờ mất lựa chọn gốc.
+  - Giá trị mặc định của mỗi ô chọn là **— Giữ nguyên —**; chỉ những nhóm có đơn vị mới khác (so sánh đã chuẩn hoá) mới được tính là thay đổi, nên bấm nhầm cũng không ghi gì xuống.
+  - `handleSubmit()` **chỉ** `update({ unit })` trên `lot_items` theo danh sách `id` của nhóm — không đụng `quantity`, không đụng `product_id`, không cộng gộp/xoá dòng (khác hẳn "Đổi mã hàng loạt" vốn có nhánh merge + delete).
+  - Khi đơn vị mới có khối lượng khác đơn vị cũ, cảnh báo đỏ nêu rõ: số lượng thùng giữ nguyên nhưng **khối lượng quy đổi đổi** (`180 Thùng (12kg)` → `2160 kg` thành `3600 kg`), để user biết mình đang dán lại nhãn quy cách chứ không phải quy đổi số.
+  - Có "Áp dụng nhanh" cho mọi nhóm cùng mang một đơn vị, màn hình kết quả (số dòng đổi, số LOT bị ảnh hưởng, nhóm lỗi) và ghi `audit_logs` (`table_name: lot_items`, old/new theo từng nhóm).
+  - LOT cũ chỉ gắn sản phẩm trên `lots` (không có `lot_items`) được liệt kê trong cảnh báo và **bỏ qua**, không tự sửa `products.unit` (sửa đó sẽ đổi luôn đơn vị của cả sản phẩm trên mọi phân hệ).
+- `src/components/warehouse/map/MultiSelectActionBar.tsx`: thêm prop `onBulkChangeUnit?: (lotIds: string[]) => void` và mục menu "Đổi đơn vị tính" ngay dưới "Đổi mã hàng loạt" trong submenu **Quản lý mã** (submenu này đã disable sẵn khi các ô đã chọn không có LOT).
+- `src/app/(dashboard)/warehouses/map/page.tsx`: `handleOpenBulkChangeUnit` đếm `selected/total` số **vị trí thật** của từng LOT (dùng `positions` gốc, vì `PositionCell`/`MergedBigCell` luôn push `realIds` vào `selectedPositionIds`, nên ô gộp không gây đếm sai), truyền `lotIds` + `lotPositionStats` cho modal; `onSuccess` gọi `fetchData()` và bỏ chọn toàn bộ.
+
+## Tuân thủ kiến trúc phân hệ & Kho Đông Lạnh
+
+- Không có mã kho hardcode: mọi query đều lọc `system_code = currentSystem.code`, đơn vị lấy từ cấu hình của chính sản phẩm thuộc phân hệ đang làm việc.
+- Không đổi schema, không đổi luồng nhập/xuất, không đổi component nào của Kho Đông Lạnh đang chạy: chỉ **thêm** một mục trong submenu có sẵn. Khi user không bấm vào mục đó, hành vi trang sơ đồ kho giữ nguyên 100% (không có useEffect/trạng thái mới nào chạy ở chế độ không dùng).
+- Không gắn cờ module: nhóm thao tác hàng loạt trong submenu này ("Đổi mã hàng loạt", "Gán mã phụ", "Xóa mã phụ", "Đổi ngày") đều là tiện ích dữ liệu không cần cờ; bản thân tính năng không tự hiện trên giao diện cho tới khi người dùng bấm vào nó. Nếu sau này muốn bật/tắt theo phân hệ thì chỉ cần khai báo thêm id module và bọc `{hasModule(...) && ...}` quanh mục menu.
+
+## Kiểm chứng đã làm / chưa làm
+
+- `npx tsc --noEmit`: sạch trên cả 3 file vừa sửa (đã lọc output theo file touched; repo còn hàng trăm lỗi cũ không liên quan).
+- Đối chiếu schema thật trên Supabase local (`supabase_db_anywarehouse`): `products.weight_kg` **có tồn tại** nên select `weight_kg` không nổ lúc chạy; sản phẩm trong ảnh `TP101020207.01.01` có `unit = Kg`, `weight_kg = NULL`, `product_units` = `Khay 0.4`, `Thùng 9.6`, `Thùng 12` → modal gợi ý `Kg`, `Khay (0.4kg)`, `Thùng (9.6kg)`, `Thùng (12kg)`; đơn vị hiện tại `Thùng (12kg)` nằm trong danh sách (đo bằng test thật, không đoán).
+- Phân bố đơn vị thật trong `lot_items`: `Thùng (20kg)` 839 dòng, `Thùng (13kg)` 498, `Kg` 279, `Thùng (20 Kg)` 156… xác nhận việc nhóm theo `canonicalizeUnit` là cần thiết (`Thùng (20kg)` và `Thùng (20 Kg)` phải là MỘT nhóm).
+- Toàn bộ 2057 LOT đang hiệu lực của `KHO_DONG_LANH` đều có `lot_items` → nhánh "LOT cũ bị bỏ qua" thực tế gần như không kích hoạt ở kho đông.
+- **Chưa** bấm thử trên trình duyệt: agent không có phiên đăng nhập (mật khẩu test bị lớp bảo mật chặn tự nhập). Cần user mở `http://localhost:3001/warehouses/map`, tích vài ô có cùng sản phẩm khác đơn vị, bấm **Quản lý mã → Đổi đơn vị tính** để xác nhận UI.
+
+# Walkthrough (tiếp): Sửa lỗi "Không tải được danh sách sản phẩm / đơn vị" + tách logic ra src/lib
+
+User gửi ảnh: mở modal **Đổi đơn vị tính** trên `/warehouses/map` → toast đỏ "Không tải được danh sách sản phẩm / đơn vị của các LOT đã chọn." và màn rỗng.
+
+## Nguyên nhân (đã đo, không đoán)
+
+`loadData` gói ba truy vấn bằng `Promise.all`, trong đó 2 nhánh đầu **đã là `Promise.all` lồng trong** `Promise.all`. Kết quả `prodRes` là mảng các `{data, error}`, nhưng code cũ viết `prodRes.flatMap(r => r.flatMap(...))` — gọi `.flatMap` trên một **object** → `TypeError: r.flatMap is not a function` → rơi vào `catch` → đúng toast user nhìn thấy. Bản thân 4 truy vấn Supabase **không lỗi**: chạy thử headless bằng `.env.local` (in ra mỗi lỗi query, không in key) thì chỉ trả `data` rỗng do RLS của key anon, không có error nào.
+
+Sửa còn một điểm: lọc `lots!inner(code, system_code)` + `.eq('lots.system_code', systemCode)` đã xác nhận `lot_items_lot_id_fkey` tồn tại trong DB thật, nên embed hợp lệ.
+
+## Tách logic thuần sang `src/lib/lotUnitBulkEdit.ts`
+
+Theo thông lệ của repo (logic thuần + test vitest, vì agent không có phiên đăng nhập để bấm UI), toàn bộ phần gom nhóm/unit chuyển sang `src/lib/lotUnitBulkEdit.ts`:
+
+- `buildUnitOptions()` — đơn vị gốc + `product_units` quy đổi (giờ mới hiểu là hệ số `conversion_rate` **x với khối lượng gốc**, nên `Khay 0.4` ra `Khay (0.4kg)` chứ không phải `Khay (1kg)` như ghi chú cũ trong walkthrough).
+- `groupLotItemsForUnitChange()` — khoá nhóm `product_id|canonicalizeUnit(unit)`, cộng số lượng, gom mã LOT, sắp xếp theo tên sản phẩm rồi đơn vị và gán nhãn A, B, C…
+- `collectAllUnitOptions()`, `isSameUnit()`, `letterOf()`.
+
+`LotBulkChangeUnitModal.tsx` chỉ còn phần gọi query + render; `chunk()` vẫn nằm local vì chỉ phục vụ cắt truy vấn.
+
+## Kiểm chứng
+
+- `src/lib/__tests__/lotUnitBulkEdit.test.ts` (mới, **15 test, tất cả pass**) dùng fixture **đo từ DB thật**: sản phẩm `TP101020207.01.01` (`unit=Kg`, `weight_kg=NULL`, `product_units` = Khay 0.4 / Thùng 9.6 / Thùng 12) và hai biến thể đơn vị có thật `Thùng (20 Kg)` (156 dòng) / `Thùng (20kg)` (839 dòng). Các trường hợp khoá chặt:
+  - cùng sản phẩm, hai đơn vị 12kg và 9.6kg → **2 nhóm tách riêng A, B** (đúng quyết định 1 của user);
+  - `Thùng (20 Kg)` + `Thùng (20kg)` → **một nhóm**, số lượng cộng dồn, mã LOT gộp không trùng;
+  - đơn vị gốc Kg **không** dính hậu tố `(1kg)`, các đơn vị quy đổi có hậu tố kg;
+  - đơn vị hiện tại chưa cấu hình vẫn luôn xuất hiện trong danh sách chọn;
+  - dòng LOT trống đơn vị → lấy `products.unit` làm đơn vị hiện tại;
+  - sản phẩm đã bị xóa vẫn lên nhóm, tên `(sản phẩm không tồn tại)`;
+  - nhãn A..Z rồi AA, AB, BA (quá 26 nhóm không sinh nhãn trùng).
+- `npx tsc --noEmit` sau khi refactor: **không còn lỗi nào** trên `lotUnitBulkEdit.ts`, `LotBulkChangeUnitModal.tsx`, `MultiSelectActionBar.tsx`, `warehouses/map/page.tsx`.
+- `git diff` của `MultiSelectActionBar.tsx` chỉ 19 dòng thêm đúng phần menu, không có dòng bị viết lại do đổi ending.
+- **Chưa** bấm thử trên trình duyệt (agent không tự nhập được mật khẩu test). User mở `http://localhost:3001/warehouses/map` (bản dev, không phải `:3000` đang là build cũ), tích vài ô có cùng sản phẩm khác đơn vị rồi bấm **Quản lý mã → Đổi đơn vị tính**; sau đó đối chiếu số lượng trong ô **không đổi** và chỉ chữ đơn vị đổi.

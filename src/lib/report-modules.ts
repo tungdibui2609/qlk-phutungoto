@@ -6,6 +6,7 @@ import {
     TrendingUp,
     CalendarClock,
     Factory,
+    Scale,
     LucideIcon
 } from 'lucide-react'
 
@@ -65,6 +66,13 @@ export const REPORT_MODULES: ReportModule[] = [
         name: 'Tồn theo Lệnh sản xuất',
         description: 'Tab tồn kho gom theo lệnh sản xuất › mã lot sản xuất › sản phẩm. Dành cho kho có truy xuất nguồn gốc theo lệnh SX.',
         icon: Factory,
+        is_basic: true
+    },
+    {
+        id: 'report_stocktake_diff',
+        name: 'Đối chiếu kiểm kê',
+        description: 'So 2 file Excel cùng loại (sơ đồ kho dạng Bảng / dạng Lưới, hoặc tồn kho theo LOT) xuất trước và sau khi kiểm kê để chỉ ra chỗ lệch số lượng, xuất báo cáo Excel tô đỏ dòng lệch',
+        icon: Scale,
         is_basic: true
     }
 ]

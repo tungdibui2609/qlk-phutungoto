@@ -39,6 +39,7 @@ import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
 import { LotBulkCloneModal } from '@/components/warehouse/lots/LotBulkCloneModal'
 import { LotBulkChangeProductModal } from '@/components/warehouse/lots/LotBulkChangeProductModal'
+import { LotBulkChangeUnitModal } from '@/components/warehouse/lots/LotBulkChangeUnitModal'
 import { LotBulkEditDatesModal } from '@/components/warehouse/lots/LotBulkEditDatesModal'
 import { groupWarehouseData, sortPositionsByBinPriority } from '@/lib/warehouseUtils'
 import { exportMarkedPositionsToExcel } from '@/lib/warehouseExcelExport'
@@ -252,6 +253,9 @@ function WarehouseMapContent() {
     const [isMoveModalOpen, setIsMoveModalOpen] = useState(false)
     const [isBulkChangeProductOpen, setIsBulkChangeProductOpen] = useState(false)
     const [bulkChangeLotIds, setBulkChangeLotIds] = useState<string[] | null>(null)
+    const [isBulkChangeUnitOpen, setIsBulkChangeUnitOpen] = useState(false)
+    const [bulkChangeUnitLotIds, setBulkChangeUnitLotIds] = useState<string[] | null>(null)
+    const [bulkChangeUnitStats, setBulkChangeUnitStats] = useState<Record<string, { selected: number, total: number }>>({})
     const [preselectedProductId, setPreselectedProductId] = useState<string | undefined>(undefined)
     const [isBulkEditDatesOpen, setIsBulkEditDatesOpen] = useState(false)
     const [bulkEditDateLotIds, setBulkEditDateLotIds] = useState<string[] | null>(null)
@@ -319,6 +323,24 @@ function WarehouseMapContent() {
 
         setPreselectedProductId(foundProductId)
         setIsBulkChangeProductOpen(true)
+    }
+
+    const handleOpenBulkChangeUnit = (lotIds: string[]) => {
+        if (!lotIds || lotIds.length === 0) {
+            showToast('Các vị trí đã chọn chưa có LOT nào để đổi đơn vị', 'warning')
+            return
+        }
+        const stats: Record<string, { selected: number, total: number }> = {}
+        lotIds.forEach(id => {
+            const lotPositions = positions.filter(p => p.lot_id === id)
+            stats[id] = {
+                total: lotPositions.length,
+                selected: lotPositions.filter(p => selectedPositionIds.has(p.id)).length
+            }
+        })
+        setBulkChangeUnitLotIds(lotIds)
+        setBulkChangeUnitStats(stats)
+        setIsBulkChangeUnitOpen(true)
     }
 
     const handleOpenBulkEditDates = (lotIds: string[]) => {
@@ -2065,6 +2087,7 @@ function WarehouseMapContent() {
                 onOpenAutoAssignWarehouse={() => setIsAutoAssignModalOpen(true)}
                 onCloneLot={handleCloneLot}
                 onBulkChangeProduct={handleOpenBulkChangeProduct}
+                onBulkChangeUnit={handleOpenBulkChangeUnit}
                 onToggleMark={(posIds) => toggleMark(posIds)}
                 onOpenMarkModal={(posIds) => setBulkMarkTargetIds(posIds)}
                 onUnmarkPositions={(posIds) => unmarkPositions(posIds)}
@@ -2087,6 +2110,25 @@ function WarehouseMapContent() {
                     onSuccess={() => {
                         setIsBulkChangeProductOpen(false)
                         setBulkChangeLotIds(null)
+                        fetchData()
+                        setSelectedPositionIds(new Set())
+                    }}
+                />
+            )}
+
+            {isBulkChangeUnitOpen && (
+                <LotBulkChangeUnitModal
+                    lotIds={bulkChangeUnitLotIds || []}
+                    lotPositionStats={bulkChangeUnitStats}
+                    onClose={() => {
+                        setIsBulkChangeUnitOpen(false)
+                        setBulkChangeUnitLotIds(null)
+                        setBulkChangeUnitStats({})
+                    }}
+                    onSuccess={() => {
+                        setIsBulkChangeUnitOpen(false)
+                        setBulkChangeUnitLotIds(null)
+                        setBulkChangeUnitStats({})
                         fetchData()
                         setSelectedPositionIds(new Set())
                     }}

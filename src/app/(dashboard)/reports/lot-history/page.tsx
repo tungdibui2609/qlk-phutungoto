@@ -1,3 +1,4 @@
+import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 'use client'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
@@ -924,7 +925,7 @@ export default function LotHistoryPage() {
                                                                     )}
                                                                 </div>
                                                                 <span className="font-bold text-stone-900 dark:text-stone-100 truncate max-w-[220px]" title={item.products?.name}>
-                                                                    {item.products?.name || 'Sản phẩm'}
+                                                                    {resolveDisplayProductName(item.products?.name, (lot.lot_tags || []).filter(t => !t.lot_item_id || t.lot_item_id === item.id), affixTagSet) || 'Sản phẩm'}
                                                                 </span>
                                                             </div>
                                                         ))

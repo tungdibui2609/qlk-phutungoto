@@ -12,6 +12,7 @@ import { SearchMode } from '@/app/(dashboard)/warehouses/map/_hooks/useMapFilter
 import { encodeSTT, decodeSTT, setLastUpdatedSTT, getLastUpdatedSTT, getNextSTT } from '@/lib/numberUtils'
 import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 import { getBranchesOfCompany, getDefaultBranchName, BRANCH_FILTER_ALL, BRANCH_FILTER_NONE } from '@/lib/branches'
+import { fetchAffixTagSet } from '@/lib/productNameResolver'
 
 export type Lot = Database['public']['Tables']['lots']['Row'] & {
     system_code?: string
@@ -100,6 +101,12 @@ export function useLotManagement() {
     const [existingTags, setExistingTags] = useState<string[]>([])
     const [productions, setProductions] = useState<any[]>([])
     const [zones, setZones] = useState<any[]>([])
+    const [affixTagSet, setAffixTagSet] = useState<Set<string>>(new Set())
+
+    useEffect(() => {
+        if (!currentSystem?.code) return
+        fetchAffixTagSet(supabase, currentSystem.code).then(setAffixTagSet)
+    }, [currentSystem?.code])
 
     // Use Ref to access latest fetchLots in subscription without re-subscribing
     const fetchLotsRef = useRef(fetchLots)
@@ -183,7 +190,7 @@ export function useLotManagement() {
     async function fetchCommonData() {
         if (!currentSystem?.code) return
 
-        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData, productionData, zoneData] = await Promise.all([
+        const [prodData, suppData, qcData, branchData, unitData, pUnitData, tagData, productionData, zoneData, affixData] = await Promise.all([
             fetchAllPaginated('products', q => q.eq('system_type', currentSystem!.code).order('name')),
             fetchAllPaginated('suppliers', q => q.eq('system_code', currentSystem!.code).order('name')),
             fetchAllPaginated('qc_info', q => q.eq('system_code', currentSystem!.code).order('name')),
@@ -192,7 +199,8 @@ export function useLotManagement() {
             fetchAllPaginated('product_units'),
             fetchAllPaginated('lot_tags', q => q.eq('lots.system_code', currentSystem!.code).order('tag'), 'tag, lots!inner(system_code)'),
             fetchAllPaginated('productions', q => q.order('code', { ascending: false }), '*, products:product_id(*), production_lots(*, products(*))'),
-            fetchAllPaginated('zones', q => q.eq('system_type', currentSystem!.code).order('level').order('name').order('id'), 'id, parent_id, name, code, level, display_order, system_type, is_hall')
+            fetchAllPaginated('zones', q => q.eq('system_type', currentSystem!.code).order('level').order('name').order('id'), 'id, parent_id, name, code, level, display_order, system_type, is_hall'),
+            fetchAffixTagSet(supabase, currentSystem!.code)
         ])
 
         setProducts(prodData)
@@ -207,6 +215,7 @@ export function useLotManagement() {
         setProductUnits(pUnitData)
         setProductions(productionData)
         setZones(zoneData)
+        setAffixTagSet(affixData)
         
         const uniqueTags = Array.from(new Set(tagData.map((t: any) => t.tag))).filter(Boolean) as string[]
         setExistingTags(uniqueTags)
@@ -2041,6 +2050,7 @@ export function useLotManagement() {
 
 
     return {
+        affixTagSet,
         // State
         lots, // Now contains only one page
         rawLots: lots, // naming compatibility

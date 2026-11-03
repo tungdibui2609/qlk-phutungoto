@@ -1,3 +1,4 @@
+import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
@@ -97,10 +98,11 @@ export default function Floor1ReportPage() {
         async function loadData() {
             setLoading(true)
             try {
-                // 1. Fetch Zones and Positions
-                const [zoneData, posData] = await Promise.all([
+                // 1. Fetch Zones, Positions and Affix Tags
+                const [zoneData, posData, affixTagSet] = await Promise.all([
                     fetchAll('zones', q => q.eq('system_type', systemType).order('level').order('code').order('id')),
-                    fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id'))
+                    fetchAll('positions', q => q.eq('system_type', systemType).order('code').order('id')),
+                    fetchAffixTagSet(supabase, systemType)
                 ])
 
                 if (!isMounted) return
@@ -213,7 +215,7 @@ export default function Floor1ReportPage() {
                         // Use * to avoid missing column errors, but keep joins
                         const { data, error } = await supabase
                             .from('lots')
-                            .select('*, lot_items(id, quantity, unit, products(name, sku, internal_code, color)), productions(code, name)')
+                            .select('*, lot_tags(tag, lot_item_id), lot_items(id, quantity, unit, products(name, sku, internal_code, color)), productions(code, name)')
                             .in('id', chunk)
                         
                         if (error) {
@@ -229,7 +231,7 @@ export default function Floor1ReportPage() {
                     allLotRecords.forEach((l: any) => {
                         const items = l.lot_items || []
                         const products = items.map((it: any) => ({
-                            name: it.products?.name || 'Sản phẩm không tên',
+                            name: resolveDisplayProductName(it.products?.name, (l.lot_tags || []).filter((t: any) => !t.lot_item_id || t.lot_item_id === it.id), affixTagSet) || 'Sản phẩm không tên',
                             sku: it.products?.sku || 'N/A',
                             internal_code: it.products?.internal_code,
                             quantity: it.quantity,

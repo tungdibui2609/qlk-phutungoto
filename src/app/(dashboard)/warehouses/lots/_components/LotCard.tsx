@@ -1,3 +1,6 @@
+import { resolveDisplayProductName, fetchAffixTagSet } from '@/lib/productNameResolver'
+import { useSystem } from '@/contexts/SystemContext'
+import { supabase } from '@/lib/supabaseClient'
 import { MapPin, Layers, Truck, ShieldCheck, Info, Factory, ChevronUp, ChevronDown, QrCode as QrIcon, Eye, Edit, Trash2, Tag, Combine, Split, ArrowUpRight, History, Star, ArrowUpDown, Copy, Lock, Unlock, MoreHorizontal, AlertCircle, Check, Pencil, Loader2, X, Smartphone, Calendar, Plus, Building2 } from 'lucide-react'
 import { useState, useRef } from 'react'
 import { LotItemImageManager } from './LotItemImageManager'
@@ -17,6 +20,7 @@ import { advancedMatchSearch } from '@/lib/searchUtils'
 import { useToast } from '@/components/ui/ToastProvider'
 
 interface LotCardProps {
+    affixTagSet?: Set<string>
     lot: Lot
     isModuleEnabled: (moduleId: string) => boolean
     isUtilityEnabled: (utilityId: string) => boolean
@@ -40,8 +44,19 @@ interface LotCardProps {
     searchTerm?: string
 }
 
-export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, onToggleSelect, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, onQuickUpdateSTT, onQuickUpdateQuantity, managePermission, searchTerm }: LotCardProps) {
+export function LotCard({ affixTagSet, lot, isModuleEnabled, isUtilityEnabled, isSelected, onToggleSelect, onEdit, onDelete, onView, onQr, onToggleStar, onAssignTag, onMerge, onSplit, onExport, onBulkClone, onAssignLocation, onToggleLock, onQuickUpdateSTT, onQuickUpdateQuantity, managePermission, searchTerm }: LotCardProps) {
     const router = useRouter()
+    const { systemType } = useSystem()
+    const [localAffixTagSet, setLocalAffixTagSet] = useState<Set<string>>(new Set())
+
+    React.useEffect(() => {
+        if (affixTagSet && affixTagSet.size > 0) return
+        if (!systemType) return
+        fetchAffixTagSet(supabase, systemType).then(setLocalAffixTagSet)
+    }, [systemType, affixTagSet])
+
+    const activeAffixTagSet = (affixTagSet && affixTagSet.size > 0) ? affixTagSet : localAffixTagSet
+
     const pathname = usePathname()
     const { showToast } = useToast()
     
@@ -998,7 +1013,19 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                                                     />
                                                                 </div>
                                                             </div>
-                                                            <span className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug break-words" title={showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}>{showInternal && item.products?.internal_name ? item.products.internal_name : item.products?.name}</span>
+                                                            {(() => {
+                                                                const rawProdName = showInternal && item.products?.internal_name ? item.products.internal_name : (item.products?.name || 'Sản phẩm');
+                                                                const itemTags = (lot.lot_tags || []).filter((t: any) => t.lot_item_id === item.id).map((t: any) => t.tag);
+                                                                const unassignedTags = (lot.lot_tags || []).filter((t: any) => !t.lot_item_id).map((t: any) => t.tag);
+                                                                const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null;
+                                                                const allCandidateTags = [...itemTags, ...(itemTags.length === 0 ? unassignedTags : []), ...(metaTag ? [metaTag] : [])];
+                                                                const resolvedName = resolveDisplayProductName(rawProdName, allCandidateTags, activeAffixTagSet);
+                                                                return (
+                                                                    <span className="font-bold text-xs text-slate-900 dark:text-slate-100 leading-snug break-words" title={resolvedName}>
+                                                                        {resolvedName}
+                                                                    </span>
+                                                                );
+                                                            })()}
                                                         </div>
 
                                                         {/* Inline Tags */}
@@ -1056,7 +1083,20 @@ export function LotCard({ lot, isModuleEnabled, isUtilityEnabled, isSelected, on
                                             {lot.products?.name ? (
                                                 <div className="text-sm text-zinc-800 dark:text-zinc-200 flex justify-between gap-2">
                                                     <div className="flex-1 min-w-0">
-                                                        <div className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug break-words">{showInternal && lot.products.internal_name ? lot.products.internal_name : lot.products.name}</div>
+                                                        {(() => {
+                                                            const rawName = showInternal && lot.products.internal_name ? lot.products.internal_name : lot.products.name;
+                                                            const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null;
+                                                            const boxTag = lot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null;
+                                                            const tags = (lot.lot_tags && lot.lot_tags.length > 0)
+                                                                ? lot.lot_tags.map((t: any) => t.tag)
+                                                                : (metaTag || boxTag ? [metaTag || boxTag] : []);
+                                                            const resolvedName = resolveDisplayProductName(rawName, tags, activeAffixTagSet);
+                                                            return (
+                                                                <div className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-snug break-words" title={resolvedName}>
+                                                                    {resolvedName}
+                                                                </div>
+                                                            );
+                                                        })()}
                                                         {(() => {
                                                             const metaTag = (lot.metadata as any)?.pallet_tag || (lot.metadata as any)?.tag || null
                                                             const boxTag = lot.box_labels?.map((b: any) => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean) || null

@@ -3,6 +3,7 @@ import { Lot } from '../_hooks/useLotManagement'
 import { LotCard } from './LotCard'
 
 interface LotListProps {
+    affixTagSet?: Set<string>
     loading: boolean
     lots: Lot[]
     isModuleEnabled: (moduleId: string) => boolean
@@ -30,6 +31,7 @@ interface LotListProps {
 }
 
 export function LotList({
+    affixTagSet,
     loading,
     lots,
     isModuleEnabled,
@@ -136,6 +138,7 @@ export function LotList({
                 {lots.map(lot => (
                     <LotCard
                         key={lot.id}
+                        affixTagSet={affixTagSet}
                         lot={lot}
                         isSelected={selectedLotIds.has(lot.id)}
                         onToggleSelect={onToggleSelect}

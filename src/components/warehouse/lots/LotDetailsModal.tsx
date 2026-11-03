@@ -14,6 +14,9 @@ import { normalizeUnit, formatUnitWeight, groupQtyByNormalizedUnit } from '@/lib
 import { formatQuantityFull, decodeSTT, getNextSTT, getLastUpdatedSTT, setLastUpdatedSTT } from '@/lib/numberUtils'
 import { formatMaterialZoneList } from '@/lib/provinces'
 import { useToast } from '@/components/ui/ToastProvider'
+import { useSystem } from '@/contexts/SystemContext'
+import { supabase } from '@/lib/supabaseClient'
+import { resolveDisplayProductName, fetchAffixTagSet } from '@/lib/productNameResolver'
 
 interface LotDetailsModalProps {
     lot: Lot | null

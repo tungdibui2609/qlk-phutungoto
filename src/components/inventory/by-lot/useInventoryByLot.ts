@@ -12,6 +12,7 @@ import {
     extractWeightFromName,
     MAIN_PACKAGE_UNITS 
 } from '@/lib/unitConversion'
+import { fetchAffixTagSet, resolveDisplayProductName, buildAffixedGroupKey } from '@/lib/productNameResolver'
 
 interface ProductInfo {
     name: string
@@ -77,6 +78,7 @@ export function useInventoryByLot(
 ) {
     const enabled = externalFilters?.enabled !== undefined ? externalFilters.enabled : true
     const [lots, setLots] = useState<Lot[]>([])
+    const [affixTagSet, setAffixTagSet] = useState<Set<string>>(new Set())
     const [loading, setLoading] = useState(enabled)
     const [internalSearchTerm, setInternalSearchTerm] = useState('')
     const [internalBranch, setInternalBranch] = useState('Tất cả')
@@ -232,7 +234,8 @@ export function useInventoryByLot(
                 allZonesData,
                 allCategories,
                 allProductionLots,
-                sysRes
+                sysRes,
+                loadedAffixTags
             ] = await Promise.all([
                 fetchAll('lots', '*, productions(code)', (q: any) => q.eq('system_code', sysCode).eq('status', 'active')),
                 fetchAll('lot_items', 'id, lot_id, product_id, quantity, unit, initial_quantity, category_id'),
@@ -245,8 +248,11 @@ export function useInventoryByLot(
                 fetchAll('zones', '*', (q: any) => q.eq('system_type', sysCode)),
                 fetchAll('categories', 'id, name'),
                 fetchAll('production_lots', 'id, lot_code, production_date'),
-                supabase.from('systems' as any).select('modules').eq('code', sysCode).single()
+                supabase.from('systems' as any).select('modules').eq('code', sysCode).single(),
+                fetchAffixTagSet(supabase, sysCode)
             ])
+
+            setAffixTagSet(loadedAffixTags)
 
             const lPos = ((((sysRes as any)?.data as any)?.modules as any)?.loose_positions || {}) as Record<string, any>
             setLoosePositionsMap(lPos)
@@ -378,7 +384,12 @@ export function useInventoryByLot(
                 if (p?.internal_code) res.push(p.internal_code)
             }
             if (mode === 'all' || mode === 'name') {
-                if (p?.name) res.push(p.name)
+                if (p?.name) {
+                    res.push(p.name)
+                    const tags = l.lot_tags?.map((t: any) => t.tag) || []
+                    const affName = resolveDisplayProductName(p.name, tags, affixTagSet)
+                    if (affName !== p.name) res.push(affName)
+                }
                 if (p?.internal_name) res.push(p.internal_name)
                 const rawAliases = p?.aliases || p?.short_name
                 if (rawAliases) {
@@ -570,12 +581,23 @@ export function useInventoryByLot(
                     lineCategoryId
                 )
 
+                let tags: string[] = []
+                if (lot.lot_tags) {
+                    const itemTags = lot.lot_tags.filter(t => t.lot_item_id === itemId).map(t => t.tag)
+                    const generalTags = lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)
+                    tags = [...new Set([...itemTags, ...generalTags])]
+                }
+
+                // Gắn kèm mã phụ vào tên sản phẩm nếu tag có cờ append_to_product_name = true
+                const resolvedProductName = resolveDisplayProductName(name, tags, affixTagSet)
+                key = buildAffixedGroupKey(key, tags, affixTagSet)
+
                 if (!groups.has(key)) {
                     groups.set(key, {
                         key,
                         productSku: sku,
                         productCode: sku,
-                        productName: name,
+                        productName: resolvedProductName,
                         unit: displayUnit,
                         totalQuantity: 0,
                         variants: new Map(),
@@ -590,13 +612,6 @@ export function useInventoryByLot(
                 catIds.forEach(cid => {
                     if (!group.categoryIds.includes(cid)) group.categoryIds.push(cid)
                 })
-
-                let tags: string[] = []
-                if (lot.lot_tags) {
-                    const itemTags = lot.lot_tags.filter(t => t.lot_item_id === itemId).map(t => t.tag)
-                    const generalTags = lot.lot_tags.filter(t => !t.lot_item_id).map(t => t.tag)
-                    tags = [...new Set([...itemTags, ...generalTags])]
-                }
                 
                 const sxCode = lot.production_code || lot.batch_code || lot.productions?.code;
                 if (sxCode) {

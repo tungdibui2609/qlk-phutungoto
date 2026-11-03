@@ -1,3 +1,4 @@
+import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { Database } from '@/lib/database.types'
@@ -32,6 +33,7 @@ export function useWarehouseData() {
 
     const [session, setSession] = useState<any>(null)
     const lastUserIdRef = useRef<string | null>(null)
+    const affixTagSetRef = useRef<Set<string>>(new Set())
 
     // Auth Session Check
     useEffect(() => {
@@ -71,7 +73,7 @@ export function useWarehouseData() {
                 const catInfo = extractProductCategories(item.products, item.category_id)
 
                 return {
-                    product_name: item.products?.name || '',
+                    product_name: resolveDisplayProductName(item.products?.name, itemTags.length > 0 ? itemTags : allTags.map((t: any) => t.tag), affixTagSetRef.current) || '',
                     sku: item.products?.sku || '',
                     internal_code: item.products?.internal_code || '',
                     internal_name: item.products?.internal_name || '',
@@ -235,7 +237,7 @@ export function useWarehouseData() {
                         const catInfo = extractProductCategories(item.products, item.category_id)
 
                         return {
-                            product_name: item.products?.name,
+                            product_name: resolveDisplayProductName(item.products?.name, itemTags.length > 0 ? itemTags : allTags.map((t: any) => t.tag), affixTagSetRef.current),
                             sku: item.products?.sku,
                             internal_code: item.products?.internal_code,
                             internal_name: item.products?.internal_name,
@@ -257,7 +259,7 @@ export function useWarehouseData() {
                     const catInfo = extractProductCategories(l.products)
 
                     items = [{
-                        product_name: l.products.name,
+                        product_name: resolveDisplayProductName(l.products.name, itemTags.length > 0 ? itemTags : allTags.map((t: any) => t.tag), affixTagSetRef.current),
                         sku: l.products.sku,
                         internal_code: l.products.internal_code,
                         internal_name: l.products.internal_name,

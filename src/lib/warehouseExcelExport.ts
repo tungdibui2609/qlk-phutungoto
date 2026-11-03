@@ -7,7 +7,7 @@ import { parsePositionCodeFallback, extractSubPosition, parseDetailedPositionInf
  * Ví dụ: "Thùng (10 Kg)" → "Thùng (10kg)", "Thùng (10kg)" → "Thùng (10kg)"
  * Xử lý: loại bỏ khoảng trắng thừa bên trong ngoặc và viết thường đơn vị trọng lượng.
  */
-function normalizeUnit(unit: string): string {
+export function normalizeUnit(unit: string): string {
     if (!unit) return '';
     // Chuẩn hóa khoảng trắng thừa trước
     let normalized = unit.trim().replace(/\s+/g, ' ');
