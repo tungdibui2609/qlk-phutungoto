@@ -1,5 +1,5 @@
-import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 'use client'
+import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'

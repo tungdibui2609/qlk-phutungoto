@@ -1,5 +1,5 @@
-import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 'use client'
+import { fetchAffixTagSet, resolveDisplayProductName } from '@/lib/productNameResolver'
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
