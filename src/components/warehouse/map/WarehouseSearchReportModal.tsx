@@ -15,7 +15,8 @@ import {
     Layers, 
     Loader2,
     CalendarDays,
-    BarChart3
+    BarChart3,
+    Filter
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useSystem } from '@/contexts/SystemContext'
@@ -27,6 +28,7 @@ import {
 } from '@/lib/warehouseSearchReportExcelExport'
 import { decodeSTT } from '@/lib/numberUtils'
 import { canonicalizeUnit } from '@/lib/unitConversion'
+import { advancedMatchSearch } from '@/lib/searchUtils'
 
 export type SortByField = 'date' | 'position' | 'product_name' | 'sku' | 'quantity'
 export type SortOrder = 'asc' | 'desc'
@@ -73,6 +75,7 @@ export function WarehouseSearchReportModal({
     const [scope, setScope] = useState<'all' | 'selected'>(selectedPositionIds.size > 0 ? 'selected' : 'all')
     const [modalSearch, setModalSearch] = useState('')
     const [isExporting, setIsExporting] = useState(false)
+    const [onlyMatchingItems, setOnlyMatchingItems] = useState(Boolean(searchTerm || categoryName))
 
     // Helper: Build zone path (Kho • Dãy/Sảnh • Ô • Tầng)
     const getZonePath = (zoneId: string | null | undefined) => {
@@ -195,8 +198,49 @@ export function WarehouseSearchReportModal({
             const prodName = lot.productions?.name || lot.production_code || undefined
             const lotStt = lot.daily_seq ? decodeSTT(lot.daily_seq) : ''
 
+            // Helper: Kiểm tra item có khớp với điều kiện tìm kiếm hay không
+            const isItemMatchSearch = (item: any, fallbackProduct?: any): boolean => {
+                if (!onlyMatchingItems) return true
+                if (!searchTerm && !categoryName) return true
+
+                let matchesSearch = true
+                if (searchTerm) {
+                    // Nếu searchTerm khớp với vị trí, mã LOT hoặc STT -> người dùng tìm vị trí/lô cụ thể -> giữ tất cả mặt hàng
+                    const isPosOrLotSearch = advancedMatchSearch(pos.code, searchTerm) || 
+                        (lot.code && advancedMatchSearch(lot.code, searchTerm)) ||
+                        (lot.daily_seq && advancedMatchSearch([String(lot.daily_seq), decodeSTT(lot.daily_seq)], searchTerm))
+
+                    if (isPosOrLotSearch) {
+                        matchesSearch = true
+                    } else {
+                        // Người dùng đang tìm kiếm mặt hàng -> chỉ lấy item khớp với từ khóa
+                        const searchVals = [
+                            item.product_name || fallbackProduct?.name,
+                            item.sku || fallbackProduct?.sku,
+                            item.internal_code || fallbackProduct?.internal_code,
+                            item.internal_name || fallbackProduct?.internal_name,
+                            item.aliases || fallbackProduct?.aliases,
+                            ...(item.categoryNames || [])
+                        ].filter(Boolean)
+                        matchesSearch = advancedMatchSearch(searchVals, searchTerm)
+                    }
+                }
+
+                let matchesCat = true
+                if (categoryName) {
+                    const catVals = [
+                        item.primary_category_name,
+                        ...(item.categoryNames || [])
+                    ].filter(Boolean)
+                    matchesCat = catVals.some((c: string) => c.toLowerCase().includes(categoryName.toLowerCase()))
+                }
+
+                return matchesSearch && matchesCat
+            }
+
             if (lot.items && lot.items.length > 0) {
                 lot.items.forEach((item: any) => {
+                    if (!isItemMatchSearch(item, lot.products)) return
                     list.push({
                         productName: item.product_name || lot.products?.name || '',
                         sku: item.sku || item.internal_code || lot.products?.sku || '',
@@ -220,6 +264,7 @@ export function WarehouseSearchReportModal({
                     })
                 })
             } else if (lot.products) {
+                if (!isItemMatchSearch(lot.products)) return
                 list.push({
                     productName: lot.products.name || '',
                     sku: lot.products.sku || lot.products.internal_code || '',
@@ -245,7 +290,7 @@ export function WarehouseSearchReportModal({
         })
 
         return list
-    }, [targetPositions, lotInfo, dateField, zones, currentSystem?.name, systemType])
+    }, [targetPositions, lotInfo, dateField, zones, currentSystem?.name, systemType, onlyMatchingItems, searchTerm, categoryName])
 
     // Filter by modal search input (quick search)
     const filteredItems = useMemo(() => {
@@ -697,6 +742,25 @@ export function WarehouseSearchReportModal({
                                 <option value="created_at" className="dark:bg-slate-800">Ngày: Tạo lô</option>
                             </select>
                         </div>
+
+                        {/* Toggle: Chỉ mặt hàng khớp tìm kiếm (khi có searchTerm hoặc categoryName) */}
+                        {(searchTerm || categoryName) && (
+                            <button
+                                onClick={() => setOnlyMatchingItems(prev => !prev)}
+                                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                    onlyMatchingItems
+                                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-700 shadow-xs'
+                                        : 'bg-slate-50 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700 hover:text-slate-700'
+                                }`}
+                                title={onlyMatchingItems 
+                                    ? 'Đang chỉ hiển thị các mặt hàng khớp từ khóa tìm kiếm (bỏ qua mã khác trên pallet ghép)' 
+                                    : 'Đang hiển thị tất cả mặt hàng trên các vị trí tìm thấy (bao gồm cả mã khác trên pallet ghép)'
+                                }
+                            >
+                                <Filter size={12} className={onlyMatchingItems ? 'text-emerald-600' : 'text-slate-400'} />
+                                <span>{onlyMatchingItems ? 'Chỉ mặt hàng tìm kiếm' : 'Tất cả mặt hàng trên vị trí'}</span>
+                            </button>
+                        )}
 
                         {/* Scope (Tất cả vs Vị trí đã chọn) */}
                         {selectedPositionIds.size > 0 && (

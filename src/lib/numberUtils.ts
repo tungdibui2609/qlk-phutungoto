@@ -161,3 +161,22 @@ export function setLastUpdatedSTT(stt: string | null | undefined): void {
     } catch {}
 }
 
+/**
+ * Làm tròn số lượng (mặc định 3 chữ số thập phân), triệt tiêu hoàn toàn sai số floating-point IEEE 754.
+ * Nếu giá trị tuyệt đối nhỏ hơn 0.00001 thì trả về 0.
+ */
+export function roundQuantity(val: number | string | null | undefined, decimals: number = 3): number {
+    if (val === null || val === undefined || val === '') return 0
+    const num = typeof val === 'number' ? val : parseFloat(String(val))
+    if (isNaN(num)) return 0
+    if (Math.abs(num) < 0.00001) return 0
+    const factor = Math.pow(10, decimals)
+    return Math.round((num + Number.EPSILON) * factor) / factor
+}
+
+/**
+ * Kiểm tra 2 số lượng có bằng nhau không (bỏ qua sai số thập phân siêu nhỏ < 0.0001).
+ */
+export function isQuantityEqual(a: number | null | undefined, b: number | null | undefined, epsilon: number = 0.0001): boolean {
+    return Math.abs((a || 0) - (b || 0)) < epsilon
+}

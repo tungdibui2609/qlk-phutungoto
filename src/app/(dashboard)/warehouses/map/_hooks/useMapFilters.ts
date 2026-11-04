@@ -60,6 +60,9 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
     // Hide Export Pending
     const [hidePendingExport, setHidePendingExport] = useState(false)
 
+    // Lọc loại trừ mã phụ (tag) - Chỉ hiển thị hàng chuẩn không có mã phụ
+    const [excludeTags, setExcludeTags] = useState(false)
+
     // FIFO Toggle (local, defaults to ON when module is enabled)
     const [fifoActive, setFifoActive] = useState(true)
     const isFifoActive = !!isFifoEnabled && fifoActive
@@ -95,8 +98,31 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         // 1. TÌM KIẾM THEO TỪ KHÓA (SEARCH TERM)
         // Áp dụng chung cho cả chế độ Thường và Chuyên sâu
         // ==========================================
+        // Nhận diện cú pháp gõ !tag / -tag / notag / kotag trực tiếp trong ô tìm kiếm
+        const hasNoTagSyntax = /\b(!tag|-tag|notag|kotag|khongtag)\b/i.test(searchTerm)
+        const isExcludeTagsActive = excludeTags || hasNoTagSyntax
+
+        // Lọc loại trừ mã phụ nếu bật nút hoặc gõ cú pháp
+        if (isExcludeTagsActive) {
+            result = result.filter(p => {
+                if (!p.lot_id) return true
+                const lot = lotInfo[p.lot_id]
+                if (!lot) return true
+                const lotTags = (lot.tags || []).filter((t: string) => 
+                    t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_') && !t.startsWith('MERGED_TO:') && !t.startsWith('SPLIT_TO:')
+                )
+                const lotItemTags = (lot.items || []).flatMap((it: any) => it.tags || []).filter((t: string) => 
+                    t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_')
+                )
+                const rawLotTags = (lot.lot_tags || []).map((t: any) => typeof t === 'string' ? t : t.tag).filter((t: string) =>
+                    t && !t.startsWith('MERGED_') && !t.startsWith('SPLIT_')
+                )
+                return lotTags.length === 0 && lotItemTags.length === 0 && rawLotTags.length === 0
+            })
+        }
+
         if (searchTerm) {
-            const trimmed = searchTerm.trim()
+            const trimmed = searchTerm.replace(/\b(!tag|-tag|notag|kotag|khongtag)\b/gi, '').trim()
             if (trimmed) {
                 let finalSearchTerm = trimmed
                 if (!trimmed.includes(';') && !trimmed.includes(',') && !trimmed.includes('&')) {
@@ -138,7 +164,7 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                             }
                         })
 
-                        if (mode === 'all' || mode === 'tag') {
+                        if ((mode === 'all' || mode === 'tag') && !isExcludeTagsActive) {
                             lot.tags?.forEach((t: string) => res.push(t))
                             if (!lot.tags?.length && lot.lot_tags) {
                                 lot.lot_tags.forEach((t: any) => res.push(t.tag))
@@ -187,25 +213,22 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
                                 if (mode === 'all' || mode === 'stt') {
                                     if (label.code) res.push(label.code)
                                 }
-                                if (mode === 'all' || mode === 'stamp') {
-                                    if (label.code) res.push(label.code)
-                                    if (label.semi_finished_lot_code) res.push(label.semi_finished_lot_code)
-                                    if (label.finished_lot_code) res.push(label.finished_lot_code)
-                                    const meta = label.metadata || {}
-                                    if (meta.stamp_line1) res.push(meta.stamp_line1)
-                                    if (meta.stamp_line2) res.push(meta.stamp_line2)
-                                    if (meta.pallet_stt) res.push(meta.pallet_stt)
-                                    if (meta.product_name) res.push(meta.product_name)
-                                }
-                                // Bổ sung toàn bộ từ khóa giải mã tem OCR để tìm kiếm siêu nhạy
-                                if (mode === 'all' || mode === 'stamp') {
-                                    const decoded = decodeStampBox(label)
-                                    res.push(...decoded.searchableTokens)
-                                } else if (mode === 'name') {
-                                    const decoded = decodeStampBox(label)
-                                    if (decoded.productTitle) res.push(decoded.productTitle)
-                                    if (decoded.varietyName) res.push(decoded.varietyName)
-                                    if (decoded.productGradeName) res.push(decoded.productGradeName)
+                                // CHỈ QUÉT NỘI DUNG DẬP MỰC CON DẤU VÀ GIẢI MÃ TEM OCR KHI BẬT CHẾ ĐỘ 'TÌM CHUYÊN SÂU OCR' HOẶC CHỌN MODE 'stamp'
+                                if (isDeepScanMode || mode === 'stamp') {
+                                    if (mode === 'all' || mode === 'stamp') {
+                                        const meta = label.metadata || {}
+                                        if (meta.stamp_line1) res.push(meta.stamp_line1)
+                                        if (meta.stamp_line2) res.push(meta.stamp_line2)
+                                        if (meta.pallet_stt) res.push(meta.pallet_stt)
+                                        if (meta.product_name) res.push(meta.product_name)
+                                        const decoded = decodeStampBox(label)
+                                        res.push(...decoded.searchableTokens)
+                                    } else if (mode === 'name') {
+                                        const decoded = decodeStampBox(label)
+                                        if (decoded.productTitle) res.push(decoded.productTitle)
+                                        if (decoded.varietyName) res.push(decoded.varietyName)
+                                        if (decoded.productGradeName) res.push(decoded.productGradeName)
+                                    }
                                 }
                             })
                         } else if (mode === 'all' || mode === 'box_count') {
@@ -528,6 +551,10 @@ export function useMapFilters({ positions, zones, lotInfo, isFifoEnabled, pendin
         // Export Filter
         hidePendingExport,
         setHidePendingExport,
+        // Tag Exclusion Filter (Không kèm mã phụ)
+        excludeTags,
+        setExcludeTags,
+        toggleExcludeTags: () => setExcludeTags(prev => !prev),
         // Deep Scan (Tìm kiếm chuyên sâu OCR / Tem con dấu)
         isDeepScanMode,
         setIsDeepScanMode,

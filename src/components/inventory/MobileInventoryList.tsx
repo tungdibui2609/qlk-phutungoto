@@ -10,13 +10,15 @@ interface InventoryItem {
     qtyOut: number
     balance: number
     isUnconvertible?: boolean
+    lotBalance?: number
 }
 
 interface MobileInventoryListProps {
     items: InventoryItem[]
+    showLotBalance?: boolean
 }
 
-export default function MobileInventoryList({ items }: MobileInventoryListProps) {
+export default function MobileInventoryList({ items, showLotBalance = false }: MobileInventoryListProps) {
     if (items.length === 0) {
         return (
             <div className="p-8 text-center text-stone-500 bg-white rounded-xl border border-stone-200">
@@ -60,6 +62,19 @@ export default function MobileInventoryList({ items }: MobileInventoryListProps)
                             <div className="text-xs text-stone-500">Tồn cuối</div>
                             <div className="font-bold text-stone-900">{formatQuantityFull(item.balance)}</div>
                         </div>
+                        {showLotBalance && (
+                            <div className="bg-purple-50 p-1.5 rounded-lg border border-purple-100 col-span-2 flex justify-between items-center">
+                                <span className="text-xs text-purple-700 font-bold">Tồn kho theo LOT:</span>
+                                <span className={`font-mono font-bold text-sm ${item.balance !== (item.lotBalance || 0) ? 'text-red-600' : 'text-purple-800'}`}>
+                                    {formatQuantityFull(item.lotBalance || 0)}
+                                    {item.balance !== (item.lotBalance || 0) && (
+                                        <span className="text-[10px] text-red-500 font-normal ml-1">
+                                            (lệch {(item.lotBalance || 0) - item.balance > 0 ? '+' : ''}{formatQuantityFull((item.lotBalance || 0) - item.balance)})
+                                        </span>
+                                    )}
+                                </span>
+                            </div>
+                        )}
                         <div>
                             <div className="text-xs text-stone-500">Nhập</div>
                             <div className="font-medium text-emerald-600">+{formatQuantityFull(item.qtyIn)}</div>

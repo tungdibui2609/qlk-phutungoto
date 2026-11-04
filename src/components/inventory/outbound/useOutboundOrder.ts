@@ -340,11 +340,31 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
             }
 
             if (initialData) {
-                if (initialData.items) setItems(initialData.items)
+                if (initialData.items) {
+                    const mappedItems = initialData.items.map((item: any) => {
+                        let catId = item.categoryId
+                        if (!catId && item.productId && prodRes.data) {
+                            const p = (prodRes.data as any[]).find((prod: any) => prod.id === item.productId)
+                            if (p?.category_id) catId = p.category_id
+                        }
+                        return {
+                            ...item,
+                            categoryId: catId || null
+                        }
+                    })
+                    setItems(mappedItems)
+                }
                 if (initialData.customerName) setCustomerName(initialData.customerName)
-                if (initialData.orderTypeId) setOrderTypeId(initialData.orderTypeId)
+                if (initialData.orderTypeId) {
+                    setOrderTypeId(initialData.orderTypeId)
+                } else if (initialData.orderTypeName) {
+                    const matchedType = typeRes.data?.find((t: any) => t.name?.toLowerCase().includes(initialData.orderTypeName.toLowerCase()))
+                    if (matchedType) setOrderTypeId(matchedType.id)
+                }
+                if (initialData.warehouseName) setWarehouseName(initialData.warehouseName)
+                if (initialData.description) setDescription(initialData.description)
             }
-            if (!editOrderId && !duplicateOrderId && !initialData?.orderTypeId) {
+            if (!editOrderId && !duplicateOrderId && !initialData?.orderTypeId && !initialData?.orderTypeName) {
                 const defaultType = typeRes.data?.find((t: any) => t.name?.toLowerCase().includes('bán')) || typeRes.data?.[0]
                 if (defaultType) setOrderTypeId(defaultType.id)
             }

@@ -210,7 +210,20 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
                 // Sinh mã phiếu mới
                 generateOrderCode('PNK', systemCode).then(setCode)
             } else if (initialData) {
-                if (initialData.items) setItems(initialData.items)
+                if (initialData.items) {
+                    const mappedItems = initialData.items.map((item: any) => {
+                        let catId = item.categoryId
+                        if (!catId && item.productId && prodRes.data) {
+                            const p = (prodRes.data as any[]).find((prod: any) => prod.id === item.productId)
+                            if (p?.category_id) catId = p.category_id
+                        }
+                        return {
+                            ...item,
+                            categoryId: catId || null
+                        }
+                    })
+                    setItems(mappedItems)
+                }
 
                 // Fix Supplier: Use fetched data instead of waiting for state update
                 if (initialData.supplierId) {
@@ -224,7 +237,12 @@ export function useInboundOrder({ isOpen, editOrderId, duplicateOrderId, initial
 
                 if (initialData.warehouseName) setWarehouseName(initialData.warehouseName)
                 if (initialData.targetUnit) setTargetUnit(initialData.targetUnit)
-                if (initialData.orderTypeId) setOrderTypeId(initialData.orderTypeId)
+                if (initialData.orderTypeId) {
+                    setOrderTypeId(initialData.orderTypeId)
+                } else if (initialData.orderTypeName) {
+                    const matchedType = typeRes.data?.find((t: any) => t.name?.toLowerCase().includes(initialData.orderTypeName.toLowerCase()))
+                    if (matchedType) setOrderTypeId(matchedType.id)
+                }
 
                 if (initialData.description) setDescription(initialData.description)
 

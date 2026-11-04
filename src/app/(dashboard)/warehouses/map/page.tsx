@@ -164,6 +164,8 @@ function WarehouseMapContent() {
         toggleFifo,
         hidePendingExport,
         setHidePendingExport,
+        excludeTags,
+        toggleExcludeTags,
         // Deep Scan (OCR / Tem con dấu)
         isDeepScanMode,
         setIsDeepScanMode,
@@ -1730,6 +1732,8 @@ function WarehouseMapContent() {
                         grouped={isGrouped}
                         hidePendingExport={hidePendingExport}
                         onHidePendingExportChange={setHidePendingExport}
+                        excludeTags={excludeTags}
+                        onToggleExcludeTags={toggleExcludeTags}
                         categories={categories}
                         selectedCategoryId={selectedCategoryId}
                         onCategorySelect={setSelectedCategoryId}

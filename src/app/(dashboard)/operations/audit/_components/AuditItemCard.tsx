@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { InventoryCheckItem } from '../_hooks/useAudit'
 import { Check, AlertTriangle, MessageSquare, Package, Minus, Plus, X, ShieldCheck, History, Send } from 'lucide-react'
-import { formatQuantityFull } from '@/lib/numberUtils'
+import { formatQuantityFull, roundQuantity, isQuantityEqual } from '@/lib/numberUtils'
 import { QuantityInput } from '@/components/ui/QuantityInput'
 import { getProductDisplayImage } from '@/lib/utils'
 
@@ -13,9 +13,10 @@ interface AuditItemCardProps {
     onAddFeedback: (id: string, content: string, isReviewer?: boolean) => void
     readonly?: boolean
     canApprove?: boolean
+    showLotQuantity?: boolean
 }
 
-export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApprove }: AuditItemCardProps) {
+export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApprove, showLotQuantity = false }: AuditItemCardProps) {
     const firstItem = items[0]
     const [itemStates, setItemStates] = useState<Record<string, { qty: number | '', note: string }>>(
         Object.fromEntries(items.map(item => [
@@ -69,10 +70,10 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
         new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
     )
 
-    const hasMismatch = items.some(i => i.actual_quantity !== null && i.difference !== 0)
-    const isAllMatch = items.every(i => i.actual_quantity !== null && i.difference === 0)
+    const hasMismatch = items.some(i => i.actual_quantity !== null && Math.abs(roundQuantity(i.difference, 3)) >= 0.001)
+    const isAllMatch = items.every(i => i.actual_quantity !== null && Math.abs(roundQuantity(i.difference, 3)) < 0.001)
     const hasUncounted = items.some(i => i.actual_quantity === null)
-    const hasSystemMismatch = items.some(i => i.system_quantity !== i.lot_system_quantity)
+    const hasSystemMismatch = showLotQuantity && items.some(i => !isQuantityEqual(i.system_quantity, i.lot_system_quantity))
 
     const productName = firstItem.products?.name || (firstItem as any).product_name || 'Sản phẩm'
     const productSku = firstItem.products?.sku || (firstItem as any).product_sku || '---'
@@ -130,9 +131,10 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
             <div className="space-y-3">
                 {items.map(item => {
                     const state = itemStates[item.id] || { qty: '', note: '' }
-                    const diff = item.actual_quantity !== null ? item.actual_quantity - item.system_quantity : 0 - item.system_quantity
-                    const isItemMatch = item.actual_quantity !== null && diff === 0
-                    const isItemMismatch = item.actual_quantity !== null && diff !== 0
+                    const diff = item.actual_quantity !== null ? roundQuantity(item.actual_quantity - item.system_quantity, 3) : roundQuantity(0 - item.system_quantity, 3)
+                    const isItemMatch = item.actual_quantity !== null && Math.abs(diff) < 0.001
+                    const isItemMismatch = item.actual_quantity !== null && Math.abs(diff) >= 0.001
+                    const isLotMatch = isQuantityEqual(item.actual_quantity, item.lot_system_quantity)
 
                     return (
                         <div key={item.id} className="p-3 rounded-xl bg-white/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
@@ -145,34 +147,57 @@ export function AuditItemCard({ items, onUpdate, onAddFeedback, readonly, canApp
                                             {formatQuantityFull(item.system_quantity)}
                                         </span>
                                     </div>
-                                    <div className="flex items-baseline gap-2">
-                                        <span className="text-[10px] font-bold text-slate-400 w-16">TỒN LOT:</span>
-                                        <span className={`font-mono font-bold ${item.actual_quantity !== null && item.actual_quantity !== item.lot_system_quantity ? 'text-red-500 text-lg underline decoration-wavy' : 'text-slate-500 dark:text-slate-400'}`}>
-                                            {formatQuantityFull(item.lot_system_quantity || 0)}
-                                        </span>
-                                    </div>
-                                    {item.actual_quantity !== null && item.actual_quantity !== item.lot_system_quantity && (
-                                        <div className="mt-2 p-2.5 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded-r-lg space-y-1">
-                                            <div className="flex items-center gap-2">
-                                                <AlertTriangle size={14} className="text-red-600" />
-                                                <span className="text-xs font-black text-red-600 uppercase tracking-tight">🚩 SAI LỆCH VẬT LÝ SO VỚI LOT</span>
+                                    {showLotQuantity && (
+                                        <>
+                                            <div className="flex items-baseline gap-2">
+                                                <span className="text-[10px] font-bold text-slate-400 w-16">TỒN LOT:</span>
+                                                <div className="flex items-center gap-2">
+                                                    <span className={`font-mono font-bold ${item.actual_quantity !== null && !isLotMatch ? 'text-red-500 text-lg underline decoration-wavy' : 'text-slate-500 dark:text-slate-400'}`}>
+                                                        {formatQuantityFull(item.lot_system_quantity || 0)}
+                                                    </span>
+                                                    {!readonly && (
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => {
+                                                                const lotQty = item.lot_system_quantity || 0
+                                                                setItemStates(prev => ({
+                                                                    ...prev,
+                                                                    [item.id]: { ...prev[item.id], qty: lotQty }
+                                                                }))
+                                                                handleSave(item.id, lotQty, state.note)
+                                                            }}
+                                                            className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 cursor-pointer transition-colors"
+                                                            title="Điền số tồn LOT này vào ô kiểm kê"
+                                                        >
+                                                            Điền số này
+                                                        </button>
+                                                    )}
+                                                </div>
                                             </div>
-                                            <p className="text-[11px] text-red-700 dark:text-red-400 leading-tight">
-                                                Bạn đếm được <b>{formatQuantityFull(item.actual_quantity)}</b> nhưng LOT hệ thống đang báo <b>{formatQuantityFull(item.lot_system_quantity || 0)}</b>.
-                                                <br />
-                                                <span className="italic font-bold">Quản lý cần rà soát lại các vị trí Lô sau khi duyệt phiếu này.</span>
-                                            </p>
-                                        </div>
-                                    )}
-                                    {item.actual_quantity === null && item.system_quantity !== item.lot_system_quantity && (
-                                        <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/10 border-l-2 border-amber-400 rounded-r-lg">
-                                            <p className="text-[10px] text-amber-700 dark:text-amber-500 italic">
-                                                * Lưu ý: Sổ sách ({formatQuantityFull(item.system_quantity)}) và LOT ({formatQuantityFull(item.lot_system_quantity || 0)}) đang không khớp.
-                                            </p>
-                                        </div>
+                                            {item.actual_quantity !== null && !isLotMatch && (
+                                                <div className="mt-2 p-2.5 bg-red-50 dark:bg-red-900/20 border-l-4 border-red-500 rounded-r-lg space-y-1">
+                                                    <div className="flex items-center gap-2">
+                                                        <AlertTriangle size={14} className="text-red-600" />
+                                                        <span className="text-xs font-black text-red-600 uppercase tracking-tight">🚩 SAI LỆCH VẬT LÝ SO VỚI LOT</span>
+                                                    </div>
+                                                    <p className="text-[11px] text-red-700 dark:text-red-400 leading-tight">
+                                                        Bạn đếm được <b>{formatQuantityFull(item.actual_quantity)}</b> nhưng LOT hệ thống đang báo <b>{formatQuantityFull(item.lot_system_quantity || 0)}</b>.
+                                                        <br />
+                                                        <span className="italic font-bold">Quản lý cần rà soát lại các vị trí Lô sau khi duyệt phiếu này.</span>
+                                                    </p>
+                                                </div>
+                                            )}
+                                            {item.actual_quantity === null && !isQuantityEqual(item.system_quantity, item.lot_system_quantity) && (
+                                                <div className="mt-2 p-2 bg-amber-50 dark:bg-amber-900/10 border-l-2 border-amber-400 rounded-r-lg">
+                                                    <p className="text-[10px] text-amber-700 dark:text-amber-500 italic">
+                                                        * Lưu ý: Sổ sách ({formatQuantityFull(item.system_quantity)}) và LOT ({formatQuantityFull(item.lot_system_quantity || 0)}) đang không khớp.
+                                                    </p>
+                                                </div>
+                                            )}
+                                        </>
                                     )}
                                 </div>
-                                {item.actual_quantity !== null && diff !== 0 && (
+                                {item.actual_quantity !== null && Math.abs(diff) >= 0.001 && (
                                     <div className="flex items-center gap-1.5 mt-0.5">
                                         <div className={`w-1.5 h-1.5 rounded-full ${diff > 0 ? 'bg-emerald-500' : 'bg-red-500'}`} />
                                         <span className={`text-sm font-bold ${diff > 0 ? 'text-emerald-600' : 'text-red-600'}`}>

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye, Landmark, Hash, Tag } from 'lucide-react'
+import { X, Calendar, Package, User, FileText, CheckCircle, Printer, ChevronDown, Eye, Landmark, Hash, Tag, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -219,6 +219,32 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
             onClose()
         } catch (error: any) {
             showToast('Lỗi: ' + error.message, 'error')
+        }
+    }
+
+    const handleDeleteOrder = async () => {
+        if (!order) return
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn xóa phiếu xuất ${order.code}? Hành động này không thể hoàn tác.`)
+        if (!confirmed) return
+
+        try {
+            const { error: itemsError } = await (supabase
+                .from('outbound_order_items') as any)
+                .delete()
+                .eq('order_id', order.id)
+            if (itemsError) throw itemsError
+
+            const { error: orderError } = await (supabase
+                .from('outbound_orders') as any)
+                .delete()
+                .eq('id', order.id)
+            if (orderError) throw orderError
+
+            showToast(`Đã xóa phiếu ${order.code} thành công`, 'success')
+            if (onUpdate) onUpdate()
+            onClose()
+        } catch (error: any) {
+            showToast('Lỗi khi xóa phiếu: ' + error.message, 'error')
         }
     }
 
@@ -590,8 +616,18 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                     </div>
 
                     {/* Footer */}
-                    <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex justify-end gap-3">
-                        <div className="relative">
+                    <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex items-center justify-between gap-3">
+                        <button
+                            type="button"
+                            onClick={handleDeleteOrder}
+                            className="flex items-center gap-1.5 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 dark:bg-red-950/30 dark:border-red-900/50 dark:hover:bg-red-900/50 rounded-lg text-sm font-semibold transition-all active:scale-95 cursor-pointer"
+                        >
+                            <Trash2 size={16} />
+                            <span>Xóa phiếu này</span>
+                        </button>
+
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
                             <button
                                 onClick={() => setShowPrintMenu(!showPrintMenu)}
                                 className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
@@ -664,6 +700,7 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                 Xác nhận Xuất kho
                             </button>
                         )}
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog >

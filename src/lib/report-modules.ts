@@ -69,6 +69,13 @@ export const REPORT_MODULES: ReportModule[] = [
         is_basic: true
     },
     {
+        id: 'inventory_show_lot_balance',
+        name: 'Hiện Tồn kho theo LOT (Bảng Kế toán)',
+        description: 'Hiển thị thêm cột số lượng Tồn kho theo LOT ngay trên bảng Tồn kho kế toán để dễ dàng đối chiếu số lượng thực tế trong kho với sổ sách.',
+        icon: Scale,
+        is_basic: true
+    },
+    {
         id: 'report_stocktake_diff',
         name: 'Đối chiếu kiểm kê',
         description: 'So 2 file Excel cùng loại (sơ đồ kho dạng Bảng / dạng Lưới, hoặc tồn kho theo LOT) xuất trước và sau khi kiểm kê để chỉ ra chỗ lệch số lượng, xuất báo cáo Excel tô đỏ dòng lệch',

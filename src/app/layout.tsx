@@ -1,15 +1,8 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/ui/ToastProvider";
 import { SystemProvider } from "@/contexts/SystemContext";
 import { UserProvider } from "@/contexts/UserContext";
-
-const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin", "vietnamese"],
-  display: "swap",
-});
 
 import { COMPANY_INFO } from "@/lib/constants";
 import { generateAppTitle } from "@/lib/utils";
@@ -86,8 +79,11 @@ export default function RootLayout({
       <head>
         <link rel="apple-touch-icon" href="/icon-512.png" />
         <meta name="theme-color" content="#059669" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet" />
       </head>
-      <body className={`${inter.variable} antialiased font-sans`}>
+      <body className="antialiased font-sans">
         <UserProvider>
           <SystemProvider>
             <ToastProvider>

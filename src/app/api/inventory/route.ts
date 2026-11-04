@@ -99,6 +99,42 @@ export async function GET(request: Request) {
             return allItems;
         };
 
+        // Helper to fetch active lots for lot balance
+        const fetchActiveLots = async () => {
+            let allLots: any[] = [];
+            let currentFrom = 0;
+            while (true) {
+                let q = supabase
+                    .from('lots')
+                    .select(`
+                        id,
+                        product_id,
+                        quantity,
+                        warehouse_name,
+                        lot_items (
+                            product_id,
+                            quantity,
+                            unit
+                        )
+                    `)
+                    .eq('status', 'active')
+                    .eq('system_code', normalizedSystemType)
+                    .order('id', { ascending: true })
+                    .range(currentFrom, currentFrom + PAGE_SIZE - 1);
+
+                if (warehouse && warehouse !== 'Tất cả') {
+                    q = q.eq('warehouse_name', warehouse);
+                }
+
+                const { data, error } = await q;
+                if (error || !data || data.length === 0) break;
+                allLots = [...allLots, ...data];
+                if (data.length < PAGE_SIZE) break;
+                currentFrom += PAGE_SIZE;
+            }
+            return allLots;
+        };
+
         // Helper for support data
         const fetchAllWithPagination = async (tableName: string, select = '*') => {
             let allResults: any[] = [];
@@ -126,14 +162,16 @@ export async function GET(request: Request) {
             productsData,
             unitsData,
             prodUnitsData,
-            categoriesData
+            categoriesData,
+            activeLotsData
         ] = await Promise.all([
             fetchOrderItems('inbound_order_items'),
             fetchOrderItems('outbound_order_items'),
             fetchAllWithPagination('products'),
             fetchAllWithPagination('units'),
             fetchAllWithPagination('product_units'),
-            fetchAllWithPagination('categories')
+            fetchAllWithPagination('categories'),
+            fetchActiveLots()
         ]);
 
         // 3. Conditional fetch for search-related data
@@ -168,6 +206,7 @@ export async function GET(request: Request) {
             categoryId?: string | null
             isUnconvertible?: boolean
             kg?: number
+            lotBalance?: number
         }
 
         // Maps for O(1) Access
@@ -336,8 +375,66 @@ export async function GET(request: Request) {
             // Process Outbound
             ; (outboundItems as any[])?.forEach(item => processItem(item, 'out', new Date(item.order.created_at)))
         
-        // Calculate KG for each item
+        // Aggregate LOT totals map for instant O(1) balance lookup
+        const lotTotalsMap = new Map<string, number>();
+        (activeLotsData || []).forEach((lot: any) => {
+            const wNorm = normalizeWarehouseName(lot.warehouse_name);
+            const addLotQty = (pid: string, qty: number, u: string) => {
+                if (!pid || !qty) return;
+                const uCanon = canonicalizeUnit(u);
+                const uRaw = (u || '').trim();
+                
+                // Key with warehouse
+                const keyWithWh = `${pid}_${wNorm}_${uCanon}`;
+                lotTotalsMap.set(keyWithWh, (lotTotalsMap.get(keyWithWh) || 0) + qty);
+                
+                // Key overall
+                const keyOverall = `${pid}_${uCanon}`;
+                lotTotalsMap.set(keyOverall, (lotTotalsMap.get(keyOverall) || 0) + qty);
+
+                if (uRaw !== uCanon) {
+                    const keyRawWh = `${pid}_${wNorm}_${uRaw}`;
+                    lotTotalsMap.set(keyRawWh, (lotTotalsMap.get(keyRawWh) || 0) + qty);
+                    const keyRawOverall = `${pid}_${uRaw}`;
+                    lotTotalsMap.set(keyRawOverall, (lotTotalsMap.get(keyRawOverall) || 0) + qty);
+                }
+            };
+
+            if (lot.lot_items && lot.lot_items.length > 0) {
+                lot.lot_items.forEach((item: any) => {
+                    addLotQty(item.product_id, item.quantity, item.unit || '');
+                });
+            } else if (lot.product_id) {
+                const prod = productMap.get(lot.product_id);
+                addLotQty(lot.product_id, lot.quantity, prod?.unit || '');
+            }
+        });
+
+        // Calculate KG and lotBalance for each item
         inventoryMap.forEach((entry) => {
+            const wNorm = normalizeWarehouseName(entry.warehouse);
+            const uCanon = canonicalizeUnit(entry.unitRaw || entry.unit);
+            const uDisplay = entry.unit;
+            const uRaw = entry.unitRaw || '';
+
+            let physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uCanon}`);
+            if (physicalQty === undefined && uRaw) {
+                physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uRaw}`);
+            }
+            if (physicalQty === undefined) {
+                physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uDisplay}`);
+            }
+            if (physicalQty === undefined && (!warehouse || warehouse === 'Tất cả')) {
+                physicalQty = lotTotalsMap.get(`${entry.productId}_${uCanon}`);
+            }
+
+            let finalLotQty = physicalQty || 0;
+            if (targetUnitId && entry.isUnconvertible !== true && targetUnit && finalLotQty > 0) {
+                const prod = productMap.get(entry.productId);
+                finalLotQty = convertUnitLogic(entry.productId, entry.unitRaw || entry.unit, targetUnit.name, finalLotQty, prod?.unit, unitNameMap, conversionMap);
+            }
+            entry.lotBalance = Math.round((finalLotQty + Number.EPSILON) * 1000) / 1000;
+
             const prod = productMap.get(entry.productId)
             if (prod) {
                 const baseUnitName = prod.unit

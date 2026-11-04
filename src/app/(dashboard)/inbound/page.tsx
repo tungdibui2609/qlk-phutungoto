@@ -954,6 +954,15 @@ export default function InboundPage() {
                                                                 <Printer className="w-4 h-4" />
                                                             </button>
 
+                                                            {/* Quick Delete Button */}
+                                                            <button 
+                                                                onClick={() => handleDeleteOrder(order.id, order.code)}
+                                                                className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-lg transition-colors cursor-pointer"
+                                                                title="Xóa phiếu"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+
                                                             {/* More Actions Toggle */}
                                                             <button 
                                                                 onClick={(e) => {
@@ -982,13 +991,15 @@ export default function InboundPage() {
                                                     </td>
                                                 </tr>
                                                 <tr className={`transition-colors ${bgClass} ${hoverBgClass}`}>
-                                                    <td colSpan={5} className="px-3 py-1.5 text-xs text-gray-600 border-b-2 border-stone-300 dark:border-zinc-700">
-                                                        <div className='flex items-center gap-3'>
-                                                            {renderOrderItemsSummary(order)}
+                                                    <td colSpan={5} className="px-3 py-2 text-xs text-gray-600 border-b-2 border-stone-300 dark:border-zinc-700">
+                                                        <div className='flex flex-wrap items-center gap-x-3 gap-y-1.5'>
+                                                            <div className="shrink-0">
+                                                                {renderOrderItemsSummary(order)}
+                                                            </div>
                                                             {order.description && (
-                                                                <span className='text-gray-500 dark:text-gray-400 italic truncate max-w-[600px] border-l border-gray-200 dark:border-zinc-700 pl-3' title={order.description}>
+                                                                <div className='text-gray-500 dark:text-gray-400 italic text-xs break-words whitespace-normal border-l-2 border-gray-200 dark:border-zinc-700 pl-3 max-w-2xl' title={order.description}>
                                                                     {order.description}
-                                                                </span>
+                                                                </div>
                                                             )}
                                                         </div>
                                                     </td>
@@ -1079,23 +1090,20 @@ export default function InboundPage() {
                                                 <span>Quay lại Chờ duyệt</span>
                                             </button>
                                         )}
-                                        {(currentActionOrder.status === 'Pending' || currentActionOrder.status === 'Cancelled') && (
-                                            <>
-                                                <div className="my-1 border-t border-stone-100 dark:border-zinc-700" />
-                                                <button
-                                                    onClick={() => {
-                                                        const id = actionMenu.id
-                                                        const code = currentActionOrder.code
-                                                        setActionMenu(null)
-                                                        handleDeleteOrder(id, code)
-                                                    }}
-                                                    className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
-                                                >
-                                                    <Trash2 size={13} />
-                                                    <span>Xóa phiếu</span>
-                                                </button>
-                                            </>
-                                        )}
+
+                                        <div className="my-1 border-t border-stone-100 dark:border-zinc-700" />
+                                        <button
+                                            onClick={() => {
+                                                const id = actionMenu.id
+                                                const code = currentActionOrder.code
+                                                setActionMenu(null)
+                                                handleDeleteOrder(id, code)
+                                            }}
+                                            className="w-full px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30 flex items-center gap-2 transition-colors cursor-pointer"
+                                        >
+                                            <Trash2 size={13} />
+                                            <span>Xóa phiếu</span>
+                                        </button>
                                     </div>
                                     <div
                                         className="fixed inset-0 z-40 bg-transparent cursor-default"

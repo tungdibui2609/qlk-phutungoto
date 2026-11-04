@@ -73,6 +73,7 @@ type InventoryChecksTable = {
         adjustment_outbound_order_id: string | null
         lot_adjusted_at: string | null
         lot_adjusted_by: string | null
+        show_lot_quantity?: boolean | null
     }
     Insert: {
         id?: string
@@ -95,6 +96,7 @@ type InventoryChecksTable = {
         adjustment_outbound_order_id?: string | null
         lot_adjusted_at?: string | null
         lot_adjusted_by?: string | null
+        show_lot_quantity?: boolean | null
     }
     Update: {
         id?: string
@@ -117,6 +119,7 @@ type InventoryChecksTable = {
         adjustment_outbound_order_id?: string | null
         lot_adjusted_at?: string | null
         lot_adjusted_by?: string | null
+        show_lot_quantity?: boolean | null
     }
     Relationships: [
         {

@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useMemo, useCallback } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { Loader2, AlertTriangle, CheckCircle, Printer, ChevronDown, Warehouse, FileSpreadsheet, MapPin, Search, RefreshCw, X } from 'lucide-react'
+import { Loader2, AlertTriangle, CheckCircle, Printer, ChevronDown, Warehouse, FileSpreadsheet, MapPin, Search, RefreshCw, X, PlusCircle, MinusCircle, Scale, CheckSquare } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import MobileReconciliationList from './MobileReconciliationList'
@@ -11,8 +11,11 @@ import { canonicalizeUnit, normalizeUnit, isKg } from '@/lib/unitConversion'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { usePrintCompanyInfo } from '@/hooks/usePrintCompanyInfo'
 import { useUser } from '@/contexts/UserContext'
+import { useToast } from '@/components/ui/ToastProvider'
 import { ProductSearchInput } from '@/components/shared/ProductSearchInput'
 import { matchSearch } from '@/lib/searchUtils'
+import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
+import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 
 // Types
 interface AccountingItem {
@@ -42,6 +45,7 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
     const { systemType } = useSystem()
     // Use company info for printing params, prioritized from user profile
     const { profile } = useUser()
+    const { showToast } = useToast()
     const { companyInfo, loading: loadingCompany } = usePrintCompanyInfo({
         orderCompanyId: profile?.company_id
     })
@@ -58,6 +62,24 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
     const [selectedBranch, setSelectedBranch] = useState('Tất cả')
     const [branches, setBranches] = useState<{ id: string, name: string, is_default?: boolean }[]>([])
     const [selectedLotDetailModal, setSelectedLotDetailModal] = useState<ItemReconciliation | null>(null)
+    const [orderTypes, setOrderTypes] = useState<any[]>([])
+    const [activeModal, setActiveModal] = useState<'INBOUND' | 'OUTBOUND' | null>(null)
+    const [modalInitialData, setModalInitialData] = useState<any>(null)
+    const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set())
+
+    // Fetch Order Types
+    useEffect(() => {
+        async function fetchOrderTypes() {
+            if (!systemType) return
+            const { data } = await (supabase
+                .from('order_types') as any)
+                .select('*')
+                .or(`system_code.eq.${systemType},system_code.is.null`)
+                .eq('is_active', true)
+            if (data) setOrderTypes(data)
+        }
+        fetchOrderTypes()
+    }, [systemType])
 
     // Fetch Branches
     useEffect(() => {
@@ -313,6 +335,151 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
         }
         return result
     }, [items, showOnlyDiff, searchQuery, productMap])
+
+    const getItemKey = useCallback((item: ItemReconciliation) => `${item.productId}_${item.unit}`, [])
+
+    const diffItems = useMemo(() => displayedItems.filter(i => Math.abs(i.diff) >= 0.001), [displayedItems])
+    const selectedDiffItems = useMemo(() => displayedItems.filter(i => selectedKeys.has(getItemKey(i)) && Math.abs(i.diff) >= 0.001), [displayedItems, selectedKeys, getItemKey])
+    const inboundSelectedItems = useMemo(() => selectedDiffItems.filter(i => i.diff < 0), [selectedDiffItems])
+    const outboundSelectedItems = useMemo(() => selectedDiffItems.filter(i => i.diff > 0), [selectedDiffItems])
+
+    const allDiffSelected = diffItems.length > 0 && diffItems.every(i => selectedKeys.has(getItemKey(i)))
+    const someDiffSelected = selectedDiffItems.length > 0 && !allDiffSelected
+
+    const toggleSelectItem = useCallback((item: ItemReconciliation) => {
+        const key = getItemKey(item)
+        setSelectedKeys(prev => {
+            const next = new Set(prev)
+            if (next.has(key)) {
+                next.delete(key)
+            } else {
+                next.add(key)
+            }
+            return next
+        })
+    }, [getItemKey])
+
+    const toggleSelectAll = useCallback(() => {
+        if (allDiffSelected) {
+            setSelectedKeys(prev => {
+                const next = new Set(prev)
+                diffItems.forEach(i => next.delete(getItemKey(i)))
+                return next
+            })
+        } else {
+            setSelectedKeys(prev => {
+                const next = new Set(prev)
+                diffItems.forEach(i => next.add(getItemKey(i)))
+                return next
+            })
+        }
+    }, [allDiffSelected, diffItems, getItemKey])
+
+    // Create Inbound / Outbound Balancing Order (Single)
+    const handleCreateOrder = async (item: ItemReconciliation, type: 'INBOUND' | 'OUTBOUND') => {
+        const prod = productMap.get(item.productId)
+        let categoryId = prod?.category_id || null
+        if (!categoryId && item.productId) {
+            const { data: pData } = await (supabase.from('products') as any)
+                .select('category_id')
+                .eq('id', item.productId)
+                .single()
+            if (pData?.category_id) {
+                categoryId = pData.category_id
+            }
+        }
+
+        const diffQty = Math.abs(item.diff)
+
+        // Find "Điều Chỉnh" order type matching scope
+        const adjustmentType = orderTypes.find((t: any) =>
+            (type === 'INBOUND' ? ['inbound', 'both'].includes(t.scope) : ['outbound', 'both'].includes(t.scope)) &&
+            (t.name?.toLowerCase().includes('điều chỉnh') || t.name?.toLowerCase().includes('dieu chinh'))
+        )
+
+        const orderItem = {
+            id: crypto.randomUUID(),
+            productId: item.productId,
+            productName: item.productName,
+            unit: item.unit,
+            quantity: diffQty,
+            document_quantity: diffQty,
+            price: 0,
+            categoryId: categoryId,
+            note: 'Cân bằng đối chiếu'
+        }
+
+        const warehouse = (selectedBranch && selectedBranch !== 'Tất cả') ? selectedBranch : undefined
+
+        setModalInitialData({
+            items: [orderItem],
+            orderTypeId: adjustmentType?.id,
+            orderTypeName: 'Điều Chỉnh',
+            warehouseName: warehouse,
+            description: 'Điều chỉnh cân bằng đối chiếu kho',
+            customerName: type === 'OUTBOUND' ? 'Điều chỉnh kiểm kê' : undefined
+        })
+
+        setActiveModal(type)
+    }
+
+    // Create Inbound / Outbound Balancing Order (Batch / Multi-select)
+    const handleCreateBatchOrder = async (type: 'INBOUND' | 'OUTBOUND') => {
+        const targetItems = type === 'INBOUND' ? inboundSelectedItems : outboundSelectedItems
+        if (targetItems.length === 0) return
+
+        // Check missing category_id
+        const missingProductIds = targetItems
+            .filter(it => !productMap.get(it.productId)?.category_id)
+            .map(it => it.productId)
+            .filter(Boolean)
+
+        let missingCategoryMap = new Map<string, string>()
+        if (missingProductIds.length > 0) {
+            const { data: pData } = await (supabase.from('products') as any)
+                .select('id, category_id')
+                .in('id', missingProductIds)
+            if (pData) {
+                pData.forEach((p: any) => {
+                    if (p.category_id) missingCategoryMap.set(p.id, p.category_id)
+                })
+            }
+        }
+
+        const orderItems = targetItems.map(item => {
+            const catId = productMap.get(item.productId)?.category_id || missingCategoryMap.get(item.productId) || null
+            const diffQty = Math.abs(item.diff)
+            return {
+                id: crypto.randomUUID(),
+                productId: item.productId,
+                productName: item.productName,
+                unit: item.unit,
+                quantity: diffQty,
+                document_quantity: diffQty,
+                price: 0,
+                categoryId: catId,
+                note: 'Cân bằng đối chiếu'
+            }
+        })
+
+        const adjustmentType = orderTypes.find((t: any) =>
+            (type === 'INBOUND' ? ['inbound', 'both'].includes(t.scope) : ['outbound', 'both'].includes(t.scope)) &&
+            (t.name?.toLowerCase().includes('điều chỉnh') || t.name?.toLowerCase().includes('dieu chinh'))
+        )
+
+        const warehouse = (selectedBranch && selectedBranch !== 'Tất cả') ? selectedBranch : undefined
+
+        setModalInitialData({
+            items: orderItems,
+            orderTypeId: adjustmentType?.id,
+            orderTypeName: 'Điều Chỉnh',
+            warehouseName: warehouse,
+            description: 'Điều chỉnh cân bằng đối chiếu kho',
+            customerName: type === 'OUTBOUND' ? 'Điều chỉnh kiểm kê' : undefined
+        })
+
+        setActiveModal(type)
+    }
 
     const lotColumnTitle = positionFilter === 'has_position'
         ? 'LOT Đã có vị trí'
@@ -574,12 +741,63 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
                 </div>
             ) : (
                 <>
+                    {/* Batch Action Bar */}
+                    {selectedDiffItems.length > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-gradient-to-r from-orange-500 to-amber-600 dark:from-orange-600 dark:to-amber-700 text-white rounded-xl shadow-md animate-in fade-in slide-in-from-top-2">
+                            <div className="flex items-center gap-2">
+                                <CheckSquare className="w-5 h-5 text-white shrink-0" />
+                                <div className="text-sm">
+                                    <span className="font-bold">Đã chọn {selectedDiffItems.length}</span> sản phẩm chênh lệch
+                                    <span className="text-xs text-orange-100 ml-1.5 opacity-90 hidden sm:inline">
+                                        ({inboundSelectedItems.length > 0 ? `${inboundSelectedItems.length} cần nhập` : ''}{inboundSelectedItems.length > 0 && outboundSelectedItems.length > 0 ? ', ' : ''}{outboundSelectedItems.length > 0 ? `${outboundSelectedItems.length} cần xuất` : ''})
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {inboundSelectedItems.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCreateBatchOrder('INBOUND')}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-emerald-700 hover:bg-emerald-50 active:scale-95 transition-all shadow-sm cursor-pointer"
+                                    >
+                                        <PlusCircle size={14} className="text-emerald-600" />
+                                        <span>Lập phiếu Nhập ({inboundSelectedItems.length} SP)</span>
+                                    </button>
+                                )}
+
+                                {outboundSelectedItems.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => handleCreateBatchOrder('OUTBOUND')}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white text-orange-700 hover:bg-orange-50 active:scale-95 transition-all shadow-sm cursor-pointer"
+                                    >
+                                        <MinusCircle size={14} className="text-orange-600" />
+                                        <span>Lập phiếu Xuất ({outboundSelectedItems.length} SP)</span>
+                                    </button>
+                                )}
+
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedKeys(new Set())}
+                                    className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-white/90 hover:text-white hover:bg-white/20 transition-colors cursor-pointer"
+                                >
+                                    Bỏ chọn
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Mobile List */}
                     <div className="md:hidden">
                         <MobileReconciliationList
                             items={displayedItems}
                             positionFilter={positionFilter}
                             onSelectLotDetail={setSelectedLotDetailModal}
+                            onCreateOrder={handleCreateOrder}
+                            selectedKeys={selectedKeys}
+                            onToggleSelect={toggleSelectItem}
+                            getItemKey={getItemKey}
                         />
                     </div>
 
@@ -589,6 +807,19 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 font-medium">
                                     <tr>
+                                        <th className="px-3 py-3 w-10 text-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={allDiffSelected}
+                                                ref={input => {
+                                                    if (input) input.indeterminate = someDiffSelected
+                                                }}
+                                                onChange={toggleSelectAll}
+                                                disabled={diffItems.length === 0}
+                                                className="w-4 h-4 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer disabled:opacity-40"
+                                                title={diffItems.length === 0 ? "Không có sản phẩm lệch để chọn" : "Chọn tất cả sản phẩm lệch"}
+                                            />
+                                        </th>
                                         <th className="px-4 py-3">Mã SP</th>
                                         <th className="px-4 py-3">Tên sản phẩm</th>
                                         <th className="px-4 py-3 text-center">ĐVT</th>
@@ -596,20 +827,35 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
                                         <th className="px-4 py-3 text-right">{lotColumnTitle}</th>
                                         <th className="px-4 py-3 text-right">Chênh lệch</th>
                                         <th className="px-4 py-3 text-center">Trạng thái</th>
+                                        <th className="px-4 py-3 text-center whitespace-nowrap">Cân bằng</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
                                     {displayedItems.length === 0 ? (
                                         <tr>
-                                            <td colSpan={7} className="px-4 py-8 text-center text-stone-500">
+                                            <td colSpan={9} className="px-4 py-8 text-center text-stone-500">
                                                 {showOnlyDiff ? 'Tuyệt vời! Không có mục nào bị sai lệch.' : 'Không có dữ liệu đối chiếu.'}
                                             </td>
                                         </tr>
                                     ) : (
                                         displayedItems.map((item, idx) => {
                                             const isDiff = Math.abs(item.diff) >= 0.001
+                                            const itemKey = getItemKey(item)
+                                            const isChecked = selectedKeys.has(itemKey)
                                             return (
-                                                <tr key={`${item.productId}_${item.unit}_${idx}`} className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors ${isDiff ? 'bg-orange-50/50 dark:bg-orange-900/10' : ''}`}>
+                                                <tr key={`${itemKey}_${idx}`} className={`hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors ${isChecked ? 'bg-orange-100/40 dark:bg-orange-950/30' : (isDiff ? 'bg-orange-50/50 dark:bg-orange-900/10' : '')}`}>
+                                                    <td className="px-3 py-3 text-center">
+                                                        {isDiff ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isChecked}
+                                                                onChange={() => toggleSelectItem(item)}
+                                                                className="w-4 h-4 rounded border-stone-300 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                                                            />
+                                                        ) : (
+                                                            <span className="text-stone-300 dark:text-stone-700 text-xs">—</span>
+                                                        )}
+                                                    </td>
                                                     <td className="px-4 py-3 font-mono text-stone-600 dark:text-stone-400">{item.productCode}</td>
                                                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{item.productName}</td>
                                                     <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
@@ -643,6 +889,53 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
                                                                 <CheckCircle size={12} />
                                                                 Khớp
                                                             </div>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-3 text-center whitespace-nowrap">
+                                                        {isDiff ? (
+                                                            item.diff < 0 ? (
+                                                                <div className="inline-flex items-center gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCreateOrder(item, 'INBOUND')}
+                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                                                        title={`Tạo phiếu Nhập điều chỉnh +${formatQuantityFull(Math.abs(item.diff))} ${item.unit} để cân bằng`}
+                                                                    >
+                                                                        <PlusCircle size={13} />
+                                                                        <span>Nhập</span>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCreateOrder(item, 'OUTBOUND')}
+                                                                        className="p-1 rounded-md text-stone-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/40 transition-colors cursor-pointer"
+                                                                        title="Hoặc tạo phiếu Xuất điều chỉnh"
+                                                                    >
+                                                                        <MinusCircle size={13} />
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="inline-flex items-center gap-1">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCreateOrder(item, 'OUTBOUND')}
+                                                                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-semibold bg-orange-50 hover:bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:hover:bg-orange-900/60 dark:text-orange-300 border border-orange-200 dark:border-orange-800 transition-all shadow-sm active:scale-95 cursor-pointer"
+                                                                        title={`Tạo phiếu Xuất điều chỉnh -${formatQuantityFull(item.diff)} ${item.unit} để cân bằng`}
+                                                                    >
+                                                                        <MinusCircle size={13} />
+                                                                        <span>Xuất</span>
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleCreateOrder(item, 'INBOUND')}
+                                                                        className="p-1 rounded-md text-stone-400 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 transition-colors cursor-pointer"
+                                                                        title="Hoặc tạo phiếu Nhập điều chỉnh"
+                                                                    >
+                                                                        <PlusCircle size={13} />
+                                                                    </button>
+                                                                </div>
+                                                            )
+                                                        ) : (
+                                                            <span className="text-stone-300 dark:text-stone-700 text-xs font-mono">—</span>
                                                         )}
                                                     </td>
                                                 </tr>
@@ -731,6 +1024,31 @@ export default function InventoryReconciliation({ units, products = [] }: { unit
                     </div>
                 </div>
             )}
+
+            {/* Balancing Order Modals */}
+            <InboundOrderModal
+                isOpen={activeModal === 'INBOUND'}
+                onClose={() => setActiveModal(null)}
+                systemCode={systemType || ''}
+                initialData={modalInitialData}
+                onSuccess={() => {
+                    showToast('Đã tạo phiếu nhập điều chỉnh cân bằng thành công', 'success')
+                    setSelectedKeys(new Set())
+                    fetchData()
+                }}
+            />
+
+            <OutboundOrderModal
+                isOpen={activeModal === 'OUTBOUND'}
+                onClose={() => setActiveModal(null)}
+                systemCode={systemType || ''}
+                initialData={modalInitialData}
+                onSuccess={() => {
+                    showToast('Đã tạo phiếu xuất điều chỉnh cân bằng thành công', 'success')
+                    setSelectedKeys(new Set())
+                    fetchData()
+                }}
+            />
         </div>
     )
 }

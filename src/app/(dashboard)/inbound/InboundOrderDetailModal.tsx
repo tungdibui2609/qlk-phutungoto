@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabaseClient'
-import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, ChevronDown, Eye, Landmark, Hash, Tag, Layers } from 'lucide-react'
+import { X, Calendar, Package, User, FileText, CheckCircle, Clock, Printer, ChevronDown, Eye, Landmark, Hash, Tag, Layers, Trash2 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useToast } from '@/components/ui/ToastProvider'
 import { useUser } from '@/contexts/UserContext'
@@ -230,6 +230,32 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
             onClose()
         } catch (error: any) {
             showToast('Lỗi: ' + error.message, 'error')
+        }
+    }
+
+    const handleDeleteOrder = async () => {
+        if (!orderDetails) return
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn xóa phiếu nhập ${orderDetails.code}? Hành động này không thể hoàn tác.`)
+        if (!confirmed) return
+
+        try {
+            const { error: itemsError } = await (supabase
+                .from('inbound_order_items') as any)
+                .delete()
+                .eq('order_id', orderDetails.id)
+            if (itemsError) throw itemsError
+
+            const { error: orderError } = await (supabase
+                .from('inbound_orders') as any)
+                .delete()
+                .eq('id', orderDetails.id)
+            if (orderError) throw orderError
+
+            showToast(`Đã xóa phiếu ${orderDetails.code} thành công`, 'success')
+            if (onUpdate) onUpdate()
+            onClose()
+        } catch (error: any) {
+            showToast('Lỗi khi xóa phiếu: ' + error.message, 'error')
         }
     }
 
@@ -614,80 +640,91 @@ export default function InboundOrderDetailModal({ order, onClose, onUpdate }: In
                     </div>
 
                     {/* Footer */}
-                    <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex justify-end gap-3">
-                        <div className="relative">
-                            <button
-                                onClick={() => setShowPrintMenu(!showPrintMenu)}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
-                            >
-                                <Printer size={18} />
-                                In phiếu
-                                <ChevronDown size={16} />
-                            </button>
-                            {showPrintMenu && (
-                                <>
-                                    <div className="fixed inset-0 z-10" onClick={() => setShowPrintMenu(false)} />
-                                    <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-stone-200 dark:border-zinc-700 overflow-hidden z-20">
-                                        <button
-                                            onClick={() => {
-                                                window.open(`/print/inbound?id=${orderDetails.id}&type=internal`, '_blank')
-                                                setShowPrintMenu(false)
-                                            }}
-                                            className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200"
-                                        >
-                                            <Printer size={16} className="text-blue-500" />
-                                            <div>
-                                                <div className="font-medium">Phiếu nội bộ</div>
-                                                <div className="text-xs text-stone-500">Không có đơn giá, thành tiền</div>
-                                            </div>
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                window.open(`/print/inbound?id=${orderDetails.id}&type=official`, '_blank')
-                                                setShowPrintMenu(false)
-                                            }}
-                                            className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
-                                        >
-                                            <Printer size={16} className="text-orange-500" />
-                                            <div>
-                                                <div className="font-medium">Hệ Thống</div>
-                                                <div className="text-xs text-stone-500">Mẫu 01-VT đầy đủ</div>
-                                            </div>
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                window.open(`/print/inbound?id=${orderDetails.id}&type=bank`, '_blank')
-                                                setShowPrintMenu(false)
-                                            }}
-                                            className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
-                                        >
-                                            <Landmark size={16} className="text-emerald-600" />
-                                            <div>
-                                                <div className="font-medium">Ngân Hàng</div>
-                                                <div className="text-xs text-stone-500">Phiếu nhập kho VietinBank</div>
-                                            </div>
-                                        </button>
-
-                                    </div>
-                                </>
-                            )}
-                        </div>
+                    <div className="p-6 border-t border-stone-200 dark:border-zinc-800 bg-stone-50 dark:bg-zinc-900/50 flex items-center justify-between gap-3">
                         <button
-                            onClick={onClose}
-                            className="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 text-stone-700 dark:text-gray-300 rounded-lg font-medium hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors"
+                            type="button"
+                            onClick={handleDeleteOrder}
+                            className="flex items-center gap-1.5 px-4 py-2.5 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 dark:bg-red-950/30 dark:border-red-900/50 dark:hover:bg-red-900/50 rounded-lg text-sm font-semibold transition-all active:scale-95 cursor-pointer"
                         >
-                            Đóng
+                            <Trash2 size={16} />
+                            <span>Xóa phiếu này</span>
                         </button>
 
-                        {orderDetails.status === 'Pending' && hasPermission('inbound.approve') && (
+                        <div className="flex items-center gap-3">
+                            <div className="relative">
+                                <button
+                                    onClick={() => setShowPrintMenu(!showPrintMenu)}
+                                    className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium shadow-md shadow-blue-500/20 transition-all hover:scale-105 active:scale-95"
+                                >
+                                    <Printer size={18} />
+                                    In phiếu
+                                    <ChevronDown size={16} />
+                                </button>
+                                {showPrintMenu && (
+                                    <>
+                                        <div className="fixed inset-0 z-10" onClick={() => setShowPrintMenu(false)} />
+                                        <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-stone-200 dark:border-zinc-700 overflow-hidden z-20">
+                                            <button
+                                                onClick={() => {
+                                                    window.open(`/print/inbound?id=${orderDetails.id}&type=internal`, '_blank')
+                                                    setShowPrintMenu(false)
+                                                }}
+                                                className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200"
+                                            >
+                                                <Printer size={16} className="text-blue-500" />
+                                                <div>
+                                                    <div className="font-medium">Phiếu nội bộ</div>
+                                                    <div className="text-xs text-stone-500">Không có đơn giá, thành tiền</div>
+                                                </div>
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    window.open(`/print/inbound?id=${orderDetails.id}&type=official`, '_blank')
+                                                    setShowPrintMenu(false)
+                                                }}
+                                                className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
+                                            >
+                                                <Printer size={16} className="text-orange-500" />
+                                                <div>
+                                                    <div className="font-medium">Hệ Thống</div>
+                                                    <div className="text-xs text-stone-500">Mẫu 01-VT đầy đủ</div>
+                                                </div>
+                                            </button>
+                                            <button
+                                                onClick={() => {
+                                                    window.open(`/print/inbound?id=${orderDetails.id}&type=bank`, '_blank')
+                                                    setShowPrintMenu(false)
+                                                }}
+                                                className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200 border-t border-stone-100 dark:border-zinc-700"
+                                            >
+                                                <Landmark size={16} className="text-emerald-600" />
+                                                <div>
+                                                    <div className="font-medium">Ngân Hàng</div>
+                                                    <div className="text-xs text-stone-500">Phiếu nhập kho VietinBank</div>
+                                                </div>
+                                            </button>
+
+                                        </div>
+                                    </>
+                                )}
+                            </div>
                             <button
-                                onClick={handleApprove}
-                                className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-105 active:scale-95"
+                                onClick={onClose}
+                                className="px-6 py-2.5 bg-white dark:bg-zinc-800 border border-stone-300 dark:border-zinc-600 text-stone-700 dark:text-gray-300 rounded-lg font-medium hover:bg-stone-50 dark:hover:bg-zinc-700 transition-colors"
                             >
-                                <CheckCircle size={20} />
-                                Xác nhận Nhập kho
+                                Đóng
                             </button>
-                        )}
+
+                            {orderDetails.status === 'Pending' && hasPermission('inbound.approve') && (
+                                <button
+                                    onClick={handleApprove}
+                                    className="flex items-center gap-2 px-6 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-bold shadow-lg shadow-green-500/20 transition-all hover:scale-105 active:scale-95"
+                                >
+                                    <CheckCircle size={20} />
+                                    Xác nhận Nhập kho
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog >

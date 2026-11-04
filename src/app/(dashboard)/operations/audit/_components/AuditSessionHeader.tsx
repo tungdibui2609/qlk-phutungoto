@@ -1,7 +1,7 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, PlusCircle, MinusCircle, FileText, Printer } from 'lucide-react'
+import { ArrowLeft, CheckCircle, Zap, ShieldCheck, XCircle, PlusCircle, MinusCircle, FileText, Printer, Boxes, Trash2 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useUser } from '@/contexts/UserContext'
 
@@ -16,11 +16,15 @@ interface AuditSessionHeaderProps {
     onOpenInbound?: () => void
     onOpenOutbound?: () => void
     onConfirmLot?: () => void
+    onToggleShowLot?: () => void
+    onQuickFillLot?: () => void
+    onDelete?: () => void
 }
 
 export function AuditSessionHeader({
     session, onSubmit, onApprove, onReject, onQuickFill,
-    hasSurplus, hasLoss, onOpenInbound, onOpenOutbound, onConfirmLot
+    hasSurplus, hasLoss, onOpenInbound, onOpenOutbound, onConfirmLot, onToggleShowLot, onQuickFillLot,
+    onDelete
 }: AuditSessionHeaderProps) {
     const router = useRouter()
     const { hasPermission } = useUser()
@@ -46,6 +50,21 @@ export function AuditSessionHeader({
                                 {session.code}
                             </h1>
                             <StatusBadge status={session.status} />
+                            {onToggleShowLot && (
+                                <button
+                                    onClick={onToggleShowLot}
+                                    type="button"
+                                    className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold transition-all border cursor-pointer ${
+                                        session.show_lot_quantity
+                                            ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 shadow-sm'
+                                            : 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 hover:border-slate-300'
+                                    }`}
+                                    title={session.show_lot_quantity ? "Đang hiện tồn LOT. Nhấp để ẩn" : "Đang ẩn tồn LOT. Nhấp để hiện"}
+                                >
+                                    <Boxes size={13} />
+                                    <span>{session.show_lot_quantity ? 'Hiện tồn LOT' : 'Ẩn tồn LOT'}</span>
+                                </button>
+                            )}
                             {session.adjustment_inbound_order && (
                                 <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400 px-2.5 py-1 rounded-lg text-[10px] font-bold border border-emerald-100 dark:border-emerald-800">
                                     NHẬP: {session.adjustment_inbound_order.code}
@@ -110,15 +129,35 @@ export function AuditSessionHeader({
                         <Printer size={20} />
                     </button>
 
+                    {onDelete && (
+                        <button
+                            onClick={onDelete}
+                            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 dark:bg-slate-800 dark:hover:bg-red-950/50 dark:text-slate-400 dark:hover:text-red-400 transition-colors border border-transparent hover:border-red-200 dark:hover:border-red-800"
+                            title={session.status === 'COMPLETED' ? "Xóa phiếu kiểm kê đã hoàn thành" : "Xóa phiếu kiểm kê"}
+                        >
+                            <Trash2 size={18} />
+                        </button>
+                    )}
+
                     {canEdit && (
                         <>
                             <button
                                 onClick={onQuickFill}
                                 className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-                                title="Tự động điền số lượng hệ thống cho các mục chưa kiểm"
+                                title="Tự động điền số lượng sổ sách hệ thống cho các mục chưa kiểm"
                             >
                                 <Zap size={20} />
                             </button>
+                            {onQuickFillLot && (
+                                <button
+                                    onClick={onQuickFillLot}
+                                    className="h-10 px-3 flex items-center gap-1.5 rounded-xl bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/50 transition-all font-bold text-xs shadow-sm cursor-pointer active:scale-95"
+                                    title="Tự động điền số lượng tồn LOT vào chỗ số lượng kiểm kê"
+                                >
+                                    <Boxes size={16} />
+                                    <span>Điền tồn LOT</span>
+                                </button>
+                            )}
                             <button
                                 onClick={onSubmit}
                                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl font-bold text-sm shadow-lg shadow-blue-500/20 active:scale-95 transition-all flex items-center gap-2"

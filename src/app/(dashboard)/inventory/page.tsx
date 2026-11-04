@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useEffect, useState, useMemo } from 'react'
-import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash, FileSpreadsheet, HelpCircle, LayoutGrid, Package, Tag, MapPin, Layers } from 'lucide-react'
+import { Search, Loader2, Printer, Warehouse, ChevronDown, Hash, FileSpreadsheet, HelpCircle, LayoutGrid, Package, Tag, MapPin, Layers, Boxes } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -33,6 +33,7 @@ interface InventoryItem {
     balance: number
     categoryName: string | null
     isUnconvertible?: boolean
+    lotBalance?: number
 }
 
 interface Branch {
@@ -52,6 +53,8 @@ export default function InventoryPage() {
     const [items, setItems] = useState<InventoryItem[]>([])
     const [loading, setLoading] = useState(false)
     const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const hasLotBalanceModule = hasModule('inventory_show_lot_balance')
+    const [showLotBalance, setShowLotBalance] = useState(true)
 
     // Branches
     const [branches, setBranches] = useState<Branch[]>([])
@@ -228,8 +231,9 @@ export default function InventoryPage() {
             opening: acc.opening + item.opening,
             qtyIn: acc.qtyIn + item.qtyIn,
             qtyOut: acc.qtyOut + item.qtyOut,
-            balance: acc.balance + item.balance
-        }), { opening: 0, qtyIn: 0, qtyOut: 0, balance: 0 })
+            balance: acc.balance + item.balance,
+            lotBalance: acc.lotBalance + (item.lotBalance || 0)
+        }), { opening: 0, qtyIn: 0, qtyOut: 0, balance: 0, lotBalance: 0 })
     }, [items])
 
     return (
@@ -443,6 +447,15 @@ export default function InventoryPage() {
                             </div>
 
                             <div className="flex gap-2">
+                                {hasLotBalanceModule && (
+                                    <button
+                                        onClick={() => setShowLotBalance(!showLotBalance)}
+                                        className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all flex items-center justify-center ${showLotBalance ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
+                                        title={showLotBalance ? "Đang hiện cột Tồn kho theo LOT (bấm để ẩn)" : "Hiện cột Tồn kho theo LOT"}
+                                    >
+                                        <Boxes className="w-5 h-4" />
+                                    </button>
+                                )}
                                 <button
                                     onClick={() => setDisplayInternalCode(!displayInternalCode)}
                                     className={`p-2 border border-stone-300 dark:border-stone-700 rounded-md transition-all flex items-center justify-center ${displayInternalCode ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800' : 'text-stone-500 hover:text-stone-700 dark:text-stone-400 dark:hover:text-stone-200 active:scale-95'}`}
@@ -620,7 +633,7 @@ export default function InventoryPage() {
                         ) : (
                             <>
                                 <div className="md:hidden">
-                                    <MobileInventoryList items={items} />
+                                    <MobileInventoryList items={items} showLotBalance={hasLotBalanceModule && showLotBalance} />
                                 </div>
 
                                 <div className="hidden md:block rounded-md border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
@@ -635,13 +648,18 @@ export default function InventoryPage() {
                                                     <th className="px-4 py-3 text-right">Nhập</th>
                                                     <th className="px-4 py-3 text-right">Xuất</th>
                                                     <th className="px-4 py-3 text-right">Tồn cuối</th>
+                                                    {hasLotBalanceModule && showLotBalance && (
+                                                        <th className="px-4 py-3 text-right bg-purple-50/50 dark:bg-purple-950/20 text-purple-700 dark:text-purple-300 font-bold">
+                                                            Tồn LOT
+                                                        </th>
+                                                    )}
                                                     <th className="px-4 py-3 text-center">ĐVT</th>
                                                 </tr>
                                             </thead>
                                             <tbody className="divide-y divide-stone-200 dark:divide-stone-800">
                                                 {items.length === 0 ? (
                                                     <tr>
-                                                        <td colSpan={8} className="px-4 py-8 text-center text-stone-500">
+                                                        <td colSpan={hasLotBalanceModule && showLotBalance ? 9 : 8} className="px-4 py-8 text-center text-stone-500">
                                                             Không có dữ liệu tồn kho trong giai đoạn này.
                                                         </td>
                                                     </tr>
@@ -672,6 +690,20 @@ export default function InventoryPage() {
                                                                     <td className="px-4 py-3 text-right tabular-nums text-emerald-600 font-medium">+{formatQuantityFull(item.qtyIn)}</td>
                                                                     <td className="px-4 py-3 text-right tabular-nums text-rose-600 font-medium">-{formatQuantityFull(item.qtyOut)}</td>
                                                                     <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
+                                                                    {hasLotBalanceModule && showLotBalance && (
+                                                                        <td className={`px-4 py-3 text-right tabular-nums font-bold bg-purple-50/30 dark:bg-purple-950/10 ${
+                                                                            item.balance !== (item.lotBalance || 0)
+                                                                                ? 'text-red-600 dark:text-red-400 font-black'
+                                                                                : 'text-purple-700 dark:text-purple-300'
+                                                                        }`}>
+                                                                            {formatQuantityFull(item.lotBalance || 0)}
+                                                                            {item.balance !== (item.lotBalance || 0) && (
+                                                                                <span className="block text-[10px] font-normal text-red-500">
+                                                                                    (Lệch: {formatQuantityFull((item.lotBalance || 0) - item.balance)})
+                                                                                </span>
+                                                                            )}
+                                                                        </td>
+                                                                    )}
                                                                     <td className="px-4 py-3 text-center text-stone-500">{item.unit}</td>
                                                                 </tr>
                                                             )
@@ -682,6 +714,11 @@ export default function InventoryPage() {
                                                             <td className="px-4 py-3 text-right tabular-nums text-emerald-700">+{formatQuantityFull(totals.qtyIn)}</td>
                                                             <td className="px-4 py-3 text-right tabular-nums text-rose-700">-{formatQuantityFull(totals.qtyOut)}</td>
                                                             <td className="px-4 py-3 text-right tabular-nums text-stone-900 dark:text-white">{formatQuantityFull(totals.balance)}</td>
+                                                            {hasLotBalanceModule && showLotBalance && (
+                                                                <td className="px-4 py-3 text-right tabular-nums font-bold text-purple-700 dark:text-purple-300 bg-purple-100/50 dark:bg-purple-950/30">
+                                                                    {formatQuantityFull(totals.lotBalance)}
+                                                                </td>
+                                                            )}
                                                             <td></td>
                                                         </tr>
                                                     </>

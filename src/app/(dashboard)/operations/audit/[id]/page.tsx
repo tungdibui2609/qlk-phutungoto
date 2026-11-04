@@ -10,6 +10,7 @@ import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import { Search, Filter, Layers, Users, Eye } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
+import { roundQuantity } from '@/lib/numberUtils'
 import { useUser } from '@/contexts/UserContext'
 
 export default function AuditDetailPage() {
@@ -25,9 +26,12 @@ export default function AuditDetailPage() {
         submitForApproval,
         approveSession,
         rejectSession,
+        deleteSession,
         quickFill,
+        quickFillLot,
         linkAdjustmentTicket,
-        confirmLotAdjustment
+        confirmLotAdjustment,
+        toggleShowLotQuantity
     } = useAudit()
     const { currentSystem } = useSystem()
     const { hasPermission } = useUser()
@@ -53,7 +57,7 @@ export default function AuditDetailPage() {
 
             if (!matchesSearch) return false
 
-            if (filterMode === 'MISMATCH') return item.actual_quantity !== null && item.difference !== 0
+            if (filterMode === 'MISMATCH') return item.actual_quantity !== null && Math.abs(roundQuantity(item.difference, 3)) >= 0.001
             if (filterMode === 'UNCOUNTED') return item.actual_quantity === null
 
             return true
@@ -70,24 +74,28 @@ export default function AuditDetailPage() {
         const surplus: any[] = []
         const loss: any[] = []
         sessionItems.forEach(item => {
-            if (item.actual_quantity !== null && item.difference > 0) {
+            if (item.actual_quantity === null) return
+            const diff = roundQuantity(item.difference, 3)
+            if (diff > 0.0001) {
                 surplus.push({
                     id: crypto.randomUUID(),
                     productId: item.product_id,
                     productName: item.products?.name,
                     unit: item.unit,
-                    quantity: item.difference,
+                    quantity: diff,
                     price: 0,
+                    categoryId: (item.products as any)?.category_id || null,
                     note: `Điều chỉnh thừa từ kiểm kê ${currentSession?.code}`
                 })
-            } else if (item.actual_quantity !== null && item.difference < 0) {
+            } else if (diff < -0.0001) {
                 loss.push({
                     id: crypto.randomUUID(),
                     productId: item.product_id,
                     productName: item.products?.name,
                     unit: item.unit,
-                    quantity: Math.abs(item.difference),
+                    quantity: Math.abs(diff),
                     price: 0,
+                    categoryId: (item.products as any)?.category_id || null,
                     note: `Điều chỉnh thiếu từ kiểm kê ${currentSession?.code}`
                 })
             }
@@ -113,11 +121,14 @@ export default function AuditDetailPage() {
                 onApprove={() => setShowApproveModal(true)}
                 onReject={() => rejectSession(id, 'Từ chối bởi quản lý')}
                 onQuickFill={quickFill}
+                onQuickFillLot={quickFillLot}
                 hasSurplus={surplusItems.length > 0}
                 hasLoss={lossItems.length > 0}
                 onOpenInbound={() => setActiveModal('INBOUND')}
                 onOpenOutbound={() => setActiveModal('OUTBOUND')}
                 onConfirmLot={() => confirmLotAdjustment(id)}
+                onToggleShowLot={() => toggleShowLotQuantity(id, !currentSession.show_lot_quantity)}
+                onDelete={() => deleteSession(currentSession.id)}
             />
 
             {/* Session Metadata (Participants & Scope) */}
@@ -220,7 +231,7 @@ export default function AuditDetailPage() {
                             active={filterMode === 'MISMATCH'}
                             onClick={() => setFilterMode('MISMATCH')}
                             label="Lệch kho"
-                            count={sessionItems.filter(i => i.actual_quantity !== null && i.difference !== 0).length}
+                            count={sessionItems.filter(i => i.actual_quantity !== null && Math.abs(roundQuantity(i.difference, 3)) >= 0.001).length}
                             alert
                         />
                     </div>
@@ -236,6 +247,7 @@ export default function AuditDetailPage() {
                                 onAddFeedback={addFeedback}
                                 readonly={currentSession.status === 'WAITING_FOR_APPROVAL' || currentSession.status === 'COMPLETED'}
                                 canApprove={canApprove && currentSession.status === 'WAITING_FOR_APPROVAL'}
+                                showLotQuantity={!!currentSession.show_lot_quantity}
                             />
                         ))}
                     </div>

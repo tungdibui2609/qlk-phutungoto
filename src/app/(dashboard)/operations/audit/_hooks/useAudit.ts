@@ -8,6 +8,7 @@ import { useUser } from '@/contexts/UserContext'
 import { useRouter } from 'next/navigation'
 import { logActivity } from '@/lib/audit'
 import { getPhysicalInventorySnapshot } from '@/lib/inventoryService'
+import { roundQuantity, isQuantityEqual } from '@/lib/numberUtils'
 
 export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks']['Row'] & {
     user_profiles?: { full_name: string | null }
@@ -15,6 +16,7 @@ export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks
     adjustment_outbound_order?: { code: string } | null
     scope?: 'ALL' | 'PARTIAL' | null
     participants?: any
+    show_lot_quantity?: boolean | null
     stats?: {
         total: number
         counted: number
@@ -30,7 +32,7 @@ export type InventoryCheck = TypedDatabase['public']['Tables']['inventory_checks
 
 export type InventoryCheckItem = TypedDatabase['public']['Tables']['inventory_check_items']['Row'] & {
     lots?: { code: string; batch_code?: string | null } | null
-    products?: { name: string; sku: string; unit: string | null; image_url?: string | null; product_media?: { url: string; type: string }[] } | null
+    products?: { name: string; sku: string; unit: string | null; category_id?: string | null; image_url?: string | null; product_media?: { url: string; type: string }[] } | null
     logs?: TypedDatabase['public']['Tables']['inventory_check_item_logs']['Row'][]
 }
 
@@ -55,10 +57,10 @@ export function useAudit() {
             // Calculate balancing progress if needed
             let balancing = undefined
             if (['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(currentSession.status)) {
-                const hasSurplus = sessionItems.some(i => i.actual_quantity !== null && i.difference > 0)
-                const hasLoss = sessionItems.some(i => i.actual_quantity !== null && i.difference < 0)
-                const hasLotMismatch = sessionItems.some(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
-                const lotMismatchCount = sessionItems.filter(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
+                const hasSurplus = sessionItems.some(i => i.actual_quantity !== null && roundQuantity(i.difference, 3) > 0.001)
+                const hasLoss = sessionItems.some(i => i.actual_quantity !== null && roundQuantity(i.difference, 3) < -0.001)
+                const hasLotMismatch = sessionItems.some(i => i.actual_quantity !== null && !isQuantityEqual(i.actual_quantity, i.lot_system_quantity))
+                const lotMismatchCount = sessionItems.filter(i => i.actual_quantity !== null && !isQuantityEqual(i.actual_quantity, i.lot_system_quantity)).length
 
                 const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0) + (hasLotMismatch ? 1 : 0)
                 if (balTotal > 0) {
@@ -181,24 +183,25 @@ export function useAudit() {
         } else if (data) {
             // Fetch stats for these sessions
             const sessionIds = data.map((s: any) => s.id)
-            const { data: items } = await supabase
+            const { data: items } = await (supabase as any)
                 .from('inventory_check_items')
                 .select('check_id, actual_quantity, system_quantity, lot_system_quantity, difference')
                 .in('check_id', sessionIds)
 
+            const typedItems: any[] = items || []
             const sessionsWithStats = data.map((s: any) => {
-                const sItems = items?.filter(i => i.check_id === s.id) || []
+                const sItems = typedItems.filter((i: any) => i.check_id === s.id)
                 const total = sItems.length
-                const counted = sItems.filter(i => i.actual_quantity !== null).length
+                const counted = sItems.filter((i: any) => i.actual_quantity !== null).length
                 const progress = total > 0 ? Math.round((counted / total) * 100) : 0
 
                 // Calculate balancing progress if applicable
                 let balancing = undefined
                 if (['WAITING_FOR_APPROVAL', 'COMPLETED'].includes(s.status)) {
-                    const hasSurplus = sItems.some(i => i.actual_quantity !== null && i.difference > 0)
-                    const hasLoss = sItems.some(i => i.actual_quantity !== null && i.difference < 0)
-                    const hasLotMismatch = sItems.some(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
-                    const lotMismatchCount = sItems.filter(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
+                    const hasSurplus = sItems.some((i: any) => i.actual_quantity !== null && roundQuantity(i.difference, 3) > 0.001)
+                    const hasLoss = sItems.some((i: any) => i.actual_quantity !== null && roundQuantity(i.difference, 3) < -0.001)
+                    const hasLotMismatch = sItems.some((i: any) => i.actual_quantity !== null && !isQuantityEqual(i.actual_quantity, i.lot_system_quantity))
+                    const lotMismatchCount = sItems.filter((i: any) => i.actual_quantity !== null && !isQuantityEqual(i.actual_quantity, i.lot_system_quantity)).length
 
                     const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0) + (hasLotMismatch ? 1 : 0)
                     if (balTotal > 0) {
@@ -234,7 +237,8 @@ export function useAudit() {
         productIds: string[] = [],
         participants: any[] = [],
         productSelections?: { productId: string, units: string[] }[],
-        globalUnitSelections?: string[]
+        globalUnitSelections?: string[],
+        showLotQuantity: boolean = false
     ) => {
         if (!currentSystem?.code || !user) return null
 
@@ -246,8 +250,8 @@ export function useAudit() {
             const randomSuffix = Math.floor(1000 + Math.random() * 9000)
             const code = `KK-${dateStr}-${randomSuffix}`
 
-            const { data: checkData, error: checkError } = await supabase
-                .from('inventory_checks')
+            const { data: checkData, error: checkError } = await (supabase
+                .from('inventory_checks') as any)
                 .insert({
                     code,
                     warehouse_id: warehouseId,
@@ -257,7 +261,8 @@ export function useAudit() {
                     created_by: user.id,
                     status: 'IN_PROGRESS',
                     scope,
-                    participants: participants as any // JSONB
+                    participants: participants as any, // JSONB
+                    show_lot_quantity: showLotQuantity
                 })
                 .select()
                 .single()
@@ -268,7 +273,7 @@ export function useAudit() {
             const checkId = checkData.id
 
             // 2. Fetch Base Products (Those that SHOULD be in the check)
-            let productsQuery = supabase
+            let productsQuery = (supabase as any)
                 .from('products')
                 .select('id, name, sku, unit')
                 .eq('system_type', currentSystem.code)
@@ -279,7 +284,8 @@ export function useAudit() {
 
             const { data: baseProducts, error: prodError } = await productsQuery
             if (prodError) throw prodError
-            if (!baseProducts || baseProducts.length === 0) {
+            const productsList: any[] = baseProducts || []
+            if (productsList.length === 0) {
                 throw new Error('Không tìm thấy sản phẩm nào trong phạm vi đã chọn')
             }
 
@@ -340,10 +346,10 @@ export function useAudit() {
                         product_id: inv.productId,
                         product_sku: inv.productCode,
                         product_name: inv.productName,
-                        system_quantity: inv.balance,
-                        lot_system_quantity: physicalQty,
+                        system_quantity: roundQuantity(inv.balance, 3),
+                        lot_system_quantity: roundQuantity(physicalQty, 3),
                         actual_quantity: null,
-                        difference: 0 - inv.balance,
+                        difference: roundQuantity(0 - inv.balance, 3),
                         unit: inv.unit || 'Cái',
                         note: ''
                     })
@@ -355,7 +361,7 @@ export function useAudit() {
             if (scope === 'PARTIAL' && productSelections) {
                 // For partial scope, we iterate through the selections to ensure all chosen units exist
                 productSelections.forEach((ps: { productId: string, units: string[] }) => {
-                    const p = baseProducts.find(bp => bp.id === ps.productId)
+                    const p = productsList.find((bp: any) => bp.id === ps.productId)
                     if (!p) return
 
                     ps.units.forEach((unit: string) => {
@@ -388,7 +394,7 @@ export function useAudit() {
                 })
             } else {
                 // For 'ALL' scope, we just add products that weren't in the snapshot at all (using default unit)
-                baseProducts.forEach((p: any) => {
+                productsList.forEach((p: any) => {
                     const defaultUnit = p.unit || 'Cái'
                     const key = `${p.id}_${defaultUnit}`
 
@@ -428,7 +434,7 @@ export function useAudit() {
             const chunkSize = 100
             for (let i = 0; i < checkItems.length; i += chunkSize) {
                 const chunk = checkItems.slice(i, i + chunkSize)
-                const { error: insertError } = await supabase
+                const { error: insertError } = await (supabase as any)
                     .from('inventory_check_items')
                     .insert(chunk)
 
@@ -452,7 +458,7 @@ export function useAudit() {
     const fetchSessionDetail = useCallback(async (id: string) => {
         setLoading(true)
         // Fetch Header
-        const { data: check, error: checkError } = await supabase
+        const { data: check, error: checkError } = await (supabase as any)
             .from('inventory_checks')
             .select(`
                 *,
@@ -472,11 +478,11 @@ export function useAudit() {
         setCurrentSession(check as any)
 
         // Fetch Items
-        const { data: rawItems, error: itemsError } = await supabase
+        const { data: rawItems, error: itemsError } = await (supabase as any)
             .from('inventory_check_items')
             .select(`
                 *,
-                products (name, sku, unit, image_url, product_media (url, type)),
+                products (name, sku, unit, category_id, image_url, product_media (url, type)),
                 logs:inventory_check_item_logs(*)
             `)
             .eq('check_id', id)
@@ -490,17 +496,18 @@ export function useAudit() {
         }
 
         // Calculate stats for current session
-        const total = rawItems.length
-        const counted = rawItems.filter(i => i.actual_quantity !== null).length
+        const typedRawItems: any[] = rawItems || []
+        const total = typedRawItems.length
+        const counted = typedRawItems.filter((i: any) => i.actual_quantity !== null).length
         const progress = total > 0 ? Math.round((counted / total) * 100) : 0
 
         // Calculate balancing progress if applicable
         let balancing = undefined
         if (['WAITING_FOR_APPROVAL', 'COMPLETED'].includes((check as any).status)) {
-            const hasSurplus = rawItems.some(i => i.actual_quantity !== null && i.difference > 0)
-            const hasLoss = rawItems.some(i => i.actual_quantity !== null && i.difference < 0)
-            const hasLotMismatch = rawItems.some(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
-            const lotMismatchCount = rawItems.filter(i => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
+            const hasSurplus = typedRawItems.some((i: any) => i.actual_quantity !== null && i.difference > 0)
+            const hasLoss = typedRawItems.some((i: any) => i.actual_quantity !== null && i.difference < 0)
+            const hasLotMismatch = typedRawItems.some((i: any) => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity)
+            const lotMismatchCount = typedRawItems.filter((i: any) => i.actual_quantity !== null && i.actual_quantity !== i.lot_system_quantity).length
 
             const balTotal = (hasSurplus ? 1 : 0) + (hasLoss ? 1 : 0) + (hasLotMismatch ? 1 : 0)
             if (balTotal > 0) {
@@ -529,13 +536,13 @@ export function useAudit() {
 
             let lotsMap: Record<string, any> = {}
             if (lotIds.length > 0) {
-                const { data: lotsData } = await supabase
+                const { data: lotsData } = await (supabase as any)
                     .from('lots')
                     .select('id, code, batch_code')
                     .in('id', lotIds)
 
                 if (lotsData) {
-                    lotsData.forEach(l => { lotsMap[l.id] = l })
+                    lotsData.forEach((l: any) => { lotsMap[l.id] = l })
                 }
             }
 
@@ -557,16 +564,19 @@ export function useAudit() {
         if (targetIndex === -1) return
 
         const item = sessionItems[targetIndex]
-        const difference = actualQty !== null ? actualQty - item.system_quantity : 0 - item.system_quantity
+        const roundedActual = actualQty !== null ? roundQuantity(actualQty, 3) : null
+        const difference = roundedActual !== null
+            ? (isQuantityEqual(roundedActual, item.system_quantity) ? 0 : roundQuantity(roundedActual - item.system_quantity, 3))
+            : roundQuantity(0 - item.system_quantity, 3)
 
-        const newItem = { ...item, actual_quantity: actualQty, difference, note: note ?? item.note }
+        const newItem = { ...item, actual_quantity: roundedActual, difference, note: note ?? item.note }
         const newItems = [...sessionItems]
         newItems[targetIndex] = newItem
         setSessionItems(newItems)
 
-        const { error } = await supabase
+        const { error } = await (supabase as any)
             .from('inventory_check_items')
-            .update({ actual_quantity: actualQty, difference, note })
+            .update({ actual_quantity: roundedActual, difference, note })
             .eq('id', itemId)
 
         if (error) {
@@ -629,7 +639,7 @@ export function useAudit() {
 
         try {
             // 1. Update the main item note for quick view
-            const { error: itemError } = await supabase
+            const { error: itemError } = await (supabase as any)
                 .from('inventory_check_items')
                 .update({ [isReviewer ? 'reviewer_note' : 'note']: content })
                 .eq('id', itemId)
@@ -637,7 +647,7 @@ export function useAudit() {
             if (itemError) throw itemError
 
             // 2. Add to logs for history & snapshot
-            const { error: logError } = await supabase
+            const { error: logError } = await (supabase as any)
                 .from('inventory_check_item_logs')
                 .insert({
                     item_id: itemId,
@@ -667,7 +677,7 @@ export function useAudit() {
 
         setLoading(true)
         try {
-            await supabase
+            await (supabase as any)
                 .from('inventory_checks')
                 .update({
                     status: 'WAITING_FOR_APPROVAL',
@@ -687,7 +697,7 @@ export function useAudit() {
 
     const linkAdjustmentTicket = async (checkId: string, orderId: string, orderType: 'INBOUND' | 'OUTBOUND') => {
         const field = orderType === 'INBOUND' ? 'adjustment_inbound_order_id' : 'adjustment_outbound_order_id'
-        const { error } = await supabase
+        const { error } = await (supabase as any)
             .from('inventory_checks')
             .update({ [field]: orderId })
             .eq('id', checkId)
@@ -750,7 +760,7 @@ export function useAudit() {
 
         setLoading(true)
         try {
-            await supabase
+            await (supabase as any)
                 .from('inventory_checks')
                 .update({
                     status: 'REJECTED',
@@ -773,7 +783,13 @@ export function useAudit() {
 
     // Delete Session
     const deleteSession = async (checkId: string) => {
-        if (!await showConfirm('Bạn có chắc chắn muốn xóa phiếu kiểm kê này? Hành động này không thể hoàn tác.')) return
+        const sessionToDelete = sessions.find(s => s.id === checkId) || currentSession
+        const isCompleted = sessionToDelete?.status === 'COMPLETED'
+        const confirmMsg = isCompleted
+            ? `Phiếu kiểm kê "${sessionToDelete?.code || checkId}" ĐÃ HOÀN THÀNH. Bạn có chắc chắn muốn xóa không? Dữ liệu kiểm kê sẽ bị xóa vĩnh viễn và không thể hoàn tác.`
+            : `Bạn có chắc chắn muốn xóa phiếu kiểm kê "${sessionToDelete?.code || checkId}"? Hành động này không thể hoàn tác.`
+
+        if (!await showConfirm(confirmMsg)) return
 
         setLoading(true)
         try {
@@ -784,8 +800,20 @@ export function useAudit() {
 
             if (error) throw error
 
-            showToast('Đã xóa phiếu kiểm kê', 'success')
+            await logActivity({
+                supabase,
+                tableName: 'inventory_checks',
+                recordId: checkId,
+                action: 'DELETE',
+                oldData: sessionToDelete || { id: checkId },
+                systemCode: currentSystem?.code
+            })
+
+            showToast('Đã xóa phiếu kiểm kê thành công', 'success')
             setSessions(prev => prev.filter(s => s.id !== checkId))
+            if (currentSession?.id === checkId) {
+                router.push('/operations/audit')
+            }
         } catch (error: any) {
             console.error('Error deleting session:', error)
             showToast('Lỗi xóa phiếu: ' + error.message, 'error')
@@ -806,7 +834,8 @@ export function useAudit() {
         // Optimistic Update
         const newItems = sessionItems.map(item => {
             if (item.actual_quantity === null) {
-                return { ...item, actual_quantity: item.system_quantity, difference: 0 }
+                const sysQty = roundQuantity(item.system_quantity, 3)
+                return { ...item, actual_quantity: sysQty, difference: 0 }
             }
             return item
         })
@@ -827,7 +856,7 @@ export function useAudit() {
             const chunkSize = 100
             for (let i = 0; i < updates.length; i += chunkSize) {
                 const chunk = updates.slice(i, i + chunkSize)
-                const { error } = await supabase
+                const { error } = await (supabase as any)
                     .from('inventory_check_items')
                     .upsert(chunk, { onConflict: 'id' })
 
@@ -845,13 +874,79 @@ export function useAudit() {
         }
     }
 
+    // Quick Fill with LOT system quantity
+    const quickFillLot = async (overwrite: boolean = false) => {
+        const itemsToUpdate = overwrite
+            ? sessionItems
+            : sessionItems.filter(i => i.actual_quantity === null)
+
+        if (itemsToUpdate.length === 0) {
+            showToast('Không có dòng nào cần điền', 'info')
+            return
+        }
+
+        const msg = overwrite
+            ? `Tự động điền số lượng tồn LOT cho toàn bộ ${itemsToUpdate.length} dòng?`
+            : `Tự động điền số lượng tồn LOT cho ${itemsToUpdate.length} dòng chưa kiểm?`
+
+        if (!await showConfirm(msg)) return
+
+        setLoading(true)
+
+        // Optimistic Update
+        const newItems = sessionItems.map(item => {
+            if (overwrite || item.actual_quantity === null) {
+                const lotQty = roundQuantity(item.lot_system_quantity || 0, 3)
+                const diff = isQuantityEqual(lotQty, item.system_quantity) ? 0 : roundQuantity(lotQty - item.system_quantity, 3)
+                return {
+                    ...item,
+                    actual_quantity: lotQty,
+                    difference: diff
+                }
+            }
+            return item
+        })
+        setSessionItems(newItems)
+
+        try {
+            const updates = itemsToUpdate.map(item => {
+                const lotQty = roundQuantity(item.lot_system_quantity || 0, 3)
+                const diff = isQuantityEqual(lotQty, item.system_quantity) ? 0 : roundQuantity(lotQty - item.system_quantity, 3)
+                return {
+                    id: item.id,
+                    check_id: item.check_id,
+                    product_id: item.product_id,
+                    actual_quantity: lotQty,
+                    difference: diff
+                }
+            })
+
+            const chunkSize = 100
+            for (let i = 0; i < updates.length; i += chunkSize) {
+                const chunk = updates.slice(i, i + chunkSize)
+                const { error } = await (supabase
+                    .from('inventory_check_items') as any)
+                    .upsert(chunk, { onConflict: 'id' })
+
+                if (error) throw error
+            }
+
+            showToast(`Đã tự động điền số lượng tồn LOT cho ${itemsToUpdate.length} dòng`, 'success')
+        } catch (error: any) {
+            console.error('Error in quickFillLot:', error)
+            showToast('Lỗi điền tự động tồn LOT: ' + error.message, 'error')
+        } finally {
+            setLoading(false)
+        }
+    }
+
     const confirmLotAdjustment = async (checkId: string) => {
         if (!user) return
 
         setLoading(true)
         try {
             const now = new Date().toISOString()
-            const { error } = await supabase
+            const { error } = await (supabase as any)
                 .from('inventory_checks')
                 .update({
                     lot_adjusted_at: now,
@@ -886,6 +981,25 @@ export function useAudit() {
         }
     }
 
+    const toggleShowLotQuantity = async (checkId: string, show: boolean) => {
+        try {
+            const { error } = await (supabase
+                .from('inventory_checks') as any)
+                .update({ show_lot_quantity: show })
+                .eq('id', checkId)
+
+            if (error) throw error
+
+            if (currentSession?.id === checkId) {
+                setCurrentSession(prev => prev ? { ...prev, show_lot_quantity: show } : null)
+            }
+            showToast(show ? 'Đã bật hiển thị tồn LOT' : 'Đã ẩn hiển thị tồn LOT', 'success')
+        } catch (error: any) {
+            console.error('Error toggling show lot quantity:', error)
+            showToast('Lỗi cập nhật hiển thị tồn LOT: ' + error.message, 'error')
+        }
+    }
+
     return {
         loading,
         sessions,
@@ -901,7 +1015,9 @@ export function useAudit() {
         rejectSession,
         deleteSession,
         quickFill,
+        quickFillLot,
         linkAdjustmentTicket,
-        confirmLotAdjustment
+        confirmLotAdjustment,
+        toggleShowLotQuantity
     }
 }

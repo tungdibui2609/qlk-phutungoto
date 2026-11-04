@@ -1,7 +1,7 @@
 'use client'
 
 import { InventoryCheck } from '../_hooks/useAudit'
-import { Calendar, User, FileText, ChevronRight, ClipboardCheck, Trash2, Users, Layers, Target, Ban } from 'lucide-react'
+import { Calendar, User, FileText, ChevronRight, ClipboardCheck, Trash2, Users, Layers, Target } from 'lucide-react'
 import Link from 'next/link'
 
 interface AuditSessionListProps {
@@ -64,24 +64,18 @@ export function AuditSessionList({ sessions, loading, onDelete }: AuditSessionLi
 
                                 <div className="flex items-center gap-1.5 ml-1 text-[10px] font-bold tracking-wider uppercase">
                                     <span className="text-slate-400">Xóa phiếu:</span>
-                                    {['DRAFT', 'IN_PROGRESS', 'CANCELLED', 'REJECTED'].includes(session.status) ? (
-                                        <button
-                                            onClick={(e) => {
-                                                e.preventDefault()
-                                                e.stopPropagation()
-                                                onDelete(session.id)
-                                            }}
-                                            className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 group/del hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded transition-all"
-                                        >
-                                            <span>Được xóa</span>
-                                            <Trash2 size={12} className="group-hover/del:text-red-500 transition-colors" />
-                                        </button>
-                                    ) : (
-                                        <div className="flex items-center gap-1 text-slate-400 px-1.5 py-0.5">
-                                            <span>Không được xóa</span>
-                                            <Ban size={12} />
-                                        </div>
-                                    )}
+                                    <button
+                                        onClick={(e) => {
+                                            e.preventDefault()
+                                            e.stopPropagation()
+                                            onDelete(session.id)
+                                        }}
+                                        className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 group/del hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded transition-all"
+                                        title={session.status === 'COMPLETED' ? 'Xóa phiếu kiểm kê đã hoàn thành' : 'Xóa phiếu kiểm kê'}
+                                    >
+                                        <span>Được xóa</span>
+                                        <Trash2 size={12} className="group-hover/del:text-red-500 transition-colors" />
+                                    </button>
                                 </div>
                             </div>
                         </div>

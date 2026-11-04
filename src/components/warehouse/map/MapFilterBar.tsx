@@ -35,6 +35,8 @@ interface MapFilterBarProps {
     onlyShowMarked?: boolean
     onToggleOnlyShowMarked?: () => void
     markedCount?: number
+    excludeTags?: boolean
+    onToggleExcludeTags?: () => void
     // Deep Scan Props
     isDeepScanMode?: boolean
     onToggleDeepScanMode?: () => void
@@ -87,6 +89,8 @@ export function MapFilterBar({
     onlyShowMarked,
     onToggleOnlyShowMarked,
     markedCount,
+    excludeTags = false,
+    onToggleExcludeTags,
     // Deep scan
     isDeepScanMode = false,
     onToggleDeepScanMode,
@@ -353,6 +357,7 @@ export function MapFilterBar({
         onEndDateChange('')
         if (onlyShowMarked && onToggleOnlyShowMarked) onToggleOnlyShowMarked()
         if (hidePendingExport && onHidePendingExportChange) onHidePendingExportChange(false)
+        if (excludeTags && onToggleExcludeTags) onToggleExcludeTags()
         setShowSuggestions(false)
     }
 
@@ -434,7 +439,7 @@ export function MapFilterBar({
                                 searchMode === 'production' ? "Nhập mã LSX hoặc mã lot sản xuất..." :
                                 isDeepScanMode 
                                     ? "Tìm kiếm kết hợp (dona A, mã tem, vị trí...) + bộ lọc bên dưới..." 
-                                    : "Tìm kiếm nhanh (hỗ trợ tên gõ tắt, SKU, vị trí, tem dập)..."
+                                    : "Tìm kiếm nhanh (hỗ trợ tên gõ tắt, SKU, vị trí, gõ !tag để bỏ mã phụ)..."
                             }
                             value={localSearchTerm}
                             onChange={(e) => {
@@ -565,6 +570,23 @@ export function MapFilterBar({
                 <div className="hidden lg:flex items-center gap-2 shrink-0">
                     {/* Nút gạt chuyển chế độ */}
                     {renderModeToggle()}
+
+                    {/* Nút lọc không kèm mã phụ (tag) */}
+                    {onToggleExcludeTags && (
+                        <button
+                            type="button"
+                            onClick={onToggleExcludeTags}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-bold transition-all whitespace-nowrap shadow-xs active:scale-95 shrink-0 cursor-pointer ${
+                                excludeTags
+                                    ? 'bg-amber-600 text-white border-amber-700 ring-2 ring-amber-300 dark:ring-amber-800 shadow-amber-500/20'
+                                    : 'bg-white border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-amber-50/60 dark:hover:bg-amber-950/30 hover:border-amber-300 dark:hover:border-amber-800'
+                            }`}
+                            title={excludeTags ? "Đang lọc: Chỉ hiển thị hàng chuẩn KHÔNG có mã phụ (Bấm để hiện cả hàng có tag)" : "Lọc chỉ hiển thị các lô hàng chuẩn KHÔNG có mã tag / mã phụ"}
+                        >
+                            <Tag size={14} className={excludeTags ? "fill-white text-white" : "text-amber-500"} />
+                            <span>Không mã phụ</span>
+                        </button>
+                    )}
 
                     {onToggleOnlyShowMarked && (
                         <button

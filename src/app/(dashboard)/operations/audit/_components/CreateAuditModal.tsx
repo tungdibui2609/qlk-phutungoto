@@ -30,7 +30,8 @@ interface CreateAuditModalProps {
         productIds: string[],
         participants: { name: string, role: string }[],
         productSelections?: { productId: string, units: string[] }[],
-        globalUnitSelections?: string[]
+        globalUnitSelections?: string[],
+        showLotQuantity?: boolean
     ) => Promise<any>
 }
 
@@ -46,7 +47,7 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
     const [scope, setScope] = useState<'ALL' | 'PARTIAL'>('ALL')
     const [allSystemUnits, setAllSystemUnits] = useState<{ id: string, name: string }[]>([])
     const [globalSelectedUnits, setGlobalSelectedUnits] = useState<string[]>([])
-
+    const [showLotQuantity, setShowLotQuantity] = useState(false)
     // Team/Member Selection State
     const [teams, setTeams] = useState<ConstructionTeam[]>([])
     const [selectedTeamId, setSelectedTeamId] = useState<string>('')
@@ -101,7 +102,7 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
 
     const fetchWarehouses = async () => {
         setLoading(true)
-        const { data } = await supabase
+        const { data } = await (supabase as any)
             .from('branches')
             .select('id, name, is_default')
             .order('is_default', { ascending: false })
@@ -167,7 +168,7 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
         setSearchingProducts(true)
 
         // 1. Search products
-        let query = supabase
+        let query = (supabase as any)
             .from('products')
             .select('id, name, sku, unit')
             .or(`name.ilike.%${q}%,sku.ilike.%${q}%`)
@@ -180,14 +181,15 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
         const { data: prodData } = await query
 
         if (prodData) {
+            const productsList: any[] = prodData || []
             // 2. For each product, fetch its available units
-            const productIds = prodData.map(p => p.id)
+            const productIds = productsList.map((p: any) => p.id)
             const { data: unitData } = await (supabase
                 .from('product_units') as any)
                 .select('product_id, units:unit_id(name)')
                 .in('product_id', productIds)
 
-            const productsWithUnits = prodData.map(p => {
+            const productsWithUnits = productsList.map((p: any) => {
                 const pUnits = unitData
                     ?.filter((u: any) => u.product_id === p.id)
                     .map((u: any) => (u as any).units?.name)
@@ -286,7 +288,8 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
             selectedProducts.map(p => p.id),
             allParticipants,
             productSelections,
-            globalSelectedUnits.length > 0 ? globalSelectedUnits : undefined
+            globalSelectedUnits.length > 0 ? globalSelectedUnits : undefined,
+            showLotQuantity
         )
         setSubmitting(false)
         onClose()
@@ -332,6 +335,50 @@ export function CreateAuditModal({ isOpen, onClose, onCreate }: CreateAuditModal
                                     <option value="PARTIAL">Tùy chọn sản phẩm</option>
                                 </select>
                             </div>
+                        </div>
+
+                        {/* 1.6 Show LOT balance option */}
+                        <div className="flex items-center justify-between p-4 bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/60 rounded-2xl transition-colors">
+                            <div className="space-y-0.5 pr-4">
+                                <label htmlFor="show-lot-checkbox" className="text-sm font-bold text-slate-800 dark:text-slate-200 cursor-pointer flex items-center gap-2">
+                                    Cho phép hiện số lượng tồn theo LOT của sản phẩm
+                                </label>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    Khi bật, kiểm kê viên sẽ nhìn thấy số lượng tồn LOT thực tế của từng sản phẩm để đối chiếu trực tiếp khi kiểm đếm.
+                                </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                <input
+                                    id="show-lot-checkbox"
+                                    type="checkbox"
+                                    checked={showLotQuantity}
+                                    onChange={(e) => setShowLotQuantity(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-orange-600"></div>
+                            </label>
+                        </div>
+
+                        {/* 1.6 Show LOT balance option */}
+                        <div className="flex items-center justify-between p-4 bg-orange-50/60 dark:bg-orange-950/20 border border-orange-200 dark:border-orange-800/60 rounded-2xl transition-colors">
+                            <div className="space-y-0.5 pr-4">
+                                <label htmlFor="show-lot-checkbox" className="text-sm font-bold text-slate-800 dark:text-slate-200 cursor-pointer flex items-center gap-2">
+                                    Cho phép hiện số lượng tồn theo LOT của sản phẩm
+                                </label>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">
+                                    Khi bật, kiểm kê viên sẽ nhìn thấy số lượng tồn LOT thực tế của từng sản phẩm để đối chiếu trực tiếp khi kiểm đếm.
+                                </p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                <input
+                                    id="show-lot-checkbox"
+                                    type="checkbox"
+                                    checked={showLotQuantity}
+                                    onChange={(e) => setShowLotQuantity(e.target.checked)}
+                                    className="sr-only peer"
+                                />
+                                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-slate-600 peer-checked:bg-orange-600"></div>
+                            </label>
                         </div>
 
                         {/* 1.5 Global Unit selection (master filter) */}

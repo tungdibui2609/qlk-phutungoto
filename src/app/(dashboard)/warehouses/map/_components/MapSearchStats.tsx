@@ -373,7 +373,7 @@ export function MapSearchStats({
     }
 
     const stats = useMemo(() => {
-        if (!searchTerm) return null
+        if (!searchTerm && !categoryName) return null
 
         const groupingMap: Record<string, { id: string; count: number; quantity: number; name: string; oldestDate: string | null; newestDate: string | null; positionIds: string[] }> = {}
         let totalQty = 0
@@ -387,7 +387,51 @@ export function MapSearchStats({
             if (pos.lot_id && lotInfo[pos.lot_id]) {
                 const lot = lotInfo[pos.lot_id]
                 const items = lot.items || []
-                qty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+
+                // If searching specifically by position code, lot code, or STT: count entire pallet
+                // If searching by product name, SKU, internal code, tags, or category: only count matching items
+                const isPosOrLotSearch = !!(
+                    searchTerm && (
+                        advancedMatchSearch(pos.code, searchTerm) ||
+                        (lot.code && advancedMatchSearch(lot.code, searchTerm)) ||
+                        (lot.daily_seq && advancedMatchSearch([String(lot.daily_seq), decodeSTT(lot.daily_seq)], searchTerm))
+                    )
+                )
+
+                if (isPosOrLotSearch || (!searchTerm && !categoryName)) {
+                    qty = items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                } else {
+                    const matchedItems = items.filter((item: any) => {
+                        let matchesSearch = true
+                        if (searchTerm) {
+                            const searchVals = [
+                                item.product_name || lot.products?.name,
+                                item.sku || lot.products?.sku,
+                                item.internal_code || lot.products?.internal_code,
+                                item.internal_name || lot.products?.internal_name,
+                                item.aliases || lot.products?.aliases,
+                                ...(item.categoryNames || [])
+                            ].filter(Boolean)
+                            matchesSearch = advancedMatchSearch(searchVals, searchTerm)
+                        }
+
+                        let matchesCat = true
+                        if (categoryName) {
+                            const catVals = [
+                                item.primary_category_name,
+                                ...(item.categoryNames || [])
+                            ].filter(Boolean)
+                            matchesCat = catVals.some((c: string) => c.toLowerCase().includes(categoryName.toLowerCase()))
+                        }
+
+                        return matchesSearch && matchesCat
+                    })
+
+                    qty = matchedItems.length > 0
+                        ? matchedItems.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                        : items.reduce((sum: number, item: any) => sum + (item.quantity || 0), 0)
+                }
+
                 posDate = lot.inbound_date || lot.created_at || null
             }
             totalQty += qty

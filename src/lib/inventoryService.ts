@@ -30,6 +30,11 @@ export function aggregateLotData(lots: any[]) {
         }
     })
 
+    // Round to 3 decimal places to eliminate floating point issues (e.g. 14381.200000000003)
+    totals.forEach((val, k) => {
+        totals.set(k, Math.round((val + Number.EPSILON) * 1000) / 1000)
+    })
+
     return totals
 }
 
