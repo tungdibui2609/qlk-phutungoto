@@ -2040,3 +2040,161 @@ Không có điều kiện theo mã kho/tên kho nào được viết thêm; logi
 - `npx tsc --noEmit`: không còn lỗi nào trên `ExportMapList.tsx` và `export-order/[id]/page.tsx` (lỗi `Property 'id' does not exist on type 'never'` ở vòng log đã xử lý bằng cách cast mảng kết quả).
 - `git diff --stat`: page.tsx +51 dòng, ExportMapList.tsx 43 thêm/14 xóa (14 dòng xóa chính là khối nút mắt được thụt lề lại vào wrapper mới) — không có dòng nào bị viết lại chỉ vì đổi line ending.
 - **Chưa** bấm thử trên trình duyệt (agent không tự nhập được mật khẩu test). User mở `http://localhost:3001/work/export-order/e244ca32-743b-4fdb-a7b1-da58ecf811e0` (bản dev, `:3000` đang là build cũ sẽ chưa thấy nút mới), bấm icon thùng rác ở góc phải một card vị trí → xác nhận → card biến mất, số dòng trong bảng giảm đúng bằng số dòng của card đó, và bảng hoạt động log thấy các dòng `export_task_items` bị xóa.
+
+
+# Walkthrough (tiếp): Module Kế Hoạch Công Việc & Đánh Giá Cuối Ngày (`work_plan`)
+
+Triển khai module **Kế Hoạch Công Việc & Đánh Giá Cuối Ngày** (`work_plan`) theo kiến trúc Modular-First và cô lập dữ liệu phân hệ (`system_code`), giúp lập bảng kế hoạch làm việc hàng ngày, giao việc cho nhân sự/tổ đội, chấm điểm chất lượng cuối ngày, chuyển việc tồn đọng sang ngày hôm sau và xuất phiếu báo cáo Zalo/Excel.
+
+## 🏗️ 1. Cấu Trúc Dữ Liệu & Module
+- **Migration**: [20261105141000_create_work_plans_module.sql](file:///d:/chanh%20thu/web/supabase/migrations/20261105141000_create_work_plans_module.sql)
+  - Đăng ký `work_plan` trong `public.app_modules` (`category = 'utility'`, `is_basic = true`).
+  - Tạo bảng `public.work_plans` và `public.work_plan_items` có đầy đủ cột `system_code` và `company_id` để cô lập tuyệt đối dữ liệu giữa các phân hệ kho và khách hàng.
+- **Khai báo Module**:
+  - [utility-modules.ts](file:///d:/chanh%20thu/web/src/lib/utility-modules.ts): Khai báo module `work_plan` ("Kế hoạch Công việc & Đánh giá").
+  - [Sidebar.tsx](file:///d:/chanh%20thu/web/src/components/layout/Sidebar.tsx) & [SanxuatSidebar.tsx](file:///d:/chanh%20thu/web/src/components/layout/SanxuatSidebar.tsx): Thêm mục menu **Kế hoạch & Đánh giá CV** (`/work/plans` và `/sanxuat/work/plans`), kiểm soát hiển thị 100% qua `hasModule('work_plan')`.
+
+## 🎨 2. Thành Phần Giao Diện & Nghiệp Vụ
+- [WorkPlansView.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkPlansView.tsx): Màn hình điều phối kế hoạch theo ngày (chọn nhanh Hôm qua / Hôm nay / Kế hoạch Ngày mai + dải lịch 7 ngày), thêm/sửa/sắp xếp đầu việc, gắn nhiều nhân viên hoặc tổ đội phụ trách, chấm nhanh hoàn thành 1 chạm hoặc chuyển việc tồn đọng sang ngày kế tiếp.
+- [BulkImportModal.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/BulkImportModal.tsx): Công cụ dán nhanh danh sách nhiều dòng từ Zalo/Excel, tự động bóc tách STT `1.`, `2.`, nhận diện nhóm công việc, khu vực (`Kho 1`, `Kho bao bì mới`...) và bắt tên nhân viên có trong câu (`Uy`, `Trôi`...).
+- [EvaluateItemModal.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/EvaluateItemModal.tsx): Đánh giá chi tiết cuối ngày (Trạng thái hoàn thành, % tiến độ, mức chất lượng 1-5 Sao: Xuất sắc / Tốt / Đạt / Cần nhắc nhở / Chưa đạt, nhận xét của Quản lý, ảnh minh chứng kết quả và tùy chọn tự động chuyển việc chưa xong sang ngày mai).
+- [PlanExportCardModal.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/PlanExportCardModal.tsx): Xuất phiếu ảnh PNG sắc nét hoặc copy ảnh trực tiếp vào Clipboard (`Ctrl+V` dán thẳng vào Zalo) với 2 mẫu: **Phiếu Kế hoạch đầu ngày** và **Phiếu Báo cáo Đánh giá cuối ngày**.
+- [WorkPlanAnalyticsTab.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkPlanAnalyticsTab.tsx): Bảng tổng kết & xếp hạng hiệu suất nhân viên/tổ đội theo Tuần/Tháng (tỷ lệ hoàn thành TB, điểm Sao chất lượng TB, xếp hạng A+/A/B/C) và xuất báo cáo Excel 2 sheet.
+
+## 🔒 3. Tuân Thủ Kiến Trúc Phân Hệ & Bảo Toàn Kho Đông Lạnh
+- **100% Modular-First (`hasModule('work_plan')`)**: Không hardcode bất kỳ mã kho nào; trang `/work/plans` kiểm tra `hasModule('work_plan')`. Khi tắt module, phân hệ giữ nguyên trạng thái ban đầu.
+- **Cô lập dữ liệu (`system_code`)**: Mọi thao tác đọc/ghi/xóa và kênh Realtime trên `work_plans` và `work_plan_items` đều lọc `.eq('system_code', currentSystem.code)`.
+- **Không chạm luồng cốt lõi Kho Đông Lạnh**: Không sửa đổi bất kỳ bảng hay component nhập/xuất/LOT nào của Kho Đông Lạnh.
+
+# Walkthrough (tiếp): File Excel "Tỉ lệ lấp đầy" thành 4 sheet, đủ 3 tab + toàn bộ cây khu vực
+
+User gửi 2 ảnh (màn Dashboard và file `TI_LE_LAP_DAY_KHO_LO_KE_20261105_…` đang mở bằng Excel) và nói không hài lòng với file xuất. Bốn điểm user chọn phải: **thiếu 2 tab còn lại**, **biểu đồ PNG xấu/thiếu số**, **không có cấp khu con/dãy**, **layout tổng thể**; mức độ: **sửa trong khung cũ**. Hai quyết định tiếp theo: file gồm **4 sheet Tong quan + Lo ke/Sanh/Tong**, biểu đồ thanh **chỉ vẽ cấp khu vực**.
+
+## Lib thay đổi
+
+- `src/lib/warehouseFillRate.ts`: thêm `fillTreeRows(stats, scope)` trả `{ stat, depth, path }` theo đúng thứ tự màn hình (display_order → so mã tự nhiên, cùng comparator `compareZoneOrder`). Xây bản đồ cha→con **một lần** rồi đi cây — phân hệ thật có 4.223 khu, nếu gọi `childStatsOf` cho từng node là O(n²). `path` lấy theo cây zone gốc (kể cả cha ngoài phạm vi) để 5 khu "SẢNH 1" của 5 kho phân biệt được. Tạm lọc predicate phạm vi thành `isInScope()` dùng chung cho `childStatsOf` (hành vi không đổi — 21 test cũ của file vẫn pass).
+- `src/lib/chartImage.ts`: `ChartSpec.valueLabels?: string[]` — thanh ghi nhãn tự do thay vì chỉ con số; lề phải chừa 150px khi có nhãn dài, nhãn chuyển vào **trong** thanh (chữ trắng) khi thanh đủ chỗ, ra ngoài khi thanh ngắn (kể cả thanh 0%).
+- `src/lib/dashboardExcelWorkbook.ts`: thêm `DashboardSheetSpec` + `buildWorkbookFromSheets(sheets)` — một sheet = tiêu đề + metadata (giá trị **số** ghi thành ô số, không còn chuỗi "6.744") + ảnh PNG + bảng; bảng tự bắt đầu **bên dưới ảnh** (đếm số dòng theo chiều cao ảnh), freeze/autofilter/data-bar tính theo dòng tiêu đề thực tế. `writeTable` nhận `rowIndents` → cột "Khu vực" thụt đầu dòng theo cấp. `buildDashboardWorkbook` cũ giờ chỉ là wrapper 2 sheet "Bieu do"/"Du lieu" nên 3 view khác (phân bố KG, theo danh mục, container) giữ nguyên định dạng.
+- `src/lib/dashboardExcelSpecs.ts`: `fillRateExportSpec` (1 tab + 1 cấp) thay bằng `fillRateWorkbookPlan({ systemName, stats })` → 4 sheet. Sheet phạm vi: 7 cột `Khu vực | Đường dẫn trong sơ đồ | Ô … quy hoạch | Đang chứa | Còn trống | Tỉ lệ lấp đầy | Trạng thái`, dòng tổng "Toàn Lô kệ/Sảnh/vị trí", data-bar cột tỉ lệ; biểu đồ `valueLabels` dạng `42,9% · 335/780 ô`.
+- `src/lib/dashboardExcelExport.ts`: thêm `exportDashboardSheets()` (vẽ từng ảnh rồi gom một workbook); `exportDashboardChart()` giữ nguyên chữ ký cho các view khác.
+- `WarehouseFillRateChart.tsx`: `handleExport` không còn phụ thuộc tab/cấp đang drill, tên file bỏ hậu tố tab → `TI_LE_LAP_DAY_KHO_20261105_1448.xlsx`.
+
+## Số liệu đo trên dữ liệu thật KHO_DONG_LANH (dump ra CSV bằng psql, dựng file bằng vitest)
+
+- `totals` khớp **1:1** ảnh user chụp: Lô kệ **2.035/6.744 = 30,2%**, Sảnh **33/1.106 = 3%**, Tổng **2.068/7.850 = 26,3%** (4.223 zone, 7.850 vị trí).
+- Số dòng cây khu mỗi sheet: `Lo ke=4.211`, `Sanh=12`, `Tong (ke + sanh)=4.223`; dựng file **1,63s**, **275KB** (chưa tính 3 ảnh PNG vì canvas chỉ có trên trình duyệt).
+- Cấp hiển thị đúng theo sơ đồ: `KHO 1 › DÃY 1 › Ô A01 › TẦNG 1` (780/335 = 42,9% ở KHO 1 — lệch ảnh chụp 770/329 vì user đã sửa sơ đồ giữa hai thời điểm, tổng toàn kho vẫn 6.744).
+- Sample đã sinh để mở thử: `MAU-EXCEL-TI-LE-LAP-DAY.xlsx` ở gốc repo (không track, xem xong xóa được; file này chưa có ảnh biểu đồ).
+
+## Kiểm chứng
+
+- `src/lib/__tests__/dashboardExcel.test.ts`: **13 test pass** — 4 tên sheet, dòng sheet Tổng quan đúng `stats.totals` cả ba tab, cây `KHO 1 → KHU A 1 → KHO 2` với `rowIndents [0,1,0]`, `valueLabels` dạng `37,5% · 6/16 ô` và `100% · 5/5 ô`, khu sảnh trùng tên phân biệt nhờ đường dẫn, và test **load lại file .xlsx bằng exceljs** để assert ảnh nằm trên, bảng bắt đầu dưới ảnh, indent giữ nguyên khi mở file, data-bar `F{header+1}:F{header+3}`.
+- 3 test cũ của `buildDashboardWorkbook` chuyển sang fixture `categoryPositionExportSpec`/`distributionKgExportSpec` để vẫn chống regress cho 3 view chưa đổi.
+- `npx tsc --noEmit`: sạch trên `warehouseFillRate.ts`, `chartImage.ts`, `dashboardExcel*.ts`, `WarehouseFillRateChart.tsx`. `warehouseFillRate.test.ts` 21 test vẫn pass.
+- **Chưa** xác minh mắt thường phần ảnh PNG (agent không đăng nhập được): user bấm **Xuất Excel** trên `http://localhost:3001` (không phải `:3000` đang là build cũ) rồi mở 4 sheet, đối chiếu chữ trên thanh có đủ `42,9% · 335/780 ô` và không bị cắt.
+
+
+## 📊 4. Bổ Sung Số Liệu Chứng Minh Khối Lượng & Liên Kết Lệnh Xuất Kho (`workload_metrics`)
+- **Migration**: [20261105150500_add_workload_metrics_to_work_plan_items.sql](file:///d:/chanh%20thu/web/supabase/migrations/20261105150500_add_workload_metrics_to_work_plan_items.sql) bổ sung cột `workload_metrics JSONB` vào `public.work_plan_items`.
+- **Liên kết trực tiếp với Lệnh xuất kho (`/work/export-order`)**:
+  - Component [WorkloadMetricsSection.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkloadMetricsSection.tsx) truy vấn danh sách `export_tasks` & `export_task_items` của đúng `system_code` hiện hành.
+  - Khi người dùng tích chọn 1 hoặc nhiều lệnh xuất (ví dụ: `đơn C hạt CUối` có 52 vị trí, 1.560 Thùng 20kg), hệ thống tự động cộng dồn **Số Vị Trí**, **Số LOT**, **Số Thùng**, **Khối lượng quy đổi (Kg/Tấn)** và tự động gợi ý **Mức độ Nặng / Nhẹ** (`🌱 Nhẹ x1.0`, `⚡ Vừa x1.2`, `💪 Nặng x1.5`, `🔥 Rất nặng x2.0`).
+  - Hiển thị huy hiệu số liệu và nút bấm mở trực tiếp `/work/export-order/[id]` ngay trên dòng công việc trong [WorkPlansView.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkPlansView.tsx), in lên phiếu báo cáo Zalo trong [PlanExportCardModal.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/PlanExportCardModal.tsx) và tính **Điểm Khối Lượng Quy Đổi** trong [WorkPlanAnalyticsTab.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkPlanAnalyticsTab.tsx).
+
+
+# Walkthrough (tiếp): Cấu hình "Danh mục cần theo dõi" không còn mất sau mỗi ngày
+
+## Triệu chứng
+Dashboard **Tỉ lệ phân bố hàng hóa tồn kho** → tab *Theo danh mục (vị trí)* → nút **CẤU HÌNH (34)** → tích vài danh mục → **Lưu hệ thống**: báo thành công, nhưng hôm sau mở lại vẫn thấy **chọn toàn bộ 34 danh mục**. Trang `/warehouses/status` (dùng chung khóa cấu hình) và bộ lọc danh mục tab *Theo khối lượng (KG)* (`dashboard_config.allowed_category_ids`) cũng cùng bệnh.
+
+## Nguyên nhân (đã đo, không suy đoán)
+Cấu hình được nhét vào jsonb `systems.modules`, và khối đó có 3 con đường hỏng **im lặng**:
+
+1. **RLS chặn ghi với tài khoản thường.** Policy `Enable update for admins` trên bảng `systems` yêu cầu `user_profiles.account_level IN (1,2)`; toàn bộ tài khoản kho `ctg.*@system.local` là **level 3**. Giả lập đúng quyền trong psql:
+   `update systems set modules = modules || '{"__probe__":true}' where code='KHO_DONG_LANH' returning id;` → **UPDATE 0** (không lỗi). PostgREST trả 200 với `error: null`, nên `if (error) throw error` không bao giờ chạy, modal vẫn đóng và `/warehouses/status` vẫn toast *"Đã lưu cấu hình … lên hệ thống!"*.
+2. **Superadmin không có dòng `systems` nào.** `tungdibui2609@gmail.com` có `company_id = a0000000-…001` — UUID này **không tồn tại trong bảng `companies`** và không `systems` nào thuộc về nó, nên `fetchSystems` (lọc `.eq('company_id', profile.company_id)`) trả 0 dòng và SystemContext thay bằng 4 system **giả, không có `id`**. `patchSystemModules` mở đầu bằng `if (!currentSystem?.id) return` → mọi lần lưu bị bỏ qua từ dòng đầu tiên.
+3. **Trang Cài đặt tính năng ghi đè cả khối jsonb.** `UnifiedSystemConfig.tsx` và `SystemModuleConfig.tsx` từng submit `modules: {product_modules, utility_modules, print_modules, qr_modules, report_modules}` — đúng 5 khóa, **xóa sạch** `warehouse_status_config`, `dashboard_config`, `marked_positions`, `locked_position_ids`, `loose_positions`… của mọi kho. Bằng chứng trong DB: `KHO_DUNG_CU`, `KHO_NGUYEN_VAT_LIEU`, `KHO_VAT_TU_BAO_BI` và 4 kho `DEFAULT` chỉ còn đúng 5 khóa module.
+
+Bổ sung: `systems.modules` là blob dùng chung, đọc–gộp–ghi không nguyên tử, nên còn đua với các API route `positions/lock|loose|mark`.
+
+## Cách sửa
+Bảng riêng cho cấu hình giao diện, khóa theo **mã phân hệ** (không phụ thuộc `systems.id`), cùng mô hình đã chứng minh là chạy được trong app: `dashboard_chart_settings` (cấu hình biểu đồ Container Stock **chưa bao giờ mất**).
+
+- **Migration** [20261105170000_create_system_ui_settings.sql](file:///d:/chanh%20thu/web/supabase/migrations/20261105170000_create_system_ui_settings.sql): tạo `system_ui_settings(id, system_code, config jsonb, updated_at)`, policy `FOR ALL TO authenticated USING (true)` + `FOR SELECT` cho cả anon, và **backfill** nguyên trạng 2 khóa cũ từ `systems.modules`.
+- **Thư viện** [src/lib/systemUiSettings.ts](file:///d:/chanh%20thu/web/src/lib/systemUiSettings.ts): `readUiConfig(systemCode)` / `writeUiConfig(systemCode, patch)` — gộp theo khóa cấp 1 rồi **đọc lại để xác nhận**; nếu dữ liệu không nằm lại thì `throw` để UI báo đỏ thay vì im lặng.
+- **Hai nơi lưu/đọc** chuyển sang bảng mới: [InventoryDistributionChart.tsx:170](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L170) (cả `dashboard_config` và `warehouse_status_config`, đã xóa `patchSystemModules`) và [warehouses/status/page.tsx:105](file:///d:/chanh%20thu/web/src/app/(dashboard)/warehouses/status/page.tsx#L105).
+- **Chặn nguồn wipe còn lại**: 2 trang cài đặt module giờ đọc `modules` hiện có rồi ghi đè từng khóa (giữ `marked_positions`, `locked_position_ids`…).
+
+## Tuân thủ kiến trúc phân hệ
+- Bảng mới có `system_code`; mọi đọc/ghi đều theo `systemType` hiện hành → không lộ cấu hình giữa các phân hệ.
+- Không hardcode mã kho: khóa là `ui_<code>` sinh từ `systemType`, kho nào (tên/mã bất kỳ) cũng dùng chung một đường.
+- Kho Đông Lạnh: không đụng schema nghiệp vụ, chỉ **bê nguyên giá trị đã lưu** sang bảng mới (backfill) — hành vi hiển thị giữ nguyên.
+
+## Kiểm chứng
+- psql giả lập role `authenticated` của `ctg.giang@system.local` (account_level 3): trên `systems` → **UPDATE 0**; trên `system_ui_settings` → **INSERT 0 1** và đọc lại thấy đúng `{"probe": true}`. Đây chính là chỗ trước đây hỏng.
+- Backfill: `ui_KHO_DONG_LANH` nhận đúng 3 danh mục đang tích (Sầu Riêng / Xoài / Mít).
+- `npx tsc --noEmit` sạch trên 5 file thay đổi; `npx vitest run` **158/158 pass** (21 file).
+- **Cần user xác nhận trên trình duyệt** (`http://localhost:3001`): tích 3 danh mục → Lưu hệ thống → F5 / đăng xuất đăng nhập lại bằng tài khoản **nhân viên level 3** → vẫn còn 3 danh mục; mở Cài đặt → Tính năng → Lưu, quay lại dashboard vẫn còn nguyên.
+
+
+# Walkthrough (tiếp): Tab "Theo danh mục (vị trí)" chuyển sang biểu đồ tròn
+
+## Yêu cầu
+User: *"báo cáo tỉ lệ phân bố hàng hóa theo danh mục tôi muốn hình tròn cho dễ nhìn"*. Hai quyết định user chọn: **tròn + chú giải, bỏ thẻ thanh ngang**, và **file Excel cũng đổi sang tròn cho khớp màn hình**.
+
+## Thay đổi
+- [InventoryDistributionChart.tsx:817](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L817): thay lưới thẻ bằng donut recharts **đúng kiểu tab "Theo khối lượng (KG)"** (inner 80 / outer 110 / paddingAngle 2) — tâm ghi `2.072` ô đang chứa hàng trên `7.850` ô quy hoạch; chú giải 3 cột vẫn hiển thị đủ **số ô + TỈ LỆ HÀNG HOÁ + TỈ LỆ CÔNG SUẤT** như thẻ cũ.
+- `positionChartData` sắp xếp **lớn → bé theo số ô**, khớp thứ tự biểu đồ trong file Excel; tooltip dùng `% hàng hoá` thật (mẫu số = ô đang chứa), không dùng % tự tính của recharts (vốn lấy theo tổng các lát, dễ hiểu sai vì một LOT mang nhiều danh mục).
+- [dashboardExcelSpecs.ts:288](file:///D:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts#L288): `categoryPositionExportSpec` đổi `chart.kind` từ `hbar` → `donut` (`legendLimit: 12`, vượt 12 danh mục tự gom "Khác").
+- Ba dòng ghi chú giải thích mẫu số / LOT đa danh mục / ô chưa gắn danh mục **giữ nguyên**.
+
+## Kiểm chứng
+- `npx tsc --noEmit` sạch; `dashboardExcel.test.ts` **13/13 pass** (thêm assert `chart.kind === 'donut'`).
+- **Chưa** xác minh mắt thường: user mở `http://localhost:3001`, chuyển sang tab *Theo danh mục (vị trí)* xem donut + chú giải, rồi bấm **Xuất Excel** kiểm tra sheet "Bieu do" là hình tròn.
+
+---
+
+# Walkthrough (tiếp): Mở Rộng 4 Nguồn Số Liệu Chứng Minh Độ Nặng / Nhẹ Công Việc (`/work/plans`)
+
+## 🎯 Yêu Cầu
+Mở rộng phần **Số Liệu Chứng Minh Khối Lượng & Độ Nặng / Nhẹ** trong module Kế hoạch Công việc (`work_plan`) để ngoài **Lệnh xuất kho (`/work/export-order`)**, người quản lý có thể gắn trực tiếp:
+1. **Lệnh xuất kho (`/work/export-order`)** — số vị trí lấy hàng, số LOT, số thùng/kiện.
+2. **Phiếu Nhập Kho Kế Toán (`/inbound`)** — số mặt hàng, tổng số lượng nhập, nhà cung cấp/diễn giải, bấm mở trực tiếp `/inbound?editCode=...`.
+3. **Phiếu Xuất Kho Kế Toán (`/outbound`)** — số mặt hàng, tổng số lượng xuất, khách hàng/diễn giải, bấm mở trực tiếp `/outbound?editCode=...`.
+4. **Số LOT Được Tạo Theo Ngày Tạo (`/warehouses/lots`)** — tự động thống kê tổng số LOT và số thùng/kiện được tạo trong ngày (`created_at`), tách theo **Tất cả kho** hoặc từng khu vực gốc (`KHO 1`, `KHO 2`, `KHO 3`...), kèm link mở trực tiếp `/warehouses/lots?createdDate=YYYY-MM-DD&zoneId=...`.
+
+## 🛠 Các File Đã Cập Nhật
+- [types.ts](file:///d:/chanh%20thu/web/src/components/work-plans/types.ts):
+  - Bổ sung `LinkedAccountingOrderSummary` (`inbound` / `outbound`), `LinkedLotDateSummary` (`lots` theo ngày tạo & khu vực), và hàm `recalculateWorkloadFromLinkedSources()` tự động cộng dồn **Số Vị Trí**, **Số LOT**, **Số Thùng/Kiện**, **Khối lượng (Kg)** và tự gợi ý **Mức độ Nặng/Nhẹ (`difficulty`)** từ cả 4 nguồn.
+- [WorkloadMetricsSection.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkloadMetricsSection.tsx):
+  - Thiết kế bộ chọn 4 nguồn chứng từ trực quan (`📦 Lệnh xuất kho`, `📥 Nhập kế toán`, `📤 Xuất kế toán`, `🏷️ Số LOT tạo`).
+  - Ở tab `🏷️ Số LOT tạo`, tự động truy vấn bảng `lots` + `lot_items` + `positions` + `zones` theo `system_code` và ngày tạo (`created_at`), hiển thị tổng số LOT toàn kho và từng `KHO 1`, `KHO 2`, `KHO 3`... để tích chọn trong 1 cú nhấp chuột.
+- [WorkPlansView.tsx](file:///d:/chanh%20thu/web/src/components/work-plans/WorkPlansView.tsx):
+  - Hiển thị huy hiệu số LOT (`🏷️ X LOT`) và các nút link bấm mở trực tiếp `/work/export-order/[id]`, `/inbound?editCode=...`, `/outbound?editCode=...`, `/warehouses/lots?createdDate=...` ngay trên từng dòng công việc.
+- [useLotManagement.ts](file:///d:/chanh%20thu/web/src/app/(dashboard)/warehouses/lots/_hooks/useLotManagement.ts) & [outbound/page.tsx](file:///d:/chanh%20thu/web/src/app/(dashboard)/outbound/page.tsx):
+  - Đọc tham số URL `?createdDate=YYYY-MM-DD&zoneId=...` trên `/warehouses/lots` để tự động điền sẵn bộ lọc **NGÀY TẠO** và khu vực kho khi người dùng bấm từ Kế hoạch công việc sang kiểm chứng (không ảnh hưởng hành vi mặc định khi vào trang bình thường).
+  - Bổ sung đọc `?editCode=...` trên `/outbound` đồng bộ với `/inbound`.
+
+## ✅ Kiểm Chứng
+- Unit test [workPlanParser.test.ts](file:///d:/chanh%20thu/web/src/components/work-plans/__tests__/workPlanParser.test.ts): **PASS 4/4**.
+
+
+# Walkthrough (tiếp): Xuất Excel dashboard phân bố ra MỘT file hai sheet
+
+## Yêu cầu
+User: *"xuất file excel thì đồng nghĩa phải có 2 tab luôn chứ, hiện tại phải di chuyển từng tab để xuất ra 2 file, gộp lại 1 file thôi"*.
+
+## Thay đổi
+- [dashboardExcelSpecs.ts](file:///D:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts): thêm `distributionWorkbookPlan(kgInput, positionInput)` — gọi lại đúng `distributionKgExportSpec` + `categoryPositionExportSpec` (bảng số và biểu đồ giữ nguyên nội dung) rồi bọc mỗi cái thành một sheet qua `sheetFromExport`. Tên sheet **`Khoi luong KG`** và **`Danh muc vi tri`** (ASCII cho an toàn trên mọi phiên Excel).
+- [InventoryDistributionChart.tsx](file:///D:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx): `handleExport` bỏ nhánh `if (view === 'kg')`, chuyển sang `exportDashboardSheets` (dùng `buildWorkbookFromSheets` đã có từ dashboard tỉ lệ lấp đầy) → **một lần bấm = một file hai sheet**, mỗi sheet có ảnh biểu đồ tròn + bảng số + autofilter + ghi chú riêng của tab đó.
+- Tab vị trí vốn **tải lười** (chỉ đọc khi bấm sang tab). Nếu xuất mà chưa tải thì `fetchPositionData()` nay **trả về đúng dữ liệu vừa đọc** (`PositionData`) để `handleExport` tính `buildCategoryPositionStats` ngay trong lần bấm, không chờ React re-render; màn hình giữ nguyên hành vi cũ.
+- Tooltip nút thành *"Xuất Excel: một file gồm 2 sheet — Khối lượng (KG) và Danh mục (vị trí)"*; điều kiện `disabled` không còn phụ thuộc tab đang xem.
+
+## Kiểm chứng
+- `dashboardExcel.test.ts` thêm 2 test (tổng **15**): tên/thứ tự sheet, `title` từng sheet, `chart.kind` cả hai là `donut`, dòng tổng KG `700.5`, dòng đầu sheet danh mục `['SẦU RIÊNG', 1414, 68.2, 18.1]`; test thứ hai **writeBuffer rồi load lại bằng exceljs** để xác nhận workbook thật có đúng 2 sheet và bảng số nằm dưới ảnh.
+- `npx tsc --noEmit` sạch; `npx vitest run` **161/161 pass** (21 file).
+- **Cần user bấm thử** trên `http://localhost:3001`: đứng ở tab *Theo khối lượng (KG)* bấm **Xuất Excel** → file `TI_LE_PHAN_BO_HANG_HOA_TON_KHO_<stamp>.xlsx` mở ra có ngay 2 sheet, không phải chuyển tab.
+
+
+
+

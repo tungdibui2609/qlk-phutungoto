@@ -84,6 +84,7 @@ const MODULE_DEFINITIONS = [
     { id: 'handover', name: 'Bàn giao hàng hóa', description: 'Quản lý nhận và giao hàng hóa trực tiếp giữa các bộ phận, không cần tạo sản phẩm/đơn vị.', category: 'utility', is_basic: true },
     { id: 'delivery_journal', name: 'Nhật ký giao nhận', description: 'Nhật ký giao nhận giữa Kho và Sản xuất: Kho gửi vật tư, SX nhận và hoàn trả thành phẩm. Đồng bộ real-time.', category: 'utility', is_basic: true },
     { id: 'shift_tasks', name: 'Sổ Giao Việc & Nhắc Nhở Bàn Giao', description: 'Giao việc dở dang, tạo nhắc nhở giao ca kèm hình ảnh minh chứng và xác nhận tiếp nhận 2 bên rõ ràng.', category: 'utility', is_basic: true },
+    { id: 'work_plan', name: 'Kế hoạch Công việc & Đánh giá', description: 'Lập bảng kế hoạch làm việc hàng ngày, giao việc cho nhân viên/tổ đội, chấm điểm & đánh giá chất lượng cuối ngày, chuyển việc tồn đọng và xuất báo cáo Zalo/Excel.', category: 'utility', is_basic: true },
     { id: 'packaging_auto_sync_accounting', name: 'Tự động tạo Phiếu Kế toán (PNK) khi nhập cấp phát', description: 'Khi nhập hàng trực tiếp tại module Cấp phát/Bao bì, tự động tạo Phiếu Nhập Kho Kế toán và LOT mới tương ứng.', category: 'utility', is_basic: true },
 
     // Print

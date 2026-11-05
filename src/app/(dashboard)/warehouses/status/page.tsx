@@ -17,6 +17,7 @@ import { groupWarehouseData, getProductColorStyle } from '@/lib/warehouseUtils'
 import { analyzeWarehouseArrangements } from '@/lib/warehouseArrangement'
 import { logActivity } from '@/lib/audit'
 import { resolveCategories } from '@/lib/productCategory'
+import { readUiConfig, writeUiConfig } from '@/lib/systemUiSettings'
 
 type Position = Database['public']['Tables']['positions']['Row']
 type Zone = Database['public']['Tables']['zones']['Row']
@@ -72,12 +73,16 @@ function WarehouseStatusContent() {
 
     // Đồng bộ cấu hình danh mục cần thống kê từ DB/localStorage
     useEffect(() => {
-        if (currentSystem && categories.length > 0) {
-            const modules = currentSystem.modules as any
-            const dbIds = modules?.warehouse_status_config?.selected_category_ids
-            if (Array.isArray(dbIds)) {
-                setSelectedStatsCategoryIds(dbIds)
-            } else {
+        if (!systemType || categories.length === 0) return
+        let alive = true
+        readUiConfig(systemType)
+            .then(config => {
+                if (!alive) return
+                const dbIds = config.warehouse_status_config?.selected_category_ids
+                if (Array.isArray(dbIds)) {
+                    setSelectedStatsCategoryIds(dbIds)
+                    return
+                }
                 if (typeof window !== 'undefined') {
                     const saved = localStorage.getItem('status_stats_selected_categories')
                     if (saved) {
@@ -91,46 +96,29 @@ function WarehouseStatusContent() {
                         setSelectedStatsCategoryIds(categories.map(c => c.id))
                     }
                 }
-            }
-        }
-    }, [currentSystem, categories])
+            })
+            .catch(err => console.error('Lỗi tải cấu hình danh mục thống kê:', err))
+        return () => { alive = false }
+    }, [systemType, categories])
 
     // Lưu cấu hình lên database của phân hệ
     const saveConfigToDatabase = async (ids: string[]) => {
-        if (!currentSystem?.id) return
+        if (!systemType) return
         setSavingConfig(true)
         try {
-            const systemsTable = supabase.from('systems' as any) as any
-            const { data: sysData } = await systemsTable
-                .select('modules')
-                .eq('id', currentSystem.id)
-                .single()
-            
-            const currentModules = (sysData?.modules as any) || {}
-            const updatedModules = {
-                ...currentModules,
-                warehouse_status_config: {
-                    ...currentModules.warehouse_status_config,
-                    selected_category_ids: ids
-                }
-            }
+            await writeUiConfig(systemType, {
+                warehouse_status_config: { selected_category_ids: ids }
+            })
 
-            const { error } = await systemsTable
-                .update({ modules: updatedModules })
-                .eq('id', currentSystem.id)
-
-            if (error) throw error
-            
             setSelectedStatsCategoryIds(ids)
             if (typeof window !== 'undefined') {
                 localStorage.setItem('status_stats_selected_categories', JSON.stringify(ids))
             }
-            refreshSystems()
             showToast('Đã lưu cấu hình danh mục thống kê lên hệ thống!', 'success')
             setShowStatsConfig(false)
         } catch (error: any) {
             console.error('Lỗi khi lưu cấu hình lên DB:', error)
-            showToast('Không thể lưu cấu hình: ' + error.message, 'error')
+            showToast('Không thể lưu cấu hình: ' + (error?.message || 'Lỗi không xác định'), 'error')
         } finally {
             setSavingConfig(false)
         }

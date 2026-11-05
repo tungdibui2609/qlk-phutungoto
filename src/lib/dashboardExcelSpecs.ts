@@ -1,5 +1,7 @@
 import {
+    chartRowsForScope,
     classifyFill,
+    fillTreeRows,
     metricsOf,
     CRITICAL_FILL_PCT,
     HIGH_FILL_PCT,
@@ -10,7 +12,7 @@ import {
 } from './warehouseFillRate'
 import type { CategoryPositionResult } from './categoryPositionStats'
 import type { ChartSpec } from './chartImage'
-import type { DashboardWorkbookSpec } from './dashboardExcelWorkbook'
+import type { DashboardSheetSpec, DashboardWorkbookSpec } from './dashboardExcelWorkbook'
 
 /**
  * Dựng nội dung file Excel cho từng view Dashboard.
@@ -21,6 +23,9 @@ export type ExportSpec = {
     spec: Omit<DashboardWorkbookSpec, 'image'>
     chart: ChartSpec
 }
+
+/** Một sheet kèm biểu đồ riêng — ảnh PNG do phía client vẽ khi tải file. */
+export type DashboardSheetPlan = DashboardSheetSpec & { chart?: ChartSpec | null }
 
 const LEVEL_LABEL: Record<FillLevel, string> = {
     critical: 'Sắp đầy',
@@ -51,82 +56,147 @@ function round(n: number, decimals = 1) {
     return Math.round((Number.isFinite(n) ? n : 0) * f) / f
 }
 
-export function fillRateExportSpec(input: {
+const SCOPE_ORDER: FillScope[] = ['rack', 'hall', 'all']
+
+/** Tên sheet không dấu — Excel giữ tên tiếng Việt có dấu nhưng dễ lỗi phông khi mở máy khác. */
+const SCOPE_SHEET_NAME: Record<FillScope, string> = {
+    rack: 'Lo ke',
+    hall: 'Sanh',
+    all: 'Tong (ke + sanh)'
+}
+
+/** Từ ngắn dùng trong tiêu đề/nhãn cột, gọn hơn nhãn tab. */
+const SCOPE_UNIT: Record<FillScope, string> = {
+    rack: 'Lô kệ',
+    hall: 'Sảnh',
+    all: 'vị trí'
+}
+
+const viNumber = (n: number) => n.toLocaleString('vi-VN')
+const viPercent = (n: number) => `${round(n, 1).toLocaleString('vi-VN')}%`
+
+/**
+ * File Excel của dashboard tỉ lệ lấp đầy: 4 sheet
+ *   "Tong quan"          — số của cả ba tab trên một màn
+ *   "Lo ke"/"Sanh"/"Tong"— biểu đồ cấp khu vực + bảng TOÀN BỘ cây khu, thụt đầu dòng theo cấp
+ * Xuất độc lập với cấp đang drill trên màn hình vì người dùng cần xem cả hệ thống trong Excel.
+ */
+export function fillRateWorkbookPlan(input: {
     systemName: string
-    scope: FillScope
-    pathLabels: string[]
     stats: FillStats
-    rows: ZoneFillStat[]
-    currentZoneId?: string | null
-}): ExportSpec {
-    const { systemName, scope, pathLabels, stats, rows, currentZoneId = null } = input
-    const bucket = stats.totals[scope]
-    const unit = scope === 'hall' ? 'Sảnh' : scope === 'rack' ? 'Lô kệ' : 'vị trí'
+    when?: Date
+}): DashboardSheetPlan[] {
+    const { systemName, stats, when = new Date() } = input
 
-    const tableRows = rows.map(row => {
-        const m = metricsOf(row, scope)
-        return [
-            row.label,
-            m.positions,
-            m.occupied,
-            m.free,
-            round(m.pct, 1),
-            LEVEL_LABEL[classifyFill(m.pct)]
-        ]
-    })
+    const levelNote = `Ngưỡng: Sắp đầy ≥ ${CRITICAL_FILL_PCT}% · Cao ≥ ${HIGH_FILL_PCT}% · Bình thường < ${HIGH_FILL_PCT}% · Trống = 0%.`
 
-    const notes: string[] = [
-        `Ngưỡng: Sắp đầy ≥ ${CRITICAL_FILL_PCT}% · Cao ≥ ${HIGH_FILL_PCT}% · Bình thường < ${HIGH_FILL_PCT}% · Trống = 0%.`,
-        'Số của khu cha đã cộng dồn toàn bộ khu con, nên không cộng tiếp các dòng với nhau.'
-    ]
-    if (scope !== 'hall' && stats.unassignedPositions > 0) {
-        notes.push(
-            `${stats.unassignedOccupied}/${stats.unassignedPositions} ô ${unit} chưa gán vào khu vực nào trong sơ đồ — vẫn nằm trong dòng "Toàn ${unit.toLowerCase()}".`
-        )
+    const overview: DashboardSheetPlan = {
+        sheetName: 'Tong quan',
+        title: 'Tỉ lệ lấp đầy theo khu vực',
+        meta: [
+            { label: 'Phân hệ kho', value: systemName },
+            { label: 'Xuất lúc', value: exportedAt(when) },
+            { label: 'Bao gồm', value: '3 sheet riêng: Lô kệ / Sảnh / Tổng — mỗi sheet có biểu đồ và toàn bộ cây khu vực' }
+        ],
+        columns: [
+            { header: 'Phạm vi', format: 'text', width: 22 },
+            { header: 'Ô quy hoạch', format: 'int' },
+            { header: 'Đang chứa', format: 'int' },
+            { header: 'Còn trống', format: 'int' },
+            { header: 'Tỉ lệ lấp đầy', format: 'percent' },
+            { header: 'Trạng thái', format: 'text', width: 16, align: 'center' }
+        ],
+        rows: SCOPE_ORDER.map(scope => {
+            const bucket = stats.totals[scope]
+            return [
+                SCOPE_LABEL[scope],
+                bucket.positions,
+                bucket.occupied,
+                bucket.free,
+                round(bucket.pct, 1),
+                LEVEL_LABEL[classifyFill(bucket.pct)]
+            ]
+        }),
+        notes: [
+            'Lô kệ và Sảnh tách riêng vì sức chứa và quyết định nhập/xuất dựa trên Lô kệ; tab Tổng cộng cả hai để đối soát với trang Sơ đồ trạng thái kho.',
+            ...(stats.unassignedPositions > 0
+                ? [`${stats.unassignedOccupied}/${stats.unassignedPositions} ô Lô kệ chưa gán vào khu vực nào trong sơ đồ — vẫn nằm trong dòng "Lô kệ" của bảng này.`]
+                : []),
+            levelNote
+        ],
+        dataBarColumn: 5
     }
 
-    return {
-        spec: {
-            chartTitle: `Tỉ lệ lấp đầy ${unit} theo khu vực`,
-            meta: [
-                { label: 'Phân hệ kho', value: systemName },
-                { label: 'Tab', value: SCOPE_LABEL[scope] },
-                { label: 'Cấp đang xem', value: pathLabels.length ? pathLabels.join(' › ') : 'Toàn kho' },
-                { label: 'Tổng ô đã quy hoạch', value: bucket.positions.toLocaleString('vi-VN') },
-                { label: 'Ô đang chứa hàng', value: bucket.occupied.toLocaleString('vi-VN') },
-                { label: 'Tỉ lệ lấp đầy', value: `${round(bucket.pct, 1)}% (${LEVEL_LABEL[classifyFill(bucket.pct)]})` },
-                { label: 'Xuất lúc', value: exportedAt() }
-            ],
+    const scopeSheets: DashboardSheetPlan[] = SCOPE_ORDER.map(scope => {
+        const unit = SCOPE_UNIT[scope]
+        const bucket = stats.totals[scope]
+        const tree = fillTreeRows(stats, scope)
+        const chartRows = chartRowsForScope(stats, scope)
+        const metricsOfRow = (row: ZoneFillStat) => metricsOf(row, scope)
+
+        return {
+            sheetName: SCOPE_SHEET_NAME[scope],
+            title: `Tỉ lệ lấp đầy ${SCOPE_LABEL[scope]}`,
             columns: [
-                { header: 'Khu vực', format: 'text', width: 32 },
+                { header: 'Khu vực', format: 'text', width: 34 },
+                { header: 'Đường dẫn trong sơ đồ', format: 'text', width: 46 },
                 { header: `Ô ${unit} quy hoạch`, format: 'int' },
                 { header: 'Đang chứa', format: 'int' },
                 { header: 'Còn trống', format: 'int' },
                 { header: 'Tỉ lệ lấp đầy', format: 'percent' },
                 { header: 'Trạng thái', format: 'text', width: 16, align: 'center' }
             ],
-            rows: tableRows,
+            rows: tree.map(({ stat, path }) => {
+                const m = metricsOfRow(stat)
+                return [
+                    stat.label,
+                    path.join(' › '),
+                    m.positions,
+                    m.occupied,
+                    m.free,
+                    round(m.pct, 1),
+                    LEVEL_LABEL[classifyFill(m.pct)]
+                ]
+            }),
+            rowIndents: tree.map(({ depth }) => depth),
             totalRow: [
-                `Toàn ${unit.toLowerCase()}`,
+                `Toàn ${unit}`,
+                '',
                 bucket.positions,
                 bucket.occupied,
                 bucket.free,
                 round(bucket.pct, 1),
                 LEVEL_LABEL[classifyFill(bucket.pct)]
             ],
-            notes,
-            dataBarColumn: 5
-        },
-        chart: {
-            kind: 'hbar',
-            title: `Tỉ lệ lấp đầy ${unit} — ${SCOPE_LABEL[scope]} (${pathLabels.length ? pathLabels[pathLabels.length - 1] : 'Toàn kho'})`,
-            labels: rows.map(r => r.label),
-            series: [{ name: 'Tỉ lệ lấp đầy', color: LEVEL_HEX.normal, values: rows.map(r => round(metricsOf(r, scope).pct, 1)) }],
-            barColors: rows.map(r => LEVEL_HEX[classifyFill(metricsOf(r, scope).pct)]),
-            percentAxis: true,
-            unit: '%'
+            notes: [
+                'Dòng khu cha đã cộng dồn toàn bộ khu con bên dưới nên không cộng tiếp các dòng với nhau; cột "Còn trống" là ô đã quy hoạch chưa có LOT.',
+                ...(scope !== 'hall' && stats.unassignedPositions > 0
+                    ? [`${stats.unassignedOccupied}/${stats.unassignedPositions} ô ${unit} chưa gán khu vực — chỉ nằm ở dòng "Toàn ${unit}", không có dòng khu vực nào.`]
+                    : []),
+                levelNote
+            ],
+            dataBarColumn: 6,
+            chart: {
+                kind: 'hbar',
+                title: `Tỉ lệ lấp đầy ${SCOPE_LABEL[scope]} — cấp khu vực`,
+                labels: chartRows.map(row => row.label),
+                series: [{
+                    name: 'Tỉ lệ lấp đầy',
+                    color: LEVEL_HEX.normal,
+                    values: chartRows.map(row => round(metricsOfRow(row).pct, 1))
+                }],
+                barColors: chartRows.map(row => LEVEL_HEX[classifyFill(metricsOfRow(row).pct)]),
+                percentAxis: true,
+                unit: '%',
+                valueLabels: chartRows.map(row => {
+                    const m = metricsOfRow(row)
+                    return `${viPercent(m.pct)} · ${viNumber(m.occupied)}/${viNumber(m.positions)} ô`
+                })
+            }
         }
-    }
+    })
+
+    return [overview, ...scopeSheets]
 }
 
 export function distributionKgExportSpec(input: {
@@ -216,14 +286,45 @@ export function categoryPositionExportSpec(input: {
             dataBarColumn: 3
         },
         chart: {
-            kind: 'hbar',
+            kind: 'donut',
             title: `Số ô vị trí theo danh mục — ${warehouseLabel}`,
             labels: stats.map(s => s.name),
             series: [{ name: 'Ô vị trí', color: '#6366f1', values: stats.map(s => s.count) }],
             unit: 'ô',
-            decimals: 0
+            decimals: 0,
+            legendLimit: 12
         }
     }
+}
+
+function sheetFromExport(exportSpec: ExportSpec, sheetName: string): DashboardSheetPlan {
+    const { spec, chart } = exportSpec
+    return {
+        sheetName,
+        title: spec.chartTitle,
+        meta: spec.meta,
+        columns: spec.columns,
+        rows: spec.rows,
+        totalRow: spec.totalRow,
+        notes: spec.notes,
+        dataBarColumn: spec.dataBarColumn,
+        chart
+    }
+}
+
+/**
+ * Dashboard "Tỉ lệ phân bố hàng hóa" gộp CẢ HAI tab vào một file:
+ * bấm Xuất Excel một lần là có đủ sheet khối lượng (KG) và sheet danh mục (vị trí),
+ * khỏi phải chuyển tab rồi xuất hai lần.
+ */
+export function distributionWorkbookPlan(
+    kgInput: Parameters<typeof distributionKgExportSpec>[0],
+    positionInput: Parameters<typeof categoryPositionExportSpec>[0]
+): DashboardSheetPlan[] {
+    return [
+        sheetFromExport(distributionKgExportSpec(kgInput), 'Khoi luong KG'),
+        sheetFromExport(categoryPositionExportSpec(positionInput), 'Danh muc vi tri')
+    ]
 }
 
 export function containerExportSpec(input: {

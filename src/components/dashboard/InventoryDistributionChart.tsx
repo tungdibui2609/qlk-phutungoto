@@ -10,8 +10,9 @@ import { Database } from '@/lib/database.types'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { fetchAllPaged } from '@/lib/supabasePaged'
 import { buildZoneLookup } from '@/lib/warehouseFillRate'
-import { exportDashboardChart } from '@/lib/dashboardExcelExport'
-import { categoryPositionExportSpec, distributionKgExportSpec } from '@/lib/dashboardExcelSpecs'
+import { readUiConfig, writeUiConfig, type UiConfig } from '@/lib/systemUiSettings'
+import { exportDashboardSheets } from '@/lib/dashboardExcelExport'
+import { distributionWorkbookPlan } from '@/lib/dashboardExcelSpecs'
 import {
     buildCategoryPositionStats,
     buildLotCategoryMap,
@@ -43,6 +44,13 @@ type Lot = Database['public']['Tables']['lots']['Row'] & {
     } | null
 }
 
+/** Dữ liệu thô của tab vị trí — đủ để tính lại thống kê mà không chờ React re-render. */
+type PositionData = {
+    positions: Array<{ id: string; lot_id: string | null; zone_id: string | null }>
+    zones: Array<{ id: string; code: string | null; name: string | null; parent_id: string | null; level: number | null }>
+    lotCategories: Map<string, string[]>
+}
+
 const COLORS = [
     '#0ea5e9', // Sky Blue
     '#f97316', // Orange
@@ -57,7 +65,7 @@ const COLORS = [
 ]
 
 export default function InventoryDistributionChart() {
-    const { systemType, currentSystem, refreshSystems } = useSystem()
+    const { systemType, currentSystem } = useSystem()
     const [loading, setLoading] = useState(true)
     const [lots, setLots] = useState<Lot[]>([])
     const [categories, setCategories] = useState<{ id: string, name: string }[]>([])
@@ -81,6 +89,7 @@ export default function InventoryDistributionChart() {
     const [showStatConfig, setShowStatConfig] = useState(false)
     const [tempStatIds, setTempStatIds] = useState<string[]>([])
     const [savingStatConfig, setSavingStatConfig] = useState(false)
+    const [uiConfig, setUiConfig] = useState<UiConfig>({})
 
     const { getBaseAmount: toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap, loading: conversionLoading } = useUnitConversion()
 
@@ -165,16 +174,12 @@ export default function InventoryDistributionChart() {
         }
 
         // Load configuration from current system in Database
-        const loadSystemConfig = () => {
-            if (!currentSystem || !currentSystem.modules) return
-            
-            const modules = currentSystem.modules as any
-            const dashboardConfig = modules.dashboard_config || {}
-            
-            if (dashboardConfig.allowed_category_ids) {
-                setAllowedCategoryIds(dashboardConfig.allowed_category_ids)
-            } else {
-                setAllowedCategoryIds(null)
+        const loadSystemConfig = async () => {
+            if (!systemType) return
+            try {
+                setUiConfig(await readUiConfig(systemType))
+            } catch (err) {
+                console.error('Lỗi tải cấu hình dashboard:', err)
             }
         }
 
@@ -183,48 +188,30 @@ export default function InventoryDistributionChart() {
             fetchCategories()
             loadSystemConfig()
         }
-    }, [systemType, currentSystem])
+    }, [systemType])
 
-    // Ghi cấu hình vào bảng systems (jsonb `modules`) mà không xoá các cấu hình khác
-    const patchSystemModules = async (build: (currentModules: any) => Record<string, any>) => {
-        if (!currentSystem?.id) return
-
-        // Lấy modules mới nhất để không ghi đè cấu hình vừa được sửa ở tab khác
-        const { data: sysData } = await (supabase
-            .from('systems') as any)
-            .select('modules')
-            .eq('id', currentSystem.id)
-            .single()
-
-        const currentModules = (sysData?.modules as any) || {}
-
-        const { error } = await (supabase
-            .from('systems') as any)
-            .update({ modules: { ...currentModules, ...build(currentModules) } })
-            .eq('id', currentSystem.id)
-
-        if (error) throw error
-
-        // Refresh systems context to sync globally
-        refreshSystems()
-    }
+    useEffect(() => {
+        const allowed = uiConfig.dashboard_config?.allowed_category_ids
+        setAllowedCategoryIds(Array.isArray(allowed) ? allowed : null)
+    }, [uiConfig])
 
     const saveToDatabase = async (newAllowedIds: string[] | null) => {
+        if (!systemType) return
         try {
-            await patchSystemModules(modules => ({
-                dashboard_config: {
-                    ...modules.dashboard_config,
-                    allowed_category_ids: newAllowedIds
-                }
-            }))
-        } catch (error) {
-            console.error('Error saving dashboard config to database:', error)
+            const saved = await writeUiConfig(systemType, {
+                dashboard_config: { ...uiConfig.dashboard_config, allowed_category_ids: newAllowedIds }
+            })
+            setUiConfig(saved)
+        } catch (error: any) {
+            console.error('Lỗi lưu cấu hình dashboard vào CSDL:', error)
+            alert('Không lưu được cấu hình: ' + (error?.message || 'Lỗi không xác định'))
         }
     }
 
-    // Đọc/fresh dữ liệu vị trí cho tab "Theo danh mục (vị trí)"
-    const fetchPositionData = useCallback(async () => {
-        if (!systemType) return
+    // Đọc/fresh dữ liệu vị trí cho tab "Theo danh mục (vị trí)".
+    // Trả về đúng dữ liệu vừa đọc để nút Xuất Excel dùng ngay khi tab chưa mở lần nào.
+    const fetchPositionData = useCallback(async (): Promise<PositionData | null> => {
+        if (!systemType) return null
         setPositionLoading(true)
         setPositionError(null)
         try {
@@ -270,13 +257,18 @@ export default function InventoryDistributionChart() {
                 if (data) lotsForCategories.push(...(data as CatStatLot[]))
             }
 
+            const lotCategoryMap = buildLotCategoryMap(lotsForCategories)
+
             setPositionRows(positionsWithZone)
             setZoneRows(zoneList)
-            setLotCategories(buildLotCategoryMap(lotsForCategories))
+            setLotCategories(lotCategoryMap)
             setPositionLoaded(true)
+
+            return { positions: positionsWithZone, zones: zoneList, lotCategories: lotCategoryMap }
         } catch (err: any) {
             console.error('Error fetching category position stats:', err)
             setPositionError(err?.message || 'Không tải được dữ liệu vị trí kho.')
+            return null
         } finally {
             setPositionLoading(false)
         }
@@ -288,10 +280,10 @@ export default function InventoryDistributionChart() {
 
     // Cấu hình danh mục theo dõi: dùng chung key với trang /warehouses/status
     useEffect(() => {
-        if (!currentSystem || categories.length === 0) return
-        const dbIds = (currentSystem.modules as any)?.warehouse_status_config?.selected_category_ids
+        if (categories.length === 0) return
+        const dbIds = uiConfig.warehouse_status_config?.selected_category_ids
         setStatCategoryIds(Array.isArray(dbIds) ? dbIds : categories.map(c => c.id))
-    }, [currentSystem, categories])
+    }, [uiConfig, categories])
 
     const warehouses = useMemo(
         () => zoneRows.filter(z => z.level === 0 || !z.parent_id),
@@ -314,19 +306,27 @@ export default function InventoryDistributionChart() {
         [positionResult, statCategoryIds]
     )
 
+    // Thứ tự lớn → bé giống hệt biểu đồ trong file Excel xuất ra
+    const positionChartData = useMemo(
+        () => [...visiblePositionStats].sort((a, b) => b.count - a.count).map(s => ({ ...s, value: s.count })),
+        [visiblePositionStats]
+    )
+
     const saveStatConfig = async (ids: string[]) => {
         setSavingStatConfig(true)
         try {
-            await patchSystemModules(modules => ({
+            const saved = await writeUiConfig(systemType, {
                 warehouse_status_config: {
-                    ...modules.warehouse_status_config,
+                    ...uiConfig.warehouse_status_config,
                     selected_category_ids: ids
                 }
-            }))
+            })
+            setUiConfig(saved)
             setStatCategoryIds(ids)
             setShowStatConfig(false)
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error saving category stats config:', error)
+            alert('Không lưu được cấu hình danh mục: ' + (error?.message || 'Lỗi không xác định'))
         } finally {
             setSavingStatConfig(false)
         }
@@ -428,48 +428,48 @@ export default function InventoryDistributionChart() {
 
     const { data: processedData, totalWeight } = chartData || { data: [], totalWeight: 0 }
 
-    // Xuất Excel theo đúng tab đang xem: KG → pie phân bố; danh mục → bar số ô.
+    // Bấm một lần ra MỘT file có đủ hai sheet: khối lượng (KG) và danh mục (số ô vị trí).
     const handleExport = async () => {
         setExporting(true)
         try {
             const systemName = currentSystem?.name || systemType || ''
-            if (view === 'kg') {
-                const filterLabel = selectedCategoryIds.length === 0
-                    ? 'Tất cả danh mục'
-                    : selectedCategoryIds
-                        .map(id => categories.find(c => c.id === id)?.name || 'Chưa phân loại')
-                        .join(', ')
-                const { spec, chart } = distributionKgExportSpec({
+            const filterLabel = selectedCategoryIds.length === 0
+                ? 'Tất cả danh mục'
+                : selectedCategoryIds
+                    .map(id => categories.find(c => c.id === id)?.name || 'Chưa phân loại')
+                    .join(', ')
+
+            // Tab vị trí tải lười: chưa mở tab này lần nào thì phải đọc dữ liệu ngay trong lúc xuất.
+            const posData: PositionData | null = positionLoaded
+                ? { positions: positionRows, zones: zoneRows, lotCategories }
+                : await fetchPositionData()
+            if (!posData) throw new Error('Không đọc được dữ liệu ô vị trí.')
+
+            const exportResult = buildCategoryPositionStats({
+                categories,
+                positions: posData.positions,
+                lotCategories: posData.lotCategories,
+                zones: posData.zones,
+                warehouseId: statWarehouseId
+            })
+            const warehouse = statWarehouseId
+                ? posData.zones.find(z => z.id === statWarehouseId)
+                : null
+
+            const sheets = distributionWorkbookPlan(
+                { systemName, filterLabel, items: processedData, totalWeight },
+                {
                     systemName,
-                    filterLabel,
-                    items: processedData,
-                    totalWeight
-                })
-                await exportDashboardChart({
-                    spec,
-                    chart,
-                    filePrefix: 'Tỉ lệ phân bố hàng hóa',
-                    fileExtra: 'Khối lượng KG'
-                })
-            } else {
-                const warehouse = statWarehouseId
-                    ? zoneRows.find(z => z.id === statWarehouseId)
-                    : null
-                const { spec, chart } = categoryPositionExportSpec({
-                    systemName,
-                    warehouseLabel: warehouse
-                        ? (warehouse.name || warehouse.code || 'Kho đã chọn')
-                        : 'Tất cả kho',
-                    result: { ...positionResult, stats: visiblePositionStats },
+                    warehouseLabel: warehouse ? (warehouse.name || warehouse.code || 'Kho đã chọn') : 'Tất cả kho',
+                    result: {
+                        ...exportResult,
+                        stats: exportResult.stats.filter(s => statCategoryIds.includes(s.categoryId))
+                    },
                     visibleOnly: statCategoryIds.length > 0
-                })
-                await exportDashboardChart({
-                    spec,
-                    chart,
-                    filePrefix: 'Tỉ lệ phân bố hàng hóa',
-                    fileExtra: 'Theo danh mục'
-                })
-            }
+                }
+            )
+
+            await exportDashboardSheets({ sheets, filePrefix: 'Tỉ lệ phân bố hàng hóa' })
         } catch (err) {
             console.error('Lỗi xuất Excel phân bố hàng hóa:', err)
             alert('Không xuất được file Excel. Vui lòng thử lại.')
@@ -518,9 +518,9 @@ export default function InventoryDistributionChart() {
                     </div>
                     <button
                         onClick={handleExport}
-                        disabled={exporting || (view === 'kg' ? processedData.length === 0 : visiblePositionStats.length === 0)}
+                        disabled={exporting || (processedData.length === 0 && positionLoaded && visiblePositionStats.length === 0)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Xuất tab đang xem ra Excel (biểu đồ + bảng số)"
+                        title="Xuất Excel: một file gồm 2 sheet — Khối lượng (KG) và Danh mục (vị trí)"
                     >
                         {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         Xuất Excel
@@ -827,37 +827,67 @@ export default function InventoryDistributionChart() {
                         </div>
                     ) : (
                         <>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                                {visiblePositionStats.map(stat => (
-                                    <div key={stat.categoryId} className="relative overflow-hidden rounded-2xl border border-stone-200 bg-stone-50/50 p-3.5 hover:border-indigo-200 transition-colors">
-                                        <div className="absolute top-0 right-0 w-20 h-20 bg-indigo-500/5 rounded-full -mr-6 -mt-6" />
-                                        <div className="relative z-10 flex items-start justify-between gap-2 mb-2.5">
-                                            <div className="flex items-center gap-2 min-w-0">
-                                                <FolderTree size={14} className="text-indigo-500 shrink-0" />
-                                                <span className="text-xs font-black text-stone-700 truncate uppercase" title={stat.name}>
-                                                    {stat.name}
+                            <div className="h-[300px] w-full relative">
+                                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-center pointer-events-none z-10">
+                                    <p className="text-sm text-stone-500 font-medium">Ô đang chứa hàng</p>
+                                    <p className="text-3xl font-bold text-indigo-600">
+                                        {formatQuantityFull(positionResult.occupiedPositions, 0)}
+                                    </p>
+                                    <p className="text-xs text-stone-500 font-medium uppercase">
+                                        trên {formatQuantityFull(positionResult.totalPositions, 0)} ô quy hoạch
+                                    </p>
+                                </div>
+
+                                <ResponsiveContainer width="100%" height="100%">
+                                    <PieChart>
+                                        <Pie
+                                            data={positionChartData}
+                                            cx="50%"
+                                            cy="50%"
+                                            innerRadius={80}
+                                            outerRadius={110}
+                                            paddingAngle={2}
+                                            dataKey="value"
+                                            stroke="none"
+                                        >
+                                            {positionChartData.map((entry, index) => (
+                                                <Cell key={`pos-cell-${entry.categoryId}`} fill={COLORS[index % COLORS.length]} />
+                                            ))}
+                                        </Pie>
+                                        <Tooltip
+                                            formatter={(value: any, name: any, props: any) => {
+                                                const payload = props.payload
+                                                return [
+                                                    `${formatQuantityFull(payload.count, 0)} ô · ${payload.pctOfOccupied.toFixed(1)}% hàng hoá`,
+                                                    payload.name
+                                                ]
+                                            }}
+                                            contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                        />
+                                    </PieChart>
+                                </ResponsiveContainer>
+                            </div>
+
+                            {/* Chú giải: giữ nguyên hai tỉ lệ mà thẻ từng hiển thị */}
+                            <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-x-6 gap-y-3">
+                                {positionChartData.map((entry, index) => (
+                                    <div key={entry.categoryId} className="flex items-start gap-2.5">
+                                        <div
+                                            className="w-3 h-3 rounded-full shrink-0 mt-1"
+                                            style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                                        />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-baseline justify-between gap-2">
+                                                <span className="text-xs font-black text-stone-700 truncate uppercase" title={entry.name}>
+                                                    {entry.name}
+                                                </span>
+                                                <span className="text-[10px] font-black text-indigo-600 shrink-0 uppercase">
+                                                    {formatQuantityFull(entry.count, 0)} vị trí
                                                 </span>
                                             </div>
-                                            <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 text-[9px] font-black uppercase tracking-wider shrink-0">
-                                                {formatQuantityFull(stat.count, 0)} vị trí
-                                            </span>
-                                        </div>
-                                        <div className="relative z-10 space-y-2">
-                                            <div className="w-full bg-stone-200/80 h-1.5 rounded-full overflow-hidden">
-                                                <div
-                                                    className="bg-gradient-to-r from-indigo-500 to-violet-600 h-full rounded-full transition-all duration-500"
-                                                    style={{ width: `${Math.min(stat.pctOfOccupied, 100)}%` }}
-                                                />
-                                            </div>
-                                            <div className="flex flex-col gap-0.5 text-[9px] font-bold text-stone-400 tracking-wider">
-                                                <div className="flex justify-between items-center">
-                                                    <span>TỈ LỆ HÀNG HOÁ:</span>
-                                                    <span className="text-stone-700 font-black">{stat.pctOfOccupied.toFixed(1)}%</span>
-                                                </div>
-                                                <div className="flex justify-between items-center">
-                                                    <span>TỈ LỆ CÔNG SUẤT:</span>
-                                                    <span className="text-stone-700 font-black">{stat.pctOfTotal.toFixed(1)}%</span>
-                                                </div>
+                                            <div className="flex justify-between text-[9px] font-bold text-stone-400 tracking-wider">
+                                                <span>HÀNG HOÁ: {entry.pctOfOccupied.toFixed(1)}%</span>
+                                                <span>CÔNG SUẤT: {entry.pctOfTotal.toFixed(1)}%</span>
                                             </div>
                                         </div>
                                     </div>

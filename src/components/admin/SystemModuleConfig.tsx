@@ -249,7 +249,14 @@ export default function SystemModuleConfig({ systemId, companyId, systemName, on
         setSaving(true)
         try {
             // 1. Update System Config
+            const systemsTable = (supabase.from('systems' as any) as any)
+
+            // Giữ các khóa cấu hình khác trong jsonb (danh mục theo dõi, ô đánh dấu/khóa trên sơ đồ)
+            const { data: currentRows } = await systemsTable.select('modules').eq('id', systemId).limit(1)
+            const currentModules = (currentRows?.[0]?.modules as any) || {}
+
             const modulesJson = {
+                ...currentModules,
                 product_modules: config.product,
                 utility_modules: config.utility,
                 print_modules: config.print,

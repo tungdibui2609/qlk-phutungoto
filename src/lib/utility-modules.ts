@@ -1,4 +1,4 @@
-import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes, Building2, Truck } from 'lucide-react'
+import { Combine, ArrowRightLeft, Scissors, HardHat, Package, Factory, Store, ShieldCheck, QrCode, Users, FileText, ArrowUpDown, Leaf, AlertTriangle, ClipboardList, CheckSquare, PackagePlus, Boxes, Building2, Truck, CalendarCheck } from 'lucide-react'
 
 export type ModuleCategory = 'core' | 'automation' | 'specialized' | 'info'
 
@@ -168,6 +168,15 @@ export const UTILITY_MODULES: UtilityModule[] = [
         name: 'Sổ Giao Việc & Nhắc Nhở Bàn Giao',
         description: 'Giao việc dở dang, tạo nhắc nhở giao ca kèm hình ảnh minh chứng và xác nhận tiếp nhận 2 bên rõ ràng.',
         icon: CheckSquare,
+        category: 'core',
+        is_basic: true,
+        default_enabled: true
+    },
+    {
+        id: 'work_plan',
+        name: 'Kế hoạch Công việc & Đánh giá',
+        description: 'Lập bảng kế hoạch làm việc hàng ngày, giao việc cho nhân viên/tổ đội, chấm điểm & đánh giá chất lượng cuối ngày, chuyển việc tồn đọng và xuất báo cáo Zalo/Excel.',
+        icon: CalendarCheck,
         category: 'core',
         is_basic: true,
         default_enabled: true

@@ -86,6 +86,28 @@ export function useLotManagement() {
     const [startDate, setStartDate] = useState<string>('')
     const [endDate, setEndDate] = useState<string>('')
 
+    // Đọc tham số lọc ngày tạo / khu vực từ URL (nếu mở từ link chứng minh Kế hoạch công việc)
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const params = new URLSearchParams(window.location.search)
+        const createdDateParam = params.get('createdDate')
+        const startParam = params.get('startDate') || createdDateParam
+        const endParam = params.get('endDate') || createdDateParam
+        const zoneParam = params.get('zoneId')
+
+        if (startParam && /^\d{4}-\d{2}-\d{2}$/.test(startParam)) {
+            setDateFilterField('created_at')
+            setStartDate(startParam)
+        }
+        if (endParam && /^\d{4}-\d{2}-\d{2}$/.test(endParam)) {
+            setDateFilterField('created_at')
+            setEndDate(endParam)
+        }
+        if (zoneParam) {
+            setSelectedZoneId(zoneParam)
+        }
+    }, [])
+
     // FIFO Toggle (local, defaults to OFF)
     const [fifoActive, setFifoActive] = useState(false)
     const isFifoAvailable = hasModule('fifo_priority')

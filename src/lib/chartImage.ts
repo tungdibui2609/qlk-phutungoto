@@ -31,6 +31,11 @@ export interface ChartSpec {
     barColors?: string[]
     /** true → trục tung cố định 0..100 và nhãn dạng % */
     percentAxis?: boolean
+    /**
+     * hbar: nhãn in cạnh từng thanh, thay cho chỉ số đơn thuần
+     * (vd "42,7% · 329/770 ô" để file Excel mang đủ số liệu như trên màn hình).
+     */
+    valueLabels?: string[]
     unit?: string
     decimals?: number
     width?: number
@@ -169,7 +174,9 @@ function drawHBar(ctx: CanvasRenderingContext2D, spec: ChartSpec, width: number,
         Math.max(70, ...labels.map(l => ctx.measureText(l).width)) + 8
     )
     const plotX = 16 + labelWidth + 10
-    const plotWidth = width - plotX - 64
+    // Nhãn "42,7% · 329/770 ô" dài hơn con số % thường nên phải chừa lề phải rộng hơn.
+    const rightPad = spec.valueLabels ? 150 : 64
+    const plotWidth = Math.max(120, width - plotX - rightPad)
     const allValues = series.flatMap(s => s.values).filter(v => isFinite(v))
     const maxValue = spec.percentAxis ? 100 : niceMax(Math.max(0, ...allValues))
     const safeMax = maxValue > 0 ? maxValue : 1
@@ -216,13 +223,14 @@ function drawHBar(ctx: CanvasRenderingContext2D, spec: ChartSpec, width: number,
             ctx.fillStyle = '#292524'
             ctx.font = 'bold 10px Arial, sans-serif'
             ctx.textAlign = 'left'
-            const text = axisLabel(value, spec)
-            if (w > plotWidth - 60) {
+            const text = spec.valueLabels?.[rowIdx] ?? axisLabel(value, spec)
+            const textWidth = ctx.measureText(text).width
+            if (w >= textWidth + 12) {
                 ctx.fillStyle = '#ffffff'
                 ctx.textAlign = 'right'
-                ctx.fillText(text, plotX + Math.max(w - 4, 0), y + barHeight / 2)
+                ctx.fillText(text, plotX + w - 5, y + barHeight / 2)
             } else {
-                ctx.fillText(text, plotX + w + 4, y + barHeight / 2)
+                ctx.fillText(text, plotX + w + 5, y + barHeight / 2)
             }
         })
     })

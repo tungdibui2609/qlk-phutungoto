@@ -301,6 +301,13 @@ export function ownMetricsOf(row: ZoneFillStat, scope: FillScope): FillBucket {
     return bucket(row.ownRackPositions, row.ownRackOccupied)
 }
 
+/** Khu vực này có xuất hiện ở cấp hiển thị của phạm vi đang xem không. */
+function isInScope(stat: ZoneFillStat, scope: FillScope): boolean {
+    if (scope === 'all') return metricsOf(stat, 'all').positions > 0
+    if (scope === 'hall') return stat.isHall && stat.hallPositions > 0
+    return !stat.isHall && stat.rackPositions > 0
+}
+
 /**
  * Cấp hiển thị tiếp theo: khu vực con của `parentId` (hoặc gốc khi `null`), lọc theo phạm vi
  * Lô kệ / Sảnh / Tổng và giữ đúng thứ tự sơ đồ kho (display_order → so mã tự nhiên).
@@ -310,13 +317,7 @@ export function childStatsOf(stats: FillStats, parentId: string | null, scope: F
 
     // Tab Lô kệ chỉ khu không phải sảnh, tab Sảnh chỉ khu sảnh — giữ nguyên tách bạch,
     // khu có 0 ô trong phạm vi đó bị ẩn để không nhiễu danh sách.
-    const filtered = base.filter(z => {
-        if (scope === 'all') return metricsOf(z, 'all').positions > 0
-        if (scope === 'hall') return z.isHall && z.hallPositions > 0
-        return !z.isHall && z.rackPositions > 0
-    })
-
-    return [...filtered].sort(compareZoneOrder)
+    return base.filter(z => isInScope(z, scope)).sort(compareZoneOrder)
 }
 
 /**
@@ -331,4 +332,69 @@ export function rowsForScope(stats: FillStats, parentId: string | null, scope: F
 /** Số khu vực con còn lại có thể đi xuống trong phạm vi đang xem. */
 export function drillableChildCount(stats: FillStats, zoneId: string, scope: FillScope): number {
     return rowsForScope(stats, zoneId, scope).length
+}
+
+export interface FillTreeRow {
+    stat: ZoneFillStat
+    /** 0 = cấp cao nhất của phạm vi đang xem, tăng dần khi xuống khu con. */
+    depth: number
+    /** Tên đầy đủ từ khu gốc tới khu này — dùng để lọc trong Excel vì tên dãy/ô lặp lại giữa các kho. */
+    path: string[]
+}
+
+/**
+ * Toàn bộ cây khu vực của một phạm vi theo thứ tự hiển thị (cha trước, rồi con của nó),
+ * phục vụ bảng Excel — màn hình chỉ hiển thị từng cấp một nên trước đây không có bản này.
+ * Xây một lần bản đồ cha→con rồi đi cây: phân hệ thật có tới ~4.000 khu nên không thể
+ * gọi `childStatsOf` cho từng node (O(n²)). `seen` chặn dữ liệu zone có quan hệ vòng lặp.
+ */
+export function fillTreeRows(stats: FillStats, scope: FillScope): FillTreeRow[] {
+    const childrenOf = new Map<string, ZoneFillStat[]>()
+    for (const stat of stats.byZone.values()) {
+        if (!stat.parentId || !isInScope(stat, scope)) continue
+        const siblings = childrenOf.get(stat.parentId)
+        if (siblings) siblings.push(stat)
+        else childrenOf.set(stat.parentId, [stat])
+    }
+
+    const rows: FillTreeRow[] = []
+    const seen = new Set<string>()
+
+    // Đường dẫn lấy theo cây zone thật (kể cả cha ngoài phạm vi) để "SẢNH 1" của mỗi kho vẫn phân biệt được.
+    const pathOf = (stat: ZoneFillStat): string[] => {
+        const labels: string[] = []
+        const guard = new Set<string>()
+        let current: ZoneFillStat | undefined = stat
+        while (current && !guard.has(current.zoneId)) {
+            guard.add(current.zoneId)
+            labels.unshift(current.label)
+            current = current.parentId ? stats.byZone.get(current.parentId) : undefined
+        }
+        return labels
+    }
+
+    const walk = (stat: ZoneFillStat, depth: number) => {
+        if (seen.has(stat.zoneId)) return
+        seen.add(stat.zoneId)
+        rows.push({ stat, depth, path: pathOf(stat) })
+        for (const child of [...(childrenOf.get(stat.zoneId) || [])].sort(compareZoneOrder)) {
+            walk(child, depth + 1)
+        }
+    }
+
+    // Tab Sảnh bắt đầu từ khu sảnh đầu ngành, giống hệt rowsForScope.
+    const top = scope === 'hall' ? stats.hallRoots : childStatsOf(stats, null, scope)
+    top.forEach(stat => walk(stat, 0))
+    return rows
+}
+
+/**
+ * Dòng vẽ ở cấp cao nhất của biểu đồ: nếu cả phân hệ chỉ có MỘT khu gốc thì xuống thêm một cấp,
+ * giống cách màn hình tự hạ xuống cấp khu để so sánh được.
+ */
+export function chartRowsForScope(stats: FillStats, scope: FillScope): ZoneFillStat[] {
+    const top = rowsForScope(stats, null, scope)
+    if (top.length !== 1) return top
+    const children = rowsForScope(stats, top[0].zoneId, scope)
+    return children.length > 0 ? [top[0], ...children] : top
 }

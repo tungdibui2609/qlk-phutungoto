@@ -118,6 +118,42 @@ export default function OutboundPage() {
         }
     }, [systemType, currentSystem])
 
+    // Tự động mở chi tiết / chỉnh sửa phiếu xuất nếu có editCode trên URL
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const params = new URLSearchParams(window.location.search)
+        const editCode = params.get('editCode')
+        if (!editCode || !systemType) return
+
+        const handleUrlEditCode = async () => {
+            const foundLocal = orders.find(o => o.code === editCode)
+            if (foundLocal) {
+                setSelectedOrderId(foundLocal.id)
+                setIsDetailModalOpen(true)
+                window.history.replaceState({}, '', window.location.pathname)
+                return
+            }
+            try {
+                const { data, error } = await supabase
+                    .from('outbound_orders')
+                    .select('id')
+                    .eq('code', editCode)
+                    .eq('system_code', systemType)
+                    .single()
+                if (!error && data) {
+                    setSelectedOrderId((data as any).id)
+                    setIsDetailModalOpen(true)
+                }
+            } catch (e) {
+                console.error('Lỗi khi tìm phiếu xuất từ URL:', e)
+            } finally {
+                window.history.replaceState({}, '', window.location.pathname)
+            }
+        }
+
+        handleUrlEditCode()
+    }, [orders, systemType])
+
     const updateBufferCount = async () => {
         if (!systemType || !isUtilityEnabled('lot_accounting_sync')) return
         const { data } = await supabase

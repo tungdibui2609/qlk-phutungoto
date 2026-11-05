@@ -154,7 +154,18 @@ export default function UnifiedSystemConfig() {
         if (!selectedSystemCode) return
         setSaving(true)
         try {
+            const systemsTable = (supabase.from('systems' as any) as any)
+
+            // jsonb `modules` còn chứa cấu hình của các màn hình khác (danh mục theo dõi,
+            // ô đánh dấu/khóa trên sơ đồ) — phải đọc rồi ghi đè từng khóa, không thay cả khối.
+            const lookup = currentSystem?.id
+                ? systemsTable.select('modules').eq('id', currentSystem.id)
+                : systemsTable.select('modules').eq('code', selectedSystemCode)
+            const { data: currentRows } = await lookup.limit(1)
+            const currentModules = (currentRows?.[0]?.modules as any) || {}
+
             const modulesJson = {
+                ...currentModules,
                 product_modules: config.product,
                 utility_modules: config.utility,
                 print_modules: config.print,

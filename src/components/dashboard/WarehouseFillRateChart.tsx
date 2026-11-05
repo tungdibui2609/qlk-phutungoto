@@ -21,8 +21,8 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchAllPaged } from '@/lib/supabasePaged'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantity } from '@/lib/numberUtils'
-import { exportDashboardChart } from '@/lib/dashboardExcelExport'
-import { fillRateExportSpec, SCOPE_LABEL } from '@/lib/dashboardExcelSpecs'
+import { exportDashboardSheets } from '@/lib/dashboardExcelExport'
+import { fillRateWorkbookPlan } from '@/lib/dashboardExcelSpecs'
 import {
     buildFillStats,
     buildZoneLookup,
@@ -172,24 +172,17 @@ export default function WarehouseFillRateChart() {
         [rows, currentZone, scope]
     )
 
-    // Xuất đúng tab đang chọn và đúng cấp khu đang drill — những gì thấy là những gì tải về.
+    // File Excel gồm cả 3 tab và toàn bộ cây khu vực, không phụ thuộc tab/cấp đang drill trên màn hình.
     const handleExport = async () => {
         if (!stats) return
         setExporting(true)
         try {
-            const { spec, chart } = fillRateExportSpec({
-                systemName: currentSystem?.name || systemType || '',
-                scope,
-                pathLabels: path.map(id => stats.byZone.get(id)?.label || ''),
-                stats,
-                rows,
-                currentZoneId: currentZone?.zoneId || null
-            })
-            await exportDashboardChart({
-                spec,
-                chart,
-                filePrefix: 'Tỉ lệ lấp đầy kho',
-                fileExtra: SCOPE_LABEL[scope]
+            await exportDashboardSheets({
+                sheets: fillRateWorkbookPlan({
+                    systemName: currentSystem?.name || systemType || '',
+                    stats
+                }),
+                filePrefix: 'Tỉ lệ lấp đầy kho'
             })
         } catch (err) {
             console.error('Lỗi xuất Excel tỉ lệ lấp đầy:', err)
@@ -267,7 +260,7 @@ export default function WarehouseFillRateChart() {
                         onClick={handleExport}
                         disabled={exporting}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-emerald-300 hover:text-emerald-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                        title="Xuất tab và cấp khu đang xem ra Excel (biểu đồ + bảng số)"
+                        title="Xuất Excel: sheet Tổng quan + 3 sheet Lô kệ / Sảnh / Tổng, mỗi sheet có biểu đồ và toàn bộ cây khu vực"
                     >
                         {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
                         Xuất Excel

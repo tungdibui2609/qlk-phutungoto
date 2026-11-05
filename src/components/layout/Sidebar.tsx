@@ -176,6 +176,7 @@ const menuItems: MenuItem[] = [
         name: 'Công việc',
         icon: ClipboardCheck,
         children: [
+            { id: 'work_plan', name: 'Kế hoạch & Đánh giá CV', href: '/work/plans', icon: CalendarClock, requiredModule: 'work_plan' },
             { id: 'shift_tasks', name: 'Giao việc & Bàn giao ca', href: '/work/tasks', icon: CheckSquare, requiredModule: 'shift_tasks' },
             { id: 'export_order', name: 'Lệnh xuất kho', href: '/work/export-order', icon: ArrowUpFromLine, requiredModule: 'work_export_order' },
             { id: 'internal_inventory', name: 'Kiểm kê nội bộ', href: '/work/inventory', icon: ClipboardCheck },

@@ -1,13 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import ExcelJS from 'exceljs'
-import { buildDashboardWorkbook, excelFileName } from '../dashboardExcelWorkbook'
 import {
+    buildDashboardWorkbook,
+    buildWorkbookFromSheets,
+    excelFileName,
+    type DashboardChartImage
+} from '../dashboardExcelWorkbook'
+import {
+    categoryPositionExportSpec,
     containerExportSpec,
     distributionKgExportSpec,
-    fillRateExportSpec,
-    categoryPositionExportSpec
+    distributionWorkbookPlan,
+    fillRateWorkbookPlan
 } from '../dashboardExcelSpecs'
-import { buildFillStats, buildZoneLookup, rowsForScope } from '../warehouseFillRate'
+import { buildFillStats, buildZoneLookup, fillTreeRows } from '../warehouseFillRate'
 import type { CategoryPositionResult } from '../categoryPositionStats'
 
 // PNG 1x1 trong suốt — chỉ cần để kiểm chứng exceljs nhúng ảnh vào gói .xlsx
@@ -20,11 +26,13 @@ function zone(id: string, code: string, extra: Record<string, unknown> = {}) {
 function makeStats() {
     const zones = [
         zone('z1', 'KHO 1'),
+        zone('z1a', 'KHU A 1', { parent_id: 'z1', level: 2 }),
         zone('z2', 'KHO 2'),
-        zone('z3', 'SANH 1', { is_hall: true })
+        zone('z3', 'SANH 1', { is_hall: true, parent_id: 'z1', level: 2 })
     ]
     const positions: Array<{ id: string; lot_id: string | null; zone_id: string | null }> = []
     for (let i = 0; i < 10; i++) positions.push({ id: `p${i}`, lot_id: i < 4 ? 'lot1' : null, zone_id: 'z1' })
+    for (let i = 0; i < 6; i++) positions.push({ id: `a${i}`, lot_id: i < 2 ? 'lot4' : null, zone_id: 'z1a' })
     for (let i = 0; i < 5; i++) positions.push({ id: `q${i}`, lot_id: i < 5 ? 'lot2' : null, zone_id: 'z2' })
     for (let i = 0; i < 3; i++) positions.push({ id: `h${i}`, lot_id: i < 1 ? 'lot3' : null, zone_id: 'z3' })
     const links = positions.map(p => ({ zone_id: p.zone_id!, position_id: p.id }))
@@ -41,19 +49,36 @@ async function bufferToWorkbook(buffer: ArrayBuffer) {
     return wb
 }
 
-describe('buildDashboardWorkbook', () => {
-    it('tạo 2 sheet, đúng tên và đúng bảng số', async () => {
-        const stats = makeStats()
-        const rows = rowsForScope(stats, null, 'rack')
-        const { spec } = fillRateExportSpec({
+/** Sheet có tiêu đề nằm dưới ảnh biểu đồ → phải tìm dòng tiêu đề thật trước khi assert. */
+function headerRowOf(ws: ExcelJS.Worksheet, firstHeader: string) {
+    for (let r = 1; r <= 60; r++) {
+        if (ws.getRow(r).getCell(1).value === firstHeader) return r
+    }
+    throw new Error(`Không tìm thấy dòng tiêu đề "${firstHeader}"`)
+}
+
+const CATEGORY_RESULT: CategoryPositionResult = {
+    stats: [
+        { categoryId: 'c1', name: 'SẦU RIÊNG', count: 1414, pctOfOccupied: 68.21, pctOfTotal: 18.1 },
+        { categoryId: 'c2', name: 'XOÀI', count: 193, pctOfOccupied: 9.32, pctOfTotal: 2.5 }
+    ],
+    totalPositions: 7820,
+    occupiedPositions: 2073,
+    unclassifiedOccupied: 12
+}
+
+describe('buildDashboardWorkbook (kiểu cũ 2 sheet)', () => {
+    it('tạo 2 sheet "Bieu do"/"Du lieu" và giữ nguyên bảng số của spec', async () => {
+        const { spec } = categoryPositionExportSpec({
             systemName: 'Kho Đông Lạnh',
-            scope: 'rack',
-            pathLabels: [],
-            stats,
-            rows
+            warehouseLabel: 'KHO 1',
+            result: CATEGORY_RESULT,
+            visibleOnly: true
         })
-        const workbook = buildDashboardWorkbook({ ...spec, image: { base64: TINY_PNG, width: 720, height: 200 } })
-        const buffer = (await workbook.xlsx.writeBuffer()) as ArrayBuffer
+        const buffer = (await buildDashboardWorkbook({
+            ...spec,
+            image: { base64: TINY_PNG, width: 720, height: 200 }
+        }).xlsx.writeBuffer()) as ArrayBuffer
 
         expect(buffer.byteLength).toBeGreaterThan(1000)
         const wb = await bufferToWorkbook(buffer)
@@ -61,32 +86,28 @@ describe('buildDashboardWorkbook', () => {
 
         const data = wb.getWorksheet('Du lieu')!
         expect((data.getRow(1).values as unknown as Array<string | null>).slice(1)).toEqual([
-            'Khu vực',
-            'Ô Lô kệ quy hoạch',
-            'Đang chứa',
-            'Còn trống',
-            'Tỉ lệ lấp đầy',
-            'Trạng thái'
+            'Danh mục',
+            'Số ô vị trí',
+            'Tỉ lệ hàng hoá',
+            'Tỉ lệ công suất'
         ])
-        expect(data.getRow(2).getCell(1).value).toBe('KHO 1')
-        expect(data.getRow(2).getCell(5).value).toBe(40)
-        expect(data.getRow(2).getCell(6).value).toBe('Bình thường')
+        expect(data.getRow(2).getCell(1).value).toBe('SẦU RIÊNG')
+        expect(data.getRow(2).getCell(2).value).toBe(1414)
+        expect(data.getRow(2).getCell(3).value).toBe(68.2)
     })
 
     it('giữ format số, autofilter, đóng băng dòng đầu và data bar trên cột %', async () => {
-        const stats = makeStats()
-        const { spec } = fillRateExportSpec({
+        const { spec } = categoryPositionExportSpec({
             systemName: 'KHO',
-            scope: 'rack',
-            pathLabels: [],
-            stats,
-            rows: rowsForScope(stats, null, 'rack')
+            warehouseLabel: 'KHO 1',
+            result: CATEGORY_RESULT,
+            visibleOnly: true
         })
         const wb = await bufferToWorkbook(
             (await buildDashboardWorkbook({ ...spec, image: null }).xlsx.writeBuffer()) as ArrayBuffer
         )
         const data = wb.getWorksheet('Du lieu')!
-        const pctCell = data.getRow(2).getCell(5)
+        const pctCell = data.getRow(2).getCell(3)
         expect(pctCell.numFmt).toContain('%')
         expect(data.autoFilter).toBeTruthy()
         expect(JSON.stringify(data.views)).toContain('frozen')
@@ -94,18 +115,16 @@ describe('buildDashboardWorkbook', () => {
             conditionalFormattings: Array<{ ref: string; rules: Array<{ type: string }> }>
         }).conditionalFormattings
         expect(cf.length).toBe(1)
-        expect(cf[0].ref).toBe('E2:E3')
+        expect(cf[0].ref).toBe('C2:C3')
         expect(cf[0].rules[0].type).toBe('dataBar')
     })
 
     it('nhúng ảnh PNG vào sheet Biểu đồ', async () => {
-        const stats = makeStats()
-        const { spec } = fillRateExportSpec({
+        const { spec } = distributionKgExportSpec({
             systemName: 'KHO',
-            scope: 'hall',
-            pathLabels: [],
-            stats,
-            rows: rowsForScope(stats, null, 'hall')
+            filterLabel: 'Tất cả danh mục',
+            items: [{ name: 'Sầu riêng', value: 700.5, percentage: 70 }],
+            totalWeight: 700.5
         })
         const buffer = (await buildDashboardWorkbook({
             ...spec,
@@ -138,63 +157,154 @@ describe('buildDashboardWorkbook', () => {
     })
 })
 
-describe('fillRateExportSpec', () => {
-    it('vẽ hbar trục % và tô màu theo mức lấp đầy', () => {
-        const stats = makeStats()
-        const rows = rowsForScope(stats, null, 'rack')
-        const { spec, chart } = fillRateExportSpec({
-            systemName: 'KHO',
-            scope: 'rack',
-            pathLabels: ['KHO 1'],
-            stats,
-            rows
+describe('fillTreeRows', () => {
+    it('đi toàn bộ cây khu: cha đứng trước con, depth tăng theo cấp', () => {
+        const tree = fillTreeRows(makeStats(), 'rack')
+        expect(tree.map(r => `${r.stat.label}:${r.depth}`)).toEqual(['KHO 1:0', 'KHU A 1:1', 'KHO 2:0'])
+        // tab Sảnh bắt đầu từ khu sảnh đầu ngành, không lẫn khu kệ
+        expect(fillTreeRows(makeStats(), 'hall').map(r => r.stat.label)).toEqual(['SANH 1'])
+    })
+})
+
+describe('fillRateWorkbookPlan', () => {
+    it('4 sheet, sheet Tổng quan đủ số của cả ba tab', () => {
+        const plan = fillRateWorkbookPlan({
+            systemName: 'Kho Đông Lạnh',
+            stats: makeStats(),
+            when: new Date(2026, 10, 5, 14, 1)
         })
-        expect(chart.kind).toBe('hbar')
-        expect(chart.percentAxis).toBe(true)
-        expect(chart.labels).toEqual(['KHO 1', 'KHO 2'])
-        expect(chart.series[0].values).toEqual([40, 100])
-        expect(chart.barColors).toEqual(['#10b981', '#f43f5e'])
-        expect(spec.meta!.find(m => m.label === 'Cấp đang xem')?.value).toBe('KHO 1')
-        expect(spec.totalRow?.[4]).toBe(60)
+        expect(plan.map(s => s.sheetName)).toEqual(['Tong quan', 'Lo ke', 'Sanh', 'Tong (ke + sanh)'])
+        expect(plan[0].rows).toEqual([
+            ['Lô kệ', 21, 11, 10, 52.4, 'Bình thường'],
+            ['Sảnh tạm kết', 3, 1, 2, 33.3, 'Bình thường'],
+            ['Tổng (kệ + sảnh)', 24, 12, 12, 50, 'Bình thường']
+        ])
+        expect(plan[0].meta!.find(m => m.label === 'Phân hệ kho')?.value).toBe('Kho Đông Lạnh')
+        expect(plan[0].chart).toBeUndefined()
     })
 
-    it('tab Sảnh đổi tiêu đề và đơn vị, không kèm ghi chú ô chưa gán khu', () => {
-        const stats = makeStats()
-        const { spec } = fillRateExportSpec({
-            systemName: 'KHO',
-            scope: 'hall',
-            pathLabels: [],
-            stats,
-            rows: rowsForScope(stats, null, 'hall')
-        })
-        expect(spec.columns[1].header).toBe('Ô Sảnh quy hoạch')
-        expect(spec.notes?.some(n => n.includes('chưa gán vào khu'))).toBe(false)
-        expect(spec.rows).toEqual([['SANH 1', 3, 1, 2, 33.3, 'Bình thường']])
+    it('sheet Lô kệ là toàn bộ cây khu, con thụt một cấp so với cha', () => {
+        const rack = fillRateWorkbookPlan({ systemName: 'KHO', stats: makeStats() })[1]
+        expect(rack.columns!.map(c => c.header)).toEqual([
+            'Khu vực',
+            'Đường dẫn trong sơ đồ',
+            'Ô Lô kệ quy hoạch',
+            'Đang chứa',
+            'Còn trống',
+            'Tỉ lệ lấp đầy',
+            'Trạng thái'
+        ])
+        expect(rack.rows).toEqual([
+            ['KHO 1', 'KHO 1', 16, 6, 10, 37.5, 'Bình thường'],
+            ['KHU A 1', 'KHO 1 › KHU A 1', 6, 2, 4, 33.3, 'Bình thường'],
+            ['KHO 2', 'KHO 2', 5, 5, 0, 100, 'Sắp đầy']
+        ])
+        expect(rack.rowIndents).toEqual([0, 1, 0])
+        expect(rack.totalRow).toEqual(['Toàn Lô kệ', '', 21, 11, 10, 52.4, 'Bình thường'])
+    })
+
+    it('biểu đồ chỉ vẽ cấp khu vực và nhãn thanh kèm số ô như trên màn hình', () => {
+        const plan = fillRateWorkbookPlan({ systemName: 'KHO', stats: makeStats() })
+        const rackChart = plan[1].chart!
+        expect(rackChart.labels).toEqual(['KHO 1', 'KHO 2'])
+        expect(rackChart.series[0].values).toEqual([37.5, 100])
+        expect(rackChart.barColors).toEqual(['#10b981', '#f43f5e'])
+        expect(rackChart.valueLabels).toEqual(['37,5% · 6/16 ô', '100% · 5/5 ô'])
+        expect(plan[2].chart!.labels).toEqual(['SANH 1'])
+    })
+
+    it('khu sảnh trùng tên vẫn phân biệt được nhờ cột đường dẫn', () => {
+        const hall = fillRateWorkbookPlan({ systemName: 'KHO', stats: makeStats() })[2]
+        expect(hall.rows).toEqual([['SANH 1', 'KHO 1 › SANH 1', 3, 1, 2, 33.3, 'Bình thường']])
+        expect(hall.rowIndents).toEqual([0])
+        expect(hall.totalRow).toEqual(['Toàn Sảnh', '', 3, 1, 2, 33.3, 'Bình thường'])
+    })
+
+    it('buildWorkbookFromSheets: ảnh nằm trên, bảng bắt đầu bên dưới ảnh, data bar đúng cột tỉ lệ', async () => {
+        const plan = fillRateWorkbookPlan({ systemName: 'KHO', stats: makeStats() })
+        const image: DashboardChartImage = { base64: TINY_PNG, width: 720, height: 100 }
+        const wb = await bufferToWorkbook(
+            (await buildWorkbookFromSheets(
+                plan.map(s => ({ ...s, image: s.chart ? image : null }))
+            ).xlsx.writeBuffer()) as ArrayBuffer
+        )
+
+        expect(wb.worksheets.map(w => w.name)).toEqual(['Tong quan', 'Lo ke', 'Sanh', 'Tong (ke + sanh)'])
+
+        const rack = wb.getWorksheet('Lo ke')!
+        const headerRow = headerRowOf(rack, 'Khu vực')
+        expect(headerRow).toBeGreaterThan(1)
+        expect(rack.getRow(headerRow + 2).getCell(1).value).toBe('KHU A 1')
+        expect(rack.getRow(headerRow + 2).getCell(1).alignment?.indent).toBe(1)
+        expect(rack.getRow(headerRow + 1).getCell(3).numFmt).toContain('#')
+        expect(JSON.stringify(rack.views)).toContain('frozen')
+        const cf = (rack as unknown as { conditionalFormattings: Array<{ ref: string }> }).conditionalFormattings
+        expect(cf[0].ref).toBe(`F${headerRow + 1}:F${headerRow + 3}`)
+
+        // sheet Tổng quan không có ảnh → bảng sát ngay dưới metadata
+        const overview = wb.getWorksheet('Tong quan')!
+        expect(headerRowOf(overview, 'Phạm vi')).toBeLessThan(8)
+        expect(overview.getRow(3).getCell(2).value).toBe('KHO')
     })
 })
 
 describe('categoryPositionExportSpec', () => {
     it('xuất 2 tỉ lệ và ghi chú LOT chưa phân loại', () => {
-        const result: CategoryPositionResult = {
-            stats: [
-                { categoryId: 'c1', name: 'SẦU RIÊNG', count: 1414, pctOfOccupied: 68.21, pctOfTotal: 18.1 },
-                { categoryId: 'c2', name: 'XOÀI', count: 193, pctOfOccupied: 9.32, pctOfTotal: 2.5 }
-            ],
-            totalPositions: 7820,
-            occupiedPositions: 2073,
-            unclassifiedOccupied: 12
-        }
         const { spec, chart } = categoryPositionExportSpec({
             systemName: 'KHO',
             warehouseLabel: 'KHO 1',
-            result,
+            result: CATEGORY_RESULT,
             visibleOnly: true
         })
         expect(spec.rows[0]).toEqual(['SẦU RIÊNG', 1414, 68.2, 18.1])
         expect(spec.dataBarColumn).toBe(3)
+        expect(chart.kind).toBe('donut')
+        expect(chart.legendLimit).toBe(12)
         expect(chart.series[0].values).toEqual([1414, 193])
         expect(spec.notes?.[2]).toContain('12 ô')
         expect(spec.meta!.find(m => m.label === 'Ô đang chứa hàng')?.value).toBe('2.073')
+    })
+})
+
+describe('distributionWorkbookPlan', () => {
+    const plan = () =>
+        distributionWorkbookPlan(
+            {
+                systemName: 'KHO',
+                filterLabel: 'Tất cả danh mục',
+                items: [{ name: 'Sầu riêng', code: 'SR01', value: 700.5, percentage: 100 }],
+                totalWeight: 700.5
+            },
+            { systemName: 'KHO', warehouseLabel: 'Tất cả kho', result: CATEGORY_RESULT, visibleOnly: true }
+        )
+
+    it('một file hai sheet, sheet KG trước sheet danh mục', () => {
+        const sheets = plan()
+        expect(sheets.map(s => s.sheetName)).toEqual(['Khoi luong KG', 'Danh muc vi tri'])
+        expect(sheets[0].title).toContain('khối lượng')
+        expect(sheets[1].title).toContain('danh mục')
+        expect(sheets.map(s => s.chart?.kind)).toEqual(['donut', 'donut'])
+        expect(sheets[0].totalRow?.[3]).toBe(700.5)
+        expect(sheets[1].rows?.[0]).toEqual(['SẦU RIÊNG', 1414, 68.2, 18.1])
+    })
+
+    it('writeBuffer ra workbook có đúng 2 sheet kèm bảng số của từng tab', async () => {
+        const sheets = plan().map(({ chart, ...sheet }) => ({
+            ...sheet,
+            image: { base64: TINY_PNG, width: 720, height: 200 } as DashboardChartImage
+        }))
+        const wb = await bufferToWorkbook((await buildWorkbookFromSheets(sheets).xlsx.writeBuffer()) as ArrayBuffer)
+        expect(wb.worksheets.map(w => w.name)).toEqual(['Khoi luong KG', 'Danh muc vi tri'])
+
+        const posSheet = wb.getWorksheet('Danh muc vi tri')!
+        const headerRow = headerRowOf(posSheet, 'Danh mục')
+        expect((posSheet.getRow(headerRow).values as unknown as Array<string | null>).slice(1)).toEqual([
+            'Danh mục',
+            'Số ô vị trí',
+            'Tỉ lệ hàng hoá',
+            'Tỉ lệ công suất'
+        ])
+        expect(posSheet.getRow(headerRow + 1).getCell(2).value).toBe(1414)
     })
 })
 

@@ -59,6 +59,7 @@ const menuItems: MenuItem[] = [
         name: 'Công việc & Ca trực',
         icon: CheckSquare,
         children: [
+            { id: 'work_plan_sanxuat', name: 'Kế hoạch & Đánh giá CV', href: '/sanxuat/work/plans', icon: ClipboardList },
             { id: 'shift_tasks_sanxuat', name: 'Giao việc & Bàn giao ca', href: '/sanxuat/work/tasks', icon: CheckSquare },
         ]
     },
