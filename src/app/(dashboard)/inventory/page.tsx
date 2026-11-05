@@ -34,6 +34,7 @@ interface InventoryItem {
     categoryName: string | null
     isUnconvertible?: boolean
     lotBalance?: number
+    lotDiff?: number
 }
 
 interface Branch {
@@ -692,14 +693,14 @@ export default function InventoryPage() {
                                                                     <td className="px-4 py-3 text-right tabular-nums font-bold text-stone-900 dark:text-stone-100">{formatQuantityFull(item.balance)}</td>
                                                                     {hasLotBalanceModule && showLotBalance && (
                                                                         <td className={`px-4 py-3 text-right tabular-nums font-bold bg-purple-50/30 dark:bg-purple-950/10 ${
-                                                                            item.balance !== (item.lotBalance || 0)
+                                                                            Math.abs(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance)) >= 0.001
                                                                                 ? 'text-red-600 dark:text-red-400 font-black'
                                                                                 : 'text-purple-700 dark:text-purple-300'
                                                                         }`}>
                                                                             {formatQuantityFull(item.lotBalance || 0)}
-                                                                            {item.balance !== (item.lotBalance || 0) && (
+                                                                            {Math.abs(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance)) >= 0.001 && (
                                                                                 <span className="block text-[10px] font-normal text-red-500">
-                                                                                    (Lệch: {formatQuantityFull((item.lotBalance || 0) - item.balance)})
+                                                                                    (Lệch: {formatQuantityFull(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance))})
                                                                                 </span>
                                                                             )}
                                                                         </td>

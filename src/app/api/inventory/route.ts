@@ -99,18 +99,20 @@ export async function GET(request: Request) {
             return allItems;
         };
 
-        // Helper to fetch active lots for lot balance
+        // Helper to fetch active lots for lot balance (synced with InventoryReconciliation: unlocked & positioned LOTs)
         const fetchActiveLots = async () => {
             let allLots: any[] = [];
             let currentFrom = 0;
             while (true) {
-                let q = supabase
+                const q = supabase
                     .from('lots')
                     .select(`
                         id,
                         product_id,
                         quantity,
                         warehouse_name,
+                        is_locked,
+                        positions!positions_lot_id_fkey (id, code),
                         lot_items (
                             product_id,
                             quantity,
@@ -122,13 +124,21 @@ export async function GET(request: Request) {
                     .order('id', { ascending: true })
                     .range(currentFrom, currentFrom + PAGE_SIZE - 1);
 
-                if (warehouse && warehouse !== 'Tất cả') {
-                    q = q.eq('warehouse_name', warehouse);
-                }
-
                 const { data, error } = await q;
                 if (error || !data || data.length === 0) break;
-                allLots = [...allLots, ...data];
+
+                let filtered = (data as any[]).filter((lot: any) =>
+                    lot.is_locked !== true &&
+                    Array.isArray(lot.positions) &&
+                    lot.positions.length > 0
+                );
+
+                if (warehouse && warehouse !== 'Tất cả') {
+                    const targetNorm = normalizeWarehouseName(warehouse);
+                    filtered = filtered.filter((lot: any) => normalizeWarehouseName(lot.warehouse_name) === targetNorm);
+                }
+
+                allLots = [...allLots, ...filtered];
                 if (data.length < PAGE_SIZE) break;
                 currentFrom += PAGE_SIZE;
             }
@@ -207,6 +217,7 @@ export async function GET(request: Request) {
             isUnconvertible?: boolean
             kg?: number
             lotBalance?: number
+            lotDiff?: number
         }
 
         // Maps for O(1) Access
@@ -375,34 +386,76 @@ export async function GET(request: Request) {
             // Process Outbound
             ; (outboundItems as any[])?.forEach(item => processItem(item, 'out', new Date(item.order.created_at)))
         
-        // Aggregate LOT totals map for instant O(1) balance lookup
+        // Aggregate LOT totals map for instant O(1) balance lookup (synced with InventoryReconciliation)
         const lotTotalsMap = new Map<string, number>();
         (activeLotsData || []).forEach((lot: any) => {
             const wNorm = normalizeWarehouseName(lot.warehouse_name);
             const addLotQty = (pid: string, qty: number, u: string) => {
                 if (!pid || !qty) return;
-                const uCanon = canonicalizeUnit(u);
-                const uRaw = (u || '').trim();
-                
-                // Key with warehouse
-                const keyWithWh = `${pid}_${wNorm}_${uCanon}`;
-                lotTotalsMap.set(keyWithWh, (lotTotalsMap.get(keyWithWh) || 0) + qty);
-                
-                // Key overall
-                const keyOverall = `${pid}_${uCanon}`;
-                lotTotalsMap.set(keyOverall, (lotTotalsMap.get(keyOverall) || 0) + qty);
+                const prod = productMap.get(pid);
+                const baseUnit = prod?.unit || '';
+                const uRaw = (u || baseUnit || '').trim();
 
-                if (uRaw !== uCanon) {
-                    const keyRawWh = `${pid}_${wNorm}_${uRaw}`;
-                    lotTotalsMap.set(keyRawWh, (lotTotalsMap.get(keyRawWh) || 0) + qty);
-                    const keyRawOverall = `${pid}_${uRaw}`;
-                    lotTotalsMap.set(keyRawOverall, (lotTotalsMap.get(keyRawOverall) || 0) + qty);
+                // Enrich unit with weight suffix (e.g. "Thùng" -> "Thùng (20kg)") matching InventoryReconciliation
+                let enrichedUnit = uRaw;
+                if (uRaw && !uRaw.includes('(')) {
+                    const normU = normalizeUnit(uRaw);
+                    const productRates = pid ? conversionMap.get(pid) : null;
+                    let rate: number | undefined = undefined;
+                    if (productRates) {
+                        const unitId = unitNameMap.get(canonicalizeUnit(uRaw));
+                        if (unitId && productRates.has(unitId)) {
+                            rate = productRates.get(unitId);
+                        } else {
+                            const matchingUnit = (unitsData as any[]).find(unitRow => {
+                                const n = normalizeUnit(unitRow.name);
+                                return (n === normU || n.replace(/\s*\([^)]*\)/, '').trim() === normU) && productRates.has(unitRow.id);
+                            });
+                            if (matchingUnit) rate = productRates.get(matchingUnit.id);
+                        }
+                    }
+                    if (rate && rate > 1 && isKg(baseUnit)) {
+                        enrichedUnit = `${uRaw} (${rate}kg)`;
+                    }
                 }
+
+                // If targetUnitId is requested and convertible, also aggregate into target unit bucket
+                const isTargetKg = targetUnit && isKg(targetUnit.name);
+                const hasWeightSuffix = extractWeightFromName(enrichedUnit) !== null;
+                const isConvertible = targetUnitId && prod && (
+                    baseUnit?.toLowerCase() === targetUnit?.name?.toLowerCase() ||
+                    conversionMap.get(pid)?.has(targetUnitId) ||
+                    (isTargetKg && hasWeightSuffix)
+                );
+                if (targetUnitId && isConvertible && targetUnit) {
+                    const convertedQty = convertUnitLogic(pid, enrichedUnit, targetUnit.name, qty, baseUnit, unitNameMap, conversionMap);
+                    const targetKeyWh = `${pid}_${wNorm}_TARGET_${targetUnitId}`;
+                    const targetKeyAll = `${pid}_TARGET_${targetUnitId}`;
+                    lotTotalsMap.set(targetKeyWh, (lotTotalsMap.get(targetKeyWh) || 0) + convertedQty);
+                    lotTotalsMap.set(targetKeyAll, (lotTotalsMap.get(targetKeyAll) || 0) + convertedQty);
+                }
+
+                const unitVariants = new Set<string>(
+                    [
+                        canonicalizeUnit(enrichedUnit),
+                        canonicalizeUnit(uRaw),
+                        enrichedUnit,
+                        uRaw
+                    ].filter(Boolean)
+                );
+
+                unitVariants.forEach(uKey => {
+                    const keyWithWh = `${pid}_${wNorm}_${uKey}`;
+                    lotTotalsMap.set(keyWithWh, (lotTotalsMap.get(keyWithWh) || 0) + qty);
+                    const keyOverall = `${pid}_${uKey}`;
+                    lotTotalsMap.set(keyOverall, (lotTotalsMap.get(keyOverall) || 0) + qty);
+                });
             };
 
             if (lot.lot_items && lot.lot_items.length > 0) {
                 lot.lot_items.forEach((item: any) => {
-                    addLotQty(item.product_id, item.quantity, item.unit || '');
+                    const prod = productMap.get(item.product_id);
+                    addLotQty(item.product_id, item.quantity, item.unit || prod?.unit || '');
                 });
             } else if (lot.product_id) {
                 const prod = productMap.get(lot.product_id);
@@ -410,30 +463,53 @@ export async function GET(request: Request) {
             }
         });
 
-        // Calculate KG and lotBalance for each item
+        // Precompute total accounting balance per (productId + warehouse + unit) across category splits
+        // so that multi-category order items (e.g. -33 and +33 summing to 0) match InventoryReconciliation
+        const productUnitAccountingTotals = new Map<string, number>();
         inventoryMap.forEach((entry) => {
             const wNorm = normalizeWarehouseName(entry.warehouse);
-            const uCanon = canonicalizeUnit(entry.unitRaw || entry.unit);
+            const uCanon = canonicalizeUnit(entry.unit);
+            const groupKey = `${entry.productId}_${wNorm}_${uCanon}`;
+            productUnitAccountingTotals.set(groupKey, (productUnitAccountingTotals.get(groupKey) || 0) + entry.balance);
+        });
+
+        // Calculate KG, lotBalance, and lotDiff for each item
+        inventoryMap.forEach((entry) => {
+            const wNorm = normalizeWarehouseName(entry.warehouse);
+            const uCanonDisplay = canonicalizeUnit(entry.unit);
+            const uCanonRaw = canonicalizeUnit(entry.unitRaw || entry.unit);
             const uDisplay = entry.unit;
             const uRaw = entry.unitRaw || '';
 
-            let physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uCanon}`);
-            if (physicalQty === undefined && uRaw) {
-                physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uRaw}`);
-            }
-            if (physicalQty === undefined) {
-                physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uDisplay}`);
-            }
-            if (physicalQty === undefined && (!warehouse || warehouse === 'Tất cả')) {
-                physicalQty = lotTotalsMap.get(`${entry.productId}_${uCanon}`);
+            let finalLotQty = 0;
+            if (targetUnitId && entry.isUnconvertible !== true && targetUnit) {
+                const targetWhQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_TARGET_${targetUnitId}`);
+                const targetAllQty = (!warehouse || warehouse === 'Tất cả')
+                    ? lotTotalsMap.get(`${entry.productId}_TARGET_${targetUnitId}`)
+                    : undefined;
+                finalLotQty = targetWhQty ?? targetAllQty ?? 0;
+            } else {
+                let physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uCanonDisplay}`);
+                if (physicalQty === undefined) {
+                    physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uCanonRaw}`);
+                }
+                if (physicalQty === undefined && uRaw) {
+                    physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uRaw}`);
+                }
+                if (physicalQty === undefined) {
+                    physicalQty = lotTotalsMap.get(`${entry.productId}_${wNorm}_${uDisplay}`);
+                }
+                if (physicalQty === undefined && (!warehouse || warehouse === 'Tất cả')) {
+                    physicalQty = lotTotalsMap.get(`${entry.productId}_${uCanonDisplay}`) ?? lotTotalsMap.get(`${entry.productId}_${uCanonRaw}`);
+                }
+                finalLotQty = physicalQty || 0;
             }
 
-            let finalLotQty = physicalQty || 0;
-            if (targetUnitId && entry.isUnconvertible !== true && targetUnit && finalLotQty > 0) {
-                const prod = productMap.get(entry.productId);
-                finalLotQty = convertUnitLogic(entry.productId, entry.unitRaw || entry.unit, targetUnit.name, finalLotQty, prod?.unit, unitNameMap, conversionMap);
-            }
             entry.lotBalance = Math.round((finalLotQty + Number.EPSILON) * 1000) / 1000;
+
+            const groupKey = `${entry.productId}_${wNorm}_${uCanonDisplay}`;
+            const totalAccountingForProductUnit = productUnitAccountingTotals.get(groupKey) ?? entry.balance;
+            entry.lotDiff = Math.round(((entry.lotBalance - totalAccountingForProductUnit) + Number.EPSILON) * 1000) / 1000;
 
             const prod = productMap.get(entry.productId)
             if (prod) {

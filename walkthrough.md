@@ -2021,3 +2021,22 @@ Theo thông lệ của repo (logic thuần + test vitest, vì agent không có p
 - `npx tsc --noEmit` sau khi refactor: **không còn lỗi nào** trên `lotUnitBulkEdit.ts`, `LotBulkChangeUnitModal.tsx`, `MultiSelectActionBar.tsx`, `warehouses/map/page.tsx`.
 - `git diff` của `MultiSelectActionBar.tsx` chỉ 19 dòng thêm đúng phần menu, không có dòng bị viết lại do đổi ending.
 - **Chưa** bấm thử trên trình duyệt (agent không tự nhập được mật khẩu test). User mở `http://localhost:3001/warehouses/map` (bản dev, không phải `:3000` đang là build cũ), tích vài ô có cùng sản phẩm khác đơn vị rồi bấm **Quản lý mã → Đổi đơn vị tính**; sau đó đối chiếu số lượng trong ô **không đổi** và chỉ chữ đơn vị đổi.
+
+# Walkthrough (tiếp): Nút xóa cả vị trí ngay trên sơ đồ xuất kho
+
+User gửi ảnh trang `/work/export-order/[id]`, khu vực **"Sơ đồ vị trí xuất kho"** (không phải bảng "Danh sách vật tư xuất kho") và yêu cầu thêm nút xóa vị trí đó khỏi lệnh xuất. Hai quyết định của user: **phạm vi xóa = cả card vị trí** (mọi dòng hàng đang nằm tại mã vị trí đó, ví dụ `K2D5A07T101`), và **không gate module** — nút hiện trên mọi phân hệ.
+
+## Triển khai
+
+- `src/components/export/ExportMapList.tsx`: thêm prop `onPositionDelete?: (itemIds: string[], positionName: string) => void`. Hai icon bên phải header card (mắt + thùng rác) giờ nằm trong một `div.flex` chung để `justify-between` của header không dồn chúng ra hai phía. Nút thùng rác chỉ render khi `!readOnly && onPositionDelete`, và gọi back với **toàn bộ `id` của các dòng trong card** (`posItems.map(i => i.id!)`) — đúng nhóm dòng mà checkbox / chip mã vị trí / "Chọn cả Ô" đang thao tác.
+- `src/app/(dashboard)/work/export-order/[id]/page.tsx`: `handleDeletePosition(itemIds, positionName)` đặt cạnh `handleDeleteItem` sẵn có, dùng cùng bộ gác cổng và cùng đường ghi log: chặn khi lệnh `Completed`/`Cancelled`, `showConfirm` nêu rõ số dòng sẽ mất, `delete().in('id', itemIds)` trên `export_task_items`, `logActivity(action: 'DELETE')` cho **từng** dòng (oldData đầy đủ để khôi phục thủ công), gỡ các id đã xóa khỏi `selectedPositionIds` để thanh action nổi không còn giữ dòng ma, rồi `fetchTaskDetails()`.
+
+## Vì sao không ảnh hưởng Kho Đông Lạnh
+
+Không có điều kiện theo mã kho/tên kho nào được viết thêm; logic分组 của sơ đồ, trạng thái chọn, luồng xác nhận và cấu trúc query đều giữ nguyên. Thay đổi duy nhất về hành vi là một `DELETE` trên `export_task_items` — cùng bảng, cùng điều kiện khóa `id` mà nút xóa trong bảng vẫn làm từ trước, chỉ khác phạm vi nhiều dòng. Phân hệ Kho Đông Lạnh vì thế có thêm đúng một nút xóa, không mất hay đổi chức năng cũ.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit`: không còn lỗi nào trên `ExportMapList.tsx` và `export-order/[id]/page.tsx` (lỗi `Property 'id' does not exist on type 'never'` ở vòng log đã xử lý bằng cách cast mảng kết quả).
+- `git diff --stat`: page.tsx +51 dòng, ExportMapList.tsx 43 thêm/14 xóa (14 dòng xóa chính là khối nút mắt được thụt lề lại vào wrapper mới) — không có dòng nào bị viết lại chỉ vì đổi line ending.
+- **Chưa** bấm thử trên trình duyệt (agent không tự nhập được mật khẩu test). User mở `http://localhost:3001/work/export-order/e244ca32-743b-4fdb-a7b1-da58ecf811e0` (bản dev, `:3000` đang là build cũ sẽ chưa thấy nút mới), bấm icon thùng rác ở góc phải một card vị trí → xác nhận → card biến mất, số dòng trong bảng giảm đúng bằng số dòng của card đó, và bảng hoạt động log thấy các dòng `export_task_items` bị xóa.

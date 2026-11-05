@@ -11,6 +11,7 @@ interface InventoryItem {
     balance: number
     isUnconvertible?: boolean
     lotBalance?: number
+    lotDiff?: number
 }
 
 interface MobileInventoryListProps {
@@ -65,11 +66,11 @@ export default function MobileInventoryList({ items, showLotBalance = false }: M
                         {showLotBalance && (
                             <div className="bg-purple-50 p-1.5 rounded-lg border border-purple-100 col-span-2 flex justify-between items-center">
                                 <span className="text-xs text-purple-700 font-bold">Tồn kho theo LOT:</span>
-                                <span className={`font-mono font-bold text-sm ${item.balance !== (item.lotBalance || 0) ? 'text-red-600' : 'text-purple-800'}`}>
+                                <span className={`font-mono font-bold text-sm ${Math.abs(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance)) >= 0.001 ? 'text-red-600' : 'text-purple-800'}`}>
                                     {formatQuantityFull(item.lotBalance || 0)}
-                                    {item.balance !== (item.lotBalance || 0) && (
+                                    {Math.abs(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance)) >= 0.001 && (
                                         <span className="text-[10px] text-red-500 font-normal ml-1">
-                                            (lệch {(item.lotBalance || 0) - item.balance > 0 ? '+' : ''}{formatQuantityFull((item.lotBalance || 0) - item.balance)})
+                                            (lệch {(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance)) > 0 ? '+' : ''}{formatQuantityFull(item.lotDiff !== undefined ? item.lotDiff : ((item.lotBalance || 0) - item.balance))})
                                         </span>
                                     )}
                                 </span>

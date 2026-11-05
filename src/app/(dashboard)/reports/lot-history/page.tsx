@@ -71,6 +71,12 @@ export default function LotHistoryPage() {
     const [lots, setLots] = useState<LotWithDetails[]>([])
     const [loading, setLoading] = useState(true)
     const [isExporting, setIsExporting] = useState(false)
+    const [affixTagSet, setAffixTagSet] = useState<Set<string>>(new Set())
+
+    useEffect(() => {
+        if (!systemType) return
+        fetchAffixTagSet(supabase, systemType).then(setAffixTagSet)
+    }, [systemType])
 
     // Recreate modal state
     const [selectedLotForRecreate, setSelectedLotForRecreate] = useState<LotWithDetails | null>(null)

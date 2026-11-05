@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from 'react'
-import { ChevronDown, CheckSquare, Eye } from 'lucide-react'
+import { ChevronDown, CheckSquare, Eye, Trash2 } from 'lucide-react'
 
 interface ExportItemProps {
     id?: string
@@ -24,10 +24,11 @@ interface ExportMapListProps {
     selectedIds?: Set<string>
     onBulkSelect?: (ids: string[], shouldSelect: boolean) => void
     onViewLotDetails?: (lotId: string) => void
+    onPositionDelete?: (itemIds: string[], positionName: string) => void
     readOnly?: boolean
 }
 
-export function ExportMapList({ items, onPositionSelect, selectedIds = new Set(), onBulkSelect, onViewLotDetails, readOnly = false }: ExportMapListProps) {
+export function ExportMapList({ items, onPositionSelect, selectedIds = new Set(), onBulkSelect, onViewLotDetails, onPositionDelete, readOnly = false }: ExportMapListProps) {
     // Grouping structure: Warehouse -> Aisle -> Bin (Grouped) -> Floor
     const warehouseGroups = useMemo(() => {
         const data: any = {}
@@ -284,18 +285,32 @@ export function ExportMapList({ items, onPositionSelect, selectedIds = new Set()
                                                                                             {posName}
                                                                                         </span>
                                                                                     </div>
-                                                                                    {onViewLotDetails && firstItem.lot_id && (
-                                                                                        <button
-                                                                                            onClick={(e) => {
-                                                                                                e.stopPropagation()
-                                                                                                onViewLotDetails(firstItem.lot_id!)
-                                                                                            }}
-                                                                                            className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-slate-50 dark:hover:bg-zinc-800"
-                                                                                            title="Xem chi tiết LOT"
-                                                                                        >
-                                                                                            <Eye size={12} />
-                                                                                        </button>
-                                                                                    )}
+                                                                                    <div className="flex items-center gap-0.5">
+                                                                                        {onViewLotDetails && firstItem.lot_id && (
+                                                                                            <button
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation()
+                                                                                                    onViewLotDetails(firstItem.lot_id!)
+                                                                                                }}
+                                                                                                className="p-1 text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors rounded-lg hover:bg-slate-50 dark:hover:bg-zinc-800"
+                                                                                                title="Xem chi tiết LOT"
+                                                                                            >
+                                                                                                <Eye size={12} />
+                                                                                            </button>
+                                                                                        )}
+                                                                                        {!readOnly && onPositionDelete && (
+                                                                                            <button
+                                                                                                onClick={(e) => {
+                                                                                                    e.stopPropagation()
+                                                                                                    onPositionDelete(posItems.map(i => i.id!).filter(Boolean), posName)
+                                                                                                }}
+                                                                                                className="p-1 text-slate-400 hover:text-red-600 transition-colors rounded-lg hover:bg-red-50 dark:hover:bg-red-950/20"
+                                                                                                title="Xóa vị trí này khỏi lệnh xuất"
+                                                                                            >
+                                                                                                <Trash2 size={12} />
+                                                                                            </button>
+                                                                                        )}
+                                                                                    </div>
                                                                                 </div>
 
                                                                                 {/* Product Lines Container */}

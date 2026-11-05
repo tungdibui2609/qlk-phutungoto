@@ -1090,6 +1090,56 @@ function ExportOrderDetailContent() {
         }
     }
 
+    async function handleDeletePosition(itemIds: string[], positionName: string) {
+        if (task?.status === 'Completed' || task?.status === 'Cancelled') {
+            showToast('Không thể chỉnh sửa lệnh xuất đã hoàn thành hoặc đã hủy', 'error')
+            return
+        }
+        if (itemIds.length === 0) return
+
+        const confirmed = await showConfirm(`Bạn có chắc chắn muốn xóa vị trí ${positionName} (${itemIds.length} dòng hàng) khỏi lệnh xuất kho này?`)
+        if (!confirmed) return
+
+        setLoading(true)
+        try {
+            const { data: oldItems } = await supabase
+                .from('export_task_items')
+                .select('*')
+                .in('id', itemIds)
+
+            const { error } = await supabase
+                .from('export_task_items')
+                .delete()
+                .in('id', itemIds)
+
+            if (error) throw error
+
+            for (const oldItem of (oldItems ?? []) as any[]) {
+                await logActivity({
+                    supabase,
+                    tableName: 'export_task_items',
+                    recordId: oldItem.id,
+                    action: 'DELETE',
+                    oldData: oldItem,
+                    systemCode: currentSystem?.code || null
+                })
+            }
+
+            setSelectedPositionIds(prev => {
+                const next = new Set(prev)
+                itemIds.forEach(id => next.delete(id))
+                return next
+            })
+
+            showToast(`Đã xóa vị trí ${positionName} khỏi lệnh xuất`, 'success')
+            fetchTaskDetails()
+        } catch (error: any) {
+            console.error('Error deleting export position:', error)
+            showToast('Lỗi khi xóa vị trí: ' + error.message, 'error')
+            setLoading(false)
+        }
+    }
+
     async function fetchFullLotDetails(lotId: string) {
         try {
             const { data, error } = await supabase
@@ -1604,6 +1654,7 @@ function ExportOrderDetailContent() {
                             selectedIds={selectedPositionIds}
                             onBulkSelect={handleBulkSelect}
                             onViewLotDetails={fetchFullLotDetails}
+                            onPositionDelete={handleDeletePosition}
                             readOnly={task.status === 'Completed' || task.status === 'Cancelled'}
                         />
                     </div>
