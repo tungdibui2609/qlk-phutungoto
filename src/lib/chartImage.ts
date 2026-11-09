@@ -169,8 +169,10 @@ function drawHBar(ctx: CanvasRenderingContext2D, spec: ChartSpec, width: number,
     const bottomAxis = 26
 
     ctx.font = '11px Arial, sans-serif'
+    // Trần 280px: tên mặt hàng dài (vd "TP cấp đông sầu riêng múi monthong C - Hàng có hạt")
+    // cần cột nhãn rộng hơn 220px cũ mới không bị cắt cụt trong ảnh báo cáo.
     const labelWidth = Math.min(
-        220,
+        280,
         Math.max(70, ...labels.map(l => ctx.measureText(l).width)) + 8
     )
     const plotX = 16 + labelWidth + 10
@@ -212,9 +214,7 @@ function drawHBar(ctx: CanvasRenderingContext2D, spec: ChartSpec, width: number,
             const value = s.values[rowIdx] || 0
             const y = groupY + si * (barHeight + 2)
             const w = Math.max(0, Math.min(1, value / safeMax)) * plotWidth
-            const color = spec.percentAxis
-                ? (spec.barColors?.[rowIdx] || s.color)
-                : s.color
+            const color = spec.barColors?.[rowIdx] || s.color
             ctx.fillStyle = '#f5f5f4'
             ctx.fillRect(plotX, y, plotWidth, barHeight)
             ctx.fillStyle = color

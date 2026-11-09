@@ -27,6 +27,9 @@ export interface LinkedExportOrderSummary {
     positions_count: number
     lots_count: number
     total_quantity: number
+    packages_count?: number | null
+    package_unit?: string | null
+    kg_quantity?: number | null
     exported_quantity?: number
     unit: string
     estimated_weight_kg?: number | null
@@ -43,18 +46,41 @@ export interface LinkedAccountingOrderSummary {
     description?: string | null
     items_count: number
     total_quantity: number
+    packages_count?: number | null
+    package_unit?: string | null
+    kg_quantity?: number | null
     unit: string
     estimated_weight_kg?: number | null
 }
 
 export interface LinkedLotDateSummary {
     id: string // `${created_date}_${zone_id || 'ALL'}`
-    created_date: string // YYYY-MM-DD
+    created_date: string // YYYY-MM-DD hoặc "YYYY-MM-DD..YYYY-MM-DD"
+    date_label?: string // VD: "04/11/2026" hoặc "04/11 → 05/11/2026"
     zone_id?: string | null
     zone_name: string // 'Tất cả kho' | 'KHO 1' | 'KHO 2' ...
     lots_count: number
     assigned_positions_count: number
     total_quantity: number
+    packages_count?: number | null
+    package_unit?: string | null
+    kg_quantity?: number | null
+    unit: string
+    estimated_weight_kg?: number | null
+}
+
+export interface LinkedApprovedAssignmentSummary {
+    id: string // `${action_date}_${zone_id || 'ALL'}`
+    action_date: string // YYYY-MM-DD hoặc "YYYY-MM-DD..YYYY-MM-DD"
+    date_label?: string // VD: "04/11/2026" hoặc "04/11 → 05/11/2026"
+    zone_id?: string | null
+    zone_name: string // 'Tất cả kho' | 'KHO 1' | 'KHO 2' ...
+    approved_count: number // Số vị trí xe nâng đã đưa lên kệ và được duyệt
+    lots_count: number
+    total_quantity: number
+    packages_count?: number | null
+    package_unit?: string | null
+    kg_quantity?: number | null
     unit: string
     estimated_weight_kg?: number | null
 }
@@ -65,6 +91,7 @@ export interface WorkloadMetrics {
     linked_inbound_orders?: LinkedAccountingOrderSummary[]
     linked_outbound_orders?: LinkedAccountingOrderSummary[]
     linked_lot_summaries?: LinkedLotDateSummary[]
+    linked_approved_assignments?: LinkedApprovedAssignmentSummary[]
     positions_count?: number | null
     lots_count?: number | null
     packages_count?: number | null
@@ -83,6 +110,416 @@ export interface WorkloadMetrics {
     base_lots_count?: number | null
     base_packages_count?: number | null
     base_weight_kg?: number | null
+    // Phân loại Việc chính (100đ cơ bản) vs Việc phụ / Hỗ trợ (cộng thêm điểm lên 120-150đ)
+    task_type?: WorkPlanTaskType | null
+    // Đánh giá KPI & Ghi nhận vi phạm theo từng cá nhân
+    assignee_evaluations?: WorkPlanAssigneeEvaluation[]
+}
+
+export type IncidentSeverity = 'minor' | 'moderate' | 'severe'
+
+export interface WorkPlanAssigneeIncident {
+    id: string
+    type: string
+    name: string
+    group: 'safety_forklift' | 'quality_goods' | 'operations' | 'discipline_5s' | 'other'
+    severity: IncidentSeverity
+    penalty_points: number
+    note?: string | null
+    created_at?: string
+}
+
+export interface WorkPlanAssigneeEvaluation {
+    assignee_id?: string
+    assignee_name: string
+    share_percent: number // Tỷ lệ phân chia khối lượng (VD: 50, 70, 100)
+    role?: 'main' | 'support' | 'equal' | string // Lái chính, Phụ việc, Chia đều
+    task_type?: WorkPlanTaskType // Phân định cho người này: 'primary' (việc chính) hoặc 'secondary' (việc phụ/hỗ trợ)
+    regular_hours?: number | null // Giờ ca chuẩn (mặc định 8h)
+    overtime_hours?: number | null // Giờ tăng ca (OT, mặc định 0h)
+    overtime_note?: string | null // Lý do / nội dung tăng ca (tùy chọn)
+    bonus_points?: number // Điểm thưởng
+    bonus_reason?: string | null
+    incidents?: WorkPlanAssigneeIncident[] // Danh sách vi phạm / lỗi
+    custom_productivity_score?: number | null // Cho phép quản lý chấm tay trực tiếp điểm năng suất (0-45đ)
+    custom_quality_score?: number | null // Cho phép quản lý chấm tay trực tiếp điểm chất lượng (0-25đ) cho riêng từng người
+    individual_note?: string | null // Nhận xét riêng
+}
+
+export interface IncidentTemplateItem {
+    type: string
+    name: string
+    severity: IncidentSeverity
+    penalty: number
+}
+
+export interface IncidentGroupTemplate {
+    group: 'safety_forklift' | 'quality_goods' | 'operations' | 'discipline_5s'
+    groupLabel: string
+    icon: string
+    items: IncidentTemplateItem[]
+}
+
+export const DEFAULT_INCIDENT_TEMPLATES: IncidentGroupTemplate[] = [
+    {
+        group: 'safety_forklift',
+        groupLabel: 'Xe nâng & An toàn',
+        icon: '🚜',
+        items: [
+            { type: 'rack_collision', name: 'Va quẹt chân kệ / Cột bảo vệ', severity: 'severe', penalty: 30 },
+            { type: 'speeding', name: 'Chạy quá tốc độ / Cua gấp trong kho', severity: 'moderate', penalty: 15 },
+            { type: 'no_horn', name: 'Không bấm còi góc khuất / Cửa kho lạnh', severity: 'minor', penalty: 5 },
+            { type: 'unsafe_stacking', name: 'Nâng hạ không cân / Quá tải trọng', severity: 'severe', penalty: 25 },
+        ],
+    },
+    {
+        group: 'quality_goods',
+        groupLabel: 'Hàng hóa & Chất lượng',
+        icon: '📦',
+        items: [
+            { type: 'fork_puncture', name: 'Nĩa xe đâm rách thùng / Bao bì', severity: 'moderate', penalty: 20 },
+            { type: 'dropped_pallet', name: 'Làm đổ / Rơi kiện / Pallet hàng', severity: 'severe', penalty: 40 },
+            { type: 'cold_chain_breach', name: 'Để hàng ngoài nhiệt độ lạnh quá giờ', severity: 'severe', penalty: 35 },
+            { type: 'torn_label', name: 'Rách tem / Mất mã barcode kiện hàng', severity: 'minor', penalty: 10 },
+        ],
+    },
+    {
+        group: 'operations',
+        groupLabel: 'Vận hành & Tiến độ',
+        icon: '📍',
+        items: [
+            { type: 'incomplete_task', name: 'Chưa xong việc trong ca (chủ quan)', severity: 'minor', penalty: 5 },
+            { type: 'slow_task_progress', name: 'Chậm tiến độ / Kéo dài ca làm việc', severity: 'minor', penalty: 5 },
+            { type: 'wrong_position', name: 'Hạ / Xếp sai vị trí kệ so với hệ thống', severity: 'moderate', penalty: 15 },
+            { type: 'missed_scan', name: 'Quên quét tem / Bỏ sót kiện hàng', severity: 'minor', penalty: 10 },
+            { type: 'loose_strapping', name: 'Đai hàng lỏng / Quấn màng co ẩu', severity: 'minor', penalty: 5 },
+        ],
+    },
+    {
+        group: 'discipline_5s',
+        groupLabel: 'Kỷ luật & 5S vệ sinh',
+        icon: '🧹',
+        items: [
+            { type: 'late_leave_early', name: 'Đi muộn / Về sớm / Rời ca không báo', severity: 'moderate', penalty: 15 },
+            { type: 'no_cleanup_5s', name: 'Không dọn dẹp vệ sinh khu vực sau ca', severity: 'minor', penalty: 10 },
+            { type: 'slow_progress', name: 'Làm việc riêng / Chậm trễ dây chuyền', severity: 'minor', penalty: 5 },
+        ],
+    },
+]
+
+export const INCIDENT_GROUPS = DEFAULT_INCIDENT_TEMPLATES
+
+// ==========================================
+// PHÂN LOẠI VIỆC CHÍNH VS VIỆC PHỤ / HỖ TRỢ (MỞ TRẦN 150 ĐIỂM)
+// ==========================================
+export type WorkPlanTaskType = 'primary' | 'secondary'
+
+export interface TaskTypeConfig {
+    label: string
+    shortLabel: string
+    badgeEmoji: string
+    badgeClass: string
+    description: string
+    baseScore: number
+}
+
+export const TASK_TYPE_CONFIG: Record<WorkPlanTaskType, TaskTypeConfig> = {
+    primary: {
+        label: 'Việc chính trong ca',
+        shortLabel: 'Việc chính',
+        badgeEmoji: '⭐',
+        badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        description: 'Nhiệm vụ cốt lõi trong ca (Hoàn thành đạt 40đ Năng suất chuẩn, tổng ca 100đ)',
+        baseScore: 40,
+    },
+    secondary: {
+        label: 'Việc phụ / Tăng cường / Làm thêm',
+        shortLabel: 'Việc phụ',
+        badgeEmoji: '➕',
+        badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200',
+        description: 'Làm thêm / Hỗ trợ ca khác (Mở trần, cộng thêm điểm thưởng vượt mức lên 120đ - 150đ+)',
+        baseScore: 20,
+    },
+}
+
+// ==========================================
+// THANG ĐIỂM KPI 100% CHUẨN (BALANCED 4-PILLAR MODEL)
+// ==========================================
+export const KPI_PILLARS = {
+    productivity: { label: 'Năng suất', max: 40, weight: 0.4 },
+    quality: { label: 'Chất lượng', max: 25, weight: 0.25 },
+    safety: { label: 'An toàn & Hàng hóa', max: 20, weight: 0.2 },
+    discipline: { label: 'Kỷ luật & 5S', max: 15, weight: 0.15 },
+} as const
+
+export interface TaskStandardKpiScore {
+    taskType: WorkPlanTaskType
+    totalKpi: number // Với việc chính: thang 0 - 100đ; Với việc phụ: là số điểm cộng thêm vào KPI ngày (+10đ đến +45đ)
+    bonusOverTargetPoints: number // Điểm việc phụ / vượt mức cộng dồn
+    productivityScore: number // Tối đa 40đ (vượt mức tối đa 45đ)
+    qualityScore: number // Tối đa 25đ
+    safetyScore: number // Gốc 20đ (trừ lỗi an toàn)
+    disciplineScore: number // Gốc 15đ (trừ lỗi 5S + cộng thưởng)
+    grade: 'A+' | 'A' | 'B' | 'C'
+    gradeLabel: string
+    hasSevereIncident: boolean
+}
+
+/**
+ * Tính điểm KPI chuẩn trên thang 100% cho từng nhân sự
+ * Hỗ trợ phân định Việc chính (chuẩn 100đ) vs Việc phụ (cộng thêm điểm lên 120 - 150đ)
+ * Quy chế vận hành: Tiến độ (Xong/Một phần) chỉ mang tính đánh dấu theo dõi ca, KHÔNG làm giảm điểm năng suất
+ * nhằm tránh phạt oan các công việc kéo dài 2-3 ngày. Nếu chậm do chủ quan, quản lý gán lỗi vi phạm (-5đ).
+ */
+export function calculateAssigneeTaskStandardKpi(params: {
+    userPositions: number
+    diffMultiplier?: number
+    progressPercent?: number
+    ratingStars?: number | null
+    customProductivityScore?: number | null
+    customQualityScore?: number | null
+    incidents?: WorkPlanAssigneeIncident[]
+    bonusPoints?: number
+    taskType?: WorkPlanTaskType
+    taskStatus?: WorkPlanItemStatus
+    sharePercent?: number
+}): TaskStandardKpiScore {
+    const {
+        userPositions,
+        diffMultiplier = 1.0,
+        progressPercent = 100,
+        ratingStars = null,
+        customProductivityScore = null,
+        customQualityScore = null,
+        incidents = [],
+        bonusPoints = 0,
+        taskType = 'primary',
+        taskStatus = 'completed',
+        sharePercent = 100,
+    } = params
+
+    // Nếu công việc bị hoãn / hủy bỏ hoàn toàn trong ca thì không tính điểm năng suất
+    const isCancelled = taskStatus === 'cancelled'
+
+    // 1. Trụ Cột Năng Suất (Chuẩn 40đ, làm việc nặng hoặc vượt trội được thưởng lên 45đ)
+    // Nếu Quản lý tự chấm tay (customProductivityScore) thì ưu tiên tuyệt đối điểm chấm tay của quản lý
+    let prodScore = 0
+    if (isCancelled) {
+        prodScore = 0
+    } else if (customProductivityScore !== null && customProductivityScore !== undefined) {
+        prodScore = Math.max(0, Math.min(45, customProductivityScore))
+    } else if (taskType === 'secondary') {
+        // VỚI VIỆC PHỤ / HỖ TRỢ:
+        // Điểm hỗ trợ được tự động tính theo % đóng góp thực tế vào công việc (Cơ sở chuẩn 40đ)
+        // Ví dụ: đóng góp 18% -> 40 * 18% = 7.2đ. Đóng góp 50% -> 40 * 50% = 20đ.
+        const baseTaskScore = diffMultiplier > 1.0
+            ? Math.min(45, Math.round(40 * diffMultiplier * 10) / 10)
+            : 40
+        const share = typeof sharePercent === 'number' ? Math.max(0, Math.min(100, sharePercent)) : 100
+        prodScore = Math.round(((baseTaskScore * share) / 100) * 10) / 10
+
+        // Thưởng năng suất tối đa 45đ khi cá nhân đạt sản lượng lớn (từ 45 vị trí pallet trở lên trong ca)
+        if (userPositions >= 45) {
+            prodScore = 45
+        }
+    } else {
+        const baseScore = 40
+        // Hệ số độ nặng: công việc Nặng (x1.2), Rất nặng (x1.5) được thưởng thêm điểm lên tối đa 45đ
+        if (diffMultiplier > 1.0) {
+            prodScore = Math.min(45, Math.round(baseScore * diffMultiplier * 10) / 10)
+        } else {
+            prodScore = baseScore
+        }
+
+        // Thưởng năng suất tối đa 45đ khi cá nhân đạt sản lượng lớn (từ 45 vị trí pallet trở lên trong ca)
+        if (userPositions >= 45) {
+            prodScore = 45
+        }
+    }
+
+    // 2. Trụ Cột Chất Lượng (Tối đa 25đ)
+    // Nếu Quản lý tự chấm tay riêng (customQualityScore) thì ưu tiên điểm chấm tay của nhân sự đó
+    let qualScore = 20
+    if (isCancelled) {
+        qualScore = 0
+    } else if (customQualityScore !== null && customQualityScore !== undefined) {
+        qualScore = Math.max(0, Math.min(25, customQualityScore))
+    } else if (ratingStars !== null && ratingStars !== undefined) {
+        if (ratingStars >= 5) qualScore = 25
+        else if (ratingStars >= 4) qualScore = 20
+        else if (ratingStars >= 3) qualScore = 15
+        else if (ratingStars >= 2) qualScore = 10
+        else qualScore = 5
+    } else {
+        // Mặc định đạt yêu cầu chuẩn (20đ) khi không chấm sao thủ công
+        qualScore = 20
+    }
+
+    // 3. Trụ Cột An Toàn Lao Động & Hàng Hóa (Gốc 20đ, trừ lỗi)
+    let safetyDeduction = 0
+    let hasSevere = false
+    incidents.forEach(inc => {
+        if (inc.group === 'safety_forklift' || inc.group === 'quality_goods') {
+            safetyDeduction += inc.penalty_points || 0
+        }
+        if (inc.severity === 'severe') {
+            hasSevere = true
+        }
+    })
+    const safetyScore = isCancelled ? 0 : Math.max(0, 20 - safetyDeduction)
+
+    // 4. Trụ Cột Kỷ Luật & 5S (Gốc 15đ, trừ lỗi + cộng thưởng)
+    let disciplineDeduction = 0
+    incidents.forEach(inc => {
+        if (
+            inc.group === 'operations' ||
+            inc.group === 'discipline_5s' ||
+            inc.group === 'other'
+        ) {
+            disciplineDeduction += inc.penalty_points || 0
+        }
+    })
+    const discScore = isCancelled ? 0 : Math.min(20, Math.max(0, 15 - disciplineDeduction + bonusPoints))
+
+    // Xử lý theo Việc chính hay Việc phụ:
+    let bonusOverTargetPoints = 0
+    let totalKpi = 0
+
+    if (taskType === 'secondary') {
+        // Việc phụ / Làm thêm / Hỗ trợ: Là điểm năng suất cộng thêm mở trần (Bonus points)
+        const taskPenalty = safetyDeduction + disciplineDeduction
+        bonusOverTargetPoints = isCancelled
+            ? 0
+            : Math.max(0, Math.round((prodScore - taskPenalty + bonusPoints) * 10) / 10)
+        totalKpi = bonusOverTargetPoints
+    } else {
+        // Việc chính trong ca: Chuẩn 100 điểm
+        const rawTotal = prodScore + qualScore + safetyScore + discScore
+        totalKpi = isCancelled ? 0 : Math.min(110, Math.round(rawTotal * 10) / 10)
+    }
+
+    // Xếp loại & Khóa danh hiệu nếu có lỗi nghiêm trọng
+    let grade: 'A+' | 'A' | 'B' | 'C' = 'B'
+    let gradeLabel = 'Đạt yêu cầu (B)'
+    if (isCancelled) {
+        grade = 'C'
+        gradeLabel = 'Hoãn / Hủy'
+    } else if (hasSevere || safetyScore <= 5 || (taskType === 'primary' && totalKpi < 70)) {
+        grade = 'C'
+        gradeLabel = hasSevere ? 'Hạng C (Vi phạm nghiêm trọng)' : 'Cần cải thiện (C)'
+    } else if (totalKpi >= 100) {
+        grade = 'A+'
+        gradeLabel = 'Xuất sắc (A+)'
+    } else if (totalKpi >= 85) {
+        grade = 'A'
+        gradeLabel = 'Tốt (A)'
+    } else if (totalKpi >= 70) {
+        grade = 'B'
+        gradeLabel = 'Đạt yêu cầu (B)'
+    } else {
+        grade = 'C'
+        gradeLabel = 'Cần cải thiện (C)'
+    }
+
+    return {
+        taskType,
+        totalKpi,
+        bonusOverTargetPoints,
+        productivityScore: prodScore,
+        qualityScore: qualScore,
+        safetyScore,
+        disciplineScore: discScore,
+        grade,
+        gradeLabel,
+        hasSevereIncident: hasSevere,
+    }
+}
+
+// ==========================================
+// TÍNH TOÁN GIỜ LÀM VIỆC, TĂNG CA (OT) & TỐC ĐỘ NĂNG SUẤT THEO GIỜ
+// ==========================================
+export interface WorkSpeedResult {
+    totalHours: number
+    regularHours: number
+    overtimeHours: number
+    positionsPerHour: number | null
+    weightKgPerHour: number | null
+    weightTonsPerHour: number | null
+    packagesPerHour: number | null
+    speedSummaryText: string
+}
+
+/**
+ * Tính toán tốc độ làm việc thực tế theo giờ
+ * (Vị trí/giờ, Tấn/giờ, Thùng/giờ) dựa trên tổng giờ làm việc (Giờ chuẩn 8h + Giờ OT)
+ */
+export function calculateWorkSpeed(params: {
+    positions?: number | null
+    weightKg?: number | null
+    packages?: number | null
+    regularHours?: number | null
+    overtimeHours?: number | null
+}): WorkSpeedResult {
+    const reg =
+        typeof params.regularHours === 'number' && !isNaN(params.regularHours)
+            ? Math.max(0, params.regularHours)
+            : 8
+    const ot =
+        typeof params.overtimeHours === 'number' && !isNaN(params.overtimeHours)
+            ? Math.max(0, params.overtimeHours)
+            : 0
+    const totalHours = Math.round((reg + ot) * 10) / 10
+
+    const pos =
+        typeof params.positions === 'number' && params.positions > 0 ? params.positions : 0
+    const kg =
+        typeof params.weightKg === 'number' && params.weightKg > 0 ? params.weightKg : 0
+    const pkg =
+        typeof params.packages === 'number' && params.packages > 0 ? params.packages : 0
+
+    let positionsPerHour: number | null = null
+    let weightKgPerHour: number | null = null
+    let weightTonsPerHour: number | null = null
+    let packagesPerHour: number | null = null
+
+    if (totalHours > 0) {
+        if (pos > 0) {
+            positionsPerHour = Math.round((pos / totalHours) * 10) / 10
+        }
+        if (kg > 0) {
+            weightKgPerHour = Math.round(kg / totalHours)
+            weightTonsPerHour = Math.round((kg / 1000 / totalHours) * 10) / 10
+        }
+        if (pkg > 0) {
+            packagesPerHour = Math.round((pkg / totalHours) * 10) / 10
+        }
+    }
+
+    const parts: string[] = []
+    if (positionsPerHour !== null && positionsPerHour > 0) {
+        parts.push(`${positionsPerHour} vt/h`)
+    }
+    if (weightTonsPerHour !== null && weightTonsPerHour > 0) {
+        parts.push(`${weightTonsPerHour} tấn/h`)
+    } else if (weightKgPerHour !== null && weightKgPerHour > 0) {
+        parts.push(`${weightKgPerHour.toLocaleString('vi-VN')} kg/h`)
+    }
+    if (parts.length === 0 && packagesPerHour !== null && packagesPerHour > 0) {
+        parts.push(`${packagesPerHour} thùng/h`)
+    }
+
+    const speedSummaryText = parts.length > 0 ? parts.join(' • ') : ''
+
+    return {
+        totalHours,
+        regularHours: reg,
+        overtimeHours: ot,
+        positionsPerHour,
+        weightKgPerHour,
+        weightTonsPerHour,
+        packagesPerHour,
+        speedSummaryText,
+    }
 }
 
 export interface QuantityFactorPreset {
@@ -173,6 +610,9 @@ export interface WorkPlanAssignee {
     name: string
     type: 'member' | 'team' | 'custom'
     role?: string
+    task_type?: WorkPlanTaskType // Phân định cho người này: 'primary' (việc chính) hoặc 'secondary' (việc phụ/hỗ trợ)
+    regular_hours?: number | null // Giờ ca chuẩn (mặc định 8h)
+    overtime_hours?: number | null // Giờ tăng ca (OT, mặc định 0h)
 }
 
 export interface WorkPlan {
@@ -203,6 +643,7 @@ export interface WorkPlanItem {
     plan_date: string // YYYY-MM-DD
     sort_order: number
     content: string
+    description?: string | null
     category: string | null
     priority: WorkPlanPriority
     location_note: string | null
@@ -215,6 +656,7 @@ export interface WorkPlanItem {
     evaluation_note: string | null
     completion_images: string[]
     workload_metrics?: WorkloadMetrics | null
+    assignee_evaluations?: WorkPlanAssigneeEvaluation[]
     evaluated_by: string | null
     evaluated_by_name: string | null
     evaluated_at: string | null
@@ -234,6 +676,63 @@ export const WORK_CATEGORIES = [
     'Bảo trì / Thiết bị',
     'Khác',
 ] as const
+
+export interface WarehouseBadgeInfo {
+    label: string
+    icon: string
+    badgeClass: string
+}
+
+export function getWarehouseBadge(codeOrName?: string | null): WarehouseBadgeInfo {
+    if (!codeOrName || codeOrName === 'ALL' || codeOrName === 'all') {
+        return {
+            label: 'Dùng chung',
+            icon: '🌐',
+            badgeClass: 'bg-stone-100 text-stone-700 border-stone-200',
+        }
+    }
+    const lower = codeOrName.toLowerCase()
+    if (lower.includes('đông') || lower.includes('cold') || lower.includes('lạnh')) {
+        return {
+            label: codeOrName,
+            icon: '❄️',
+            badgeClass: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+        }
+    }
+    if (lower.includes('bao bì') || lower.includes('vật tư') || lower.includes('pack')) {
+        return {
+            label: codeOrName,
+            icon: '📦',
+            badgeClass: 'bg-amber-50 text-amber-900 border-amber-200',
+        }
+    }
+    if (lower.includes('dụng cụ') || lower.includes('ccdc') || lower.includes('tool')) {
+        return {
+            label: codeOrName,
+            icon: '🛠️',
+            badgeClass: 'bg-violet-50 text-violet-800 border-violet-200',
+        }
+    }
+    if (lower.includes('hóa chất') || lower.includes('chem')) {
+        return {
+            label: codeOrName,
+            icon: '🧪',
+            badgeClass: 'bg-rose-50 text-rose-800 border-rose-200',
+        }
+    }
+    if (lower.includes('nguyên') || lower.includes('liệu') || lower.includes('raw')) {
+        return {
+            label: codeOrName,
+            icon: '🌾',
+            badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        }
+    }
+    return {
+        label: codeOrName,
+        icon: '🏢',
+        badgeClass: 'bg-blue-50 text-blue-800 border-blue-200',
+    }
+}
 
 export const WORK_SHIFTS = [
     'Cả ngày',
@@ -264,7 +763,7 @@ export const DIFFICULTY_CONFIG: Record<
         bgClass: 'bg-sky-50',
         textClass: 'text-sky-700',
         borderClass: 'border-sky-200',
-        description: 'Công việc nhẹ nhàng, ít vị trí (< 10 vị trí)',
+        description: 'Công việc nhẹ nhàng (< 1 Cont / < 45 vị trí / < 27 tấn)',
     },
     medium: {
         label: 'Vừa',
@@ -274,7 +773,7 @@ export const DIFFICULTY_CONFIG: Record<
         bgClass: 'bg-indigo-50',
         textClass: 'text-indigo-700',
         borderClass: 'border-indigo-200',
-        description: 'Khối lượng trung bình (10 – 24 vị trí)',
+        description: 'Khối lượng trung bình (1 – 3 Cont / 45 – 179 vị trí / 27 – 107 tấn)',
     },
     heavy: {
         label: 'Nặng',
@@ -284,7 +783,7 @@ export const DIFFICULTY_CONFIG: Record<
         bgClass: 'bg-orange-50',
         textClass: 'text-orange-700',
         borderClass: 'border-orange-200',
-        description: 'Công việc nặng, nhiều vị trí (25 – 44 vị trí) hoặc dọn vệ sinh nặng',
+        description: 'Công việc nặng (4 – 7 Cont / 180 – 359 vị trí / 108 – 215 tấn)',
     },
     very_heavy: {
         label: 'Rất nặng',
@@ -294,7 +793,7 @@ export const DIFFICULTY_CONFIG: Record<
         bgClass: 'bg-rose-50',
         textClass: 'text-rose-700',
         borderClass: 'border-rose-200',
-        description: 'Khối lượng rất lớn (≥ 45 vị trí / xuất nguyên Cont / đập đá dàn lạnh)',
+        description: 'Khối lượng rất lớn (≥ 8 Cont / ≥ 360 vị trí / ≥ 216 tấn)',
     },
 }
 
@@ -472,6 +971,16 @@ export function formatVNDate(dateStr: string): string {
 
 export function formatVNDateSlash(dateStr: string): string {
     if (!dateStr) return ''
+    if (dateStr.includes('..')) {
+        const [d1, d2] = dateStr.split('..')
+        return `${formatVNDateSlash(d1)} → ${formatVNDateSlash(d2)}`
+    }
+    if (dateStr.includes(',')) {
+        return dateStr
+            .split(',')
+            .map(d => formatVNDateSlash(d.trim()))
+            .join(', ')
+    }
     const parts = dateStr.split('-')
     if (parts.length !== 3) return dateStr
     return `${parts[2]}/${parts[1]}/${parts[0]}`
@@ -491,6 +1000,22 @@ export function buildDefaultPlanTitle(dateStr: string, systemName?: string): str
 }
 
 /**
+ * Kiểm tra xem một chuỗi đơn vị có phải là Kg hay không (ví dụ "Kg", "kgs", "kilogram"...)
+ */
+export function isKgUnit(unitStr: string | null | undefined): boolean {
+    if (!unitStr) return false
+    const norm = unitStr.normalize('NFC').toLowerCase().trim()
+    return (
+        norm === 'kg' ||
+        norm === 'kgs' ||
+        norm === 'kilogram' ||
+        norm === 'ki-lo-gam' ||
+        norm === 'kilo' ||
+        norm === 'kg.'
+    )
+}
+
+/**
  * Tách số Kg từ chuỗi đơn vị như "Thùng (20kg)", "Khay (0.4kg)", "Kg"
  */
 export function parseUnitWeightKg(unitStr: string | null | undefined): number | null {
@@ -506,26 +1031,36 @@ export function parseUnitWeightKg(unitStr: string | null | undefined): number | 
 }
 
 /**
- * Tự động gợi ý Mức độ Nặng / Nhẹ dựa trên số vị trí, số LOT, số thùng hoặc số kg
+ * Tự động gợi ý Mức độ Nặng / Nhẹ dựa trên:
+ * - 1 Cont tương đương ~ 45 vị trí ~ 27 tấn (27.000 kg)
+ * - Rất nặng: 1 trong 3 thông số đạt (Cont >= 8, Vị trí/LOT >= 360, Khối lượng >= 216 tấn = 216.000 kg)
+ * - Nặng: Cont >= 4 (hoặc Vị trí/LOT >= 180, Khối lượng >= 108 tấn = 108.000 kg)
+ * - Vừa: Cont >= 1 (hoặc Vị trí/LOT >= 45, Khối lượng >= 27 tấn = 27.000 kg)
+ * - Nhẹ: Dưới 1 Cont (< 45 vị trí, < 27 tấn)
  */
 export function suggestWorkloadDifficulty(
     metrics: Partial<WorkloadMetrics>
 ): WorkloadDifficulty {
     const pos = Number(metrics.positions_count) || 0
     const lots = Number(metrics.lots_count) || 0
-    const pkgs = Number(metrics.packages_count) || 0
     const kg = Number(metrics.weight_kg) || 0
     const conts = Number(metrics.containers_count) || 0
 
-    if (pos >= 40 || lots >= 40 || pkgs >= 1000 || kg >= 15000 || conts >= 2) {
+    // Rất nặng: chỉ cần 1 trong 3 thông số (Cont, Vị trí/LOT, Khối lượng) đạt mốc
+    if (conts >= 8 || pos >= 360 || lots >= 360 || kg >= 216000) {
         return 'very_heavy'
     }
-    if (pos >= 20 || lots >= 20 || pkgs >= 400 || kg >= 6000 || conts >= 1) {
+
+    // Nặng: Cont >= 4, hoặc Vị trí/LOT >= 180, hoặc Khối lượng >= 108 tấn
+    if (conts >= 4 || pos >= 180 || lots >= 180 || kg >= 108000) {
         return 'heavy'
     }
-    if (pos >= 8 || lots >= 8 || pkgs >= 120 || kg >= 1500) {
+
+    // Vừa: Cont >= 1, hoặc Vị trí/LOT >= 45, hoặc Khối lượng >= 27 tấn
+    if (conts >= 1 || pos >= 45 || lots >= 45 || kg >= 27000) {
         return 'medium'
     }
+
     return 'light'
 }
 
@@ -544,9 +1079,16 @@ export function recalculateWorkloadFromLinkedSources(
     const lotSummaries = Array.isArray(metrics.linked_lot_summaries)
         ? metrics.linked_lot_summaries
         : []
+    const approvedAssignments = Array.isArray(metrics.linked_approved_assignments)
+        ? metrics.linked_approved_assignments
+        : []
 
     const totalLinkedCount =
-        exportList.length + inboundList.length + outboundList.length + lotSummaries.length
+        exportList.length +
+        inboundList.length +
+        outboundList.length +
+        lotSummaries.length +
+        approvedAssignments.length
 
     if (totalLinkedCount === 0) {
         return metrics
@@ -554,33 +1096,61 @@ export function recalculateWorkloadFromLinkedSources(
 
     const sumPositions =
         exportList.reduce((s, o) => s + (o.positions_count || 0), 0) +
-        lotSummaries.reduce((s, l) => s + (l.assigned_positions_count || 0), 0)
+        lotSummaries.reduce((s, l) => s + (l.assigned_positions_count || 0), 0) +
+        approvedAssignments.reduce((s, a) => s + (a.approved_count || 0), 0)
 
     const sumLots =
         exportList.reduce((s, o) => s + (o.lots_count || 0), 0) +
         lotSummaries.reduce((s, l) => s + (l.lots_count || 0), 0) +
+        approvedAssignments.reduce((s, a) => s + (a.lots_count || 0), 0) +
         inboundList.reduce((s, o) => s + (o.items_count || 0), 0) +
         outboundList.reduce((s, o) => s + (o.items_count || 0), 0)
 
+    const getPackagesFromSummary = (item: {
+        packages_count?: number | null
+        total_quantity?: number
+        unit?: string
+    }): number => {
+        if (typeof item.packages_count === 'number') {
+            return item.packages_count
+        }
+        if (item.unit && isKgUnit(item.unit)) {
+            return 0
+        }
+        return item.total_quantity || 0
+    }
+
     const sumPackages =
-        exportList.reduce((s, o) => s + (o.total_quantity || 0), 0) +
-        inboundList.reduce((s, o) => s + (o.total_quantity || 0), 0) +
-        outboundList.reduce((s, o) => s + (o.total_quantity || 0), 0) +
-        lotSummaries.reduce((s, l) => s + (l.total_quantity || 0), 0)
+        exportList.reduce((s, o) => s + getPackagesFromSummary(o), 0) +
+        inboundList.reduce((s, o) => s + getPackagesFromSummary(o), 0) +
+        outboundList.reduce((s, o) => s + getPackagesFromSummary(o), 0) +
+        lotSummaries.reduce((s, l) => s + getPackagesFromSummary(l), 0) +
+        approvedAssignments.reduce((s, a) => s + getPackagesFromSummary(a), 0)
 
     const sumWeight =
         exportList.reduce((s, o) => s + (o.estimated_weight_kg || 0), 0) +
         inboundList.reduce((s, o) => s + (o.estimated_weight_kg || 0), 0) +
         outboundList.reduce((s, o) => s + (o.estimated_weight_kg || 0), 0) +
-        lotSummaries.reduce((s, l) => s + (l.estimated_weight_kg || 0), 0)
+        lotSummaries.reduce((s, l) => s + (l.estimated_weight_kg || 0), 0) +
+        approvedAssignments.reduce((s, a) => s + (a.estimated_weight_kg || 0), 0)
+
+    const findPackageUnit = (item?: {
+        package_unit?: string | null
+        unit?: string
+    }) => {
+        if (!item) return null
+        const u = item.package_unit || item.unit
+        return u && !isKgUnit(u) ? u : null
+    }
 
     const primaryUnit =
-        exportList[0]?.unit ||
-        inboundList[0]?.unit ||
-        outboundList[0]?.unit ||
-        lotSummaries[0]?.unit ||
+        findPackageUnit(exportList[0]) ||
+        findPackageUnit(inboundList[0]) ||
+        findPackageUnit(outboundList[0]) ||
+        findPackageUnit(lotSummaries[0]) ||
+        findPackageUnit(approvedAssignments[0]) ||
         metrics.package_unit ||
-        'Thùng'
+        (sumPackages === 0 ? 'Kg' : 'Thùng')
 
     const factor =
         metrics.quantity_factor && metrics.quantity_factor > 0
@@ -592,7 +1162,9 @@ export function recalculateWorkloadFromLinkedSources(
     const basePkgs =
         sumPackages > 0
             ? Math.round(sumPackages * 100) / 100
-            : metrics.base_packages_count ?? metrics.packages_count ?? null
+            : totalLinkedCount > 0
+                ? 0
+                : metrics.base_packages_count ?? metrics.packages_count ?? null
     const baseWeight =
         sumWeight > 0
             ? Math.round(sumWeight)
@@ -668,22 +1240,24 @@ export function hasWorkloadData(metrics?: WorkloadMetrics | null): boolean {
     if (!metrics) return false
     return Boolean(
         metrics.difficulty ||
-            (Array.isArray(metrics.linked_export_orders) &&
-                metrics.linked_export_orders.length > 0) ||
-            (Array.isArray(metrics.linked_inbound_orders) &&
-                metrics.linked_inbound_orders.length > 0) ||
-            (Array.isArray(metrics.linked_outbound_orders) &&
-                metrics.linked_outbound_orders.length > 0) ||
-            (Array.isArray(metrics.linked_lot_summaries) &&
-                metrics.linked_lot_summaries.length > 0) ||
-            (metrics.positions_count && metrics.positions_count > 0) ||
-            (metrics.lots_count && metrics.lots_count > 0) ||
-            (metrics.packages_count && metrics.packages_count > 0) ||
-            (metrics.weight_kg && metrics.weight_kg > 0) ||
-            (metrics.containers_count && metrics.containers_count > 0) ||
-            (metrics.hours_spent && metrics.hours_spent > 0) ||
-            metrics.custom_metric_value ||
-            metrics.quantity_adjustment_note
+        (Array.isArray(metrics.linked_export_orders) &&
+            metrics.linked_export_orders.length > 0) ||
+        (Array.isArray(metrics.linked_inbound_orders) &&
+            metrics.linked_inbound_orders.length > 0) ||
+        (Array.isArray(metrics.linked_outbound_orders) &&
+            metrics.linked_outbound_orders.length > 0) ||
+        (Array.isArray(metrics.linked_lot_summaries) &&
+            metrics.linked_lot_summaries.length > 0) ||
+        (Array.isArray(metrics.linked_approved_assignments) &&
+            metrics.linked_approved_assignments.length > 0) ||
+        (metrics.positions_count && metrics.positions_count > 0) ||
+        (metrics.lots_count && metrics.lots_count > 0) ||
+        (metrics.packages_count && metrics.packages_count > 0) ||
+        (metrics.weight_kg && metrics.weight_kg > 0) ||
+        (metrics.containers_count && metrics.containers_count > 0) ||
+        (metrics.hours_spent && metrics.hours_spent > 0) ||
+        metrics.custom_metric_value ||
+        metrics.quantity_adjustment_note
     )
 }
 
@@ -763,8 +1337,21 @@ export function formatWorkloadSummaryText(metrics?: WorkloadMetrics | null): str
             `LOT tạo: ${metrics.linked_lot_summaries
                 .map(
                     l =>
-                        `${l.lots_count} LOT (${formatVNDateSlash(l.created_date)}${
-                            l.zone_name && l.zone_name !== 'Tất cả kho' ? ` - ${l.zone_name}` : ''
+                        `${l.lots_count} LOT (${l.date_label || formatVNDateSlash(l.created_date)}${l.zone_name && l.zone_name !== 'Tất cả kho' ? ` - ${l.zone_name}` : ''
+                        })`
+                )
+                .join(', ')}`
+        )
+    }
+    if (
+        Array.isArray(metrics.linked_approved_assignments) &&
+        metrics.linked_approved_assignments.length > 0
+    ) {
+        parts.push(
+            `Đưa lên kệ: ${metrics.linked_approved_assignments
+                .map(
+                    a =>
+                        `${a.approved_count} vị trí (${a.date_label || formatVNDateSlash(a.action_date)}${a.zone_name && a.zone_name !== 'Tất cả kho' ? ` - ${a.zone_name}` : ''
                         })`
                 )
                 .join(', ')}`

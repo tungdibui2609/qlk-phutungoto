@@ -30,9 +30,12 @@ import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { exportOrderReportToExcel } from '@/lib/exportOrderReportExcelExport'
+import { extractTagAtoms } from '@/lib/productNameResolver'
+import { fetchUserProfilesByIds, formatProfileName } from '@/lib/userProfiles'
 
 const FETCH_PAGE_SIZE = 1000
 const ROW_PAGE_SIZE = 50
+const UNGROUPED_TAG_LABEL = '(Chưa gắn mã phụ)'
 
 const TASK_STATUS_LABELS: Record<string, string> = {
     Pending: 'Chờ xử lý',
@@ -42,7 +45,48 @@ const TASK_STATUS_LABELS: Record<string, string> = {
     Cancelled: 'Đã hủy',
 }
 
-type GroupMode = 'DAY' | 'PRODUCT' | 'TASK' | 'HOUR'
+type GroupMode = 'DAY' | 'PRODUCT' | 'TASK' | 'HOUR' | 'TAG'
+
+/** Bỏ tag nội bộ của luồng tách/gộp LOT - chúng không phải mã phụ do người dùng gắn */
+function isSystemTag(rawTag: string): boolean {
+    return rawTag.startsWith('MERGED_') || rawTag.startsWith('SPLIT_')
+}
+
+function toTagAtoms(rawTag: string | null | undefined): string[] {
+    if (!rawTag || isSystemTag(rawTag)) return []
+    return extractTagAtoms(rawTag)
+}
+
+interface EmbeddedLot {
+    code?: string | null
+    production_code?: string | null
+    lot_items?: { id: string; product_id: string | null }[] | null
+    lot_tags?: { tag: string; lot_item_id: string | null }[] | null
+}
+
+/**
+ * export_task_items không có lot_item_id nên mã phụ cấp dòng phải khớp qua product_id của dòng lệnh xuất.
+ * Tag cấp dòng chỉ tính cho đúng dòng sản phẩm của nó; chỉ tag cấp thẻ LOT (lot_item_id null) mới áp cho mọi dòng.
+ */
+function resolveTagAtoms(lot: EmbeddedLot | null | undefined, productId: string | null): string[] {
+    const tags = lot?.lot_tags
+    if (!tags || tags.length === 0) return []
+    const productByLotItem = new Map<string, string>()
+    ;(lot?.lot_items || []).forEach(li => {
+        if (li.id && li.product_id) productByLotItem.set(li.id, li.product_id)
+    })
+    const atoms = new Set<string>()
+    tags.forEach(t => {
+        const belongsToLine = !t.lot_item_id || (!!productId && productByLotItem.get(t.lot_item_id) === productId)
+        if (!belongsToLine) return
+        toTagAtoms(t.tag).forEach(atom => atoms.add(atom))
+    })
+    return Array.from(atoms).sort()
+}
+
+function normalizeSearch(value: string): string {
+    return value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim()
+}
 
 interface StatItemRow {
     taskCode: string
@@ -59,12 +103,14 @@ interface StatItemRow {
     lineStatus: string
     taskNotes: string
     day: string
+    tagAtoms: string[]
 }
 
 interface StatPickRow {
     createdAt: string
     day: string
     hour: string
+    pickerId: string
     pickerName: string
     productName: string
     sku: string
@@ -102,6 +148,17 @@ interface HourGroup {
     pickers: Set<string>
     quantity: number
     unit: string
+}
+
+interface TagGroup {
+    key: string
+    tag: string
+    taskCodes: Set<string>
+    lotCodes: Set<string>
+    units: Set<string>
+    lineCount: number
+    requestedQty: number
+    exportedQty: number
 }
 
 interface TaskGroup {
@@ -167,9 +224,10 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                         exported_quantity,
                         unit,
                         status,
+                        product_id,
                         export_tasks!inner(code, status, notes, created_at, system_code),
                         products(name, sku),
-                        lots(code, production_code),
+                        lots(code, production_code, lot_items(id, product_id), lot_tags(tag, lot_item_id)),
                         positions(code)
                     `)
                     .eq('export_tasks.system_code', currentSystem.code)
@@ -198,12 +256,12 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                         lineStatus: r.status || 'N/A',
                         taskNotes: task?.notes || '',
                         day: task?.created_at ? format(new Date(task.created_at), 'yyyy-MM-dd') : '',
+                        tagAtoms: resolveTagAtoms(r.lots, r.product_id || null),
                     })
                 })
                 if (rows.length < FETCH_PAGE_SIZE) hasMore = false
                 else from += FETCH_PAGE_SIZE
             }
-            setItemRows(allItems)
 
             // 2. Lượt hạ hàng (theo thời điểm hạ thực tế)
             const allPicks: StatPickRow[] = []
@@ -215,10 +273,10 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                         .from('export_task_picks')
                         .select(`
                             id,
+                            picker_id,
                             quantity,
                             note,
                             created_at,
-                            picker:user_profiles!picker_id(username, full_name),
                             task_item:export_task_items!task_item_id(
                                 unit,
                                 products(name, sku),
@@ -241,7 +299,8 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                             createdAt: r.created_at,
                             day: r.created_at ? format(new Date(r.created_at), 'yyyy-MM-dd') : '',
                             hour: r.created_at ? format(new Date(r.created_at), 'HH') : '',
-                            pickerName: r.picker?.full_name || r.picker?.username || 'Không rõ',
+                            pickerId: r.picker_id || '',
+                            pickerName: 'Không rõ',
                             productName: ti?.products?.name || 'N/A',
                             sku: ti?.products?.sku || '',
                             taskCode: task?.code || 'N/A',
@@ -253,9 +312,15 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     if (rows.length < FETCH_PAGE_SIZE) pHasMore = false
                     else pFrom += FETCH_PAGE_SIZE
                 }
-            } catch (pickErr) {
+                // picker_id là FK trỏ auth.users nên PostgREST không nhúng được user_profiles; phải tra riêng rồi ghép tên vào.
+                const profiles = await fetchUserProfilesByIds(allPicks.map(p => p.pickerId))
+                allPicks.forEach(p => { p.pickerName = formatProfileName(profiles.get(p.pickerId)) })
+            } catch (pickErr: any) {
                 console.warn('Không đọc được lịch sử hạ hàng (bỏ qua thống kê theo giờ):', pickErr)
+                showToast('Không đọc được lịch sử hạ hàng: ' + (pickErr?.message || ''), 'warning')
             }
+
+            setItemRows(allItems)
             setPickRows(allPicks)
             setFetchedAt(new Date())
         } catch (error: any) {
@@ -277,25 +342,26 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
     }, [searchTerm, groupMode, dateFrom, dateTo])
 
     const filteredItems = useMemo(() => {
-        const q = searchTerm.trim().toLowerCase()
+        const q = normalizeSearch(searchTerm)
         if (!q) return itemRows
         return itemRows.filter(r =>
-            r.productName.toLowerCase().includes(q) ||
-            r.sku.toLowerCase().includes(q) ||
-            r.taskCode.toLowerCase().includes(q) ||
-            (r.productionCode || '').toLowerCase().includes(q) ||
-            r.lotCode.toLowerCase().includes(q)
+            normalizeSearch(r.productName).includes(q) ||
+            normalizeSearch(r.sku).includes(q) ||
+            normalizeSearch(r.taskCode).includes(q) ||
+            normalizeSearch(r.productionCode || '').includes(q) ||
+            normalizeSearch(r.lotCode).includes(q) ||
+            r.tagAtoms.some(atom => normalizeSearch(atom).includes(q))
         )
     }, [itemRows, searchTerm])
 
     const filteredPicks = useMemo(() => {
-        const q = searchTerm.trim().toLowerCase()
+        const q = normalizeSearch(searchTerm)
         if (!q) return pickRows
         return pickRows.filter(r =>
-            r.productName.toLowerCase().includes(q) ||
-            r.sku.toLowerCase().includes(q) ||
-            r.taskCode.toLowerCase().includes(q) ||
-            r.pickerName.toLowerCase().includes(q)
+            normalizeSearch(r.productName).includes(q) ||
+            normalizeSearch(r.sku).includes(q) ||
+            normalizeSearch(r.taskCode).includes(q) ||
+            normalizeSearch(r.pickerName).includes(q)
         )
     }, [pickRows, searchTerm])
 
@@ -346,6 +412,34 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
             if (!g.unit && r.unit) g.unit = r.unit
         })
         return Array.from(map.values()).sort((a, b) => b.exportedQty - a.exportedQty || b.requestedQty - a.requestedQty)
+    }, [filteredItems])
+
+    const tagGroups = useMemo(() => {
+        const map = new Map<string, TagGroup>()
+        const push = (tag: string, r: StatItemRow) => {
+            if (!map.has(tag)) {
+                map.set(tag, {
+                    key: tag, tag, taskCodes: new Set(), lotCodes: new Set(), units: new Set(),
+                    lineCount: 0, requestedQty: 0, exportedQty: 0,
+                })
+            }
+            const g = map.get(tag)!
+            g.taskCodes.add(r.taskCode)
+            if (r.lotCode && r.lotCode !== 'N/A') g.lotCodes.add(r.lotCode)
+            if (r.unit) g.units.add(r.unit)
+            g.lineCount += 1
+            g.requestedQty += r.quantity
+            g.exportedQty += r.exportedQuantity
+        }
+        filteredItems.forEach(r => {
+            if (r.tagAtoms.length === 0) push(UNGROUPED_TAG_LABEL, r)
+            else r.tagAtoms.forEach(atom => push(atom, r))
+        })
+        return Array.from(map.values()).sort((a, b) => {
+            if (a.tag === UNGROUPED_TAG_LABEL) return 1
+            if (b.tag === UNGROUPED_TAG_LABEL) return -1
+            return b.requestedQty - a.requestedQty || a.tag.localeCompare(b.tag)
+        })
     }, [filteredItems])
 
     const taskGroups = useMemo(() => {
@@ -430,6 +524,22 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                 ],
             }))
         }
+        if (groupMode === 'TAG') {
+            return tagGroups.map(t => ({
+                id: t.key,
+                numericFrom: 1,
+                cells: [
+                    { label: 'Mã phụ', value: t.tag, strong: true },
+                    { label: 'Số lệnh', value: String(t.taskCodes.size) },
+                    { label: 'Dòng hàng', value: String(t.lineCount) },
+                    { label: 'Số kiện', value: String(t.lotCodes.size) },
+                    { label: 'Yêu cầu', value: formatQuantityFull(t.requestedQty) },
+                    { label: 'Đã xuất', value: formatQuantityFull(t.exportedQty) },
+                    { label: 'Còn lại', value: formatQuantityFull(t.requestedQty - t.exportedQty) },
+                    { label: 'ĐVT', value: t.units.size > 0 ? Array.from(t.units).join(', ') : '-' },
+                ],
+            }))
+        }
         if (groupMode === 'PRODUCT') {
             return productGroups.map(p => ({
                 id: p.key,
@@ -477,7 +587,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                 { label: 'Nhân viên', value: Array.from(g.pickers).join(', ') },
             ],
         }))
-    }, [groupMode, dayGroups, productGroups, taskGroups, hourGroups])
+    }, [groupMode, dayGroups, productGroups, taskGroups, hourGroups, tagGroups])
 
     const totalPages = Math.max(1, Math.ceil(detailSource.length / ROW_PAGE_SIZE))
     const safePage = Math.min(page, totalPages)
@@ -518,6 +628,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     { label: 'Số lệnh đã hoàn thành', value: summary.completedTaskCount },
                     { label: 'Tổng dòng hàng', value: summary.lineCount },
                     { label: 'Số mặt hàng (SKU)', value: summary.skuCount },
+                    { label: 'Số mã phụ có phát sinh', value: tagGroups.filter(t => t.tag !== UNGROUPED_TAG_LABEL).length },
                     { label: 'Tổng SL yêu cầu', value: formatQuantityFull(summary.requested) },
                     { label: 'Tổng SL đã xuất', value: formatQuantityFull(summary.exported) },
                     { label: 'Còn lại chưa xuất', value: formatQuantityFull(summary.remaining) },
@@ -541,6 +652,15 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     lineCount: p.lineCount,
                     requestedQty: p.requestedQty,
                     exportedQty: p.exportedQty,
+                })),
+                tagRows: tagGroups.map(g => ({
+                    tag: g.tag,
+                    taskCount: g.taskCodes.size,
+                    lineCount: g.lineCount,
+                    lotCount: g.lotCodes.size,
+                    requestedQty: g.requestedQty,
+                    exportedQty: g.exportedQty,
+                    unit: Array.from(g.units).join(', '),
                 })),
                 taskRows: taskGroups.map(t => ({
                     taskCode: t.taskCode,
@@ -573,6 +693,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     sku: r.sku,
                     productionCode: r.productionCode || '-',
                     lotCode: r.lotCode,
+                    tags: r.tagAtoms.join(', ') || '-',
                     positionCode: r.positionCode,
                     requestedQty: r.quantity,
                     exportedQty: r.exportedQuantity,
@@ -626,7 +747,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                         <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
                         <input
                             type="text"
-                            placeholder="Lọc sản phẩm, SKU, mã lệnh..."
+                            placeholder="Lọc sản phẩm, SKU, mã lệnh, mã phụ..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
                             className="w-full pl-9 pr-3 py-2.5 rounded-lg bg-stone-50 dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
@@ -757,7 +878,7 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                     <div className="bg-white dark:bg-zinc-800 rounded-xl border border-stone-200 dark:border-zinc-700 shadow-sm overflow-hidden">
                         <div className="p-4 flex flex-wrap items-center gap-3 border-b border-stone-100 dark:border-zinc-700">
                             <div className="flex bg-stone-100 dark:bg-zinc-900 p-1 rounded-lg overflow-x-auto">
-                                {([['DAY', 'Theo ngày'], ['PRODUCT', 'Theo sản phẩm'], ['TASK', 'Theo lệnh'], ['HOUR', 'Theo giờ hạ']] as const).map(([key, label]) => (
+                                {([['DAY', 'Theo ngày'], ['PRODUCT', 'Theo sản phẩm'], ['TAG', 'Theo mã phụ'], ['TASK', 'Theo lệnh'], ['HOUR', 'Theo giờ hạ']] as const).map(([key, label]) => (
                                     <button
                                         key={key}
                                         onClick={() => setGroupMode(key)}
@@ -767,9 +888,16 @@ export default function ExportOrderStatsPanel({ active }: { active: boolean }) {
                                     </button>
                                 ))}
                             </div>
-                            <span className="text-sm font-semibold text-stone-500 dark:text-stone-400 ml-auto">
-                                {detailSource.length} dòng thống kê
-                            </span>
+                            <div className="ml-auto text-right">
+                                <span className="text-sm font-semibold text-stone-500 dark:text-stone-400">
+                                    {detailSource.length} dòng thống kê
+                                </span>
+                                {groupMode === 'TAG' && (
+                                    <p className="text-[11px] font-medium text-stone-400">
+                                        Một dòng hàng mang nhiều mã phụ được tính ở từng nhóm, nên cộng các dòng có thể lớn hơn tổng lệnh xuất.
+                                    </p>
+                                )}
+                            </div>
                         </div>
 
                         {detailSource.length === 0 ? (

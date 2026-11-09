@@ -334,6 +334,25 @@ export function drillableChildCount(stats: FillStats, zoneId: string, scope: Fil
     return rowsForScope(stats, zoneId, scope).length
 }
 
+/**
+ * Tên các khu cha từ gốc tới cha trực tiếp (KHÔNG gồm chính khu này) — để phân biệt
+ * khu trùng tên giữa các kho khác nhau ("SẢNH 1" của KHO 1 và của KHO 2).
+ * `guard` chặn dữ liệu zone có quan hệ vòng lặp.
+ */
+export function ancestorLabels(stats: FillStats, zoneId: string): string[] {
+    const labels: string[] = []
+    const guard = new Set<string>([zoneId])
+    let current = stats.byZone.get(zoneId)
+    while (current?.parentId && !guard.has(current.parentId)) {
+        guard.add(current.parentId)
+        const parent = stats.byZone.get(current.parentId)
+        if (!parent) break
+        labels.unshift(parent.label)
+        current = parent
+    }
+    return labels
+}
+
 export interface FillTreeRow {
     stat: ZoneFillStat
     /** 0 = cấp cao nhất của phạm vi đang xem, tăng dần khi xuống khu con. */
@@ -361,17 +380,7 @@ export function fillTreeRows(stats: FillStats, scope: FillScope): FillTreeRow[] 
     const seen = new Set<string>()
 
     // Đường dẫn lấy theo cây zone thật (kể cả cha ngoài phạm vi) để "SẢNH 1" của mỗi kho vẫn phân biệt được.
-    const pathOf = (stat: ZoneFillStat): string[] => {
-        const labels: string[] = []
-        const guard = new Set<string>()
-        let current: ZoneFillStat | undefined = stat
-        while (current && !guard.has(current.zoneId)) {
-            guard.add(current.zoneId)
-            labels.unshift(current.label)
-            current = current.parentId ? stats.byZone.get(current.parentId) : undefined
-        }
-        return labels
-    }
+    const pathOf = (stat: ZoneFillStat): string[] => [...ancestorLabels(stats, stat.zoneId), stat.label]
 
     const walk = (stat: ZoneFillStat, depth: number) => {
         if (seen.has(stat.zoneId)) return

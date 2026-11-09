@@ -2,8 +2,10 @@ import ExcelJS from 'exceljs';
 import { saveAs } from 'file-saver';
 import { CompanyInfo } from '@/hooks/usePrintCompanyInfo';
 import { canonicalizeUnit } from '@/lib/unitConversion';
+import type { DistributionChartImages } from '@/lib/inventoryDistributionCharts';
+import type { DashboardChartImage } from '@/lib/dashboardExcelWorkbook';
 
-interface InventoryReportExportData {
+export interface InventoryReportExportData {
     type: 'accounting' | 'lot' | 'reconciliation' | 'category' | 'tags' | 'production' | 'labels';
     viewMode?: 'lot' | 'month';
     positionFilter?: 'all' | 'has_position' | 'no_position';
@@ -11,6 +13,12 @@ interface InventoryReportExportData {
     warehouse: string;
     items: any[];
     companyInfo: CompanyInfo | null;
+    /** Hai biểu đồ của dashboard "Tỉ lệ phân bố hàng hóa tồn kho" — chỉ tab LOT mới có. */
+    distributionImages?: DistributionChartImages | null;
+    /** Biểu đồ card "Số lượng Container tồn kho theo từng mặt hàng" — chỉ tab LOT mới có. */
+    containerImage?: DashboardChartImage | null;
+    /** Ảnh chụp card "Tỉ lệ lấp đầy theo khu vực" — chỉ tab LOT mới có. */
+    fillRateImage?: DashboardChartImage | null;
 }
 
 // Helper: clean number values to avoid trailing dots in Excel
@@ -30,19 +38,142 @@ function formatDmy(raw: any): string {
     return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
-export async function exportInventoryReportToExcel(data: InventoryReportExportData) {
-    const workbook = new ExcelJS.Workbook();
-    
-    if (data.type === 'lot') {
-        const ws1 = workbook.addWorksheet('Chi tiết');
-        buildWorksheet(ws1, data, false);
+// Tên tab phải ngắn để hàng tab Excel không tràn; tiêu đề đầy đủ vẫn nằm ở ô A1 trong sheet.
+export const DISTRIBUTION_SHEET_NAME = 'Phân bố tồn kho';
+export const CONTAINER_SHEET_NAME = 'Container tồn kho';
+export const FILL_RATE_SHEET_NAME = 'Lấp đầy theo khu';
 
-        const ws2 = workbook.addWorksheet('Tổng hợp');
-        buildWorksheet(ws2, data, true);
+/** Một dòng Excel mặc định ~20px — chừa chỗ cho ảnh trước khi ghi dòng kế tiếp. */
+const PX_PER_ROW = 20;
+
+function addStackedImage(
+    workbook: ExcelJS.Workbook,
+    ws: ExcelJS.Worksheet,
+    caption: string,
+    image: { base64: string; width: number; height: number },
+    cursor: number
+): number {
+    const label = ws.getCell(`A${cursor}`);
+    label.value = caption;
+    label.font = { bold: true, size: 12, color: { argb: 'FF1C1917' } };
+    cursor += 1;
+
+    const id = workbook.addImage({ base64: image.base64, extension: 'png' });
+    ws.addImage(id, {
+        tl: { col: 0.2, row: cursor - 1 + 0.2 },
+        ext: { width: image.width, height: image.height },
+        editAs: 'oneCell'
+    });
+    return cursor + Math.ceil(image.height / PX_PER_ROW) + 2;
+}
+
+/**
+ * Sheet ảnh lấy nguyên xi từ card dashboard "Tỉ lệ phân bố hàng hóa tồn kho":
+ * hai donut (khối lượng KG và số ô vị trí theo danh mục) xếp dọc, có tiêu đề từng ảnh.
+ */
+function buildDistributionSheet(
+    workbook: ExcelJS.Workbook,
+    data: InventoryReportExportData,
+    images: DistributionChartImages
+) {
+    const ws = workbook.addWorksheet(DISTRIBUTION_SHEET_NAME);
+    ws.getColumn(1).width = 100;
+    ws.views = [{ showGridLines: false }];
+
+    const title = ws.getCell('A1');
+    title.value = 'Tỉ lệ phân bố hàng hóa tồn kho';
+    title.font = { bold: true, size: 15, color: { argb: 'FF1C1917' } };
+
+    const meta = ws.getCell('A2');
+    meta.value = `${data.dateTitle} · Kho: ${data.warehouse} · Số liệu cùng nguồn với dashboard`;
+    meta.font = { size: 10, color: { argb: 'FF78716C' } };
+
+    let cursor = 4;
+    cursor = addStackedImage(workbook, ws, 'Phân bố khối lượng (KG) theo sản phẩm', images.kg, cursor);
+    addStackedImage(workbook, ws, 'Số ô vị trí đang chứa hàng theo danh mục', images.position, cursor);
+}
+
+/**
+ * Sheet ảnh của card dashboard "Số lượng Container tồn kho theo từng mặt hàng": thường là
+ * ảnh CHỤP DOM đúng card (nút bấm đã bỏ), khi không chụp được thì là biểu đồ vẽ lại.
+ */
+function buildContainerSheet(
+    workbook: ExcelJS.Workbook,
+    data: InventoryReportExportData,
+    image: DashboardChartImage
+) {
+    const ws = workbook.addWorksheet(CONTAINER_SHEET_NAME);
+    ws.getColumn(1).width = 100;
+    ws.views = [{ showGridLines: false }];
+
+    const title = ws.getCell('A1');
+    title.value = 'Ước tính số container tồn kho theo mặt hàng';
+    title.font = { bold: true, size: 15, color: { argb: 'FF1C1917' } };
+
+    const meta = ws.getCell('A2');
+    meta.value = `${data.dateTitle} · Kho: ${data.warehouse} · Số liệu cùng nguồn với dashboard`;
+    meta.font = { size: 10, color: { argb: 'FF78716C' } };
+
+    addStackedImage(workbook, ws, 'Số lượng Container tồn kho theo từng mặt hàng', image, 4);
+}
+
+/**
+ * Sheet ảnh của card dashboard "Tỉ lệ lấp đầy theo khu vực": ảnh CHỤP DOM đúng card
+ * (header + nút bấm đã bỏ bởi data-excel-shot="skip"), giữ tab Lô kệ / Sảnh / Tổng và cây khu vực.
+ */
+function buildFillRateSheet(
+    workbook: ExcelJS.Workbook,
+    data: InventoryReportExportData,
+    image: DashboardChartImage
+) {
+    const ws = workbook.addWorksheet(FILL_RATE_SHEET_NAME);
+    ws.getColumn(1).width = 100;
+    ws.views = [{ showGridLines: false }];
+
+    const title = ws.getCell('A1');
+    title.value = 'Tỉ lệ lấp đầy theo khu vực';
+    title.font = { bold: true, size: 15, color: { argb: 'FF1C1917' } };
+
+    const meta = ws.getCell('A2');
+    meta.value = `${data.dateTitle} · Kho: ${data.warehouse} · Số liệu cùng nguồn với dashboard`;
+    meta.font = { size: 10, color: { argb: 'FF78716C' } };
+
+    addStackedImage(workbook, ws, 'Tỉ lệ lấp đầy theo khu vực', image, 4);
+}
+
+export function buildInventoryReportWorkbook(data: InventoryReportExportData): ExcelJS.Workbook {
+    const workbook = new ExcelJS.Workbook();
+
+    if (data.type === 'lot') {
+        // Thứ tự tab: Tổng hợp mở ra là thấy bức tranh chung, 3 sheet ảnh đứng giữa,
+        // Chi tiết (bảng dài từng dòng) nằm cuối — mở file không bị lạc vào bảng dài trước.
+        const wsSummary = workbook.addWorksheet('Tổng hợp');
+        buildWorksheet(wsSummary, data, true);
+
+        if (data.distributionImages) {
+            buildDistributionSheet(workbook, data, data.distributionImages);
+        }
+
+        if (data.containerImage) {
+            buildContainerSheet(workbook, data, data.containerImage);
+        }
+
+        if (data.fillRateImage) {
+            buildFillRateSheet(workbook, data, data.fillRateImage);
+        }
+
+        const wsDetail = workbook.addWorksheet('Chi tiết');
+        buildWorksheet(wsDetail, data, false);
     } else {
         const ws = workbook.addWorksheet('Bao Cao Ton Kho');
         buildWorksheet(ws, data, false);
     }
+
+    return workbook;
+}
+
+export async function exportInventoryReportToExcel(data: InventoryReportExportData) {
+    const workbook = buildInventoryReportWorkbook(data);
 
     // Save
     const buffer = await workbook.xlsx.writeBuffer();

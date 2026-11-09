@@ -12,8 +12,14 @@ import {
     Search,
     RefreshCw,
     MapPin,
+    ShieldAlert,
+    CheckCircle2,
+    Target,
+    Camera,
+    BookOpen,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import AnalyticsExportCardModal from './AnalyticsExportCardModal'
 import {
     WorkPlanItem,
     ITEM_STATUS_CONFIG,
@@ -21,6 +27,10 @@ import {
     DIFFICULTY_CONFIG,
     formatVNDateSlash,
     formatWorkloadSummaryText,
+    WorkPlanAssigneeEvaluation,
+    calculateAssigneeTaskStandardKpi,
+    calculateWorkSpeed,
+    WorkPlanTaskType,
 } from './types'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
@@ -32,7 +42,18 @@ interface WorkPlanAnalyticsTabProps {
     companyId?: string | null
 }
 
-interface EmployeeStatRow {
+export interface EmployeeIncidentItem {
+    id: string
+    name: string
+    group: string
+    severity?: string
+    penalty_points: number
+    note?: string | null
+    taskContent: string
+    taskDate: string
+}
+
+export interface EmployeeStatRow {
     name: string
     type: 'member' | 'team' | 'custom'
     totalAssigned: number
@@ -48,9 +69,47 @@ interface EmployeeStatRow {
     needsImprovementCount: number
     totalPositions: number
     totalPackages: number
-    weightedScore: number
+    totalWeightKg: number
+    totalContainers: number
+    totalPenaltyPoints: number
+    totalBonusPoints: number
+    safetyPenaltyPoints: number
+    disciplinePenaltyPoints: number
+    hasSevereIncident: boolean
+    incidentsCount: number
+    incidentsList: EmployeeIncidentItem[]
+    // Phân định Việc chính (100đ cơ bản) vs Việc phụ (Cộng thêm mở trần lên 150đ)
+    primaryTasksAssigned: number
+    primaryTasksCompleted: number
+    secondaryTasksAssigned: number
+    secondaryTasksCompleted: number
+    primaryKpiScore: number // Điểm ca chuẩn (thang 100đ)
+    secondaryBonusPoints: number // Điểm việc phụ / tăng cường cộng dồn
+    // 4 Trụ Cột KPI Chuẩn (Thang 100 Điểm)
+    productivityScore: number // Tối đa 40đ (vượt mức max 45đ)
+    qualityScore: number // Tối đa 25đ
+    safetyScore: number // Gốc 20đ
+    disciplineScore: number // Gốc 15đ
+    netKpiScore: number // Tổng điểm KPI chuẩn (Thang 100đ + Việc phụ -> lên 150đ+)
+    weightedScore: number // Điểm quy đổi khối lượng
+    // Thời gian làm việc, tăng ca (OT) & Tốc độ năng suất theo giờ
+    totalRegularHours: number
+    totalOvertimeHours: number
+    totalWorkHours: number
+    speedPositionsPerHour: number | null
+    speedWeightTonsPerHour: number | null
+    speedPackagesPerHour: number | null
+    speedSummaryText: string
     grade: 'A+' | 'A' | 'B' | 'C'
+    gradeLabel: string
     items: WorkPlanItem[]
+}
+
+function toLocalDateStr(d: Date): string {
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
 }
 
 export default function WorkPlanAnalyticsTab({
@@ -63,39 +122,49 @@ export default function WorkPlanAnalyticsTab({
     const [dateFrom, setDateFrom] = useState<string>(() => {
         const d = new Date()
         d.setDate(1)
-        return d.toISOString().slice(0, 10)
+        return toLocalDateStr(d)
     })
     const [dateTo, setDateTo] = useState<string>(() => {
         const d = new Date()
-        d.setDate(d.getDate() + 1)
-        return d.toISOString().slice(0, 10)
+        return toLocalDateStr(d)
     })
-    const [rangePreset, setRangePreset] = useState<'week' | 'month' | '7days' | 'custom'>('month')
+    const [rangePreset, setRangePreset] = useState<'today' | 'yesterday' | 'week' | 'month' | '7days' | 'custom'>('month')
     const [items, setItems] = useState<WorkPlanItem[]>([])
     const [loading, setLoading] = useState<boolean>(true)
     const [searchEmployee, setSearchEmployee] = useState<string>('')
     const [selectedEmployee, setSelectedEmployee] = useState<EmployeeStatRow | null>(null)
     const [exportingExcel, setExportingExcel] = useState<boolean>(false)
+    const [showExportZaloModal, setShowExportZaloModal] = useState<boolean>(false)
 
-    const applyPreset = (preset: 'week' | 'month' | '7days') => {
+    const applyPreset = (preset: 'today' | 'yesterday' | 'week' | 'month' | '7days') => {
         setRangePreset(preset)
         const now = new Date()
-        const toStr = new Date(now.getTime() + 86400000).toISOString().slice(0, 10)
+        const todayStr = toLocalDateStr(now)
 
-        if (preset === '7days') {
-            const from = new Date(now.getTime() - 6 * 86400000)
-            setDateFrom(from.toISOString().slice(0, 10))
-            setDateTo(toStr)
+        if (preset === 'today') {
+            setDateFrom(todayStr)
+            setDateTo(todayStr)
+        } else if (preset === 'yesterday') {
+            const yest = new Date(now)
+            yest.setDate(now.getDate() - 1)
+            const yestStr = toLocalDateStr(yest)
+            setDateFrom(yestStr)
+            setDateTo(yestStr)
+        } else if (preset === '7days') {
+            const from = new Date(now)
+            from.setDate(now.getDate() - 6)
+            setDateFrom(toLocalDateStr(from))
+            setDateTo(todayStr)
         } else if (preset === 'week') {
             const day = now.getDay() || 7
             const mon = new Date(now)
             mon.setDate(now.getDate() - day + 1)
-            setDateFrom(mon.toISOString().slice(0, 10))
-            setDateTo(toStr)
+            setDateFrom(toLocalDateStr(mon))
+            setDateTo(todayStr)
         } else if (preset === 'month') {
             const first = new Date(now.getFullYear(), now.getMonth(), 1)
-            setDateFrom(first.toISOString().slice(0, 10))
-            setDateTo(toStr)
+            setDateFrom(toLocalDateStr(first))
+            setDateTo(todayStr)
         }
     }
 
@@ -171,14 +240,32 @@ export default function WorkPlanAnalyticsTab({
     // Employee / Team Performance Aggregation
     const employeeStats = useMemo(() => {
         const map = new Map<string, EmployeeStatRow>()
+        const empDayHoursMap = new Map<string, Map<string, { regular: number; ot: number }>>()
 
         const addStat = (
             keyName: string,
             type: 'member' | 'team' | 'custom',
-            item: WorkPlanItem
+            item: WorkPlanItem,
+            ev: WorkPlanAssigneeEvaluation | null | undefined,
+            sharePercent: number = 100
         ) => {
             if (item.status === 'cancelled') return
             const normKey = keyName.trim().toLowerCase()
+
+            // Ghi nhận giờ làm ca chuẩn & giờ tăng ca theo ngày
+            const itemDate = item.plan_date || 'default_date'
+            let dayMap = empDayHoursMap.get(normKey)
+            if (!dayMap) {
+                dayMap = new Map<string, { regular: number; ot: number }>()
+                empDayHoursMap.set(normKey, dayMap)
+            }
+            const curDay = dayMap.get(itemDate) || { regular: 0, ot: 0 }
+            const reg = typeof ev?.regular_hours === 'number' && !isNaN(ev.regular_hours) ? ev.regular_hours : 8
+            const ot = typeof ev?.overtime_hours === 'number' && !isNaN(ev.overtime_hours) ? ev.overtime_hours : 0
+            const nextReg = Math.max(curDay.regular, reg)
+            const nextOt = curDay.ot + ot
+            dayMap.set(itemDate, { regular: nextReg, ot: nextOt })
+
             if (!map.has(normKey)) {
                 map.set(normKey, {
                     name: keyName.trim(),
@@ -196,8 +283,36 @@ export default function WorkPlanAnalyticsTab({
                     needsImprovementCount: 0,
                     totalPositions: 0,
                     totalPackages: 0,
+                    totalWeightKg: 0,
+                    totalContainers: 0,
+                    totalPenaltyPoints: 0,
+                    totalBonusPoints: 0,
+                    safetyPenaltyPoints: 0,
+                    disciplinePenaltyPoints: 0,
+                    hasSevereIncident: false,
+                    incidentsCount: 0,
+                    incidentsList: [],
+                    primaryTasksAssigned: 0,
+                    primaryTasksCompleted: 0,
+                    secondaryTasksAssigned: 0,
+                    secondaryTasksCompleted: 0,
+                    primaryKpiScore: 0,
+                    secondaryBonusPoints: 0,
+                    productivityScore: 0,
+                    qualityScore: 0,
+                    safetyScore: 20,
+                    disciplineScore: 15,
+                    netKpiScore: 0,
                     weightedScore: 0,
-                    grade: 'A',
+                    totalRegularHours: 0,
+                    totalOvertimeHours: 0,
+                    totalWorkHours: 0,
+                    speedPositionsPerHour: null,
+                    speedWeightTonsPerHour: null,
+                    speedPackagesPerHour: null,
+                    speedSummaryText: '',
+                    grade: 'B',
+                    gradeLabel: 'Đạt yêu cầu',
                     items: [],
                 })
             }
@@ -212,9 +327,91 @@ export default function WorkPlanAnalyticsTab({
                     ? DIFFICULTY_CONFIG[wl.difficulty].multiplier
                     : 1.0
 
-            row.totalPositions += Number(wl?.positions_count) || 0
-            row.totalPackages += Number(wl?.packages_count) || 0
-            row.weightedScore += ((item.progress_percent || 0) / 100) * mult
+            const itemTotalPos = Number(wl?.positions_count) || 0
+            const itemTotalPkg = Number(wl?.packages_count) || 0
+            const itemTotalKg = Number(wl?.weight_kg) || 0
+            const itemTotalConts = Number(wl?.containers_count) || 0
+
+            // Phân bổ sản lượng cá nhân theo % đóng góp
+            const myPos = Math.round(((itemTotalPos * sharePercent) / 100) * 10) / 10
+            const myPkg = Math.round((itemTotalPkg * sharePercent) / 100)
+            const myKg = Math.round((itemTotalKg * sharePercent) / 100)
+            const myConts = Math.round(((itemTotalConts * sharePercent) / 100) * 10) / 10
+
+            row.totalPositions += myPos
+            row.totalPackages += myPkg
+            row.totalWeightKg += myKg
+            row.totalContainers += myConts
+
+            // Điểm quy đổi khối lượng đảm nhận trong ca
+            row.weightedScore += mult * (sharePercent / 100)
+
+            // Lỗi vi phạm và thưởng của người này trong task
+            let taskPenalty = 0
+            let taskBonus = 0
+            if (ev) {
+                if (Array.isArray(ev.incidents) && ev.incidents.length > 0) {
+                    ev.incidents.forEach(inc => {
+                        const pen = inc.penalty_points || 0
+                        taskPenalty += pen
+                        row.incidentsCount += 1
+                        row.incidentsList.push({
+                            id: inc.id,
+                            name: inc.name,
+                            group: inc.group,
+                            severity: inc.severity,
+                            penalty_points: pen,
+                            note: inc.note,
+                            taskContent: item.content,
+                            taskDate: item.plan_date,
+                        })
+
+                        if (inc.group === 'safety_forklift' || inc.group === 'quality_goods') {
+                            row.safetyPenaltyPoints += pen
+                        } else {
+                            row.disciplinePenaltyPoints += pen
+                        }
+
+                        if (inc.severity === 'severe') {
+                            row.hasSevereIncident = true
+                        }
+                    })
+                }
+                taskBonus = ev.bonus_points || 0
+            }
+
+            row.totalPenaltyPoints += taskPenalty
+            row.totalBonusPoints += taskBonus
+
+            // Phân định Việc chính vs Việc phụ / Tăng cường
+            const itemTaskType: WorkPlanTaskType = item.workload_metrics?.task_type || 'primary'
+            const taskType: WorkPlanTaskType = ev?.task_type || itemTaskType
+
+            // Tính điểm KPI theo chuẩn 100% (4 Trụ Cột, tiến độ không trừ oan năng suất việc làm 2 ngày)
+            const taskKpi = calculateAssigneeTaskStandardKpi({
+                userPositions: myPos,
+                diffMultiplier: mult,
+                progressPercent: item.progress_percent || 0,
+                ratingStars: item.rating_stars,
+                incidents: ev?.incidents || [],
+                bonusPoints: taskBonus,
+                taskType,
+                taskStatus: item.status,
+                customProductivityScore: ev?.custom_productivity_score,
+                customQualityScore: ev?.custom_quality_score,
+                sharePercent: sharePercent,
+            })
+
+            if (taskType === 'secondary') {
+                row.secondaryTasksAssigned += 1
+                if (item.status === 'completed') row.secondaryTasksCompleted += 1
+                row.secondaryBonusPoints += taskKpi.bonusOverTargetPoints
+            } else {
+                row.primaryTasksAssigned += 1
+                if (item.status === 'completed') row.primaryTasksCompleted += 1
+                row.productivityScore += taskKpi.productivityScore
+                row.qualityScore += taskKpi.qualityScore
+            }
 
             if (item.status === 'completed') row.completed += 1
             else if (item.status === 'partial') row.partial += 1
@@ -233,11 +430,23 @@ export default function WorkPlanAnalyticsTab({
 
         items.forEach(item => {
             const assignees = Array.isArray(item.assignees) ? item.assignees : []
+            const evals = item.workload_metrics?.assignee_evaluations || []
+
             if (assignees.length === 0) {
-                addStat('Toàn đội kho (Chung)', 'team', item)
+                addStat('Toàn đội kho (Chung)', 'team', item, null, 100)
             } else {
-                assignees.forEach(a => {
-                    if (a?.name) addStat(a.name, a.type || 'member', item)
+                const count = assignees.length
+                assignees.forEach((a, idx) => {
+                    if (!a?.name) return
+                    const ev = evals.find(
+                        e => e.assignee_name?.trim().toLowerCase() === a.name.trim().toLowerCase()
+                    )
+                    const defShare = Math.round(100 / count)
+                    const fallbackShare =
+                        idx === count - 1 ? 100 - defShare * (count - 1) : defShare
+                    const share = ev?.share_percent ?? fallbackShare
+
+                    addStat(a.name, a.type || 'member', item, ev, share)
                 })
             }
         })
@@ -248,24 +457,100 @@ export default function WorkPlanAnalyticsTab({
             const avgStars =
                 r.ratedCount > 0 ? Number((r.totalStars / r.ratedCount).toFixed(1)) : null
 
+            // 1. Năng suất TB Việc chính (thang 40đ, max 45đ)
+            const baseTasksCount = r.primaryTasksAssigned > 0 ? r.primaryTasksAssigned : r.totalAssigned
+            const prodAvg = baseTasksCount > 0 ? Math.round((r.productivityScore / baseTasksCount) * 10) / 10 : 0
+            // 2. Chất lượng TB Việc chính (thang 25đ)
+            const qualAvg = baseTasksCount > 0 ? Math.round((r.qualityScore / baseTasksCount) * 10) / 10 : 0
+            // 3. An toàn lao động & Hàng hóa (gốc 20đ, trừ lỗi)
+            const safeScore = Math.max(0, 20 - r.safetyPenaltyPoints)
+            // 4. Kỷ luật & 5S (gốc 15đ, trừ lỗi + cộng thưởng)
+            const discScore = Math.min(20, Math.max(0, 15 - r.disciplinePenaltyPoints + r.totalBonusPoints))
+
+            // ĐIỂM VIỆC CHÍNH (Chuẩn 100 điểm)
+            const rawPrimaryKpi = prodAvg + qualAvg + safeScore + discScore
+            const primaryKpiScore = Math.min(110, Math.round(rawPrimaryKpi * 10) / 10)
+
+            // ĐIỂM VIỆC PHỤ / LÀM THÊM (MỞ TRẦN CỘNG DỒN)
+            const secondaryBonusPoints = Math.round(r.secondaryBonusPoints * 10) / 10
+
+            // TỔNG ĐIỂM KPI (Có thể đạt 120đ, 150đ, 180đ+)
+            const netKpiScore = Math.round((primaryKpiScore + secondaryBonusPoints) * 10) / 10
+
+            // Xếp loại theo tổng điểm KPI chuẩn (Thang ca chuẩn 100đ + Việc phụ mở trần)
             let grade: 'A+' | 'A' | 'B' | 'C' = 'B'
-            if (avgProgress >= 90 && (avgStars === null || avgStars >= 4.5)) grade = 'A+'
-            else if (avgProgress >= 80 && (avgStars === null || avgStars >= 3.8)) grade = 'A'
-            else if (avgProgress >= 60) grade = 'B'
-            else grade = 'C'
+            let gradeLabel = 'Đạt yêu cầu (B)'
+            if (r.hasSevereIncident || safeScore <= 5 || primaryKpiScore < 70) {
+                grade = 'C'
+                gradeLabel = r.hasSevereIncident ? 'Hạng C (Lỗi nghiêm trọng)' : 'Cần cải thiện (C)'
+            } else if (netKpiScore >= 100) {
+                grade = 'A+'
+                gradeLabel = 'Xuất sắc (A+)'
+            } else if (netKpiScore >= 85) {
+                grade = 'A'
+                gradeLabel = 'Tốt (A)'
+            } else if (netKpiScore >= 70) {
+                grade = 'B'
+                gradeLabel = 'Đạt yêu cầu (B)'
+            } else {
+                grade = 'C'
+                gradeLabel = 'Cần cải thiện (C)'
+            }
+
+            // TÍNH TOÁN GIỜ LÀM VIỆC & TỐC ĐỘ NĂNG SUẤT THEO GIỜ
+            const normKey = r.name.trim().toLowerCase()
+            const dayMap = empDayHoursMap.get(normKey)
+            let totalRegularHours = 0
+            let totalOvertimeHours = 0
+            if (dayMap) {
+                dayMap.forEach(d => {
+                    totalRegularHours += d.regular
+                    totalOvertimeHours += d.ot
+                })
+            }
+            totalRegularHours = Math.round(totalRegularHours * 10) / 10
+            totalOvertimeHours = Math.round(totalOvertimeHours * 10) / 10
+            const totalWorkHours = Math.round((totalRegularHours + totalOvertimeHours) * 10) / 10
+
+            const speedInfo = calculateWorkSpeed({
+                positions: r.totalPositions,
+                weightKg: r.totalWeightKg,
+                packages: r.totalPackages,
+                regularHours: totalRegularHours,
+                overtimeHours: totalOvertimeHours,
+            })
 
             return {
                 ...r,
                 avgProgress,
                 avgStars,
+                productivityScore: prodAvg,
+                qualityScore: qualAvg,
+                safetyScore: safeScore,
+                disciplineScore: discScore,
+                primaryKpiScore,
+                secondaryBonusPoints,
+                totalPositions: Math.round(r.totalPositions * 10) / 10,
+                totalContainers: Math.round(r.totalContainers * 10) / 10,
                 weightedScore: Math.round(r.weightedScore * 10) / 10,
+                totalRegularHours,
+                totalOvertimeHours,
+                totalWorkHours,
+                speedPositionsPerHour: speedInfo.positionsPerHour,
+                speedWeightTonsPerHour: speedInfo.weightTonsPerHour,
+                speedPackagesPerHour: speedInfo.packagesPerHour,
+                speedSummaryText: speedInfo.speedSummaryText,
+                netKpiScore,
                 grade,
+                gradeLabel,
             }
         })
 
         rows.sort(
             (a, b) =>
-                b.weightedScore - a.weightedScore ||
+                b.netKpiScore - a.netKpiScore ||
+                b.secondaryBonusPoints - a.secondaryBonusPoints ||
+                b.primaryKpiScore - a.primaryKpiScore ||
                 b.completed - a.completed ||
                 b.avgProgress - a.avgProgress
         )
@@ -281,20 +566,32 @@ export default function WorkPlanAnalyticsTab({
             const workbook = new ExcelJS.Workbook()
             workbook.creator = 'Modular WMS'
 
-            // Sheet 1: Bảng Hiệu Suất Nhân Sự
-            const wsEmp = workbook.addWorksheet('Hiệu suất Nhân viên')
+            // Sheet 1: Bảng Hiệu Suất & KPI Nhân Sự
+            const wsEmp = workbook.addWorksheet('Hiệu suất & KPI Nhân viên')
             wsEmp.columns = [
                 { header: 'STT', key: 'stt', width: 8 },
                 { header: 'Nhân viên / Tổ đội', key: 'name', width: 28 },
                 { header: 'Phân loại', key: 'type', width: 15 },
-                { header: 'Tổng việc giao', key: 'total', width: 15 },
-                { header: 'Hoàn thành (100%)', key: 'completed', width: 18 },
-                { header: 'Tổng Vị trí xử lý', key: 'positions', width: 18 },
-                { header: 'Tổng Thùng/Kiện', key: 'packages', width: 18 },
-                { header: 'Điểm Khối lượng (Nặng/Nhẹ)', key: 'weighted', width: 24 },
+                { header: '⭐ Việc chính đã giao', key: 'primaryAssigned', width: 20 },
+                { header: '⭐ Việc chính hoàn thành', key: 'primaryCompleted', width: 22 },
+                { header: '➕ Việc phụ hỗ trợ', key: 'secondaryTasks', width: 18 },
+                { header: 'Tổng vị trí cá nhân (vt)', key: 'positions', width: 20 },
+                { header: 'Tổng khối lượng (Kg)', key: 'weightKg', width: 20 },
+                { header: '⏱️ Giờ chuẩn (h)', key: 'regularHours', width: 16 },
+                { header: '⚡ Tăng ca OT (h)', key: 'overtimeHours', width: 16 },
+                { header: '⏱️ Tổng giờ làm (h)', key: 'totalHours', width: 18 },
+                { header: '🚀 Tốc độ năng suất', key: 'speedSummary', width: 24 },
+                { header: '⚡ Năng suất việc chính (/40đ)', key: 'prodScore', width: 24 },
+                { header: '⭐ Chất lượng (/25đ)', key: 'qualScore', width: 18 },
+                { header: '🛡️ An toàn (/20đ)', key: 'safeScore', width: 18 },
+                { header: '📋 Kỷ luật & 5S (/15đ)', key: 'discScore', width: 20 },
+                { header: '🎯 Điểm Việc Chính (/100đ)', key: 'primaryKpi', width: 24 },
+                { header: '➕ Điểm Việc Phụ (+đ)', key: 'secondaryBonus', width: 22 },
+                { header: '⚠️ Lỗi vi phạm', key: 'incidentsCount', width: 16 },
+                { header: 'Điểm phạt (-đ)', key: 'penalty', width: 16 },
+                { header: '🏆 TỔNG ĐIỂM KPI (Mở trần)', key: 'netKpi', width: 28 },
                 { header: 'Tiến độ TB (%)', key: 'avgProgress', width: 16 },
-                { header: 'Điểm Sao TB (/5)', key: 'avgStars', width: 16 },
-                { header: 'Xếp loại', key: 'grade', width: 12 },
+                { header: 'Xếp loại thi đua', key: 'grade', width: 22 },
             ]
 
             wsEmp.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } }
@@ -309,14 +606,26 @@ export default function WorkPlanAnalyticsTab({
                     stt: i + 1,
                     name: emp.name,
                     type: emp.type === 'team' ? 'Tổ / Đội' : 'Nhân viên',
-                    total: emp.totalAssigned,
-                    completed: emp.completed,
+                    primaryAssigned: emp.primaryTasksAssigned,
+                    primaryCompleted: emp.primaryTasksCompleted,
+                    secondaryTasks: `${emp.secondaryTasksCompleted} / ${emp.secondaryTasksAssigned}`,
                     positions: emp.totalPositions || '-',
-                    packages: emp.totalPackages || '-',
-                    weighted: emp.weightedScore,
+                    weightKg: emp.totalWeightKg > 0 ? emp.totalWeightKg : '-',
+                    regularHours: emp.totalRegularHours > 0 ? `${emp.totalRegularHours}h` : '-',
+                    overtimeHours: emp.totalOvertimeHours > 0 ? `+${emp.totalOvertimeHours}h` : '-',
+                    totalHours: emp.totalWorkHours > 0 ? `${emp.totalWorkHours}h` : '-',
+                    speedSummary: emp.speedSummaryText || '-',
+                    prodScore: `${emp.productivityScore} / 40đ`,
+                    qualScore: `${emp.qualityScore} / 25đ`,
+                    safeScore: `${emp.safetyScore} / 20đ`,
+                    discScore: `${emp.disciplineScore} / 15đ`,
+                    primaryKpi: `${emp.primaryKpiScore} / 100đ`,
+                    secondaryBonus: emp.secondaryBonusPoints > 0 ? `+${emp.secondaryBonusPoints}đ` : '0đ',
+                    incidentsCount: emp.incidentsCount || 0,
+                    penalty: emp.totalPenaltyPoints ? `-${emp.totalPenaltyPoints}đ` : '-',
+                    netKpi: `${emp.netKpiScore} điểm`,
                     avgProgress: `${emp.avgProgress}%`,
-                    avgStars: emp.avgStars ?? '-',
-                    grade: emp.grade,
+                    grade: emp.gradeLabel || emp.grade,
                 })
             })
 
@@ -326,10 +635,11 @@ export default function WorkPlanAnalyticsTab({
                 { header: 'Ngày', key: 'date', width: 14 },
                 { header: 'STT Ngày', key: 'order', width: 10 },
                 { header: 'Nội dung công việc', key: 'content', width: 45 },
-                { header: 'Người / Đội phụ trách', key: 'assignees', width: 26 },
+                { header: 'Người / Đội phụ trách', key: 'assignees', width: 28 },
+                { header: 'Đánh giá & Vi phạm cá nhân', key: 'individualEval', width: 45 },
                 { header: 'Độ nặng/nhẹ', key: 'difficulty', width: 16 },
                 { header: 'Số vị trí', key: 'positions', width: 12 },
-                { header: 'Số lượng & Lệnh xuất', key: 'workload', width: 38 },
+                { header: 'Số lượng & Nguồn gắn', key: 'workload', width: 38 },
                 { header: 'Trạng thái cuối ngày', key: 'status', width: 18 },
                 { header: 'Tiến độ (%)', key: 'progress', width: 14 },
                 { header: 'Đánh giá chất lượng', key: 'rating', width: 18 },
@@ -349,6 +659,19 @@ export default function WorkPlanAnalyticsTab({
                     wl?.difficulty && DIFFICULTY_CONFIG[wl.difficulty]
                         ? DIFFICULTY_CONFIG[wl.difficulty].shortLabel
                         : '-'
+                
+                const evals = wl?.assignee_evaluations || []
+                const evalText = evals.map(e => {
+                    const parts: string[] = [`${e.assignee_name} (${e.share_percent}%)`]
+                    if (e.incidents && e.incidents.length > 0) {
+                        parts.push(`Lỗi: ${e.incidents.map(i => `${i.name} (-${i.penalty_points}đ)`).join(', ')}`)
+                    }
+                    if (e.bonus_points) {
+                        parts.push(`Thưởng: +${e.bonus_points}đ`)
+                    }
+                    return parts.join(' - ')
+                }).join('; ')
+
                 wsDetail.addRow({
                     date: formatVNDateSlash(item.plan_date),
                     order: item.sort_order,
@@ -356,6 +679,7 @@ export default function WorkPlanAnalyticsTab({
                     assignees: Array.isArray(item.assignees)
                         ? item.assignees.map(a => a.name).join(', ')
                         : '',
+                    individualEval: evalText || '-',
                     difficulty: diffLabel,
                     positions: wl?.positions_count || '-',
                     workload: formatWorkloadSummaryText(wl) || '-',
@@ -370,7 +694,7 @@ export default function WorkPlanAnalyticsTab({
             const blob = new Blob([buffer], {
                 type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             })
-            saveAs(blob, `BaoCao_KeHoach_DanhGiaCV_${dateFrom}_${dateTo}.xlsx`)
+            saveAs(blob, `BaoCao_KeHoach_KPI_DanhGiaCV_${dateFrom}_${dateTo}.xlsx`)
             showToast('Xuất báo cáo Excel thành công!', 'success')
         } catch (err) {
             console.error('Export Excel error:', err)
@@ -388,6 +712,8 @@ export default function WorkPlanAnalyticsTab({
                     <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 text-xs">
                         {(
                             [
+                                { id: 'today', label: 'Hôm nay' },
+                                { id: 'yesterday', label: 'Hôm qua' },
                                 { id: '7days', label: '7 ngày qua' },
                                 { id: 'week', label: 'Tuần này' },
                                 { id: 'month', label: 'Tháng này' },
@@ -442,15 +768,39 @@ export default function WorkPlanAnalyticsTab({
                     </button>
                 </div>
 
-                <button
-                    type="button"
-                    disabled={exportingExcel || items.length === 0}
-                    onClick={handleExportExcel}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
-                >
-                    <FileSpreadsheet size={16} />
-                    {exportingExcel ? 'Đang xuất Excel...' : 'Xuất Báo Cáo Excel (.xlsx)'}
-                </button>
+                <div className="flex items-center gap-2">
+                    <a
+                        href="/work/rules"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3.5 py-2 rounded-xl bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 text-xs font-bold shadow-2xs flex items-center gap-1.5 transition-all"
+                        title="Xem bộ quy tắc chấm điểm, thưởng phạt và xếp loại KPI"
+                    >
+                        <BookOpen size={15} className="text-amber-600" />
+                        <span>Quy Chế KPI</span>
+                    </a>
+
+                    <button
+                        type="button"
+                        disabled={items.length === 0}
+                        onClick={() => setShowExportZaloModal(true)}
+                        className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 hover:from-indigo-700 hover:to-purple-700 disabled:opacity-50 text-white text-xs font-black shadow-xs flex items-center gap-1.5 transition-all"
+                        title="Tạo ảnh bảng xếp hạng sắc nét gửi vào nhóm Zalo"
+                    >
+                        <Camera size={15} />
+                        Xuất Phiếu / Ảnh Zalo
+                    </button>
+
+                    <button
+                        type="button"
+                        disabled={exportingExcel || items.length === 0}
+                        onClick={handleExportExcel}
+                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
+                    >
+                        <FileSpreadsheet size={16} />
+                        {exportingExcel ? 'Đang xuất Excel...' : 'Xuất Báo Cáo Excel (.xlsx)'}
+                    </button>
+                </div>
             </div>
 
             {/* KPI Summary Cards */}
@@ -552,16 +902,20 @@ export default function WorkPlanAnalyticsTab({
                         <table className="w-full text-sm">
                             <thead>
                                 <tr className="bg-stone-50 text-stone-600 text-xs font-bold uppercase border-b border-stone-200">
-                                    <th className="px-4 py-3 text-center w-14">Hạng</th>
-                                    <th className="px-4 py-3 text-left">Nhân viên / Tổ đội</th>
-                                    <th className="px-4 py-3 text-center">Tổng việc</th>
-                                    <th className="px-4 py-3 text-center">Hoàn thành</th>
-                                    <th className="px-4 py-3 text-center">Số Vị trí</th>
-                                    <th className="px-4 py-3 text-center">Điểm Khối lượng</th>
-                                    <th className="px-4 py-3 text-left w-40">Tiến độ TB</th>
-                                    <th className="px-4 py-3 text-center">Điểm chất lượng</th>
-                                    <th className="px-4 py-3 text-center">Xếp loại</th>
-                                    <th className="px-4 py-3 text-right">Chi tiết</th>
+                                    <th className="px-2 py-3 text-center w-10">Hạng</th>
+                                    <th className="px-3 py-3 text-left">Nhân viên / Tổ đội</th>
+                                    <th className="px-2.5 py-3 text-center" title="Số việc chính được giao trong ca và tỷ lệ hoàn tất">⭐ Việc chính</th>
+                                    <th className="px-2.5 py-3 text-center" title="Số việc phụ / tăng cường được hỗ trợ">➕ Việc phụ</th>
+                                    <th className="px-2.5 py-3 text-center" title="Sản lượng thực tế, số giờ làm và tốc độ năng suất trong 1 giờ">Sản Lượng & Giờ Làm</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột Năng suất & Khối lượng việc chính (Tối đa 40đ, vượt mức 45đ)">⚡ N.Suất</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột Chất lượng thực hiện việc chính (Tối đa 25đ)">⭐ C.Lượng</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột An toàn lao động & Hàng hóa (Gốc 20đ, trừ lỗi)">🛡️ A.Toàn</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột Kỷ luật & 5S (Gốc 15đ, trừ lỗi + thưởng)">📋 K.Luật</th>
+                                    <th className="px-3 py-3 text-center" title="Điểm việc chính theo thang chuẩn 100đ">⭐ Điểm Chính</th>
+                                    <th className="px-3 py-3 text-center" title="Điểm việc phụ cộng thêm không giới hạn trần">➕ Việc Phụ</th>
+                                    <th className="px-3 py-3 text-center" title="Tổng KPI thực tế mở trần (có thể đạt 120đ - 150đ+)">🎯 TỔNG KPI</th>
+                                    <th className="px-3 py-3 text-center">Xếp loại</th>
+                                    <th className="px-3 py-3 text-right">Chi tiết</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100">
@@ -570,12 +924,15 @@ export default function WorkPlanAnalyticsTab({
                                         key={row.name}
                                         className="hover:bg-indigo-50/30 transition-colors"
                                     >
-                                        <td className="px-4 py-3 text-center font-black text-stone-500">
+                                        <td className="px-2 py-3 text-center font-black text-stone-500">
                                             #{idx + 1}
                                         </td>
-                                        <td className="px-4 py-3">
-                                            <div className="font-bold text-stone-800">
-                                                {row.name}
+                                        <td className="px-3 py-3">
+                                            <div className="font-bold text-stone-900 flex items-center gap-1.5">
+                                                <span>{row.name}</span>
+                                                {row.hasSevereIncident && (
+                                                    <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse inline-block" title="Có lỗi vi phạm an toàn nghiêm trọng" />
+                                                )}
                                             </div>
                                             <div className="text-[11px] text-stone-500">
                                                 {row.type === 'team'
@@ -583,60 +940,118 @@ export default function WorkPlanAnalyticsTab({
                                                     : 'Nhân viên thực hiện'}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-center font-bold text-stone-800">
-                                            {row.totalAssigned}
+                                        {/* ⭐ Việc chính */}
+                                        <td className="px-2.5 py-3 text-center font-bold text-stone-800">
+                                            <span className="text-emerald-700 font-extrabold">{row.primaryTasksCompleted}</span>
+                                            <span className="text-stone-400 font-normal"> / {row.primaryTasksAssigned}</span>
                                         </td>
-                                        <td className="px-4 py-3 text-center font-bold text-emerald-600">
-                                            {row.completed}
-                                        </td>
-                                        <td className="px-4 py-3 text-center">
-                                            {row.totalPositions > 0 ? (
-                                                <span className="px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold">
-                                                    📍 {row.totalPositions}
+                                        {/* ➕ Việc phụ */}
+                                        <td className="px-2.5 py-3 text-center font-bold">
+                                            {row.secondaryTasksAssigned > 0 ? (
+                                                <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-xs font-black">
+                                                    +{row.secondaryTasksCompleted}/{row.secondaryTasksAssigned}
                                                 </span>
                                             ) : (
-                                                <span className="text-xs text-stone-400">-</span>
+                                                <span className="text-xs text-stone-300">-</span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-center">
-                                            <span
-                                                className="px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-extrabold"
-                                                title="Điểm quy đổi theo hệ số độ nặng/nhẹ (x1.0 đến x2.0)"
-                                            >
-                                                ⚡ {row.weightedScore} đ
-                                            </span>
-                                        </td>
-                                        <td className="px-4 py-3">
-                                            <div className="flex items-center gap-2">
-                                                <div className="flex-1 h-2 bg-stone-100 rounded-full overflow-hidden">
-                                                    <div
-                                                        className={`h-full rounded-full ${
-                                                            row.avgProgress >= 85
-                                                                ? 'bg-emerald-500'
-                                                                : row.avgProgress >= 60
-                                                                ? 'bg-amber-500'
-                                                                : 'bg-rose-500'
-                                                        }`}
-                                                        style={{ width: `${row.avgProgress}%` }}
-                                                    />
-                                                </div>
-                                                <span className="text-xs font-bold text-stone-700 w-10 text-right">
-                                                    {row.avgProgress}%
-                                                </span>
+                                        {/* Sản lượng & Giờ làm / Tốc độ */}
+                                        <td className="px-2.5 py-3 text-center">
+                                            <div className="flex flex-col items-center gap-0.5">
+                                                {row.totalPositions > 0 && (
+                                                    <span className="px-1.5 py-0.2 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[11px] font-bold">
+                                                        📍 {row.totalPositions} vt
+                                                    </span>
+                                                )}
+                                                {row.totalWeightKg > 0 && (
+                                                    <span className="text-[10px] text-stone-500 font-medium">
+                                                        ⚖️ {(row.totalWeightKg / 1000).toFixed(1)} tấn
+                                                    </span>
+                                                )}
+                                                {row.totalWorkHours > 0 && (
+                                                    <span
+                                                        className="text-[10px] text-indigo-700 font-bold bg-indigo-50/70 border border-indigo-100 px-1.5 py-0.2 rounded mt-0.5"
+                                                        title={`Tổng ${row.totalWorkHours}h làm (${row.totalRegularHours}h ca chuẩn + ${row.totalOvertimeHours}h OT)`}
+                                                    >
+                                                        ⏱️ {row.totalWorkHours}h {row.totalOvertimeHours > 0 && `(+${row.totalOvertimeHours}h OT)`}
+                                                        {row.speedSummaryText ? ` • ⚡ ${row.speedSummaryText}` : ''}
+                                                    </span>
+                                                )}
+                                                {row.totalPositions === 0 && row.totalWeightKg === 0 && row.totalWorkHours === 0 && (
+                                                    <span className="text-xs text-stone-300">-</span>
+                                                )}
                                             </div>
                                         </td>
-                                        <td className="px-4 py-3 text-center">
-                                            {row.avgStars ? (
-                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold">
-                                                    ★ {row.avgStars} / 5.0
+                                        {/* Trụ Cột 1: Năng Suất (/40đ) */}
+                                        <td className="px-2 py-3 text-center font-bold text-stone-800">
+                                            <span className={`px-1.5 py-0.5 rounded-md text-xs ${
+                                                row.productivityScore >= 36 ? 'bg-emerald-50 text-emerald-800 font-black' : 'bg-stone-50 text-stone-700'
+                                            }`}>
+                                                {row.productivityScore}
+                                            </span>
+                                        </td>
+                                        {/* Trụ Cột 2: Chất Lượng (/25đ) */}
+                                        <td className="px-2 py-3 text-center font-bold text-amber-700">
+                                            <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 text-xs">
+                                                {row.qualityScore}
+                                            </span>
+                                        </td>
+                                        {/* Trụ Cột 3: An Toàn (/20đ) */}
+                                        <td className="px-2 py-3 text-center">
+                                            <span className={`px-1.5 py-0.5 rounded-md text-xs font-bold ${
+                                                row.safetyScore < 20
+                                                    ? 'bg-rose-50 text-rose-700 border border-rose-200 font-black'
+                                                    : 'bg-emerald-50 text-emerald-700'
+                                            }`}>
+                                                {row.safetyScore}
+                                                {row.safetyPenaltyPoints > 0 && (
+                                                    <span className="text-[10px] text-rose-600 block font-normal">(-{row.safetyPenaltyPoints})</span>
+                                                )}
+                                            </span>
+                                        </td>
+                                        {/* Trụ Cột 4: Kỷ Luật & 5S (/15đ) */}
+                                        <td className="px-2 py-3 text-center">
+                                            <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-bold">
+                                                {row.disciplineScore}
+                                                {row.totalBonusPoints > 0 && (
+                                                    <span className="text-[10px] text-emerald-600 block font-bold">(+{row.totalBonusPoints})</span>
+                                                )}
+                                            </span>
+                                        </td>
+                                        {/* ⭐ ĐIỂM VIỆC CHÍNH (/100đ chuẩn) */}
+                                        <td className="px-3 py-3 text-center">
+                                            <span className="px-2 py-0.5 rounded-lg bg-stone-100 text-stone-800 text-xs font-black">
+                                                {row.primaryKpiScore} <span className="text-[10px] text-stone-400 font-normal">/100đ</span>
+                                            </span>
+                                        </td>
+                                        {/* ➕ ĐIỂM VIỆC PHỤ (+đ mở trần) */}
+                                        <td className="px-3 py-3 text-center">
+                                            {row.secondaryBonusPoints > 0 ? (
+                                                <span className="px-2 py-0.5 rounded-lg bg-purple-100 text-purple-800 text-xs font-black shadow-2xs">
+                                                    +{row.secondaryBonusPoints}đ
                                                 </span>
                                             ) : (
-                                                <span className="text-xs text-stone-400">
-                                                    Chưa chấm
-                                                </span>
+                                                <span className="text-xs text-stone-300">-</span>
                                             )}
                                         </td>
-                                        <td className="px-4 py-3 text-center">
+                                        {/* 🎯 TỔNG ĐIỂM KPI (MỞ TRẦN ĐẠT 120-150đ+) */}
+                                        <td className="px-3 py-3 text-center">
+                                            <span
+                                                className={`px-2.5 py-1 rounded-xl text-white text-xs font-black shadow-xs inline-flex items-center gap-1 ${
+                                                    row.netKpiScore >= 120
+                                                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 animate-pulse'
+                                                        : row.netKpiScore >= 100
+                                                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600'
+                                                        : 'bg-gradient-to-r from-indigo-600 to-indigo-700'
+                                                }`}
+                                                title={`Tổng KPI = Điểm Việc Chính (${row.primaryKpiScore}đ) + Thưởng Việc Phụ (+${row.secondaryBonusPoints}đ)`}
+                                            >
+                                                <Target size={12} />
+                                                {row.netKpiScore} đ
+                                            </span>
+                                        </td>
+                                        {/* Xếp Loại */}
+                                        <td className="px-3 py-3 text-center">
                                             <span
                                                 className={`inline-block px-2.5 py-0.5 rounded-lg text-xs font-black border ${
                                                     row.grade === 'A+'
@@ -645,13 +1060,13 @@ export default function WorkPlanAnalyticsTab({
                                                         ? 'bg-teal-50 text-teal-700 border-teal-200'
                                                         : row.grade === 'B'
                                                         ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                                                        : 'bg-rose-50 text-rose-700 border-rose-200'
                                                 }`}
                                             >
-                                                Hạng {row.grade}
+                                                {row.gradeLabel || `Hạng ${row.grade}`}
                                             </span>
                                         </td>
-                                        <td className="px-4 py-3 text-right">
+                                        <td className="px-3 py-3 text-right">
                                             <button
                                                 type="button"
                                                 onClick={() =>
@@ -664,8 +1079,8 @@ export default function WorkPlanAnalyticsTab({
                                                 className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
                                             >
                                                 {selectedEmployee?.name === row.name
-                                                    ? 'Đóng'
-                                                    : 'Xem việc'}
+                                                    ? 'Đóng chi tiết ✕'
+                                                    : 'Xem việc & điểm số ▾'}
                                             </button>
                                         </td>
                                     </tr>
@@ -677,13 +1092,19 @@ export default function WorkPlanAnalyticsTab({
 
                 {/* Drill-down drawer for selected employee */}
                 {selectedEmployee && (
-                    <div className="p-4 bg-indigo-50/40 border-t border-indigo-100 space-y-2.5">
-                        <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-900">
-                                Danh sách công việc của: {selectedEmployee.name} (
-                                {selectedEmployee.items.length} việc • Điểm khối lượng:{' '}
-                                {selectedEmployee.weightedScore} đ)
-                            </h4>
+                    <div className="p-4 bg-indigo-50/40 border-t border-indigo-100 space-y-3.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                                <h4 className="text-xs font-black uppercase tracking-wider text-indigo-950 flex flex-wrap items-center gap-2">
+                                    <span>Bảng Đánh Giá KPI Nhân Sự: {selectedEmployee.name}</span>
+                                    <span className="px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white text-xs font-black shadow-xs">
+                                        🎯 TỔNG KPI: {selectedEmployee.netKpiScore} ĐIỂM ({selectedEmployee.gradeLabel})
+                                    </span>
+                                </h4>
+                                <p className="text-[11px] text-stone-500 mt-0.5">
+                                    ⭐ Việc chính: <b>{selectedEmployee.primaryTasksCompleted}/{selectedEmployee.primaryTasksAssigned}</b> (Đạt {selectedEmployee.primaryKpiScore}/100đ chuẩn) • ➕ Việc phụ hỗ trợ: <b>{selectedEmployee.secondaryTasksCompleted}/{selectedEmployee.secondaryTasksAssigned}</b> (+{selectedEmployee.secondaryBonusPoints}đ) • Tổng sản lượng: <b>{selectedEmployee.totalPositions} vị trí</b> ({selectedEmployee.totalWeightKg.toLocaleString('vi-VN')} kg) • ⏱️ Giờ làm: <b>{selectedEmployee.totalWorkHours}h</b> ({selectedEmployee.totalRegularHours}h chuẩn{selectedEmployee.totalOvertimeHours > 0 ? ` + ${selectedEmployee.totalOvertimeHours}h OT` : ''}){selectedEmployee.speedSummaryText ? ` • ⚡ Tốc độ: ${selectedEmployee.speedSummaryText}` : ''}
+                                </p>
+                            </div>
                             <button
                                 type="button"
                                 onClick={() => setSelectedEmployee(null)}
@@ -692,46 +1113,221 @@ export default function WorkPlanAnalyticsTab({
                                 Đóng chi tiết ✕
                             </button>
                         </div>
-                        <div className="space-y-1.5 max-h-72 overflow-y-auto pr-1">
+
+                        {/* Thẻ hiển thị Điểm Việc Chính (4 Trụ Cột /100đ) & Việc Phụ Cộng Thêm */}
+                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+                            <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
+                                <div className="text-[10px] font-bold text-stone-500 uppercase">⚡ N.Suất Việc Chính (Max 40)</div>
+                                <div className="text-lg font-black text-stone-900 mt-1">{selectedEmployee.productivityScore} <span className="text-xs text-stone-400 font-normal">/ 40 đ</span></div>
+                                <div className="text-[10px] text-stone-500 mt-0.5">Định mức công việc & Vị trí xử lý</div>
+                            </div>
+                            <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
+                                <div className="text-[10px] font-bold text-stone-500 uppercase">⭐ Chất Lượng (Max 25)</div>
+                                <div className="text-lg font-black text-amber-700 mt-1">{selectedEmployee.qualityScore} <span className="text-xs text-amber-600 font-normal">/ 25 đ</span></div>
+                                <div className="text-[10px] text-stone-500 mt-0.5">Điểm sao đánh giá của Quản lý</div>
+                            </div>
+                            <div className={`p-3 rounded-xl border shadow-2xs ${selectedEmployee.safetyScore < 20 ? 'bg-rose-50 border-rose-200' : 'bg-white border-stone-200'}`}>
+                                <div className={`text-[10px] font-bold uppercase ${selectedEmployee.safetyScore < 20 ? 'text-rose-700' : 'text-stone-500'}`}>
+                                    🛡️ An Toàn (Gốc 20)
+                                </div>
+                                <div className={`text-lg font-black mt-1 ${selectedEmployee.safetyScore < 20 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                    {selectedEmployee.safetyScore} <span className="text-xs opacity-70 font-normal">/ 20 đ</span>
+                                </div>
+                                <div className="text-[10px] text-stone-500 mt-0.5">
+                                    {selectedEmployee.safetyPenaltyPoints > 0 ? `Trừ -${selectedEmployee.safetyPenaltyPoints}đ lỗi an toàn` : '✓ Tuyệt đối an toàn'}
+                                </div>
+                            </div>
+                            <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
+                                <div className="text-[10px] font-bold text-stone-500 uppercase">📋 Kỷ Luật & 5S (Gốc 15)</div>
+                                <div className="text-lg font-black text-indigo-700 mt-1">{selectedEmployee.disciplineScore} <span className="text-xs text-indigo-400 font-normal">/ 15 đ</span></div>
+                                <div className="text-[10px] text-stone-500 mt-0.5">
+                                    {selectedEmployee.totalBonusPoints > 0 ? `+${selectedEmployee.totalBonusPoints}đ thưởng công hiến` : '✓ Tuân thủ nội quy ca'}
+                                </div>
+                            </div>
+                            {/* Thẻ Việc Phụ / Tăng Cường (Mở Trần) */}
+                            <div className={`p-3 rounded-xl border shadow-2xs ${selectedEmployee.secondaryBonusPoints > 0 ? 'bg-purple-50/80 border-purple-200' : 'bg-white border-stone-200'}`}>
+                                <div className="text-[10px] font-bold text-purple-900 uppercase">➕ Việc Phụ / Tăng Cường</div>
+                                <div className="text-lg font-black text-purple-700 mt-1">
+                                    +{selectedEmployee.secondaryBonusPoints} <span className="text-xs text-purple-400 font-normal">điểm</span>
+                                </div>
+                                <div className="text-[10px] text-purple-600 mt-0.5 font-medium">
+                                    {selectedEmployee.secondaryTasksCompleted} việc phụ hoàn tất (Mở trần)
+                                </div>
+                            </div>
+                        </div>
+
+                        {selectedEmployee.hasSevereIncident && (
+                            <div className="p-3 rounded-xl bg-rose-100 border border-rose-300 text-xs font-bold text-rose-900 flex items-center gap-2">
+                                <ShieldAlert size={16} className="text-rose-700 shrink-0" />
+                                <span>Nhân sự có lỗi vi phạm an toàn nghiêm trọng trong kỳ $\rightarrow$ Bị khóa xếp loại Hạng C theo quy chế an toàn lao động.</span>
+                            </div>
+                        )}
+
+                        {/* Hộp cảnh báo sự cố / vi phạm nếu có */}
+                        {selectedEmployee.incidentsList.length > 0 && (
+                            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 space-y-2">
+                                <div className="flex items-center gap-1.5 text-xs font-black text-rose-900 uppercase">
+                                    <ShieldAlert size={15} className="text-rose-600" />
+                                    <span>
+                                        Lịch sử Vi Phạm & Điểm Trừ Trong Kỳ ({selectedEmployee.incidentsCount} lỗi vi phạm • Tổng trừ -{selectedEmployee.totalPenaltyPoints} điểm)
+                                    </span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                    {selectedEmployee.incidentsList.map((inc, i) => (
+                                        <div
+                                            key={inc.id || i}
+                                            className="p-2.5 bg-white rounded-lg border border-rose-200 text-xs flex items-start justify-between gap-2 shadow-2xs"
+                                        >
+                                            <div className="space-y-0.5">
+                                                <div className="font-bold text-stone-900 flex items-center gap-1">
+                                                    <span className="text-rose-700">⚠️ {inc.name}</span>
+                                                </div>
+                                                <div className="text-[11px] text-stone-500">
+                                                    Ngày: <span className="font-bold text-stone-700">{formatVNDateSlash(inc.taskDate)}</span>
+                                                </div>
+                                                <div className="text-[11px] text-stone-600 italic line-clamp-1">
+                                                    Đầu việc: {inc.taskContent}
+                                                </div>
+                                            </div>
+                                            <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white font-black text-xs shrink-0">
+                                                -{inc.penalty_points}đ
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Danh sách từng công việc cụ thể */}
+                        <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
                             {selectedEmployee.items.map(item => {
                                 const st = ITEM_STATUS_CONFIG[item.status]
                                 const rt = item.rating ? RATING_CONFIG[item.rating] : null
                                 const wlText = formatWorkloadSummaryText(item.workload_metrics)
+
+                                // Tìm đánh giá cá nhân cho nhân viên này trong task
+                                const evals = item.workload_metrics?.assignee_evaluations || []
+                                const myEval = evals.find(
+                                    e => e.assignee_name?.trim().toLowerCase() === selectedEmployee.name.trim().toLowerCase()
+                                )
+
+                                const itemMult = DIFFICULTY_CONFIG[item.workload_metrics?.difficulty || 'medium']?.multiplier || 1.0
+                                const itemTotalPos = Number(item.workload_metrics?.positions_count) || 0
+                                const itemTotalKg = Number(item.workload_metrics?.weight_kg) || 0
+                                const itemShare = myEval?.share_percent ?? 100
+                                const userPos = Math.round(((itemTotalPos * itemShare) / 100) * 10) / 10
+                                const userKg = Math.round((itemTotalKg * itemShare) / 100)
+                                const isSecondaryTask = myEval?.task_type === 'secondary' || item.workload_metrics?.task_type === 'secondary'
+
+                                const taskKpi = calculateAssigneeTaskStandardKpi({
+                                    userPositions: userPos,
+                                    diffMultiplier: itemMult,
+                                    progressPercent: item.progress_percent || 0,
+                                    ratingStars: item.rating_stars,
+                                    incidents: myEval?.incidents || [],
+                                    bonusPoints: myEval?.bonus_points || 0,
+                                    taskType: isSecondaryTask ? 'secondary' : 'primary',
+                                    taskStatus: item.status,
+                                    customProductivityScore: myEval?.custom_productivity_score,
+                                    customQualityScore: myEval?.custom_quality_score,
+                                    sharePercent: itemShare,
+                                })
+
                                 return (
                                     <div
                                         key={item.id}
-                                        className="p-2.5 rounded-xl bg-white border border-stone-200 flex flex-wrap items-center justify-between gap-2 text-xs"
+                                        className="p-3 rounded-xl bg-white border border-stone-200 space-y-2 shadow-2xs hover:border-indigo-200 transition-colors"
                                     >
-                                        <div className="space-y-0.5">
-                                            <div className="font-bold text-stone-800">
-                                                <span className="text-indigo-600 mr-1.5">
-                                                    [{formatVNDateSlash(item.plan_date)}]
+                                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                                            <div className="font-bold text-stone-900 flex flex-wrap items-center gap-1.5">
+                                                <span className="text-indigo-600 font-extrabold bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                                    📅 {formatVNDateSlash(item.plan_date)}
                                                 </span>
-                                                {item.sort_order}. {item.content}
+                                                <span className="text-sm font-black">#{item.sort_order}. {item.content}</span>
+                                                {isSecondaryTask ? (
+                                                    <span className="px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-800 font-extrabold text-[10px] border border-purple-200">
+                                                        ➕ Việc phụ (+đ)
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-1.5 py-0.2 rounded-md bg-amber-50 text-amber-800 font-extrabold text-[10px] border border-amber-200">
+                                                        ⭐ Việc chính
+                                                    </span>
+                                                )}
                                             </div>
-                                            {wlText && (
-                                                <div className="text-amber-700 font-semibold">
-                                                    📊 {wlText}
-                                                </div>
-                                            )}
-                                            {item.evaluation_note && (
-                                                <div className="text-stone-500">
-                                                    💬 Nhận xét: {item.evaluation_note}
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="flex items-center gap-2">
-                                            <span
-                                                className={`px-2 py-0.5 rounded-md font-bold ${st.bgClass} ${st.textClass}`}
-                                            >
-                                                {st.shortLabel} ({item.progress_percent}%)
-                                            </span>
-                                            {rt && (
-                                                <span className="font-bold text-amber-600">
-                                                    {'★'.repeat(rt.stars)} {rt.label}
+
+                                            {/* Tổng Điểm KPI của Công Việc Này */}
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span className={`px-2 py-0.5 rounded-md font-bold text-xs ${st.bgClass} ${st.textClass}`}>
+                                                    {st.shortLabel} ({item.progress_percent}%)
                                                 </span>
-                                            )}
+                                                {isSecondaryTask ? (
+                                                    <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-black text-xs border border-purple-200 shadow-2xs">
+                                                        Thưởng: +{taskKpi.bonusOverTargetPoints}đ
+                                                    </span>
+                                                ) : (
+                                                    <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-black text-xs border border-indigo-200 shadow-2xs">
+                                                        KPI việc: {taskKpi.totalKpi}/100đ ({taskKpi.grade})
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
+
+                                        {/* Chi tiết khối lượng đảm nhận & Bảng 4 Trụ Cột của việc này */}
+                                        <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-stone-100 text-[11px]">
+                                            <div className="flex flex-wrap items-center gap-2 text-stone-600">
+                                                <span className="font-bold text-stone-800">
+                                                    Đóng góp: {itemShare}% {myEval?.role === 'main' ? '(Lái chính)' : myEval?.role === 'support' ? '(Phụ việc)' : ''}
+                                                </span>
+                                                {(userPos > 0 || userKg > 0) && (
+                                                    <span className="text-amber-700 font-medium bg-amber-50/80 px-1.5 py-0.2 rounded border border-amber-200">
+                                                        📦 {userPos} vị trí • {userKg.toLocaleString('vi-VN')} kg
+                                                    </span>
+                                                )}
+                                                {wlText && (
+                                                    <span className="text-stone-400 text-[10px] hidden lg:inline">
+                                                        (Toàn việc: {wlText})
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Chi tiết 4 Trụ Cột của việc này */}
+                                            <div className="flex flex-wrap items-center gap-1.5 font-bold">
+                                                <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
+                                                    ⚡ N.Suất: <b className="text-stone-900">{taskKpi.productivityScore}/40đ</b>
+                                                </span>
+                                                <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
+                                                    ⭐ C.Lượng: <b className="text-amber-700">{taskKpi.qualityScore}/25đ</b>
+                                                </span>
+                                                <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
+                                                    🛡️ A.Toàn: <b className={taskKpi.safetyScore < 20 ? 'text-rose-600' : 'text-emerald-700'}>{taskKpi.safetyScore}/20đ</b>
+                                                </span>
+                                                <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
+                                                    📋 Kỷ luật: <b className="text-indigo-700">{taskKpi.disciplineScore}/15đ</b>
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Hiển thị lỗi hoặc ghi chú nếu có */}
+                                        {myEval && (
+                                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5 text-[11px]">
+                                                {(myEval.incidents || []).map(inc => (
+                                                    <span key={inc.id} className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-800 border border-rose-200 font-bold text-[10px] flex items-center gap-1">
+                                                        <span>⚠️ Vi phạm: {inc.name}</span>
+                                                        <b className="text-rose-600">(-{inc.penalty_points}đ)</b>
+                                                    </span>
+                                                ))}
+                                                {myEval.bonus_points ? (
+                                                    <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[10px]">
+                                                        🎁 +{myEval.bonus_points}đ Thưởng ({myEval.bonus_reason || 'Đột xuất'})
+                                                    </span>
+                                                ) : null}
+                                                {item.evaluation_note && (
+                                                    <span className="text-stone-500 italic text-[11px] ml-1">
+                                                        💬 Nhận xét: {item.evaluation_note}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
                                 )
                             })}
@@ -739,6 +1335,26 @@ export default function WorkPlanAnalyticsTab({
                     </div>
                 )}
             </div>
+
+            {/* Modal Xuất Phiếu & Ảnh Gửi Zalo */}
+            <AnalyticsExportCardModal
+                isOpen={showExportZaloModal}
+                onClose={() => setShowExportZaloModal(false)}
+                systemName={systemName}
+                companyName={companyId ? 'Công ty TNHH Chánh Thu' : null}
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                rows={employeeStats}
+                kpis={{
+                    total: kpis.total,
+                    completed: kpis.completed,
+                    partial: kpis.partial,
+                    uncompleted: kpis.uncompleted,
+                    avgProgress: kpis.avgProgress,
+                    totalPositions: kpis.totalPositions,
+                    avgStars: kpis.avgStars,
+                }}
+            />
         </div>
     )
 }

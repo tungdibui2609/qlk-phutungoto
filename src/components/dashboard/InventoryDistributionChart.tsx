@@ -1,55 +1,23 @@
 'use client'
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react'
+import React, { useEffect, useMemo, useRef, useCallback, useState } from 'react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
-import { supabase } from '@/lib/supabaseClient'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { ChevronDown, Download, FolderTree, Layers, Loader2, RefreshCw, Scale, Settings2 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
-import { Database } from '@/lib/database.types'
 import { formatQuantityFull } from '@/lib/numberUtils'
-import { fetchAllPaged } from '@/lib/supabasePaged'
-import { buildZoneLookup } from '@/lib/warehouseFillRate'
 import { readUiConfig, writeUiConfig, type UiConfig } from '@/lib/systemUiSettings'
-import { exportDashboardSheets } from '@/lib/dashboardExcelExport'
+import { captureDashboardScreenshot, exportDashboardSheets } from '@/lib/dashboardExcelExport'
 import { distributionWorkbookPlan } from '@/lib/dashboardExcelSpecs'
+import { buildCategoryPositionStats } from '@/lib/categoryPositionStats'
 import {
-    buildCategoryPositionStats,
-    buildLotCategoryMap,
-    type CatStatLot
-} from '@/lib/categoryPositionStats'
-
-type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
-    unit: string | null
-    products: {
-        sku: string
-        name: string
-        unit: string
-        internal_code: string | null
-        internal_name: string | null
-        product_category_rel?: { category_id: string }[]
-    } | null
-}
-
-type Lot = Database['public']['Tables']['lots']['Row'] & {
-    lot_items: LotItem[] | null
-    // Legacy support
-    products: {
-        sku: string
-        name: string
-        unit: string
-        internal_code: string | null
-        internal_name: string | null
-        product_category_rel?: { category_id: string }[]
-    } | null
-}
-
-/** Dữ liệu thô của tab vị trí — đủ để tính lại thống kê mà không chờ React re-render. */
-type PositionData = {
-    positions: Array<{ id: string; lot_id: string | null; zone_id: string | null }>
-    zones: Array<{ id: string; code: string | null; name: string | null; parent_id: string | null; level: number | null }>
-    lotCategories: Map<string, string[]>
-}
+    aggregateKgByProduct,
+    fetchCategoryPositionRaw,
+    fetchDistributionCategories,
+    fetchDistributionLots,
+    type CategoryPositionRaw,
+    type DistributionLot
+} from '@/lib/inventoryDistributionData'
 
 const COLORS = [
     '#0ea5e9', // Sky Blue
@@ -67,7 +35,7 @@ const COLORS = [
 export default function InventoryDistributionChart() {
     const { systemType, currentSystem } = useSystem()
     const [loading, setLoading] = useState(true)
-    const [lots, setLots] = useState<Lot[]>([])
+    const [lots, setLots] = useState<DistributionLot[]>([])
     const [categories, setCategories] = useState<{ id: string, name: string }[]>([])
     const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
     const [allowedCategoryIds, setAllowedCategoryIds] = useState<string[] | null>(null) // null means all
@@ -84,6 +52,7 @@ export default function InventoryDistributionChart() {
     const [lotCategories, setLotCategories] = useState<Map<string, string[]>>(new Map())
     const [positionLoaded, setPositionLoaded] = useState(false)
     const [exporting, setExporting] = useState(false)
+    const cardRef = useRef<HTMLDivElement>(null)
     const [statWarehouseId, setStatWarehouseId] = useState<string | null>(null)
     const [statCategoryIds, setStatCategoryIds] = useState<string[]>([])
     const [showStatConfig, setShowStatConfig] = useState(false)
@@ -97,65 +66,9 @@ export default function InventoryDistributionChart() {
     const fetchData = async () => {
         if (!systemType) return
         setLoading(true)
-        
+
         try {
-            let allLots: Lot[] = []
-            let from = 0
-            const limit = 1000
-            let hasMore = true
-
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('lots')
-                    .select(`
-                        id,
-                        code,
-                        status,
-                        system_code,
-                        product_id,
-                        quantity,
-                        lot_items (
-                            id,
-                            quantity,
-                            unit,
-                            product_id,
-                            products (
-                                sku,
-                                name,
-                                unit,
-                                internal_code,
-                                internal_name,
-                                product_category_rel (category_id)
-                            )
-                        ),
-                        products (
-                            sku,
-                            name,
-                            unit,
-                            internal_code,
-                            internal_name,
-                            product_category_rel (category_id)
-                        )
-                    `)
-                    .eq('status', 'active')
-                    .eq('system_code', systemType)
-                    .range(from, from + limit - 1)
-
-                if (error) throw error
-
-                if (data && data.length > 0) {
-                    allLots = [...allLots, ...data as unknown as Lot[]]
-                    if (data.length < limit) {
-                        hasMore = false
-                    } else {
-                        from += limit
-                    }
-                } else {
-                    hasMore = false
-                }
-            }
-
-            setLots(allLots)
+            setLots(await fetchDistributionLots(systemType))
         } catch (err: any) {
             console.error('Error fetching inventory distribution:', err)
         } finally {
@@ -166,11 +79,7 @@ export default function InventoryDistributionChart() {
     useEffect(() => {
         const fetchCategories = async () => {
             if (!systemType) return
-            const { data } = await supabase
-                .from('categories')
-                .select('id, name')
-                .eq('system_type', systemType)
-            if (data) setCategories(data)
+            setCategories(await fetchDistributionCategories(systemType))
         }
 
         // Load configuration from current system in Database
@@ -210,61 +119,19 @@ export default function InventoryDistributionChart() {
 
     // Đọc/fresh dữ liệu vị trí cho tab "Theo danh mục (vị trí)".
     // Trả về đúng dữ liệu vừa đọc để nút Xuất Excel dùng ngay khi tab chưa mở lần nào.
-    const fetchPositionData = useCallback(async (): Promise<PositionData | null> => {
+    const fetchPositionData = useCallback(async (): Promise<CategoryPositionRaw | null> => {
         if (!systemType) return null
         setPositionLoading(true)
         setPositionError(null)
         try {
-            const [posRows, zoneList, linkRows] = await Promise.all([
-                fetchAllPaged<{ id: string; lot_id: string | null }>((from, to) =>
-                    (supabase.from('positions') as any)
-                        .select('id, lot_id')
-                        .eq('system_type', systemType)
-                        .order('id')
-                        .range(from, to)
-                ),
-                fetchAllPaged<{ id: string; code: string | null; name: string | null; parent_id: string | null; level: number | null }>((from, to) =>
-                    (supabase.from('zones') as any)
-                        .select('id, code, name, parent_id, level')
-                        .eq('system_type', systemType)
-                        .order('level')
-                        .order('code')
-                        .range(from, to)
-                ),
-                fetchAllPaged<{ zone_id: string; position_id: string }>((from, to) =>
-                    (supabase.from('zone_positions') as any)
-                        .select('zone_id, position_id, positions!inner(*)')
-                        .eq('positions.system_type', systemType)
-                        .order('zone_id')
-                        .order('position_id')
-                        .range(from, to)
-                )
-            ])
+            const raw = await fetchCategoryPositionRaw(systemType)
 
-            const zoneLookup = buildZoneLookup(linkRows)
-            const positionsWithZone = posRows.map(p => ({ ...p, zone_id: zoneLookup.get(p.id) || null }))
-
-            // Chỉ lấy đúng các LOT đang chiếm ô (không lọc status) — giống trang trạng thái kho.
-            const occupiedLotIds = Array.from(new Set(posRows.map(p => p.lot_id).filter((id): id is string => !!id)))
-            const lotsForCategories: CatStatLot[] = []
-            const chunkSize = 150
-            for (let i = 0; i < occupiedLotIds.length; i += chunkSize) {
-                const chunk = occupiedLotIds.slice(i, i + chunkSize)
-                const { data, error } = await (supabase.from('lots') as any)
-                    .select('id, lot_items(category_id, products(sku, name, category_id, product_category_rel(category_id)))')
-                    .in('id', chunk)
-                if (error) throw error
-                if (data) lotsForCategories.push(...(data as CatStatLot[]))
-            }
-
-            const lotCategoryMap = buildLotCategoryMap(lotsForCategories)
-
-            setPositionRows(positionsWithZone)
-            setZoneRows(zoneList)
-            setLotCategories(lotCategoryMap)
+            setPositionRows(raw.positions)
+            setZoneRows(raw.zones)
+            setLotCategories(raw.lotCategories)
             setPositionLoaded(true)
 
-            return { positions: positionsWithZone, zones: zoneList, lotCategories: lotCategoryMap }
+            return raw
         } catch (err: any) {
             console.error('Error fetching category position stats:', err)
             setPositionError(err?.message || 'Không tải được dữ liệu vị trí kho.')
@@ -334,97 +201,9 @@ export default function InventoryDistributionChart() {
 
     const chartData = useMemo(() => {
         if (conversionLoading || lots.length === 0) return { data: [], totalWeight: 0 }
-
-        const aggregation = new Map<string, { value: number, productName: string, internalName: string | null, internalCode: string | null, sku: string }>()
-
-        lots.forEach(lot => {
-            const process = (
-                pid: string,
-                sku: string,
-                productName: string,
-                qty: number,
-                unit: string,
-                baseUnit: string,
-                internalName: string | null,
-                internalCode: string | null,
-                categoryIds: string[]
-            ) => {
-                // Category Filter
-                if (selectedCategoryIds.length > 0) {
-                    const hasMatch = categoryIds.some(id => selectedCategoryIds.includes(id)) || 
-                                   (categoryIds.length === 0 && selectedCategoryIds.includes('none'))
-                    if (!hasMatch) return
-                }
-
-                // Convert to KG
-                const kgRate = getBaseToKgRate(pid, baseUnit)
-                if (kgRate !== null) {
-                    const baseQty = toBaseAmount(pid, unit, qty, baseUnit)
-                    const kgQty = baseQty * kgRate
-
-                    const key = internalCode || sku
-                    const current = aggregation.get(key) || { value: 0, productName, internalName, internalCode, sku }
-                    aggregation.set(key, { 
-                        ...current, 
-                        productName: current.productName || productName,
-                        value: current.value + kgQty 
-                    })
-                }
-            }
-
-            if (lot.lot_items && lot.lot_items.length > 0) {
-                (lot.lot_items as any[]).forEach(item => {
-                    if (item.products && item.products.sku) {
-                        const u = item.unit || item.products.unit
-                        process(
-                            item.product_id, 
-                            item.products.sku, 
-                            item.products.name,
-                            item.quantity, 
-                            u, 
-                            item.products.unit,
-                            item.products.internal_name,
-                            item.products.internal_code,
-                            item.products.product_category_rel?.map((r: any) => r.category_id) || []
-                        )
-                    }
-                })
-            } else if (lot.products && lot.products.sku) {
-                // Legacy
-                const u = lot.quantity ? (lot as any).unit || lot.products.unit : lot.products.unit
-                const q = lot.quantity || 0
-                if (lot.product_id) {
-                    process(
-                        lot.product_id, 
-                        lot.products.sku, 
-                        lot.products.name,
-                        q, 
-                        u, 
-                        lot.products.unit,
-                        lot.products.internal_name,
-                        lot.products.internal_code,
-                        lot.products.product_category_rel?.map((r: any) => r.category_id) || []
-                    )
-                }
-            }
-        })
-
-        // Format for Chart
-        const totalWeight = Array.from(aggregation.values()).reduce((a, b) => a + b.value, 0)
-
-        let data = Array.from(aggregation.values()).map((item) => ({
-            name: item.productName || item.internalName || item.sku,
-            code: item.internalCode || item.sku,
-            value: item.value,
-            percentage: totalWeight > 0 ? (item.value / totalWeight) * 100 : 0,
-            originalSku: item.sku
-        }))
-
-        // Sort descending
-        data.sort((a, b) => b.value - a.value)
-
-        return { data, totalWeight }
-    }, [lots, conversionLoading, toBaseAmount, getBaseToKgRate, unitNameMap, conversionMap])
+        const { items, totalWeight } = aggregateKgByProduct(lots, { toBaseAmount, getBaseToKgRate }, selectedCategoryIds)
+        return { data: items, totalWeight }
+    }, [lots, conversionLoading, toBaseAmount, getBaseToKgRate, selectedCategoryIds, unitNameMap, conversionMap])
 
     const { data: processedData, totalWeight } = chartData || { data: [], totalWeight: 0 }
 
@@ -440,7 +219,7 @@ export default function InventoryDistributionChart() {
                     .join(', ')
 
             // Tab vị trí tải lười: chưa mở tab này lần nào thì phải đọc dữ liệu ngay trong lúc xuất.
-            const posData: PositionData | null = positionLoaded
+            const posData: CategoryPositionRaw | null = positionLoaded
                 ? { positions: positionRows, zones: zoneRows, lotCategories }
                 : await fetchPositionData()
             if (!posData) throw new Error('Không đọc được dữ liệu ô vị trí.')
@@ -456,11 +235,13 @@ export default function InventoryDistributionChart() {
                 ? posData.zones.find(z => z.id === statWarehouseId)
                 : null
 
+            const warehouseLabel = warehouse ? (warehouse.name || warehouse.code || 'Kho đã chọn') : 'Tất cả kho'
+
             const sheets = distributionWorkbookPlan(
                 { systemName, filterLabel, items: processedData, totalWeight },
                 {
                     systemName,
-                    warehouseLabel: warehouse ? (warehouse.name || warehouse.code || 'Kho đã chọn') : 'Tất cả kho',
+                    warehouseLabel,
                     result: {
                         ...exportResult,
                         stats: exportResult.stats.filter(s => statCategoryIds.includes(s.categoryId))
@@ -469,7 +250,13 @@ export default function InventoryDistributionChart() {
                 }
             )
 
-            await exportDashboardSheets({ sheets, filePrefix: 'Tỉ lệ phân bố hàng hóa' })
+            const screenshot = await captureDashboardScreenshot(cardRef.current, {
+                cardTitle: 'Tỉ lệ phân bố hàng hóa tồn kho',
+                systemName,
+                filterLabel: `${filterLabel} · Phạm vi: ${warehouseLabel}`
+            })
+
+            await exportDashboardSheets({ sheets, screenshot, filePrefix: 'Tỉ lệ phân bố hàng hóa' })
         } catch (err) {
             console.error('Lỗi xuất Excel phân bố hàng hóa:', err)
             alert('Không xuất được file Excel. Vui lòng thử lại.')
@@ -487,9 +274,9 @@ export default function InventoryDistributionChart() {
     }
 
     return (
-        <div className="bg-white rounded-2xl p-6 border border-stone-200">
+        <div ref={cardRef} className="bg-white rounded-2xl p-6 border border-stone-200">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between mb-5">
-                <h2 className="text-xl font-semibold text-stone-800">Tỉ lệ phân bố hàng hóa tồn kho</h2>
+                <h2 data-excel-shot="skip" className="text-xl font-semibold text-stone-800">Tỉ lệ phân bố hàng hóa tồn kho</h2>
                 <div className="flex flex-wrap items-center gap-2">
                     {/* Tab: khối lượng KG (theo sản phẩm) / số ô vị trí (theo danh mục) */}
                     <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl">
@@ -517,10 +304,11 @@ export default function InventoryDistributionChart() {
                         </button>
                     </div>
                     <button
+                        data-excel-shot="skip"
                         onClick={handleExport}
                         disabled={exporting || (processedData.length === 0 && positionLoaded && visiblePositionStats.length === 0)}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-indigo-300 hover:text-indigo-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Xuất Excel: một file gồm 2 sheet — Khối lượng (KG) và Danh mục (vị trí)"
+                        title="Xuất Excel: sheet ảnh dashboard + 2 sheet — Khối lượng (KG) và Danh mục (vị trí)"
                     >
                         {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
                         Xuất Excel
@@ -558,6 +346,7 @@ export default function InventoryDistributionChart() {
                         </>
                     )}
                     <button
+                        data-excel-shot="skip"
                         onClick={() => {
                             fetchData()
                             if (view === 'position') fetchPositionData()

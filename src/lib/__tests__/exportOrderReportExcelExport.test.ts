@@ -21,6 +21,10 @@ const baseOptions = {
     productRows: [
         { productName: 'Thùng 5 lớp', sku: 'HH001', unit: 'Cái', lineCount: 2, requestedQty: 100, exportedQty: 80 },
     ],
+    tagRows: [
+        { tag: 'HÀNG BẢO LỘC', taskCount: 1, lineCount: 2, lotCount: 2, requestedQty: 100, exportedQty: 80, unit: 'Cái' },
+        { tag: '(Chưa gắn mã phụ)', taskCount: 1, lineCount: 1, lotCount: 0, requestedQty: 50, exportedQty: 50, unit: 'Kg' },
+    ],
     taskRows: [
         {
             taskCode: 'XK-001', taskCreatedAt: '25/10/2026 09:00', taskStatus: 'Hoàn thành',
@@ -35,6 +39,7 @@ const baseOptions = {
         {
             taskCode: 'XK-001', taskCreatedAt: '25/10/2026 09:00', taskStatus: 'Completed',
             productName: 'Thùng 5 lớp', sku: 'HH001', productionCode: 'L015DD260-TN', lotCode: 'DL-LOT-280526-013',
+            tags: 'HÀNG BẢO LỘC',
             positionCode: 'K1D1A01T101', requestedQty: 100, exportedQty: 80, unit: 'Cái', lineStatus: 'Exported', taskNotes: '',
         },
     ],
@@ -50,7 +55,7 @@ async function readWorkbook(blob: Blob) {
 describe('exportOrderReportToExcel', () => {
     beforeEach(() => saveAsMock.mockClear())
 
-    it('tạo file .xlsx với 6 sheet và gọi saveAs', async () => {
+    it('tạo file .xlsx với 7 sheet và gọi saveAs', async () => {
         const fileName = await exportOrderReportToExcel(baseOptions)
 
         expect(fileName).toContain('.xlsx')
@@ -59,7 +64,7 @@ describe('exportOrderReportToExcel', () => {
 
         const wb = await readWorkbook(saveAsMock.mock.calls[0][0] as Blob)
         expect(wb.worksheets.map(w => w.name)).toEqual([
-            'Tong hop', 'Theo ngay', 'Theo san pham', 'Theo lenh', 'Chi tiet lenh xuat', 'Lịch sử hạ hàng',
+            'Tong hop', 'Theo ngay', 'Theo san pham', 'Theo ma phu', 'Theo lenh', 'Chi tiet lenh xuat', 'Lịch sử hạ hàng',
         ])
     })
 
@@ -74,6 +79,9 @@ describe('exportOrderReportToExcel', () => {
         expect(wsDay.getCell('B5').value).toBe('25/10/2026')
         expect(wsDay.getCell('E5').value).toBe(150)
         expect(wsDay.getCell('F5').value).toBe(130)
+        expect(wsDay.getCell('G4').value).toBe('Lệnh hoàn thành')
+        expect(wsDay.getCell('G5').value).toBe(1)
+        expect(wsDay.getCell('H4').value).toBeNull()
 
         const wsProduct = wb.getWorksheet('Theo san pham')!
         expect(wsProduct.getCell('B5').value).toBe('Thùng 5 lớp')
@@ -92,7 +100,25 @@ describe('exportOrderReportToExcel', () => {
         const wb = await readWorkbook(saveAsMock.mock.calls[0][0] as Blob)
 
         expect(wb.worksheets.map(w => w.name)).toEqual([
-            'Tong hop', 'Theo ngay', 'Theo san pham', 'Theo lenh', 'Chi tiet lenh xuat',
+            'Tong hop', 'Theo ngay', 'Theo san pham', 'Theo ma phu', 'Theo lenh', 'Chi tiet lenh xuat',
         ])
+    })
+
+    it('ghi đúng nhóm mã phụ và cột Mã phụ trong sheet chi tiết', async () => {
+        await exportOrderReportToExcel(baseOptions)
+        const wb = await readWorkbook(saveAsMock.mock.calls[0][0] as Blob)
+
+        const wsTag = wb.getWorksheet('Theo ma phu')!
+        expect(wsTag.getCell('A1').value).toBe('SẢN LƯỢNG XUẤT THEO MÃ PHỤ (THẺ TAG ĐƠN LẺ)')
+        expect(wsTag.getCell('B4').value).toBe('Mã phụ')
+        expect(wsTag.getCell('B5').value).toBe('HÀNG BẢO LỘC')
+        expect(wsTag.getCell('E5').value).toBe(2)
+        expect(wsTag.getCell('F5').value).toBe(100)
+        expect(wsTag.getCell('H5').value).toBe('20')
+        expect(wsTag.getCell('B6').value).toBe('(Chưa gắn mã phụ)')
+
+        const wsDetail = wb.getWorksheet('Chi tiet lenh xuat')!
+        expect(wsDetail.getCell('I4').value).toBe('Mã phụ')
+        expect(wsDetail.getCell('I5').value).toBe('HÀNG BẢO LỘC')
     })
 })

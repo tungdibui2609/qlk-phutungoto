@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+    ancestorLabels,
     buildFillStats,
     buildHallDetector,
     buildZoneLookup,
@@ -273,5 +274,40 @@ describe('tổng hợp cây khu vực', () => {
         expect(stats.totals.rack.occupied).toBe(2)
         expect(stats.byZone.get('a')!.rackPositions).toBe(2)
         expect(stats.roots).toEqual([])
+    })
+})
+
+describe('ancestorLabels — ngữ cảnh khu cha cho khu trùng tên', () => {
+    it('trả chuỗi cha từ gốc tới cha trực tiếp, không gồm chính nó', () => {
+        const stats = buildFillStats(zones, mixedPositions)
+        expect(ancestorLabels(stats, DAY_A1)).toEqual(['Kho 1', 'Khu A'])
+        expect(ancestorLabels(stats, SANH)).toEqual(['Kho 1'])
+        expect(ancestorLabels(stats, KHO)).toEqual([])
+        expect(ancestorLabels(stats, 'khong-ton-tai')).toEqual([])
+    })
+
+    it('sảnh trùng tên ở hai kho vẫn phân biệt được bằng chuỗi cha', () => {
+        const stats = buildFillStats(
+            [
+                { id: 'k1', code: 'K1', name: 'KHO 1', parent_id: null, level: 0 },
+                { id: 'k2', code: 'K2', name: 'KHO 2', parent_id: null, level: 0 },
+                { id: 's1', code: 'S1', name: 'SẢNH 1', parent_id: 'k1', level: 1, is_hall: true },
+                { id: 's2', code: 'S1', name: 'SẢNH 1', parent_id: 'k2', level: 1, is_hall: true }
+            ],
+            [pos('p1', 's1', true), pos('p2', 's2', false)]
+        )
+        expect(stats.hallRoots.map(z => ancestorLabels(stats, z.zoneId).concat(z.label).join(' › ')))
+            .toEqual(['KHO 1 › SẢNH 1', 'KHO 2 › SẢNH 1'])
+    })
+
+    it('quan hệ vòng lặp không làm treo khi đi ngược chuỗi cha', () => {
+        const stats = buildFillStats(
+            [
+                { id: 'a', name: 'A', parent_id: 'b', level: 1 },
+                { id: 'b', name: 'B', parent_id: 'a', level: 1 }
+            ],
+            [pos('p1', 'a', true)]
+        )
+        expect(ancestorLabels(stats, 'a')).toEqual(['B'])
     })
 })

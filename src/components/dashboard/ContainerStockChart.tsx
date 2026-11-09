@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useMemo } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import {
     BarChart,
     Bar,
@@ -34,50 +34,19 @@ import {
     Check
 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
-import { Database } from '@/lib/database.types'
 import { formatQuantity } from '@/lib/numberUtils'
-import { exportDashboardChart } from '@/lib/dashboardExcelExport'
+import { captureDashboardScreenshot, exportDashboardChart } from '@/lib/dashboardExcelExport'
 import { containerExportSpec } from '@/lib/dashboardExcelSpecs'
+import {
+    aggregateContainerStock,
+    fetchContainerLots,
+    filterByChartCategories,
+    selectConfiguredProducts,
+    sortContainerStats,
+    type ContainerLot,
+    type ProductContainerStat
+} from '@/lib/containerStockData'
 import Link from 'next/link'
-
-type LotItem = Database['public']['Tables']['lot_items']['Row'] & {
-    unit: string | null
-    products: {
-        id?: string
-        sku: string
-        name: string
-        unit: string
-        boxes_per_container?: number | null
-        internal_code: string | null
-        internal_name: string | null
-        product_category_rel?: { category_id: string }[]
-    } | null
-}
-
-type Lot = Database['public']['Tables']['lots']['Row'] & {
-    lot_items: LotItem[] | null
-    products: {
-        id?: string
-        sku: string
-        name: string
-        unit: string
-        boxes_per_container?: number | null
-        internal_code: string | null
-        internal_name: string | null
-        product_category_rel?: { category_id: string }[]
-    } | null
-}
-
-interface ProductContainerStat {
-    id: string
-    sku: string
-    name: string
-    totalBoxes: number
-    boxesPerContainer: number
-    containers: number
-    categoryIds: string[]
-    hasConfig: boolean
-}
 
 // Color palette for the bars based on volume
 const COLOR_PALETTE = [
@@ -161,18 +130,18 @@ class ChartErrorBoundary extends React.Component<
     }
 }
 
-export default function ContainerStockChart() {
+export default function ContainerStockChart({ initialCategoryTab = '', noAnimation = false }: { initialCategoryTab?: string; noAnimation?: boolean } = {}) {
     return (
         <ChartErrorBoundary>
-            <ContainerStockChartInner />
+            <ContainerStockChartInner initialCategoryTab={initialCategoryTab} noAnimation={noAnimation} />
         </ChartErrorBoundary>
     )
 }
 
-function ContainerStockChartInner() {
+function ContainerStockChartInner({ initialCategoryTab = '', noAnimation = false }: { initialCategoryTab?: string; noAnimation?: boolean } = {}) {
     const { systemType, currentSystem } = useSystem()
     const [loading, setLoading] = useState(true)
-    const [lots, setLots] = useState<Lot[]>([])
+    const [lots, setLots] = useState<ContainerLot[]>([])
     const [categories, setCategories] = useState<{ id: string, name: string }[]>([])
     const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
     const [showCategoryFilter, setShowCategoryFilter] = useState(false)
@@ -182,9 +151,10 @@ function ContainerStockChartInner() {
     const [pinnedIds, setPinnedIds] = useState<string[]>([])
     const [chartCategoryIds, setChartCategoryIds] = useState<string[]>([])
     const [topN, setTopN] = useState<number>(DEFAULT_TOP_N)
-    const [activeChartCategoryTab, setActiveChartCategoryTab] = useState<string>('')
+    const [activeChartCategoryTab, setActiveChartCategoryTab] = useState<string>(initialCategoryTab || 'all')
     const [isChartExpanded, setIsChartExpanded] = useState<boolean>(false)
     const [exporting, setExporting] = useState<boolean>(false)
+    const cardRef = useRef<HTMLDivElement>(null)
     const [showPicker, setShowPicker] = useState(false)
     const [pickerSearch, setPickerSearch] = useState('')
 
@@ -303,67 +273,7 @@ function ContainerStockChartInner() {
         setLoading(true)
 
         try {
-            let allLots: Lot[] = []
-            let from = 0
-            const limit = 1000
-            let hasMore = true
-
-            while (hasMore) {
-                const { data, error } = await supabase
-                    .from('lots')
-                    .select(`
-                        id,
-                        code,
-                        status,
-                        system_code,
-                        product_id,
-                        quantity,
-                        lot_items (
-                            id,
-                            quantity,
-                            unit,
-                            product_id,
-                            products (
-                                id,
-                                sku,
-                                name,
-                                unit,
-                                boxes_per_container,
-                                internal_code,
-                                internal_name,
-                                product_category_rel (category_id)
-                            )
-                        ),
-                        products (
-                            id,
-                            sku,
-                            name,
-                            unit,
-                            boxes_per_container,
-                            internal_code,
-                            internal_name,
-                            product_category_rel (category_id)
-                        )
-                    `)
-                    .eq('status', 'active')
-                    .eq('system_code', systemType)
-                    .range(from, from + limit - 1)
-
-                if (error) throw error
-
-                if (data && data.length > 0) {
-                    allLots = [...allLots, ...data as unknown as Lot[]]
-                    if (data.length < limit) {
-                        hasMore = false
-                    } else {
-                        from += limit
-                    }
-                } else {
-                    hasMore = false
-                }
-            }
-
-            setLots(allLots)
+            setLots(await fetchContainerLots(systemType))
         } catch (err: any) {
             console.error('Error fetching lots for container chart:', err)
         } finally {
@@ -391,107 +301,10 @@ function ContainerStockChartInner() {
     const processedData = useMemo(() => {
         if (conversionLoading || lots.length === 0) return []
 
-        const aggregation = new Map<string, ProductContainerStat>()
+        const aggregated = aggregateContainerStock(lots, { convertUnit, getBaseAmount }, selectedCategoryIds)
+        const list = onlyConfigured ? aggregated.filter(item => item.hasConfig) : aggregated
 
-        const processItem = (
-            pid: string,
-            prod: {
-                id?: string
-                sku: string
-                name: string
-                unit: string
-                boxes_per_container?: number | null
-                internal_code: string | null
-                internal_name: string | null
-                product_category_rel?: { category_id: string }[]
-            },
-            quantity: number,
-            unit: string | null
-        ) => {
-            let categoryIds: string[] = []
-            if (Array.isArray(prod.product_category_rel)) {
-                categoryIds = prod.product_category_rel.map((r: any) => r?.category_id).filter(Boolean)
-            } else if (prod.product_category_rel && typeof prod.product_category_rel === 'object' && (prod.product_category_rel as any).category_id) {
-                categoryIds = [(prod.product_category_rel as any).category_id]
-            }
-
-            // Check Category Filter
-            if (selectedCategoryIds.length > 0) {
-                const hasMatch = categoryIds.some(id => selectedCategoryIds.includes(id)) ||
-                    (categoryIds.length === 0 && selectedCategoryIds.includes('none'))
-                if (!hasMatch) return
-            }
-
-            // Calculate number of boxes (Thùng)
-            let boxCount = 0
-            const unitStr = unit || prod.unit || ''
-            const isDirectBox = /thùng|thung|sọt|sot|hộp|hop|bao|két/i.test(unitStr)
-
-            if (isDirectBox) {
-                boxCount = quantity || 0
-            } else {
-                // If in Kg or other unit, convert to Thùng
-                const converted = convertUnit(pid, unitStr, 'Thùng', quantity, prod.unit)
-                if (converted > 0 && converted !== quantity) {
-                    boxCount = converted
-                } else {
-                    // Fallback: Kg / 20 nếu đơn vị là Kg
-                    const baseKg = getBaseAmount(pid, unitStr, quantity, prod.unit)
-                    boxCount = baseKg > 0 ? baseKg / 20 : quantity
-                }
-            }
-
-            const key = pid || prod.sku
-            const existing = aggregation.get(key)
-            const boxesPerContainer = prod.boxes_per_container || 0
-
-            if (existing) {
-                existing.totalBoxes += boxCount
-                existing.containers = boxesPerContainer > 0 ? existing.totalBoxes / boxesPerContainer : 0
-            } else {
-                aggregation.set(key, {
-                    id: prod.id || pid,
-                    sku: prod.sku,
-                    name: prod.name || prod.internal_name || prod.sku,
-                    totalBoxes: boxCount,
-                    boxesPerContainer,
-                    containers: boxesPerContainer > 0 ? boxCount / boxesPerContainer : 0,
-                    categoryIds,
-                    hasConfig: boxesPerContainer > 0
-                })
-            }
-        }
-
-        lots.forEach(lot => {
-            if (lot.lot_items && lot.lot_items.length > 0) {
-                (lot.lot_items as any[]).forEach(item => {
-                    if (item.products && item.products.sku) {
-                        processItem(item.product_id, item.products, item.quantity || 0, item.unit)
-                    }
-                })
-            } else if (lot.products && lot.products.sku) {
-                const u = lot.quantity ? (lot as any).unit || lot.products.unit : lot.products.unit
-                processItem(lot.product_id || '', lot.products, lot.quantity || 0, u)
-            }
-        })
-
-        let list = Array.from(aggregation.values())
-
-        // Filter only configured if toggled
-        if (onlyConfigured) {
-            list = list.filter(item => item.hasConfig)
-        }
-
-        // Sorting
-        if (sortBy === 'containers') {
-            list.sort((a, b) => b.containers - a.containers || b.totalBoxes - a.totalBoxes)
-        } else if (sortBy === 'boxes') {
-            list.sort((a, b) => b.totalBoxes - a.totalBoxes)
-        } else if (sortBy === 'name') {
-            list.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
-        }
-
-        return list
+        return sortContainerStats(list, sortBy)
     }, [lots, conversionLoading, selectedCategoryIds, onlyConfigured, sortBy, convertUnit, getBaseAmount])
 
     // Bảng số xuất ra là toàn bộ danh sách đang lọc; ảnh biểu đồ lấy Top 15 cho dễ đọc.
@@ -503,14 +316,21 @@ function ContainerStockChartInner() {
                 : selectedCategoryIds
                     .map(id => categories.find(c => c.id === id)?.name || 'Chưa phân loại')
                     .join(', ')
+            const systemName = currentSystem?.name || systemType || ''
             const { spec, chart } = containerExportSpec({
-                systemName: currentSystem?.name || systemType || '',
+                systemName,
                 filterLabel,
                 items: processedData
+            })
+            const screenshot = await captureDashboardScreenshot(cardRef.current, {
+                cardTitle: 'Số lượng Container tồn kho theo từng mặt hàng',
+                systemName,
+                filterLabel
             })
             await exportDashboardChart({
                 spec,
                 chart,
+                screenshot,
                 filePrefix: 'Uoc tinh container ton kho',
                 fileExtra: onlyConfigured ? 'Co dinh muc' : 'Tat ca'
             })
@@ -565,20 +385,17 @@ function ContainerStockChartInner() {
         return list
     }, [chartCategoryIds, categories])
 
-    // Auto-select "Sầu Riêng" by default as requested
-    useEffect(() => {
-        if (configuredChartCategories.length > 0 && !activeChartCategoryTab) {
-            const sauRieng = configuredChartCategories.find(c =>
-                c.name.toLowerCase().includes('sầu riêng') ||
-                c.name.toLowerCase().includes('sau rieng')
-            )
-            if (sauRieng) {
-                setActiveChartCategoryTab(sauRieng.id)
-            } else {
-                setActiveChartCategoryTab(configuredChartCategories[0].id)
-            }
-        }
-    }, [configuredChartCategories, activeChartCategoryTab])
+    // Hai useMemo này phải đứng TRƯỚC early return bên dưới, nếu không thứ tự hook đổi giữa render loading và render thường.
+    const chartSource = useMemo(
+        () => filterByChartCategories(processedData, chartCategoryIds),
+        [processedData, chartCategoryIds]
+    )
+
+    const isPinnedMode = pinnedIds.length > 0
+    const userConfiguredProducts = useMemo(
+        () => selectConfiguredProducts(processedData, { pinnedIds, categoryIds: chartCategoryIds, topN }),
+        [processedData, pinnedIds, chartCategoryIds, topN]
+    )
 
     if (loading || conversionLoading) {
         return (
@@ -589,21 +406,6 @@ function ContainerStockChartInner() {
     }
 
     const displayList = isExpanded ? processedData : processedData.slice(0, 10)
-
-    // Products available to the chart, limited by the chart's display categories
-    const chartSource = chartCategoryIds.length > 0
-        ? processedData.filter(p => {
-            const cIds = Array.isArray(p.categoryIds) ? p.categoryIds : []
-            return cIds.some(id => chartCategoryIds.includes(id)) ||
-                (cIds.length === 0 && chartCategoryIds.includes('none'))
-        })
-        : processedData
-
-    // Products configured by user (either pinned or Top N from chartSource)
-    const isPinnedMode = pinnedIds.length > 0
-    const userConfiguredProducts = isPinnedMode
-        ? chartSource.filter(p => pinnedIds.includes(p.id))
-        : chartSource.slice(0, topN)
 
     // Chart list filtered by active single category tab selected on the chart
     const chartList = (activeChartCategoryTab && activeChartCategoryTab !== 'all')
@@ -628,9 +430,9 @@ function ContainerStockChartInner() {
     const chartSettingsActive = isPinnedMode || chartCategoryIds.length > 0 || topN !== DEFAULT_TOP_N
 
     return (
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-stone-200 space-y-4">
+        <div ref={cardRef} className="bg-white rounded-2xl p-4 sm:p-5 border border-stone-200 space-y-4">
             {/* Header & Controls */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100">
+            <div data-excel-shot="skip" className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100">
                 <div>
                     <div className="flex items-center gap-2 mb-0.5">
                         <Truck className="text-emerald-600 shrink-0" size={18} />
@@ -685,10 +487,11 @@ function ContainerStockChartInner() {
 
                     {/* Export Excel */}
                     <button
+                        data-excel-shot="skip"
                         onClick={handleExport}
                         disabled={exporting || processedData.length === 0}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-emerald-300 hover:text-emerald-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Xuất danh sách đang lọc ra Excel (biểu đồ + bảng số)"
+                        title="Xuất Excel: sheet ảnh dashboard + biểu đồ + bảng số của danh sách đang lọc"
                     >
                         {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
                         Xuất Excel
@@ -696,6 +499,7 @@ function ContainerStockChartInner() {
 
                     {/* Refresh */}
                     <button
+                        data-excel-shot="skip"
                         onClick={fetchData}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-stone-300 hover:text-stone-900 transition-all"
                         title="Làm mới dữ liệu"
@@ -832,6 +636,7 @@ function ContainerStockChartInner() {
                         </h3>
                         <div className="flex items-center gap-2">
                             <button
+                                data-excel-shot="skip"
                                 onClick={() => setShowPicker(!showPicker)}
                                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold border transition-all ${
                                     showPicker || chartSettingsActive
@@ -849,7 +654,7 @@ function ContainerStockChartInner() {
                         </div>
                     </div>
 
-                    {/* Category tabs directly on the chart (Single select mode, Tat ca at the end) */}
+                    {/* Category tabs directly on the chart (Single select mode, Tat ca at the front) */}
                     {configuredChartCategories.length > 0 && (
                         <div className="flex flex-wrap items-center gap-1.5 p-2 bg-stone-50/80 rounded-xl border border-stone-200/90 animate-in fade-in duration-200">
                             <span className="text-xs font-bold text-stone-600 flex items-center gap-1.5 pl-1 pr-1">
@@ -857,7 +662,29 @@ function ContainerStockChartInner() {
                                 <span>Danh mục:</span>
                             </span>
 
-                            {/* 1. Category buttons (Single Select) */}
+                            {/* 1. Tất cả button at the FRONT */}
+                            <button
+                                onClick={() => {
+                                    setActiveChartCategoryTab('all')
+                                    setIsChartExpanded(false)
+                                }}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all shrink-0 ${
+                                    activeChartCategoryTab === 'all'
+                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/20'
+                                        : 'bg-white border-stone-200 text-stone-700 hover:border-stone-300 hover:bg-stone-50'
+                                }`}
+                            >
+                                <span className="whitespace-nowrap">Tất cả</span>
+                                <span className={`text-[11px] px-1.5 py-0.2 rounded-md font-extrabold ${
+                                    activeChartCategoryTab === 'all'
+                                        ? 'bg-emerald-700 text-white'
+                                        : 'bg-stone-100 text-stone-600'
+                                }`}>
+                                    {userConfiguredProducts.length}
+                                </span>
+                            </button>
+
+                            {/* 2. Category buttons (Single Select) */}
                             {configuredChartCategories.map(cat => {
                                 const isSelected = activeChartCategoryTab === cat.id
                                 const count = userConfiguredProducts.filter(p => {
@@ -872,13 +699,13 @@ function ContainerStockChartInner() {
                                             setActiveChartCategoryTab(cat.id)
                                             setIsChartExpanded(false)
                                         }}
-                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all shrink-0 ${
                                             isSelected
                                                 ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/20'
                                                 : 'bg-white border-stone-200 text-stone-700 hover:border-stone-300 hover:bg-stone-50'
                                         }`}
                                     >
-                                        <span>{cat.name}</span>
+                                        <span className="whitespace-nowrap">{cat.name}</span>
                                         <span className={`text-[11px] px-1.5 py-0.2 rounded-md font-extrabold ${
                                             isSelected
                                                 ? 'bg-emerald-700 text-white'
@@ -889,28 +716,6 @@ function ContainerStockChartInner() {
                                     </button>
                                 )
                             })}
-
-                            {/* 2. Tất cả button at the END */}
-                            <button
-                                onClick={() => {
-                                    setActiveChartCategoryTab('all')
-                                    setIsChartExpanded(false)
-                                }}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                                    activeChartCategoryTab === 'all'
-                                        ? 'bg-emerald-600 border-emerald-600 text-white shadow-sm ring-2 ring-emerald-500/20'
-                                        : 'bg-white border-stone-200 text-stone-700 hover:border-stone-300 hover:bg-stone-50'
-                                }`}
-                            >
-                                <span>Tất cả</span>
-                                <span className={`text-[11px] px-1.5 py-0.2 rounded-md font-extrabold ${
-                                    activeChartCategoryTab === 'all'
-                                        ? 'bg-emerald-700 text-white'
-                                        : 'bg-stone-100 text-stone-600'
-                                }`}>
-                                    {userConfiguredProducts.length}
-                                </span>
-                            </button>
                         </div>
                     )}
 
@@ -1116,7 +921,7 @@ function ContainerStockChartInner() {
                             )}
                         </div>
                     ) : (
-                    <div className="w-full bg-stone-50/50 p-3 sm:p-4 rounded-2xl border border-stone-200/80 overflow-x-auto">
+                    <div data-capture-clip className="w-full bg-stone-50/50 p-3 sm:p-4 rounded-2xl border border-stone-200/80 overflow-x-auto">
                         <div style={{ minWidth: 640, height: Math.max(280, displayedChartList.length * 52) }}>
                             <ResponsiveContainer width="100%" height="100%">
                                 <BarChart
@@ -1248,6 +1053,7 @@ function ContainerStockChartInner() {
                                     name="Số Cont"
                                     radius={[0, 8, 8, 0]}
                                     barSize={24}
+                                    isAnimationActive={!noAnimation}
                                 >
                                     <LabelList
                                         dataKey="containers"
@@ -1272,7 +1078,7 @@ function ContainerStockChartInner() {
 
                     {/* Xem thêm / Thu gọn button for chart */}
                     {chartList.length > CHART_PAGE_SIZE && (
-                        <div className="mt-3 flex justify-center">
+                        <div className="mt-3 flex justify-center" data-excel-shot="skip">
                             <button
                                 onClick={() => setIsChartExpanded(!isChartExpanded)}
                                 className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-stone-100 hover:bg-stone-200 text-xs font-bold text-stone-700 transition-all shadow-sm border border-stone-200 hover:text-emerald-700 active:scale-95"
@@ -1427,7 +1233,7 @@ function ContainerStockChartInner() {
 
                 {/* Expand / Collapse Button */}
                 {processedData.length > 10 && (
-                    <div className="mt-3.5 flex justify-center">
+                    <div className="mt-3.5 flex justify-center" data-excel-shot="skip">
                         <button
                             onClick={() => setIsExpanded(!isExpanded)}
                             className="inline-flex items-center gap-1 px-4 py-1.5 rounded-full bg-stone-100 hover:bg-stone-200 text-[11px] font-bold text-stone-700 transition-all shadow-sm"

@@ -236,9 +236,9 @@ export function buildWorkbookFromSheets(sheets: DashboardSheetSpec[]): ExcelJS.W
     return workbook
 }
 
-/** Giữ nguyên định dạng cũ 2 sheet "Bieu do"/"Du lieu" cho các view chưa chuyển sang plan nhiều sheet. */
-export function buildDashboardWorkbook(spec: DashboardWorkbookSpec): ExcelJS.Workbook {
-    return buildWorkbookFromSheets([
+/** Quy ước spec kiểu cũ (một biểu đồ + một bảng) thành danh sách sheet để dùng chung với plan nhiều sheet. */
+export function sheetsFromWorkbookSpec(spec: DashboardWorkbookSpec): DashboardSheetSpec[] {
+    return [
         {
             sheetName: spec.chartSheetName || 'Bieu do',
             title: spec.chartTitle,
@@ -254,7 +254,12 @@ export function buildDashboardWorkbook(spec: DashboardWorkbookSpec): ExcelJS.Wor
             notes: spec.notes,
             dataBarColumn: spec.dataBarColumn
         }
-    ])
+    ]
+}
+
+/** Giữ nguyên định dạng cũ 2 sheet "Bieu do"/"Du lieu" cho các view chưa chuyển sang plan nhiều sheet. */
+export function buildDashboardWorkbook(spec: DashboardWorkbookSpec): ExcelJS.Workbook {
+    return buildWorkbookFromSheets(sheetsFromWorkbookSpec(spec))
 }
 
 export async function buildDashboardXlsxBuffer(spec: DashboardWorkbookSpec): Promise<ArrayBuffer> {

@@ -454,10 +454,10 @@ describe('parseStocktakeFile - file Excel tồn kho theo LOT', () => {
         await lotExport([lotGroup('TP01', 'Sầu riêng múi', 'Kg', 10, 'Trái cây')])
         const blob = savedBlobs[0]
 
-        // Chính file đó có 2 sheet: 'Chi tiết' (nhiều dòng con) và 'Tổng hợp' (mỗi SP một dòng)
+        // Chính file đó có 2 sheet: 'Tổng hợp' (mỗi SP một dòng, đứng đầu) và 'Chi tiết' (nhiều dòng con, đứng cuối)
         const rawWorkbook = new ExcelJS.Workbook()
         await rawWorkbook.xlsx.load(await blob.arrayBuffer())
-        expect(rawWorkbook.worksheets.map(ws => ws.name)).toEqual(['Chi tiết', 'Tổng hợp'])
+        expect(rawWorkbook.worksheets.map(ws => ws.name)).toEqual(['Tổng hợp', 'Chi tiết'])
         expect(rawWorkbook.getWorksheet('Chi tiết')!.rowCount)
             .toBeGreaterThan(rawWorkbook.getWorksheet('Tổng hợp')!.rowCount)
 

@@ -18,6 +18,7 @@ import {
     ITEM_STATUS_CONFIG,
     RATING_CONFIG,
     DIFFICULTY_CONFIG,
+    getWarehouseBadge,
     formatVNDate,
     getDayOfWeekVN,
     hasWorkloadData,
@@ -150,19 +151,42 @@ export default function PlanExportCardModal({
             }
             lines.push(`-----------------------------------`)
             items.forEach((item, idx) => {
-                const assigneeStr =
-                    Array.isArray(item.assignees) && item.assignees.length > 0
-                        ? ` 👉 [${item.assignees.map(a => a.name).join(', ')}]`
-                        : ''
-                const locStr = item.location_note ? ` (${item.location_note})` : ''
+                const primaryAssignees = (item.assignees || []).filter(
+                    a => a.task_type !== 'secondary'
+                )
+                const supportAssignees = (item.assignees || []).filter(
+                    a => a.task_type === 'secondary'
+                )
+                const locStr = item.location_note ? ` [${item.location_note}]` : ''
+                const catStr = item.category ? ` (${item.category})` : ''
+                const descStr = item.description ? `\n   📝 Mô tả: ${item.description}` : ''
+
+                const assigneeLines: string[] = []
+                if (primaryAssignees.length > 0) {
+                    assigneeLines.push(
+                        `\n   ⭐ Việc chính: ${primaryAssignees.map(a => a.name).join(', ')}`
+                    )
+                }
+                if (supportAssignees.length > 0) {
+                    assigneeLines.push(
+                        `\n   ➕ Hỗ trợ: ${supportAssignees.map(a => a.name).join(', ')}`
+                    )
+                }
+                if (primaryAssignees.length === 0 && supportAssignees.length === 0) {
+                    assigneeLines.push(`\n   👤 Chưa phân công`)
+                }
+
                 const wlText = formatWorkloadSummaryText(item.workload_metrics)
                 const wlLine = wlText ? `\n   📊 Khối lượng: ${wlText}` : ''
-                lines.push(`${idx + 1}. ${item.content}${locStr}${assigneeStr}${wlLine}`)
+                lines.push(
+                    `${idx + 1}. *${item.content}*${locStr}${catStr}${descStr}${assigneeLines.join('')}${wlLine}`
+                )
             })
             if (plan?.general_note) {
                 lines.push(`-----------------------------------`)
-                lines.push(`📌 Ghi chú: ${plan.general_note}`)
+                lines.push(`📌 Lưu ý điều phối: ${plan.general_note}`)
             }
+            lines.push(`*📌 Ghi chú: Kế hoạch có thể thay đổi theo công việc phát sinh.*`)
             lines.push(`\nEm gửi kế hoạch làm việc ngày (${vnDate}) ạ!`)
         } else {
             lines.push(`✅ *BÁO CÁO & ĐÁNH GIÁ CÔNG VIỆC CUỐI NGÀY ${vnDate}*`)
@@ -180,20 +204,37 @@ export default function PlanExportCardModal({
                         : item.status === 'cancelled'
                         ? '⚪'
                         : '❌'
-                const assigneeStr =
-                    Array.isArray(item.assignees) && item.assignees.length > 0
-                        ? ` [${item.assignees.map(a => a.name).join(', ')}]`
-                        : ''
+                const primaryAssignees = (item.assignees || []).filter(
+                    a => a.task_type !== 'secondary'
+                )
+                const supportAssignees = (item.assignees || []).filter(
+                    a => a.task_type === 'secondary'
+                )
+                const locStr = item.location_note ? ` [${item.location_note}]` : ''
                 const ratingStr = item.rating
                     ? ` • ${RATING_CONFIG[item.rating].label} (${item.rating_stars}⭐)`
                     : ''
+                const descStr = item.description ? `\n   📝 ${item.description}` : ''
+
+                const assigneeLines: string[] = []
+                if (primaryAssignees.length > 0) {
+                    assigneeLines.push(
+                        `\n   ⭐ Việc chính: ${primaryAssignees.map(a => a.name).join(', ')}`
+                    )
+                }
+                if (supportAssignees.length > 0) {
+                    assigneeLines.push(
+                        `\n   ➕ Hỗ trợ: ${supportAssignees.map(a => a.name).join(', ')}`
+                    )
+                }
+
                 const wlText = formatWorkloadSummaryText(item.workload_metrics)
                 const wlLine = wlText ? `\n   📦 Số liệu: ${wlText}` : ''
                 const noteStr = item.evaluation_note
                     ? `\n   ↳ Nhận xét: ${item.evaluation_note}`
                     : ''
                 lines.push(
-                    `${idx + 1}. ${icon} ${item.content}${assigneeStr} — *${st.shortLabel} (${item.progress_percent}%)*${ratingStr}${wlLine}${noteStr}`
+                    `${idx + 1}. ${icon} *${item.content}*${locStr} — *${st.shortLabel} (${item.progress_percent}%)*${ratingStr}${descStr}${assigneeLines.join('')}${wlLine}${noteStr}`
                 )
             })
             if (plan?.end_of_day_summary) {
@@ -360,16 +401,10 @@ export default function PlanExportCardModal({
                                             </th>
                                             {(items.some(i => i.assignees?.length > 0) ||
                                                 cardMode === 'evaluation') && (
-                                                <th className="border border-stone-300 px-3 py-2 w-36 text-left">
+                                                <th className="border border-stone-300 px-3 py-2 w-64 min-w-[220px] text-left">
                                                     Nhân sự / Đội
                                                 </th>
                                             )}
-                                            {cardMode === 'plan' &&
-                                                items.some(i => i.location_note) && (
-                                                    <th className="border border-stone-300 px-3 py-2 w-28 text-left">
-                                                        Khu vực
-                                                    </th>
-                                                )}
                                             {cardMode === 'evaluation' && (
                                                 <>
                                                     <th className="border border-stone-300 px-2.5 py-2 w-28 text-center">
@@ -406,14 +441,35 @@ export default function PlanExportCardModal({
                                                         {idx + 1}.
                                                     </td>
                                                     <td className="border border-stone-300 px-3 py-2.5 font-medium text-stone-900 leading-snug">
-                                                        <div>
-                                                            <span>{item.content}</span>
+                                                        <div className="flex items-center flex-wrap gap-1.5">
+                                                            <span className="font-bold">{item.content}</span>
+                                                            {item.location_note && (() => {
+                                                                const sysBadge = getWarehouseBadge(item.location_note)
+                                                                return (
+                                                                    <span
+                                                                        className={`px-1.5 py-0.2 rounded-full border text-[9px] font-extrabold inline-flex items-center gap-1 shadow-2xs ${sysBadge.badgeClass}`}
+                                                                    >
+                                                                        <span>{sysBadge.icon}</span>
+                                                                        <span>{sysBadge.label}</span>
+                                                                    </span>
+                                                                )
+                                                            })()}
+                                                            {item.category && (
+                                                                <span className="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 border border-stone-200 text-[9px] font-semibold">
+                                                                    {item.category}
+                                                                </span>
+                                                            )}
                                                             {item.priority === 'urgent' && (
-                                                                <span className="ml-2 inline-block px-1.5 py-0.5 text-[10px] font-bold bg-rose-100 text-rose-700 rounded-sm">
+                                                                <span className="ml-1 inline-block px-1.5 py-0.5 text-[9px] font-bold bg-rose-100 text-rose-700 rounded-sm">
                                                                     KHẨN
                                                                 </span>
                                                             )}
                                                         </div>
+                                                        {item.description && (
+                                                            <div className="text-xs text-stone-500 mt-1 leading-relaxed">
+                                                                {item.description}
+                                                            </div>
+                                                        )}
                                                         {hasWorkloadData(wl) && (
                                                             <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px]">
                                                                 {diffCfg && (
@@ -472,23 +528,52 @@ export default function PlanExportCardModal({
                                                         i => i.assignees?.length > 0
                                                     ) ||
                                                         cardMode === 'evaluation') && (
-                                                        <td className="border border-stone-300 px-3 py-2.5 text-xs font-semibold text-indigo-900">
-                                                            {Array.isArray(item.assignees) &&
-                                                            item.assignees.length > 0
-                                                                ? item.assignees
-                                                                      .map(a => a.name)
-                                                                      .join(', ')
-                                                                : 'Toàn đội kho'}
+                                                        <td className="border border-stone-300 px-3 py-2.5 text-xs text-stone-800">
+                                                            {(() => {
+                                                                const primary = (item.assignees || []).filter(
+                                                                    a => a.task_type !== 'secondary'
+                                                                )
+                                                                const support = (item.assignees || []).filter(
+                                                                    a => a.task_type === 'secondary'
+                                                                )
+                                                                if (primary.length === 0 && support.length === 0) {
+                                                                    return (
+                                                                        <span className="text-stone-400 italic">
+                                                                            Toàn đội kho
+                                                                        </span>
+                                                                    )
+                                                                }
+                                                                return (
+                                                                    <div className="space-y-1">
+                                                                        {primary.length > 0 && (
+                                                                            <div>
+                                                                                <b className="text-emerald-800">
+                                                                                    ⭐ Việc chính:{' '}
+                                                                                </b>
+                                                                                <span className="font-semibold text-stone-900">
+                                                                                    {primary
+                                                                                        .map(a => a.name)
+                                                                                        .join(', ')}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                        {support.length > 0 && (
+                                                                            <div>
+                                                                                <b className="text-purple-800">
+                                                                                    ➕ Hỗ trợ:{' '}
+                                                                                </b>
+                                                                                <span className="font-semibold text-stone-700">
+                                                                                    {support
+                                                                                        .map(a => a.name)
+                                                                                        .join(', ')}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )
+                                                            })()}
                                                         </td>
                                                     )}
-                                                    {cardMode === 'plan' &&
-                                                        items.some(
-                                                            i => i.location_note
-                                                        ) && (
-                                                            <td className="border border-stone-300 px-3 py-2.5 text-xs text-stone-600">
-                                                                {item.location_note || '-'}
-                                                            </td>
-                                                        )}
                                                     {cardMode === 'evaluation' && (
                                                         <>
                                                             <td className="border border-stone-300 px-2.5 py-2.5 text-center">
@@ -527,19 +612,30 @@ export default function PlanExportCardModal({
                                 </table>
 
                                 {/* Footer Note / Summary */}
-                                {(cardMode === 'plan'
-                                    ? plan?.general_note
-                                    : plan?.end_of_day_summary) && (
-                                    <div className="mt-4 p-3 rounded-lg bg-stone-50 border border-stone-300 text-xs text-stone-700">
-                                        <span className="font-bold text-stone-900">
-                                            {cardMode === 'plan'
-                                                ? '📌 Ghi chú điều phối: '
-                                                : '📝 Nhận xét tổng kết cuối ngày: '}
-                                        </span>
-                                        {cardMode === 'plan'
-                                            ? plan?.general_note
-                                            : plan?.end_of_day_summary}
+                                {cardMode === 'plan' ? (
+                                    <div className="mt-3.5 p-2.5 rounded-lg bg-amber-50/80 border border-amber-200/80 text-xs text-amber-950 flex items-start gap-2">
+                                        <span className="text-amber-600 font-bold shrink-0">📌</span>
+                                        <div className="space-y-0.5 leading-relaxed">
+                                            <span className="font-bold text-amber-900">* Ghi chú:</span>{' '}
+                                            <span className="font-semibold text-stone-800">
+                                                Kế hoạch có thể thay đổi theo công việc phát sinh.
+                                            </span>
+                                            {plan?.general_note && (
+                                                <div className="text-stone-700 pt-1 border-t border-amber-200/60 mt-1">
+                                                    <b>Lưu ý điều phối:</b> {plan.general_note}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
+                                ) : (
+                                    plan?.end_of_day_summary && (
+                                        <div className="mt-4 p-3 rounded-lg bg-stone-50 border border-stone-300 text-xs text-stone-700">
+                                            <span className="font-bold text-stone-900">
+                                                📝 Nhận xét tổng kết cuối ngày:{' '}
+                                            </span>
+                                            {plan.end_of_day_summary}
+                                        </div>
+                                    )
                                 )}
 
                                 <div className="mt-4 pt-2 border-t border-stone-200 flex items-center justify-between text-[11px] text-stone-500">
@@ -622,26 +718,86 @@ export default function PlanExportCardModal({
                                                     <div className="w-7 h-7 rounded-lg bg-stone-800 text-white font-bold text-xs flex items-center justify-center shrink-0 mt-0.5">
                                                         {idx + 1}
                                                     </div>
-                                                    <div>
-                                                        <div className="text-sm font-bold text-stone-900">
-                                                            {item.content}
-                                                        </div>
-                                                        <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-stone-600">
-                                                            {item.location_note && (
-                                                                <span>📍 {item.location_note}</span>
-                                                            )}
-                                                            {Array.isArray(item.assignees) &&
-                                                                item.assignees.length > 0 && (
-                                                                    <span className="text-indigo-700 font-semibold">
-                                                                        👤{' '}
-                                                                        {item.assignees
-                                                                            .map(a => a.name)
-                                                                            .join(', ')}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center flex-wrap gap-2">
+                                                            <span className="text-sm font-bold text-stone-900">
+                                                                {item.content}
+                                                            </span>
+                                                            {/* Chip Phân Hệ Kho gắn ngay tên công việc */}
+                                                            {item.location_note && (() => {
+                                                                const sysBadge = getWarehouseBadge(item.location_note)
+                                                                return (
+                                                                    <span
+                                                                        className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs ${sysBadge.badgeClass}`}
+                                                                    >
+                                                                        <span>{sysBadge.icon}</span>
+                                                                        <span>{sysBadge.label}</span>
                                                                     </span>
-                                                                )}
+                                                                )
+                                                            })()}
+                                                            {item.category && (
+                                                                <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200 text-[10px] font-semibold">
+                                                                    {item.category}
+                                                                </span>
+                                                            )}
+                                                            {item.priority === 'urgent' && (
+                                                                <span className="px-1.5 py-0.5 text-[9px] font-bold bg-rose-100 text-rose-700 rounded-sm">
+                                                                    KHẨN
+                                                                </span>
+                                                            )}
                                                         </div>
+
+                                                        {/* Mô tả chi tiết công việc từ mẫu */}
+                                                        {item.description && (
+                                                            <div className="text-xs text-stone-500 mt-1 leading-relaxed">
+                                                                {item.description}
+                                                            </div>
+                                                        )}
+
+                                                        {/* Phân công nhân sự: Việc chính (dòng 1) & Hỗ trợ (dòng 2) */}
+                                                        {(() => {
+                                                            const primary = (item.assignees || []).filter(
+                                                                a => a.task_type !== 'secondary'
+                                                            )
+                                                            const support = (item.assignees || []).filter(
+                                                                a => a.task_type === 'secondary'
+                                                            )
+                                                            if (primary.length === 0 && support.length === 0) {
+                                                                return (
+                                                                    <div className="mt-1.5 text-xs text-stone-400 italic">
+                                                                        Toàn đội kho
+                                                                    </div>
+                                                                )
+                                                            }
+
+                                                            return (
+                                                                <div className="space-y-1 mt-2 text-xs">
+                                                                    {primary.length > 0 && (
+                                                                        <div className="flex items-center flex-wrap gap-1.5 text-stone-800">
+                                                                            <span className="font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px] inline-flex items-center gap-1">
+                                                                                ⭐ Việc chính:
+                                                                            </span>
+                                                                            <span className="font-semibold text-stone-900">
+                                                                                {primary.map(a => a.name).join(', ')}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                    {support.length > 0 && (
+                                                                        <div className="flex items-center flex-wrap gap-1.5 text-stone-800">
+                                                                            <span className="font-bold text-purple-800 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-md text-[10px] inline-flex items-center gap-1">
+                                                                                ➕ Hỗ trợ:
+                                                                            </span>
+                                                                            <span className="font-semibold text-stone-700">
+                                                                                {support.map(a => a.name).join(', ')}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })()}
+
                                                         {wlSummary && (
-                                                            <div className="mt-1 text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 inline-block">
+                                                            <div className="mt-2 text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 inline-block">
                                                                 📊 {wlSummary}
                                                             </div>
                                                         )}
@@ -673,6 +829,33 @@ export default function PlanExportCardModal({
                                         )
                                     })}
                                 </div>
+
+                                {/* Footer Note / Summary cho Kiểu Hiện Đại */}
+                                {cardMode === 'plan' ? (
+                                    <div className="mt-4 p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-xs text-amber-950 flex items-start gap-2.5 shadow-2xs">
+                                        <span className="text-amber-600 font-bold shrink-0 text-sm">📌</span>
+                                        <div className="space-y-0.5 leading-relaxed">
+                                            <span className="font-bold text-amber-900">* Ghi chú:</span>{' '}
+                                            <span className="font-semibold text-stone-800">
+                                                Kế hoạch có thể thay đổi theo công việc phát sinh.
+                                            </span>
+                                            {plan?.general_note && (
+                                                <div className="text-stone-700 pt-1 border-t border-amber-200/60 mt-1">
+                                                    <b>Lưu ý điều phối:</b> {plan.general_note}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                ) : (
+                                    plan?.end_of_day_summary && (
+                                        <div className="mt-4 p-3.5 rounded-2xl bg-stone-50 border border-stone-200 text-xs text-stone-700">
+                                            <span className="font-bold text-stone-900">
+                                                📝 Nhận xét tổng kết cuối ngày:{' '}
+                                            </span>
+                                            {plan.end_of_day_summary}
+                                        </div>
+                                    )
+                                )}
                             </div>
                         )}
                     </div>

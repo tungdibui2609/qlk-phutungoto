@@ -33,6 +33,9 @@ import {
     Scale,
     ExternalLink,
     Link2,
+    BookmarkPlus,
+    ArrowRight,
+    BookOpen,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
@@ -52,6 +55,9 @@ import {
     RATING_CONFIG,
     PRIORITY_CONFIG,
     DIFFICULTY_CONFIG,
+    WorkPlanTaskType,
+    TASK_TYPE_CONFIG,
+    getWarehouseBadge,
     formatVNDate,
     formatVNDateSlash,
     getDayOfWeekVN,
@@ -63,6 +69,9 @@ import EvaluateItemModal from './EvaluateItemModal'
 import WorkloadMetricsModal from './WorkloadMetricsModal'
 import PlanExportCardModal from './PlanExportCardModal'
 import WorkPlanAnalyticsTab from './WorkPlanAnalyticsTab'
+import TaskLibraryTab, { WorkTaskTemplate } from './TaskLibraryTab'
+import TaskLibraryPickerModal from './TaskLibraryPickerModal'
+import KpiRulesHandbookTab from './KpiRulesHandbookTab'
 import ImageLightbox from '@/components/tasks/ImageLightbox'
 
 function getLocalTodayStr(): string {
@@ -82,6 +91,9 @@ function addDaysStr(dateStr: string, offset: number): string {
     return `${y}-${m}-${day}`
 }
 
+// 5 Top-level Tabs: Thư Viện -> Giao Việc -> Đánh Giá -> Báo Cáo -> Quy Chế
+export type WorkPlanTopTab = 'library' | 'dispatch' | 'evaluate' | 'reports' | 'rules'
+
 export default function WorkPlansView() {
     const { currentSystem } = useSystem()
     const { profile } = useUser()
@@ -91,11 +103,9 @@ export default function WorkPlansView() {
     const tomorrowStr = useMemo(() => addDaysStr(todayStr, 1), [todayStr])
     const yesterdayStr = useMemo(() => addDaysStr(todayStr, -1), [todayStr])
 
-    // Navigation & Mode States
-    const [activeMainTab, setActiveMainTab] = useState<'daily' | 'analytics'>('daily')
+    const [activeTab, setActiveTab] = useState<WorkPlanTopTab>('dispatch')
     const [selectedDate, setSelectedDate] = useState<string>(todayStr)
     const [selectedShift, setSelectedShift] = useState<string>('Cả ngày')
-    const [workMode, setWorkMode] = useState<'plan' | 'evaluate'>('plan')
 
     // Data States
     const [plan, setPlan] = useState<WorkPlan | null>(null)
@@ -110,17 +120,25 @@ export default function WorkPlansView() {
     const [newContent, setNewContent] = useState<string>('')
     const [newCategory, setNewCategory] = useState<string>('Vận hành kho')
     const [newPriority, setNewPriority] = useState<WorkPlanPriority>('normal')
+    const [newTaskType, setNewTaskType] = useState<WorkPlanTaskType>('primary')
     const [newLocation, setNewLocation] = useState<string>('')
     const [newAssignees, setNewAssignees] = useState<WorkPlanAssignee[]>([])
     const [assigneeInput, setAssigneeInput] = useState<string>('')
     const [addingItem, setAddingItem] = useState<boolean>(false)
 
+    // Library Picker Modal State
+    const [showLibraryPicker, setShowLibraryPicker] = useState<boolean>(false)
+
     // Inline Editing States
     const [editingItemId, setEditingItemId] = useState<string | null>(null)
     const [editingContent, setEditingContent] = useState<string>('')
+    const [editingDescription, setEditingDescription] = useState<string>('')
     const [editingLocation, setEditingLocation] = useState<string>('')
     const [addingAssigneeForItemId, setAddingAssigneeForItemId] = useState<string | null>(null)
     const [inlineAssigneeText, setInlineAssigneeText] = useState<string>('')
+
+    // Templates Descriptions Map (để hiển thị mô tả công việc từ mẫu)
+    const [templatesMap, setTemplatesMap] = useState<Map<string, string>>(new Map())
 
     // Plan Header Notes State
     const [editingHeaderNote, setEditingHeaderNote] = useState<boolean>(false)
@@ -209,6 +227,29 @@ export default function WorkPlansView() {
         }
         loadAssignees()
     }, [systemCode, companyId])
+
+    // Load template descriptions map to display instructions from library
+    useEffect(() => {
+        const fetchTemplates = async () => {
+            try {
+                const { data } = await (supabase as any)
+                    .from('work_task_templates')
+                    .select('title, description')
+                if (Array.isArray(data)) {
+                    const map = new Map<string, string>()
+                    data.forEach((t: any) => {
+                        if (t.title && t.description) {
+                            map.set(t.title.trim().toLowerCase(), t.description)
+                        }
+                    })
+                    setTemplatesMap(map)
+                }
+            } catch (err) {
+                console.error('Fetch templates for descriptions error:', err)
+            }
+        }
+        fetchTemplates()
+    }, [])
 
     // 2. Load Plan & Items for Selected Date
     const loadPlanData = useCallback(async () => {
@@ -351,6 +392,7 @@ export default function WorkPlansView() {
                 }
             }
 
+            const matchedDesc = templatesMap.get(contentTrimmed.toLowerCase()) || null
             const { data, error } = await (supabase as any)
                 .from('work_plan_items')
                 .insert({
@@ -360,12 +402,16 @@ export default function WorkPlansView() {
                     plan_date: selectedDate,
                     sort_order: nextOrder,
                     content: contentTrimmed,
+                    description: matchedDesc,
                     category: newCategory,
                     priority: newPriority,
                     location_note: newLocation.trim() || null,
                     assignees: finalAssignees,
                     status: 'pending',
                     progress_percent: 0,
+                    workload_metrics: {
+                        task_type: newTaskType,
+                    },
                 })
                 .select('*')
                 .single()
@@ -376,12 +422,155 @@ export default function WorkPlansView() {
             setNewLocation('')
             setNewAssignees([])
             setAssigneeInput('')
+            setNewTaskType('primary')
             showToast(`Đã thêm mục #${nextOrder} vào kế hoạch`, 'success')
         } catch (err) {
             console.error('Add item error:', err)
             showToast('Không thể thêm công việc, vui lòng thử lại', 'error')
         } finally {
             setAddingItem(false)
+        }
+    }
+
+    // Toggle Task Type (Việc chính <-> Việc phụ / Hỗ trợ)
+    const handleToggleTaskType = async (item: WorkPlanItem) => {
+        const currentType: WorkPlanTaskType = item.workload_metrics?.task_type || 'primary'
+        const nextType: WorkPlanTaskType = currentType === 'primary' ? 'secondary' : 'primary'
+        try {
+            const nextWl: WorkloadMetrics = {
+                ...(item.workload_metrics || {}),
+                task_type: nextType,
+            }
+            const { data, error } = await (supabase as any)
+                .from('work_plan_items')
+                .update({ workload_metrics: nextWl, updated_at: new Date().toISOString() })
+                .eq('id', item.id)
+                .eq('system_code', systemCode)
+                .select('*')
+                .single()
+            if (error) throw error
+            setItems(prev => prev.map(i => (i.id === item.id ? data : i)))
+            showToast(
+                `Đã chuyển thành ${nextType === 'secondary' ? '➕ Việc phụ / Tăng cường (Mở trần điểm)' : '⭐ Việc chính trong ca (Chuẩn 100đ)'}!`,
+                'success'
+            )
+        } catch (err) {
+            console.error('Toggle task type error:', err)
+            showToast('Không thể đổi loại việc', 'error')
+        }
+    }
+
+    // Add Template from Library into active plan
+    const handleAddTemplateToPlan = async (template: WorkTaskTemplate) => {
+        try {
+            const activePlan = await ensurePlanRecord()
+            const startOrder =
+                items.length > 0 ? Math.max(...items.map(i => i.sort_order)) + 1 : 1
+
+            const { data, error } = await (supabase as any)
+                .from('work_plan_items')
+                .insert({
+                    plan_id: activePlan.id,
+                    system_code: systemCode,
+                    company_id: companyId,
+                    plan_date: selectedDate,
+                    sort_order: startOrder,
+                    content: template.title,
+                    description: template.description || null,
+                    category: template.category,
+                    priority: template.default_priority,
+                    location_note: template.target_system_name || null,
+                    assignees: [],
+                    status: 'pending',
+                    progress_percent: 0,
+                    workload_metrics: {
+                        task_type: 'primary',
+                    },
+                })
+                .select('*')
+                .single()
+
+            if (error) throw error
+            setItems(prev => [...prev, data])
+            setActiveTab('dispatch')
+            showToast(`Đã thêm việc "${template.title}" vào ca làm việc!`, 'success')
+        } catch (err) {
+            console.error('Error adding template to plan:', err)
+            showToast('Không thể thêm công việc từ thư viện', 'error')
+        }
+    }
+
+    // Add Multiple Templates from Library
+    const handleAddMultipleTemplatesToPlan = async (templatesToAdd: WorkTaskTemplate[]) => {
+        if (templatesToAdd.length === 0) return
+        try {
+            const activePlan = await ensurePlanRecord()
+            const startOrder =
+                items.length > 0 ? Math.max(...items.map(i => i.sort_order)) + 1 : 1
+
+            const rowsToInsert = templatesToAdd.map((t, idx) => ({
+                plan_id: activePlan.id,
+                system_code: systemCode,
+                company_id: companyId,
+                plan_date: selectedDate,
+                sort_order: startOrder + idx,
+                content: t.title,
+                description: t.description || null,
+                category: t.category,
+                priority: t.default_priority,
+                location_note: t.target_system_name || null,
+                assignees: [],
+                status: 'pending',
+                progress_percent: 0,
+                workload_metrics: {
+                    task_type: 'primary',
+                },
+            }))
+
+            const { data, error } = await (supabase as any)
+                .from('work_plan_items')
+                .insert(rowsToInsert)
+                .select('*')
+
+            if (error) throw error
+            setItems(prev => [...prev, ...(data || [])])
+            setActiveTab('dispatch')
+            showToast(`Đã thêm ${rowsToInsert.length} công việc từ thư viện vào ca!`, 'success')
+        } catch (err) {
+            console.error('Error adding templates to plan:', err)
+            showToast('Không thể thêm công việc từ thư viện', 'error')
+        }
+    }
+
+    // Save existing plan item to template library
+    const handleSaveItemAsTemplate = (item: WorkPlanItem) => {
+        const storageKey = `wms_task_library_all`
+        try {
+            let list: WorkTaskTemplate[] = []
+            const raw = localStorage.getItem(storageKey)
+            if (raw) {
+                list = JSON.parse(raw)
+            }
+            if (list.some(t => t.title.trim().toLowerCase() === item.content.trim().toLowerCase())) {
+                showToast(`Công việc này đã có sẵn trong Thư viện mẫu!`, 'info')
+                return
+            }
+            const newTpl: WorkTaskTemplate = {
+                id: `tpl_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+                title: item.content,
+                category: item.category || 'Vận hành kho',
+                default_priority: item.priority || 'normal',
+                target_system_code: currentSystem?.code || 'ALL',
+                target_system_name: currentSystem?.name || 'Dùng chung',
+                description: null,
+                created_at: new Date().toISOString(),
+            }
+            const updated = [newTpl, ...list]
+            localStorage.setItem(storageKey, JSON.stringify(updated))
+            showToast(`Đã lưu "${item.content}" vào Thư viện mẫu!`, 'success')
+        } catch (err) {
+            console.error('Save template error:', err)
+            showToast('Không thể lưu công việc mẫu', 'error')
         }
     }
 
@@ -617,6 +806,7 @@ export default function WorkPlansView() {
                 plan_date: nextDate,
                 sort_order: baseOrder + idx,
                 content: src.content,
+                description: src.description || null,
                 category: src.category,
                 priority: src.priority,
                 location_note: src.location_note,
@@ -676,14 +866,29 @@ export default function WorkPlansView() {
         await carryItemsToNextDay(incomplete)
     }
 
+    // Start Editing Item (Content, Description, Location)
+    const startEditingItem = (item: WorkPlanItem) => {
+        setEditingItemId(item.id)
+        setEditingContent(item.content)
+        setEditingLocation(item.location_note || '')
+        const currentDesc =
+            item.description !== null && item.description !== undefined
+                ? item.description
+                : templatesMap.get(item.content.trim().toLowerCase()) || ''
+        setEditingDescription(currentDesc)
+    }
+
     // Inline Edit Save
     const handleSaveInlineEdit = async (item: WorkPlanItem) => {
         if (!editingContent.trim()) return
         try {
+            // Cho phép chuỗi rỗng "" để người dùng có thể xóa hoàn toàn mô tả nếu muốn
+            const nextDesc = editingDescription.trim()
             const { data, error } = await (supabase as any)
                 .from('work_plan_items')
                 .update({
                     content: editingContent.trim(),
+                    description: nextDesc,
                     location_note: editingLocation.trim() || null,
                     updated_at: new Date().toISOString(),
                 })
@@ -694,7 +899,7 @@ export default function WorkPlansView() {
             if (error) throw error
             setItems(prev => prev.map(i => (i.id === item.id ? data : i)))
             setEditingItemId(null)
-            showToast('Đã cập nhật nội dung công việc', 'success')
+            showToast('Đã cập nhật mô tả & nội dung công việc hôm nay', 'success')
         } catch (err) {
             console.error('Update item error:', err)
             showToast('Không thể cập nhật', 'error')
@@ -746,6 +951,7 @@ export default function WorkPlansView() {
                 id: found?.id,
                 name: found?.name || trimmed,
                 type: found?.type || 'custom',
+                task_type: 'primary',
             },
         ]
 
@@ -764,6 +970,67 @@ export default function WorkPlansView() {
         } catch (err) {
             console.error('Update assignee error:', err)
         }
+    }
+
+    // Chuyển đổi Việc chính <-> Việc phụ cho riêng từng nhân sự được giao
+    const handleToggleAssigneeTaskType = async (
+        item: WorkPlanItem,
+        assigneeName: string
+    ) => {
+        const currentList = Array.isArray(item.assignees) ? item.assignees : []
+        let nextTaskType: WorkPlanTaskType = 'primary'
+        const nextList: WorkPlanAssignee[] = currentList.map(a => {
+            if (a.name === assigneeName) {
+                const cur = a.task_type || 'primary'
+                nextTaskType = cur === 'secondary' ? 'primary' : 'secondary'
+                return { ...a, task_type: nextTaskType }
+            }
+            return a
+        })
+
+        // Đồng bộ sang assignee_evaluations nếu đã có
+        const nextEvaluations = Array.isArray(item.assignee_evaluations)
+            ? item.assignee_evaluations.map(ev => {
+                  if (ev.assignee_name.trim().toLowerCase() === assigneeName.trim().toLowerCase()) {
+                      return { ...ev, task_type: nextTaskType }
+                  }
+                  return ev
+              })
+            : undefined
+
+        const updatePayload: any = { assignees: nextList }
+        if (nextEvaluations) {
+            updatePayload.assignee_evaluations = nextEvaluations
+        }
+
+        try {
+            const { data, error } = await (supabase as any)
+                .from('work_plan_items')
+                .update(updatePayload)
+                .eq('id', item.id)
+                .eq('system_code', systemCode)
+                .select('*')
+                .single()
+            if (error) throw error
+            setItems(prev => prev.map(i => (i.id === item.id ? data : i)))
+        } catch (err) {
+            console.error('Toggle assignee task type error:', err)
+        }
+    }
+
+    const handleToggleNewAssigneeTaskType = (assigneeName: string) => {
+        setNewAssignees(prev =>
+            prev.map(a => {
+                if (a.name === assigneeName) {
+                    const cur = a.task_type || 'primary'
+                    return {
+                        ...a,
+                        task_type: cur === 'secondary' ? 'primary' : 'secondary',
+                    }
+                }
+                return a
+            })
+        )
     }
 
     const handleRemoveAssigneeFromRow = async (
@@ -943,63 +1210,126 @@ export default function WorkPlansView() {
 
     return (
         <div className="p-3 sm:p-5 md:p-6 max-w-7xl mx-auto space-y-5">
-            {/* Top Page Header & Main Tab Switcher */}
+            {/* Top Page Header & 4-Step Workflow Navigation */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-4 sm:p-5 rounded-2xl border border-stone-200 shadow-xs">
                 <div className="flex items-start sm:items-center gap-3.5">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md shrink-0">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-indigo-800 text-white flex items-center justify-center shadow-md shrink-0">
                         <ClipboardCheck size={26} />
                     </div>
                     <div>
                         <div className="flex flex-wrap items-center gap-2">
                             <h1 className="text-lg sm:text-xl font-extrabold text-stone-900">
-                                Kế Hoạch Công Việc & Đánh Giá Cuối Ngày
+                                Quản Lý Công Việc & Đánh Giá KPI Nhân Sự
                             </h1>
                             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
                                 {systemName}
                             </span>
                         </div>
                         <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-                            Lập danh sách đầu việc hàng ngày, phân công nhân sự, đánh giá chất lượng cuối ngày & xuất phiếu Zalo/Excel
+                            Quy trình 5 trang chuyên biệt: 1. Thư viện mẫu → 2. Giao việc ca → 3. Đánh giá KPI → 4. Báo cáo & Xếp hạng → 5. Quy chế KPI
                         </p>
                     </div>
                 </div>
 
-                {/* Main Tabs: Daily Plan vs Analytics */}
-                <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 self-start lg:self-auto">
+                {/* 5 Top-level Tabs Bar */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-1.5 bg-stone-100 p-1.5 rounded-2xl border border-stone-200 self-stretch lg:self-auto">
                     <button
                         type="button"
-                        onClick={() => setActiveMainTab('daily')}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            activeMainTab === 'daily'
-                                ? 'bg-white text-indigo-700 shadow-xs'
-                                : 'text-stone-600 hover:text-stone-900'
+                        onClick={() => setActiveTab('library')}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                            activeTab === 'library'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-white/80 text-stone-700 hover:bg-white hover:text-indigo-600'
                         }`}
                     >
-                        <Calendar size={15} />
-                        Kế Hoạch & Đánh Giá Ngày
+                        <BookmarkPlus size={14} />
+                        <span>1. Thư Viện Mẫu</span>
                     </button>
+
                     <button
                         type="button"
-                        onClick={() => setActiveMainTab('analytics')}
-                        className={`px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
-                            activeMainTab === 'analytics'
-                                ? 'bg-white text-indigo-700 shadow-xs'
-                                : 'text-stone-600 hover:text-stone-900'
+                        onClick={() => setActiveTab('dispatch')}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                            activeTab === 'dispatch'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-white/80 text-stone-700 hover:bg-white hover:text-indigo-600'
                         }`}
                     >
-                        <BarChart3 size={15} />
-                        Thống Kê Hiệu Suất Nhân Viên
+                        <Calendar size={14} />
+                        <span>2. Giao Việc Ca</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('evaluate')}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                            activeTab === 'evaluate'
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'bg-white/80 text-stone-700 hover:bg-white hover:text-emerald-700'
+                        }`}
+                    >
+                        <Star size={14} />
+                        <span>3. Đánh Giá KPI</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('reports')}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                            activeTab === 'reports'
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : 'bg-white/80 text-stone-700 hover:bg-white hover:text-purple-700'
+                        }`}
+                    >
+                        <BarChart3 size={14} />
+                        <span>4. Báo Cáo Xếp Hạng</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('rules')}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${
+                            activeTab === 'rules'
+                                ? 'bg-amber-600 text-white shadow-xs'
+                                : 'bg-white/80 text-stone-700 hover:bg-white hover:text-amber-700'
+                        }`}
+                        title="Xem cẩm nang quy chế chấm điểm, thưởng phạt & xếp loại KPI"
+                    >
+                        <BookOpen size={14} />
+                        <span>5. Quy Chế KPI</span>
                     </button>
                 </div>
             </div>
 
-            {activeMainTab === 'analytics' ? (
+            {/* TAB 1: THƯ VIỆN CÔNG VIỆC MẪU */}
+            {activeTab === 'library' && (
+                <TaskLibraryTab
+                    systemCode={systemCode}
+                    systemName={systemName}
+                    onAddTemplateToPlan={handleAddTemplateToPlan}
+                    onAddMultipleTemplatesToPlan={handleAddMultipleTemplatesToPlan}
+                />
+            )}
+
+            {/* TAB 4: BÁO CÁO & XẾP HẠNG KPI */}
+            {activeTab === 'reports' && (
                 <WorkPlanAnalyticsTab
                     systemCode={systemCode}
                     systemName={systemName}
                     companyId={companyId}
                 />
-            ) : (
+            )}
+
+            {/* TAB 5: CẨM NANG & BỘ QUY TẮC CHẤM ĐIỂM KPI */}
+            {activeTab === 'rules' && (
+                <KpiRulesHandbookTab
+                    systemName={systemName}
+                    onNavigateTab={tab => setActiveTab(tab)}
+                />
+            )}
+
+            {/* TAB 2 & 3: KẾ HOẠCH GIAO VIỆC HOẶC NGHIỆM THU ĐÁNH GIÁ */}
+            {(activeTab === 'dispatch' || activeTab === 'evaluate') && (
                 <>
                     {/* Date Navigator & Shift Strip */}
                     <div className="bg-white rounded-2xl border border-stone-200 p-3.5 sm:p-4 shadow-xs space-y-3">
@@ -1079,7 +1409,7 @@ export default function WorkPlansView() {
                                 </div>
                             </div>
 
-                            {/* Shift Selector & Mode Switcher */}
+                            {/* Shift Selector & Workflow Quick Navigation */}
                             <div className="flex flex-wrap items-center gap-2">
                                 <select
                                     value={selectedShift}
@@ -1093,31 +1423,26 @@ export default function WorkPlansView() {
                                     ))}
                                 </select>
 
-                                {/* Mode Toggle: Lập Kế Hoạch vs Đánh Giá Cuối Ngày */}
-                                <div className="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+                                {activeTab === 'dispatch' ? (
                                     <button
                                         type="button"
-                                        onClick={() => setWorkMode('plan')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                            workMode === 'plan'
-                                                ? 'bg-indigo-600 text-white shadow-xs'
-                                                : 'text-stone-600 hover:text-stone-900'
-                                        }`}
+                                        onClick={() => setActiveTab('evaluate')}
+                                        className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-2xs"
+                                        title="Chuyển sang bước nghiệm thu và chấm điểm cuối ca"
                                     >
-                                        📝 1. Lập Kế Hoạch & Giao Việc
+                                        <span>Sang Bước 3: Đánh giá KPI</span>
+                                        <ArrowRight size={13} />
                                     </button>
+                                ) : (
                                     <button
                                         type="button"
-                                        onClick={() => setWorkMode('evaluate')}
-                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                                            workMode === 'evaluate'
-                                                ? 'bg-emerald-600 text-white shadow-xs'
-                                                : 'text-stone-600 hover:text-stone-900'
-                                        }`}
+                                        onClick={() => setActiveTab('dispatch')}
+                                        className="px-3.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-2xs"
+                                        title="Quay lại phân công và giao việc"
                                     >
-                                        ⭐ 2. Đánh Giá Cuối Ngày
+                                        <span>← Quay lại Giao việc</span>
                                     </button>
-                                </div>
+                                )}
                             </div>
                         </div>
 
@@ -1236,16 +1561,28 @@ export default function WorkPlansView() {
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowBulkModal(true)}
-                                    className="px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
-                                >
-                                    <ClipboardPaste size={15} />
-                                    Nhập nhanh nhiều dòng (Zalo/Excel)
-                                </button>
+                                {activeTab === 'dispatch' && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowLibraryPicker(true)}
+                                            className="px-3.5 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-black shadow-xs flex items-center gap-1.5 transition-all"
+                                        >
+                                            <BookmarkPlus size={15} />
+                                            📋 Chọn từ Thư viện mẫu
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowBulkModal(true)}
+                                            className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
+                                        >
+                                            <ClipboardPaste size={15} />
+                                            Nhập nhanh nhiều dòng
+                                        </button>
+                                    </>
+                                )}
 
-                                {items.length > 0 && (
+                                {activeTab === 'evaluate' && items.length > 0 && (
                                     <>
                                         <button
                                             type="button"
@@ -1264,163 +1601,193 @@ export default function WorkPlansView() {
                                             title="Chuyển các công việc chưa xong sang ngày kế tiếp"
                                         >
                                             <ArrowRightCircle size={15} />
-                                            Chuyển việc tồn sang ngày mai
-                                        </button>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setExportDefaultMode(
-                                                    workMode === 'evaluate'
-                                                        ? 'evaluation'
-                                                        : 'plan'
-                                                )
-                                                setShowExportModal(true)
-                                            }}
-                                            className="px-3.5 py-2 rounded-xl bg-white text-stone-900 hover:bg-stone-100 text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all"
-                                        >
-                                            <FileImage size={15} className="text-indigo-600" />
-                                            Xuất Ảnh Phiếu / Gửi Zalo
+                                            Chuyển việc tồn sang mai
                                         </button>
                                     </>
+                                )}
+
+                                {items.length > 0 && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setExportDefaultMode(
+                                                activeTab === 'evaluate'
+                                                    ? 'evaluation'
+                                                    : 'plan'
+                                            )
+                                            setShowExportModal(true)
+                                        }}
+                                        className="px-3.5 py-2 rounded-xl bg-white text-stone-900 hover:bg-stone-100 text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all"
+                                    >
+                                        <FileImage size={15} className="text-indigo-600" />
+                                        Xuất Phiếu Zalo
+                                    </button>
                                 )}
                             </div>
                         </div>
 
-                        {/* Quick Add Single Work Item Bar */}
-                        <form
-                            onSubmit={handleAddSingleItem}
-                            className="p-4 bg-stone-50 border-b border-stone-200 space-y-3"
-                        >
-                            <div className="flex flex-col md:flex-row gap-2.5">
-                                <div className="flex items-center gap-2 flex-1">
-                                    <span className="w-8 h-9 rounded-xl bg-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
-                                        #{items.length + 1}
-                                    </span>
-                                    <input
-                                        type="text"
-                                        value={newContent}
-                                        onChange={e => setNewContent(e.target.value)}
-                                        placeholder="Nhập nội dung công việc mới (VD: Hạ hàng, đưa hàng ra đai hàng C hạt chuẩn bị xuất cont)..."
-                                        className="flex-1 rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-medium text-stone-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-hidden"
-                                    />
+                        {/* MODE 1: Giao việc mới (Chỉ hiện khi ở Tab 2: Giao Việc Ca) */}
+                        {activeTab === 'dispatch' && (
+                            <form
+                                onSubmit={handleAddSingleItem}
+                                className="p-4 bg-stone-50 border-b border-stone-200 space-y-3"
+                            >
+                                <div className="flex flex-col md:flex-row gap-2.5">
+                                    <div className="flex items-center gap-2 flex-1">
+                                        <span className="w-8 h-9 rounded-xl bg-indigo-100 text-indigo-700 font-black text-xs flex items-center justify-center shrink-0">
+                                            #{items.length + 1}
+                                        </span>
+                                        <input
+                                            type="text"
+                                            value={newContent}
+                                            onChange={e => setNewContent(e.target.value)}
+                                            placeholder="Nhập nội dung công việc mới (VD: Hạ hàng, đưa hàng ra đai hàng C hạt chuẩn bị xuất cont)..."
+                                            className="flex-1 rounded-xl border border-stone-300 bg-white px-3.5 py-2 text-sm font-medium text-stone-800 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 outline-hidden"
+                                        />
+                                    </div>
+
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <select
+                                            value={newCategory}
+                                            onChange={e => setNewCategory(e.target.value)}
+                                            className="rounded-xl border border-stone-300 bg-white px-2.5 py-2 text-xs font-semibold text-stone-700 outline-hidden"
+                                        >
+                                            {WORK_CATEGORIES.map(c => (
+                                                <option key={c} value={c}>
+                                                    {c}
+                                                </option>
+                                            ))}
+                                        </select>
+
+                                        <select
+                                            value={newPriority}
+                                            onChange={e =>
+                                                setNewPriority(e.target.value as WorkPlanPriority)
+                                            }
+                                            className="rounded-xl border border-stone-300 bg-white px-2.5 py-2 text-xs font-semibold text-stone-700 outline-hidden"
+                                        >
+                                            <option value="normal">Ưu tiên: Thường</option>
+                                            <option value="important">Ưu tiên: Quan trọng</option>
+                                            <option value="urgent">Ưu tiên: Khẩn cấp</option>
+                                        </select>
+
+                                        <button
+                                            type="submit"
+                                            disabled={!newContent.trim() || addingItem}
+                                            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
+                                        >
+                                            <Plus size={16} />
+                                            Thêm việc
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div className="flex flex-wrap items-center gap-2">
-                                    <select
-                                        value={newCategory}
-                                        onChange={e => setNewCategory(e.target.value)}
-                                        className="rounded-xl border border-stone-300 bg-white px-2.5 py-2 text-xs font-semibold text-stone-700 outline-hidden"
-                                    >
-                                        {WORK_CATEGORIES.map(c => (
-                                            <option key={c} value={c}>
-                                                {c}
+                                {/* Quick Assignee Selector for New Item */}
+                                <div className="flex flex-wrap items-center gap-2 pl-10">
+                                    <span className="text-xs font-semibold text-stone-500 flex items-center gap-1">
+                                        <Users size={13} className="text-indigo-600" />
+                                        Giao cho:
+                                    </span>
+
+                                    {newAssignees.map(a => {
+                                        const isSec = a.task_type === 'secondary'
+                                        return (
+                                            <span
+                                                key={a.name}
+                                                className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                            >
+                                                <span>{a.name}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleNewAssigneeTaskType(a.name)}
+                                                    className={`px-1.5 py-0.2 rounded text-[10px] font-black border transition-colors cursor-pointer ${
+                                                        isSec
+                                                            ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                                                            : 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
+                                                    }`}
+                                                    title="Bấm để đổi giữa ⭐ Việc chính (chuẩn 100đ) và ➕ Việc phụ (cộng điểm mở trần lên 150đ) cho người này"
+                                                >
+                                                    {isSec ? '➕ Việc phụ (+đ)' : '⭐ Việc chính'}
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        setNewAssignees(prev =>
+                                                            prev.filter(x => x.name !== a.name)
+                                                        )
+                                                    }
+                                                    className="hover:text-rose-600"
+                                                >
+                                                    <X size={12} />
+                                                </button>
+                                            </span>
+                                        )
+                                    })}
+
+                                    <input
+                                        type="text"
+                                        list="work-plan-assignees-datalist"
+                                        value={assigneeInput}
+                                        onChange={e => setAssigneeInput(e.target.value)}
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                const val = assigneeInput.trim()
+                                                if (!val) return
+                                                const found = availableAssignees.find(
+                                                    a => a.name.toLowerCase() === val.toLowerCase()
+                                                )
+                                                if (
+                                                    !newAssignees.some(
+                                                        a =>
+                                                            a.name.toLowerCase() ===
+                                                            val.toLowerCase()
+                                                    )
+                                                ) {
+                                                    setNewAssignees(prev => [
+                                                        ...prev,
+                                                        {
+                                                            id: found?.id,
+                                                            name: found?.name || val,
+                                                            type: found?.type || 'custom',
+                                                            task_type: 'primary',
+                                                        },
+                                                    ])
+                                                }
+                                                setAssigneeInput('')
+                                            }
+                                        }}
+                                        placeholder="+ Chọn hoặc gõ tên nhân viên / đội (Enter)..."
+                                        className="px-2.5 py-1 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-700 w-64 outline-hidden focus:border-indigo-500"
+                                    />
+                                    <datalist id="work-plan-assignees-datalist">
+                                        {availableAssignees.map((a, i) => (
+                                            <option key={i} value={a.name}>
+                                                {a.type === 'team' ? 'Tổ / Đội' : 'Nhân viên'}
                                             </option>
                                         ))}
-                                    </select>
-
-                                    <select
-                                        value={newPriority}
-                                        onChange={e =>
-                                            setNewPriority(e.target.value as WorkPlanPriority)
-                                        }
-                                        className="rounded-xl border border-stone-300 bg-white px-2.5 py-2 text-xs font-semibold text-stone-700 outline-hidden"
-                                    >
-                                        <option value="normal">Ưu tiên: Thường</option>
-                                        <option value="important">Ưu tiên: Quan trọng</option>
-                                        <option value="urgent">Ưu tiên: Khẩn cấp</option>
-                                    </select>
-
-                                    <input
-                                        type="text"
-                                        value={newLocation}
-                                        onChange={e => setNewLocation(e.target.value)}
-                                        placeholder="Khu vực (VD: Kho 1)"
-                                        className="w-36 rounded-xl border border-stone-300 bg-white px-3 py-2 text-xs font-medium text-stone-800 outline-hidden focus:border-indigo-500"
-                                    />
-
-                                    <button
-                                        type="submit"
-                                        disabled={!newContent.trim() || addingItem}
-                                        className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all"
-                                    >
-                                        <Plus size={16} />
-                                        Thêm việc
-                                    </button>
+                                    </datalist>
                                 </div>
+                            </form>
+                        )}
+
+                        {/* MODE 2: Banner Nghiệm thu (Chỉ hiện khi ở Tab 3: Đánh Giá KPI) */}
+                        {activeTab === 'evaluate' && (
+                            <div className="p-3.5 bg-emerald-50/70 border-b border-emerald-100 flex flex-wrap items-center justify-between gap-2 text-xs">
+                                <div className="flex items-center gap-2 text-emerald-950 font-bold">
+                                    <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse" />
+                                    <span>Chế độ Nghiệm Thu Cuối Ca: Chấm sao chất lượng, tiến độ %, chia sản lượng & ghi nhận lỗi vi phạm xét KPI</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('reports')}
+                                    className="text-xs font-black text-emerald-700 hover:text-emerald-900 underline flex items-center gap-1"
+                                >
+                                    <span>Xem Bảng Xếp Hạng KPI</span>
+                                    <ArrowRight size={12} />
+                                </button>
                             </div>
-
-                            {/* Quick Assignee Selector for New Item */}
-                            <div className="flex flex-wrap items-center gap-2 pl-10">
-                                <span className="text-xs font-semibold text-stone-500 flex items-center gap-1">
-                                    <Users size={13} className="text-indigo-600" />
-                                    Giao cho:
-                                </span>
-
-                                {newAssignees.map(a => (
-                                    <span
-                                        key={a.name}
-                                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-200"
-                                    >
-                                        {a.name}
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                setNewAssignees(prev =>
-                                                    prev.filter(x => x.name !== a.name)
-                                                )
-                                            }
-                                            className="hover:text-rose-600"
-                                        >
-                                            <X size={12} />
-                                        </button>
-                                    </span>
-                                ))}
-
-                                <input
-                                    type="text"
-                                    list="work-plan-assignees-datalist"
-                                    value={assigneeInput}
-                                    onChange={e => setAssigneeInput(e.target.value)}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            const val = assigneeInput.trim()
-                                            if (!val) return
-                                            const found = availableAssignees.find(
-                                                a => a.name.toLowerCase() === val.toLowerCase()
-                                            )
-                                            if (
-                                                !newAssignees.some(
-                                                    a =>
-                                                        a.name.toLowerCase() ===
-                                                        val.toLowerCase()
-                                                )
-                                            ) {
-                                                setNewAssignees(prev => [
-                                                    ...prev,
-                                                    {
-                                                        id: found?.id,
-                                                        name: found?.name || val,
-                                                        type: found?.type || 'custom',
-                                                    },
-                                                ])
-                                            }
-                                            setAssigneeInput('')
-                                        }
-                                    }}
-                                    placeholder="+ Chọn hoặc gõ tên nhân viên / đội (Enter)..."
-                                    className="px-2.5 py-1 rounded-lg border border-dashed border-stone-300 bg-white text-xs text-stone-700 w-64 outline-hidden focus:border-indigo-500"
-                                />
-                                <datalist id="work-plan-assignees-datalist">
-                                    {availableAssignees.map((a, i) => (
-                                        <option key={i} value={a.name}>
-                                            {a.type === 'team' ? 'Tổ / Đội' : 'Nhân viên'}
-                                        </option>
-                                    ))}
-                                </datalist>
-                            </div>
-                        </form>
+                        )}
 
                         {/* Work Items List (Spreadsheet-inspired Interactive Table) */}
                         {loading ? (
@@ -1464,527 +1831,583 @@ export default function WorkPlansView() {
                                     return (
                                         <div
                                             key={item.id}
-                                            className={`p-3.5 sm:px-5 sm:py-4 transition-colors flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
-                                                item.status === 'completed'
-                                                    ? 'bg-emerald-50/20 hover:bg-emerald-50/40'
-                                                    : item.status === 'uncompleted'
-                                                    ? 'bg-rose-50/20 hover:bg-rose-50/40'
+                                            className={`p-3.5 sm:px-5 sm:py-4 transition-colors ${
+                                                activeTab === 'evaluate'
+                                                    ? item.status === 'completed'
+                                                        ? 'bg-emerald-50/25 hover:bg-emerald-50/40'
+                                                        : item.status === 'uncompleted'
+                                                        ? 'bg-rose-50/25 hover:bg-rose-50/40'
+                                                        : 'hover:bg-stone-50/80'
                                                     : 'hover:bg-stone-50/80'
                                             }`}
                                         >
-                                            {/* Left: STT + Content + Metadata + Assignees */}
-                                            <div className="flex items-start gap-3.5 flex-1 min-w-0">
-                                                {/* STT Badge + Reorder Arrows */}
-                                                <div className="flex flex-col items-center gap-1 shrink-0">
-                                                    <div
-                                                        className={`w-8 h-8 rounded-xl font-black text-sm flex items-center justify-center border ${
-                                                            item.status === 'completed'
-                                                                ? 'bg-emerald-600 text-white border-emerald-600'
-                                                                : 'bg-stone-900 text-white border-stone-900'
-                                                        }`}
-                                                    >
-                                                        {idx + 1}.
+                                            <div className="flex flex-col lg:flex-row items-stretch gap-4 w-full">
+                                                {/* NỬA BÊN TRÁI: STT + Tên việc + Mô tả + Người giao + (Dưới cùng: Đánh giá & Icon thao tác) */}
+                                                <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                                                    {/* STT Badge + Reorder Arrows */}
+                                                    <div className="flex flex-col items-center gap-1 shrink-0 pt-0.5">
+                                                        <div
+                                                            className={`w-8 h-8 rounded-xl font-black text-sm flex items-center justify-center border ${
+                                                                activeTab === 'evaluate' && item.status === 'completed'
+                                                                    ? 'bg-emerald-600 text-white border-emerald-600'
+                                                                    : 'bg-stone-900 text-white border-stone-900'
+                                                            }`}
+                                                        >
+                                                            {idx + 1}.
+                                                        </div>
+                                                        <div className="flex items-center gap-0.5">
+                                                            <button
+                                                                type="button"
+                                                                disabled={idx === 0}
+                                                                onClick={() => handleMoveItem(idx, -1)}
+                                                                className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-25"
+                                                                title="Chuyển lên"
+                                                            >
+                                                                <ArrowUp size={12} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                disabled={idx === items.length - 1}
+                                                                onClick={() => handleMoveItem(idx, 1)}
+                                                                className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-25"
+                                                                title="Chuyển xuống"
+                                                            >
+                                                                <ArrowDown size={12} />
+                                                            </button>
+                                                        </div>
                                                     </div>
-                                                    <div className="flex items-center gap-0.5">
-                                                        <button
-                                                            type="button"
-                                                            disabled={idx === 0}
-                                                            onClick={() => handleMoveItem(idx, -1)}
-                                                            className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-25"
-                                                            title="Chuyển lên"
-                                                        >
-                                                            <ArrowUp size={12} />
-                                                        </button>
-                                                        <button
-                                                            type="button"
-                                                            disabled={idx === items.length - 1}
-                                                            onClick={() => handleMoveItem(idx, 1)}
-                                                            className="p-0.5 text-stone-400 hover:text-stone-700 disabled:opacity-25"
-                                                            title="Chuyển xuống"
-                                                        >
-                                                            <ArrowDown size={12} />
-                                                        </button>
+
+                                                    {/* Content & Details */}
+                                                    <div className="flex-1 min-w-0 flex flex-col justify-between space-y-2.5">
+                                                        <div className="space-y-2">
+                                                            {isEditing ? (
+                                                                <div className="space-y-2">
+                                                                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                                                                        <input
+                                                                            type="text"
+                                                                            value={editingContent}
+                                                                            onChange={e =>
+                                                                                setEditingContent(
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
+                                                                            placeholder="Tên công việc..."
+                                                                            className="flex-1 px-3 py-1.5 rounded-lg border border-indigo-400 text-sm font-semibold text-stone-900 outline-hidden"
+                                                                            autoFocus
+                                                                        />
+                                                                        <input
+                                                                            type="text"
+                                                                            value={editingLocation}
+                                                                            onChange={e =>
+                                                                                setEditingLocation(
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
+                                                                            placeholder="Khu vực..."
+                                                                            className="w-36 px-2.5 py-1.5 rounded-lg border border-stone-300 text-xs text-stone-700 outline-hidden"
+                                                                        />
+                                                                        <div className="flex items-center gap-1">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    handleSaveInlineEdit(
+                                                                                        item
+                                                                                    )
+                                                                                }
+                                                                                className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer transition-colors shadow-2xs"
+                                                                            >
+                                                                                Lưu
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    setEditingItemId(null)
+                                                                                }
+                                                                                className="px-2.5 py-1.5 rounded-lg bg-stone-200 hover:bg-stone-300 text-stone-700 text-xs font-bold cursor-pointer transition-colors"
+                                                                            >
+                                                                                Hủy
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="space-y-1">
+                                                                        <textarea
+                                                                            rows={2}
+                                                                            value={editingDescription}
+                                                                            onChange={e =>
+                                                                                setEditingDescription(
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
+                                                                            placeholder="Mô tả công việc thực tế hôm nay (nhập, sửa hoặc xóa lại theo ý bạn)..."
+                                                                            className="w-full px-3 py-1.5 rounded-lg border border-indigo-300 focus:border-indigo-500 text-xs text-stone-800 outline-hidden bg-white"
+                                                                        />
+                                                                        <div className="text-[10px] text-stone-400 italic flex items-center justify-between">
+                                                                            <span>💡 Sửa mô tả tại đây chỉ áp dụng cho ca hôm nay, không làm thay đổi mẫu gốc trong thư viện.</span>
+                                                                            {editingDescription && (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => setEditingDescription('')}
+                                                                                    className="text-rose-500 hover:text-rose-700 font-medium hover:underline cursor-pointer"
+                                                                                >
+                                                                                    Xóa mô tả
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <div className="flex items-start justify-between gap-2">
+                                                                        <div className="flex items-center flex-wrap gap-2">
+                                                                            <span
+                                                                                onDoubleClick={() => startEditingItem(item)}
+                                                                                className={`text-sm sm:text-base font-bold leading-snug cursor-pointer ${
+                                                                                    item.status === 'cancelled'
+                                                                                        ? 'line-through text-stone-400'
+                                                                                        : 'text-stone-900 hover:text-indigo-900'
+                                                                                }`}
+                                                                                title="Nhấp đúp để sửa nhanh nội dung & mô tả"
+                                                                            >
+                                                                                {item.content}
+                                                                            </span>
+
+                                                                            {/* Chip Phân Hệ Kho hiển thị ngay liền sau tiêu đề công việc */}
+                                                                            {item.location_note && (() => {
+                                                                                const sysBadge = getWarehouseBadge(item.location_note)
+                                                                                return (
+                                                                                    <span
+                                                                                        className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold inline-flex items-center gap-1 shadow-2xs ${sysBadge.badgeClass}`}
+                                                                                        title={`Phân hệ kho: ${item.location_note}`}
+                                                                                    >
+                                                                                        <span>{sysBadge.icon}</span>
+                                                                                        <span>{sysBadge.label}</span>
+                                                                                    </span>
+                                                                                )
+                                                                            })()}
+
+                                                                            {/* Danh mục công việc (Vận hành kho, Bảo trì, v.v.) hiển thị ngay trên hàng tên công việc */}
+                                                                            {item.category && (
+                                                                                <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200 text-[11px] font-semibold">
+                                                                                    {item.category}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* Mô tả công việc từ mẫu hoặc do người dùng tạo (Cho phép click để sửa nhanh cho ngày hôm nay) */}
+                                                                    {(() => {
+                                                                        const desc =
+                                                                            item.description !== null && item.description !== undefined
+                                                                                ? item.description
+                                                                                : templatesMap.get(item.content.trim().toLowerCase()) || ''
+
+                                                                        if (desc) {
+                                                                            return (
+                                                                                <div
+                                                                                    onClick={() => startEditingItem(item)}
+                                                                                    className="group/desc inline-flex items-center gap-1.5 cursor-pointer rounded-md -mx-1 px-1 py-0.5 hover:bg-indigo-50/80 border border-transparent hover:border-indigo-200 transition-all text-xs text-stone-600 leading-relaxed"
+                                                                                    title="Nhấp để sửa hoặc xóa mô tả cho ca hôm nay (không ảnh hưởng mẫu gốc)"
+                                                                                >
+                                                                                    <p className="line-clamp-2 group-hover/desc:text-indigo-950">
+                                                                                        {desc}
+                                                                                    </p>
+                                                                                    <span className="opacity-0 group-hover/desc:opacity-100 text-[10px] text-indigo-600 font-bold flex items-center gap-0.5 shrink-0 transition-opacity">
+                                                                                        <Edit3 size={11} /> Sửa mô tả
+                                                                                    </span>
+                                                                                </div>
+                                                                            )
+                                                                        }
+
+                                                                        return (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => startEditingItem(item)}
+                                                                                className="text-[11px] text-stone-400 hover:text-indigo-600 font-medium flex items-center gap-1 hover:underline cursor-pointer pl-0.5 pt-0.5"
+                                                                                title="Nhấp để thêm mô tả hướng dẫn riêng cho ca hôm nay"
+                                                                            >
+                                                                                <span className="text-xs">➕</span> Thêm mô tả cho ca hôm nay...
+                                                                            </button>
+                                                                        )
+                                                                    })()}
+                                                                </>
+                                                            )}
+
+                                                            {/* Badges Row: Priority, Assignees (Người giao) */}
+                                                            <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                                                                {item.priority !== 'normal' && (
+                                                                    <span
+                                                                        className={`px-2 py-0.5 rounded-md border text-[11px] font-bold ${pri.bgClass} ${pri.textClass} ${pri.borderClass}`}
+                                                                    >
+                                                                        {pri.label}
+                                                                    </span>
+                                                                )}
+
+                                                                {/* Assignee Chips with Individual Task Type (Chính vs Phụ) */}
+                                                                {Array.isArray(item.assignees) &&
+                                                                    item.assignees.map(a => {
+                                                                        const isSec = a.task_type === 'secondary'
+                                                                        return (
+                                                                          <span
+                                                                            key={a.name}
+                                                                            className="inline-flex items-center gap-1.5 pl-2.5 pr-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-900 border border-indigo-200 text-xs font-bold shadow-2xs"
+                                                                          >
+                                                                            <span>👤 {a.name}</span>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => handleToggleAssigneeTaskType(item, a.name)}
+                                                                                className={`px-1.5 py-0.2 rounded text-[10px] font-black border transition-all cursor-pointer ${
+                                                                                    isSec
+                                                                                        ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
+                                                                                        : 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
+                                                                                }`}
+                                                                                title="Bấm để chuyển đổi giữa ⭐ Việc chính (100đ chuẩn) và ➕ Việc phụ (cộng điểm mở trần lên 150đ) cho nhân sự này"
+                                                                            >
+                                                                                {isSec ? '➕ Việc phụ (+đ)' : '⭐ Việc chính'}
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    handleRemoveAssigneeFromRow(
+                                                                                        item,
+                                                                                        a.name
+                                                                                    )
+                                                                                }
+                                                                                className="hover:text-rose-600 ml-0.5 cursor-pointer"
+                                                                                title="Gỡ người này"
+                                                                            >
+                                                                                <X size={11} />
+                                                                            </button>
+                                                                          </span>
+                                                                        )
+                                                                    })}
+
+                                                                {/* Inline Add Assignee Button/Input */}
+                                                                {addingAssigneeForItemId === item.id ? (
+                                                                    <div className="inline-flex items-center gap-1">
+                                                                        <input
+                                                                            type="text"
+                                                                            list="work-plan-assignees-datalist"
+                                                                            value={inlineAssigneeText}
+                                                                            onChange={e =>
+                                                                                setInlineAssigneeText(
+                                                                                    e.target.value
+                                                                                )
+                                                                            }
+                                                                            onKeyDown={e => {
+                                                                                if (e.key === 'Enter') {
+                                                                                    e.preventDefault()
+                                                                                    handleAddAssigneeToRow(
+                                                                                        item,
+                                                                                        inlineAssigneeText
+                                                                                    )
+                                                                                } else if (
+                                                                                    e.key === 'Escape'
+                                                                                ) {
+                                                                                    setAddingAssigneeForItemId(
+                                                                                        null
+                                                                                    )
+                                                                                }
+                                                                            }}
+                                                                            placeholder="Tên NV/Đội (Enter)"
+                                                                            className="px-2 py-0.5 rounded-lg border border-indigo-400 text-xs w-36 outline-hidden"
+                                                                            autoFocus
+                                                                        />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                handleAddAssigneeToRow(
+                                                                                    item,
+                                                                                    inlineAssigneeText
+                                                                                )
+                                                                            }
+                                                                            className="p-1 rounded-md bg-indigo-600 text-white"
+                                                                        >
+                                                                            <Check size={11} />
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setAddingAssigneeForItemId(
+                                                                                item.id
+                                                                            )
+                                                                            setInlineAssigneeText('')
+                                                                        }}
+                                                                        className="px-2 py-0.5 rounded-full border border-dashed border-stone-300 hover:border-indigo-400 text-[11px] font-semibold text-stone-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"
+                                                                    >
+                                                                        <UserPlus size={11} />
+                                                                        Giao người
+                                                                    </button>
+                                                                )}
+
+                                                                {item.carried_to_date && (
+                                                                    <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[11px] font-bold">
+                                                                        ↪ Đã chuyển sang{' '}
+                                                                        {formatVNDate(item.carried_to_date)}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Evaluation Note & Proof Images */}
+                                                            {(item.evaluation_note ||
+                                                                (Array.isArray(item.completion_images) &&
+                                                                    item.completion_images.length > 0)) && (
+                                                                <div className="mt-2 p-2.5 rounded-xl bg-white border border-stone-200/90 space-y-2">
+                                                                    {item.evaluation_note && (
+                                                                        <div className="text-xs text-stone-700 flex items-start gap-1.5">
+                                                                            <MessageSquare
+                                                                                size={13}
+                                                                                className="text-emerald-600 shrink-0 mt-0.5"
+                                                                            />
+                                                                            <span>
+                                                                                <b className="text-stone-900">
+                                                                                    Đánh giá cuối ngày:{' '}
+                                                                                </b>
+                                                                                {item.evaluation_note}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {Array.isArray(item.completion_images) &&
+                                                                        item.completion_images.length > 0 && (
+                                                                            <div className="flex flex-wrap items-center gap-2">
+                                                                                {item.completion_images.map(
+                                                                                    (imgUrl, imgIdx) => (
+                                                                                        <button
+                                                                                            key={imgIdx}
+                                                                                            type="button"
+                                                                                            onClick={() => {
+                                                                                                setLightboxImages(
+                                                                                                    item.completion_images
+                                                                                                )
+                                                                                                setLightboxIndex(imgIdx)
+                                                                                                setShowLightbox(true)
+                                                                                            }}
+                                                                                            className="w-12 h-12 rounded-lg overflow-hidden border border-stone-200 hover:ring-2 hover:ring-emerald-500 transition-all"
+                                                                                        >
+                                                                                            <img
+                                                                                                src={imgUrl}
+                                                                                                alt="Minh chứng"
+                                                                                                className="w-full h-full object-cover"
+                                                                                            />
+                                                                                        </button>
+                                                                                    )
+                                                                                )}
+                                                                            </div>
+                                                                        )}
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* DÒNG Ở DƯỚI PHẦN NGƯỜI GIAO: ĐÁNH GIÁ (Ở BƯỚC 3) & CÁC ICON THAO TÁC (Ở BƯỚC 2) */}
+                                                        <div className="flex items-center justify-between gap-2 pt-2 border-t border-stone-100">
+                                                            <div>
+                                                                {activeTab === 'evaluate' && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => setItemToEvaluate(item)}
+                                                                        className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
+                                                                        title="Đánh giá chi tiết, tiến độ %, chấm sao chất lượng, chia khối lượng & ghi nhận lỗi vi phạm xét KPI"
+                                                                    >
+                                                                        <Award size={14} className="text-emerald-600" />
+                                                                        <span>🏅 Đánh giá</span>
+                                                                    </button>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Các icon thao tác: Bookmark, Sửa, Xóa (Chỉ hiện ở Bước 2: Giao việc & Kế hoạch) */}
+                                                            {activeTab === 'dispatch' && (
+                                                                <div className="flex items-center gap-1 text-stone-400 ml-auto">
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleSaveItemAsTemplate(item)}
+                                                                        className="p-1.5 rounded-lg hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                                                        title="Lưu việc này vào Thư viện công việc mẫu để tái sử dụng"
+                                                                    >
+                                                                        <BookmarkPlus size={15} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => startEditingItem(item)}
+                                                                        className="p-1.5 rounded-lg hover:text-indigo-600 hover:bg-indigo-50 transition-colors cursor-pointer"
+                                                                        title="Sửa nội dung & mô tả hôm nay"
+                                                                    >
+                                                                        <Edit3 size={15} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDeleteItem(item)}
+                                                                        className="p-1.5 rounded-lg hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                                                        title="Xóa đầu việc"
+                                                                    >
+                                                                        <Trash2 size={15} />
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                {/* Content & Tags */}
-                                                <div className="flex-1 min-w-0 space-y-2">
-                                                    {isEditing ? (
-                                                        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                                                            <input
-                                                                type="text"
-                                                                value={editingContent}
-                                                                onChange={e =>
-                                                                    setEditingContent(
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                                className="flex-1 px-3 py-1.5 rounded-lg border border-indigo-400 text-sm font-semibold text-stone-900 outline-hidden"
-                                                                autoFocus
-                                                            />
-                                                            <input
-                                                                type="text"
-                                                                value={editingLocation}
-                                                                onChange={e =>
-                                                                    setEditingLocation(
-                                                                        e.target.value
-                                                                    )
-                                                                }
-                                                                placeholder="Khu vực..."
-                                                                className="w-36 px-2.5 py-1.5 rounded-lg border border-stone-300 text-xs text-stone-700 outline-hidden"
-                                                            />
-                                                            <div className="flex items-center gap-1">
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        handleSaveInlineEdit(
-                                                                            item
-                                                                        )
-                                                                    }
-                                                                    className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-bold"
-                                                                >
-                                                                    Lưu
-                                                                </button>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        setEditingItemId(null)
-                                                                    }
-                                                                    className="px-2.5 py-1.5 rounded-lg bg-stone-200 text-stone-700 text-xs font-bold"
-                                                                >
-                                                                    Hủy
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="flex items-start justify-between gap-2">
-                                                            <p
-                                                                onDoubleClick={() => {
-                                                                    setEditingItemId(item.id)
-                                                                    setEditingContent(item.content)
-                                                                    setEditingLocation(
-                                                                        item.location_note || ''
-                                                                    )
-                                                                }}
-                                                                className={`text-sm sm:text-base font-bold leading-snug cursor-pointer ${
-                                                                    item.status === 'cancelled'
-                                                                        ? 'line-through text-stone-400'
-                                                                        : 'text-stone-900'
-                                                                }`}
-                                                                title="Nhấp đúp để sửa nhanh nội dung"
-                                                            >
-                                                                {item.content}
-                                                            </p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Badges Row: Category, Priority, Location, Assignees */}
-                                                    <div className="flex flex-wrap items-center gap-1.5">
-                                                        {item.category && (
-                                                            <span className="px-2 py-0.5 rounded-md bg-stone-100 text-stone-600 border border-stone-200 text-[11px] font-semibold">
-                                                                {item.category}
-                                                            </span>
-                                                        )}
-
-                                                        {item.priority !== 'normal' && (
-                                                            <span
-                                                                className={`px-2 py-0.5 rounded-md border text-[11px] font-bold ${pri.bgClass} ${pri.textClass} ${pri.borderClass}`}
-                                                            >
-                                                                {pri.label}
-                                                            </span>
-                                                        )}
-
-                                                        {item.location_note && (
-                                                            <span className="px-2 py-0.5 rounded-md bg-amber-50/80 text-amber-800 border border-amber-200 text-[11px] font-semibold flex items-center gap-1">
-                                                                <MapPin size={11} />
-                                                                {item.location_note}
-                                                            </span>
-                                                        )}
-
-                                                        {/* Assignee Chips */}
-                                                        {Array.isArray(item.assignees) &&
-                                                            item.assignees.map(a => (
-                                                                <span
-                                                                    key={a.name}
-                                                                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-bold"
-                                                                >
-                                                                    👤 {a.name}
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            handleRemoveAssigneeFromRow(
-                                                                                item,
-                                                                                a.name
-                                                                            )
-                                                                        }
-                                                                        className="hover:text-rose-600 ml-0.5"
-                                                                        title="Gỡ người này"
-                                                                    >
-                                                                        <X size={11} />
-                                                                    </button>
-                                                                </span>
-                                                            ))}
-
-                                                        {/* Inline Add Assignee Button/Input */}
-                                                        {addingAssigneeForItemId === item.id ? (
-                                                            <div className="inline-flex items-center gap-1">
-                                                                <input
-                                                                    type="text"
-                                                                    list="work-plan-assignees-datalist"
-                                                                    value={inlineAssigneeText}
-                                                                    onChange={e =>
-                                                                        setInlineAssigneeText(
-                                                                            e.target.value
-                                                                        )
-                                                                    }
-                                                                    onKeyDown={e => {
-                                                                        if (e.key === 'Enter') {
-                                                                            e.preventDefault()
-                                                                            handleAddAssigneeToRow(
-                                                                                item,
-                                                                                inlineAssigneeText
-                                                                            )
-                                                                        } else if (
-                                                                            e.key === 'Escape'
-                                                                        ) {
-                                                                            setAddingAssigneeForItemId(
-                                                                                null
-                                                                            )
-                                                                        }
-                                                                    }}
-                                                                    placeholder="Tên NV/Đội (Enter)"
-                                                                    className="px-2 py-0.5 rounded-lg border border-indigo-400 text-xs w-36 outline-hidden"
-                                                                    autoFocus
-                                                                />
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() =>
-                                                                        handleAddAssigneeToRow(
-                                                                            item,
-                                                                            inlineAssigneeText
-                                                                        )
-                                                                    }
-                                                                    className="p-1 rounded-md bg-indigo-600 text-white"
-                                                                >
-                                                                    <Check size={11} />
-                                                                </button>
-                                                            </div>
-                                                        ) : (
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setAddingAssigneeForItemId(
-                                                                        item.id
-                                                                    )
-                                                                    setInlineAssigneeText('')
-                                                                }}
-                                                                className="px-2 py-0.5 rounded-full border border-dashed border-stone-300 hover:border-indigo-400 text-[11px] font-semibold text-stone-500 hover:text-indigo-600 flex items-center gap-1 transition-colors"
-                                                            >
-                                                                <UserPlus size={11} />
-                                                                Giao người
-                                                            </button>
-                                                        )}
-
-                                                        {item.carried_to_date && (
-                                                            <span className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[11px] font-bold">
-                                                                ↪ Đã chuyển sang{' '}
-                                                                {formatVNDate(item.carried_to_date)}
-                                                            </span>
-                                                        )}
-
-                                                        {/* Single Consolidated Workload / Proof Button */}
-                                                        {(() => {
-                                                            const wl = item.workload_metrics
-                                                            const hasData = hasWorkloadData(wl)
-                                                            if (!hasData || !wl) {
-                                                                return (
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() =>
-                                                                            setItemForWorkloadModal(
-                                                                                item
-                                                                            )
-                                                                        }
-                                                                        className="px-2.5 py-0.5 rounded-full border border-dashed border-amber-400 bg-amber-50/50 hover:bg-amber-100 text-[11px] font-bold text-amber-800 flex items-center gap-1 transition-colors"
-                                                                        title="Bấm để gắn Lệnh xuất kho, Phiếu nhập/xuất kế toán, Số LOT tạo hoặc nhập số liệu độ nặng/nhẹ"
-                                                                    >
-                                                                        <Scale size={11} />
-                                                                        <span>+ Số liệu</span>
-                                                                    </button>
-                                                                )
-                                                            }
-
-                                                            const diffCfg =
-                                                                wl.difficulty &&
-                                                                DIFFICULTY_CONFIG[wl.difficulty]
-                                                                    ? DIFFICULTY_CONFIG[
-                                                                          wl.difficulty
-                                                                      ]
-                                                                    : null
-
-                                                            const linkedCount =
-                                                                (wl.linked_export_orders?.length ||
-                                                                    0) +
-                                                                (wl.linked_inbound_orders?.length ||
-                                                                    0) +
-                                                                (wl.linked_outbound_orders
-                                                                    ?.length || 0) +
-                                                                (wl.linked_lot_summaries?.length ||
-                                                                    0)
-
-                                                            const factorSuffix = wl.quantity_factor_label
-                                                                ? ` (${wl.quantity_factor_label})`
-                                                                : ''
-
-                                                            const summaryParts: string[] = []
-                                                            if (diffCfg) {
-                                                                summaryParts.push(
-                                                                    `${diffCfg.badgeEmoji} ${diffCfg.label}`
-                                                                )
-                                                            }
-                                                            if (wl.positions_count) {
-                                                                summaryParts.push(
-                                                                    `${wl.positions_count} vị trí${factorSuffix}`
-                                                                )
-                                                            } else if (wl.lots_count) {
-                                                                summaryParts.push(
-                                                                    `${wl.lots_count} LOT${factorSuffix}`
-                                                                )
-                                                            } else if (wl.packages_count) {
-                                                                summaryParts.push(
-                                                                    `${wl.packages_count.toLocaleString('vi-VN')} ${wl.package_unit || 'Thùng'}${factorSuffix}`
-                                                                )
-                                                            } else if (wl.quantity_factor_label) {
-                                                                summaryParts.push(
-                                                                    wl.quantity_factor_label
-                                                                )
-                                                            }
-                                                            if (linkedCount > 0) {
-                                                                summaryParts.push(
-                                                                    `${linkedCount} chứng từ`
-                                                                )
-                                                            }
-
+                                                {/* NỬA BÊN PHẢI: KHỐI HIỂN THỊ SỐ LIỆU ĐẦY ĐỦ NHẤT (Ngang hàng với tên công việc) */}
+                                                <div className="w-full lg:w-[320px] xl:w-[370px] shrink-0 self-stretch flex flex-col justify-center">
+                                                    {(() => {
+                                                        const wl = item.workload_metrics
+                                                        const hasData = hasWorkloadData(wl)
+                                                        if (!hasData || !wl) {
                                                             return (
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() =>
-                                                                        setItemForWorkloadModal(
-                                                                            item
-                                                                        )
-                                                                    }
-                                                                    className="px-2.5 py-0.5 rounded-full border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-[11px] font-bold text-indigo-800 flex items-center gap-1.5 shadow-2xs transition-colors"
-                                                                    title={
-                                                                        wl.quantity_adjustment_note
-                                                                            ? `Lý do hệ số: ${wl.quantity_adjustment_note} (Bấm để chỉnh sửa)`
-                                                                            : 'Bấm để xem liên kết chứng từ hoặc chỉnh sửa thêm/bớt số liệu'
-                                                                    }
+                                                                    onClick={() => setItemForWorkloadModal(item)}
+                                                                    className="w-full h-full min-h-[92px] rounded-2xl border-2 border-dashed border-stone-300 hover:border-indigo-400 bg-stone-50/70 hover:bg-indigo-50/40 p-3 flex flex-col items-center justify-center gap-1.5 text-stone-500 hover:text-indigo-800 transition-all cursor-pointer group/add"
+                                                                    title="Bấm để gắn số liệu khối lượng: bao nhiêu tấn, bao nhiêu pallet/vị trí, bao nhiêu thùng, cont hoặc Lệnh xuất kho..."
                                                                 >
-                                                                    <Scale size={11} />
-                                                                    <span>
-                                                                        Số liệu
-                                                                        {summaryParts.length > 0
-                                                                            ? `: ${summaryParts.join(' • ')}`
-                                                                            : ''}
+                                                                    <div className="w-8 h-8 rounded-full bg-white shadow-2xs border border-stone-200 group-hover/add:border-indigo-300 flex items-center justify-center text-stone-400 group-hover/add:text-indigo-600">
+                                                                        <Scale size={16} />
+                                                                    </div>
+                                                                    <span className="text-xs font-bold text-stone-700 group-hover/add:text-indigo-950">
+                                                                        + Gắn số liệu khối lượng thực tế
+                                                                    </span>
+                                                                    <span className="text-[10px] text-stone-400">
+                                                                        (Số tấn, số pallet/vị trí, thùng, cont...)
                                                                     </span>
                                                                 </button>
                                                             )
-                                                        })()}
-                                                    </div>
+                                                        }
 
-                                                    {/* Evaluation Note, Workload Adjustment Note & Proof Images */}
-                                                    {(item.evaluation_note ||
-                                                        item.workload_metrics
-                                                            ?.quantity_adjustment_note ||
-                                                        (Array.isArray(item.completion_images) &&
-                                                            item.completion_images.length >
-                                                                0)) && (
-                                                        <div className="mt-2 p-2.5 rounded-xl bg-white border border-stone-200/90 space-y-2">
-                                                            {item.workload_metrics
-                                                                ?.quantity_adjustment_note && (
-                                                                <div className="text-xs text-indigo-900 flex items-start gap-1.5">
-                                                                    <Scale
-                                                                        size={13}
-                                                                        className="text-indigo-600 shrink-0 mt-0.5"
-                                                                    />
-                                                                    <span>
-                                                                        <b className="text-indigo-950">
-                                                                            Ghi chú hệ số khối lượng
-                                                                            {item.workload_metrics
-                                                                                .quantity_factor_label
-                                                                                ? ` (${item.workload_metrics.quantity_factor_label})`
-                                                                                : ''}
-                                                                            :{' '}
-                                                                        </b>
-                                                                        {
-                                                                            item.workload_metrics
-                                                                                .quantity_adjustment_note
-                                                                        }
+                                                        const diffCfg =
+                                                            wl.difficulty && DIFFICULTY_CONFIG[wl.difficulty]
+                                                                ? DIFFICULTY_CONFIG[wl.difficulty]
+                                                                : null
+
+                                                        return (
+                                                            <div
+                                                                onClick={() => setItemForWorkloadModal(item)}
+                                                                className="group/wl cursor-pointer rounded-2xl border border-indigo-200/90 bg-gradient-to-br from-indigo-50/60 via-white to-purple-50/40 p-3 hover:border-indigo-400 hover:shadow-xs transition-all flex flex-col justify-between h-full space-y-2"
+                                                                title="Bấm để xem chứng từ liên kết hoặc chỉnh sửa số liệu khối lượng"
+                                                            >
+                                                                {/* Header số liệu */}
+                                                                <div className="flex items-center justify-between text-xs pb-1.5 border-b border-indigo-100/90">
+                                                                    <span className="font-black text-indigo-950 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                                                                        <Scale size={13} className="text-indigo-600" />
+                                                                        <span>Số liệu khối lượng thực tế</span>
+                                                                    </span>
+                                                                    <span className="text-[11px] font-bold text-indigo-600 group-hover/wl:underline flex items-center gap-0.5">
+                                                                        Sửa <ChevronRight size={12} />
                                                                     </span>
                                                                 </div>
-                                                            )}
-                                                            {item.evaluation_note && (
-                                                                <div className="text-xs text-stone-700 flex items-start gap-1.5">
-                                                                    <MessageSquare
-                                                                        size={13}
-                                                                        className="text-emerald-600 shrink-0 mt-0.5"
-                                                                    />
-                                                                    <span>
-                                                                        <b className="text-stone-900">
-                                                                            Đánh giá cuối ngày:{' '}
-                                                                        </b>
-                                                                        {item.evaluation_note}
-                                                                    </span>
-                                                                </div>
-                                                            )}
 
-                                                            {Array.isArray(
-                                                                item.completion_images
-                                                            ) &&
-                                                                item.completion_images.length >
-                                                                    0 && (
-                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                        {item.completion_images.map(
-                                                                            (imgUrl, imgIdx) => (
-                                                                                <button
-                                                                                    key={imgIdx}
-                                                                                    type="button"
-                                                                                    onClick={() => {
-                                                                                        setLightboxImages(
-                                                                                            item.completion_images
-                                                                                        )
-                                                                                        setLightboxIndex(
-                                                                                            imgIdx
-                                                                                        )
-                                                                                        setShowLightbox(
-                                                                                            true
-                                                                                        )
-                                                                                    }}
-                                                                                    className="w-12 h-12 rounded-lg overflow-hidden border border-stone-200 hover:ring-2 hover:ring-emerald-500 transition-all"
-                                                                                >
-                                                                                    <img
-                                                                                        src={
-                                                                                            imgUrl
-                                                                                        }
-                                                                                        alt="Minh chứng"
-                                                                                        className="w-full h-full object-cover"
-                                                                                    />
-                                                                                </button>
-                                                                            )
-                                                                        )}
+                                                                {/* Lưới các chỉ số khối lượng: Vị trí PL, Tấn/Kg, Thùng, Cont */}
+                                                                <div className="grid grid-cols-3 gap-1.5 text-xs">
+                                                                    {/* 1. Vị trí / Pallet */}
+                                                                    <div className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center">
+                                                                        <span className="text-[10px] font-semibold text-stone-500">📍 Vị trí / PL</span>
+                                                                        <span className="text-xs font-black text-indigo-950 mt-0.5 truncate">
+                                                                            {wl.positions_count ? `${wl.positions_count} PL` : '-'}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {/* 2. Trọng lượng Tấn / Kg */}
+                                                                    <div className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center">
+                                                                        <span className="text-[10px] font-semibold text-stone-500">⚖️ Khối lượng</span>
+                                                                        <span className="text-xs font-black text-emerald-800 mt-0.5 truncate">
+                                                                            {wl.weight_kg
+                                                                                ? (wl.weight_kg >= 1000
+                                                                                    ? `${(wl.weight_kg / 1000).toFixed(1)} tấn`
+                                                                                    : `${wl.weight_kg.toLocaleString('vi-VN')} kg`)
+                                                                                : '-'}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {/* 3. Số thùng / kiện */}
+                                                                    <div className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center">
+                                                                        <span className="text-[10px] font-semibold text-stone-500">📦 Đóng gói</span>
+                                                                        <span className="text-xs font-black text-amber-900 mt-0.5 truncate">
+                                                                            {wl.packages_count
+                                                                                ? `${wl.packages_count.toLocaleString('vi-VN')} ${wl.package_unit || 'Thùng'}`
+                                                                                : '-'}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {/* 4. Số Cont */}
+                                                                    {Boolean(wl.containers_count) && (
+                                                                        <div className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center">
+                                                                            <span className="text-[10px] font-semibold text-stone-500">🚢 Số Cont</span>
+                                                                            <span className="text-xs font-black text-blue-800 mt-0.5 truncate">
+                                                                                {wl.containers_count} Cont
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* 5. Hệ số độ nặng */}
+                                                                    {diffCfg && (
+                                                                        <div className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center">
+                                                                            <span className="text-[10px] font-semibold text-stone-500">⚡ Độ nặng</span>
+                                                                            <span className="text-xs font-black text-stone-800 mt-0.5 truncate">
+                                                                                {diffCfg.badgeEmoji} {diffCfg.label} (x{diffCfg.multiplier})
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* 6. Số LOT */}
+                                                                    {Boolean(wl.lots_count) && (
+                                                                        <div className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center">
+                                                                            <span className="text-[10px] font-semibold text-stone-500">🏷️ Số LOT</span>
+                                                                            <span className="text-xs font-black text-purple-800 mt-0.5 truncate">
+                                                                                {wl.lots_count} LOT
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+
+                                                                {/* Footer ghi chú hệ số hoặc chứng từ nếu có */}
+                                                                {(wl.quantity_adjustment_note || wl.quantity_factor_label) && (
+                                                                    <div className="text-[10px] text-stone-600 bg-white/80 px-2 py-1 rounded-lg border border-indigo-100/60 flex items-center gap-1.5">
+                                                                        <span className="font-bold text-indigo-900 shrink-0">Hệ số:</span>
+                                                                        <span className="truncate">{wl.quantity_adjustment_note || wl.quantity_factor_label}</span>
                                                                     </div>
                                                                 )}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Right: Evaluation Controls & Actions */}
-                                            <div className="flex flex-wrap items-center justify-between lg:justify-end gap-2.5 pl-11 lg:pl-0 shrink-0">
-                                                {/* Quick 1-click Status Pills */}
-                                                <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl border border-stone-200">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            handleQuickEvaluateRow(
-                                                                item,
-                                                                'completed'
-                                                            )
-                                                        }
-                                                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ${
-                                                            item.status === 'completed'
-                                                                ? 'bg-emerald-600 text-white shadow-xs'
-                                                                : 'text-stone-600 hover:bg-white'
-                                                        }`}
-                                                        title="Đánh dấu Hoàn thành 100%"
-                                                    >
-                                                        ✓ Xong
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            handleQuickEvaluateRow(item, 'partial')
-                                                        }
-                                                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${
-                                                            item.status === 'partial'
-                                                                ? 'bg-amber-500 text-white shadow-xs'
-                                                                : 'text-stone-600 hover:bg-white'
-                                                        }`}
-                                                        title="Đạt một phần"
-                                                    >
-                                                        Một phần
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            handleQuickEvaluateRow(
-                                                                item,
-                                                                'uncompleted'
-                                                            )
-                                                        }
-                                                        className={`px-2 py-1 rounded-lg text-xs font-bold transition-all ${
-                                                            item.status === 'uncompleted'
-                                                                ? 'bg-rose-600 text-white shadow-xs'
-                                                                : 'text-stone-600 hover:bg-white'
-                                                        }`}
-                                                        title="Chưa xong / Tồn đọng"
-                                                    >
-                                                        Chưa xong
-                                                    </button>
-                                                </div>
-
-                                                {/* Star Rating Badge or Quick Star Picker */}
-                                                {rt ? (
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setItemToEvaluate(item)}
-                                                        className={`px-2.5 py-1 rounded-xl border text-xs font-bold flex items-center gap-1 ${rt.bgClass} ${rt.textClass} ${rt.borderClass}`}
-                                                        title="Bấm để sửa đánh giá chi tiết"
-                                                    >
-                                                        <span>{'★'.repeat(rt.stars)}</span>
-                                                        <span>{rt.label}</span>
-                                                    </button>
-                                                ) : null}
-
-                                                {/* Detailed Evaluate Button */}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setItemToEvaluate(item)}
-                                                    className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1 transition-colors"
-                                                >
-                                                    <Award size={14} />
-                                                    Đánh giá
-                                                </button>
-
-                                                {/* Edit & Delete Buttons */}
-                                                <div className="flex items-center gap-1">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setEditingItemId(item.id)
-                                                            setEditingContent(item.content)
-                                                            setEditingLocation(
-                                                                item.location_note || ''
-                                                            )
-                                                        }}
-                                                        className="p-1.5 rounded-lg text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                                                        title="Sửa nội dung"
-                                                    >
-                                                        <Edit3 size={15} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDeleteItem(item)}
-                                                        className="p-1.5 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                                                        title="Xóa đầu việc"
-                                                    >
-                                                        <Trash2 size={15} />
-                                                    </button>
+                                                            </div>
+                                                        )
+                                                    })()}
                                                 </div>
                                             </div>
                                         </div>
                                     )
                                 })}
+                            </div>
+                        )}
+
+                        {/* Step Transition Action Bars */}
+                        {activeTab === 'dispatch' && (
+                            <div className="p-4 bg-indigo-50/60 border-t border-indigo-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <div className="text-xs text-stone-600">
+                                    Đang ở <b>Bước 2: Kế hoạch & Giao việc</b> ({items.length} việc). Khi hoàn tất phân công, chuyển sang bước Nghiệm thu & Chấm điểm.
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('evaluate')}
+                                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-xs font-black shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+                                >
+                                    <span>Chuyển sang Bước 3: Đánh Giá & Chấm Điểm Cuối Ca</span>
+                                    <ArrowRight size={15} />
+                                </button>
+                            </div>
+                        )}
+
+                        {activeTab === 'evaluate' && (
+                            <div className="p-4 bg-purple-50/60 border-t border-purple-100 flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <div className="text-xs text-stone-600">
+                                    Đã hoàn tất nghiệm thu ca làm việc. Bấm để xem Báo cáo tổng hợp và Bảng xếp hạng KPI thi đua.
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveTab('reports')}
+                                    className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white text-xs font-black shadow-sm flex items-center gap-2 transition-all cursor-pointer"
+                                >
+                                    <span>Xem Bước 4: Báo Cáo Tổng Hợp & Bảng Xếp Hạng KPI</span>
+                                    <ArrowRight size={15} />
+                                </button>
                             </div>
                         )}
 
@@ -2040,13 +2463,17 @@ export default function WorkPlansView() {
                             ) : (
                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                                     <div className="space-y-1 text-xs text-stone-600">
+                                        <div className="text-amber-900 font-bold flex items-center gap-1.5">
+                                            <span className="text-amber-600">📌</span>
+                                            <span>* Ghi chú: Kế hoạch có thể thay đổi theo công việc phát sinh.</span>
+                                        </div>
                                         <div>
                                             <b className="text-stone-800">
-                                                📌 Ghi chú điều phối:{' '}
+                                                💬 Lưu ý điều phối thêm:{' '}
                                             </b>
                                             {plan?.general_note || (
                                                 <span className="italic text-stone-400">
-                                                    Chưa có ghi chú đầu ngày
+                                                    Chưa có ghi chú riêng
                                                 </span>
                                             )}
                                         </div>
@@ -2102,11 +2529,24 @@ export default function WorkPlansView() {
                 isOpen={showExportModal}
                 onClose={() => setShowExportModal(false)}
                 plan={plan}
-                items={items}
+                items={items.map(item => ({
+                    ...item,
+                    description:
+                        item.description !== null && item.description !== undefined
+                            ? item.description
+                            : templatesMap.get(item.content.trim().toLowerCase()) || null,
+                }))}
                 planDate={selectedDate}
                 systemName={systemName}
                 companyName={profile?.company_name}
                 defaultMode={exportDefaultMode}
+            />
+
+            <TaskLibraryPickerModal
+                isOpen={showLibraryPicker}
+                onClose={() => setShowLibraryPicker(false)}
+                systemCode={systemCode}
+                onSelectTemplates={handleAddMultipleTemplatesToPlan}
             />
 
             {showLightbox && (

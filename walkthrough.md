@@ -1,3 +1,22 @@
+# Walkthrough: Tối Ưu Hóa Quy Trình Đánh Giá KPI & Hiển Thị Số Liệu Kế Hoạch Công Việc
+
+## 🎯 Tổng Quan & Yêu Cầu Cốt Lõi
+1. **Loại bỏ các nút bấm nhanh ngoài bảng ở Bước 3 (Nghiệm thu cuối ca)**:
+   - Bỏ cụm nút bấm nhanh trạng thái: `[✓ Xong] [Một phần] [Chưa xong]`.
+   - Bỏ nút/sao chọn chất lượng nhanh ngoài hàng: `[★★★ Đạt yêu cầu]`.
+   - **Lý do**: Bấm nhanh ngoài bảng tự động gán điểm chất lượng (khóa ở mức 3 sao / 20đ), gây hiểu lầm và làm sai lệch đánh giá chi tiết.
+2. **Tập trung đánh giá duy nhất vào Modal Đánh Giá Chi Tiết (`EvaluateItemModal`)**:
+   - Ở ngoài hàng danh sách chỉ hiển thị **Nút Đánh giá** `[🏅 Đánh giá]` (hoặc huy hiệu trạng thái gọn gàng kèm `[🏅 Sửa đánh giá]`).
+   - Mọi thao tác nghiệm thu, tiến độ %, chấm sao chất lượng, chia tỷ lệ khối lượng và gán lỗi vi phạm / thưởng đều thực hiện trong Modal và chỉ có hiệu lực khi bấm **"Lưu Đánh Giá & Số Liệu"**.
+3. **Thay thế vị trí các nút bỏ đi bằng Khối Nội Dung Số Liệu**:
+   - Đưa nội dung / chip số liệu công việc (`workload_metrics`) sang khu vực điều khiển bên phải của hàng công việc.
+   - Bỏ dòng số liệu bị lặp phía dưới nhân sự để giải phóng không gian, giúp thông tin nhân viên hiển thị rộng rãi, thoáng đãng.
+4. **Sửa dứt điểm lỗi "vào modal không sửa được điểm chất lượng, lúc nào cũng 20/25đ"**:
+   - Truyền `ratingStars` từ Modal xuống `AssigneeEvaluationSection` và hàm `calculateAssigneeTaskStandardKpi`.
+   - Cập nhật tức thì điểm chất lượng theo số sao quản lý chọn (5 sao = 25đ, 4 sao = 20đ, 3 sao = 15đ, 2 sao = 10đ, 1 sao = 5đ).
+
+---
+
 # Walkthrough: Danh Mục Cấp Dòng Cho LOT (`lot_items.category_id`)
 
 Tài liệu này mô tả cách tính năng "chọn danh mục cho từng dòng sản phẩm khi tạo/sửa Lot" tuân thủ kiến trúc phân hệ (`system_type`) và đảm bảo **không làm thay đổi hành vi của phân hệ Kho Đông Lạnh**.
@@ -2198,3 +2217,509 @@ User: *"xuất file excel thì đồng nghĩa phải có 2 tab luôn chứ, hi�
 
 
 
+
+---
+
+# Walkthrough: Thống kê Mã phụ trên tab Thống kê lệnh xuất (`/work/export-order?tab=stats`)
+
+## 🧩 Cấu Trúc (3 file, không thêm migration)
+
+| File | Vai trò |
+|---|---|
+| [ExportOrderStatsPanel.tsx](file:///d:/chanh%20thu/web/src/components/export/ExportOrderStatsPanel.tsx) | Lấy mã phụ cho từng dòng, thêm tab "Theo mã phụ", mở rộng ô lọc |
+| [exportOrderReportExcelExport.ts](file:///d:/chanh%20thu/web/src/lib/exportOrderReportExcelExport.ts) | Sheet 4 `Theo ma phu` + cột "Mã phụ" trong sheet `Chi tiet lenh xuat` |
+| [exportOrderReportExcelExport.test.ts](file:///d:/chanh%20thu/web/src/lib/__tests__/exportOrderReportExcelExport.test.ts) | 4 test (thêm test đối chiếu sheet mã phụ và cột Mã phụ) |
+
+## 🧮 Đường dữ liệu mã phụ (điểm mấu chốt)
+
+`export_task_items` **không có cột `lot_item_id`** (chỉ `lot_id` + `product_id`), trong khi 100% mã phụ Kho Đông đang gắn ở **cấp dòng sản phẩm** (`lot_tags.lot_item_id NOT NULL`). Panel giải quyết ngay trong một request:
+
+1. Select của `export_task_items` nhúng thẳng `lots(code, production_code, lot_items(id, product_id), lot_tags(tag, lot_item_id))` — kiểu nhúng 2 cấp này đã chạy thật ở `/print/export-order` nên không cần thử nghiệm thêm.
+2. `resolveTagAtoms(lot, productId)`: tag **cấp dòng** chỉ được tính cho dòng có `product_id` trùng với `lot_items` của nó; chỉ tag **cấp thẻ LOT** (`lot_item_id IS NULL`) mới áp cho mọi dòng. Đây chính là quy tắc "cấm broadcast tag cấp dòng cho mọi dòng cùng pallet" đã đo và sửa ngày 31/10.
+3. Chuỗi phân cấp tách bằng `extractTagAtoms()` có sẵn trong `productNameResolver.ts` (cắt theo `>`, bỏ segment `@` = placeholder mã SKU, uppercase) → **một thẻ tag đơn = một nhóm thống kê**, khớp cách `master_tags` lưu nguyên liệu. Tag nội bộ `MERGED_*` / `SPLIT_*` bị loại, mã sản xuất KHÔNG thành nhóm.
+
+### 🐆 Bản sửa lỗi 07/11: "lệnh xuất có HÀNG BẢO LỘC nhưng thống kê không ra"
+
+Bản đầu tiên KHÔNG nhúng `lot_tags` mà truy vấn bù `lot_tags`/`lot_items` theo `.in('lot_id', chunk)` với chunk 500. Đo trực tiếp trên Kong local:
+
+| chunk | kết quả |
+|---|---|
+| 500 / 250 | **NULL — "URI too long"** (414, Kong chặn URL > ~8KB; 250 UUID ≈ 9,7KB) |
+| 100 | 41 dòng tag, OK |
+| 50 | 39 dòng tag, OK |
+
+Code cũ chỉ lấy `{ data }` và **bỏ qua `{ error }`**, nên dữ liệu rỗng đi thẳng vào nhóm `(Chưa gắn mã phụ)` — 256/256 dòng đều "chưa gắn" dù lệnh `đơn C hạt CUối` (05/11) có 44 dòng mang tag. Đã bỏ hẳn kiểu `.in()`: mã phụ giờ đi theo nhúng trong query dòng lệnh xuất (mục 1 ở trên), không còn danh sách id trong URL, không còn lỗi nuốt im lặng.
+
+Cửa sổ 7 ngày KHO_DONG_LANH sau khi sửa (đo bằng đúng logic panel qua PostgREST, không phải SQL): **256 dòng, 92 dòng có mã phụ** → `HÀNG BẢO LỘC` 1 lệnh/44 dòng/1.320 · `ĐỂ RIÊNG` 1/38/1.109 · `NẤM` 3/10/300 · `(Chưa gắn mã phụ)` 5/164/4.919. Cộng dòng các nhóm = 256, khớp 1:1 với tab "Theo ngày".
+
+
+## 📊 Tab "Theo mã phụ"
+
+Cột: Mã phụ | Số lệnh | Dòng hàng | Số kiện (LOT distinct) | Yêu cầu | Đã xuất | Còn lại | ĐVT. Nhóm `(Chưa gắn mã phụ)` luôn xếp cuối. Có dòng ghi chú ngay trên bảng: *một dòng mang nhiều mã phụ được tính ở từng nhóm, nên cộng các dòng có thể lớn hơn tổng lệnh xuất* — đây là hệ quả tất yếu của việc gộp theo thẻ tag đơn.
+
+Ô lọc chuyển sang khớp cả mã phụ và **bỏ dấu tiếng Việt** (`normalizeSearch`, cùng chuẩn với `/api/inventory/by-tag`), nên gõ "bao loc" vẫn thấy `HÀNG BẢO LỘC`. Placeholder: "Lọc sản phẩm, SKU, mã lệnh, mã phụ...".
+
+## 🔒 Tuân thủ kiến trúc phân hệ & Kho Đông Lạnh
+
+- **Không đụng schema, không sửa luồng xuất/nhập**: chỉ mở rộng `select` của query đang chạy bằng các nhúng có sẵn (`lots → lot_items, lot_tags`), không thêm request mới. Kho Đông Lạnh giữ nguyên hành vi khi tắt tab.
+- **Cô lập `system_code`**: mã phụ chỉ được đọc qua nhúng `lots` của chính các dòng đã lọc `export_tasks.system_code = currentSystem.code`, nên không có đường nào đọc tag của phân hệ khác.
+- **Không hardcode mã kho / systemType**: không có điều kiện `=== 'KHO_DONG_LANH'` nào; tab nằm trong trang đã gate bởi module `work_export_order`.
+
+## ✅ Kiểm chứng
+
+- `npx tsc --noEmit`: không lỗi trên 3 file vừa sửa. `npm run build`: exit code 0 (chạy lại sau bản sửa 07/11), route `/work/export-order` biên dịch sạch.
+- `vitest src/lib/__tests__/exportOrderReportExcelExport.test.ts`: **PASS 4/4** (mở lại .xlsx bằng ExcelJS, assert `B5='HÀNG BẢO LỘC'`, `H5='20'`, `I4/I5` cột Mã phụ).
+- Đối chiếu số liệu thật bằng **đúng pipeline PostgREST mà panel dùng** (không phải SQL), xem mục "Bản sửa lỗi 07/11" ở trên.
+- Bản mô phỏng SQL 90 ngày (trước khi sửa): 1.641 dòng lệnh, 100 dòng có mã phụ, **98 dòng khớp đúng cấp sản phẩm**, 0 tag mồ côi, 0 `lot_items` bị xóa sau khi xuất.
+- **Còn mở**: bấm thật tab "Theo mã phụ" + xuất Excel cần phiên đăng nhập localhost.
+
+## ⚠️ Ghi chú phát hiện thêm (chưa sửa)
+
+1. Sheet `Theo ngay` trong file Excel đang bị **lặp cột "SL đã xuất"** (`exportedQty` khai báo 2 lần, [dòng 205-206](file:///d:/chanh%20thu/web/src/lib/exportOrderReportExcelExport.ts#L205)) — lỗi tiền tồn tại, cần người dùng xác nhận trước khi bỏ vì làm dịch cột G của file cũ.
+2. **Thống kê "Theo giờ hạ" và cột "Hạ trong ngày" đang chết im lặng** (tiền tồn tại, đo 07/11): query `export_task_picks` nhúng `picker:user_profiles!picker_id(...)` nhưng FK thật là `export_task_picks_picker_id_fkey → auth.users(id)` → PostgREST trả `PGRST200 Could not find a relationship between 'export_task_picks' and 'user_profiles'`, và `catch` chỉ `console.warn` nên UI hiển thị 0 thay vì báo lỗi. Cùng lỗi ở [reports/picking-productivity/page.tsx:98](file:///d:/chanh%20thu/web/src/app/(dashboard)/reports/picking-productivity/page.tsx#L98). Đã đo: bỏ nhúng `picker` thì query trả đúng 6 dòng của Kho Đông. Hướng sửa (chưa làm, chờ người dùng): đọc `user_profiles` bằng truy vấn riêng + map `picker_id → full_name` như trang danh sách lệnh xuất đang làm với `created_by`. Hệ quả phụ: vì picks không bao giờ tải được, ô lọc mã phụ **không** áp dụng lên lượt hạ hàng (panel không còn lấy tag cho picks).
+
+---
+
+# Walkthrough (tiếp): Sheet "Tong quan" trong file Excel tỉ lệ lấp đầy có thêm biểu đồ 3 phạm vi
+
+## Bối cảnh
+
+Người dùng phản hồi file `TI_LE_LAP_DAY_KHO_*.xlsx` **thiếu biểu đồ tổng**: sheet "Tong quan" chỉ có bảng số + data bar, trong khi 3 sheet "Lo ke" / "Sanh" / "Tong (ke + sanh)" đều đã có biểu đồ. Yêu cầu đi kèm: thanh "Tổng (kệ + sảnh)" phải **tô màu vàng** để không nhầm với các thanh theo mức lấp đầy.
+
+## Thay đổi
+
+- [src/lib/dashboardExcelSpecs.ts](file:///d:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts)
+  - Thêm hằng `AGGREGATE_HEX = '#f59e0b'` — màu riêng cho thanh cộng dồn, tách khỏi `LEVEL_HEX` (vàng = "cộng dồn", không phải "Cao ≥ 70%").
+  - Thêm `overviewChart` (kind `hbar`, `percentAxis`) vẽ 3 thanh từ `stats.totals[rack|hall|all]`; `barColors` theo mức cho Lô kệ/Sảnh, riêng phạm vi `all` dùng `AGGREGATE_HEX`; `valueLabels` giữ đúng nhãn dạng `52,4% · 11/21 ô` như 3 sheet kia và như trên màn hình.
+  - Gắn `chart: overviewChart` vào plan sheet "Tong quan" + ghi chú giải thích thanh vàng vào `notes` của sheet này.
+- [src/lib/__tests__/dashboardExcel.test.ts](file:///d:/chanh%20thu/web/src/lib/__tests__/dashboardExcel.test.ts)
+  - Test mới "sheet Tổng quan có biểu đồ 3 phạm vi, thanh Tổng tô vàng" assert labels/values/barColors/valueLabels.
+  - Test nhúng ảnh: bỏ giả định cũ "Tổng quan không có ảnh" (`headerRow < 8`) → nay bảng nằm dưới ảnh và vẫn đúng dòng "Lô kệ" / "Tổng (kệ + sảnh)".
+
+Không sửa `chartImage.ts`, `dashboardExcelWorkbook.ts`, `dashboardExcelExport.ts` — pipeline vẽ PNG + `addImage` đã có sẵn và tự áp cho sheet mới vì giờ plan của nó cũng có trường `chart`.
+
+## Tuân thủ kiến trúc phân hệ
+
+- **Không đụng Kho Đông Lạnh**: thay đổi chỉ nằm trong plan Excel của card dashboard, không sửa logic `buildFillStats`, form, schema hay luồng xuất/nhập.
+- **Không hardcode mã kho / systemType**: biểu đồ đọc `stats.totals` — số liệu đã được lọc theo phân hệ đang chọn ngay lúc tải dữ liệu; không có điều kiện `=== 'COLD'` hay mã kho cố định nào.
+- **Không sửa schema**: không thêm cột/bảng nào.
+
+## Kiểm chứng
+
+- `npx vitest run src/lib/__tests__/dashboardExcel.test.ts`: **PASS 16/16** (gồm test mở lại .xlsx bằng ExcelJS).
+- `npx tsc --noEmit`: không lỗi trên 2 file vừa sửa.
+- **Còn mở**: cần bấm "Xuất Excel" thật trên localhost để xem ảnh PNG (chỉ trình duyệt mới vẽ được canvas), kiểm tra thanh "Tổng (kệ + sảnh)" màu vàng và bảng không bị che.
+
+---
+
+# Walkthrough (tiếp): File Excel của MỌI dashboard có thêm sheet "Anh man hinh" (ảnh chụp nguyên card)
+
+## Bối cảnh
+
+User: *"đôi lúc thứ tôi muốn là bạn chụp lại hình ảnh cả cái dashboard đó rồi gửi vào file excel là xong, chứ ko muốn nó rắc rối vậy đâu"*. Thay vì vẽ lại biểu đồ bằng canvas cho giống màn hình (cách cũ, hay lệch nhãn/màu), nay mỗi file Excel dashboard có thêm **sheet đầu tiên "Anh man hinh"** chứa ảnh chụp đúng card người dùng đang xem — thấy ngay tab/bộ lọc đang áp dụng.
+
+## Cách làm
+
+- [src/lib/dashboardExcelExport.ts](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts) — `captureDashboardScreenshot(node, info)` dùng `html-to-image.toPng` (thư viện **đã có sẵn** trong dự án, cùng tham số `pixelRatio`/`backgroundColor`/`cacheBust` mà `PlanExportCardModal` đang dùng). Ảnh giữ nguyên tỷ lệ CSS nhưng **chụp ở 2x điểm ảnh** cho nét khi zoom trong Excel; card rộng quá **1400px** thì thu nhỏ lại cho vừa một màn xem. **Không báo lỗi khi chụp thất bại**: hàm trả `null`, file Excel vẫn xuất đủ các sheet số liệu.
+- `exportDashboardChart` và `exportDashboardSheets` đều nhận thêm `screenshot?: DashboardScreenshot | null` → tự ghép sheet "Anh man hinh" vào **đầu** danh sách sheet (`withScreenshotSheet`).
+- [src/lib/dashboardExcelSpecs.ts](file:///d:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts) — `screenshotSheetPlan()` sinh sheet chỉ có tiêu đề + metadata (Phân hệ kho / Bộ lọc trên màn hình / Xuất lúc / Ghi chú) + ảnh, **không có bảng** nên không autofilter, không data bar.
+- [src/lib/dashboardExcelWorkbook.ts](file:///d:/chanh%20thu/web/src/lib/dashboardExcelWorkbook.ts) — tách `sheetsFromWorkbookSpec()` từ `buildDashboardWorkbook()` để định dạng cũ 2 sheet ("Bieu do"/"Du lieu") cũng chèn được sheet ảnh mà không nhân bản logic.
+
+## Ba card dashboard đã gắn
+
+| Card | Ảnh chụp từ | Sheet phát sinh |
+|---|---|---|
+| Tỉ lệ lấp đầy theo khu vực | `cardRef` ở [WarehouseFillRateChart.tsx:244](file:///d:/chanh%20thu/web/src/components/dashboard/WarehouseFillRateChart.tsx#L244) | Anh man hinh + Tong quan + Lo ke + Sanh + Tong (ke + sanh) |
+| Tỉ lệ phân bố hàng hóa tồn kho | `cardRef` ở [InventoryDistributionChart.tsx:499](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L499) | Anh man hinh + Khoi luong KG + Danh muc vi tri |
+| Số lượng Container tồn kho | `cardRef` ở [ContainerStockChart.tsx:639](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L639) (card thật bên trong `ContainerStockChartInner`) | Anh man hinh + Bieu do + Du lieu |
+
+Mỗi card truyền `cardTitle` + `systemName` + `filterLabel` (danh mục/kho đang lọc) để sheet ảnh tự giải thích nó chụp cấu hình nào.
+
+## 🔴 Lỗi gặp khi chạy thật (đã sửa)
+
+Next.js dev overlay báo `SecurityError: Failed to read the 'cssRules' property from 'CSSStyleSheet': Cannot access rules` ngay dòng `await toPng(...)`. Nguyên nhân: [src/app/layout.tsx:84](file:///d:/chanh%20thu/web/src/app/layout.tsx#L84) nạp Inter bằng `<link>` **chéo nguồn** `fonts.googleapis.com`, mà html-to-image duyệt `.cssRules` của *mọi* stylesheet trong trang để tìm `@font-face` — đọc rules của sheet chéo nguồn thì bị trình duyệt chặn. Thư viện tự catch và chỉ `console.error`, nên file vẫn xuất được nhưng spam lỗi đỏ.
+
+Cách sửa: truyền `skipFonts: true` ([dashboardExcelExport.ts:56-64](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L56-L64)) — đúng nhánh `embedWebFonts()` bỏ luôn bước quét font, không còn chạm `.cssRules`. Đổi lại ảnh dùng `system-ui` (Segoe UI) thay vì Inter; `globals.css:83` đã khai báo stack `'Inter', system-ui, ...` nên bố cục không lệch.
+
+**Còn tồn tại (chưa sửa, ngoài phạm vi)**: `PlanExportCardModal` cũng gọi `toPng` mà không truyền `skipFonts` ([dòng 98-102](file:///d:/chanh%20thu/web/src/components/work-plans/PlanExportCardModal.tsx#L98-L102)) nên vẫn spam cùng lỗi này khi tải ảnh phiếu; cần user xác nhận trước khi đổi vì ảnh đó đang render bằng Inter.
+
+## 🔴 Lượt sửa thứ 2: ảnh "rất xấu" vì chụp cả tiêu đề và các nút
+
+User: *"bạn chụp tấm hình rất xấu, bạn lấy tiêu đề làm gì… còn thứ tôi muốn là bỏ mấy cái nút ở hình 2 đi"* (hình 2 = cụm `Sơ đồ chi tiết / Xuất Excel / Làm mới`). Ảnh chỉ cần **phần số liệu**, tiêu đề đã có ở dòng A1 của sheet.
+
+- Cơ chế: thuộc tính `data-excel-shot="skip"` + option `filter` của `toPng` (html-to-image gọi `filter(node)` cho từng node trừ node gốc, trả `false` là bỏ nguyên subtree — xem `clone-node.js:277`). Hàm lọc phải kiểm tra `nodeType === ELEMENT_NODE` vì filter nhận cả text node.
+- Phần tử đã đánh dấu bỏ khỏi ảnh:
+  - Lô kê: cả dòng header ([WarehouseFillRateChart.tsx:246](file:///d:/chanh%20thu/web/src/components/dashboard/WarehouseFillRateChart.tsx#L246) — gồm tiêu đề, mô tả và 3 nút).
+  - Container: khối tiêu đề + mô tả (`ContainerStockChart.tsx:642`) và 2 nút **Xuất Excel** / **Làm mới** (`:696`, `:708`).
+  - Phân bố: `<h2>` (`InventoryDistributionChart.tsx:501`) và 2 nút **Xuất Excel** / **Làm mới** (`:529`, `:571`).
+- **Cố ý giữ lại** trong ảnh: tab `Lô kệ / Sảnh / Tổng`, chip `Danh mục`, `Có định mức`, ô chọn sắp xếp, tab `KG / vị trí` — chúng là **bộ lọc đang áp dụng**, mất chúng thì không biết ảnh chụp cấu hình nào (chỉ mất nút hành động).
+
+## 🔴 Lượt sửa thứ 3: ảnh ra TRẮNG vì truyền `filter` đảo ngược
+
+User mở file: sheet "Anh man hinh" chỉ có tiêu đề + metadata, khung ảnh trắng. Nguyên nhân: `cloneNode()` của html-to-image bỏ node khi `filter` **trả `false`** (`clone-node.js:277`), còn hàm `isExcludedFromScreenshot` lại trả `true` cho node cần loại → truyền thẳng vào `filter` thành **đảo ngược**: mọi element không đánh dấu skip đều bị bỏ, text node cũng bị bỏ, ảnh còn mỗi khung trắng.
+
+- Sửa: hàm lọc đổi tên thành `keepInScreenshot` và trả `true` = giữ ([dashboardExcelSpecs.ts:38-50](file:///d:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts#L38-L50)), dùng `filter: keepInScreenshot` ([dashboardExcelExport.ts:61](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L61)).
+- Chuyển hàm lọc sang `dashboardExcelSpecs.ts` (file thuần, không import canvas/file-saver) để test được bằng vitest, và thay `Node.ELEMENT_NODE` bằng hằng `ELEMENT_NODE = 1` để chạy ngoài trình duyệt.
+- Test mới `keepInScreenshot` (19/19 pass) chính là thứ bắt được chiều đảo ngược này nếu viết trước.
+
+## 🔴 Lượt sửa thứ 4: ảnh tràn màn hình Excel → thu theo kích thước cửa sổ
+
+User: *"thu nhỏ ảnh lại để vừa màn hình"*. Ảnh render được nhưng bị cắt bên phải (mất cột % ở sát cột F) vì giới cỡ cũ là hằng số cố định `MAX_SCREENSHOT_WIDTH = 1400` px — rộng hơn cửa sổ làm việc của màn hình 1280×720.
+
+- Bỏ hằng 1400, thay bằng `screenshotFitScale(width, height)` ([dashboardExcelExport.ts:41-45](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L41-L45)): khung vừa = **ngang `window.innerWidth - 48`** (sàn 640), **dọc `window.innerHeight × 1.6`** (sàn 480) — card dài vẫn cho phép cuộn dọc một chút chứ không ép thành dải mỏng. Trả `Math.min(1, maxW/width, maxH/height)` nên card đã nhỏ thì giữ nguyên 100%.
+- `pixelRatio` không còn cố định bằng 2 mà là `Math.max(1, 2 × scale)` ([dashboardExcelExport.ts:68](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L68)): ảnh luôn gấp đúng 2 lần số điểm ảnh hiển thị trong Excel (chữ sắc khi phóng to) mà không vẽ thừa — card 1900px thu còn ~0,66 thì ảnh ra ~1260px chứ không phải 3800px, file nhẹ hơn hẳn.
+- Kích thước nhúng (`width`/`height` trong `DashboardScreenshot`) tính theo `rect × scale`, khớp đúng `ext` mà `writeSheet` đưa vào ExcelJS, nên ô ảnh không chừa khoảng trắng bên phải.
+
+## 🔴 Lượt sửa thứ 5: bỏ luật "vừa cửa sổ", thu cố định 80%
+
+User mở vài file khác: ảnh vẫn to hơn ý muốn, và chốt *"ko cần vừa màn hình mà nôm na cho tấm ảnh nhỏ lại 80% xem sao"*. Luật theo `window.innerWidth/innerHeight` ở lượt 4 phụ thuộc cửa sổ trình duyệt lúc bấm xuất nên mỗi máy mỗi khác — bỏ hẳn.
+
+- Thay bằng hằng `SCREENSHOT_SCALE = 0.8` ([dashboardExcelExport.ts:37-38](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L37-L38)): mọi ảnh dashboard nhúng vào Excel đều bằng **80% kích thước card trên màn hình**, không phụ thuộc cửa sổ hay màn hình.
+- `pixelRatio` vẫn `Math.max(1, 2 × scale)` = 1.6 → PNG gấp đúng 2 lần điểm ảnh hiển thị, chữ sắc mà file không phình.
+- Cả 3 card (Tỉ lệ lấp đầy, Phân bố tồn kho, Container) đều đi qua `captureDashboardScreenshot` nên một hằng số phủ hết; muốn đổi cỡ sau này chỉ sửa một chỗ.
+
+## 🔴 Lượt sửa thứ 6: 80% vẫn quá to → 50%
+
+User xem bản 80% vẫn chê to, chốt 50%. Chỉ đổi `SCREENSHOT_SCALE = 0.5` ([dashboardExcelExport.ts:38](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L38)); `pixelRatio` tự thành `max(1, 2×0.5) = 1` nên PNG đúng bằng số điểm ảnh của card, hiển thị trong Excel ở nửa cỡ đó — vẫn gấp 2 lần điểm ảnh hiển thị, chữ không vỡ.
+
+## 🔴 Lượt sửa thứ 7: mất chữ "KH..." trong ảnh → self-host font Inter
+
+User mở sheet ảnh card Tỉ lệ lấp đầy: nhãn khu vực chỉ còn **"KH..."** thay vì tên đầy đủ. Cơ chế: `cloneCSSStyle` của html-to-image ([clone-node.js:164-186](file:///d:/chanh%20thu/web/node_modules/html-to-image/lib/clone-node.js#L164-L186)) chép **nguyên computed style, gồm width đã resolve ra px**, vào từng node clone; trong khi `skipFonts: true` khiến khung clone chạy font thay thế (system-ui) có chữ rộng hơn Inter → chữ tràn ô width cố định → class `truncate` ([WarehouseFillRateChart.tsx:495](file:///d:/chanh%20thu/web/src/components/dashboard/WarehouseFillRateChart.tsx#L495)) cắt thành dấu ba chấm. Mọi chỗ `truncate` khác cũng tiềm ẩn lỗi tương tự.
+
+Sửa gốc rễ thay vì né: **self-host Inter** để khung clone nhúng được đúng font:
+- Tải Inter variable (OFL) subset latin + vietnamese vào [public/fonts/](file:///d:/chanh%20thu/web/public/fonts) (48KB + 10KB, kèm `OFL.txt`); khai báo 2 khối `@font-face` `font-weight: 100 900` + `unicode-range` chép đúng từ Google CSS vào [globals.css:6-21](file:///d:/chanh%20thu/web/src/app/globals.css#L6-L21).
+- Bỏ 3 thẻ `<link>` Google Fonts ở [layout.tsx](file:///d:/chanh%20thu/web/src/app/layout.tsx#L80-L82) → mọi stylesheet nay **cùng nguồn**, `getCSSRules` không còn `SecurityError` (lỗi overlay trước đây cũng hết gốc, kể cả chỗ `toPng` chưa từng sửa ở `PlanExportCardModal.tsx:98`).
+- Bỏ `skipFonts: true` trong `captureDashboardScreenshot` → html-to-image tự nhúng woff2 thành data URL vào khung clone → chữ đúng metric Inter → hết tràn ô, hết "KH...".
+- Giao diện thật không đổi: vẫn đúng font Inter, đúng dải weight, chỉ đổi nguồn phục vụ (không phụ thuộc mạng Google khi chạy trong nhà máy).
+
+Kiểm chứng: `curl` dev server trả `200 font/woff2` cho cả 2 file; CSS dev (`/_next/static/css/app/layout.css`) chứa đủ 2 khối `@font-face` cùng nguồn; vitest **19/19**, `tsc --noEmit` sạch trên file đụng tới. Phần nhúng font vào khung clone chỉ chạy trong trình duyệt → cần user xuất lại một file để chốt nhãn khu vực hiện đủ chữ.
+
+## 🔴 Lượt sửa thứ 8: 50% nhỏ quá → quay lại 80%
+
+User xem bản 50% (đã đủ chữ nhờ font self-host) thấy nhỏ quá, đoán lần 80% trước chưa ăn do cache, chốt quay lại 80%. Đổi `SCREENSHOT_SCALE = 0.8` ([dashboardExcelExport.ts:38](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L38)); `pixelRatio` tự thành 1.6. Nhắc user: bản dev ở `:3001` mới nóng hổi theo từng sửa; `:3000` là prod build cũ nên mọi thay đổi từ đầu phiên không có hiệu lực ở đó nếu chưa rebuild.
+
+## 🔴 Lượt sửa thứ 9: sheet ảnh đổi tên thành "Anh dashboard"
+
+User chê tên tab "Anh man hinh", chốt gọi là ảnh dashboard. Đổi `SCREENSHOT_SHEET_NAME = 'Anh dashboard'` ([dashboardExcelSpecs.ts:38](file:///d:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts#L38)), title dòng A1 thành `<tên card> — ảnh dashboard`, và tooltip nút Xuất Excel của cả 3 card thành "sheet ảnh dashboard" cho khớp tên tab. Test chốt thứ tự sheet đổi theo: `['Anh dashboard', 'Tong quan', 'Lo ke', 'Sanh', 'Tong (ke + sanh)']` — 19/19 pass, tsc sạch.
+
+## Tuân thủ kiến trúc phân hệ
+
+- **Không đụng Kho Đông Lạnh về mặt logic**: chỉ thêm 1 sheet ảnh vào file xuất; toàn bộ sheet số liệu giữ nguyên như cũ.
+- **Không hardcode mã kho**: `systemName` lấy từ `currentSystem?.name || systemType` đang chọn; ảnh chụp chính DOM của card nên mặc nhiên chỉ chứa dữ liệu phân hệ đang làm việc.
+- **Không thêm dependency, không sửa schema**: `html-to-image@1.11.13` đã có sẵn trong `package.json`.
+
+## Kiểm chứng
+
+- `npx vitest run src/lib/__tests__/dashboardExcel.test.ts`: **PASS 18/18** — thêm 2 test: sheet "Anh man hinh" đứng đầu file, nhúng đúng 1 PNG (`worksheet.getImages().length === 1`), metadata đủ 4 dòng và **không có autofilter**; test còn lại assert bỏ dòng "Bộ lọc trên màn hình" khi card không có bộ lọc.
+- `npx tsc --noEmit`: không lỗi trên 6 file vừa sửa.
+- **Còn mở (bắt buộc người dùng bấm thật)**: `toPng` chỉ chạy trong trình duyệt và cần phiên đăng nhập localhost, nên agent không tự kiểm chứng được 2 điểm: (1) ảnh recharts/donut có bị trắng không, (2) chiều cao ảnh card dài (nhiều khu) có hợp lý không.
+
+---
+
+# Walkthrough: Sửa 2 lỗi tiền tồn tại được phát hiện khi làm thống kê mã phụ
+
+## Bối cảnh
+
+Người dùng xác nhận "sửa cả 2 lỗi luôn" cho hai defect mà mục *Ghi chú phát hiện thêm* của phần trước đã nêu:
+
+1. Sheet `Theo ngay` trong file Excel khai báo trùng cột **"SL đã xuất"** → cột "Lệnh hoàn thành" bị đẩy sang H, file có một cột lặp vô nghĩa.
+2. Embed `picker:user_profiles!picker_id(...)` luôn fail `PGRST200`, bị `console.warn` nuốt → tab **"Theo giờ hạ"** và dòng **"Hạ trong ngày"** luôn rỗng từ trước tới nay; cùng khuôn lỗi ở trang *Năng suất lấy hàng*.
+
+## Lỗi 1: cột "SL đã xuất" lặp
+
+`buildSheet` sinh giá trị bằng `columns.map(c => row[c.key])`, nên hai lần khai báo cùng key `exportedQty` chỉ in lại cùng một số. Bỏ dòng trùng ở [exportOrderReportExcelExport.ts:205](file:///d:/chanh%20thu/web/src/lib/exportOrderReportExcelExport.ts#L205). Hệ quả có chủ đích: "Lệnh hoàn thành" về lại cột G.
+
+## Lỗi 2: không resolve được tên người hạ hàng
+
+Đo trực tiếp trên PostgREST local (`export_task_picks`, KHO_DONG_LANH):
+
+| Cách viết | Kết quả |
+|---|---|
+| `picker:user_profiles!picker_id(...)` | `PGRST200: Could not find a relationship between 'export_task_picks' and 'user_profiles'` |
+| `picker:auth.users!picker_id(...)` | `PGRST100` — schema `auth` không expose qua REST |
+| `.in('id', ids)` trên `user_profiles` | khớp **1/1** id → `Nguyễn Đình Tùng` |
+
+Nguyên nhân gốc ở schema: [20260418001500_create_export_task_picks.sql:9](file:///d:/chanh%20thu/web/supabase/migrations/20260418001500_create_export_task_picks.sql#L9) khai báo `"picker_id" "uuid" NOT NULL REFERENCES "auth"."users"("id")` — FK không trỏ `user_profiles` nên PostgREST không có đường nhúng. Không sửa migration (đã chạy trên kho thật, và `user_profiles.id` chính là `auth.users.id` theo `user_profiles_id_fkey ... ON DELETE CASCADE`), chỉ đổi cách đọc.
+
+Cách đọc mới theo đúng khuôn mà trang danh sách lệnh xuất đã dùng cho `created_by`: lấy id từ dòng, tra `user_profiles` riêng, ghép tên bằng map. Gom vào [src/lib/userProfiles.ts](file:///d:/chanh%20thu/web/src/lib/userProfiles.ts):
+
+- `fetchUserProfilesByIds(ids)` — khử trùng id, chia chunk **100 id/lần truy vấn** (theo ngưỡng "URI too long" đã đo ở phần trước) và **`throw` khi có `error`** thay để dữ liệu rỗng chảy tiếp.
+- `formatProfileName(profile)` — `full_name || username || 'Không rõ'`, giữ nguyên thứ tự ưu tiên hiển thị như embed cũ.
+
+Áp dụng:
+- `ExportOrderStatsPanel.tsx`: `StatPickRow` thêm `pickerId`, select bỏ embed và thêm `picker_id`, sau khi đọc xong toàn bộ trang thì ghép `pickerName`. `catch` của khối pick nay **toast cảnh báo** thay vì chỉ `console.warn` — lần sau nếu history hỏng, người dùng thấy ngay lý do chứ không phải suy đoán từ bảng trống.
+- `reports/picking-productivity/page.tsx`: giữ nguyên shape `picker: {...}` để mọi chỗ hiển thị (`@username`, avatar, top picker) không phải đổi; chỉ nạp nó từ map.
+
+## Tuân thủ kiến trúc phân hệ
+
+- **Không sửa schema, không chạy migration**: chỉ đổi đường đọc dữ liệu. Kho Đông Lạnh giữ nguyên hành vi; dữ liệu pick vẫn lọc `system_code = currentSystem.code` như cũ, và hàng có `task.system_code` khác vẫn bị loại.
+- **Không hardcode mã kho**: helper `userProfiles.ts` không biết gì về phân hệ, dùng được cho mọi kho.
+- **Cô lập dữ liệu**: `user_profiles` vẫn chịu RLS như khi nhúng, không mở quyền mới.
+
+## Kiểm chứng
+
+- Query mới chạy thật trên PostgREST local: stats panel trả **6 dòng**, `user_profiles` map khớp **1/1** id → tên `Nguyễn Đình Tùng`; trang năng suất trả **6 dòng** với select `*` + embed `task_item`.
+- `npx vitest run src/lib/__tests__/exportOrderReportExcelExport.test.ts`: **PASS 4/4** — test "ghi đúng dữ liệu dòng ngày" nay assert thêm `G4='Lệnh hoàn thành'`, `G5=1` và `H4` trống, chốt rằng cột trùng đã biến mất.
+- `npx tsc --noEmit`: sạch trên 6 file đụng tới (`userProfiles.ts`, `ExportOrderStatsPanel.tsx`, `picking-productivity/page.tsx`, `exportOrderReportExcelExport.ts`, `supabaseClient.ts`, `database.types.ts`).
+- **Phải bổ sung type**: `user_profiles` trong `database.types.ts` và `UserProfilesTable` thiếu cột `username` (cột thật có trong schema: `user_profiles_username_key` + `idx_user_profiles_username`), khiến `.select('id, username, full_name')` bị suy ra `never[]`. Đã thêm `username: string | null` vào Row/Insert/Update ở cả hai nơi.
+- **Còn mở**: bấm thật tab "Theo giờ hạ" và trang *Năng suất lấy hàng* cần phiên đăng nhập localhost (agent không tự nhập mật khẩu được). Lưu ý `localhost:3000` đang là bản prod build cũ — xem ở `:3001` hoặc rebuild prod.
+
+---
+
+# Walkthrough: Tab Sảnh của card Tỉ lệ lấp đầy — hết cảnh "SẢNH 1" trùng tên không biết của kho nào
+
+User nhìn tab Sảnh (cả trên màn hình lẫn sheet ảnh trong Excel): một loạt hàng "SẢNH 1", "SẢNH 2" giống hệt nhau, không biết sảnh thuộc kho nào. Nguyên nhân: danh sách gốc của tab Sảnh là `hallRoots` ([warehouseFillRate.ts:260-262](file:///d:/chanh%20thu/web/src/lib/warehouseFillRate.ts#L260-L262)) — gom sảnh "đầu ngành" của **mọi kho** thành một danh sách phẳng, mỗi hàng chỉ hiện tên chính nó; breadcrumb chỉ có ngữ cảnh khi đã bấm đi xuống một kho.
+
+- Helper mới `ancestorLabels(stats, zoneId)` ([warehouseFillRate.ts:342-354](file:///d:/chanh%20thu/web/src/lib/warehouseFillRate.ts#L342-L354)): đi ngược `parentId` trả tên chuỗi khu cha (không gồm chính nó), có guard chống vòng lặp; `fillTreeRows` nay dùng lại chính helper này cho cột đường dẫn Excel nên màn hình và Excel cùng một nguồn tên.
+- Màn hình: `FillRateRow` nhận `contextPath` và in chuỗi cha mờ ngay trước tên khu ("KHO 1 › **SẢNH 1**"), chỉ khi hàng nằm **ngoài ngữ cảnh breadcrumb** (`row.parentId !== zone đang xem` và không phải chính zone đang xem) — nên tab Lô kệ / Tổng và các cấp đã drill không thừa chữ ([WarehouseFillRateChart.tsx:410-425](file:///d:/chanh%20thu/web/src/components/dashboard/WarehouseFillRateChart.tsx#L410-L425), [:505-514](file:///d:/chanh%20thu/web/src/components/dashboard/WarehouseFillRateChart.tsx#L505-L514)). Title tooltip giữ đường dẫn đầy đủ.
+- Biểu đồ thanh trong các sheet Excel: nhãn thanh nay là đường dẫn đầy đủ (`KHO 1 › SẢNH 1`) thay vì tên trần ([dashboardExcelSpecs.ts:250-251](file:///d:/chanh%20thu/web/src/lib/dashboardExcelSpecs.ts#L250-L251)); sheet Lô kệ nhiều gốc không đổi nhãn vì gốc không có cha.
+- Sheet ảnh chụp màn hình tự hưởng lợi vì chụp đúng DOM đã có chuỗi cha.
+
+## Kiểm chứng
+
+- `npx vitest run warehouseFillRate.test.ts dashboardExcel.test.ts`: **43/43 pass** — thêm 3 test `ancestorLabels` (chuỗi cha đúng thứ tự, sảnh trùng tên hai kho phân biệt được, vòng lặp không treo) và chốt nhãn biểu đồ Sảnh thành `['KHO 1 › SANH 1']`.
+- `npx tsc --noEmit`: sạch trên 4 file đụng tới.
+- **Còn mở**: nhìn thật tab Sảnh trên trình duyệt (agent không có phiên đăng nhập) — chuỗi cha mờ phải hiện trước mỗi sảnh ở cấp "Toàn bộ sảnh", và mất đi khi đã drill vào một kho.
+
+---
+
+# Walkthrough: Báo cáo Tồn kho theo LOT — thêm sheet ảnh "Tỉ lệ phân bố hàng hóa tồn kho"
+
+User muốn file Excel của tab *Tồn kho theo LOT* (`/inventory` → Xuất Excel) có thêm 3 sheet. Bước 1 (làm trước để user duyệt) là sheet ảnh chứa đúng 2 biểu đồ của card dashboard "Tỉ lệ phân bố hàng hóa tồn kho": donut **Khối lượng (KG)** và donut **Số ô vị trí theo danh mục**.
+
+Yêu cầu cứng: số liệu trong ảnh phải khớp 1:1 với dashboard. Vì vậy KHÔNG chép lại câu query/hàm tổng hợp — tách phần lõi của card ra lib dùng chung, card và trang in cùng gọi một hàm.
+
+## 1. Tách lõi dữ liệu của card ra lib
+
+`src/lib/inventoryDistributionData.ts` (mới, 236 dòng):
+
+- `fetchDistributionLots(systemCode)` [:55](file:///d:/chanh%20thu/web/src/lib/inventoryDistributionData.ts#L55) — query `lots` (`status = active`, `.eq('system_code')`, phân trang bằng `fetchAllPaged`) kèm `lot_items.products` và `products`, có `product_category_rel(category_id)`.
+- `fetchDistributionCategories(systemCode)` [:91](file:///d:/chanh%20thu/web/src/lib/inventoryDistributionData.ts#L91).
+- `fetchCategoryPositionRaw(systemCode)` [:99](file:///d:/chanh%20thu/web/src/lib/inventoryDistributionData.ts#L99) — `positions` / `zones` / `zone_positions` + `buildZoneLookup`, rồi đọc danh mục của đúng các LOT đang chiếm ô, **chunk 150** vì `.in()` đụng trần độ dài URL của Kong local.
+- `aggregateKgByProduct(lots, conversion, selectedCategoryIds)` [:153](file:///d:/chanh%20thu/web/src/lib/inventoryDistributionData.ts#L153) — nguyên luật của card: lọc danh mục (kể cả `'none'` = chưa phân loại), bỏ sản phẩm không có `kgRate`, gộp theo `internalCode || sku`, ưu tiên `lot_items`, LOT cũ không có dòng chi tiết thì đọc thẳng đầu LOT, sắp giảm dần, trả `{ items, totalWeight }`.
+- `KgConversion` là 2 hàm của hook `useUnitConversion` truyền vào theo tham số — lib không phải React hook nên cả card lẫn trang in dùng chung được.
+
+Card `InventoryDistributionChart.tsx` nay chỉ gọi lib: `fetchData` [:71](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L71), `fetchCategories` [:82](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L82), `fetchPositionData` [:127](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L127), `chartData` useMemo [:204](file:///d:/chanh%20thu/web/src/components/dashboard/InventoryDistributionChart.tsx#L204). Card bỏ hẳn import `supabase` và type `Lot`/`PositionData` cục bộ (dùng `CategoryPositionRaw` của lib). Giao diện, tab, bộ lọc, nút Xuất Excel của card **không đổi hành vi**.
+
+## 2. Dựng 2 ảnh PNG từ đúng spec của dashboard
+
+`src/lib/inventoryDistributionCharts.ts` (mới):
+
+- `buildDistributionChartImages({ systemCode, conversion })` [:40](file:///d:/chanh%20thu/web/src/lib/inventoryDistributionCharts.ts#L40) — đọc 3 nguồn song song rồi dựng ảnh bằng CHÍNH hai hàm spec mà nút Xuất Excel của card dùng: `distributionKgExportSpec(...).chart` và `categoryPositionExportSpec(...).chart` → `renderChartPng`. Sau này sửa spec thì dashboard và báo cáo LOT cùng đổi, không lệch nhau.
+- Tập danh mục của donut vị trí đọc từ `system_ui_settings.warehouse_status_config.selected_category_ids` [:24](file:///d:/chanh%20thu/web/src/lib/inventoryDistributionCharts.ts#L24) — đúng khóa card dùng, nên ảnh khớp cấu hình user đã lưu. Không đọc được (trang in có thể mở ẩn danh qua token) → coi như theo dõi toàn bộ, không throw.
+- Lỗi bất kỳ → `console.error` + trả `null`: báo cáo LOT vẫn xuất đủ 2 sheet số liệu, chỉ thiếu sheet ảnh. Tính năng phụ không được làm chết báo cáo chính.
+
+## 3. Sheet mới trong file Excel của tab LOT
+
+`src/lib/inventoryReportExcelExport.ts`:
+
+- Tách `buildInventoryReportWorkbook(data)` [:88](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L88) ra khỏi `exportInventoryReportToExcel` [:109](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L109) để test được trong node (không cần browser/`saveAs`).
+- Trường mới `distributionImages?` [:16](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L16); sheet `DISTRIBUTION_SHEET_NAME = 'Tỉ lệ phân bố hàng hóa tồn kho'` [:36](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L36) — đúng 30 ký tự (trần Excel là 31) — chỉ được thêm khi `type === 'lot'` VÀ có ảnh.
+- `addStackedImage` [:41](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L41) đặt ảnh theo cùng công thức với workbook dashboard (`tl.col 0.2`, `editAs: 'oneCell'`, `PX_PER_ROW = 20` để tính dòng kế tiếp). Hai ảnh xếp dọc, mỗi ảnh có tiêu đề riêng ("Phân bố khối lượng (KG) theo sản phẩm" / "Số ô vị trí đang chứa hàng theo danh mục") để mở file lên là biết ảnh nào là ảnh nào.
+
+Trang in `src/app/print/inventory/page.tsx`:
+
+- `handleExportExcel` [:946](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L946) dựng ảnh khi `type === 'lot' && systemType` rồi truyền vào hàm xuất.
+- Auto-export [:970](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L970) nay chờ thêm `conversionLoading`. Lý do: nếu export trước khi bảng quy đổi đơn vị tải xong thì `getBaseToKgRate` trả `null` cho mọi sản phẩm và donut KG ra **rỗng** dù tồn kho có thật — lỗi này chỉ xuất hiện ở luồng tự xuất qua URL.
+
+## Kiến trúc phân hệ
+
+- Không hardcode mã kho: sheet ảnh bật theo `type === 'lot'` + `systemType` truyền từ URL; mọi truy vấn đều `.eq('system_code' | 'system_type', systemCode)`. Bất kỳ phân hệ nào xuất tab LOT cũng có sheet này nếu có dữ liệu, không có nhánh riêng cho kho nào.
+- Không đụng schema, không đụng luồng nhập/xuất, không đổi UI card → Kho Đông Lạnh giữ nguyên hành vi.
+
+## Kiểm chứng
+
+- `npx vitest run` (toàn suite): **182/182 pass**. File mới `src/lib/__tests__/inventoryDistributionSheet.test.ts` — 13 test: sheet nằm đúng sau 2 sheet số liệu và chứa đúng 2 ảnh; tiêu đề 2 ảnh; ảnh dưới bắt đầu sau khi ảnh trên hết chỗ; không có ảnh thì không sinh sheet rỗng; tab báo cáo khác không bị dính; ảnh sống sót qua một vòng `writeBuffer` → `load`; 2 sheet cũ nguyên vẹn. Cộng 6 test `aggregateKgByProduct`: gộp trùng mã nội bộ, bỏ sản phẩm không quy đổi được KG, LOT legacy đọc đầu LOT, lọc danh mục kể cả `'none'`, % tính trên tổng của đúng tập lọc, rỗng thì không chia 0.
+- `npx tsc --noEmit`: sạch trên 5 file đụng tới (`inventoryDistributionData.ts`, `inventoryDistributionCharts.ts`, `inventoryReportExcelExport.ts`, `InventoryDistributionChart.tsx`, `print/inventory/page.tsx`).
+- **Sự cố đã sửa**: `src/lib/__tests__/inventoryReportExcelExport.test.ts` ĐÃ CÓ SẴN (6 test của tab Lệnh SX). Lần đầu tôi `Write` ghi đè mất — đã `git checkout` khôi phục nguyên bản và chuyển test mới sang file riêng. Bài học: trước khi `Write` một file test phải kiểm tra nó tồn tại chưa (`git status` báo `M` chứ không phải `??` là dấu hiệu).
+- **Còn mở**: user bấm Xuất Excel thật ở tab *Tồn kho theo LOT* trên `http://localhost:3001` (`:3000` là bản prod build cũ, chưa có code này) để duyệt sheet ảnh. Đúng ý rồi mới làm tiếp 2 sheet còn lại của yêu cầu "thêm 3 sheet".
+
+# Walkthrough: Báo cáo Tồn kho theo LOT — thêm sheet ảnh "Ước tính container tồn kho"
+
+Nối tiếp sheet ảnh phân bố ở trên: user muốn tab *Tồn kho theo LOT* xuất thêm sheet ảnh chứa biểu đồ của card dashboard **"Số lượng Container tồn kho theo từng mặt hàng"**. Yêu cầu cứng giữ nguyên — số liệu trong ảnh phải khớp 1:1 với card, nên KHÔNG chép lại query/công thức quy đổi thùng mà tách lõi của card ra lib dùng chung, card và trang in cùng gọi một hàm.
+
+## 1. Tách lõi dữ liệu của card Cont ra lib
+
+`src/lib/containerStockData.ts` (mới):
+
+- `fetchContainerLots(systemCode)` [:61](file:///d:/chanh%20thu/web/src/lib/containerStockData.ts#L61) — query `lots` (`status = active`, `.eq('system_code')`, phân trang bằng `fetchAllPaged`) kèm `lot_items.products` và `products`, có `boxes_per_container` + `product_category_rel(category_id)`.
+- `aggregateContainerStock(lots, conversion, selectedCategoryIds)` [:126](file:///d:/chanh%20thu/web/src/lib/containerStockData.ts#L126) — nguyên luật của card: đơn vị `thùng/sọt/hộp/bao/két` đếm thẳng, đơn vị khác quy về **Thùng** bằng `convertUnit` rồi mới chia định mức; quy đổi không được thì fallback `Kg / 20`; sản phẩm chưa cài `boxes_per_container` vẫn có dòng (`containers = 0`, `hasConfig = false`) để báo cáo thấy chỗ còn thiếu; ưu tiên `lot_items`, LOT cũ không có dòng chi tiết thì đọc thẳng đầu LOT.
+- `sortContainerStats` [:208](file:///d:/chanh%20thu/web/src/lib/containerStockData.ts#L208), `filterByChartCategories` [:224](file:///d:/chanh%20thu/web/src/lib/containerStockData.ts#L224), `selectConfiguredProducts` [:236](file:///d:/chanh%20thu/web/src/lib/containerStockData.ts#L236) — ba chế độ sắp (`containers | boxes | name`), lọc theo danh mục đã cấu hình (kể cả `'none'`), và chọn pinned/Top N đúng thứ tự ưu tiên của card.
+- `ContainerConversion` là 2 hàm của hook `useUnitConversion` (`convertUnit`, `getBaseAmount`) truyền vào theo tham số — lib không phải React hook nên cả card lẫn trang in dùng chung được.
+
+Card `ContainerStockChart.tsx` nay chỉ gọi lib: `fetchData` [:271](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L271), `processedData` useMemo [:301](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L301), `chartSource` [:414](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L414), `userConfiguredProducts` [:421](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L421). Card bỏ hẳn ~100 dòng tổng hợp inline và interface `ProductContainerStat` cục bộ (nay import type từ lib). Giao diện, tab, bộ lọc, nút Xuất Excel của card **không đổi hành vi**.
+
+## 2. Ảnh sheet Cont = ảnh CHỤP DOM đúng card dashboard (nút bấm đã bỏ), canvas chỉ là fallback
+
+User chốt: thứ cần nhúng vào báo cáo LOT là **tấm ảnh giống sheet "Anh dashboard"** — tức ảnh chụp DOM thật của card Cont sau khi lược bỏ các nút bấm — chứ không phải biểu đồ vẽ lại. Vì vậy:
+
+- Trang in render card Cont **ẩn** ngoài lề màn hình (wrapper `position: fixed; left: -10000`, rộng 1100px) chỉ trong lúc xuất Excel tab LOT [:1043](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L1043). Card ẩn nằm NGOÀI `#print-ready` ( sibling qua fragment ) nên không dính vào ảnh JPG chụp báo cáo lẫn bản in giấy.
+- **Bẫy đã dính một lần**: node truyền cho `toPng` ban đầu CHÍNH là div fixed → html-to-image clone kèm computed style của node gốc nên bản clone nằm ở `left:-10000` ngoài khung SVG → PNG trong suốt, Excel nhúng ảnh đúng kích thước nhưng không thấy gì ("ko hiện gì cả"). Sửa: wrapper fixed chỉ để giấu, node chụp là div **static** bọc ngoài card [:1049](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L1049).
+- Card ẩn nhận prop `initialCategoryTab="all"` [:1050](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L1050) để mở sẵn tab **Tất cả**: effect tự chọn "Sầu Riêng" chỉ chạy khi tab còn rỗng, nên bản ẩn không dính tab mặc định của dashboard và ảnh báo cáo thấy toàn bộ danh mục. Dashboard gọi card không truyền prop nên hành vi cũ giữ nguyên.
+- Các nút bấm vô nghĩa trong ảnh tĩnh được đánh dấu `data-excel-shot="skip"` trên chính card (hàng lọc Danh mục/Tất cả sản phẩm/sắp xếp, nút Cài đặt hiển thị, hai nút Xem thêm/Thu gọn) nên cả sheet "Anh dashboard" lẫn sheet Cont đều sạch nút; vẫn giữ chip đơn vị và hàng tab danh mục vì chúng mang thông tin.
+- `waitForContainerCardReady` [:954](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L954) thăm DOM mỗi 300ms (tối đa 20s) tới khi card ẩn hết spinner (`.animate-spin`) và recharts đã vẽ (`.recharts-surface`) rồi mới chụp — chụp sớm sẽ dính nguyên khung loading.
+- `captureHiddenContainerCard` [:964](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L964) gọi đúng `captureDashboardScreenshot` của workbook dashboard: filter `keepInScreenshot` tự bỏ mọi node `data-excel-shot="skip"` (header, nút Xuất Excel / Làm mới / cài đặt) nên ảnh sạch nút bấm, và dùng chung hệ số thu 80% như sheet "Anh dashboard".
+- `buildContainerChartImage` trong `src/lib/containerStockCharts.ts` [:17](file:///d:/chanh%20thu/web/src/lib/containerStockCharts.ts#L17) giữ lại làm **fallback**: chỉ khi không chụp được DOM (timeout / lỗi html-to-image) mới vẽ biểu đồ canvas bằng `containerExportSpec(...).chart` để sheet không trống. Lỗi cả hai → `containerImage = null` → bỏ sheet, báo cáo LOT vẫn xuất đủ sheet số liệu.
+
+## 3. Sheet mới trong file Excel của tab LOT
+
+`src/lib/inventoryReportExcelExport.ts`:
+
+- Trường mới `containerImage?` [:19](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L19); sheet `CONTAINER_SHEET_NAME = 'Ước tính container tồn kho'` [:40](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L40) (26 ký tự, dưới trần 31 của Excel) — chỉ thêm khi `type === 'lot'` VÀ có ảnh.
+- `buildContainerSheet` [:96](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L96) tái dùng `addStackedImage` (cùng công thức đặt ảnh `tl.col 0.2`, `editAs: 'oneCell'`, `PX_PER_ROW = 20`) — 1 ảnh kèm tiêu đề "Số lượng Container tồn kho theo từng mặt hàng" (trung tính, đúng cho cả ảnh chụp DOM lẫn canvas fallback).
+- `buildInventoryReportWorkbook` [:116](file:///d:/chanh%20thu/web/src/lib/inventoryReportExcelExport.ts#L116) nối sheet container **sau** sheet phân bố: thứ tự file là `Chi tiết → Tổng hợp → [Tỉ lệ phân bố] → [Ước tính container]`.
+
+Trang in `src/app/print/inventory/page.tsx`:
+
+- `handleExportExcel` [:982](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L982) khi `type === 'lot' && systemType` thì chụp card ẩn trước [:996-1000](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L996), hụt mới vẽ canvas, rồi truyền `containerImage` vào hàm xuất [:1016](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L1016).
+- Card ẩn chỉ mount khi `contShotPending` (bật trong lúc xuất, tắt ở `finally`) nên ngày thường trang in không tốn thêm query Cont nào.
+
+## Kiến trúc phân hệ
+
+- Không hardcode mã kho: sheet ảnh bật theo `type === 'lot'` + `systemType` truyền từ URL; `fetchContainerLots` lọc `.eq('system_code', systemCode)`. Bất kỳ phân hệ nào xuất tab LOT cũng có sheet này nếu có dữ liệu, không nhánh riêng cho kho nào.
+- Không đụng schema, không đụng luồng nhập/xuất, không đổi UI card → Kho Đông Lạnh giữ nguyên hành vi.
+
+## Kiểm chứng
+
+- `npx vitest run` 3 file liên quan: **30/30 pass**. File mới `src/lib/__tests__/inventoryContainerSheet.test.ts` — 11 test: sheet nằm đúng sau sheet phân bố và chứa đúng 1 ảnh; chỉ có ảnh container (không phân bố) thì vẫn nối sau 2 sheet số liệu; tiêu đề ảnh; không có ảnh thì không sinh sheet rỗng; tab báo cáo khác không bị dính; ảnh sống sót qua một vòng `writeBuffer` → `load`. Cộng 5 test `aggregateContainerStock`: đơn vị thùng đếm thẳng rồi chia định mức, chưa khai định mức thì `containers = 0` nhưng vẫn có dòng, đơn vị Kg quy về Thùng rồi mới chia, gộp nhiều LOT cùng sản phẩm, rỗng thì trả `[]`.
+- `npx tsc --noEmit`: sạch trên 5 file đụng tới (`containerStockData.ts`, `containerStockCharts.ts`, `inventoryReportExcelExport.ts`, `ContainerStockChart.tsx`, `print/inventory/page.tsx`) + file test mới. Các lỗi `src/app/(dashboard)/...` còn lại là lỗi tiền tồn tại (Supabase `never`/thiếu bảng `customers`/`permissions`), không thuộc phạm vi này.
+- **Sự cố đã sửa (hooks)**: lần đầu tôi đổi `chartSource` / `userConfiguredProducts` thành `useMemo` nhưng đặt SAU nhánh `if (loading || conversionLoading) return ...` → render loading không gọi hai hook đó, React ném "change in the order of Hooks called by ContainerStockChartInner". Đã dời cả hai lên trước early return (cùng chỗ comment cũ nhắc "Must be before any early return"). Bài học: trong card này mọi hook phải đứng trước early return duy nhất; biểu thức dẫn xuất thường thì đặt sau cũng được.
+- **Còn mở**: user bấm Xuất Excel thật ở tab *Tồn kho theo LOT* trên `http://localhost:3001` để duyệt sheet ảnh Cont — kỳ vọng thấy ảnh CHỤP DOM giống sheet "Anh dashboard" (đã bỏ nút), không phải biểu đồ vẽ lại (agent không tự đăng nhập form được — lớp bảo mật chặn). Đúng ý rồi mới làm sheet còn lại của yêu cầu "thêm 3 sheet".
+
+# Walkthrough: Card Cont tồn kho — tab "Tất cả" lên đầu và thành mặc định
+
+## Yêu cầu
+
+User duyệt dashboard và chốt hai điểm UI trên card "Số lượng Container tồn kho theo từng mặt hàng":
+1. Hàng tab Danh mục: nút **"Tất cả"** đứng **đầu hàng**, các tab danh mục (Sầu Riêng, Xoài, Mít…) theo sau (trước đó "Tất cả" nằm cuối).
+2. Tab mở mặc định khi vào dashboard là **"Tất cả"** (trước đó effect tự chọn "Sầu Riêng").
+
+## Thay đổi (`src/components/dashboard/ContainerStockChart.tsx`)
+
+- Hàng tab [:672](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L672): khối nút "Tất cả" dời lên TRƯỚC vòng `configuredChartCategories.map(...)`; chỉ đổi thứ tự render, không đổi onClick/style/đếm badge.
+- State tab [:154](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L154): `useState(initialCategoryTab || 'all')` — mặc định mới là `'all'`.
+- **Xóa** effect "Auto-select Sầu Riêng" cũ: không còn cần vì state không bao giờ khởi tạo rỗng. Nhánh dữ liệu [:426](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L426) vốn coi `'all'` và `''` như nhau (`chartList = chartSource`) nên đổi mặc định không ảnh hưởng phép lọc.
+- Prop `initialCategoryTab` giữ nguyên (trang in vẫn truyền `"all"` — nay trùng mặc định, vô hại nhưng tự tài liệu ý định).
+
+## Hệ quả với ảnh báo cáo
+
+Sheet "Ước tính container tồn kho" chụp card ẩn với tab `'all'` nên không đổi hành vi; chỉ khác là hàng tab trong ảnh nay hiển thị "Tất cả" ở đầu hàng, khớp dashboard.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc theo `ContainerStockChart` → sạch.
+- User reload `http://localhost:3001`: hàng tab hiện `[Tất cả] [Sầu Riêng] [Xoài] [Mít]` với "Tất cả" đang active ngay lần đầu mở card.
+
+# Walkthrough: Sheet ảnh Cont — tắt animation recharts cho bản chụp ẩn
+
+## Lỗi user bắt gặp
+
+Ảnh sheet "Ước tính container tồn kho" (Xuất Excel tab *Tồn kho theo LOT*) khác hẳn card thật: thanh cụt cỡ ~20% chiều dài và **mất nhãn số** ("6,71 Cont"...). Nguyên nhân: `waitForContainerCardReady` chỉ chờ `.recharts-surface` xuất hiện + hết spinner, nhưng recharts `Bar` mặc định `isAnimationActive=true` (~1,5s) — trong lúc animate, thanh mới vươn dần và recharts **không render LabelList** → `toPng` chụp đúng khoảnh khắc đó.
+
+## Sửa
+
+- `ContainerStockChart` nhận prop `noAnimation?: boolean` (mặc định `false`, dashboard giữ nguyên animation) → truyền xuống `Bar` thành `isAnimationActive={!noAnimation}` [:1056](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L1056).
+- Trang in truyền `noAnimation` cho card ẩn [:1052](file:///d:/chanh%20thu/web/src/app/print/inventory/page.tsx#L1052): thanh và nhãn số render đủ ngay paint đầu → ảnh chụp đúng mốc Cont như dashboard, không cần chờ đợi mong manh.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `ContainerStockChart` + `print/inventory` → sạch.
+- User xuất lại Excel tab LOT trên `:3001`: sheet Cont phải giống hình card thật (nhãn "x,xx Cont" cuối mỗi thanh, thanh dài đúng trục).
+
+## Bổ sung: chữ "Tất cả" trong ảnh sheet bị cắt nửa dòng
+
+User soi ảnh sheet Cont: pill xanh "Tất cả" hiện "Tất" rồi chữ "cả" trồi nửa dưới mép pill. Nguyên nhân: bản clone của html-to-image khóa cả chiều rộng **lẫn chiều cao** từng node theo px đo trên bản live; chỉ cần font trong clone lệch metric một chút là span "Tất cả" quấn xuống 2 dòng trong khi chiều cao pill vẫn khóa 1 dòng → dòng thứ hai tràn ra ngoài và bị nhìn như cắt. Sửa phòng thủ tại [ContainerStockChart.tsx:671-708](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L671): thêm `whitespace-nowrap` cho span tên tab và `shrink-0` cho cả nút "Tất cả" lẫn nút danh mục — chữ không bao giờ quấn, pill giữ đúng 1 dòng cả live lẫn clone. `tsc --noEmit` lọc file sạch.
+
+# Walkthrough: Ảnh chụp card — hết khoảng trống đầu card và chip đơn vị sát mép phải
+
+## Lỗi user bắt gặp
+
+Ảnh sheet Cont (và sheet "Anh dashboard") còn hai tật: (1) dải trống ~170px đầu card chỗ tiêu đề/nút bấm đã bị loại; (2) chip "Đơn vị: Container (Cont)" không trôi sát mép phải mà hụt vào trong ~200px.
+
+## Nguyên nhân
+
+`cloneCSSStyle` của html-to-image chép **nguyên cssText computed** (gồm px width/height đã resolve) lên mọi node clone. Node bị `filter` bỏ thì biến mất nhưng cha nó vẫn giữ chiều cao/rộng khóa cũ:
+- div header (không đánh dấu skip) giữ chiều cao của tiêu đề + hàng nút → dải trống + đường kẻ `border-b` dưới dải.
+- div nhóm phải `flex items-center gap-2` giữ chiều rộng gồm cả nút "Cài đặt hiển thị" (bị bỏ trong clone) → chip đơn vị nằm lệch trái trong hộp rộng cũ, hụt mép phải.
+
+## Sửa
+
+- `globals.css`: rule `[data-capture-active='true'] [data-excel-shot='skip'] { display: none !important }` — ẩn skip-node ngay trên bản live **chỉ trong lúc chụp**.
+- `captureDashboardScreenshot` ([dashboardExcelExport.ts:53-80](file:///d:/chanh%20thu/web/src/lib/dashboardExcelExport.ts#L53)): gắn `CAPTURE_ACTIVE_ATTR` trước khi đo rect + clone, gỡ ở `finally` → computed size khóa lại đã là layout không nút; rect đo sau khi ẩn nên kích thước ảnh khớp layout mới.
+- `ContainerStockChart.tsx`: dời `data-excel-shot="skip"` lên **cả container header** (gồm `border-b`) thay vì hai div con — nếu không, container rỗng vẫn sót dải mảnh padding + đường kẻ. Các mốc skip cũ của nút Export/Làm mới thành thừa nhưng vô hại.
+- Chip đơn vị không cần đổi JSX: khi nút "Cài đặt hiển thị" (skip) ẩn lúc chụp, nhóm phải chỉ còn chip → `justify-between` đẩy sát mép phải; bản live giữ nguyên cụm [Cài đặt hiển thị][chip].
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc file đụng tới → sạch; `npx vitest run` 2 file liên quan → **30/30 pass**.
+- User xuất lại Excel trên `:3001`: ảnh card hết dải trống đầu, chip "Đơn vị: Container (Cont)" sát mép phải. Lưu ý nhỏ: trong ~0,5s chụp, card trên màn hình tạm ẩn phần tiêu đề/nút (attribute chỉ sống trong lúc chụp).
+
+## Bổ sung: thanh cuộn lọt vào ảnh sheet Cont
+
+User thấy ảnh sheet Cont có thanh cuộn dọc + ngang trong vùng biểu đồ. Nguyên nhân: khung biểu đồ ([ContainerStockChart.tsx:924](file:///d:/chanh%20thu/web/src/components/dashboard/ContainerStockChart.tsx#L924)) dùng `overflow-x-auto` (cho màn hẹp, `minWidth: 640`); bản live ResponsiveContainer đo khớp nên không tràn, còn bản clone bị khóa px từng node, lệch nhau vài pixel đủ để Chrome vẽ cả hai thanh cuộn vào ảnh SVG. Sửa: gắn `data-capture-clip` lên khung đó + rule `[data-capture-active='true'] [data-capture-clip] { overflow: hidden !important }` trong globals.css — chỉ kẹp trong lúc chụp, bản live giữ nguyên khả năng cuộn ngang. `tsc --noEmit` lọc file sạch.
+
+# Walkthrough: Báo cáo Tồn kho theo LOT — thêm sheet ảnh "Tỉ lệ lấp đầy theo khu vực"
+
+## Yêu cầu
+
+User chốt sheet ảnh thứ 3 cho tab LOT: lấy đúng nội dung ảnh mà file Excel "Tỉ lệ lấp đầy theo khu vực" (card dashboard) đang nhúng — ảnh CHỤP DOM card, ẩn các chi tiết cài đặt/nút bấm, chuẩn chỉ như sheet Cont (sheet 2).
+
+## Triển khai
+
+- `inventoryReportExcelExport.ts`: thêm `fillRateImage?` vào `InventoryReportExportData`, hằng số `FILL_RATE_SHEET_NAME = 'Tỉ lệ lấp đầy theo khu vực'` (26 ký tự < trần 31), `buildFillRateSheet` theo đúng khuôn sheet Cont (A1 tiêu đề, A2 meta, `addStackedImage` caption 'Tỉ lệ lấp đầy theo khu vực'); nối sau sheet container trong `buildInventoryReportWorkbook` → thứ tự `Chi tiết → Tổng hợp → [Tỉ lệ phân bố] → [Ước tính container] → [Tỉ lệ lấp đầy]`.
+- `print/inventory/page.tsx`: card ẩn thứ hai `WarehouseFillRateChart` (chỉ mount khi `fillShotPending`), `waitForFillRateCardReady` chờ hết spinner + hàng tab 3 nút render (nhánh lỗi chỉ 1 nút "Thử lại" nên bị loại), `captureHiddenFillRateCard` chụp qua `captureDashboardScreenshot` — hưởng trọn bộ sửa trước đó: header card đã đánh dấu `data-excel-shot="skip"` nên tiêu đề + 3 nút (Sơ đồ chi tiết / Xuất Excel / Làm mới) tự ẩn, rule `data-capture-active` chống khoảng trống ma, `data-capture-clip` không áp dụng vì card này không có khung overflow. Không chụp được thì **bỏ sheet** (card fill-rate không có bản vẽ lại canvas).
+- Card fill-rate mặc định tab "Lô kệ" (scope `rack`) — đúng tab công ty dùng quyết định sức chứa, khớp ảnh user đưa.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc 4 file đụng tới → sạch.
+- `npx vitest run src/lib/__tests__/inventoryContainerSheet.test.ts` → **16/16 pass** (thêm 5 test: sheet đứng cuối đúng thứ tự, caption ghi ≥ 2 lần (A1 + caption ảnh), không ảnh thì không sheet rỗng, tab khác không dính, ảnh sống sót qua writeBuffer → load).
+- User xuất lại Excel tab LOT trên `:3001`: file có sheet thứ 5 "Tỉ lệ lấp đầy theo khu vực" với ảnh giống hệt ảnh trong file Excel fill-rate (header/nút đã ẩn).
+
+# Walkthrough: Sửa "bấm Xuất Excel không thấy file tải về" (tab LOT)
+
+## Triệu chứng
+
+Sau khi thêm sheet ảnh fill-rate, user bấm "Xuất Excel" trên trang in nhiều lần mà không có file nào tải về, cũng không có thông báo lỗi.
+
+## Chẩn đoán
+
+- Bản build prod `:3000` lúc 23:08 có chứa đoạn chụp card fill-rate ("Không chụp được card Tỉ lệ lấp đầy ẩn") nhưng **không có** `try/catch` quanh `handleExportExcel` → mọi exception trong luồng xuất thành unhandled rejection im lặng: không file, không alert, nút vẫn sáng.
+- Một lượt xuất tab LOT giờ nặng hơn nhiều: dựng 2 biểu đồ canvas (phân bố KG + vị trí) và chụp DOM **2 card ẩn** — card fill-rate phải tự fetch toàn bộ `positions` + `zones` của phân hệ (cây khu ~4.200 zone) nên riêng bước chờ card sẵn sàng có thể ngốn 20–30s.
+- Nút không có trạng thái "đang xuất" → user tưởng chết, bấm liên tiếp; mỗi cú bấm khởi động thêm một pipeline fetch + `toPng` chạy song song, tranh nhau bộ nhớ/main thread → tab đơ, không lượt nào về đích.
+- Hai hàm chờ card (`waitForContainerCardReady`, `waitForFillRateCardReady`) chỉ có timeout: card rơi vào nhánh lỗi (1 nút "Thử lại") hoặc nhánh rỗng (`stats === null` → không render gì) thì vẫn đứng chờ hết timeout mới chịu bỏ sheet.
+
+## Sửa (`src/app/print/inventory/page.tsx`)
+
+- Thêm cờ `exportingReport`: `handleExportExcel` return ngay nếu đang chạy; toàn bộ thân hàm bọc `try/catch/finally` — catch thì `console.error` + `alert('Không xuất được file Excel. Vui lòng thử lại.')` để lỗi không còn câm lặng, finally luôn mở khóa nút.
+- Nút "Xuất Excel" (`~line 1172`): `disabled={exportingReport}`, nhãn đổi thành `Loader2` quay + "Đang xuất...", style `opacity-70 cursor-wait` — cùng khuôn nút "Tải ảnh phiếu" kế bên.
+- `waitForContainerCardReady`: thoát **ngay** khi thấy chữ nhánh lỗi của error boundary ("Đã xảy ra lỗi khi hiển thị Biểu đồ Container"); timeout giữ 20s cho luồng fetch LOT nặng.
+- `waitForFillRateCardReady`: thoát ngay khi thấy "Không tải được dữ liệu tỉ lệ lấp đầy" (nhánh lỗi) hoặc node rỗng quá 2s (nhánh `!stats`); timeout 30s để card kịp fetch positions/zones ở kho nhiều khu — chờ lâu nhưng chỉ khi còn hy vọng, các nhánh chết bỏ cuộc tức thì.
+- Ảnh sheet vẫn theo luật cũ: card nào không chụp được thì **bỏ sheet đó**, báo cáo số liệu luôn được tạo — không để sheet ảnh chặn file.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `print/inventory` → sạch (lưu ý: repo bật `typescript.ignoreBuildErrors`, lỗi kiểu trong file này trước đó vẫn build được nên mới lọt ra runtime).
+- `npx vitest run src/lib/__tests__/inventoryContainerSheet.test.ts` → **16/16 pass**.
+- Chưa xác minh được bằng trình duyệt: dev `:3001` đang tắt, `:3000` chạy bản build 23:08 (chưa có các sửa trên). Cần user chạy lại dev server (hoặc rebuild prod — phải hỏi trước) rồi bấm "Xuất Excel" tab LOT: nút phải chuyển "Đang xuất..." và khóa, file tải về kèm 5 sheet, hoặc có alert báo lỗi cụ thể trong console.
+
+# Walkthrough: Tab "Lô kệ" card Tỉ lệ lấp đầy bị gãy chữ 2 dòng
+
+Hàng tab `flex flex-wrap` cho phép flex shrink từng nút xuống min-content (bằng một từ) trước khi wrap cả nút → chữ "Lô kệ" gãy thành "Lô"/"kệ" như ảnh user chụp. Sửa đúng khuôn lần sửa tab Cont: `shrink-0` lên nút tab, bọc nhãn bằng `<span className="whitespace-nowrap">`, thêm `whitespace-nowrap` cho span số `1795/6744` và `shrink-0` cho icon — hàng tab giờ wrap cả nút xuống dòng mới thay vì bóp chữ. Áp dụng cho cả bản live lẫn ảnh chụp sheet Excel (cùng JSX). `tsc --noEmit` lọc file sạch.
+
+# Walkthrough: Sắp lại thứ tự sheet + rút ngắn tên tab báo cáo Tồn kho theo LOT
+
+## Yêu cầu
+
+User nhìn hàng tab Excel thấy tên dài tràn màn hình và muốn sheet "Chi tiết" (bảng dài) đứng sau cùng.
+
+## Sửa (`src/lib/inventoryReportExcelExport.ts`)
+
+- Tên tab rút ngắn: `DISTRIBUTION_SHEET_NAME = 'Phân bố tồn kho'`, `CONTAINER_SHEET_NAME = 'Container tồn kho'`, `FILL_RATE_SHEET_NAME = 'Lấp đầy theo khu'`. Tiêu đề đầy đủ vẫn giữ ở ô A1 trong từng sheet và caption trên ảnh — mở sheet vẫn biết đúng nội dung, chỉ hàng tab là ngắn.
+- `buildInventoryReportWorkbook` nhánh LOT: tạo 'Tổng hợp' trước, rồi 3 sheet ảnh (nếu có), cuối cùng mới 'Chi tiết'. Nhánh báo cáo khác giữ nguyên 'Bao Cao Ton Kho'.
+- Parser kiểm kê (`stocktakeSnapshotParser`) chọn sheet theo TÊN ('Tổng hợp' ưu tiên) nên đổi thứ tự không ảnh hưởng luồng đối chiếu — test stocktakeReconciliation vẫn pass.
+
+## Kiểm chứng
+
+- `npx vitest run` 3 file: inventoryContainerSheet (16), inventoryDistributionSheet (13), stocktakeReconciliation (17) → **46/46 pass**; các assertion thứ tự sheet cập nhật theo thứ tự mới `Tổng hợp → [Phân bố tồn kho] → [Container tồn kho] → [Lấp đầy theo khu] → Chi tiết`.
+- `npx tsc --noEmit` lọc 4 file đụng tới → sạch.

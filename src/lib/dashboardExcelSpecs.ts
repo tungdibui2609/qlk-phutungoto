@@ -1,4 +1,5 @@
 import {
+    ancestorLabels,
     chartRowsForScope,
     classifyFill,
     fillTreeRows,
@@ -12,7 +13,7 @@ import {
 } from './warehouseFillRate'
 import type { CategoryPositionResult } from './categoryPositionStats'
 import type { ChartSpec } from './chartImage'
-import type { DashboardSheetSpec, DashboardWorkbookSpec } from './dashboardExcelWorkbook'
+import type { DashboardChartImage, DashboardSheetSpec, DashboardWorkbookSpec, ExcelMetaItem } from './dashboardExcelWorkbook'
 
 /**
  * Dựng nội dung file Excel cho từng view Dashboard.
@@ -27,6 +28,55 @@ export type ExportSpec = {
 /** Một sheet kèm biểu đồ riêng — ảnh PNG do phía client vẽ khi tải file. */
 export type DashboardSheetPlan = DashboardSheetSpec & { chart?: ChartSpec | null }
 
+/** Ảnh chụp nguyên card dashboard trên màn hình, kèm nhãn để ghi vào sheet "Anh dashboard". */
+export type DashboardScreenshot = DashboardChartImage & {
+    cardTitle: string
+    systemName: string
+    filterLabel?: string
+}
+
+export const SCREENSHOT_SHEET_NAME = 'Anh dashboard'
+export const EXCEL_SHOT_SKIP_ATTR = 'data-excel-shot'
+
+/**
+ * Gắn lên node đang chụp để CSS ẩn hẳn phần tử `data-excel-shot="skip"` ngay trên bản live.
+ * html-to-image khóa kích thước px theo computed style lúc clone: nếu node skip chỉ bị bỏ
+ * trong clone, cha của nó vẫn giữ chiều cao/rộng cũ → ảnh dính khoảng trống và chữ lệch mép.
+ */
+export const CAPTURE_ACTIVE_ATTR = 'data-capture-active'
+
+const ELEMENT_NODE = 1
+
+/**
+ * html-to-image BỎ node khi `filter` trả `false`, nên hàm này trả `false` cho phần tử
+ * đánh dấu `data-excel-shot="skip"` (tiêu đề card, nút Xuất Excel / Làm mới) —
+ * ảnh chỉ còn phần số liệu, tiêu đề đã có ở dòng A1 của sheet.
+ */
+export function keepInScreenshot(domNode: { nodeType: number; getAttribute?: (name: string) => string | null }): boolean {
+    if (domNode.nodeType !== ELEMENT_NODE) return true
+    return domNode.getAttribute?.(EXCEL_SHOT_SKIP_ATTR) !== 'skip'
+}
+
+/**
+ * Sheet đầu tiên của mọi file Excel dashboard: ảnh chụp đúng card người dùng đang xem,
+ * kèm tiêu đề/bộ lọc — để mở file là thấy ngay màn hình, không phải suy từ bảng số.
+ */
+export function screenshotSheetPlan(shot: DashboardScreenshot, when: Date = new Date()): DashboardSheetPlan {
+    const meta: ExcelMetaItem[] = [
+        { label: 'Phân hệ kho', value: shot.systemName },
+        ...(shot.filterLabel ? [{ label: 'Bộ lọc trên màn hình', value: shot.filterLabel }] : []),
+        { label: 'Xuất lúc', value: exportedAt(when) },
+        { label: 'Ghi chú', value: 'Ảnh chụp nguyên card dashboard đúng như màn hình; số liệu chi tiết ở các sheet phía sau.' }
+    ]
+    return {
+        sheetName: SCREENSHOT_SHEET_NAME,
+        title: `${shot.cardTitle} — ảnh dashboard`,
+        meta,
+        image: { base64: shot.base64, width: shot.width, height: shot.height },
+        metaColumnWidths: [26, 110]
+    }
+}
+
 const LEVEL_LABEL: Record<FillLevel, string> = {
     critical: 'Sắp đầy',
     high: 'Cao',
@@ -40,6 +90,9 @@ const LEVEL_HEX: Record<FillLevel, string> = {
     normal: '#10b981',
     empty: '#d6d3d1'
 }
+
+/** Thanh "Tổng (kệ + sảnh)" tô vàng để phân biệt với hai thanh thành phần cấu thành nên nó. */
+const AGGREGATE_HEX = '#f59e0b'
 
 export const SCOPE_LABEL: Record<FillScope, string> = {
     rack: 'Lô kệ',
@@ -77,7 +130,7 @@ const viPercent = (n: number) => `${round(n, 1).toLocaleString('vi-VN')}%`
 
 /**
  * File Excel của dashboard tỉ lệ lấp đầy: 4 sheet
- *   "Tong quan"          — số của cả ba tab trên một màn
+ *   "Tong quan"          — biểu đồ + số của cả ba tab trên một màn
  *   "Lo ke"/"Sanh"/"Tong"— biểu đồ cấp khu vực + bảng TOÀN BỘ cây khu, thụt đầu dòng theo cấp
  * Xuất độc lập với cấp đang drill trên màn hình vì người dùng cần xem cả hệ thống trong Excel.
  */
@@ -89,6 +142,26 @@ export function fillRateWorkbookPlan(input: {
     const { systemName, stats, when = new Date() } = input
 
     const levelNote = `Ngưỡng: Sắp đầy ≥ ${CRITICAL_FILL_PCT}% · Cao ≥ ${HIGH_FILL_PCT}% · Bình thường < ${HIGH_FILL_PCT}% · Trống = 0%.`
+
+    const overviewChart: ChartSpec = {
+        kind: 'hbar',
+        title: 'Tỉ lệ lấp đầy theo phạm vi — Lô kệ / Sảnh / Tổng',
+        labels: SCOPE_ORDER.map(scope => SCOPE_LABEL[scope]),
+        series: [{
+            name: 'Tỉ lệ lấp đầy',
+            color: LEVEL_HEX.normal,
+            values: SCOPE_ORDER.map(scope => round(stats.totals[scope].pct, 1))
+        }],
+        barColors: SCOPE_ORDER.map(scope =>
+            scope === 'all' ? AGGREGATE_HEX : LEVEL_HEX[classifyFill(stats.totals[scope].pct)]
+        ),
+        percentAxis: true,
+        unit: '%',
+        valueLabels: SCOPE_ORDER.map(scope => {
+            const bucket = stats.totals[scope]
+            return `${viPercent(bucket.pct)} · ${viNumber(bucket.occupied)}/${viNumber(bucket.positions)} ô`
+        })
+    }
 
     const overview: DashboardSheetPlan = {
         sheetName: 'Tong quan',
@@ -119,12 +192,14 @@ export function fillRateWorkbookPlan(input: {
         }),
         notes: [
             'Lô kệ và Sảnh tách riêng vì sức chứa và quyết định nhập/xuất dựa trên Lô kệ; tab Tổng cộng cả hai để đối soát với trang Sơ đồ trạng thái kho.',
+            'Thanh "Tổng (kệ + sảnh)" trong biểu đồ tô màu vàng vì là cộng dồn của hai thanh trên, không phải một mức lấp đầy.',
             ...(stats.unassignedPositions > 0
                 ? [`${stats.unassignedOccupied}/${stats.unassignedPositions} ô Lô kệ chưa gán vào khu vực nào trong sơ đồ — vẫn nằm trong dòng "Lô kệ" của bảng này.`]
                 : []),
             levelNote
         ],
-        dataBarColumn: 5
+        dataBarColumn: 5,
+        chart: overviewChart
     }
 
     const scopeSheets: DashboardSheetPlan[] = SCOPE_ORDER.map(scope => {
@@ -179,7 +254,8 @@ export function fillRateWorkbookPlan(input: {
             chart: {
                 kind: 'hbar',
                 title: `Tỉ lệ lấp đầy ${SCOPE_LABEL[scope]} — cấp khu vực`,
-                labels: chartRows.map(row => row.label),
+                // Nhãn thanh kèm đường dẫn cha: tab Sảnh gom sảnh mọi kho nên "SẢNH 1" trần không biết của kho nào.
+                labels: chartRows.map(row => [...ancestorLabels(stats, row.zoneId), row.label].join(' › ')),
                 series: [{
                     name: 'Tỉ lệ lấp đầy',
                     color: LEVEL_HEX.normal,

@@ -21,6 +21,7 @@ import {
 import { useSystem } from '@/contexts/SystemContext'
 import { useToast } from '@/components/ui/ToastProvider'
 import { formatQuantityFull } from '@/lib/numberUtils'
+import { fetchUserProfilesByIds } from '@/lib/userProfiles'
 import { format } from 'date-fns'
 
 type PickRecord = {
@@ -33,7 +34,7 @@ type PickRecord = {
     system_code: string
     created_at: string
     // Joined data
-    picker: { username: string; full_name: string | null } | null
+    picker: { username: string | null; full_name: string | null } | null
     task_item: {
         task_id: string
         product_id: string
@@ -95,7 +96,6 @@ export default function PickingProductivityPage() {
                 .from('export_task_picks')
                 .select(`
                     *,
-                    picker:user_profiles!picker_id(username, full_name),
                     task_item:export_task_items!task_item_id(
                         task_id,
                         product_id,
@@ -115,7 +115,13 @@ export default function PickingProductivityPage() {
 
             const { data, error } = await query
             if (error) throw error
-            setPicks((data as any[]) as PickRecord[])
+            const rows = (data || []) as any[]
+            // picker_id là FK trỏ auth.users nên PostgREST không nhúng được user_profiles; phải tra riêng rồi ghép tên vào.
+            const profiles = await fetchUserProfilesByIds(rows.map(r => r.picker_id))
+            setPicks(rows.map(r => ({
+                ...r,
+                picker: profiles.get(r.picker_id) || null,
+            })) as PickRecord[])
         } catch (error: any) {
             showToast('Lỗi tải dữ liệu: ' + error.message, 'error')
         } finally {

@@ -20,6 +20,16 @@ export interface ExportReportProductRow {
     exportedQty: number;
 }
 
+export interface ExportReportTagRow {
+    tag: string;
+    taskCount: number;
+    lineCount: number;
+    lotCount: number;
+    requestedQty: number;
+    exportedQty: number;
+    unit: string;
+}
+
 export interface ExportReportTaskRow {
     taskCode: string;
     taskCreatedAt: string;
@@ -53,6 +63,7 @@ export interface ExportReportDetailRow {
     sku: string;
     productionCode: string;
     lotCode: string;
+    tags: string;
     positionCode: string;
     requestedQty: number;
     exportedQty: number;
@@ -73,6 +84,7 @@ export interface ExportOrderReportExcelOptions {
     summary: ExportReportSummaryRow[];
     dayRows: ExportReportDayRow[];
     productRows: ExportReportProductRow[];
+    tagRows: ExportReportTagRow[];
     taskRows: ExportReportTaskRow[];
     pickRows: ExportReportPickRow[];
     detailRows: ExportReportDetailRow[];
@@ -149,7 +161,7 @@ function buildSheet(
 }
 
 export async function exportOrderReportToExcel(options: ExportOrderReportExcelOptions) {
-    const { systemName, dateFrom, dateTo, summary, dayRows, productRows, taskRows, pickRows, detailRows, companyInfo } = options;
+    const { systemName, dateFrom, dateTo, summary, dayRows, productRows, tagRows, taskRows, pickRows, detailRows, companyInfo } = options;
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = 'Chanh Thu Smart WMS';
@@ -191,7 +203,6 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
             { header: 'Dòng hàng', key: 'lineCount', width: 12 },
             { header: 'SL yêu cầu', key: 'requestedQty', width: 14 },
             { header: 'SL đã xuất', key: 'exportedQty', width: 14 },
-            { header: 'SL đã xuất', key: 'exportedQty', width: 14 },
             { header: 'Lệnh hoàn thành', key: 'completedTasks', width: 16 },
         ],
         dayRows.map((d, i) => ({ stt: i + 1, ...d })),
@@ -228,7 +239,35 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
     );
 
     // ==========================================
-    // SHEET 4: THEO LỆNH XUẤT
+    // SHEET 4: THEO MÃ PHỤ
+    // ==========================================
+    buildSheet(
+        workbook,
+        'Theo ma phu',
+        'SẢN LƯỢNG XUẤT THEO MÃ PHỤ (THẺ TAG ĐƠN LẺ)',
+        [
+            { header: 'STT', key: 'stt', width: 6 },
+            { header: 'Mã phụ', key: 'tag', width: 30 },
+            { header: 'Số lệnh xuất', key: 'taskCount', width: 14 },
+            { header: 'Dòng hàng', key: 'lineCount', width: 12 },
+            { header: 'Số kiện (LOT)', key: 'lotCount', width: 14 },
+            { header: 'SL yêu cầu', key: 'requestedQty', width: 14 },
+            { header: 'SL đã xuất', key: 'exportedQty', width: 14 },
+            { header: 'Còn lại chưa xuất', key: 'remaining', width: 18 },
+            { header: 'ĐVT', key: 'unit', width: 14 },
+        ],
+        tagRows.map((t, i) => ({
+            stt: i + 1,
+            ...t,
+            remaining: (t.requestedQty - t.exportedQty).toLocaleString('vi-VN'),
+        })),
+        rangeLabel,
+        companyName,
+        systemName
+    );
+
+    // ==========================================
+    // SHEET 5: THEO LỆNH XUẤT
     // ==========================================
     buildSheet(
         workbook,
@@ -254,7 +293,7 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
     );
 
     // ==========================================
-    // SHEET 5: CHI TIẾT DÒNG LỆNH
+    // SHEET 6: CHI TIẾT DÒNG LỆNH
     // ==========================================
     buildSheet(
         workbook,
@@ -269,6 +308,7 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
             { header: 'Mã SP (SKU)', key: 'sku', width: 16 },
             { header: 'Lệnh SX (LOT LSX)', key: 'productionCode', width: 20 },
             { header: 'Mã kiện', key: 'lotCode', width: 20 },
+            { header: 'Mã phụ', key: 'tags', width: 26 },
             { header: 'Vị trí xuất', key: 'positionCode', width: 14 },
             { header: 'SL yêu cầu', key: 'requestedQty', width: 13 },
             { header: 'SL đã xuất', key: 'exportedQty', width: 13 },
@@ -283,7 +323,7 @@ export async function exportOrderReportToExcel(options: ExportOrderReportExcelOp
     );
 
     // ==========================================
-    // SHEET 6: LỊCH SỬ HẠ HÀNG (PICK EVENTS)
+    // SHEET 7: LỊCH SỬ HẠ HÀNG (PICK EVENTS)
     // ==========================================
     if (pickRows.length > 0) {
         buildSheet(

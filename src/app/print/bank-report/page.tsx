@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo, Suspense } from 'react'
+import React, { useState, useEffect, useMemo, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import {
@@ -13,7 +13,9 @@ import {
     Loader2,
     Warehouse as WarehouseIcon,
     FileText,
-    RotateCcw
+    RotateCcw,
+    Calendar,
+    Edit3
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { formatQuantityFull } from '@/lib/numberUtils'
@@ -52,6 +54,25 @@ function createBlankRows(count = 8): BankReportItem[] {
     }))
 }
 
+// Helper to parse dd/MM/yyyy, dd-MM-yyyy to ISO yyyy-MM-dd
+function parseDateStrToIso(str: string): string | null {
+    if (!str) return null
+    const parts = str.trim().split(/[/.-]/)
+    if (parts.length === 3) {
+        let [d, m, y] = parts
+        if (d.length === 1) d = '0' + d
+        if (m.length === 1) m = '0' + m
+        if (y.length === 2) y = '20' + y
+        const day = Number(d)
+        const month = Number(m)
+        const year = Number(y)
+        if (year >= 2000 && year <= 2100 && month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+            return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+        }
+    }
+    return null
+}
+
 function BankReportContent() {
     const router = useRouter()
     const searchParams = useSearchParams()
@@ -60,6 +81,57 @@ function BankReportContent() {
     // Date filters (blank by default to match the paper template)
     const [dateFrom, setDateFrom] = useState(searchParams.get('from') || '')
     const [dateTo, setDateTo] = useState(searchParams.get('to') || '')
+
+    // User editable text for subtitle date range
+    const [fromText, setFromText] = useState(() => {
+        const fromParam = searchParams.get('from')
+        return fromParam ? format(new Date(fromParam), 'dd/MM/yyyy') : ''
+    })
+    const [toText, setToText] = useState(() => {
+        const toParam = searchParams.get('to')
+        return toParam ? format(new Date(toParam), 'dd/MM/yyyy') : ''
+    })
+
+    // Custom date line mode (allows typing freeform text for the entire line)
+    const [isCustomDateLine, setIsCustomDateLine] = useState(false)
+    const [customDateLine, setCustomDateLine] = useState('')
+
+    const fromPickerRef = useRef<HTMLInputElement>(null)
+    const toPickerRef = useRef<HTMLInputElement>(null)
+
+    const handleDateFromChange = (newVal: string) => {
+        setDateFrom(newVal)
+        if (newVal) {
+            try {
+                setFromText(format(new Date(newVal), 'dd/MM/yyyy'))
+            } catch {
+                setFromText(newVal)
+            }
+        } else {
+            setFromText('')
+        }
+    }
+
+    const handleDateToChange = (newVal: string) => {
+        setDateTo(newVal)
+        if (newVal) {
+            try {
+                setToText(format(new Date(newVal), 'dd/MM/yyyy'))
+            } catch {
+                setToText(newVal)
+            }
+        } else {
+            setToText('')
+        }
+    }
+
+    const handleClearDates = () => {
+        setDateFrom('')
+        setDateTo('')
+        setFromText('')
+        setToText('')
+        setCustomDateLine('')
+    }
 
     // Branches & Warehouse
     const [branches, setBranches] = useState<Branch[]>([])
@@ -221,10 +293,13 @@ function BankReportContent() {
 
     // Subtitle date formatting: if empty, display standard dots "Từ ngày ............ Đến ngày ............"
     const formattedDateRange = useMemo(() => {
-        const f = dateFrom ? format(new Date(dateFrom), 'dd/MM/yyyy') : '............'
-        const t = dateTo ? format(new Date(dateTo), 'dd/MM/yyyy') : '............'
+        if (isCustomDateLine && customDateLine) {
+            return customDateLine
+        }
+        const f = fromText.trim() || '............'
+        const t = toText.trim() || '............'
         return `Từ ngày ${f} Đến ngày ${t}`
-    }, [dateFrom, dateTo])
+    }, [isCustomDateLine, customDateLine, fromText, toText])
 
     // Format cell display
     const renderCellDisplay = (val: string | number) => {
@@ -370,25 +445,25 @@ function BankReportContent() {
                         </button>
 
                         {/* Optional Date Pickers */}
-                        <div className="hidden lg:flex items-center gap-1.5 bg-stone-50 border border-stone-300 rounded-lg px-2 py-1 text-xs">
+                        <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-300 rounded-lg px-2 py-1 text-xs">
                             <span className="text-stone-500">Từ:</span>
                             <input
                                 type="date"
                                 value={dateFrom}
-                                onChange={(e) => setDateFrom(e.target.value)}
+                                onChange={(e) => handleDateFromChange(e.target.value)}
                                 className="bg-transparent focus:outline-none"
                             />
                             <span className="text-stone-500">Đến:</span>
                             <input
                                 type="date"
                                 value={dateTo}
-                                onChange={(e) => setDateTo(e.target.value)}
+                                onChange={(e) => handleDateToChange(e.target.value)}
                                 className="bg-transparent focus:outline-none"
                             />
-                            {(dateFrom || dateTo) && (
+                            {(dateFrom || dateTo || fromText || toText) && (
                                 <button
                                     type="button"
-                                    onClick={() => { setDateFrom(''); setDateTo('') }}
+                                    onClick={handleClearDates}
                                     className="text-[11px] text-blue-600 hover:underline ml-1"
                                     title="Xóa ngày để in dấu chấm chấm"
                                 >
@@ -457,18 +532,117 @@ function BankReportContent() {
                         </h1>
 
                         <div className="text-[13.5px] italic text-black font-normal">
-                            <input
-                                type="text"
-                                value={formattedDateRange}
-                                onChange={(e) => {
-                                    // allow custom typing if needed
-                                    const val = e.target.value
-                                    if (val.includes('Từ') || val.includes('...')) {
-                                        // keeping custom
-                                    }
-                                }}
-                                className="w-full max-w-[450px] text-center italic bg-transparent border-b border-dashed border-transparent hover:border-gray-300 focus:border-blue-500 focus:outline-none print:hidden"
-                            />
+                            {!isCustomDateLine ? (
+                                <div className="flex flex-wrap items-center justify-center gap-1.5 print:hidden">
+                                    <span>Từ ngày</span>
+                                    <div className="inline-flex items-center gap-1 bg-stone-50 hover:bg-stone-100 px-2 py-0.5 rounded border border-dashed border-gray-400 focus-within:border-blue-500 focus-within:bg-white transition-colors">
+                                        <input
+                                            type="text"
+                                            value={fromText}
+                                            onChange={(e) => {
+                                                const val = e.target.value
+                                                setFromText(val)
+                                                const iso = parseDateStrToIso(val)
+                                                if (iso) setDateFrom(iso)
+                                            }}
+                                            placeholder="............"
+                                            className="w-24 text-center italic bg-transparent focus:outline-none"
+                                            title="Nhập ngày bắt đầu (VD: 01/11/2025)"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => fromPickerRef.current?.showPicker?.()}
+                                            className="text-stone-400 hover:text-blue-600 transition-colors p-0.5 cursor-pointer"
+                                            title="Mở lịch chọn ngày bắt đầu"
+                                        >
+                                            <Calendar size={13} />
+                                        </button>
+                                        <input
+                                            ref={fromPickerRef}
+                                            type="date"
+                                            value={dateFrom}
+                                            onChange={(e) => handleDateFromChange(e.target.value)}
+                                            className="sr-only"
+                                            tabIndex={-1}
+                                        />
+                                    </div>
+
+                                    <span>Đến ngày</span>
+                                    <div className="inline-flex items-center gap-1 bg-stone-50 hover:bg-stone-100 px-2 py-0.5 rounded border border-dashed border-gray-400 focus-within:border-blue-500 focus-within:bg-white transition-colors">
+                                        <input
+                                            type="text"
+                                            value={toText}
+                                            onChange={(e) => {
+                                                const val = e.target.value
+                                                setToText(val)
+                                                const iso = parseDateStrToIso(val)
+                                                if (iso) setDateTo(iso)
+                                            }}
+                                            placeholder="............"
+                                            className="w-24 text-center italic bg-transparent focus:outline-none"
+                                            title="Nhập ngày kết thúc (VD: 30/11/2025)"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => toPickerRef.current?.showPicker?.()}
+                                            className="text-stone-400 hover:text-blue-600 transition-colors p-0.5 cursor-pointer"
+                                            title="Mở lịch chọn ngày kết thúc"
+                                        >
+                                            <Calendar size={13} />
+                                        </button>
+                                        <input
+                                            ref={toPickerRef}
+                                            type="date"
+                                            value={dateTo}
+                                            onChange={(e) => handleDateToChange(e.target.value)}
+                                            className="sr-only"
+                                            tabIndex={-1}
+                                        />
+                                    </div>
+
+                                    {(fromText || toText) && (
+                                        <button
+                                            type="button"
+                                            onClick={handleClearDates}
+                                            className="text-[11px] text-blue-600 hover:underline ml-1 font-normal cursor-pointer"
+                                            title="Xóa ngày để in dấu chấm chấm viết tay"
+                                        >
+                                            [Để trống]
+                                        </button>
+                                    )}
+
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setCustomDateLine(formattedDateRange)
+                                            setIsCustomDateLine(true)
+                                        }}
+                                        className="text-[11px] text-stone-400 hover:text-stone-700 ml-1.5 flex items-center gap-0.5 cursor-pointer"
+                                        title="Chuyển sang chế độ nhập tự do toàn dòng"
+                                    >
+                                        <Edit3 size={11} />
+                                        <span>Sửa tự do</span>
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="flex items-center justify-center gap-2 print:hidden">
+                                    <input
+                                        type="text"
+                                        value={customDateLine}
+                                        onChange={(e) => setCustomDateLine(e.target.value)}
+                                        className="w-full max-w-[450px] text-center italic bg-transparent border-b border-dashed border-gray-400 focus:border-blue-500 focus:outline-none"
+                                        placeholder="Từ ngày ............ Đến ngày ............"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsCustomDateLine(false)}
+                                        className="text-[11px] text-blue-600 hover:underline cursor-pointer"
+                                        title="Quay lại chế độ chuẩn"
+                                    >
+                                        [Dạng chuẩn]
+                                    </button>
+                                </div>
+                            )}
                             <span className="hidden print:inline">{formattedDateRange}</span>
                         </div>
                     </div>

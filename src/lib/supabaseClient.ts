@@ -594,6 +594,7 @@ type UserProfilesTable = {
     Row: {
         id: string
         email: string | null
+        username: string | null
         full_name: string
         avatar_url: string | null
         role_id: string | null
@@ -609,6 +610,7 @@ type UserProfilesTable = {
     Insert: {
         id?: string
         email?: string | null
+        username?: string | null
         full_name: string
         avatar_url?: string | null
         role_id?: string | null
@@ -624,6 +626,7 @@ type UserProfilesTable = {
     Update: {
         id?: string
         email?: string | null
+        username?: string | null
         full_name?: string
         avatar_url?: string | null
         role_id?: string | null

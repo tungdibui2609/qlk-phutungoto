@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
     AlertTriangle,
     Boxes,
@@ -21,9 +21,10 @@ import { supabase } from '@/lib/supabaseClient'
 import { fetchAllPaged } from '@/lib/supabasePaged'
 import { useSystem } from '@/contexts/SystemContext'
 import { formatQuantity } from '@/lib/numberUtils'
-import { exportDashboardSheets } from '@/lib/dashboardExcelExport'
+import { captureDashboardScreenshot, exportDashboardSheets } from '@/lib/dashboardExcelExport'
 import { fillRateWorkbookPlan } from '@/lib/dashboardExcelSpecs'
 import {
+    ancestorLabels,
     buildFillStats,
     buildZoneLookup,
     drillableChildCount,
@@ -96,6 +97,8 @@ export default function WarehouseFillRateChart() {
     const [scope, setScope] = useState<FillScope>('rack')
     const [paths, setPaths] = useState<ScopePaths>(EMPTY_PATHS)
     const [exporting, setExporting] = useState(false)
+
+    const cardRef = useRef<HTMLDivElement>(null)
 
     const fetchData = useCallback(async () => {
         if (!systemType) return
@@ -177,9 +180,15 @@ export default function WarehouseFillRateChart() {
         if (!stats) return
         setExporting(true)
         try {
+            const systemName = currentSystem?.name || systemType || ''
+            const screenshot = await captureDashboardScreenshot(cardRef.current, {
+                cardTitle: 'Tỉ lệ lấp đầy theo khu vực',
+                systemName
+            })
             await exportDashboardSheets({
+                screenshot,
                 sheets: fillRateWorkbookPlan({
-                    systemName: currentSystem?.name || systemType || '',
+                    systemName,
                     stats
                 }),
                 filePrefix: 'Tỉ lệ lấp đầy kho'
@@ -233,9 +242,9 @@ export default function WarehouseFillRateChart() {
     ]
 
     return (
-        <div className="bg-white rounded-2xl p-4 sm:p-5 border border-stone-200 space-y-4">
+        <div ref={cardRef} className="bg-white rounded-2xl p-4 sm:p-5 border border-stone-200 space-y-4">
             {/* Header */}
-            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-stone-100">
+            <div data-excel-shot="skip" className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-3 border-b border-stone-100">
                 <div>
                     <div className="flex items-center gap-2 mb-0.5">
                         <Gauge className="text-emerald-600 shrink-0" size={18} />
@@ -260,7 +269,7 @@ export default function WarehouseFillRateChart() {
                         onClick={handleExport}
                         disabled={exporting}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-white border border-stone-200 text-stone-600 hover:border-emerald-300 hover:text-emerald-700 transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-                        title="Xuất Excel: sheet Tổng quan + 3 sheet Lô kệ / Sảnh / Tổng, mỗi sheet có biểu đồ và toàn bộ cây khu vực"
+                        title="Xuất Excel: sheet ảnh dashboard + sheet Tổng quan + 3 sheet Lô kệ / Sảnh / Tổng, mỗi sheet có biểu đồ và toàn bộ cây khu vực"
                     >
                         {exporting ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
                         Xuất Excel
@@ -286,14 +295,14 @@ export default function WarehouseFillRateChart() {
                         <button
                             key={tab.scope}
                             onClick={() => setScope(tab.scope)}
-                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all shrink-0 ${
                                 isActive
                                     ? `${tab.activeClass} shadow-sm`
                                     : 'bg-white border-stone-200 text-stone-600 hover:border-stone-300 hover:text-stone-900'
                             }`}
                         >
-                            <Icon size={14} className={isActive ? '' : 'text-stone-400'} />
-                            {tab.label}
+                            <Icon size={14} className={`shrink-0 ${isActive ? '' : 'text-stone-400'}`} />
+                            <span className="whitespace-nowrap">{tab.label}</span>
                             <span
                                 className={`tabular-nums px-1.5 py-0.5 rounded-md text-[11px] font-black ${
                                     isActive ? 'bg-white/20' : 'bg-stone-100 text-stone-700'
@@ -301,7 +310,7 @@ export default function WarehouseFillRateChart() {
                             >
                                 {formatQuantity(tabBucket.pct, 1)}%
                             </span>
-                            <span className={`text-[10px] font-semibold tabular-nums ${isActive ? 'opacity-90' : 'text-stone-400'}`}>
+                            <span className={`text-[10px] font-semibold tabular-nums whitespace-nowrap ${isActive ? 'opacity-90' : 'text-stone-400'}`}>
                                 {formatQuantity(tabBucket.occupied, 0)}/{formatQuantity(tabBucket.positions, 0)}
                             </span>
                         </button>
@@ -406,6 +415,11 @@ export default function WarehouseFillRateChart() {
                             scope={scope}
                             stats={stats}
                             isCurrent={row === currentZone}
+                            contextPath={
+                                row !== currentZone && row.parentId !== (currentZone ? currentZone.zoneId : null)
+                                    ? ancestorLabels(stats, row.zoneId)
+                                    : undefined
+                            }
                             onDrill={() => setPaths(prev => ({
                                 ...prev,
                                 [scope]: [...prev[scope], row.zoneId]
@@ -467,12 +481,15 @@ function FillRateRow({
     scope,
     stats,
     isCurrent,
+    contextPath,
     onDrill
 }: {
     row: ZoneFillStat
     scope: FillScope
     stats: FillStats
     isCurrent: boolean
+    /** Chuỗi khu cha khi hàng nằm ngoài ngữ cảnh breadcrumb (tab Sảnh gom sảnh mọi kho). */
+    contextPath?: string[]
     onDrill: () => void
 }) {
     const bucket = metricsOf(row, scope)
@@ -484,7 +501,15 @@ function FillRateRow({
         <div className="group rounded-xl border border-stone-200/90 bg-white px-3 py-2 hover:border-emerald-300 hover:shadow-sm transition-all">
             <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-xs font-bold text-stone-800 truncate" title={row.label}>{row.label}</span>
+                    <span
+                        className="text-xs font-bold text-stone-800 truncate"
+                        title={contextPath && contextPath.length > 0 ? `${contextPath.join(' › ')} › ${row.label}` : row.label}
+                    >
+                        {contextPath && contextPath.length > 0 && (
+                            <span className="text-stone-400 font-semibold">{contextPath.join(' › ')} › </span>
+                        )}
+                        {row.label}
+                    </span>
                     {row.isHall && scope !== 'hall' && (
                         <span className="px-1.5 py-0.5 rounded-md bg-amber-50 border border-amber-200 text-[9px] font-bold text-amber-700 uppercase tracking-wide shrink-0">
                             Sảnh

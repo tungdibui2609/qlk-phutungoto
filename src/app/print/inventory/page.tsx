@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Loader2, Printer, Download, FileSpreadsheet, Scissors } from 'lucide-react'
@@ -12,6 +12,12 @@ import { PrintHeader } from '@/components/print/PrintHeader'
 import { EditableText } from '@/components/print/PrintHelpers'
 import { useUnitConversion } from '@/hooks/useUnitConversion'
 import { exportInventoryReportToExcel } from '@/lib/inventoryReportExcelExport'
+import { buildDistributionChartImages } from '@/lib/inventoryDistributionCharts'
+import { buildContainerChartImage } from '@/lib/containerStockCharts'
+import { captureDashboardScreenshot } from '@/lib/dashboardExcelExport'
+import type { DashboardChartImage } from '@/lib/dashboardExcelWorkbook'
+import ContainerStockChart from '@/components/dashboard/ContainerStockChart'
+import WarehouseFillRateChart from '@/components/dashboard/WarehouseFillRateChart'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { canonicalizeUnit } from '@/lib/unitConversion'
 import { fetchAffixTagSet, resolveDisplayProductName, buildAffixedGroupKey } from '@/lib/productNameResolver'
@@ -165,7 +171,7 @@ export default function PrintInventoryPage() {
     const dataLoadedFromSessionRef = React.useRef(false)
 
     // Unit Conversion Support
-    const { convertUnit, getBaseAmount: toBaseAmount, getBaseToKgRate, conversionMap, unitNameMap } = useUnitConversion()
+    const { convertUnit, getBaseAmount: toBaseAmount, getBaseToKgRate, conversionMap, unitNameMap, loading: conversionLoading } = useUnitConversion()
 
     // Zone states for recursive filtering
     const [posToZoneMap, setPosToZoneMap] = useState<Record<string, string>>({})
@@ -216,6 +222,15 @@ export default function PrintInventoryPage() {
 
     // Capture and snapshot state
     const [isDownloading, setIsDownloading] = useState(false)
+    // Card Cont ẩn chỉ mount lúc xuất Excel tab LOT để chụp ảnh DOM đúng như dashboard.
+    const [contShotPending, setContShotPending] = useState(false)
+    const hiddenContRef = useRef<HTMLDivElement | null>(null)
+    // Card "Tỉ lệ lấp đầy theo khu vực" ẩn — cùng khuôn: chụp DOM cho sheet ảnh thứ 3 của tab LOT.
+    const [fillShotPending, setFillShotPending] = useState(false)
+    const hiddenFillRef = useRef<HTMLDivElement | null>(null)
+    // Một lượt xuất tab LOT giờ chụp 2 card DOM + dựng 2 biểu đồ canvas nên mất chục giây;
+    // cờ này để khóa nút, tránh bấm chồng nhau làm các pipeline toPng tranh nhau rồi đơ tab.
+    const [exportingReport, setExportingReport] = useState(false)
     const { isCapturing, downloadTimer, handleCapture } = useCaptureReceipt({
         fileNamePrefix: `ton-kho-${dateTo || new Date().toISOString().split('T')[0]}`
     })
@@ -942,24 +957,140 @@ export default function PrintInventoryPage() {
         return `Tính đến ngày: ${new Date().toLocaleDateString('vi-VN')}`
     }
 
-    const handleExportExcel = async () => {
-        const dateTitle = getDateTitle()
+    // Card ẩn tải dữ liệu xong thì hết spinner và recharts vẽ svg; chờ hai dấu hiệu đó rồi mới chụp.
+    // Card lỗi (error boundary) thì thoát ngay để khỏi đứng chờ hết timeout.
+    const waitForContainerCardReady = async (timeoutMs = 20000) => {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            const node = hiddenContRef.current
+            if (node) {
+                if ((node.textContent || '').includes('Đã xảy ra lỗi khi hiển thị Biểu đồ Container')) return false
+                if (node.querySelector('.recharts-surface') && !node.querySelector('.animate-spin')) return true
+            }
+            await new Promise(r => setTimeout(r, 300))
+        }
+        return false
+    }
 
-        await exportInventoryReportToExcel({
-            type: type as any,
-            viewMode: viewMode as any,
-            positionFilter: positionFilter as any,
-            dateTitle,
-            warehouse: warehouse || 'Tất cả',
-            items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'production' ? productionItems : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems))),
-            companyInfo
-        })
+    const captureHiddenContainerCard = async (): Promise<DashboardChartImage | null> => {
+        setContShotPending(true)
+        try {
+            // Chờ một nhịp để React mount card ẩn trước khi thăm DOM.
+            await new Promise(r => setTimeout(r, 50))
+            if (!await waitForContainerCardReady()) return null
+            return await captureDashboardScreenshot(hiddenContRef.current, {
+                cardTitle: 'Số lượng Container tồn kho theo từng mặt hàng',
+                systemName: systemType
+            })
+        } catch (err) {
+            console.error('Không chụp được card Cont ẩn:', err)
+            return null
+        } finally {
+            setContShotPending(false)
+        }
+    }
+
+    // Card fill-rate không dùng recharts: dấu hiệu tải xong là hết spinner và hàng tab
+    // (3 nút Lô kệ / Sảnh / Tổng) đã render. Nhánh lỗi (1 nút "Thử lại") và nhánh rỗng
+    // (stats null → không render gì) phải thoát ngay, nếu không sẽ đứng chờ hết timeout
+    // rồi mới xuất file — người dùng tưởng nút chết mà bấm liên tiếp.
+    const waitForFillRateCardReady = async (timeoutMs = 30000) => {
+        const start = Date.now()
+        while (Date.now() - start < timeoutMs) {
+            const node = hiddenFillRef.current
+            if (node) {
+                const text = node.textContent || ''
+                if (text.includes('Không tải được dữ liệu tỉ lệ lấp đầy')) return false
+                if (!node.querySelector('.animate-spin') && node.querySelectorAll('button').length >= 3) return true
+                // stats null thì card không render gì — chờ thêm cũng vô ích (chừa 2s cho React mount).
+                if (node.children.length === 0 && Date.now() - start > 2000) return false
+            }
+            await new Promise(r => setTimeout(r, 300))
+        }
+        return false
+    }
+
+    const captureHiddenFillRateCard = async (): Promise<DashboardChartImage | null> => {
+        setFillShotPending(true)
+        try {
+            await new Promise(r => setTimeout(r, 50))
+            if (!await waitForFillRateCardReady()) return null
+            return await captureDashboardScreenshot(hiddenFillRef.current, {
+                cardTitle: 'Tỉ lệ lấp đầy theo khu vực',
+                systemName: systemType
+            })
+        } catch (err) {
+            console.error('Không chụp được card Tỉ lệ lấp đầy ẩn:', err)
+            return null
+        } finally {
+            setFillShotPending(false)
+        }
+    }
+
+    const handleExportExcel = async () => {
+        // Chặn bấm liên tiếp: mỗi lượt xuất giờ chụp 2 card DOM nặng, bấm chồng nhau
+        // thì các pipeline toPng tranh nhau và tab đơ mà không file nào về.
+        if (exportingReport) return
+        setExportingReport(true)
+        try {
+            const dateTitle = getDateTitle()
+
+            // Tab LOT xuất kèm sheet ảnh "Tỉ lệ phân bố hàng hóa tồn kho" — dựng từ đúng
+            // hàm spec của card dashboard nên số liệu khớp 1:1. Dựng lỗi thì bỏ sheet, không chặn báo cáo.
+            const distributionImages = (type === 'lot' && systemType)
+                ? await buildDistributionChartImages({
+                    systemCode: systemType,
+                    conversion: { toBaseAmount, getBaseToKgRate }
+                })
+                : null
+
+            // Sheet ảnh Cont: ưu tiên ảnh CHỤP DOM đúng card dashboard (nút bấm đã bị bỏ bởi
+            // data-excel-shot="skip"); chỉ khi không chụp được mới vẽ lại bằng canvas cho khỏi trống sheet.
+            let containerImage: DashboardChartImage | null = null
+            if (type === 'lot' && systemType) {
+                containerImage = await captureHiddenContainerCard()
+                if (!containerImage) {
+                    containerImage = await buildContainerChartImage({
+                        systemCode: systemType,
+                        conversion: { convertUnit, getBaseAmount: toBaseAmount }
+                    })
+                }
+            }
+
+            // Sheet ảnh thứ 3 của tab LOT: ảnh chụp DOM card "Tỉ lệ lấp đầy theo khu vực".
+            // Không chụp được thì bỏ sheet (không có bản vẽ lại bằng canvas cho card này).
+            let fillRateImage: DashboardChartImage | null = null
+            if (type === 'lot' && systemType) {
+                fillRateImage = await captureHiddenFillRateCard()
+            }
+
+            await exportInventoryReportToExcel({
+                type: type as any,
+                viewMode: viewMode as any,
+                positionFilter: positionFilter as any,
+                dateTitle,
+                warehouse: warehouse || 'Tất cả',
+                items: (type === 'lot' || type === 'category' || type === 'tags') ? groupedLots : (type === 'production' ? productionItems : (type === 'labels' ? boxLabelItems : (type === 'accounting' ? accountingItems : reconcileItems))),
+                companyInfo,
+                distributionImages,
+                containerImage,
+                fillRateImage
+            })
+        } catch (err) {
+            // Trước đây lỗi bị nuốt im lặng: người dùng bấm hoài không thấy file mà không biết vì sao.
+            console.error('Lỗi xuất Excel báo cáo:', err)
+            alert('Không xuất được file Excel. Vui lòng thử lại.')
+        } finally {
+            setExportingReport(false)
+        }
     }
 
     // Auto-export if requested via URL
     useEffect(() => {
         const exportType = searchParams.get('export')
-        if (!loading && !error && (accountingItems.length > 0 || groupedLots.length > 0 || productionItems.length > 0 || reconcileItems.length > 0) && exportType === 'excel') {
+        // Chờ xong bảng quy đổi đơn vị: sheet ảnh phân bố KG dựng từ getBaseToKgRate,
+        // export sớm hơn thì donut KG ra rỗng dù dữ liệu tồn kho có thật.
+        if (!loading && !conversionLoading && !error && (accountingItems.length > 0 || groupedLots.length > 0 || productionItems.length > 0 || reconcileItems.length > 0) && exportType === 'excel') {
             const timer = setTimeout(() => {
                 handleExportExcel()
                 // Remove the export param from URL to prevent infinite loop on refresh
@@ -969,13 +1100,41 @@ export default function PrintInventoryPage() {
             }, 500)
             return () => clearTimeout(timer)
         }
-    }, [loading, error, accountingItems, groupedLots, productionItems, reconcileItems])
+    }, [loading, conversionLoading, error, accountingItems, groupedLots, productionItems, reconcileItems])
 
     if (loading) return <div className="flex h-screen items-center justify-center"><Loader2 className="animate-spin mr-2" /> Đang tải dữ liệu...</div>
 
     if (error) return <div id="print-ready" data-ready="true" className="flex h-screen items-center justify-center text-red-600 font-bold">Lỗi tải dữ liệu: {error}</div>
 
     return (
+        <>
+        {contShotPending && (
+            <div
+                aria-hidden="true"
+                style={{ position: 'fixed', left: -10000, top: 0, width: 1100, pointerEvents: 'none' }}
+            >
+                {/* Node chụp phải là div static: html-to-image clone kèm style của node gốc,
+                    nếu chính nó fixed/left:-10000 thì bản clone lọt ra ngoài khung SVG → ảnh trong suốt. */}
+                <div ref={hiddenContRef}>
+                    {/* Mở sẵn tab "Tất cả": ảnh báo cáo phải thấy toàn bộ danh mục, không dính tab tự chọn Sầu Riêng của dashboard.
+                        noAnimation: recharts giấu nhãn số và thanh còn đang vươn dài trong lúc animate → chụp sẽ hụt thanh, mất nhãn. */}
+                    <ContainerStockChart initialCategoryTab="all" noAnimation />
+                </div>
+            </div>
+        )}
+        {fillShotPending && (
+            <div
+                aria-hidden="true"
+                style={{ position: 'fixed', left: -10000, top: 0, width: 1100, pointerEvents: 'none' }}
+            >
+                <div ref={hiddenFillRef}>
+                    {/* Card fill-rate mặc định tab "Lô kệ" — đúng tab công ty dùng quyết định sức chứa.
+                        Header (tiêu đề + nút Sơ đồ chi tiết / Xuất Excel / Làm mới) đã đánh dấu data-excel-shot="skip"
+                        nên khung chụp tự ẩn, ảnh chỉ còn tab số liệu + KPI + cây khu vực. */}
+                    <WarehouseFillRateChart />
+                </div>
+            </div>
+        )}
         <div id="print-ready" data-ready={!loading ? "true" : undefined} className={`bg-white h-fit min-h-0 mx-auto text-black pt-0 px-6 pb-6 print:p-4 text-[13px] ${isCapturing ? 'shadow-none !w-[1150px]' : 'w-[210mm]'}`}>
             {isCapturing && (
                 <style dangerouslySetInnerHTML={{
@@ -1029,9 +1188,19 @@ export default function PrintInventoryPage() {
                 </button>
                 <button
                     onClick={handleExportExcel}
-                    className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 shadow-lg"
+                    disabled={exportingReport}
+                    className={`flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 shadow-lg transition-all ${exportingReport ? 'opacity-70 cursor-wait' : ''}`}
                 >
-                    <FileSpreadsheet size={20} /> Xuất Excel
+                    {exportingReport ? (
+                        <>
+                            <Loader2 size={20} className="animate-spin" />
+                            Đang xuất...
+                        </>
+                    ) : (
+                        <>
+                            <FileSpreadsheet size={20} /> Xuất Excel
+                        </>
+                    )}
                 </button>
                 <button
                     onClick={handlePrint}
@@ -1739,5 +1908,6 @@ export default function PrintInventoryPage() {
                 className="block w-full h-[1px] opacity-0 pointer-events-none"
             />
         </div>
+        </>
     )
 }

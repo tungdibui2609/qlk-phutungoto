@@ -171,6 +171,86 @@ def is_port_open(port: int, host: str = "127.0.0.1", timeout: float = 0.6) -> bo
         return False
 
 
+def find_winnat_blocked_ports(ports) -> list[int]:
+    """Tìm các cổng chưa có dịch vụ lắng nghe nhưng bị Windows WinNAT/Hyper-V khóa (WinError 10013).
+
+    Trên Windows 10/11 có WSL2/Hyper-V, dịch vụ winnat thường ngẫu nhiên giữ các dải 100 cổng
+    trong vùng 49152-65535 (ví dụ 64241-64340) nếu dải đó chưa được đăng ký Administered Port Exclusion.
+    Khi đó Docker không thể bind 0.0.0.0:64321..64324 và báo lỗi:
+    'An attempt was made to access a socket in a way forbidden by its access permissions'.
+    """
+    if sys.platform != "win32":
+        return []
+    blocked = []
+    for p in ports:
+        port = int(p)
+        if is_port_open(port):
+            continue
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.bind(("0.0.0.0", port))
+        except OSError as e:
+            if getattr(e, "winerror", None) == 10013:
+                blocked.append(port)
+        except Exception:
+            pass
+    return sorted(blocked)
+
+
+def unlock_winnat_ports_via_uac(ports, log_fn=None, wait_seconds: float = 40.0) -> tuple[bool, list[int]]:
+    """Xin quyền Admin (UAC) để giải phóng cổng khỏi WinNAT và đăng ký giữ chỗ vĩnh viễn (store=persistent).
+
+    Trả về (đã_mở_khóa_hết, danh_sách_cổng_còn_bị_khóa).
+    """
+    blocked = find_winnat_blocked_ports(ports)
+    if not blocked:
+        return True, []
+
+    if log_fn:
+        log_fn(
+            f"⚠️ Phát hiện Windows Hyper-V / WinNAT đang khóa cổng {blocked} (WinError 10013).\n"
+            "   🔑 Đang yêu cầu quyền Administrator (hộp thoại UAC) để giải phóng cổng & đăng ký giữ chỗ vĩnh viễn..."
+        )
+
+    ps_cmd = (
+        "Write-Host '=== GIAI PHONG CONG SUPABASE KHOI WINDOWS WINNAT ===' -ForegroundColor Cyan; "
+        "net stop winnat; "
+        "netsh int ipv4 add excludedportrange protocol=tcp startport=64321 numberofports=10 store=persistent; "
+        "netsh int ipv4 add excludedportrange protocol=tcp startport=64421 numberofports=10 store=persistent; "
+        "net start winnat; "
+        "Write-Host '=== HOAN TAT! ===' -ForegroundColor Green; "
+        "Start-Sleep -Seconds 1"
+    )
+    try:
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None,
+            "runas",
+            "powershell.exe",
+            f'-NoProfile -Command "{ps_cmd}"',
+            None,
+            1,
+        )
+        if int(ret) <= 32:
+            if log_fn:
+                log_fn(f"❌ Không mở được PowerShell quyền Admin hoặc người dùng đã bấm No trên hộp UAC (mã {ret}).")
+            return False, blocked
+    except Exception as e:
+        if log_fn:
+            log_fn(f"❌ Không thể gọi hộp thoại UAC: {e}")
+        return False, blocked
+
+    deadline = time.time() + wait_seconds
+    while time.time() < deadline:
+        time.sleep(1.0)
+        still_blocked = find_winnat_blocked_ports(ports)
+        if not still_blocked:
+            if log_fn:
+                log_fn("✅ Đã giải phóng cổng và đăng ký giữ chỗ vĩnh viễn (64321-64330) trên Windows thành công!")
+            return True, []
+    still_blocked = find_winnat_blocked_ports(ports)
+    return len(still_blocked) == 0, still_blocked
+
+
 def wait_ports_open(ports, seconds: float = 30.0, interval: float = 1.0) -> list[int]:
     """Chờ tới khi các cổng cùng mở. Trả về danh sách cổng VẪN đóng (rỗng = tất cả đã mở)."""
     pending = set(int(p) for p in ports)
@@ -2292,6 +2372,14 @@ class ServerManagerGUI:
             if not ok:
                 self.log(f"🐳 Docker Engine chưa trả lời ({why}). Vui lòng bật Docker Desktop hoặc dùng nút Chạy Hệ Thống!")
             else:
+                all_sb_ports = [
+                    PORTS["supabase_api"],
+                    PORTS["supabase_db"],
+                    PORTS["supabase_studio"],
+                    PORTS["supabase_mail"],
+                ]
+                if find_winnat_blocked_ports(all_sb_ports):
+                    unlock_winnat_ports_via_uac(all_sb_ports, log_fn=self.log)
                 self.log("📦 Supabase chưa chạy. Đang tự động bật Supabase Local...")
                 try:
                     subprocess.run(
@@ -2423,10 +2511,18 @@ class ServerManagerGUI:
         # 2. SUPABASE LOCAL
         self.log("2️⃣ [Supabase] Đang kiểm tra CSDL Supabase Local...")
         db_ports = [PORTS["supabase_api"], PORTS["supabase_studio"]]
+        all_sb_ports = [
+            PORTS["supabase_api"],
+            PORTS["supabase_db"],
+            PORTS["supabase_studio"],
+            PORTS["supabase_mail"],
+        ]
         if is_port_open(PORTS["supabase_api"]) and is_port_open(PORTS["supabase_studio"]):
             self.log("✅ Supabase Local đã đang chạy sẵn.")
             results.append(("Supabase", True, "đã chạy sẵn"))
         else:
+            if find_winnat_blocked_ports(all_sb_ports):
+                unlock_winnat_ports_via_uac(all_sb_ports, log_fn=self.log)
             self.log("📦 Đang khởi động các container Supabase (Postgres, Studio, Auth)...")
             detail = ""
             try:

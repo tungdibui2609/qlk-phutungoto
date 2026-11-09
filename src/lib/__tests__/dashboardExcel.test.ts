@@ -11,8 +11,12 @@ import {
     containerExportSpec,
     distributionKgExportSpec,
     distributionWorkbookPlan,
-    fillRateWorkbookPlan
+    fillRateWorkbookPlan,
+    keepInScreenshot,
+    screenshotSheetPlan,
+    SCREENSHOT_SHEET_NAME
 } from '../dashboardExcelSpecs'
+import type { DashboardScreenshot } from '../dashboardExcelSpecs'
 import { buildFillStats, buildZoneLookup, fillTreeRows } from '../warehouseFillRate'
 import type { CategoryPositionResult } from '../categoryPositionStats'
 
@@ -180,7 +184,15 @@ describe('fillRateWorkbookPlan', () => {
             ['Tổng (kệ + sảnh)', 24, 12, 12, 50, 'Bình thường']
         ])
         expect(plan[0].meta!.find(m => m.label === 'Phân hệ kho')?.value).toBe('Kho Đông Lạnh')
-        expect(plan[0].chart).toBeUndefined()
+    })
+
+    it('sheet Tổng quan có biểu đồ 3 phạm vi, thanh Tổng tô vàng', () => {
+        const chart = fillRateWorkbookPlan({ systemName: 'KHO', stats: makeStats() })[0].chart!
+        expect(chart.kind).toBe('hbar')
+        expect(chart.labels).toEqual(['Lô kệ', 'Sảnh tạm kết', 'Tổng (kệ + sảnh)'])
+        expect(chart.series[0].values).toEqual([52.4, 33.3, 50])
+        expect(chart.barColors).toEqual(['#10b981', '#10b981', '#f59e0b'])
+        expect(chart.valueLabels).toEqual(['52,4% · 11/21 ô', '33,3% · 1/3 ô', '50% · 12/24 ô'])
     })
 
     it('sheet Lô kệ là toàn bộ cây khu, con thụt một cấp so với cha', () => {
@@ -210,7 +222,7 @@ describe('fillRateWorkbookPlan', () => {
         expect(rackChart.series[0].values).toEqual([37.5, 100])
         expect(rackChart.barColors).toEqual(['#10b981', '#f43f5e'])
         expect(rackChart.valueLabels).toEqual(['37,5% · 6/16 ô', '100% · 5/5 ô'])
-        expect(plan[2].chart!.labels).toEqual(['SANH 1'])
+        expect(plan[2].chart!.labels).toEqual(['KHO 1 › SANH 1'])
     })
 
     it('khu sảnh trùng tên vẫn phân biệt được nhờ cột đường dẫn', () => {
@@ -241,10 +253,75 @@ describe('fillRateWorkbookPlan', () => {
         const cf = (rack as unknown as { conditionalFormattings: Array<{ ref: string }> }).conditionalFormattings
         expect(cf[0].ref).toBe(`F${headerRow + 1}:F${headerRow + 3}`)
 
-        // sheet Tổng quan không có ảnh → bảng sát ngay dưới metadata
+        // sheet Tổng quan cũng có biểu đồ → bảng nằm dưới ảnh, không sát metadata
         const overview = wb.getWorksheet('Tong quan')!
-        expect(headerRowOf(overview, 'Phạm vi')).toBeLessThan(8)
+        const overviewHeader = headerRowOf(overview, 'Phạm vi')
+        expect(overviewHeader).toBeGreaterThan(8)
         expect(overview.getRow(3).getCell(2).value).toBe('KHO')
+        expect(overview.getRow(overviewHeader + 1).getCell(1).value).toBe('Lô kệ')
+        expect(overview.getRow(overviewHeader + 3).getCell(1).value).toBe('Tổng (kệ + sảnh)')
+    })
+})
+
+describe('screenshotSheetPlan', () => {
+    const shot: DashboardScreenshot = {
+        base64: TINY_PNG,
+        width: 1280,
+        height: 720,
+        cardTitle: 'Tỉ lệ lấp đầy theo khu vực',
+        systemName: 'Kho Đông Lạnh',
+        filterLabel: 'Tất cả danh mục'
+    }
+
+    it('sheet ảnh đứng đầu file, nhúng đúng 1 PNG và không có bảng số', async () => {
+        const chartImg: DashboardChartImage = { base64: TINY_PNG, width: 720, height: 100 }
+        const sheets = [
+            screenshotSheetPlan(shot, new Date(2026, 10, 5, 14, 1)),
+            ...fillRateWorkbookPlan({ systemName: 'Kho Đông Lạnh', stats: makeStats() }).map(
+                ({ chart, ...s }) => ({ ...s, image: chart ? chartImg : null })
+            )
+        ]
+        const built = buildWorkbookFromSheets(sheets)
+        expect(built.getWorksheet(SCREENSHOT_SHEET_NAME)!.getImages().length).toBe(1)
+
+        const wb = await bufferToWorkbook((await built.xlsx.writeBuffer()) as ArrayBuffer)
+        expect(wb.worksheets.map(w => w.name)).toEqual([
+            'Anh dashboard',
+            'Tong quan',
+            'Lo ke',
+            'Sanh',
+            'Tong (ke + sanh)'
+        ])
+
+        const sheet = wb.getWorksheet('Anh dashboard')!
+        expect(sheet.getRow(1).getCell(1).value).toBe('Tỉ lệ lấp đầy theo khu vực — ảnh dashboard')
+        expect(sheet.getRow(3).getCell(2).value).toBe('Kho Đông Lạnh')
+        expect(sheet.getRow(4).getCell(1).value).toBe('Bộ lọc trên màn hình')
+        expect(sheet.getRow(4).getCell(2).value).toBe('Tất cả danh mục')
+        expect(sheet.getRow(5).getCell(1).value).toBe('Xuất lúc')
+        expect(sheet.getRow(6).getCell(1).value).toBe('Ghi chú')
+        // sheet chỉ có ảnh → không có bảng, không autofilter
+        expect(sheet.autoFilter).toBeFalsy()
+    })
+
+    it('bỏ dòng "Bộ lọc trên màn hình" khi card không có bộ lọc', () => {
+        const plan = screenshotSheetPlan({ ...shot, filterLabel: undefined })
+        expect(plan.meta!.map(m => m.label)).toEqual(['Phân hệ kho', 'Xuất lúc', 'Ghi chú'])
+    })
+})
+
+describe('keepInScreenshot', () => {
+    /** html-to-image gọi filter cho MỌI node (kể text node) và bỏ node khi filter trả false. */
+    const element = (attrs: Record<string, string>) => ({
+        nodeType: 1,
+        getAttribute: (name: string) => attrs[name] ?? null
+    })
+
+    it('node đánh dấu data-excel-shot="skip" phải bị loại, node thường và text node phải giữ', () => {
+        expect(keepInScreenshot(element({ 'data-excel-shot': 'skip' }))).toBe(false)
+        expect(keepInScreenshot(element({}))).toBe(true)
+        expect(keepInScreenshot(element({ 'data-excel-shot': 'keep' }))).toBe(true)
+        expect(keepInScreenshot({ nodeType: 3 })).toBe(true)
     })
 })
 
