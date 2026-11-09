@@ -31,6 +31,7 @@ export async function exportAssignmentHistoryToExcel(data: AssignmentHistoryExpo
         { header: 'Mã Sản Phẩm', key: 'productSkus', width: 20 },
         { header: 'Mã LOT KHO', key: 'lotCode', width: 20 },
         { header: 'Sản Phẩm', key: 'productNames', width: 45 },
+        { header: 'Thẻ Tag / Mã Phụ', key: 'tags', width: 25 },
         { header: 'Số Lượng', key: 'quantity', width: 15 },
         { header: 'Quy đổi (Kg)', key: 'weightKg', width: 15 },
         { header: 'Vị Trí Mới', key: 'targetPos', width: 15 },
@@ -98,6 +99,7 @@ export async function exportAssignmentHistoryToExcel(data: AssignmentHistoryExpo
             productSkus: item.lot?.product_skus?.join(', ') || '---',
             lotCode: item.lot?.code || '---',
             productNames: item.lot?.product_names?.join(', ') || '---',
+            tags: item.lot?.tags?.join(', ') || (item.lot?.production_code ? `Mã phụ: ${item.lot.production_code}` : '---'),
             quantity: item.lot?.quantity_display || '---',
             weightKg: item.lot?.total_weight_kg ? Number(item.lot.total_weight_kg).toLocaleString('vi-VN') : '---',
             targetPos: item.position?.code || '---',
@@ -115,14 +117,14 @@ export async function exportAssignmentHistoryToExcel(data: AssignmentHistoryExpo
                 bottom: { style: 'thin' },
                 right: { style: 'thin' }
             };
-            // STT, Lệnh SX, Mã Lot SX, Mã SP, Mã LOT KHO, Số lượng, Quy đổi KG, TargetPos, Type, OldPos, ProdDate, ApproveDate, Status (Center align)
+            // STT, Lệnh SX, Mã Lot SX, Mã SP, Mã LOT KHO, Thẻ Tag / Mã Phụ, Số lượng, Quy đổi KG, TargetPos, Type, OldPos, ProdDate, ApproveDate, Status (Center align)
             // Column 6 (Product Names) is Left align
-            if ([1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14].includes(colIdx)) {
+            if ([1, 2, 3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15].includes(colIdx)) {
                 cell.alignment = { horizontal: 'center' };
             }
             
-            // Color coding for Type (now at col 10)
-            if (colIdx === 10) {
+            // Color coding for Type (now at col 11)
+            if (colIdx === 11) {
                 if (item.assignment_type === 'move') {
                     cell.font = { color: { argb: '0070C0' }, bold: true };
                 } else if (item.assignment_type === 'new') {

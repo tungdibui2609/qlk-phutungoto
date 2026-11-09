@@ -18,6 +18,7 @@ import { exportAssignmentHistoryToExcel } from '@/lib/assignmentExcelExport'
 import { extractWeightFromName } from '@/lib/unitConversion'
 import { logActivity } from '@/lib/audit'
 import { decodeSTT, encodeSTT } from '@/lib/numberUtils'
+import { TagDisplay } from '@/components/lots/TagDisplay'
 
 type PendingAssignment = {
     id: string
@@ -36,6 +37,7 @@ type PendingAssignment = {
         code: string
         product_names: string[]
         product_skus: string[]
+        tags?: string[]
         total_quantity: number
         total_weight_kg: number
         quantity_display: string
@@ -49,7 +51,25 @@ type PendingAssignment = {
 
 type Lot = Database['public']['Tables']['lots']['Row'] & {
     product_names?: string[]
+    product_skus?: string[]
+    tags?: string[]
     positions?: { code: string }[]
+    lot_tags?: { tag: string; lot_item_id?: string | null }[]
+}
+
+function extractLotTags(l: any): string[] {
+    const tags: string[] = []
+    if (Array.isArray(l?.lot_tags) && l.lot_tags.length > 0) {
+        l.lot_tags.forEach((t: any) => {
+            const val = typeof t === 'string' ? t.trim() : t?.tag?.trim()
+            if (val && !tags.includes(val)) tags.push(val)
+        })
+    }
+    const metaTag = (l?.metadata as any)?.pallet_tag || (l?.metadata as any)?.tag
+    if (metaTag && typeof metaTag === 'string' && !tags.includes(metaTag.trim())) {
+        tags.push(metaTag.trim())
+    }
+    return tags
 }
 
 function safeFormatDate(dateVal: string | null | undefined, fmt: string = 'dd/MM/yyyy', fallback: string = '---'): string {
@@ -167,11 +187,14 @@ export default function AssignmentApprovalPage() {
                 return true
             }
 
-            // Khớp mã lô hoặc tên sản phẩm liên kết
+            // Khớp mã lô, mã phụ hoặc tên sản phẩm liên kết, thẻ tag
             const matchedLots = lotsInDay.filter(l => l.daily_seq === targetStt)
             return matchedLots.some(l =>
                 l.code.toLowerCase().includes(term) ||
-                l.product_names?.some(p => p.toLowerCase().includes(term))
+                l.production_code?.toLowerCase().includes(term) ||
+                l.tags?.some(t => t.toLowerCase().includes(term)) ||
+                l.product_names?.some(p => p.toLowerCase().includes(term)) ||
+                l.product_skus?.some(s => s.toLowerCase().includes(term))
             )
         })
     }, [pendingList, pendingSearchTerm, manualEdits, lotsInDay])
@@ -182,13 +205,16 @@ export default function AssignmentApprovalPage() {
                 h.position?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) || 
                 decodeSTT(h.lot_stt).toLowerCase().includes(historySearchTerm.toLowerCase()) ||
                 h.lot?.code?.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+                h.lot?.production_code?.toLowerCase().includes(historySearchTerm.toLowerCase()) ||
+                h.lot?.tags?.some(t => t.toLowerCase().includes(historySearchTerm.toLowerCase())) ||
                 h.lot?.product_names?.some(p => p.toLowerCase().includes(historySearchTerm.toLowerCase()));
             
             const matchesProdOrder = !historyProdOrderSearch || 
                 h.lot?.production_order_code?.toLowerCase().includes(historyProdOrderSearch.toLowerCase());
                 
             const matchesProdLot = !historyProdLotSearch || 
-                h.lot?.production_lot_code?.toLowerCase().includes(historyProdLotSearch.toLowerCase());
+                h.lot?.production_lot_code?.toLowerCase().includes(historyProdLotSearch.toLowerCase()) ||
+                h.lot?.production_code?.toLowerCase().includes(historyProdLotSearch.toLowerCase());
 
             return matchesGeneral && matchesProdOrder && matchesProdLot;
         });
@@ -324,7 +350,7 @@ export default function AssignmentApprovalPage() {
             // Query 1: Lots in the selected date range
             const { data: dateRangeLots, error: lErr1 } = await supabase
                 .from('lots')
-                .select(`*, lot_items(products(name))`)
+                .select(`*, lot_items(products(name, sku)), lot_tags(tag, lot_item_id)`)
                 .eq('system_code', currentSystem.code)
                 .neq('status', 'hidden')
                 .neq('status', 'exported')
@@ -344,7 +370,7 @@ export default function AssignmentApprovalPage() {
                     const sttChunk = pendingStts.slice(i, i + 50)
                     const { data: sttData, error: sttErr } = await supabase
                         .from('lots')
-                        .select(`*, lot_items(products(name))`)
+                        .select(`*, lot_items(products(name, sku)), lot_tags(tag, lot_item_id)`)
                         .eq('system_code', currentSystem.code)
                         .neq('status', 'hidden')
                         .neq('status', 'exported')
@@ -386,6 +412,8 @@ export default function AssignmentApprovalPage() {
             const formattedLots: Lot[] = fetchedLots.map((l: any) => ({
                 ...l,
                 product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
+                product_skus: l.lot_items?.map((li: any) => li.products?.sku).filter(Boolean) || [],
+                tags: extractLotTags(l),
                 positions: assignedPosData.filter((p: any) => p.lot_id === l.id)
             }))
 
@@ -489,8 +517,10 @@ export default function AssignmentApprovalPage() {
                     id, code, daily_seq, inbound_date,
                     production_code,
                     production_lot_id,
+                    metadata,
                     productions(code, production_lots(lot_code)),
-                    lot_items(quantity, unit, products(name, sku, weight_kg))
+                    lot_items(quantity, unit, products(name, sku, weight_kg)),
+                    lot_tags(tag, lot_item_id)
                 `)
                 .eq('system_code', sysCode)
                 .gte('inbound_date', expandedDateFrom)
@@ -509,7 +539,7 @@ export default function AssignmentApprovalPage() {
                 // Fallback lấy dữ liệu đơn giản nếu query chính lỗi
                 let fallbackQuery = supabase
                     .from('lots')
-                    .select('id, code, daily_seq, inbound_date, lot_items(quantity, unit, products(name, sku, weight_kg))')
+                    .select('id, code, daily_seq, inbound_date, production_code, metadata, lot_items(quantity, unit, products(name, sku, weight_kg)), lot_tags(tag, lot_item_id)')
                     .eq('system_code', sysCode)
                     .gte('inbound_date', expandedDateFrom)
                     .lte('inbound_date', expandedDateTo)
@@ -540,8 +570,10 @@ export default function AssignmentApprovalPage() {
                             id, code, daily_seq, inbound_date,
                             production_code,
                             production_lot_id,
+                            metadata,
                             productions(code, production_lots(lot_code)),
-                            lot_items(quantity, unit, products(name, sku, weight_kg))
+                            lot_items(quantity, unit, products(name, sku, weight_kg)),
+                            lot_tags(tag, lot_item_id)
                         `)
                         .in('id', chunk)
                     if (chunkData) additionalLots.push(...chunkData)
@@ -566,6 +598,7 @@ export default function AssignmentApprovalPage() {
                     ...l,
                     product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
                     product_skus: l.lot_items?.map((li: any) => li.products?.sku).filter(Boolean) || [],
+                    tags: extractLotTags(l),
                     total_quantity: totalQty,
                     total_weight_kg: totalWeightKg,
                     unit: unit,
@@ -649,6 +682,7 @@ export default function AssignmentApprovalPage() {
                         code: lot.code,
                         product_names: lot.product_names,
                         product_skus: lot.product_skus,
+                        tags: lot.tags,
                         total_quantity: lot.total_quantity,
                         total_weight_kg: lot.total_weight_kg,
                         quantity_display: lot.quantity_display,
@@ -711,7 +745,7 @@ export default function AssignmentApprovalPage() {
 
                 const { data: newLots, error: fetchLotErr } = await supabase
                     .from('lots')
-                    .select(`*, lot_items(products(name))`)
+                    .select(`*, lot_items(products(name, sku)), lot_tags(tag, lot_item_id)`)
                     .eq('system_code', currentSystem.code)
                     .neq('status', 'hidden')
                     .neq('status', 'exported')
@@ -730,6 +764,8 @@ export default function AssignmentApprovalPage() {
                     const formattedNewLots: Lot[] = newLots.map((l: any) => ({
                         ...l,
                         product_names: l.lot_items?.map((li: any) => li.products?.name).filter(Boolean) || [],
+                        product_skus: l.lot_items?.map((li: any) => li.products?.sku).filter(Boolean) || [],
+                        tags: extractLotTags(l),
                         positions: posData?.filter((p: any) => p.lot_id === l.id) || []
                     }))
 
@@ -1937,8 +1973,24 @@ export default function AssignmentApprovalPage() {
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <div className="text-xs font-black text-zinc-900 dark:text-white truncate">{perfectMatch.code}</div>
-                                                            <div className="text-[9px] text-zinc-600 dark:text-zinc-400 font-medium truncate">{perfectMatch.product_names?.join(', ') || '---'}</div>
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="text-xs font-black text-zinc-900 dark:text-white truncate">{perfectMatch.code}</span>
+                                                                {perfectMatch.production_code && (
+                                                                    <span className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50 rounded text-[9px] font-bold" title="Mã phụ sản xuất">
+                                                                        Mã phụ: {perfectMatch.production_code}
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <div className="text-[9px] text-zinc-600 dark:text-zinc-400 font-medium truncate mt-0.5">{perfectMatch.product_names?.join(', ') || '---'}</div>
+                                                            {perfectMatch.tags && perfectMatch.tags.length > 0 && (
+                                                                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                                                    <TagDisplay
+                                                                        tags={perfectMatch.tags}
+                                                                        variant="compact"
+                                                                        placeholderMap={{ '@': perfectMatch.product_skus?.[0] || '' }}
+                                                                    />
+                                                                </div>
+                                                            )}
                                                         </div>
                                                         <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                                                             <button 
@@ -1986,6 +2038,11 @@ export default function AssignmentApprovalPage() {
                                                                                 <span className="text-[10px] font-black text-zinc-900 dark:text-white truncate">
                                                                                     {l.code}
                                                                                 </span>
+                                                                                {l.production_code && (
+                                                                                    <span className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50 rounded text-[8px] font-bold" title="Mã phụ sản xuất">
+                                                                                        Mã phụ: {l.production_code}
+                                                                                    </span>
+                                                                                )}
                                                                                 {posCodes ? (
                                                                                     <span className={`px-1.5 py-0.5 text-[8px] font-black rounded border flex items-center gap-1 shrink-0 ${
                                                                                         isAtTargetPos 
@@ -2004,6 +2061,15 @@ export default function AssignmentApprovalPage() {
                                                                             <div className="text-[8px] text-zinc-500 dark:text-zinc-400 truncate mt-1">
                                                                                 {l.product_names?.join(', ') || '---'}
                                                                             </div>
+                                                                            {l.tags && l.tags.length > 0 && (
+                                                                                <div className="mt-1 flex items-center gap-1 flex-wrap">
+                                                                                    <TagDisplay
+                                                                                        tags={l.tags}
+                                                                                        variant="compact"
+                                                                                        placeholderMap={{ '@': l.product_skus?.[0] || '' }}
+                                                                                    />
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                         <span className={`px-2.5 py-1 text-white rounded-md text-[9px] font-black uppercase shrink-0 transition-colors shadow-sm ${
                                                                             posCodes && !isAtTargetPos
@@ -2244,6 +2310,11 @@ export default function AssignmentApprovalPage() {
                                                                 <span className="text-[10px] font-bold text-zinc-500 uppercase">
                                                                     LOT: {h.lot?.production_lot_code || '---'}
                                                                 </span>
+                                                                {h.lot?.production_code && h.lot?.production_code !== h.lot?.production_lot_code && (
+                                                                    <span className="text-[9px] font-bold text-amber-700 dark:text-amber-400">
+                                                                        Mã phụ: {h.lot.production_code}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </td>
                                                         <td className="px-4 py-3">
@@ -2251,6 +2322,15 @@ export default function AssignmentApprovalPage() {
                                                                 <div className="flex flex-col">
                                                                     <span className="font-black text-zinc-900 dark:text-white uppercase">{h.lot.code}</span>
                                                                     <span className="text-[10px] text-zinc-500 font-medium line-clamp-1">{h.lot.product_names?.join(', ') || '---'}</span>
+                                                                    {h.lot.tags && h.lot.tags.length > 0 && (
+                                                                        <div className="mt-1">
+                                                                            <TagDisplay
+                                                                                tags={h.lot.tags}
+                                                                                variant="compact"
+                                                                                placeholderMap={{ '@': h.lot.product_skus?.[0] || '' }}
+                                                                            />
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             ) : (
                                                                 <span className="text-zinc-400 italic">Không xác định</span>
@@ -2330,15 +2410,37 @@ export default function AssignmentApprovalPage() {
                         </div>
                         <div className="max-h-[600px] overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
                             {lotsInDay
-                                .filter(l => !lotSearchTerm || l.code.toLowerCase().includes(lotSearchTerm.toLowerCase()))
+                                .filter(l => {
+                                    if (!lotSearchTerm) return true
+                                    const term = lotSearchTerm.toLowerCase()
+                                    return l.code.toLowerCase().includes(term) ||
+                                        l.production_code?.toLowerCase().includes(term) ||
+                                        l.tags?.some(t => t.toLowerCase().includes(term))
+                                })
                                 .filter(l => showOnlyUnassigned ? !l.positions?.[0] : true)
                                 .map(lot => (
                                 <div key={lot.id} className="p-4 bg-zinc-50/50 dark:bg-zinc-950 rounded-2xl border border-zinc-100 dark:border-zinc-800 hover:border-blue-200 dark:hover:border-blue-900 transition-all flex items-center justify-between group">
                                     <div className="flex items-center gap-4">
                                         <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-900 rounded-xl flex items-center justify-center font-black text-xs text-zinc-900 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 shadow-sm group-hover:bg-blue-600 group-hover:text-white group-hover:border-blue-600 transition-all">#{decodeSTT(lot.daily_seq)}</div>
                                         <div>
-                                            <div className="text-sm font-black text-zinc-900 dark:text-zinc-100">{lot.code}</div>
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="text-sm font-black text-zinc-900 dark:text-zinc-100">{lot.code}</span>
+                                                {lot.production_code && (
+                                                    <span className="px-1.5 py-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50 rounded text-[8px] font-bold" title="Mã phụ sản xuất">
+                                                        {lot.production_code}
+                                                    </span>
+                                                )}
+                                            </div>
                                             <div className="text-[9px] text-zinc-500 dark:text-zinc-500 font-bold uppercase tracking-wider">{safeFormatDate(lot.inbound_date || lot.created_at)}</div>
+                                            {lot.tags && lot.tags.length > 0 && (
+                                                <div className="mt-1">
+                                                    <TagDisplay
+                                                        tags={lot.tags}
+                                                        variant="compact"
+                                                        placeholderMap={{ '@': lot.product_skus?.[0] || '' }}
+                                                    />
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     {lot.positions?.[0]?.code ? (

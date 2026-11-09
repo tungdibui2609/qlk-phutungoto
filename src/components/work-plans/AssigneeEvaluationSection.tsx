@@ -23,6 +23,7 @@ import {
     DEFAULT_INCIDENT_TEMPLATES,
     IncidentSeverity,
     DIFFICULTY_CONFIG,
+    getProductivityScoreByDifficulty,
     calculateAssigneeTaskStandardKpi,
     calculateWorkSpeed,
     WorkPlanTaskType,
@@ -336,7 +337,7 @@ export default function AssigneeEvaluationSection({
                             Chưa phân công nhân sự phụ trách cho đầu việc này
                         </div>
                         <div className="text-[11px] text-stone-600 mt-0.5 leading-relaxed">
-                            Mục <b>Phân bổ sản lượng & Xét KPI cá nhân</b> sẽ tự động kích hoạt ngay khi đầu việc có nhân sự. Hãy bấm nút <b>"👤 Giao người"</b> trên dòng công việc để chỉ định người thực hiện (Lái chính, Phụ việc...).
+                            Mục <b>Phân bổ sản lượng & Xét KPI cá nhân</b> sẽ tự động kích hoạt ngay khi đầu việc có nhân sự. Hãy bấm nút <b>"👤 Giao người"</b> trên dòng công việc để chỉ định người thực hiện.
                         </div>
                     </div>
                 </div>
@@ -408,7 +409,7 @@ export default function AssigneeEvaluationSection({
                                     onClick={handleSetMainSupportShare}
                                     className="px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-[11px] font-bold text-indigo-700"
                                 >
-                                    Lái chính 70% • Phụ 30%
+                                    Chính 70% • Phụ 30%
                                 </button>
                             </>
                         )}
@@ -489,6 +490,7 @@ export default function AssigneeEvaluationSection({
                     const standardKpi = calculateAssigneeTaskStandardKpi({
                         userPositions: userPos,
                         diffMultiplier,
+                        difficulty: workloadMetrics.difficulty,
                         progressPercent,
                         ratingStars,
                         incidents: ev.incidents || [],
@@ -539,16 +541,6 @@ export default function AssigneeEvaluationSection({
                                             >
                                                 {assigneeTaskType === 'secondary' ? '➕ Việc phụ (+điểm)' : '⭐ Việc chính'}
                                             </button>
-                                            {ev.role === 'main' && (
-                                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-amber-100 text-amber-800">
-                                                    Lái chính
-                                                </span>
-                                            )}
-                                            {ev.role === 'support' && (
-                                                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-stone-100 text-stone-600">
-                                                    Phụ việc
-                                                </span>
-                                            )}
                                         </div>
                                         <div className="text-[10px] text-stone-400">
                                             Quy đổi: {userPos > 0 && <b>{userPos} vị trí</b>}
@@ -593,12 +585,6 @@ export default function AssigneeEvaluationSection({
                                         <Clock size={12} className="text-indigo-600" />
                                         <span>Giờ làm việc & Tăng ca (OT):</span>
                                     </span>
-                                    {speedInfo.speedSummaryText && (
-                                        <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px] font-black flex items-center gap-1 shadow-2xs">
-                                            <Zap size={11} className="text-amber-500 fill-amber-500" />
-                                            <span>Tốc độ: {speedInfo.speedSummaryText}</span>
-                                        </span>
-                                    )}
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2.5 text-xs">
@@ -787,8 +773,8 @@ export default function AssigneeEvaluationSection({
                                         </button>
                                     </div>
 
-                                    {/* 4 Nhóm Lỗi Phổ Biến */}
-                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                    {/* 5 Nhóm Lỗi Quy Chuẩn (Thống kê, Xe nâng, Hàng hóa, Vận hành, 5S) */}
+                                    <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
                                         {DEFAULT_INCIDENT_TEMPLATES.map(grp => (
                                             <div key={grp.group} className="space-y-1">
                                                 <div className="text-[10px] font-extrabold uppercase text-stone-500 flex items-center gap-1">
@@ -922,7 +908,7 @@ export default function AssigneeEvaluationSection({
                                             <input
                                                 type="number"
                                                 min={0}
-                                                max={45}
+                                                max={50}
                                                 step={0.5}
                                                 value={
                                                     ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null
@@ -934,14 +920,14 @@ export default function AssigneeEvaluationSection({
                                                     const val = rawVal === '' ? null : Number(rawVal)
                                                     updateEvaluation(ev.assignee_name, prev => ({
                                                         ...prev,
-                                                        custom_productivity_score: val === null ? null : Math.max(0, Math.min(45, val))
+                                                        custom_productivity_score: val === null ? null : Math.max(0, Math.min(50, val))
                                                     }))
                                                 }}
                                                 className="w-12 px-1 py-0.5 rounded border border-indigo-200 bg-white text-center font-black text-xs text-indigo-950 shadow-2xs focus:ring-1 focus:ring-indigo-500"
-                                                title="Quản lý có thể gõ trực tiếp điểm hỗ trợ mong muốn (0-45đ)"
+                                                title="Quản lý có thể gõ trực tiếp điểm hỗ trợ mong muốn (0-50đ)"
                                             />
                                             <span className="text-stone-400 font-bold text-[10px]">
-                                                đ (Chuẩn {diffMultiplier > 1.0 ? Math.min(45, Math.round(40 * diffMultiplier * 10) / 10) : 40}đ × {share}%)
+                                                đ (Chuẩn {getProductivityScoreByDifficulty(workloadMetrics.difficulty, diffMultiplier)}đ × {share}%)
                                             </span>
                                             {ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null && (
                                                 <button
@@ -1003,7 +989,7 @@ export default function AssigneeEvaluationSection({
                                                 <input
                                                     type="number"
                                                     min={0}
-                                                    max={45}
+                                                    max={50}
                                                     step={0.5}
                                                     value={
                                                         ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null
@@ -1015,13 +1001,13 @@ export default function AssigneeEvaluationSection({
                                                         const val = rawVal === '' ? null : Number(rawVal)
                                                         updateEvaluation(ev.assignee_name, prev => ({
                                                             ...prev,
-                                                            custom_productivity_score: val === null ? null : Math.max(0, Math.min(45, val))
+                                                            custom_productivity_score: val === null ? null : Math.max(0, Math.min(50, val))
                                                         }))
                                                     }}
                                                     className="w-11 px-1 py-0.5 rounded border border-stone-300 bg-white text-center font-black text-xs text-stone-900 shadow-2xs focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-                                                    title="Quản lý có thể chấm tay trực tiếp (0-45đ). Xóa ô để quay về tự động."
+                                                    title="Quản lý có thể chấm tay trực tiếp (0-50đ). Xóa ô để quay về tự động."
                                                 />
-                                                <span className="text-stone-400 font-bold text-[10px]">/40đ</span>
+                                                <span className="text-stone-400 font-bold text-[10px]">/40-50đ</span>
                                                 {ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null && (
                                                     <button
                                                         type="button"
@@ -1051,7 +1037,7 @@ export default function AssigneeEvaluationSection({
                                                 <input
                                                     type="number"
                                                     min={0}
-                                                    max={25}
+                                                    max={20}
                                                     step={1}
                                                     value={
                                                         ev.custom_quality_score !== undefined && ev.custom_quality_score !== null
@@ -1063,13 +1049,13 @@ export default function AssigneeEvaluationSection({
                                                         const val = rawVal === '' ? null : Number(rawVal)
                                                         updateEvaluation(ev.assignee_name, prev => ({
                                                             ...prev,
-                                                            custom_quality_score: val === null ? null : Math.max(0, Math.min(25, val))
+                                                            custom_quality_score: val === null ? null : Math.max(0, Math.min(20, val))
                                                         }))
                                                     }}
                                                     className="w-11 px-1 py-0.5 rounded border border-stone-300 bg-white text-center font-black text-xs text-amber-800 shadow-2xs focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-                                                    title="Quản lý có thể chấm tay trực tiếp (0-25đ) cho riêng người này. Xóa ô để quay về tự động."
+                                                    title="Quản lý có thể chấm tay trực tiếp (0-20đ) cho riêng người này. Xóa ô để quay về tự động."
                                                 />
-                                                <span className="text-stone-400 font-bold text-[10px]">/25đ</span>
+                                                <span className="text-stone-400 font-bold text-[10px]">/20đ</span>
                                                 {ev.custom_quality_score !== undefined && ev.custom_quality_score !== null ? (
                                                     <button
                                                         type="button"

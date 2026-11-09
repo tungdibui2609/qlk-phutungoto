@@ -207,7 +207,7 @@ export default function AnalyticsExportCardModal({
             const taskStr = `Việc: ${r.primaryTasksCompleted}/${r.primaryTasksAssigned} chính${r.secondaryTasksCompleted > 0 ? ` +${r.secondaryTasksCompleted} phụ` : ''}`
             const totalH = r.totalWorkHours || 0
             const otH = r.totalOvertimeHours || 0
-            const hourStr = totalH > 0 ? ` • ⏱️ ${totalH}h${otH > 0 ? ` (+${otH}h OT)` : ''}${r.speedSummaryText ? ` [⚡ ${r.speedSummaryText}]` : ''}` : ''
+            const hourStr = totalH > 0 ? ` • ⏱️ ${totalH}h${otH > 0 ? ` (+${otH}h OT)` : ''}` : ''
             const prodStr = `${r.totalPositions} vt • ${(r.totalWeightKg / 1000).toFixed(1)} tấn${hourStr}`
             lines.push(`${medal} *${r.name}*: *${r.netKpiScore}đ* (${r.gradeLabel})`)
             lines.push(`   ├ ${taskStr} • SL: ${prodStr}`)
@@ -238,6 +238,7 @@ export default function AnalyticsExportCardModal({
                         const taskKpi = calculateAssigneeTaskStandardKpi({
                             userPositions: userPos,
                             diffMultiplier: itemMult,
+                            difficulty: item.workload_metrics?.difficulty,
                             progressPercent: item.progress_percent || 0,
                             ratingStars: item.rating_stars,
                             incidents: myEval?.incidents || [],
@@ -413,9 +414,9 @@ export default function AnalyticsExportCardModal({
                                 <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
                                     <span>
                                         {exportMode === 'comprehensive'
-                                            ? '🌟 BÁO CÁO TOÀN DIỆN & XẾP HẠNG KPI'
+                                            ? '🌸 PHIẾU BÉ KHỎE BÉ NGOAN TRONG NGÀY'
                                             : exportMode === 'ranking'
-                                            ? '🏆 BẢNG XẾP HẠNG & HIỆU SUẤT KPI'
+                                            ? '🏆 BẢNG PHONG THẦN BÉ KHỎE BÉ NGOAN'
                                             : '📋 NHẬT KÝ & CHI TIẾT CÔNG VIỆC NHÂN SỰ'}
                                     </span>
                                 </h1>
@@ -425,7 +426,7 @@ export default function AnalyticsExportCardModal({
                                     </span>
                                     <span className="text-stone-400">•</span>
                                     <span className="text-stone-500 font-medium text-[11px]">
-                                        Tổng hợp theo 4 Trụ Cột chuẩn & Sản lượng thực tế
+                                        Đo lường năng suất (Bé Khỏe ⚡) & An toàn, kỷ luật 5S (Bé Ngoan 🛡️)
                                     </span>
                                 </div>
                             </div>
@@ -435,7 +436,7 @@ export default function AnalyticsExportCardModal({
                                     <Trophy size={28} className="text-amber-300" />
                                 </div>
                                 <div className="text-[10px] font-extrabold text-stone-500 uppercase tracking-widest mt-1">
-                                    TOP THI ĐUA
+                                    TOP BÉ NGOAN 🌸
                                 </div>
                             </div>
                         </div>
@@ -489,7 +490,7 @@ export default function AnalyticsExportCardModal({
                                 <div className="flex items-center justify-between">
                                     <h2 className="text-xs font-black uppercase text-stone-700 tracking-wider flex items-center gap-1.5">
                                         <Trophy size={14} className="text-amber-500" />
-                                        <span>I. Bảng Tổng Kết Xếp Hạng & Điểm KPI Toàn Đội</span>
+                                        <span>🌸 I. BẢNG PHONG THẦN THI ĐUA BÉ KHỎE BÉ NGOAN</span>
                                     </h2>
                                     <span className="text-[10px] text-stone-500 font-semibold">
                                         {rows.length} nhân sự tham gia thi đua
@@ -577,16 +578,10 @@ export default function AnalyticsExportCardModal({
                                                                     ⏱️ {r.totalWorkHours}h{(r.totalOvertimeHours || 0) > 0 ? ` (+${r.totalOvertimeHours}h OT)` : ''}
                                                                 </div>
                                                             )}
-                                                            {r.speedSummaryText ? (
-                                                                <div className="text-[9px] text-emerald-700 font-semibold">
-                                                                    ⚡ {r.speedSummaryText}
+                                                            {r.totalPositions > 0 && r.totalWeightKg > 0 && (
+                                                                <div className="text-[10px] text-stone-400 font-normal">
+                                                                    {(r.totalWeightKg / 1000).toFixed(1)} tấn
                                                                 </div>
-                                                            ) : (
-                                                                r.totalPositions > 0 && r.totalWeightKg > 0 && (
-                                                                    <div className="text-[10px] text-stone-400 font-normal">
-                                                                        {(r.totalWeightKg / 1000).toFixed(1)} tấn
-                                                                    </div>
-                                                                )
                                                             )}
                                                         </td>
 
@@ -629,20 +624,20 @@ export default function AnalyticsExportCardModal({
                                                             </span>
                                                         </td>
 
-                                                        {/* Xếp Loại - Hiển thị 100% đầy đủ không bao giờ tràn mép */}
-                                                        <td className="w-[150px] px-3.5 py-2.5 text-center whitespace-nowrap">
+                                                        {/* Xếp Loại - Danh hiệu Bé Khỏe Bé Ngoan */}
+                                                        <td className="w-[170px] px-3.5 py-2.5 text-center whitespace-nowrap">
                                                             <span
-                                                                className={`px-3 py-1 rounded-lg text-xs font-black border whitespace-nowrap inline-flex items-center justify-center ${
+                                                                className={`px-3 py-1 rounded-xl text-xs font-black border whitespace-nowrap inline-flex items-center justify-center gap-1 shadow-2xs ${
                                                                     r.grade === 'A+'
-                                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                        ? 'bg-rose-50 text-rose-700 border-rose-300 ring-1 ring-rose-200'
                                                                         : r.grade === 'A'
-                                                                        ? 'bg-teal-50 text-teal-700 border-teal-200'
+                                                                        ? 'bg-amber-50 text-amber-800 border-amber-300'
                                                                         : r.grade === 'B'
                                                                         ? 'bg-blue-50 text-blue-700 border-blue-200'
-                                                                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                                                                        : 'bg-stone-100 text-stone-600 border-stone-300'
                                                                 }`}
                                                             >
-                                                                {r.gradeLabel || (r.grade === 'A+' ? 'Xuất sắc (A+)' : r.grade === 'A' ? 'Tốt (A)' : r.grade === 'B' ? 'Đạt (B)' : 'Cần cố gắng (C)')}
+                                                                {r.gradeLabel || (r.grade === 'A+' ? '🌸 Bé Khỏe Bé Ngoan (A+)' : r.grade === 'A' ? '⭐ Bé Ngoan (A)' : r.grade === 'B' ? '🌱 Cần Cố Gắng (B)' : '⚠️ Chưa Ngoan (C)')}
                                                             </span>
                                                         </td>
                                                     </tr>
@@ -753,6 +748,7 @@ export default function AnalyticsExportCardModal({
                                                             const taskKpi = calculateAssigneeTaskStandardKpi({
                                                                 userPositions: userPos,
                                                                 diffMultiplier: itemMult,
+                                                                difficulty: item.workload_metrics?.difficulty,
                                                                 progressPercent: item.progress_percent || 0,
                                                                 ratingStars: item.rating_stars,
                                                                 incidents: myEval?.incidents || [],
@@ -817,8 +813,8 @@ export default function AnalyticsExportCardModal({
                                                                         </div>
 
                                                                         <div className="flex items-center gap-2 text-[10px] font-semibold text-stone-600">
-                                                                            <span>⚡ {taskKpi.productivityScore}/40đ</span>
-                                                                            <span>⭐ {taskKpi.qualityScore}/25đ</span>
+                                                                            <span>⚡ {taskKpi.productivityScore}đ</span>
+                                                                            <span>⭐ {taskKpi.qualityScore}/20đ</span>
                                                                             <span className={taskKpi.safetyScore < 20 ? 'text-rose-600 font-bold' : ''}>🛡️ {taskKpi.safetyScore}/20đ</span>
                                                                             <span>📋 {taskKpi.disciplineScore}/15đ</span>
                                                                         </div>
@@ -864,7 +860,7 @@ export default function AnalyticsExportCardModal({
                         {/* 5. FOOTER CARD */}
                         <div className="pt-4 border-t border-stone-200 flex flex-wrap items-center justify-between gap-2 text-[11px] text-stone-500">
                             <div>
-                                💡 <b>Quy chế đánh giá:</b> Điểm ca chuẩn 100đ (Năng suất 40đ • Chất lượng 25đ • An toàn 20đ • Kỷ luật 15đ) + Việc phụ cộng dồn mở trần.
+                                🌸 <b>Bảng Vinh Danh Bé Khỏe Bé Ngoan:</b> Bé Khỏe = Năng suất cao ⚡ • Bé Ngoan = An toàn & 5S sạch sẽ 🛡️ • Hoàn thành tốt ca nhận ngay Bông Hoa Đỏ!
                             </div>
                             <div className="italic text-stone-400">
                                 Xuất từ Modular WMS lúc {exportTime}

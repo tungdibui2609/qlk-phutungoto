@@ -131,10 +131,10 @@ export default function KpiRulesHandbookTab({
                         <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-2">
                             <div className="font-extrabold text-emerald-900 flex items-center gap-1.5 text-sm">
                                 <span>🤝</span>
-                                <span>Làm Nhiều Hưởng Nhiều</span>
+                                <span>Đánh Giá Theo Thực Tế Cống Hiến</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed">
-                                Khi làm theo nhóm (lái chính xe nâng, phụ việc, đai hàng), hệ thống phân bổ theo % đóng góp thực tế. Người hoàn thành việc chính ca chuẩn đạt 100đ, người tăng cường việc phụ được cộng dồn điểm thưởng mở trần lên 120đ - 150đ+.
+                                Khi làm việc theo đội nhóm (lái xe nâng, bốc vác xếp dỡ, đai kiện hàng, thống kê kiểm đếm hàng khay...), hệ thống phân bổ theo % đóng góp thực tế. Người hoàn thành việc chính đạt 95–100đ, người tăng cường hỗ trợ việc phụ được cộng dồn điểm thi đua mở trần lên 120đ - 150đ+.
                             </p>
                         </div>
 
@@ -144,7 +144,7 @@ export default function KpiRulesHandbookTab({
                                 <span>An Toàn & Kỷ Luật Tuyệt Đối</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed">
-                                Trong môi trường kho lạnh và vận hành xe nâng, an toàn là sinh mệnh. Dù năng suất cao đến đâu, nếu để xảy ra sự cố nghiêm trọng (lật xe, rơi hàng, hỏng giàn lạnh), danh hiệu thi đua sẽ bị hạ xuống Hạng C.
+                                Trong môi trường kho bãi và nhà máy (vận hành xe nâng, bốc xếp hàng hóa, kiểm kê số liệu, làm việc phòng lạnh), an toàn lao động và bảo quản hàng hóa là trên hết. Nếu để xảy ra sự cố nghiêm trọng (đổ vỡ hàng hóa, thất thoát, va quẹt tai nạn, hư hỏng thiết bị), danh hiệu thi đua sẽ bị hạ xuống Hạng C.
                             </p>
                         </div>
                     </div>
@@ -179,17 +179,18 @@ export default function KpiRulesHandbookTab({
                             <div className="flex items-center justify-between">
                                 <span className="text-xl">⚡</span>
                                 <span className="px-2 py-0.5 rounded-lg bg-indigo-600 text-white font-black text-xs">
-                                    40 Điểm (Max 45đ)
+                                    40 – 50 Điểm
                                 </span>
                             </div>
                             <h3 className="font-black text-stone-900 text-sm">I. NĂNG SUẤT THỰC HIỆN</h3>
                             <p className="text-[11px] text-stone-600 leading-relaxed">
-                                Đánh giá khối lượng hoàn thành: Số vị trí kệ (pallet), số LOT, số cont, tấn hàng.
+                                Chuẩn 40đ cho việc cơ bản hoàn thành tốt + Điểm cộng khối lượng theo độ nặng:
                             </p>
                             <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
-                                <div>• <b>Đạt tiến độ 100%:</b> 40 điểm cơ sở.</div>
-                                <div>• <b>Hệ số nặng/nhẹ:</b> Nhẹ (x1.0), Vừa (x1.2), Nặng (x1.5), Rất nặng (x2.0).</div>
-                                <div>• <b>Vượt định mức:</b> Có thể đạt tối đa 45 điểm.</div>
+                                <div>• <b>🌱 Nhẹ:</b> <span className="text-emerald-700 font-bold">40 điểm</span> (Kiểm đếm, dán tem, 5S, việc nhẹ &rarr; Tổng ca <b>95đ - Hạng A</b>)</div>
+                                <div>• <b>⚡ Vừa:</b> <span className="text-blue-700 font-bold">42 điểm</span> (1 – 3 Cont / 45 – 179 vị trí / bốc dỡ vừa &rarr; Tổng ca <b>97đ - Hạng A</b>)</div>
+                                <div>• <b>💪 Nặng:</b> <span className="text-amber-700 font-bold">45 điểm</span> (4 – 7 Cont / 180 – 359 vị trí / bốc vác nhiều &rarr; Đạt <b>100đ - Hạng A+</b>)</div>
+                                <div>• <b>🔥 Rất nặng:</b> <span className="text-rose-700 font-bold">50 điểm</span> (≥ 8 Cont / ≥ 360 vị trí / cont lạnh gấp &rarr; <b>105đ - Xuất sắc</b>)</div>
                             </div>
                         </div>
 
@@ -198,7 +199,7 @@ export default function KpiRulesHandbookTab({
                             <div className="flex items-center justify-between">
                                 <span className="text-xl">⭐</span>
                                 <span className="px-2 py-0.5 rounded-lg bg-amber-500 text-white font-black text-xs">
-                                    25 Điểm
+                                    Tối Đa 20 Điểm
                                 </span>
                             </div>
                             <h3 className="font-black text-stone-900 text-sm">II. CHẤT LƯỢNG THỰC HIỆN</h3>
@@ -206,11 +207,11 @@ export default function KpiRulesHandbookTab({
                                 Đánh giá độ chuẩn xác, cẩn thận, sắp xếp gọn gàng theo số sao nghiệm thu:
                             </p>
                             <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
-                                <div>• <b>5⭐ Xuất sắc:</b> 25 điểm</div>
-                                <div>• <b>4⭐ Tốt:</b> 20 điểm</div>
-                                <div>• <b>3⭐ Đạt yêu cầu:</b> 15 điểm</div>
-                                <div>• <b>2⭐ Cần nhắc nhở:</b> 10 điểm</div>
-                                <div>• <b>1⭐ Chưa đạt:</b> 5 điểm</div>
+                                <div>• <b>5⭐ Xuất sắc:</b> 20 điểm</div>
+                                <div>• <b>4⭐ Tốt:</b> 16 điểm</div>
+                                <div>• <b>3⭐ Đạt yêu cầu:</b> 12 điểm</div>
+                                <div>• <b>2⭐ Cần nhắc nhở:</b> 8 điểm</div>
+                                <div>• <b>1⭐ Chưa đạt:</b> 4 điểm</div>
                             </div>
                         </div>
 
@@ -228,8 +229,8 @@ export default function KpiRulesHandbookTab({
                             </p>
                             <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
                                 <div>• <b>Không có sự cố:</b> 20/20 điểm</div>
-                                <div>• <b>Lỗi xe nâng/rách tem:</b> Trừ 5đ đến 15đ</div>
-                                <div>• <b>Sự cố rơi hàng / va quẹt mạnh:</b> Trừ 20đ (còn 0đ, tự động khóa hạng C)</div>
+                                <div>• <b>Lỗi vận hành, bốc xếp sai, rách tem nhãn:</b> Trừ 5đ đến 15đ</div>
+                                <div>• <b>Sự cố rơi đổ hàng / sai số liệu / va quẹt:</b> Trừ 20đ (còn 0đ, khóa danh hiệu Hạng C)</div>
                             </div>
                         </div>
 
@@ -308,7 +309,7 @@ export default function KpiRulesHandbookTab({
                             <div className="space-y-1.5 text-xs text-stone-600 bg-white p-3 rounded-xl border border-stone-200">
                                 <div className="font-bold text-stone-800">📌 Quy tắc cộng dồn mở trần:</div>
                                 <div>• <b>Cộng thẳng vào Tổng điểm KPI:</b> Toàn bộ điểm việc phụ được cộng dồn trực tiếp.</div>
-                                <div>• <b>Tỷ lệ thuận theo % đóng góp:</b> Điểm hỗ trợ = 40 × (% đóng góp / 100) (Ví dụ: Bạn phụ 50% khối lượng &rarr; được cộng ngay <b>+20đ</b> thưởng; bạn phụ 18% &rarr; được cộng <b>+7.2đ</b>).</div>
+                                <div>• <b>Tỷ lệ thuận theo % đóng góp:</b> Điểm hỗ trợ = Điểm năng suất độ nặng × (% đóng góp / 100) (Ví dụ: Việc mức Vừa 35đ, bạn phụ 50% khối lượng &rarr; được cộng ngay <b>+17.5đ</b> thưởng; việc mức Nặng 40đ bạn phụ 18% &rarr; được cộng <b>+7.2đ</b>).</div>
                             </div>
                         </div>
                     </div>
@@ -317,25 +318,25 @@ export default function KpiRulesHandbookTab({
                     <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 text-xs space-y-2.5">
                         <div className="font-black text-indigo-950 flex items-center gap-1.5">
                             <span>⏱️</span>
-                            <span>Quy chế Giờ Làm Ca Chuẩn (8 Tiếng), Tăng Ca (OT) & Đo Lường Tốc Độ Theo Giờ:</span>
+                            <span>Quy chế Mốc Thời Gian Ca Chuẩn (8 Tiếng) & Ghi Nhận Giờ Tăng Ca:</span>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                             <div className="p-3 bg-white rounded-xl border border-indigo-100 space-y-1">
                                 <div className="font-bold text-stone-800">1. Ca chuẩn 8 tiếng:</div>
                                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                                    Định mức làm việc chuẩn là 8 giờ/ca. Hệ thống tự động tính công chuẩn cho các đầu việc chính trong ngày.
+                                    Định mức thời gian làm việc ca chuẩn là 8 giờ. Hệ thống dùng mốc này để đánh giá tỷ lệ hoàn thành công việc chính trong ngày và đo lường hiệu suất làm việc.
                                 </p>
                             </div>
                             <div className="p-3 bg-white rounded-xl border border-indigo-100 space-y-1">
-                                <div className="font-bold text-stone-800">2. Giờ Tăng Ca (OT):</div>
+                                <div className="font-bold text-stone-800">2. Giờ Tăng Ca (Làm thêm ngoài ca):</div>
                                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                                    Khi dỡ cont ngoài giờ, chạy lạnh ca đêm hoặc làm việc phụ tăng cường, Quản lý ghi nhận trực tiếp số giờ OT (+1h, +2h...).
+                                    Khi dỡ cont ngoài giờ, bốc xếp tăng ca, kiểm kê đêm hoặc làm việc phụ hỗ trợ, Quản lý ghi nhận trực tiếp số giờ làm thêm (+1h, +2h...) vào hệ thống.
                                 </p>
                             </div>
                             <div className="p-3 bg-white rounded-xl border border-indigo-100 space-y-1">
-                                <div className="font-bold text-stone-800">3. Tốc độ thực tế:</div>
+                                <div className="font-bold text-stone-800">3. Ghi nhận cống hiến:</div>
                                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                                    Hệ thống đo lường: Tốc độ = Sản lượng / (Giờ chuẩn + OT) (ví dụ: 10.5 vt/h hoặc 6.1 tấn/h), bảo đảm công bằng cho người làm việc tập trung, năng suất cao.
+                                    Ghi nhận chính xác số giờ tăng ca thực tế của nhân sự, giúp đánh giá toàn diện tinh thần trách nhiệm và mức độ đóng góp cho kho trong ngày.
                                 </p>
                             </div>
                         </div>
@@ -348,10 +349,10 @@ export default function KpiRulesHandbookTab({
                             <span>Ví dụ minh họa cách tính tổng điểm KPI cuối ngày của nhân viên Giang:</span>
                         </div>
                         <div className="space-y-1 text-stone-700 leading-relaxed pl-5 list-disc">
-                            <div>1. <b>Việc chính (Ca 8h):</b> Giang hoàn thành ca lái xe nâng đạt <b>95.6 điểm</b> (Năng suất 41.7đ • Chất lượng 18.9đ • An toàn 20đ • 5S 15đ).</div>
-                            <div>2. <b>Việc phụ (+2h Tăng Ca OT):</b> Giang tăng cường hỗ trợ đai kiện cho ca khác với 18% đóng góp &rarr; Được cộng thêm <b>+7.2 điểm</b> việc phụ.</div>
-                            <div>3. <b>Tổng thời gian làm việc:</b> 8h chuẩn + 2h OT = <b>10 giờ làm việc</b> &rarr; Đạt tốc độ trung bình <b>10.5 vị trí/giờ (6.1 tấn/h)</b>.</div>
-                            <div>4. <b>Tổng điểm KPI cuối ngày:</b> 95.6 + 7.2 = <b>102.8 điểm</b> &rarr; <b>Đạt Hạng Xuất sắc (A+)</b> và đứng vị trí Top 1 Bảng Thi Đua!</div>
+                            <div>1. <b>Việc chính (8h):</b> Giang đảm nhận bốc xếp và dỡ cont lạnh (mức Rất nặng), hoàn thành xuất sắc đạt <b>105 điểm</b> (Năng suất 50đ [40đ chuẩn + 10đ khối lượng lớn] • Chất lượng 5⭐ 20đ • An toàn 20đ • 5S 15đ).</div>
+                            <div>2. <b>Việc phụ (+2h Tăng ca):</b> Giang tăng cường hỗ trợ đai kiện cho tổ xuất hàng (mức Nặng 45đ) với 18% đóng góp &rarr; Được cộng thêm <b>+8.1 điểm</b> việc phụ.</div>
+                            <div>3. <b>Tổng thời gian làm việc:</b> 8h chuẩn + 2h tăng ca = <b>10 giờ làm việc cống hiến</b>.</div>
+                            <div>4. <b>Tổng điểm KPI cuối ngày:</b> 105 + 8.1 = <b>113.1 điểm</b> &rarr; <b>Đạt Hạng Xuất sắc (A+)</b> và đứng vị trí Top 1 Bảng Thi Đua!</div>
                         </div>
                     </div>
                 </div>
@@ -376,7 +377,7 @@ export default function KpiRulesHandbookTab({
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                         {INCIDENT_GROUPS.map((grp: IncidentGroupTemplate) => (
                             <div
                                 key={grp.group}
@@ -437,11 +438,11 @@ export default function KpiRulesHandbookTab({
                                 🏆
                             </div>
                             <div>
-                                <h2 className="text-base sm:text-lg font-black text-stone-900">
-                                    5. Bảng Tiêu Chuẩn Xếp Loại Thi Đua KPI
+                                <h2 className="text-base sm:text-lg font-black text-stone-900 flex items-center gap-2">
+                                    <span>5. Bảng Tiêu Chuẩn Danh Hiệu Bé Khỏe Bé Ngoan</span>
                                 </h2>
                                 <p className="text-xs text-stone-500">
-                                    Căn cứ vào Tổng Điểm KPI cuối ngày hoặc trung bình tháng để xét thưởng
+                                    Bé Khỏe = Năng suất cao ⚡ • Bé Ngoan = An toàn & Kỷ luật 5S 🛡️
                                 </p>
                             </div>
                         </div>
@@ -451,78 +452,78 @@ export default function KpiRulesHandbookTab({
                         <table className="w-full text-left text-xs border-collapse">
                             <thead className="bg-stone-100/90 text-stone-600 border-b border-stone-200 text-[10px] font-black uppercase tracking-wider">
                                 <tr>
-                                    <th className="px-4 py-3 text-center w-24">Danh Hiệu</th>
-                                    <th className="px-4 py-3 text-center w-36">Tổng Điểm KPI</th>
+                                    <th className="px-4 py-3 text-center w-36">Danh Hiệu</th>
+                                    <th className="px-4 py-3 text-center w-36">Tổng Điểm Thi Đua</th>
                                     <th className="px-4 py-3">Tiêu Chuẩn Đạt Được</th>
-                                    <th className="px-4 py-3 text-center w-36">Chế Độ Khen Thưởng</th>
+                                    <th className="px-4 py-3 text-center w-40">Đánh Giá Năng Lực</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-stone-100 bg-white">
-                                <tr className="bg-emerald-50/40">
+                                <tr className="bg-rose-50/30">
                                     <td className="px-4 py-3 text-center font-black">
-                                        <span className="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 font-black border border-emerald-300 text-xs inline-block">
-                                            Xuất sắc (A+)
+                                        <span className="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-800 font-black border border-rose-300 text-xs inline-flex items-center gap-1 shadow-2xs">
+                                            🌸 Bé Khỏe Bé Ngoan (A+)
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-center font-black text-emerald-700 text-sm">
+                                    <td className="px-4 py-3 text-center font-black text-rose-700 text-sm">
                                         ≥ 100 điểm
                                     </td>
                                     <td className="px-4 py-3 text-stone-700 leading-relaxed">
-                                        Hoàn thành xuất sắc toàn bộ ca làm việc chuẩn 100đ hoặc có tăng cường làm thêm việc phụ; năng suất vượt trội; không vi phạm bất kỳ lỗi an toàn nào.
+                                        Hoàn thành xuất sắc khối lượng công việc lớn hoặc có tăng cường hỗ trợ việc phụ; năng suất vượt trội; không vi phạm bất kỳ lỗi an toàn nào. Nhận ngay <b>Bông Hoa Đỏ</b>!
                                     </td>
-                                    <td className="px-4 py-3 text-center font-bold text-emerald-800">
-                                        Khen thưởng Top 1–3, cộng hệ số lương thưởng cao nhất.
+                                    <td className="px-4 py-3 text-center font-bold text-rose-800">
+                                        Biểu dương Top đầu thi đua, tấm gương làm việc năng suất và an toàn mẫu mực.
                                     </td>
                                 </tr>
 
                                 <tr>
                                     <td className="px-4 py-3 text-center font-black">
-                                        <span className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-800 font-black border border-teal-200 text-xs inline-block">
-                                            Tốt (A)
+                                        <span className="px-2.5 py-1 rounded-xl bg-amber-50 text-amber-800 font-black border border-amber-300 text-xs inline-flex items-center gap-1 shadow-2xs">
+                                            ⭐ Bé Ngoan (A)
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-center font-black text-teal-700 text-sm">
+                                    <td className="px-4 py-3 text-center font-black text-amber-700 text-sm">
                                         85 – 99.9 điểm
                                     </td>
                                     <td className="px-4 py-3 text-stone-700 leading-relaxed">
-                                        Hoàn thành tốt nhiệm vụ được giao trong ca; tuân thủ nghiêm ngặt 5S và quy tắc xe nâng; chất lượng thực hiện đạt 4–5 sao.
+                                        Hoàn thành tốt nhiệm vụ được giao trong ca; cẩn thận, trách nhiệm, tuân thủ nghiêm ngặt 5S và quy tắc an toàn kho.
                                     </td>
-                                    <td className="px-4 py-3 text-center font-bold text-teal-800">
-                                        Đạt định mức thưởng chuyên cần và hiệu suất chuẩn.
+                                    <td className="px-4 py-3 text-center font-bold text-amber-800">
+                                        Ghi nhận hoàn thành tốt nhiệm vụ, làm việc chăm chỉ và kỷ luật cao.
                                     </td>
                                 </tr>
 
                                 <tr>
                                     <td className="px-4 py-3 text-center font-black">
-                                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 font-black border border-blue-200 text-xs inline-block">
-                                            Đạt yêu cầu (B)
+                                        <span className="px-2.5 py-1 rounded-xl bg-blue-50 text-blue-800 font-black border border-blue-200 text-xs inline-flex items-center gap-1 shadow-2xs">
+                                            🌱 Cần Cố Gắng (B)
                                         </span>
                                     </td>
                                     <td className="px-4 py-3 text-center font-black text-blue-700 text-sm">
                                         70 – 84.9 điểm
                                     </td>
                                     <td className="px-4 py-3 text-stone-700 leading-relaxed">
-                                        Hoàn thành công việc ở mức cơ bản; có thể bị trừ điểm nhẹ do trễ tiến độ hoặc chất lượng ở mức 3 sao; không có sự cố an toàn.
+                                        Hoàn thành công việc ở mức cơ bản; có thể bị trừ điểm nhẹ do trễ tiến độ hoặc thao tác còn chậm; không có sự cố an toàn.
                                     </td>
                                     <td className="px-4 py-3 text-center font-bold text-stone-600">
-                                        Hưởng lương ca chuẩn, không có thưởng vượt mức.
+                                        Đang tiến bộ, cố gắng thêm một chút là giật được Bông Hoa Đỏ nhé!
                                     </td>
                                 </tr>
 
-                                <tr className="bg-rose-50/40">
+                                <tr className="bg-stone-50">
                                     <td className="px-4 py-3 text-center font-black">
-                                        <span className="px-2.5 py-1 rounded-lg bg-rose-100 text-rose-800 font-black border border-rose-300 text-xs inline-block">
-                                            Cần cải thiện (C)
+                                        <span className="px-2.5 py-1 rounded-xl bg-stone-200 text-stone-700 font-black border border-stone-300 text-xs inline-flex items-center gap-1 shadow-2xs">
+                                            ⚠️ Chưa Ngoan (C)
                                         </span>
                                     </td>
-                                    <td className="px-4 py-3 text-center font-black text-rose-700 text-sm">
+                                    <td className="px-4 py-3 text-center font-black text-stone-700 text-sm">
                                         Dưới 70 điểm
                                     </td>
                                     <td className="px-4 py-3 text-stone-700 leading-relaxed">
-                                        Không hoàn thành tiến độ hoặc để xảy ra vi phạm an toàn / rách tem / móp méo hàng hóa / vi phạm kỷ luật 5S.
+                                        Không hoàn thành tiến độ hoặc để xảy ra vi phạm an toàn / rách tem / sai lệch số liệu / móp méo hàng hóa / vi phạm kỷ luật 5S.
                                     </td>
-                                    <td className="px-4 py-3 text-center font-bold text-rose-700">
-                                        Nhắc nhở, trừ thưởng KPI, yêu cầu đào tạo lại quy trình.
+                                    <td className="px-4 py-3 text-center font-bold text-stone-700">
+                                        Cần cải thiện. Quản lý trực tiếp kèm cặp và hướng dẫn lại quy trình thao tác.
                                     </td>
                                 </tr>
                             </tbody>
@@ -560,7 +561,7 @@ export default function KpiRulesHandbookTab({
                                 <span>Một công việc có 3 người cùng làm thì điểm số được chia như thế nào?</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed pl-6">
-                                <b>Trả lời:</b> Cuối ca, Quản lý sẽ phân chia <b>tỷ lệ % đóng góp thực tế</b> (ví dụ: Lái chính làm nhiều được 50%, 2 bạn phụ việc mỗi bạn 25%). Năng suất và sản lượng vị trí hạ hàng sẽ tự động phân bổ tỷ lệ thuận theo đóng góp của bạn.
+                                <b>Trả lời:</b> Cuối ca, Quản lý sẽ phân chia <b>tỷ lệ % đóng góp thực tế</b> (ví dụ: Người làm chính đạt 70%, người hỗ trợ đạt 30%, hoặc chia đều 50% - 50%). Năng suất và sản lượng vị trí hạ hàng sẽ tự động phân bổ tỷ lệ thuận theo đóng góp của bạn.
                             </p>
                         </div>
 
@@ -570,7 +571,7 @@ export default function KpiRulesHandbookTab({
                                 <span>Nếu tôi làm việc cẩn thận, sản phẩm rất đẹp nhưng công việc chung chỉ được đánh giá 3 sao thì sao?</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed pl-6">
-                                <b>Trả lời:</b> Hệ thống có tính năng <b>chấm điểm chất lượng độc lập cho từng cá nhân</b>. Quản lý có thể ghi nhận riêng cho bạn 25/25 điểm chất lượng tối đa mà không bị phụ thuộc vào điểm chung của nhóm.
+                                <b>Trả lời:</b> Hệ thống có tính năng <b>chấm điểm chất lượng độc lập cho từng cá nhân</b>. Quản lý có thể ghi nhận riêng cho bạn 20/20 điểm chất lượng tối đa mà không bị phụ thuộc vào điểm chung của nhóm.
                             </p>
                         </div>
 
@@ -586,16 +587,6 @@ export default function KpiRulesHandbookTab({
                     </div>
                 </div>
             )}
-
-            {/* Footer Ban Quản Lý */}
-            <div className="p-4 bg-stone-100 rounded-2xl border border-stone-200 text-center text-xs text-stone-500 space-y-1 print:border-none print:bg-transparent">
-                <div className="font-bold text-stone-700">
-                    BAN QUẢN LÝ KHO & BỘ PHẬN NHÂN SỰ • CÔNG TY TNHH CHÁNH THU
-                </div>
-                <div>
-                    Quy chế ban hành áp dụng nội bộ cho phân hệ {systemName} trên nền tảng Modular WMS.
-                </div>
-            </div>
         </div>
     )
 }

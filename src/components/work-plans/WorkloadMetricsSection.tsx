@@ -2614,8 +2614,8 @@ export default function WorkloadMetricsSection({
                                     <span className="text-xs font-extrabold">
                                         {cfg.badgeEmoji} {cfg.label}
                                     </span>
-                                    <span className="text-[11px] font-black px-1.5 py-0.5 rounded-md bg-white/80 border border-current/15">
-                                        x{cfg.multiplier}
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-white/80 border border-current/15">
+                                        {cfg.baseScore}đ (x{cfg.multiplier})
                                     </span>
                                 </div>
                                 <div className="text-[10px] opacity-80 mt-1 line-clamp-2 leading-tight">
