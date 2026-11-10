@@ -1123,29 +1123,56 @@ export default function SoLieuPage() {
         }
     }
 
-    // Chuẩn bị dữ liệu phiếu kết toán Nhập / Xuất từ công việc đã chọn
+    // Chuẩn bị dữ liệu phiếu kết toán Nhập / Xuất từ công việc đã chọn (Dựa trực tiếp vào MÃ SẢN PHẨM / ID đã ghim)
     const buildSettlementData = (shift: any, rows: any[], type: 'in' | 'out') => {
         const jobTitle = shift.summary_data?.job_name || shift.notes || 'Công việc'
         const isImport = type === 'in'
         const relevantRows = rows.filter(r => (Number(isImport ? r.in_qty : r.out_qty) || 0) > 0)
+        const pinnedList: ProductItem[] = shift?.summary_data?.pinned_products || []
 
         const items = relevantRows.map((r, idx) => {
             const qty = Number(isImport ? r.in_qty : r.out_qty) || 0
             const rName = (r.product_name || '').trim().toLowerCase()
-            const foundProd = allProducts.find(p => {
-                if (r.product_id && p.id === r.product_id) return true
-                const pName = (p.name || '').trim().toLowerCase()
-                if (pName === rName) return true
-                if (p.sku && p.sku.trim().toLowerCase() === rName) return true
-                if (p.internal_name && p.internal_name.trim().toLowerCase() === rName) return true
-                if (pName.length > 3 && (rName.includes(pName) || pName.includes(rName))) return true
-                return false
-            })
+            const cleanUnit = cleanUnitLabel(r.unit) || r.unit
+
+            // 1. ƯU TIÊN SỐ 1: Match trực tiếp theo product_id từ danh sách sản phẩm ĐÃ GHIM của công việc này
+            let foundProd: any = r.product_id
+                ? (pinnedList.find(p => p.id === r.product_id) || allProducts.find(p => p.id === r.product_id))
+                : undefined
+
+            // 2. ƯU TIÊN SỐ 2: Match theo mã SKU đã ghim trong công việc
+            if (!foundProd && r.sku) {
+                foundProd = pinnedList.find(p => p.sku === r.sku) || allProducts.find(p => p.sku === r.sku)
+            }
+
+            // 3. ƯU TIÊN SỐ 3: Tìm chính xác trong danh sách sản phẩm ĐÃ GHIM (pinned_products) của ca này
+            if (!foundProd) {
+                foundProd = pinnedList.find(p => (p.name || '').trim().toLowerCase() === rName)
+            }
+
+            // 4. ƯU TIÊN SỐ 4: Match chính xác 100% trong toàn bộ danh mục sản phẩm (theo ID, SKU, hoặc Tên)
+            if (!foundProd) {
+                foundProd = allProducts.find(p => (p.name || '').trim().toLowerCase() === rName) ||
+                            allProducts.find(p => p.sku && p.sku.trim().toLowerCase() === rName)
+            }
+
+            // 5. Fallback cuối cùng: Match tương đối nhưng chọn candidate có tên dài nhất
+            if (!foundProd) {
+                const candidates = allProducts.filter(p => {
+                    const pName = (p.name || '').trim().toLowerCase()
+                    return pName.length > 3 && (rName.includes(pName) || pName.includes(rName))
+                })
+                if (candidates.length > 0) {
+                    candidates.sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0))
+                    foundProd = candidates[0]
+                }
+            }
+
             return {
                 id: `settle_${type}_${Date.now()}_${idx}`,
-                productId: foundProd?.id || '',
+                productId: foundProd?.id || r.product_id || '',
                 productName: foundProd?.name || r.product_name,
-                unit: r.unit || foundProd?.unit || 'Kg',
+                unit: cleanUnit || foundProd?.unit || 'Kg',
                 quantity: qty,
                 document_quantity: qty,
                 price: 0,
@@ -1269,12 +1296,36 @@ export default function SoLieuPage() {
         }
     }
 
-    // Tổng hợp các dòng số liệu theo Sản phẩm + ĐVT (không tính tồn)
-    const summarizeLines = (lines: DeliveryJournalRecord[]) => {
-        const map: Record<string, { product_name: string; unit: string; in_qty: number; out_qty: number; count: number }> = {}
+    // Tổng hợp các dòng số liệu theo Sản phẩm + ĐVT (Tự động gán Product ID & SKU từ danh sách ghim của ca)
+    const summarizeLines = (lines: DeliveryJournalRecord[], shift?: any) => {
+        const pinnedList: ProductItem[] = shift?.summary_data?.pinned_products || pinnedProducts || []
+        const map: Record<string, { product_id?: string; sku?: string; product_name: string; unit: string; in_qty: number; out_qty: number; count: number }> = {}
         lines.forEach(l => {
-            const key = `${l.item_name}___${l.unit}`
-            if (!map[key]) map[key] = { product_name: l.item_name, unit: l.unit, in_qty: 0, out_qty: 0, count: 0 }
+            // Trích xuất product_id từ tag [PID: ...] nếu có trong ghi chú
+            const pidMatch = (l.notes || '').match(/\[PID:\s*([^\]]+)\]/i)
+            const extractedPid = pidMatch ? pidMatch[1].trim() : undefined
+
+            // Đối soát trong danh sách sản phẩm ĐÃ GHIM của công việc này
+            const matchedPinned = (extractedPid ? pinnedList.find(p => p.id === extractedPid) : null) ||
+                                  pinnedList.find(p => (p.name || '').trim().toLowerCase() === (l.item_name || '').trim().toLowerCase()) ||
+                                  allProducts.find(p => (p.name || '').trim().toLowerCase() === (l.item_name || '').trim().toLowerCase())
+
+            const finalPid = extractedPid || matchedPinned?.id
+            const finalSku = matchedPinned?.sku
+            const productName = matchedPinned?.name || l.item_name
+
+            const key = finalPid ? `${finalPid}___${l.unit}` : `${l.item_name}___${l.unit}`
+            if (!map[key]) {
+                map[key] = {
+                    product_id: finalPid || undefined,
+                    sku: finalSku || undefined,
+                    product_name: productName,
+                    unit: l.unit,
+                    in_qty: 0,
+                    out_qty: 0,
+                    count: 0
+                }
+            }
             if (l.to_department === 'Kho') map[key].in_qty += Number(l.quantity_sent) || 0
             else map[key].out_qty += Number(l.quantity_sent) || 0
             map[key].count += 1
@@ -1496,7 +1547,7 @@ export default function SoLieuPage() {
             from_department: isImport ? 'Sản xuất' : 'Kho',
             to_department: isImport ? 'Kho' : 'Sản xuất',
             status: isImport ? 'received_by_warehouse' : 'received_by_production',
-            notes: `[CV_ID: ${activeShift.id}] [CV: ${currentJobName}] [${batchCode}] ${isImport ? 'Nhập kho' : 'Xuất kho'}`,
+            notes: `[CV_ID: ${activeShift.id}] [PID: ${product.id}] [SKU: ${product.sku || ''}] [CV: ${currentJobName}] [${batchCode}] ${isImport ? 'Nhập kho' : 'Xuất kho'}`,
 
             sent_by: profile?.id || null,
             sent_by_name: profile?.full_name || 'Nhân viên',
@@ -1655,7 +1706,7 @@ export default function SoLieuPage() {
     const handleStartEdit = (record: DeliveryJournalRecord) => {
         setEditingRecord(record)
         setEditQuantity(record.quantity_sent)
-        setEditUnit(record.unit)
+        setEditUnit(cleanUnitLabel(record.unit) || record.unit)
         setEditType(record.to_department === 'Kho' ? 'in' : 'out')
         const cleanNotes = (record.notes || '').replace(/\[CV_ID:\s*[^\]]+\]\s*/gi, '').trim()
         setEditNotes(cleanNotes)
@@ -2830,14 +2881,20 @@ export default function SoLieuPage() {
                                 const jobTitle = doneSelectedShift.summary_data?.job_name || doneSelectedShift.notes || 'Công việc'
                                 const isClosed = doneSelectedShift.status === 'closed'
                                 const summaryRows = doneLines.length > 0
-                                    ? summarizeLines(doneLines)
-                                    : Object.values(doneSelectedShift.summary_data?.products_summary || {}).map((p: any) => ({
-                                        product_name: p.product_name,
-                                        unit: p.unit,
-                                        in_qty: p.in_qty || 0,
-                                        out_qty: p.out_qty || 0,
-                                        count: (p.in_count || 0) + (p.out_count || 0)
-                                    }))
+                                    ? summarizeLines(doneLines, doneSelectedShift)
+                                    : Object.values(doneSelectedShift.summary_data?.products_summary || {}).map((p: any) => {
+                                        const pinnedList: any[] = doneSelectedShift.summary_data?.pinned_products || []
+                                        const matched = pinnedList.find((pinned: any) => pinned.name === p.product_name)
+                                        return {
+                                            product_id: matched?.id,
+                                            sku: matched?.sku,
+                                            product_name: p.product_name,
+                                            unit: p.unit,
+                                            in_qty: p.in_qty || 0,
+                                            out_qty: p.out_qty || 0,
+                                            count: (p.in_count || 0) + (p.out_count || 0)
+                                        }
+                                    })
 
                                 // Tổng hợp theo Đơn vị tính & 2 hướng (Nhập kho / Xuất kho)
                                 const unitsMap: Record<string, { unit: string; in_qty: number; out_qty: number; in_count: number; out_count: number }> = {}
@@ -4715,37 +4772,42 @@ export default function SoLieuPage() {
                     </div>
                 )}
 
-                {/* ===== DESKTOP: BẢNG NHẬP SỐ CỐ ĐỊNH BÊN PHẢI ===== */}
+                {/* ===== DESKTOP: BẢNG NHẬP SỐ CỐ ĐỊNH BÊN PHẢI (SIÊU GỌN - VỪA KHÍT TẦM MẮT MỌI MÀN HÌNH) ===== */}
                 {pageView === 'active' && activeShift && pinnedProducts.length > 0 && (
-                    <aside className="hidden sm:block sm:col-start-2 sm:row-start-1 sm:row-span-2 sticky top-[188px]">
+                    <aside className="hidden sm:block sm:col-start-2 sm:row-start-1 sm:row-span-2 sticky top-[180px] max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-thin">
                         {padProduct ? (() => {
                             const units = getProductUnits(padProduct)
                             const qtyNum = parseFloat(padValue) || 0
                             const stats = getProductCount(padProduct.name, padUnit)
                             const canSave = qtyNum > 0 && !padSaving
                             return (
-                                <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-sm p-4">
-                                    <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-600 dark:text-indigo-400 mb-1">
-                                        Đang nhập cho
-                                    </p>
-                                    <h3 className="text-base font-bold text-stone-900 dark:text-white leading-snug break-words">
-                                        {padProduct.name}
-                                    </h3>
-                                    <div className="grid grid-cols-2 gap-2 mt-3">
-                                        <div className="rounded-xl bg-emerald-50 dark:bg-emerald-950/40 px-3 py-2">
-                                            <p className="text-[10px] font-bold uppercase text-emerald-600">Đã nhập</p>
-                                            <p className="text-xl font-black text-emerald-700 dark:text-emerald-300 tabular-nums">{stats.inQty}</p>
+                                <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-sm p-3.5 space-y-2">
+                                    {/* Hàng 1: Tên sản phẩm & Thống kê đã nhập/xuất */}
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="min-w-0 flex-1">
+                                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block leading-tight">
+                                                Đang nhập cho
+                                            </span>
+                                            <h3 className="text-xs sm:text-sm font-bold text-stone-900 dark:text-white leading-tight line-clamp-2 mt-0.5" title={padProduct.name}>
+                                                {padProduct.name}
+                                            </h3>
                                         </div>
-                                        <div className="rounded-xl bg-rose-50 dark:bg-rose-950/40 px-3 py-2">
-                                            <p className="text-[10px] font-bold uppercase text-rose-600">Đã xuất</p>
-                                            <p className="text-xl font-black text-rose-700 dark:text-rose-300 tabular-nums">{stats.outQty}</p>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <div className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900/40 text-right">
+                                                <span className="text-[9px] font-bold text-emerald-600 block leading-none">Nhập</span>
+                                                <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 tabular-nums">+{stats.inQty}</span>
+                                            </div>
+                                            <div className="px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-100 dark:border-rose-900/40 text-right">
+                                                <span className="text-[9px] font-bold text-rose-600 block leading-none">Xuất</span>
+                                                <span className="text-xs font-black text-rose-700 dark:text-rose-300 tabular-nums">-{stats.outQty}</span>
+                                            </div>
                                         </div>
                                     </div>
 
-                                    {/* Chọn ĐVT */}
-                                    <div className="mt-3">
-                                        <p className="text-[11px] font-semibold text-stone-400 mb-1.5">Đơn vị tính</p>
-                                        <div className="flex flex-wrap gap-1.5">
+                                    {/* Hàng 2: Chọn ĐVT */}
+                                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
+                                        <span className="text-[10px] font-bold text-stone-400 uppercase shrink-0">ĐVT:</span>
+                                        <div className="flex flex-wrap gap-1">
                                             {units.map(u => (
                                                 <button
                                                     key={u}
@@ -4754,10 +4816,10 @@ export default function SoLieuPage() {
                                                         setPadUnit(u)
                                                         if (padProduct) handleUnitChange(padProduct.id, u)
                                                     }}
-                                                    className={`h-8 px-3 rounded-lg text-xs font-bold border transition ${
+                                                    className={`h-6 px-2.5 rounded-lg text-xs font-bold border transition ${
                                                         padUnit === u
-                                                            ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                            : 'bg-white dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-stone-300 hover:border-indigo-300'
+                                                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                                                            : 'bg-stone-50 dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-stone-300 hover:border-indigo-300'
                                                     }`}
                                                 >
                                                     {u}
@@ -4766,25 +4828,59 @@ export default function SoLieuPage() {
                                         </div>
                                     </div>
 
-                                    {/* Màn hình số */}
-                                    <div className="mt-3 h-16 rounded-xl bg-stone-100 dark:bg-zinc-800 flex items-end justify-end gap-2 px-4 pb-2">
-                                        <span className={`text-4xl font-black tabular-nums tracking-tight ${padValue ? 'text-stone-900 dark:text-white' : 'text-stone-300 dark:text-zinc-600'}`}>
-                                            {padValue || '0'}
-                                        </span>
-                                        <span className="text-sm font-bold text-stone-500 mb-1">{padUnit}</span>
+                                    {/* Hàng 3: Màn hình số & Nút xóa nhanh */}
+                                    <div className="h-11 rounded-xl bg-stone-100 dark:bg-zinc-800/80 border border-stone-200/80 dark:border-zinc-700 flex items-center justify-between px-3">
+                                        <div className="flex items-center gap-1">
+                                            {padValue ? (
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => handlePadKey('clear')}
+                                                    className="px-1.5 py-0.5 rounded bg-stone-200 hover:bg-rose-100 dark:bg-zinc-700 dark:hover:bg-rose-950/60 text-stone-600 hover:text-rose-600 dark:text-stone-300 dark:hover:text-rose-400 text-[10px] font-bold transition"
+                                                    title="Xóa số (Esc)"
+                                                >
+                                                    XÓA
+                                                </button>
+                                            ) : (
+                                                <span className="text-[11px] font-semibold text-stone-400">Số lượng:</span>
+                                            )}
+                                        </div>
+                                        <div className="flex items-baseline gap-1.5">
+                                            <span className={`text-2xl font-black tabular-nums tracking-tight ${padValue ? 'text-stone-900 dark:text-white' : 'text-stone-300 dark:text-zinc-600'}`}>
+                                                {padValue || '0'}
+                                            </span>
+                                            <span className="text-xs font-bold text-stone-500">{padUnit}</span>
+                                        </div>
                                     </div>
 
-                                    {/* Bàn phím số */}
-                                    <div className="grid grid-cols-3 gap-1.5 mt-2">
+                                    {/* Hàng 3.5: Các nút cộng dồn nhanh số lượng (+1, +5, +10, +50, +100) */}
+                                    <div className="grid grid-cols-5 gap-1">
+                                        {[1, 5, 10, 50, 100].map(n => (
+                                            <button
+                                                key={n}
+                                                type="button"
+                                                onClick={() => {
+                                                    const cur = parseFloat(padValue) || 0
+                                                    setPadValue(String(cur + n))
+                                                }}
+                                                className="h-6 rounded-md bg-stone-50 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200/70 dark:border-zinc-700 text-[11px] font-bold text-stone-700 dark:text-stone-300 transition active:scale-95"
+                                                title={`Cộng thêm ${n}`}
+                                            >
+                                                +{n}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {/* Hàng 4: Bàn phím số 3x4 */}
+                                    <div className="grid grid-cols-3 gap-1">
                                         {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map(k => (
                                             <button
                                                 key={k}
                                                 type="button"
                                                 onClick={() => handlePadKey(k)}
-                                                className={`h-11 rounded-lg text-lg font-bold active:scale-95 transition select-none ${
+                                                className={`h-8 rounded-lg text-base font-bold active:scale-95 transition select-none flex items-center justify-center ${
                                                     k === 'del'
                                                         ? 'bg-stone-200 hover:bg-stone-300 dark:bg-zinc-700 text-stone-700 dark:text-stone-200'
-                                                        : 'bg-stone-50 hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-stone-900 dark:text-white'
+                                                        : 'bg-white hover:bg-stone-100 dark:bg-zinc-800/90 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-stone-900 dark:text-white shadow-2xs'
                                                 }`}
                                             >
                                                 {k === 'del' ? '⌫' : k === '.' ? ',' : k}
@@ -4792,34 +4888,33 @@ export default function SoLieuPage() {
                                         ))}
                                     </div>
 
-                                    {/* XUẤT | NHẬP */}
-                                    <div className="grid grid-cols-2 gap-2 mt-3">
+                                    {/* Hàng 5: Hai nút hành động XUẤT | NHẬP */}
+                                    <div className="grid grid-cols-2 gap-1.5 pt-0.5">
                                         <button
                                             type="button"
                                             disabled={!canSave}
                                             onClick={() => handlePadConfirm('out')}
-                                            className="h-14 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black active:scale-95 transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex flex-col items-center justify-center leading-tight"
+                                            className="h-10 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex items-center justify-center gap-1.5 shadow-sm"
+                                            title="Xác nhận Xuất (Phím trừ -)"
                                         >
-                                            <span className="text-sm flex items-center gap-1"><ArrowUpRight className="w-4 h-4" /> XUẤT</span>
-                                            <span className="text-[11px] font-semibold opacity-90">
-                                                {qtyNum > 0 ? `-${padValue} ${padUnit}` : 'phím −'}
-                                            </span>
+                                            <ArrowUpRight className="w-4 h-4 shrink-0" />
+                                            <span className="text-xs font-black">XUẤT {qtyNum > 0 ? `(-${padValue})` : ''}</span>
                                         </button>
                                         <button
                                             type="button"
                                             disabled={!canSave}
                                             onClick={() => handlePadConfirm('in')}
-                                            className="h-14 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black active:scale-95 transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex flex-col items-center justify-center leading-tight"
+                                            className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex items-center justify-center gap-1.5 shadow-sm"
+                                            title="Xác nhận Nhập (Phím cộng +)"
                                         >
-                                            <span className="text-sm flex items-center gap-1"><ArrowDownLeft className="w-4 h-4" /> NHẬP</span>
-                                            <span className="text-[11px] font-semibold opacity-90">
-                                                {qtyNum > 0 ? `+${padValue} ${padUnit}` : 'phím +'}
-                                            </span>
+                                            <ArrowDownLeft className="w-4 h-4 shrink-0" />
+                                            <span className="text-xs font-black">NHẬP {qtyNum > 0 ? `(+${padValue})` : ''}</span>
                                         </button>
                                     </div>
 
-                                    <p className="mt-3 text-[11px] text-stone-400 leading-relaxed text-center">
-                                        Gõ số trực tiếp bằng bàn phím • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800">+</kbd> Nhập • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800">−</kbd> Xuất • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800">↑↓</kbd> đổi sản phẩm • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800">Esc</kbd> xóa số
+                                    {/* Gợi ý phím tắt */}
+                                    <p className="text-[10px] text-stone-400 text-center leading-tight pt-0.5">
+                                        Gõ số trực tiếp • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">+</kbd> Nhập • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">−</kbd> Xuất • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">↑↓</kbd> Đổi SP • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">Esc</kbd> Xóa
                                     </p>
                                 </div>
                             )
@@ -5467,13 +5562,24 @@ export default function SoLieuPage() {
                                         Đơn vị tính
                                     </label>
                                     {(() => {
-                                        const prod = allProducts.find(p => p.name === editingRecord.item_name)
+                                        // Ưu tiên tìm trong pinnedProducts trước, rồi đến allProducts
+                                        const prod = pinnedProducts.find(p => p.name === editingRecord.item_name) ||
+                                                     allProducts.find(p => p.name === editingRecord.item_name)
+
+                                        // Lấy danh sách đơn vị riêng của sản phẩm này (đã chuẩn hóa & ưu tiên Thùng lên đầu)
+                                        const productUnits = prod ? getProductUnits(prod) : []
+
+                                        // Nếu sản phẩm có đơn vị riêng thì CHỈ hiện đơn vị của sản phẩm đó
+                                        // Chỉ fallback về danh sách đơn vị hệ thống khi sản phẩm tự do hoặc không có đơn vị nào
+                                        const baseUnits = productUnits.length > 0 
+                                            ? productUnits 
+                                            : (prod?.id?.startsWith('custom_') ? availableUnits : (prod?.unit ? [prod.unit] : availableUnits))
+
+                                        const currentCleanUnit = cleanUnitLabel(editUnit) || editUnit
                                         const unitsToShow = Array.from(new Set([
-                                            editUnit,
-                                            ...(prod?.available_units || []),
-                                            ...(prod?.unit ? [prod.unit] : []),
-                                            ...availableUnits
-                                        ])).filter(Boolean)
+                                            currentCleanUnit,
+                                            ...baseUnits
+                                        ].map(u => cleanUnitLabel(u)).filter(Boolean)))
 
                                         return (
                                             <select

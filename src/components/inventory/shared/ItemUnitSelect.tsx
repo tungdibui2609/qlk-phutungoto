@@ -1,6 +1,6 @@
 import { Combobox } from '@/components/ui/Combobox'
 import { Product, Unit } from '@/components/inventory/types'
-import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
+import { normalizeUnit, formatUnitWeight, extractWeightFromName } from '@/lib/unitConversion'
 
 interface ItemUnitSelectProps {
     product: Product | undefined
@@ -47,14 +47,43 @@ export function ItemUnitSelect({ product, units, value, onChange }: ItemUnitSele
         new Map(options.map(item => [item.value, item])).values()
     )
 
+    // Khớp mềm value với options để tránh hiển thị rỗng -- ĐVT -- khi có sự sai lệch nhỏ về ký tự hoặc floating-point
+    let effectiveValue = value
+    if (value) {
+        const exact = uniqueOptions.find(opt => opt.value === value)
+        if (!exact) {
+            const normVal = value.toLowerCase().replace(/\s+/g, '')
+            const fuzzy = uniqueOptions.find(opt => opt.value.toLowerCase().replace(/\s+/g, '') === normVal)
+            if (fuzzy) {
+                effectiveValue = fuzzy.value
+            } else {
+                // Thử khớp theo khối lượng trích xuất (ví dụ 9.600000000000001kg vs 9.6kg)
+                const wVal = extractWeightFromName(value)
+                if (wVal !== null) {
+                    const byWeight = uniqueOptions.find(opt => {
+                        const wOpt = extractWeightFromName(opt.value)
+                        return wOpt !== null && Math.abs(wOpt - wVal) < 0.001
+                    })
+                    if (byWeight) {
+                        effectiveValue = byWeight.value
+                    }
+                }
+            }
+            // Nếu vẫn không khớp trong options nhưng có value, bổ sung vào options để Combobox không bị rỗng
+            if (!uniqueOptions.some(opt => opt.value === effectiveValue)) {
+                uniqueOptions.push({ value: effectiveValue, label: effectiveValue })
+            }
+        }
+    }
+
     if (uniqueOptions.length <= 1) {
-        return <div className='text-center text-sm font-medium text-stone-700'>{value || product.unit || '-'}</div>
+        return <div className='text-center text-sm font-medium text-stone-700 dark:text-stone-300'>{effectiveValue || product.unit || '-'}</div>
     }
 
     return (
         <Combobox
             options={uniqueOptions}
-            value={value}
+            value={effectiveValue}
             onChange={(val) => onChange(val || '')}
             hideSearchIcon={true}
             placeholder="-- ĐVT --"
