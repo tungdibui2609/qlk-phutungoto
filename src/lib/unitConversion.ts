@@ -44,8 +44,9 @@ export const formatUnitWeight = (unitName: string | null | undefined, weight: nu
     if (isKg(normBase)) return baseUnitName;
     
     if (weight > 0) {
+        const cleanWeight = Number(Number(weight).toFixed(4));
         // Standard format: "Name (10kg)" - no space, lowercase kg
-        return `${baseUnitName} (${weight}kg)`;
+        return `${baseUnitName} (${cleanWeight}kg)`;
     }
     return baseUnitName;
 };

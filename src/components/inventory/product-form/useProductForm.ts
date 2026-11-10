@@ -81,7 +81,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
     // Data Fetching Logic...
     async function fetchProductCategoryRels() {
         if (!initialData) return
-        const { data } = await supabase.from('product_category_rel')
+        const { data } = await (supabase as any).from('product_category_rel')
             .select('category_id, is_primary')
             .eq('product_id', initialData.id)
         
@@ -90,11 +90,11 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
             const secondary = data.filter((d: any) => !d.is_primary).map((d: any) => d.category_id)
             setFormData(prev => ({ 
                 ...prev, 
-                primary_category_id: primary || (initialData.category_id as string || ''),
+                primary_category_id: primary || ((initialData as any)?.category_id as string || ''),
                 secondary_category_ids: secondary 
             }))
-        } else if (initialData.category_id) {
-            setFormData(prev => ({ ...prev, primary_category_id: initialData.category_id as string }))
+        } else if ((initialData as any)?.category_id) {
+            setFormData(prev => ({ ...prev, primary_category_id: (initialData as any).category_id as string }))
         }
     }
 
@@ -134,7 +134,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                 } else if (ref_unit_id) {
                     const refUnit = data.find((r: any) => r.unit_id === ref_unit_id)
                     if (refUnit) {
-                        factor = d.conversion_rate / refUnit.conversion_rate
+                        factor = Number((d.conversion_rate / refUnit.conversion_rate).toFixed(4))
                     }
                 }
 
@@ -268,7 +268,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
             // Save Category Relations
             if (productId) {
                 // Delete existing rels
-                await supabase.from('product_category_rel').delete().eq('product_id', productId)
+                await (supabase as any).from('product_category_rel').delete().eq('product_id', productId)
                 
                 if (primary_category_id || (secondary_category_ids && secondary_category_ids.length > 0)) {
                     const rels = []
@@ -299,7 +299,7 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                     }
 
                     if (rels.length > 0) {
-                        const { error: relErr } = await supabase.from('product_category_rel').insert(rels)
+                        const { error: relErr } = await (supabase as any).from('product_category_rel').insert(rels)
                         if (relErr) throw relErr
                     }
                 }
@@ -317,12 +317,12 @@ export function useProductForm({ initialData, isEditMode, readOnly }: UseProduct
                         company_id: string | null;
                     }[] = []
                     for (const u of alternativeUnits.filter(u => u.unit_id && u.factor > 0)) {
-                        let absoluteRate = u.factor
+                        let absoluteRate = Number(Number(u.factor).toFixed(4))
                         if (u.ref_unit_id) {
                             // Find parent rate from earlier in the validUnits list since we removed the map
                             const parent = validUnits.find(vu => vu.unit_id === u.ref_unit_id)
                             if (parent) {
-                                absoluteRate = u.factor * parent.conversion_rate
+                                absoluteRate = Number((u.factor * parent.conversion_rate).toFixed(4))
                             }
                         }
                         validUnits.push({

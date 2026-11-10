@@ -32,7 +32,8 @@ import {
     User,
     FileText,
     ExternalLink,
-    Settings2
+    Settings2,
+    AlertTriangle
 } from 'lucide-react'
 import Link from 'next/link'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
@@ -121,6 +122,10 @@ export default function SoLieuPage() {
     const [closeNotes, setCloseNotes] = useState('')
     const [closeTimeInput, setCloseTimeInput] = useState<string>('')
     const [shiftSummary, setShiftSummary] = useState<any>(null)
+
+    // Modal xác nhận xóa công việc đẹp mắt
+    const [deleteTargetShift, setDeleteTargetShift] = useState<{ id: string; title: string; recordCount: number } | null>(null)
+    const [isDeletingShift, setIsDeletingShift] = useState(false)
 
     // Chốt tạm cho công việc hiện tại
     const [subShifts, setSubShifts] = useState<any[]>([])
@@ -211,6 +216,15 @@ export default function SoLieuPage() {
         toastTimerRef.current = setTimeout(() => setToast(null), 2500)
     }
 
+    // Helper làm sạch sai số số thực trong tên đơn vị (ví dụ: "Thùng (9.600000000000001kg)" -> "Thùng (9.6kg)")
+    const cleanUnitLabel = (u?: string | null): string => {
+        if (!u) return ''
+        return u.replace(/\((\d+(?:\.\d+)?)kg\)/gi, (_, numStr) => {
+            const cleaned = Number(Number(numStr).toFixed(4))
+            return `(${cleaned}kg)`
+        })
+    }
+
     // Helper kiểm tra đơn vị có phải là Thùng không
     const isBoxUnit = (u?: string | null) => {
         if (!u) return false
@@ -220,11 +234,12 @@ export default function SoLieuPage() {
 
     // Helper lấy đơn vị ưu tiên (ưu tiên đơn vị Thùng trước)
     const getPreferredUnit = (units: string[], fallbackUnit?: string | null): string => {
-        if (!units || units.length === 0) return fallbackUnit || 'Kg'
+        const cleanFallback = cleanUnitLabel(fallbackUnit)
+        if (!units || units.length === 0) return cleanFallback || 'Kg'
         const thungUnit = units.find(u => isBoxUnit(u))
         if (thungUnit) return thungUnit
-        if (fallbackUnit && units.includes(fallbackUnit)) return fallbackUnit
-        return units[0] || fallbackUnit || 'Kg'
+        if (cleanFallback && units.includes(cleanFallback)) return cleanFallback
+        return units[0] || cleanFallback || 'Kg'
     }
 
     // Lấy danh sách đơn vị của sản phẩm (sắp xếp ưu tiên đơn vị Thùng lên trước)
@@ -234,7 +249,9 @@ export default function SoLieuPage() {
         else if (product.available_units && product.available_units.length > 0) list = product.available_units
         else list = product.unit ? [product.unit] : ['Kg']
 
-        return [...list].sort((a, b) => {
+        const cleanedList = Array.from(new Set(list.map(u => cleanUnitLabel(u)).filter(Boolean)))
+
+        return [...cleanedList].sort((a, b) => {
             const aIs = isBoxUnit(a)
             const bIs = isBoxUnit(b)
             if (aIs && !bIs) return -1
@@ -257,18 +274,52 @@ export default function SoLieuPage() {
         return `so_lieu_pinned_job_${activeShift.id}`
     }, [activeShift?.id])
 
-    // Load danh sách ghim của công việc đang chọn từ localStorage (hoặc tự khôi phục từ dữ liệu công việc nếu vừa Mở lại CV)
+    // Ghi nhớ công việc đang chọn để khi F5 giữ nguyên đúng tab công việc đang làm
+    useEffect(() => {
+        if (selectedShiftId && shiftSystemCode && typeof window !== 'undefined') {
+            try {
+                localStorage.setItem(`so_lieu_selected_shift_${shiftSystemCode}`, selectedShiftId)
+            } catch (e) {}
+        }
+    }, [selectedShiftId, shiftSystemCode])
+
+    // Đồng bộ danh sách sản phẩm ghim lên summary_data của bảng delivery_shifts trên Supabase
+    const syncPinnedToDb = useCallback(async (shiftId: string, currentSummary: any, list: ProductItem[]) => {
+        if (!shiftId || !shiftSystemCode) return
+        try {
+            const nextSummary = {
+                ...(currentSummary || {}),
+                pinned_products: list,
+            }
+            setOpenShifts(prev => prev.map(s => s.id === shiftId ? { ...s, summary_data: nextSummary } : s))
+            await (supabase as any)
+                .from('delivery_shifts')
+                .update({ summary_data: nextSummary })
+                .eq('id', shiftId)
+                .eq('system_code', shiftSystemCode)
+        } catch (err) {
+            console.error('Failed to sync pinned products to DB:', err)
+        }
+    }, [shiftSystemCode])
+
+    // Load danh sách ghim của công việc đang chọn từ localStorage (hoặc tự khôi phục từ DB / Công việc mẫu / Lịch sử đợt khi F5)
     useEffect(() => {
         if (!storageKey || !activeShift) {
             setPinnedProducts([])
             return
         }
-        const applySyncedPinned = (rawList: ProductItem[], persist = false) => {
+        const applySyncedPinned = (rawList: ProductItem[], persist = false, syncDb = false) => {
             const synced = rawList.map(p => {
                 const found = allProducts.find(ap => ap.id === p.id || ap.name === p.name)
                 const item = found || p
                 const units = getProductUnits(item)
-                const prefUnit = getPreferredUnit(units, p.unit || item.unit)
+                const rawUnit = cleanUnitLabel(p.unit || item.unit)
+                let prefUnit: string
+                if (!rawUnit || !units.includes(rawUnit)) {
+                    prefUnit = getPreferredUnit(units, item.unit)
+                } else {
+                    prefUnit = getPreferredUnit(units, rawUnit)
+                }
                 return {
                     ...item,
                     unit: prefUnit,
@@ -286,22 +337,79 @@ export default function SoLieuPage() {
                     localStorage.setItem(storageKey, JSON.stringify(synced))
                 } catch (e) {}
             }
+            if (syncDb && synced.length > 0 && activeShift?.id) {
+                syncPinnedToDb(activeShift.id, activeShift.summary_data, synced)
+            }
         }
 
         try {
+            // 1. Đọc từ localStorage nếu có danh sách sản phẩm (> 0 phần tử)
             const saved = localStorage.getItem(storageKey)
             if (saved !== null) {
                 const parsed: ProductItem[] = JSON.parse(saved)
-                if (Array.isArray(parsed)) {
-                    applySyncedPinned(parsed, false)
+                if (Array.isArray(parsed) && parsed.length > 0) {
+                    applySyncedPinned(parsed, allProducts.length > 0, false)
                     return
                 }
             }
 
-            // Khôi phục từ summary_data.pinned_products (khi Mở lại CV đã hoàn thành từ trước)
+            // Nếu người dùng đã chủ động bấm "Xóa hết ghim" cho ca này thì tôn trọng lựa chọn đó
+            const userCleared = localStorage.getItem(`${storageKey}_cleared`) === '1'
+            if (userCleared) {
+                setPinnedProducts([])
+                return
+            }
+
+            // 2. Khôi phục từ summary_data.pinned_products trong Database (delivery_shifts)
             const savedPinned = activeShift.summary_data?.pinned_products
             if (Array.isArray(savedPinned) && savedPinned.length > 0) {
-                applySyncedPinned(savedPinned, true)
+                applySyncedPinned(savedPinned, allProducts.length > 0, false)
+                return
+            }
+
+            // Các bước khôi phục từ Công việc mẫu & Lịch sử đợt cần allProducts đã tải xong
+            if (allProducts.length === 0) {
+                return
+            }
+
+            const restoredMap = new Map<string, ProductItem>()
+
+            // 3. Khôi phục từ Công việc mẫu (khớp theo template_id hoặc tên công việc)
+            const tplId = activeShift.summary_data?.template_id
+            const jobNameLower = (activeShift.summary_data?.job_name || activeShift.notes || '').trim().toLowerCase()
+            const matchedTpl = jobTemplatesList.find(t =>
+                (tplId && t.id === tplId) ||
+                (jobNameLower && t.name.trim().toLowerCase() === jobNameLower)
+            )
+            if (matchedTpl?.pinned_product_ids && matchedTpl.pinned_product_ids.length > 0) {
+                matchedTpl.pinned_product_ids.forEach(pid => {
+                    const prod = allProducts.find(p => p.id === pid)
+                    if (prod && !restoredMap.has(prod.id)) {
+                        restoredMap.set(prod.id, prod)
+                    }
+                })
+            }
+
+            // 4. Khôi phục bổ sung từ các sản phẩm đã phát sinh nhập/xuất trong ca này
+            if (allJobJournals.length > 0) {
+                const jobTagId = `[CV_ID: ${activeShift.id}]`
+                const jobTagName = currentJobName ? `[CV: ${currentJobName}]` : ''
+                allJobJournals.forEach(r => {
+                    const notesStr = r.notes || ''
+                    const belongsToShift = notesStr.includes(jobTagId) || (jobTagName && notesStr.includes(jobTagName))
+                    if (!belongsToShift) return
+                    const itemName = (r.item_name || '').trim()
+                    if (!itemName) return
+                    const prod = allProducts.find(p => p.name.trim() === itemName)
+                    if (prod && !restoredMap.has(prod.id)) {
+                        restoredMap.set(prod.id, { ...prod, unit: r.unit || prod.unit })
+                    }
+                })
+            }
+
+            if (restoredMap.size > 0) {
+                const restoredList = Array.from(restoredMap.values())
+                applySyncedPinned(restoredList, true, true)
                 return
             }
 
@@ -311,17 +419,25 @@ export default function SoLieuPage() {
             console.error('Failed to load pinned products from storage', e)
             setPinnedProducts([])
         }
-    }, [storageKey, activeShift, allProducts])
+    }, [storageKey, activeShift, allProducts, jobTemplatesList, allJobJournals, currentJobName, syncPinnedToDb])
 
-    // Lưu danh sách ghim vào localStorage theo công việc
-    const updatePinnedProducts = (newList: ProductItem[]) => {
+    // Lưu danh sách ghim vào localStorage và đồng bộ lên DB theo công việc
+    const updatePinnedProducts = (newList: ProductItem[], isUserClear = false) => {
         setPinnedProducts(newList)
         if (storageKey) {
             try {
                 localStorage.setItem(storageKey, JSON.stringify(newList))
+                if (isUserClear || newList.length === 0) {
+                    localStorage.setItem(`${storageKey}_cleared`, '1')
+                } else {
+                    localStorage.removeItem(`${storageKey}_cleared`)
+                }
             } catch (e) {
                 console.error('Failed to save pinned products to storage', e)
             }
+        }
+        if (activeShift?.id) {
+            syncPinnedToDb(activeShift.id, activeShift.summary_data, newList)
         }
     }
 
@@ -344,11 +460,19 @@ export default function SoLieuPage() {
         }
     }, [currentSystem])
 
-    // Đổi đơn vị tính cho sản phẩm trên bàn làm việc
+    // Đổi đơn vị tính cho sản phẩm trên bàn làm việc (dùng functional state để không bao giờ ghi đè mảng rỗng khi chuyển tab)
     const handleUnitChange = (productId: string, newUnit: string) => {
         setSelectedUnitMap(prev => ({ ...prev, [productId]: newUnit }))
-        const updated = pinnedProducts.map(p => p.id === productId ? { ...p, unit: newUnit } : p)
-        updatePinnedProducts(updated)
+        setPinnedProducts(prev => {
+            if (prev.length === 0 || !prev.some(p => p.id === productId)) return prev
+            const updated = prev.map(p => p.id === productId ? { ...p, unit: newUnit } : p)
+            if (storageKey) {
+                try {
+                    localStorage.setItem(storageKey, JSON.stringify(updated))
+                } catch (e) {}
+            }
+            return updated
+        })
     }
 
     // 4. Tải danh mục sản phẩm từ DB kèm cấu hình đơn vị tính quy đổi chính xác từ /products (product_units & weight_kg)
@@ -479,6 +603,12 @@ export default function SoLieuPage() {
                 if (data.length > 0) {
                     setSelectedShiftId(prev => {
                         if (prev && data.some((s: any) => s.id === prev)) return prev
+                        if (typeof window !== 'undefined' && shiftSystemCode) {
+                            try {
+                                const savedId = localStorage.getItem(`so_lieu_selected_shift_${shiftSystemCode}`)
+                                if (savedId && data.some((s: any) => s.id === savedId)) return savedId
+                            } catch (e) {}
+                        }
                         return data[0].id
                     })
                 } else {
@@ -556,6 +686,34 @@ export default function SoLieuPage() {
                     setJournalList(allList.filter(l => l.sent_at >= latestSub.to_time))
                 } else {
                     setJournalList(allList)
+                }
+
+                // TỰ ĐỘNG ĐỒNG BỘ ĐƠN VỊ TÍNH THEO NHẬT KÝ THỰC TẾ TRONG CA:
+                // Nếu sản phẩm đã phát sinh số liệu với một đơn vị cụ thể trong ca (ví dụ Thùng 9.6kg),
+                // tự động chuyển đơn vị trên bàn làm việc về đơn vị đó để khớp số liệu tức thì.
+                if (allList.length > 0) {
+                    const latestUnitByProduct: Record<string, string> = {}
+                    // Duyệt từ cũ đến mới (để bản ghi mới nhất ghi đè)
+                    const reversed = [...allList].reverse()
+                    reversed.forEach(r => {
+                        const name = (r.item_name || '').trim()
+                        if (name && r.unit) {
+                            latestUnitByProduct[name] = r.unit
+                        }
+                    })
+
+                    setSelectedUnitMap(prev => {
+                        const next = { ...prev }
+                        let changed = false
+                        pinnedProducts.forEach(p => {
+                            const targetUnit = latestUnitByProduct[p.name.trim()]
+                            if (targetUnit && next[p.id] !== targetUnit) {
+                                next[p.id] = targetUnit
+                                changed = true
+                            }
+                        })
+                        return changed ? next : prev
+                    })
                 }
             }
         } catch (err) {
@@ -670,6 +828,91 @@ export default function SoLieuPage() {
         setIsTwoWayExpanded(false)
         setIsUnitsExpanded(false)
         loadDoneLines(shift)
+    }
+
+    // Mở modal xác nhận xóa công việc đang làm (đẹp mắt, thay thế popup mặc định của trình duyệt)
+    const handleDeleteOpenShift = (shiftId: string, shiftName?: string) => {
+        const targetShift = openShifts.find(s => s.id === shiftId) || (activeShift?.id === shiftId ? activeShift : null)
+        const jobTitle = shiftName || targetShift?.summary_data?.job_name || targetShift?.notes || 'Công việc'
+
+        // Kiểm tra xem công việc này có phát sinh đợt số liệu nào chưa
+        const shiftRecords = allJobJournals.filter(j =>
+            (j.notes && j.notes.includes(`[CV_ID: ${shiftId}]`)) ||
+            (j.notes && j.notes.includes(`[CV: ${jobTitle}]`))
+        )
+
+        setDeleteTargetShift({
+            id: shiftId,
+            title: jobTitle,
+            recordCount: shiftRecords.length
+        })
+    }
+
+    // Thực hiện xóa công việc sau khi bấm Xác nhận trên Modal
+    const confirmDeleteShift = async () => {
+        if (!deleteTargetShift) return
+        const { id: shiftId, title: jobTitle } = deleteTargetShift
+        setIsDeletingShift(true)
+
+        try {
+            if (shiftSystemCode) {
+                // 1. Xóa các lượt ghi nhận số liệu của công việc này
+                await (supabase as any)
+                    .from('delivery_journal')
+                    .delete()
+                    .eq('system_code', shiftSystemCode)
+                    .or(`notes.ilike.%[CV_ID: ${shiftId}]%,notes.ilike.%[CV: ${jobTitle}]%`)
+
+                // 2. Xóa các đợt chốt tạm
+                await (supabase as any)
+                    .from('delivery_sub_shifts')
+                    .delete()
+                    .eq('shift_id', shiftId)
+                    .eq('system_code', shiftSystemCode)
+
+                // 3. Xóa ca công việc
+                const { error } = await (supabase as any)
+                    .from('delivery_shifts')
+                    .delete()
+                    .eq('id', shiftId)
+                    .eq('system_code', shiftSystemCode)
+
+                if (error) throw error
+            }
+
+            // 4. Xóa dữ liệu lưu ghim trên máy
+            try {
+                localStorage.removeItem(`so_lieu_pinned_job_${shiftId}`)
+                localStorage.removeItem(`so_lieu_pinned_job_${shiftId}_cleared`)
+            } catch (e) {}
+
+            showToast(`Đã xóa công việc "${jobTitle}"`, 'out')
+            setDeleteTargetShift(null)
+
+            // 5. Cập nhật state danh sách công việc đang mở
+            const remaining = openShifts.filter(s => s.id !== shiftId)
+            setOpenShifts(remaining)
+
+            if (selectedShiftId === shiftId) {
+                if (remaining.length > 0) {
+                    setSelectedShiftId(remaining[0].id)
+                } else {
+                    setSelectedShiftId(null)
+                    setPinnedProducts([])
+                    setAllJobJournals([])
+                    setJournalList([])
+                    setSubShifts([])
+                    setPadProduct(null)
+                    setDraftQtyMap({})
+                }
+            }
+
+            await Promise.all([loadOpenShifts(), loadPastShifts(doneRange)])
+        } catch (err: any) {
+            alert('Lỗi xóa công việc: ' + (err?.message || err))
+        } finally {
+            setIsDeletingShift(false)
+        }
     }
 
     const handleDeleteDoneShift = async (shiftId: string) => {
@@ -1301,10 +1544,21 @@ export default function SoLieuPage() {
         const units = getProductUnits(product)
         setPadProduct(product)
         setPadValue('')
-        // Ưu tiên đơn vị Thùng trước nếu sản phẩm có cấu hình Thùng
-        const remembered = selectedUnitMap[product.id]
-        const thungUnit = units.find(u => isBoxUnit(u))
-        const preferred = thungUnit || remembered || getPreferredUnit(units, product.unit)
+
+        // 1. Kiểm tra xem ca này đã có đợt ghi nhận nào cho sản phẩm này chưa
+        const journalUnit = cleanUnitLabel(allJobJournals.find(j => j.item_name === product.name && j.unit)?.unit)
+        const remembered = cleanUnitLabel(selectedUnitMap[product.id])
+
+        let preferred = remembered
+        if (journalUnit && units.includes(journalUnit)) {
+            preferred = journalUnit
+        } else if (!preferred || !units.includes(preferred)) {
+            preferred = units.find(u => isBoxUnit(u)) || units[0] || 'Kg'
+        } else if (!isBoxUnit(preferred)) {
+            const thungUnit = units.find(u => isBoxUnit(u))
+            if (thungUnit) preferred = thungUnit
+        }
+
         setPadUnit(preferred)
         if (preferred && preferred !== remembered) {
             handleUnitChange(product.id, preferred)
@@ -1352,8 +1606,17 @@ export default function SoLieuPage() {
             if (padProduct) setPadProduct(null)
             return
         }
-        if (!padProduct || !pinnedProducts.some(p => p.id === padProduct.id)) {
+        const matched = padProduct ? pinnedProducts.find(p => p.id === padProduct.id) : null
+        if (!matched) {
             openPad(pinnedProducts[0])
+        } else {
+            if (matched !== padProduct) {
+                setPadProduct(matched)
+            }
+            const cleanedPadUnit = cleanUnitLabel(padUnit)
+            if (cleanedPadUnit && cleanedPadUnit !== padUnit) {
+                setPadUnit(cleanedPadUnit)
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [pinnedProducts])
@@ -1507,6 +1770,29 @@ export default function SoLieuPage() {
             const openedAtDate = jobOpenedAtInput ? new Date(jobOpenedAtInput) : new Date()
             const openedAtIso = isNaN(openedAtDate.getTime()) ? new Date().toISOString() : openedAtDate.toISOString()
 
+            // Tìm mẫu công việc tương ứng (ưu tiên mẫu đang chọn, hoặc tự khớp theo tên công việc)
+            const matchedTemplate = selectedJobTemplate || jobTemplatesList.find(
+                t => t.name.trim().toLowerCase() === jobNameInput.trim().toLowerCase()
+            )
+
+            // Chuẩn bị danh sách sản phẩm ghim sẵn từ mẫu công việc trước khi lưu DB
+            let initialPinned: ProductItem[] = []
+            if (matchedTemplate?.pinned_product_ids && matchedTemplate.pinned_product_ids.length > 0) {
+                initialPinned = matchedTemplate.pinned_product_ids
+                    .map(pid => allProducts.find(p => p.id === pid))
+                    .filter(Boolean)
+                    .map(p => {
+                        const item = p as ProductItem
+                        const units = getProductUnits(item)
+                        const prefUnit = getPreferredUnit(units, item.unit)
+                        return {
+                            ...item,
+                            unit: prefUnit,
+                            available_units: units,
+                        }
+                    })
+            }
+
             const payload = {
                 system_code: shiftSystemCode,
                 company_id: currentSystem?.company_id || profile?.company_id || null,
@@ -1518,6 +1804,8 @@ export default function SoLieuPage() {
                 summary_data: {
                     job_name: jobNameInput.trim(),
                     job_notes: jobNotesInput.trim() || null,
+                    template_id: matchedTemplate?.id || null,
+                    pinned_products: initialPinned,
                 }
             }
             const { data, error } = await (supabase as any)
@@ -1533,16 +1821,11 @@ export default function SoLieuPage() {
             setJobNotesInput('')
             setJobOpenedAtInput(formatDateTimeLocal(new Date()))
 
-            // Nạp lại danh sách công việc và tự động active tab công việc mới này
-            await loadOpenShifts()
             if (data?.id) {
-                // Nếu mẫu công việc có ghim sẵn sản phẩm, tự động nạp vào bàn làm việc
-                let initialPinned: any[] = []
-                if (selectedJobTemplate?.pinned_product_ids && selectedJobTemplate.pinned_product_ids.length > 0) {
-                    initialPinned = allProducts.filter(p => selectedJobTemplate.pinned_product_ids?.includes(p.id))
-                }
                 try {
                     localStorage.setItem(`so_lieu_pinned_job_${data.id}`, JSON.stringify(initialPinned))
+                    localStorage.removeItem(`so_lieu_pinned_job_${data.id}_cleared`)
+                    localStorage.setItem(`so_lieu_selected_shift_${shiftSystemCode}`, data.id)
                 } catch (e) {}
                 setPinnedProducts(initialPinned)
                 setAllJobJournals([])
@@ -1552,6 +1835,9 @@ export default function SoLieuPage() {
                 setDraftQtyMap({})
                 setSelectedShiftId(data.id)
             }
+
+            // Nạp lại danh sách công việc sau khi đã lưu localStorage và setSelectedShiftId
+            await loadOpenShifts()
             setSelectedJobTemplate(null)
             setPageView('active')
         } catch (err: any) {
@@ -2168,59 +2454,78 @@ export default function SoLieuPage() {
                                     const isSelected = activeShift?.id === shift.id
                                     const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
                                     return (
-                                        <button
-                                            key={shift.id}
-                                            type="button"
-                                            onClick={() => {
-                                                if (activeShift?.id !== shift.id) {
-                                                    setPinnedProducts([])
-                                                    setAllJobJournals([])
-                                                    setJournalList([])
-                                                    setSubShifts([])
-                                                    setPadProduct(null)
-                                                    setDraftQtyMap({})
-                                                }
-                                                setSelectedShiftId(shift.id)
-                                            }}
-                                            title={`${jobTitle} • mở lúc ${formatDateTime(shift.opened_at)}`}
-                                            className={`group relative shrink-0 w-[210px] text-left px-3 py-2 rounded-xl border transition ${
-                                                isSelected
-                                                    ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-700 ring-2 ring-indigo-500/20'
-                                                    : 'bg-white dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 hover:border-indigo-300 hover:bg-stone-50 dark:hover:bg-zinc-800'
-                                            }`}
-                                        >
-                                            <div className="flex items-center gap-1.5">
-                                                <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-indigo-600 animate-pulse' : 'bg-emerald-500'}`} />
-                                                <span className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-800 dark:text-stone-100'}`}>
-                                                    {jobTitle}
-                                                </span>
-                                            </div>
-                                            <div className="mt-0.5 pl-3.5 text-[11px] text-stone-500 flex items-center gap-1 truncate">
-                                                <Clock className="w-3 h-3 shrink-0" />
-                                                <span>Mở {formatTimeOnly(shift.opened_at)}</span>
-                                                {isSelected && (
-                                                    <>
-                                                        <span>•</span>
-                                                        <span>{allJobJournals.length} đợt</span>
-                                                        {subShifts.length > 0 && (
-                                                            <>
-                                                                <span>•</span>
-                                                                <span className="text-amber-600 font-semibold">{subShifts.length} chốt tạm</span>
-                                                            </>
-                                                        )}
-                                                    </>
-                                                )}
-                                            </div>
-                                        </button>
+                                        <div key={shift.id} className="group relative shrink-0">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (activeShift?.id !== shift.id) {
+                                                        setPinnedProducts([])
+                                                        setAllJobJournals([])
+                                                        setJournalList([])
+                                                        setSubShifts([])
+                                                        setPadProduct(null)
+                                                        setDraftQtyMap({})
+                                                    }
+                                                    setSelectedShiftId(shift.id)
+                                                }}
+                                                title={`${jobTitle} • mở lúc ${formatDateTime(shift.opened_at)}`}
+                                                className={`text-left px-3.5 py-2 pr-9 rounded-xl border transition shrink-0 whitespace-nowrap ${
+                                                    isSelected
+                                                        ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-700 ring-2 ring-indigo-500/20'
+                                                        : 'bg-white dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 hover:border-indigo-300 hover:bg-stone-50 dark:hover:bg-zinc-800'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-indigo-600 animate-pulse' : 'bg-emerald-500'}`} />
+                                                    <span className={`text-sm font-bold whitespace-nowrap ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-800 dark:text-stone-100'}`}>
+                                                        {jobTitle}
+                                                    </span>
+                                                </div>
+                                                <div className="mt-0.5 pl-3.5 text-[11px] text-stone-500 flex items-center gap-1 whitespace-nowrap">
+                                                    <Clock className="w-3 h-3 shrink-0" />
+                                                    <span>Mở {formatTimeOnly(shift.opened_at)}</span>
+                                                    {isSelected && (
+                                                        <>
+                                                            <span>•</span>
+                                                            <span>{allJobJournals.length} đợt</span>
+                                                            {subShifts.length > 0 && (
+                                                                <>
+                                                                    <span>•</span>
+                                                                    <span className="text-amber-600 font-semibold">{subShifts.length} chốt tạm</span>
+                                                                </>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </button>
+
+                                            {/* Nút xóa nhanh từng công việc trực tiếp trên thẻ */}
+                                            <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    handleDeleteOpenShift(shift.id, jobTitle)
+                                                }}
+                                                title={`Xóa công việc "${jobTitle}"`}
+                                                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-10"
+                                            >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     )
                                 })}
                                 <button
                                     type="button"
                                     onClick={() => setOpenShiftModal(true)}
-                                    className="shrink-0 min-w-[150px] px-3 py-2 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-sm font-bold flex items-center justify-center gap-1.5 transition"
+                                    title="Thêm công việc mới"
+                                    className={`shrink-0 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-bold flex items-center justify-center transition active:scale-95 ${
+                                        openShifts.length === 0
+                                            ? 'min-w-[150px] px-4 py-2 gap-1.5 text-sm'
+                                            : 'w-11 self-stretch'
+                                    }`}
                                 >
-                                    <Plus className="w-4 h-4" />
-                                    {openShifts.length === 0 ? 'Tạo công việc' : 'Thêm công việc'}
+                                    <Plus className="w-5 h-5" />
+                                    {openShifts.length === 0 && <span>Tạo công việc</span>}
                                 </button>
                             </div>
 
@@ -2249,6 +2554,14 @@ export default function SoLieuPage() {
                                         className="h-9 px-3.5 rounded-lg text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5"
                                     >
                                         <StopCircle className="w-4 h-4" /> Hoàn thành CV
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteOpenShift(activeShift.id, currentJobName)}
+                                        title={`Xóa nhanh công việc "${currentJobName}"`}
+                                        className="h-9 w-9 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0 transition"
+                                    >
+                                        <Trash2 className="w-4 h-4" />
                                     </button>
                                 </div>
                             )}
@@ -3447,39 +3760,92 @@ export default function SoLieuPage() {
                                 <span className="text-rose-600 font-bold">X = Xuất</span>
                             </span>
                         </div>
-                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl divide-y divide-stone-100 dark:divide-zinc-800 overflow-hidden">
-                            {pinnedProducts.map(product => {
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl divide-y divide-stone-200 dark:divide-zinc-700/80 overflow-hidden shadow-xs">
+                            {pinnedProducts.map((product, idx) => {
                                 const productUnits = getProductUnits(product)
                                 const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
-                                const stats = getProductCount(product.name, currentUnit)
                                 const effect = pulseEffect[product.id]
+                                const isAltRow = idx % 2 === 1
+
+                                // Lấy tất cả các đơn vị đã phát sinh số liệu trong ca
+                                const activeUnits = productUnits.filter(u => {
+                                    const s = getProductCount(product.name, u)
+                                    return s.inQty > 0 || s.outQty > 0
+                                })
+                                // Hiển thị tất cả các đơn vị có số liệu + đơn vị đang chọn
+                                const displayUnits = Array.from(new Set([
+                                    ...(activeUnits.length > 0 ? activeUnits : [currentUnit]),
+                                    currentUnit
+                                ]))
+
                                 return (
                                     <button
                                         key={product.id}
                                         type="button"
                                         onClick={() => openPad(product)}
-                                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors active:bg-indigo-50 dark:active:bg-indigo-950/40 ${
-                                            effect === 'in' ? 'bg-emerald-50 dark:bg-emerald-950/40' : effect === 'out' ? 'bg-rose-50 dark:bg-rose-950/40' : ''
+                                        className={`w-full p-3 text-left transition-colors border-l-4 active:bg-indigo-100/60 dark:active:bg-indigo-950/60 ${
+                                            effect === 'in'
+                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
+                                                : effect === 'out'
+                                                ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
+                                                : isAltRow
+                                                ? 'bg-amber-50/35 dark:bg-zinc-800/50 border-l-amber-500'
+                                                : 'bg-white dark:bg-zinc-900 border-l-indigo-600'
                                         }`}
                                     >
-                                        <span className="flex-1 min-w-0">
-                                            <span className="block text-[13px] font-bold text-stone-900 dark:text-white leading-snug break-words">
-                                                {product.name}
-                                            </span>
-                                            <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded bg-stone-100 dark:bg-zinc-800 text-[10px] font-semibold text-stone-600 dark:text-stone-300">
-                                                {currentUnit}
-                                            </span>
-                                        </span>
-                                        <span className="shrink-0 grid grid-cols-2 gap-1 text-center">
-                                            <span className="w-12 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/50">
-                                                <span className="block text-[8px] font-bold text-emerald-600">N</span>
-                                                <span className="block text-sm font-black text-emerald-700 dark:text-emerald-300 leading-tight">{stats.inQty}</span>
-                                            </span>
-                                            <span className="w-12 py-1 rounded-lg bg-rose-50 dark:bg-rose-950/50">
-                                                <span className="block text-[8px] font-bold text-rose-600">X</span>
-                                                <span className="block text-sm font-black text-rose-700 dark:text-rose-300 leading-tight">{stats.outQty}</span>
-                                            </span>
-                                        </span>
+                                        <div className="w-full">
+                                            <div className="flex items-start gap-2">
+                                                <span className={`w-5 h-5 shrink-0 rounded-md text-[10px] font-black flex items-center justify-center mt-0.5 ${
+                                                    isAltRow
+                                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
+                                                }`}>
+                                                    {idx + 1}
+                                                </span>
+                                                <div className="min-w-0 flex-1">
+                                                    <span className="block text-[13px] font-bold text-stone-900 dark:text-white leading-snug break-words">
+                                                        {product.name}
+                                                    </span>
+                                                    {product.sku && (
+                                                        <span className="block text-[10px] text-stone-400 font-mono mt-0.5">{product.sku}</span>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Danh sách hiển thị số lượng của từng loại đơn vị */}
+                                            <div className="mt-2 space-y-1.5">
+                                                {displayUnits.map(u => {
+                                                    const uStats = getProductCount(product.name, u)
+                                                    const isSelected = currentUnit === u
+                                                    return (
+                                                        <div
+                                                            key={u}
+                                                            className={`flex items-center justify-between text-xs px-2.5 py-1.5 rounded-xl border transition ${
+                                                                isSelected
+                                                                    ? 'bg-indigo-50/90 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800'
+                                                                    : 'bg-stone-50 dark:bg-zinc-800/60 border-stone-200 dark:border-zinc-700'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-center gap-1.5 font-bold">
+                                                                <span className={isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-700 dark:text-stone-300'}>
+                                                                    {u}
+                                                                </span>
+                                                                {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-indigo-600 shrink-0 animate-pulse" />}
+                                                            </div>
+                                                            <div className="flex items-center gap-2.5 text-xs font-black tabular-nums">
+                                                                <span className={uStats.inQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-400 dark:text-zinc-600'}>
+                                                                    Nhập: +{uStats.inQty}
+                                                                </span>
+                                                                <span className="text-stone-300 dark:text-zinc-700">|</span>
+                                                                <span className={uStats.outQty > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-stone-400 dark:text-zinc-600'}>
+                                                                    Xuất: -{uStats.outQty}
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+                                        </div>
                                     </button>
                                 )
                             })}
@@ -3488,7 +3854,7 @@ export default function SoLieuPage() {
 
                     {/* ===== DESKTOP: BẢNG DANH SÁCH SẢN PHẨM GỌN - CLICK ĐỂ CHỌN, NHẬP Ở BẢNG BÊN PHẢI ===== */}
                     <div className="hidden sm:block sm:col-start-1 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden mb-5">
-                        <div className="grid grid-cols-[minmax(0,1fr)_110px_90px_90px_64px_40px] items-center gap-2 px-4 py-2.5 bg-stone-50 dark:bg-zinc-950/60 border-b border-stone-200 dark:border-zinc-800 text-[11px] font-bold uppercase tracking-wide text-stone-400">
+                        <div className="grid grid-cols-[minmax(0,1fr)_130px_90px_90px_64px_40px] items-center gap-2 px-4 py-2.5 bg-stone-50 dark:bg-zinc-950/60 border-b border-stone-200 dark:border-zinc-800 text-[11px] font-bold uppercase tracking-wide text-stone-400">
                             <span>Sản phẩm</span>
                             <span>ĐVT</span>
                             <span className="text-right text-emerald-600">Đã nhập</span>
@@ -3502,28 +3868,48 @@ export default function SoLieuPage() {
                                 const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
                                 const isActive = padProduct?.id === product.id
                                 const rowUnit = isActive ? padUnit : currentUnit
-                                const stats = getProductCount(product.name, rowUnit)
                                 const effect = pulseEffect[product.id]
                                 const batchCount = journalList.filter(j => j.item_name === product.name).length
+
+                                // Lấy tất cả các đơn vị đã phát sinh số liệu trong ca
+                                const activeUnits = productUnits.filter(u => {
+                                    const s = getProductCount(product.name, u)
+                                    return s.inQty > 0 || s.outQty > 0
+                                })
+
+                                // Danh sách các đơn vị sẽ hiển thị trên dòng:
+                                // Bao gồm đơn vị đang active trên pad/selected, cộng với TẤT CẢ các đơn vị đã phát sinh số liệu
+                                const displayUnits = Array.from(new Set([
+                                    rowUnit,
+                                    ...activeUnits
+                                ]))
+
                                 return (
                                     <div
                                         key={product.id}
                                         role="button"
                                         tabIndex={0}
                                         onClick={() => openPad(product)}
-                                        className={`group grid grid-cols-[minmax(0,1fr)_110px_90px_90px_64px_40px] items-center gap-2 px-4 py-3 cursor-pointer border-l-4 transition-colors ${
+                                        className={`group grid grid-cols-[minmax(0,1fr)_130px_90px_90px_64px_40px] items-center gap-2 px-4 py-3 cursor-pointer border-l-4 transition-colors ${
                                             effect === 'in'
                                                 ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
                                                 : effect === 'out'
                                                 ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
                                                 : isActive
-                                                ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-l-indigo-600'
-                                                : 'border-l-transparent hover:bg-stone-50 dark:hover:bg-zinc-800/40'
+                                                ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-l-indigo-600'
+                                                : idx % 2 === 1
+                                                ? 'bg-amber-50/25 dark:bg-zinc-800/40 border-l-amber-400 hover:bg-amber-50/40'
+                                                : 'bg-white dark:bg-zinc-900 border-l-indigo-300 dark:border-l-indigo-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800/40'
                                         }`}
                                     >
+                                        {/* Cột 1: STT + Tên sản phẩm + SKU */}
                                         <div className="min-w-0 flex items-start gap-2.5">
-                                            <span className={`w-6 h-6 shrink-0 rounded-md text-[11px] font-bold flex items-center justify-center mt-0.5 ${
-                                                isActive ? 'bg-indigo-600 text-white' : 'bg-stone-100 dark:bg-zinc-800 text-stone-500'
+                                            <span className={`w-6 h-6 shrink-0 rounded-md text-[11px] font-black flex items-center justify-center mt-0.5 ${
+                                                isActive
+                                                    ? 'bg-indigo-600 text-white shadow-xs'
+                                                    : idx % 2 === 1
+                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                                    : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
                                             }`}>
                                                 {idx + 1}
                                             </span>
@@ -3536,16 +3922,73 @@ export default function SoLieuPage() {
                                                 )}
                                             </div>
                                         </div>
-                                        <span className="text-xs font-semibold text-stone-600 dark:text-stone-300 truncate" title={rowUnit}>
-                                            {rowUnit}
-                                        </span>
-                                        <span className="text-right text-lg font-black tabular-nums text-emerald-600 dark:text-emerald-400">
-                                            {stats.inQty}
-                                        </span>
-                                        <span className="text-right text-lg font-black tabular-nums text-rose-600 dark:text-rose-400">
-                                            {stats.outQty}
-                                        </span>
+
+                                        {/* Cột 2: ĐVT (Hiển thị từng đơn vị của sản phẩm) */}
+                                        <div className="flex flex-col gap-1.5 justify-center" onClick={e => e.stopPropagation()}>
+                                            {displayUnits.map(u => {
+                                                const isPadActive = isActive && padUnit === u
+                                                const isSelected = rowUnit === u
+                                                return (
+                                                    <button
+                                                        key={u}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            handleUnitChange(product.id, u)
+                                                            setPadProduct(product)
+                                                            setPadUnit(u)
+                                                        }}
+                                                        className={`text-left text-xs font-bold px-2 py-1 rounded-lg border transition truncate flex items-center justify-between gap-1 ${
+                                                            isPadActive
+                                                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                                                : isSelected
+                                                                ? 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-800'
+                                                                : 'bg-stone-50 dark:bg-zinc-800/70 text-stone-600 dark:text-stone-300 border-stone-200 dark:border-zinc-700 hover:border-indigo-300'
+                                                        }`}
+                                                        title={`Bấm để chọn nhập theo ${u}`}
+                                                    >
+                                                        <span className="truncate">{u}</span>
+                                                        {isPadActive && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0 animate-pulse" />}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+
+                                        {/* Cột 3: ĐÃ NHẬP (Hiển thị số lượng nhập của từng loại đơn vị) */}
+                                        <div className="flex flex-col gap-1.5 justify-center text-right">
+                                            {displayUnits.map(u => {
+                                                const uStats = getProductCount(product.name, u)
+                                                return (
+                                                    <div key={u} className="h-6 flex items-center justify-end">
+                                                        <span className={`text-base sm:text-lg font-black tabular-nums ${
+                                                            uStats.inQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-sm'
+                                                        }`}>
+                                                            {uStats.inQty > 0 ? `+${uStats.inQty}` : '0'}
+                                                        </span>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+
+                                        {/* Cột 4: ĐÃ XUẤT (Hiển thị số lượng xuất của từng loại đơn vị) */}
+                                        <div className="flex flex-col gap-1.5 justify-center text-right">
+                                            {displayUnits.map(u => {
+                                                const uStats = getProductCount(product.name, u)
+                                                return (
+                                                    <div key={u} className="h-6 flex items-center justify-end">
+                                                        <span className={`text-base sm:text-lg font-black tabular-nums ${
+                                                            uStats.outQty > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-sm'
+                                                        }`}>
+                                                            {uStats.outQty > 0 ? `-${uStats.outQty}` : '0'}
+                                                        </span>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+
+                                        {/* Cột 5: SỐ ĐỢT */}
                                         <span className="text-right text-xs text-stone-400 tabular-nums">{batchCount}</span>
+
+                                        {/* Cột 6: BỎ GHIM */}
                                         <button
                                             type="button"
                                             onClick={e => {
@@ -5221,35 +5664,47 @@ export default function SoLieuPage() {
                                 const isSelected = activeShift?.id === shift.id
                                 const title = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
                                 return (
-                                    <button
-                                        key={shift.id}
-                                        type="button"
-                                        onClick={() => {
-                                            if (activeShift?.id !== shift.id) {
-                                                setPinnedProducts([])
-                                                setAllJobJournals([])
-                                                setJournalList([])
-                                                setSubShifts([])
-                                                setPadProduct(null)
-                                                setDraftQtyMap({})
-                                            }
-                                            setSelectedShiftId(shift.id);
-                                            setMobileJobSheet(false);
-                                        }}
-                                        className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left border transition ${
-                                            isSelected
-                                                ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-800'
-                                                : 'bg-white dark:bg-zinc-900 border-stone-200 dark:border-zinc-800'
-                                        }`}
-                                    >
-                                        <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${isSelected ? 'border-indigo-600 bg-indigo-600' : 'border-stone-300'}`}>
-                                            {isSelected && <Check className="w-2.5 h-2.5 text-white stroke-[3]" />}
-                                        </span>
-                                        <span className="flex-1 min-w-0">
-                                            <span className="block text-xs font-bold text-stone-900 dark:text-white leading-snug">{title}</span>
-                                            <span className="block text-[10px] text-stone-400">Mở lúc {formatTimeOnly(shift.opened_at)}</span>
-                                        </span>
-                                    </button>
+                                    <div key={shift.id} className="flex items-center gap-1.5">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (activeShift?.id !== shift.id) {
+                                                    setPinnedProducts([])
+                                                    setAllJobJournals([])
+                                                    setJournalList([])
+                                                    setSubShifts([])
+                                                    setPadProduct(null)
+                                                    setDraftQtyMap({})
+                                                }
+                                                setSelectedShiftId(shift.id);
+                                                setMobileJobSheet(false);
+                                            }}
+                                            className={`flex-1 min-w-0 flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left border transition ${
+                                                isSelected
+                                                    ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-800'
+                                                    : 'bg-white dark:bg-zinc-900 border-stone-200 dark:border-zinc-800'
+                                            }`}
+                                        >
+                                            <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${isSelected ? 'border-indigo-600 bg-indigo-600' : 'border-stone-300'}`}>
+                                                {isSelected && <Check className="w-2.5 h-2.5 text-white stroke-[3]" />}
+                                            </span>
+                                            <span className="flex-1 min-w-0">
+                                                <span className="block text-xs font-bold text-stone-900 dark:text-white leading-snug">{title}</span>
+                                                <span className="block text-[10px] text-stone-400">Mở lúc {formatTimeOnly(shift.opened_at)}</span>
+                                            </span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleDeleteOpenShift(shift.id, title)
+                                            }}
+                                            title={`Xóa "${title}"`}
+                                            className="w-10 h-10 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0 active:scale-95 transition"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
+                                    </div>
                                 )
                             })}
                         </div>
@@ -5301,6 +5756,16 @@ export default function SoLieuPage() {
                                         className="w-full py-3 flex items-center gap-2.5 text-left text-xs font-semibold text-rose-600"
                                     >
                                         <StopCircle className="w-4 h-4" /> Hoàn thành công việc
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setMobileMenu(false)
+                                            handleDeleteOpenShift(activeShift.id, currentJobName)
+                                        }}
+                                        className="w-full py-3 flex items-center gap-2.5 text-left text-xs font-semibold text-rose-600"
+                                    >
+                                        <Trash2 className="w-4 h-4 text-rose-600" /> Xóa công việc này
                                     </button>
                                 </>
                             )}
@@ -5374,6 +5839,74 @@ export default function SoLieuPage() {
                     initialData={outboundInitialData}
                     systemCode={currentSystem?.code || 'COLD'}
                 />
+            )}
+
+            {/* ===== MODAL XÁC NHẬN XÓA CÔNG VIỆC (ĐẸP MẮT & ĐỒNG BỘ UI) ===== */}
+            {deleteTargetShift && (
+                <div 
+                    className="fixed inset-0 z-[80] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+                    onClick={() => { if (!isDeletingShift) setDeleteTargetShift(null) }}
+                >
+                    <div 
+                        className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border-t sm:border border-stone-200 dark:border-zinc-800 animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        {/* Thanh handle bar vuốt chạm trên Mobile */}
+                        <div className="w-12 h-1.5 bg-stone-300 dark:bg-zinc-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
+                        
+                        <div className="flex items-start gap-3.5 mb-3.5">
+                            <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400 flex items-center justify-center shrink-0 border border-rose-100 dark:border-rose-900/50">
+                                <Trash2 className="w-5 h-5" />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <h3 className="font-bold text-base text-stone-900 dark:text-white leading-snug">
+                                    Xác nhận xóa công việc?
+                                </h3>
+                                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 leading-relaxed break-words">
+                                    Bạn có chắc chắn muốn xóa công việc <strong className="text-stone-800 dark:text-stone-200 font-bold">"{deleteTargetShift.title}"</strong> không?
+                                </p>
+                            </div>
+                        </div>
+
+                        {deleteTargetShift.recordCount > 0 && (
+                            <div className="p-3 mb-3.5 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+                                <span className="leading-relaxed">
+                                    Công việc này đang có <strong className="font-bold text-amber-900 dark:text-amber-200">{deleteTargetShift.recordCount} đợt số liệu</strong> đã ghi nhận. Khi xóa, toàn bộ số liệu của công việc này sẽ bị xóa vĩnh viễn khỏi hệ thống!
+                                </span>
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2.5 pt-2 border-t border-stone-100 dark:border-zinc-800">
+                            <button
+                                type="button"
+                                onClick={() => setDeleteTargetShift(null)}
+                                disabled={isDeletingShift}
+                                className="h-10 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl transition disabled:opacity-50"
+                            >
+                                Hủy bỏ
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDeleteShift}
+                                disabled={isDeletingShift}
+                                className="h-10 text-xs font-bold bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            >
+                                {isDeletingShift ? (
+                                    <>
+                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                        <span>Đang xóa...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <span>Xác Nhận Xóa</span>
+                                    </>
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
             )}
         </div>
     )

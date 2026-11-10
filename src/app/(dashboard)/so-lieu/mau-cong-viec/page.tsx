@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useSystem } from '@/contexts/SystemContext'
 import { supabase } from '@/lib/supabaseClient'
+import { matchSearch, calculateSearchScore } from '@/lib/searchUtils'
 import {
     JobTemplate,
     DEFAULT_JOB_TEMPLATES,
@@ -34,6 +35,9 @@ interface ProductOption {
     name: string
     sku?: string | null
     unit?: string | null
+    aliases?: string | null
+    internal_name?: string | null
+    internal_code?: string | null
 }
 
 export default function JobTemplatesPage() {
@@ -56,6 +60,7 @@ export default function JobTemplatesPage() {
     const [modalNotes, setModalNotes] = useState('')
     const [modalPinnedIds, setModalPinnedIds] = useState<string[]>([])
     const [productSearch, setProductSearch] = useState('')
+    const [filterSelectedOnly, setFilterSelectedOnly] = useState(false)
 
     // Thông báo Toast
     const [toastMessage, setToastMessage] = useState<string | null>(null)
@@ -93,7 +98,7 @@ export default function JobTemplatesPage() {
             try {
                 let query = (supabase as any)
                     .from('products')
-                    .select('id, name, sku, unit')
+                    .select('id, name, sku, unit, aliases, internal_name, internal_code')
                     .order('name', { ascending: true })
 
                 query = query.or(`system_code.eq.${systemCode},system_type.eq.${systemCode}`)
@@ -128,6 +133,7 @@ export default function JobTemplatesPage() {
         setModalNotes('')
         setModalPinnedIds([])
         setProductSearch('')
+        setFilterSelectedOnly(false)
         setIsModalOpen(true)
     }
 
@@ -138,6 +144,7 @@ export default function JobTemplatesPage() {
         setModalNotes(tpl.notes || '')
         setModalPinnedIds(tpl.pinned_product_ids || [])
         setProductSearch('')
+        setFilterSelectedOnly(false)
         setIsModalOpen(true)
     }
 
@@ -234,15 +241,38 @@ export default function JobTemplatesPage() {
         )
     }
 
-    // Danh sách sản phẩm lọc khi tìm kiếm trong modal
+    // Danh sách các sản phẩm đã được chọn ghim
+    const selectedProductsList = useMemo(() => {
+        return modalPinnedIds
+            .map(id => allProducts.find(p => p.id === id))
+            .filter(Boolean) as ProductOption[]
+    }, [modalPinnedIds, allProducts])
+
+    // Danh sách sản phẩm lọc khi tìm kiếm trong modal (Hỗ trợ matchSearch, gõ tắt aliases, không dấu & chấm điểm ưu tiên)
     const modalFilteredProducts = useMemo(() => {
-        if (!productSearch.trim()) return allProducts.slice(0, 15)
-        const q = productSearch.toLowerCase().trim()
-        return allProducts.filter(p =>
-            p.name.toLowerCase().includes(q) ||
-            (p.sku && p.sku.toLowerCase().includes(q))
-        ).slice(0, 20)
-    }, [allProducts, productSearch])
+        let list = allProducts
+
+        if (filterSelectedOnly) {
+            list = list.filter(p => modalPinnedIds.includes(p.id))
+        }
+
+        const q = productSearch.trim()
+        if (q) {
+            list = list
+                .filter(p => matchSearch(p, q))
+                .sort((a, b) => calculateSearchScore(b, q) - calculateSearchScore(a, q))
+        } else {
+            // Khi không tìm kiếm: Ưu tiên đưa sản phẩm đã chọn lên đầu, sau đó sắp xếp theo tên tiếng Việt
+            list = [...list].sort((a, b) => {
+                const aSelected = modalPinnedIds.includes(a.id) ? 1 : 0
+                const bSelected = modalPinnedIds.includes(b.id) ? 1 : 0
+                if (aSelected !== bSelected) return bSelected - aSelected
+                return a.name.localeCompare(b.name, 'vi')
+            })
+        }
+
+        return list
+    }, [allProducts, productSearch, filterSelectedOnly, modalPinnedIds])
 
     return (
         <div className="min-h-screen bg-stone-50/50 dark:bg-zinc-950 p-3 sm:p-6 space-y-4 sm:space-y-6">
@@ -445,144 +475,251 @@ export default function JobTemplatesPage() {
                 </div>
             )}
 
-            {/* MODAL THÊM / SỬA CÔNG VIỆC MẪU */}
+            {/* MODAL THÊM / SỬA CÔNG VIỆC MẪU (TO RỘNG RÃI & HIỆN ĐẠI) */}
             {isModalOpen && (
                 <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-                    <div className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border-t sm:border border-stone-200 dark:border-zinc-800 max-h-[92vh] flex flex-col animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200">
+                    <div className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-2xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl border-t sm:border border-stone-200 dark:border-zinc-800 max-h-[94vh] sm:max-h-[90vh] flex flex-col animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200">
                         {/* Mobile handle */}
                         <div className="w-12 h-1.5 bg-stone-300 dark:bg-zinc-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
 
-                        <div className="flex items-center justify-between pb-3 border-b border-stone-100 dark:border-zinc-800 mb-4 shrink-0">
-                            <div className="flex items-center gap-2">
-                                <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 rounded-xl">
-                                    <Briefcase className="w-4 h-4" />
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between pb-3.5 border-b border-stone-100 dark:border-zinc-800 mb-4 shrink-0">
+                            <div className="flex items-center gap-2.5">
+                                <div className="p-2 sm:p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 rounded-xl">
+                                    <Briefcase className="w-5 h-5" />
                                 </div>
-                                <h3 className="font-bold text-base text-stone-900 dark:text-white">
-                                    {editingTemplate ? 'Chỉnh Sửa Công Việc Mẫu' : 'Thêm Mới Công Việc Mẫu'}
-                                </h3>
+                                <div>
+                                    <h3 className="font-bold text-base sm:text-lg text-stone-900 dark:text-white">
+                                        {editingTemplate ? 'Chỉnh Sửa Công Việc Mẫu' : 'Thêm Mới Công Việc Mẫu'}
+                                    </h3>
+                                    <p className="text-[11px] text-stone-500">
+                                        Thiết lập tên công việc và danh sách sản phẩm ghim sẵn để nhân viên mở ca nhanh chóng
+                                    </p>
+                                </div>
                             </div>
                             <button
                                 type="button"
                                 onClick={() => setIsModalOpen(false)}
-                                className="text-stone-400 hover:text-stone-600 p-1 rounded-lg"
+                                className="text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 transition"
                             >
-                                <X className="w-4 h-4" />
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <div className="overflow-y-auto flex-1 pr-0.5 space-y-4">
-                            {/* Tên mẫu */}
-                            <div>
-                                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
-                                    Tên công việc mẫu <span className="text-rose-500">*</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    autoFocus
-                                    value={modalName}
-                                    onChange={e => setModalName(e.target.value)}
-                                    placeholder="Ví dụ: Đóng gói sầu riêng xuất khẩu, Sơ chế mít..."
-                                    className="w-full text-xs font-semibold p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-stone-900 dark:text-white"
-                                />
-                            </div>
-
-                            {/* Ghi chú mặc định */}
-                            <div>
-                                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1.5">
-                                    Ghi chú mặc định (tùy chọn):
-                                </label>
-                                <textarea
-                                    value={modalNotes}
-                                    onChange={e => setModalNotes(e.target.value)}
-                                    placeholder="Ghi chú về tổ làm việc, vị trí xưởng, ca trực..."
-                                    rows={2}
-                                    className="w-full text-xs p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-stone-900 dark:text-white"
-                                />
-                            </div>
-
-                            {/* Chọn sản phẩm ghim sẵn */}
-                            <div className="pt-2 border-t border-stone-100 dark:border-zinc-800">
-                                <div className="flex items-center justify-between mb-2">
-                                    <label className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
-                                        <Pin className="w-3.5 h-3.5 text-indigo-500" />
-                                        <span>Sản phẩm ghim sẵn khi mở ca:</span>
+                        {/* Modal Body */}
+                        <div className="overflow-y-auto flex-1 pr-1 space-y-4">
+                            {/* 1. THÔNG TIN CƠ BẢN: Tên mẫu & Ghi chú (Chia 2 cột trên Desktop) */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 p-3.5 sm:p-4 bg-stone-50 dark:bg-zinc-800/50 border border-stone-200/80 dark:border-zinc-700/60 rounded-2xl">
+                                <div>
+                                    <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
+                                        Tên công việc mẫu <span className="text-rose-500">*</span>
                                     </label>
-                                    <span className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400">
-                                        Đã chọn {modalPinnedIds.length} SP
-                                    </span>
-                                </div>
-                                <p className="text-[11px] text-stone-400 mb-2">
-                                    Khi nhân viên bấm chọn mẫu này, hệ thống sẽ tự động ghim sẵn các sản phẩm này lên bàn nhập số liệu.
-                                </p>
-
-                                {/* Ô tìm kiếm sản phẩm */}
-                                <div className="relative mb-2">
-                                    <Search className="w-3.5 h-3.5 text-stone-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                                     <input
                                         type="text"
-                                        value={productSearch}
-                                        onChange={e => setProductSearch(e.target.value)}
-                                        placeholder="Tìm sản phẩm theo tên để gán..."
-                                        className="w-full text-xs pl-8 pr-2.5 py-1.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        autoFocus
+                                        value={modalName}
+                                        onChange={e => setModalName(e.target.value)}
+                                        placeholder="Ví dụ: Đóng gói sầu riêng xuất khẩu, Sơ chế mít..."
+                                        className="w-full text-xs sm:text-sm font-semibold p-2.5 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-stone-900 dark:text-white shadow-xs"
                                     />
+                                    <span className="text-[10px] text-stone-400 mt-1 block">Tên này sẽ hiển thị trong danh sách chọn mẫu khi mở ca</span>
                                 </div>
 
-                                {/* Danh sách sản phẩm để chọn */}
-                                <div className="max-h-48 overflow-y-auto border border-stone-200 dark:border-zinc-800 rounded-xl divide-y divide-stone-100 dark:divide-zinc-800 text-xs">
-                                    {loadingProducts ? (
-                                        <div className="p-3 text-center text-stone-400">Đang tải sản phẩm...</div>
-                                    ) : modalFilteredProducts.length === 0 ? (
-                                        <div className="p-3 text-center text-stone-400">Không tìm thấy sản phẩm phù hợp</div>
-                                    ) : (
-                                        modalFilteredProducts.map(prod => {
-                                            const isSelected = modalPinnedIds.includes(prod.id)
-                                            return (
-                                                <button
-                                                    key={prod.id}
-                                                    type="button"
-                                                    onClick={() => toggleModalProduct(prod.id)}
-                                                    className={`w-full p-2 text-left flex items-center justify-between hover:bg-stone-50 dark:hover:bg-zinc-800/60 transition ${
-                                                        isSelected ? 'bg-indigo-50/60 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-semibold' : 'text-stone-700 dark:text-stone-300'
-                                                    }`}
+                                <div>
+                                    <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1.5">
+                                        Ghi chú mặc định (tùy chọn):
+                                    </label>
+                                    <textarea
+                                        value={modalNotes}
+                                        onChange={e => setModalNotes(e.target.value)}
+                                        placeholder="Ghi chú về tổ làm việc, vị trí xưởng, ca trực..."
+                                        rows={2}
+                                        className="w-full text-xs p-2.5 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-stone-900 dark:text-white shadow-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* 2. CHỌN SẢN PHẨM GHIM SẴN */}
+                            <div className="space-y-3 pt-1">
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                    <div>
+                                        <label className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-200 flex items-center gap-1.5">
+                                            <Pin className="w-4 h-4 text-indigo-500" />
+                                            <span>Sản phẩm ghim sẵn khi mở ca:</span>
+                                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200/60 dark:border-indigo-800/60">
+                                                Đã chọn {modalPinnedIds.length} SP
+                                            </span>
+                                        </label>
+                                        <p className="text-[11px] text-stone-400 mt-0.5">
+                                            Khi chọn mẫu này, hệ thống sẽ tự động ghim sẵn các sản phẩm này lên bàn làm việc để nhập số liệu nhanh.
+                                        </p>
+                                    </div>
+
+                                    {modalPinnedIds.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setModalPinnedIds([])}
+                                            className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 hover:underline shrink-0 text-left sm:text-right"
+                                        >
+                                            Bỏ chọn tất cả ({modalPinnedIds.length})
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Các sản phẩm ĐÃ CHỌN hiển thị dạng Chips trực quan */}
+                                {selectedProductsList.length > 0 && (
+                                    <div className="p-2.5 bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/50 rounded-xl">
+                                        <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-300 mb-1.5 flex items-center gap-1">
+                                            <Check className="w-3 h-3 text-indigo-600" /> Danh sách ghim sẵn ({selectedProductsList.length}):
+                                        </div>
+                                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
+                                            {selectedProductsList.map(p => (
+                                                <span
+                                                    key={p.id}
+                                                    className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-1 rounded-lg bg-white dark:bg-zinc-800 text-stone-800 dark:text-stone-200 border border-indigo-200 dark:border-indigo-800 shadow-xs"
                                                 >
-                                                    <div className="min-w-0 pr-2">
-                                                        <div className="truncate">{prod.name}</div>
-                                                        <div className="text-[10px] text-stone-400">
-                                                            {prod.sku ? `SKU: ${prod.sku} • ` : ''}ĐVT: {prod.unit || 'Kg'}
+                                                    <span className="truncate max-w-[200px]">{p.name}</span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => toggleModalProduct(p.id)}
+                                                        className="text-stone-400 hover:text-rose-500 rounded p-0.5"
+                                                        title="Bỏ ghim sản phẩm này"
+                                                    >
+                                                        <X className="w-3 h-3" />
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Thanh tìm kiếm & bộ lọc sản phẩm */}
+                                <div className="flex flex-col sm:flex-row gap-2">
+                                    <div className="relative flex-1">
+                                        <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                                        <input
+                                            type="text"
+                                            value={productSearch}
+                                            onChange={e => setProductSearch(e.target.value)}
+                                            placeholder="Tìm theo tên, mã SKU hoặc từ gõ tắt (aliases: cd, sr, ri6, mit...)..."
+                                            className="w-full text-xs pl-9 pr-8 py-2 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-stone-900 dark:text-white"
+                                        />
+                                        {productSearch && (
+                                            <button
+                                                type="button"
+                                                onClick={() => setProductSearch('')}
+                                                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
+                                            >
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {/* Tabs lọc nhanh */}
+                                    <div className="flex items-center gap-1 bg-stone-100 dark:bg-zinc-800 p-1 rounded-xl shrink-0 text-xs">
+                                        <button
+                                            type="button"
+                                            onClick={() => setFilterSelectedOnly(false)}
+                                            className={`px-3 py-1 rounded-lg font-semibold transition ${
+                                                !filterSelectedOnly
+                                                    ? 'bg-white dark:bg-zinc-900 text-stone-900 dark:text-white shadow-xs'
+                                                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                            }`}
+                                        >
+                                            Tất cả ({allProducts.length})
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setFilterSelectedOnly(true)}
+                                            className={`px-3 py-1 rounded-lg font-semibold transition ${
+                                                filterSelectedOnly
+                                                    ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                            }`}
+                                        >
+                                            Đã chọn ({modalPinnedIds.length})
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Danh sách sản phẩm dạng GRID 2 CỘT (Rộng rãi & dễ chọn) */}
+                                <div className="max-h-72 sm:max-h-96 overflow-y-auto border border-stone-200 dark:border-zinc-800 rounded-2xl p-2 bg-stone-50/50 dark:bg-zinc-950/40">
+                                    {loadingProducts ? (
+                                        <div className="p-8 text-center text-xs text-stone-400">Đang tải danh mục sản phẩm...</div>
+                                    ) : modalFilteredProducts.length === 0 ? (
+                                        <div className="p-8 text-center text-xs text-stone-400">
+                                            {filterSelectedOnly
+                                                ? 'Chưa có sản phẩm nào được chọn ghim'
+                                                : 'Không tìm thấy sản phẩm phù hợp với từ khóa'}
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                            {modalFilteredProducts.map(prod => {
+                                                const isSelected = modalPinnedIds.includes(prod.id)
+                                                return (
+                                                    <button
+                                                        key={prod.id}
+                                                        type="button"
+                                                        onClick={() => toggleModalProduct(prod.id)}
+                                                        className={`p-2.5 rounded-xl text-left flex items-center justify-between border transition group ${
+                                                            isSelected
+                                                                ? 'bg-indigo-50/90 dark:bg-indigo-950/60 border-indigo-400 dark:border-indigo-600 shadow-xs'
+                                                                : 'bg-white dark:bg-zinc-900 border-stone-200/80 dark:border-zinc-800 hover:border-indigo-300 dark:hover:border-zinc-700 hover:bg-stone-50 dark:hover:bg-zinc-850'
+                                                        }`}
+                                                    >
+                                                        <div className="min-w-0 pr-2 flex-1">
+                                                            <div className={`text-xs font-bold leading-tight ${
+                                                                isSelected ? 'text-indigo-900 dark:text-indigo-100' : 'text-stone-800 dark:text-stone-200'
+                                                            }`}>
+                                                                {prod.name}
+                                                            </div>
+                                                            <div className="text-[10px] text-stone-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                                                                {prod.sku && <span>SKU: <strong className="text-stone-600 dark:text-stone-300">{prod.sku}</strong></span>}
+                                                                <span>ĐVT: <strong className="text-stone-600 dark:text-stone-300">{prod.unit || 'Kg'}</strong></span>
+                                                                {prod.aliases && (
+                                                                    <span
+                                                                        className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/60 px-1.5 py-0.5 rounded border border-amber-200/60 dark:border-amber-800/50"
+                                                                        title={`Tên gõ tắt đã cài: ${prod.aliases}`}
+                                                                    >
+                                                                        ⚡ {prod.aliases}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </div>
-                                                    </div>
-                                                    <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 border ${
-                                                        isSelected
-                                                            ? 'bg-indigo-600 border-indigo-600 text-white'
-                                                            : 'border-stone-300 dark:border-zinc-600 text-transparent'
-                                                    }`}>
-                                                        <Check className="w-3.5 h-3.5" />
-                                                    </div>
-                                                </button>
-                                            )
-                                        })
+
+                                                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center shrink-0 border transition ${
+                                                            isSelected
+                                                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                                                : 'border-stone-300 dark:border-zinc-600 group-hover:border-indigo-400 text-transparent'
+                                                        }`}>
+                                                            <Check className="w-3.5 h-3.5" />
+                                                        </div>
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
                                     )}
                                 </div>
                             </div>
                         </div>
 
-                        {/* NÚT THAO TÁC MODAL */}
-                        <div className="grid grid-cols-2 gap-2 pt-4 mt-3 border-t border-stone-100 dark:border-zinc-800 shrink-0">
+                        {/* Modal Footer: Nút Thao Tác */}
+                        <div className="flex items-center justify-end gap-2.5 pt-4 mt-3 border-t border-stone-100 dark:border-zinc-800 shrink-0">
                             <button
                                 type="button"
                                 onClick={() => setIsModalOpen(false)}
-                                className="h-10 sm:h-9 px-4 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl flex items-center justify-center transition"
+                                className="h-10 sm:h-9.5 px-5 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl flex items-center justify-center transition"
                             >
-                                Hủy
+                                Hủy bỏ
                             </button>
                             <button
                                 type="button"
                                 onClick={handleSaveModal}
                                 disabled={saving || !modalName.trim()}
-                                className="h-10 sm:h-9 px-4 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                className="h-10 sm:h-9.5 px-6 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center gap-2"
                             >
                                 <Check className="w-4 h-4" />
-                                <span>{saving ? 'Đang lưu...' : 'Lưu công việc mẫu'}</span>
+                                <span>{saving ? 'Đang lưu...' : (editingTemplate ? 'Lưu thay đổi' : 'Tạo công việc mẫu')}</span>
                             </button>
                         </div>
                     </div>
