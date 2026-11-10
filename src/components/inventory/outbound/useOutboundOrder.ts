@@ -362,6 +362,7 @@ export function useOutboundOrder({ isOpen, initialData, systemCode, onSuccess, o
                     if (matchedType) setOrderTypeId(matchedType.id)
                 }
                 if (initialData.warehouseName) setWarehouseName(initialData.warehouseName)
+                if (initialData.targetUnit) setTargetUnit(initialData.targetUnit)
                 if (initialData.description) setDescription(initialData.description)
             }
             if (!editOrderId && !duplicateOrderId && !initialData?.orderTypeId && !initialData?.orderTypeName) {

@@ -86,6 +86,10 @@ export default function OutboundPage() {
     const [previewItemsOrder, setPreviewItemsOrder] = useState<any | null>(null)
     const [duplicateOrderId, setDuplicateOrderId] = useState<string | null>(null)
 
+    // Dữ liệu kết toán từ trang số liệu (nếu có)
+    const [settlementShiftId, setSettlementShiftId] = useState<string | null>(null)
+    const [settlementInitialData, setSettlementInitialData] = useState<any>(null)
+
     // Helper: Utility Check
     const isUtilityEnabled = (utilityId: string) => {
         if (!currentSystem) return false
@@ -152,6 +156,28 @@ export default function OutboundPage() {
         }
 
         handleUrlEditCode()
+
+        // Kiểm tra xem có yêu cầu tạo phiếu kết toán từ Số Liệu không
+        const isSettlement = params.get('settlement') === '1'
+        if (isSettlement) {
+            try {
+                const raw = sessionStorage.getItem('settlement_outbound_order')
+                if (raw) {
+                    const parsed = JSON.parse(raw)
+                    if (parsed && parsed.items) {
+                        setSettlementInitialData(parsed)
+                        if (parsed.shiftId) setSettlementShiftId(parsed.shiftId)
+                        setIsCreateModalOpen(true)
+                        sessionStorage.removeItem('settlement_outbound_order')
+                    }
+                }
+            } catch (e) {
+                console.error('Lỗi đọc settlement_outbound_order:', e)
+            } finally {
+                const newUrl = window.location.pathname
+                window.history.replaceState({}, '', newUrl)
+            }
+        }
     }, [orders, systemType])
 
     const updateBufferCount = async () => {
@@ -1227,15 +1253,46 @@ export default function OutboundPage() {
             {isCreateModalOpen && (
                 <OutboundOrderModal
                     isOpen={isCreateModalOpen}
-                    onClose={() => { setIsCreateModalOpen(false); setSelectedOrderId(null); setDuplicateOrderId(null); }}
-                    onSuccess={() => {
+                    onClose={() => {
+                        setIsCreateModalOpen(false);
+                        setSelectedOrderId(null);
+                        setDuplicateOrderId(null);
+                        setSettlementInitialData(null);
+                        setSettlementShiftId(null);
+                    }}
+                    onSuccess={async (orderId) => {
                         fetchOrders();
                         showToast(`Phiếu xuất ${selectedOrderId ? 'đã cập nhật' : 'đã tạo'} thành công!`, 'success');
+                        if (settlementShiftId) {
+                            try {
+                                let orderCode = ''
+                                if (orderId) {
+                                    const { data } = await supabase.from('outbound_orders').select('code').eq('id', orderId).single()
+                                    orderCode = (data as any)?.code || ''
+                                }
+                                const { data: shiftData } = await supabase.from('delivery_shifts').select('summary_data').eq('id', settlementShiftId).single()
+                                if (shiftData) {
+                                    const currentSum = (shiftData as any)?.summary_data || {}
+                                    const updatedSum = {
+                                        ...currentSum,
+                                        settlement_outbound_id: orderId || null,
+                                        settlement_outbound_code: orderCode || 'Đã lập phiếu',
+                                        settlement_outbound_at: new Date().toISOString(),
+                                    }
+                                    await (supabase.from('delivery_shifts') as any).update({ summary_data: updatedSum }).eq('id', settlementShiftId)
+                                }
+                            } catch (e) {
+                                console.error('Lỗi lưu kết toán vào ca:', e)
+                            }
+                            setSettlementShiftId(null);
+                        }
+                        setSettlementInitialData(null);
                         setSelectedOrderId(null);
                         setDuplicateOrderId(null);
                     }}
                     editOrderId={selectedOrderId || undefined}
                     duplicateOrderId={duplicateOrderId || undefined}
+                    initialData={settlementInitialData}
                     systemCode={systemType}
                 />
             )}

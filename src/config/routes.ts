@@ -71,6 +71,7 @@ export const APP_ROUTES: RouteItem[] = [
             { name: 'Nhật ký giao nhận kho', path: '/delivery-journal' },
             { name: 'Giao nhận trực tiếp (1 bên)', path: '/delivery-journal-single' },
             { name: 'Số liệu', path: '/so-lieu' },
+            { name: 'Mẫu công việc', path: '/so-lieu/mau-cong-viec' },
             { name: 'Ca làm & Thống kê', path: '/delivery-shifts' },
         ]
     },

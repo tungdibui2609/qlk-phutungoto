@@ -30,13 +30,30 @@ import {
     ChevronDown,
     ChevronRight,
     User,
-    FileText
+    FileText,
+    ExternalLink,
+    Settings2
 } from 'lucide-react'
+import Link from 'next/link'
+import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
+import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
 import { matchSearch, calculateSearchScore } from '@/lib/searchUtils'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
+import { getJobTemplates, JobTemplate } from '@/lib/jobTemplates'
+
+// Hàm helper định dạng ngày giờ cho input datetime-local (theo múi giờ địa phương)
+const formatDateTimeLocal = (d: Date = new Date()) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const y = d.getFullYear()
+    const m = pad(d.getMonth() + 1)
+    const day = pad(d.getDate())
+    const hh = pad(d.getHours())
+    const mm = pad(d.getMinutes())
+    return `${y}-${m}-${day}T${hh}:${mm}`
+}
 
 interface ProductItem {
     id: string
@@ -95,10 +112,14 @@ export default function SoLieuPage() {
     const [openShiftModal, setOpenShiftModal] = useState(false)
     const [jobNameInput, setJobNameInput] = useState('')
     const [jobNotesInput, setJobNotesInput] = useState('')
+    const [jobOpenedAtInput, setJobOpenedAtInput] = useState<string>(() => formatDateTimeLocal())
+    const [jobTemplatesList, setJobTemplatesList] = useState<JobTemplate[]>([])
+    const [selectedJobTemplate, setSelectedJobTemplate] = useState<JobTemplate | null>(null)
 
     // Modal chốt sổ (hoàn thành công việc)
     const [closeShiftModal, setCloseShiftModal] = useState(false)
     const [closeNotes, setCloseNotes] = useState('')
+    const [closeTimeInput, setCloseTimeInput] = useState<string>('')
     const [shiftSummary, setShiftSummary] = useState<any>(null)
 
     // Chốt tạm cho công việc hiện tại
@@ -122,14 +143,23 @@ export default function SoLieuPage() {
     const [doneLines, setDoneLines] = useState<DeliveryJournalRecord[]>([])
     const [doneSubShifts, setDoneSubShifts] = useState<any[]>([])
     const [expandedDoneSubShifts, setExpandedDoneSubShifts] = useState<Set<string>>(new Set())
-    const [isMainSummaryExpanded, setIsMainSummaryExpanded] = useState(true)
+    const [isMainSummaryExpanded, setIsMainSummaryExpanded] = useState(false)
     const [isTwoWayExpanded, setIsTwoWayExpanded] = useState(false)
     const [isUnitsExpanded, setIsUnitsExpanded] = useState(false)
     const [isProductsExpanded, setIsProductsExpanded] = useState(false)
+    const [isInfoExpanded, setIsInfoExpanded] = useState(false)
+    const [isDoneSubShiftsSectionExpanded, setIsDoneSubShiftsSectionExpanded] = useState(false)
     const [expandedFeedSubShifts, setExpandedFeedSubShifts] = useState<Set<string>>(new Set())
     const [doneTab, setDoneTab] = useState<'summary' | 'lines'>('summary')
     const [doneListLoading, setDoneListLoading] = useState(false)
     const [doneLinesLoading, setDoneLinesLoading] = useState(false)
+
+    // 1.1 Modal làm phiếu nhập / xuất kết toán cho công việc
+    const [isInboundModalOpen, setIsInboundModalOpen] = useState(false)
+    const [inboundInitialData, setInboundInitialData] = useState<any>(null)
+    const [isOutboundModalOpen, setIsOutboundModalOpen] = useState(false)
+    const [outboundInitialData, setOutboundInitialData] = useState<any>(null)
+    const [settlementShiftId, setSettlementShiftId] = useState<string | null>(null)
 
     // 2. Danh mục sản phẩm & Bàn làm việc (Pinned Products)
     const [allProducts, setAllProducts] = useState<ProductItem[]>([])
@@ -156,6 +186,7 @@ export default function SoLieuPage() {
     const [allJobJournals, setAllJobJournals] = useState<DeliveryJournalRecord[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [activeTab, setActiveTab] = useState<'feed' | 'summary'>('feed')
+    const [journalTypeFilter, setJournalTypeFilter] = useState<'all' | 'in' | 'out'>('all')
 
     // Modal chỉnh sửa từng dòng nhật ký
     const [editingRecord, setEditingRecord] = useState<DeliveryJournalRecord | null>(null)
@@ -178,6 +209,38 @@ export default function SoLieuPage() {
         if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
         setToast({ text, type })
         toastTimerRef.current = setTimeout(() => setToast(null), 2500)
+    }
+
+    // Helper kiểm tra đơn vị có phải là Thùng không
+    const isBoxUnit = (u?: string | null) => {
+        if (!u) return false
+        const lower = u.trim().toLowerCase()
+        return lower.includes('thùng') || lower.startsWith('thung')
+    }
+
+    // Helper lấy đơn vị ưu tiên (ưu tiên đơn vị Thùng trước)
+    const getPreferredUnit = (units: string[], fallbackUnit?: string | null): string => {
+        if (!units || units.length === 0) return fallbackUnit || 'Kg'
+        const thungUnit = units.find(u => isBoxUnit(u))
+        if (thungUnit) return thungUnit
+        if (fallbackUnit && units.includes(fallbackUnit)) return fallbackUnit
+        return units[0] || fallbackUnit || 'Kg'
+    }
+
+    // Lấy danh sách đơn vị của sản phẩm (sắp xếp ưu tiên đơn vị Thùng lên trước)
+    const getProductUnits = (product: ProductItem): string[] => {
+        let list: string[] = []
+        if (product.id.startsWith('custom_')) list = availableUnits
+        else if (product.available_units && product.available_units.length > 0) list = product.available_units
+        else list = product.unit ? [product.unit] : ['Kg']
+
+        return [...list].sort((a, b) => {
+            const aIs = isBoxUnit(a)
+            const bIs = isBoxUnit(b)
+            if (aIs && !bIs) return -1
+            if (!aIs && bIs) return 1
+            return 0
+        })
     }
 
     const realtimeRef = useRef<any>(null)
@@ -203,17 +266,14 @@ export default function SoLieuPage() {
         const applySyncedPinned = (rawList: ProductItem[], persist = false) => {
             const synced = rawList.map(p => {
                 const found = allProducts.find(ap => ap.id === p.id || ap.name === p.name)
-                if (found) {
-                    const units = found.available_units && found.available_units.length > 0
-                        ? found.available_units
-                        : (p.available_units || (found.unit ? [found.unit] : ['Kg']))
-                    return {
-                        ...found,
-                        unit: p.unit || found.unit || units[0] || 'Kg',
-                        available_units: units,
-                    }
+                const item = found || p
+                const units = getProductUnits(item)
+                const prefUnit = getPreferredUnit(units, p.unit || item.unit)
+                return {
+                    ...item,
+                    unit: prefUnit,
+                    available_units: units,
                 }
-                return p
             })
             setPinnedProducts(synced)
             const unitMap: Record<string, string> = {}
@@ -230,77 +290,28 @@ export default function SoLieuPage() {
 
         try {
             const saved = localStorage.getItem(storageKey)
-            if (saved) {
+            if (saved !== null) {
                 const parsed: ProductItem[] = JSON.parse(saved)
-                if (Array.isArray(parsed) && parsed.length > 0) {
+                if (Array.isArray(parsed)) {
                     applySyncedPinned(parsed, false)
                     return
                 }
             }
 
-            // Khôi phục từ summary_data.pinned_products hoặc summary_data.products_summary (khi mở lại CV đã hoàn thành)
+            // Khôi phục từ summary_data.pinned_products (khi Mở lại CV đã hoàn thành từ trước)
             const savedPinned = activeShift.summary_data?.pinned_products
             if (Array.isArray(savedPinned) && savedPinned.length > 0) {
                 applySyncedPinned(savedPinned, true)
                 return
             }
 
-            const prodSum = activeShift.summary_data?.products_summary
-            if (prodSum && typeof prodSum === 'object' && Object.keys(prodSum).length > 0) {
-                const byName = new Map<string, ProductItem>()
-                Object.values(prodSum).forEach((item: any, idx) => {
-                    const pName = item?.product_name
-                    if (!pName || byName.has(pName)) return
-                    const found = allProducts.find(ap => ap.name === pName)
-                    if (found) {
-                        byName.set(pName, { ...found, unit: item.unit || found.unit || 'Kg' })
-                    } else {
-                        byName.set(pName, {
-                            id: `restored_${idx}_${pName}`,
-                            name: pName,
-                            sku: '',
-                            unit: item.unit || 'Kg',
-                            available_units: item.unit ? [item.unit] : ['Kg'],
-                        })
-                    }
-                })
-                const restored = Array.from(byName.values())
-                if (restored.length > 0) {
-                    applySyncedPinned(restored, true)
-                    return
-                }
-            }
-
-            if (allJobJournals.length > 0) {
-                const byName = new Map<string, ProductItem>()
-                allJobJournals.forEach((j, idx) => {
-                    const pName = j?.item_name
-                    if (!pName || byName.has(pName)) return
-                    const found = allProducts.find(ap => ap.name === pName)
-                    if (found) {
-                        byName.set(pName, { ...found, unit: j.unit || found.unit || 'Kg' })
-                    } else {
-                        byName.set(pName, {
-                            id: `restored_j_${idx}_${pName}`,
-                            name: pName,
-                            sku: '',
-                            unit: j.unit || 'Kg',
-                            available_units: j.unit ? [j.unit] : ['Kg'],
-                        })
-                    }
-                })
-                const restored = Array.from(byName.values())
-                if (restored.length > 0) {
-                    applySyncedPinned(restored, true)
-                    return
-                }
-            }
-
+            // Mặc định công việc mới chưa có ghim: giữ bàn làm việc trống
             setPinnedProducts([])
         } catch (e) {
             console.error('Failed to load pinned products from storage', e)
+            setPinnedProducts([])
         }
-    }, [storageKey, activeShift, allProducts, allJobJournals])
+    }, [storageKey, activeShift, allProducts])
 
     // Lưu danh sách ghim vào localStorage theo công việc
     const updatePinnedProducts = (newList: ProductItem[]) => {
@@ -400,6 +411,55 @@ export default function SoLieuPage() {
             console.error('Error loading products with units:', err)
         }
     }, [currentSystem])
+
+    // 4.1 Tải danh sách công việc mẫu (luôn cập nhật từ database và đồng bộ khi focus)
+    const refreshJobTemplates = useCallback(async () => {
+        const sysCode = currentSystem?.code || shiftSystemCode || 'COLD'
+        const companyId = currentSystem?.company_id || profile?.company_id
+        try {
+            const list = await getJobTemplates(sysCode, companyId)
+            setJobTemplatesList(list)
+        } catch (e) {
+            console.error('Lỗi tải công việc mẫu:', e)
+        }
+    }, [shiftSystemCode, currentSystem, profile])
+
+    useEffect(() => {
+        refreshJobTemplates()
+    }, [refreshJobTemplates])
+
+    // Tự động tải lại mẫu công việc khi mở modal tạo công việc
+    useEffect(() => {
+        if (openShiftModal) {
+            refreshJobTemplates()
+        }
+    }, [openShiftModal, refreshJobTemplates])
+
+    // Tự động làm mới mẫu công việc khi người dùng quay lại tab trình duyệt từ trang Quản lý mẫu
+    useEffect(() => {
+        const handleFocus = () => refreshJobTemplates()
+        window.addEventListener('focus', handleFocus)
+        return () => window.removeEventListener('focus', handleFocus)
+    }, [refreshJobTemplates])
+
+    // 4.2 Xử lý query param ?applyTemplate=tpl_xxx từ trang Quản lý mẫu
+    useEffect(() => {
+        if (typeof window === 'undefined' || jobTemplatesList.length === 0) return
+        const params = new URLSearchParams(window.location.search)
+        const tplId = params.get('applyTemplate')
+        if (tplId) {
+            const found = jobTemplatesList.find(t => t.id === tplId)
+            if (found) {
+                setJobNameInput(found.name)
+                setJobNotesInput(found.notes || '')
+                setSelectedJobTemplate(found)
+                setJobOpenedAtInput(formatDateTimeLocal(new Date()))
+                setOpenShiftModal(true)
+                const cleanUrl = window.location.pathname
+                window.history.replaceState({}, '', cleanUrl)
+            }
+        }
+    }, [jobTemplatesList])
 
     // 5. Tải danh sách tất cả các công việc đang mở (Multi-Job Shifts)
     const loadOpenShifts = useCallback(async () => {
@@ -606,7 +666,7 @@ export default function SoLieuPage() {
         setDoneSelectedId(shift.id)
         setDoneTab('summary')
         setExpandedDoneSubShifts(new Set())
-        setIsMainSummaryExpanded(true)
+        setIsMainSummaryExpanded(false)
         setIsTwoWayExpanded(false)
         setIsUnitsExpanded(false)
         loadDoneLines(shift)
@@ -667,6 +727,34 @@ export default function SoLieuPage() {
             showToast(`Đã mở lại công việc "${jobName}"`, 'in')
         } catch (err: any) {
             alert('Lỗi mở lại công việc: ' + (err?.message || err))
+        }
+    }
+
+    // Đổi ngày & giờ mở công việc (hữu ích khi người dùng quên lùi ngày lúc tạo ca nhập bù)
+    const handleUpdateShiftOpenedAt = async (shift: any) => {
+        if (!shift?.id) return
+        const currentOpenedVal = formatDateTimeLocal(new Date(shift.opened_at))
+        const inputVal = window.prompt(
+            'Nhập ngày & giờ mở công việc (Định dạng YYYY-MM-DDTHH:mm):\nVí dụ hôm qua lúc 8h sáng: 2026-11-09T08:00',
+            currentOpenedVal
+        )
+        if (!inputVal) return
+        const d = new Date(inputVal)
+        if (isNaN(d.getTime())) {
+            alert('Định dạng thời gian không hợp lệ!')
+            return
+        }
+        try {
+            const newIso = d.toISOString()
+            const { error } = await (supabase.from('delivery_shifts') as any)
+                .update({ opened_at: newIso })
+                .eq('id', shift.id)
+            if (error) throw error
+            setPastShifts(prev => prev.map(s => s.id === shift.id ? { ...s, opened_at: newIso } : s))
+            setOpenShifts(prev => prev.map(s => s.id === shift.id ? { ...s, opened_at: newIso } : s))
+            showToast('Đã cập nhật ngày giờ mở công việc!', 'in')
+        } catch (err: any) {
+            alert('Lỗi cập nhật thời gian mở: ' + (err?.message || err))
         }
     }
 
@@ -792,6 +880,152 @@ export default function SoLieuPage() {
         }
     }
 
+    // Chuẩn bị dữ liệu phiếu kết toán Nhập / Xuất từ công việc đã chọn
+    const buildSettlementData = (shift: any, rows: any[], type: 'in' | 'out') => {
+        const jobTitle = shift.summary_data?.job_name || shift.notes || 'Công việc'
+        const isImport = type === 'in'
+        const relevantRows = rows.filter(r => (Number(isImport ? r.in_qty : r.out_qty) || 0) > 0)
+
+        const items = relevantRows.map((r, idx) => {
+            const qty = Number(isImport ? r.in_qty : r.out_qty) || 0
+            const rName = (r.product_name || '').trim().toLowerCase()
+            const foundProd = allProducts.find(p => {
+                if (r.product_id && p.id === r.product_id) return true
+                const pName = (p.name || '').trim().toLowerCase()
+                if (pName === rName) return true
+                if (p.sku && p.sku.trim().toLowerCase() === rName) return true
+                if (p.internal_name && p.internal_name.trim().toLowerCase() === rName) return true
+                if (pName.length > 3 && (rName.includes(pName) || pName.includes(rName))) return true
+                return false
+            })
+            return {
+                id: `settle_${type}_${Date.now()}_${idx}`,
+                productId: foundProd?.id || '',
+                productName: foundProd?.name || r.product_name,
+                unit: r.unit || foundProd?.unit || 'Kg',
+                quantity: qty,
+                document_quantity: qty,
+                price: 0,
+                note: '',
+                categoryId: (foundProd as any)?.category_id || undefined,
+            }
+        })
+
+        return {
+            items,
+            description: jobTitle,
+            orderTypeName: 'Sản Xuất',
+            shiftId: shift.id,
+            jobName: jobTitle,
+            settlementType: type,
+            targetUnit: 'Kg',
+        }
+    }
+
+    // Mở Modal làm phiếu kết toán trực tiếp ngay tại trang Số Liệu
+    const handleOpenInboundModal = (shift: any, rows: any[]) => {
+        const data = buildSettlementData(shift, rows, 'in')
+        if (data.items.length === 0) {
+            alert('Công việc này không có số liệu nhập kho để làm phiếu kết toán.')
+            return
+        }
+        setSettlementShiftId(shift.id)
+        setInboundInitialData(data)
+        setIsInboundModalOpen(true)
+    }
+
+    const handleOpenOutboundModal = (shift: any, rows: any[]) => {
+        const data = buildSettlementData(shift, rows, 'out')
+        if (data.items.length === 0) {
+            alert('Công việc này không có số liệu xuất kho để làm phiếu kết toán.')
+            return
+        }
+        setSettlementShiftId(shift.id)
+        setOutboundInitialData(data)
+        setIsOutboundModalOpen(true)
+    }
+
+    // Chuyển hướng sang trang /inbound hoặc /outbound để kết toán
+    const handleNavigateToSettlementPage = (shift: any, rows: any[], type: 'in' | 'out') => {
+        const data = buildSettlementData(shift, rows, type)
+        if (data.items.length === 0) {
+            alert(`Công việc này không có số liệu ${type === 'in' ? 'nhập' : 'xuất'} kho để làm phiếu kết toán.`)
+            return
+        }
+        const storageKey = type === 'in' ? 'settlement_inbound_order' : 'settlement_outbound_order'
+        try {
+            sessionStorage.setItem(storageKey, JSON.stringify(data))
+        } catch (e) {
+            console.error('Không thể lưu session data', e)
+        }
+        const targetUrl = type === 'in' ? '/inbound?settlement=1' : '/outbound?settlement=1'
+        window.open(targetUrl, '_blank')
+    }
+
+    // Callback khi tạo thành công phiếu nhập kết toán
+    const handleInboundSettlementSuccess = async (orderId?: string) => {
+        setIsInboundModalOpen(false)
+        setInboundInitialData(null)
+        if (!settlementShiftId) return
+
+        try {
+            let orderCode = ''
+            if (orderId) {
+                const { data } = await supabase.from('inbound_orders').select('code').eq('id', orderId).single()
+                orderCode = (data as any)?.code || ''
+            }
+
+            const { data: shiftData } = await supabase.from('delivery_shifts').select('summary_data').eq('id', settlementShiftId).single()
+            if (shiftData) {
+                const currentSum = (shiftData as any)?.summary_data || {}
+                const updatedSum = {
+                    ...currentSum,
+                    settlement_inbound_id: orderId || null,
+                    settlement_inbound_code: orderCode || 'Đã lập phiếu',
+                    settlement_inbound_at: new Date().toISOString(),
+                }
+                await (supabase.from('delivery_shifts') as any).update({ summary_data: updatedSum }).eq('id', settlementShiftId)
+
+                setPastShifts(prev => prev.map(s => s.id === settlementShiftId ? { ...s, summary_data: updatedSum } : s))
+            }
+            showToast(`Lập phiếu nhập kết toán ${orderCode ? `(${orderCode}) ` : ''}thành công!`, 'in')
+        } catch (e: any) {
+            console.error('Lỗi khi ghi nhận mã phiếu nhập kết toán vào ca:', e)
+        }
+    }
+
+    // Callback khi tạo thành công phiếu xuất kết toán
+    const handleOutboundSettlementSuccess = async (orderId?: string) => {
+        setIsOutboundModalOpen(false)
+        setOutboundInitialData(null)
+        if (!settlementShiftId) return
+
+        try {
+            let orderCode = ''
+            if (orderId) {
+                const { data } = await supabase.from('outbound_orders').select('code').eq('id', orderId).single()
+                orderCode = (data as any)?.code || ''
+            }
+
+            const { data: shiftData } = await supabase.from('delivery_shifts').select('summary_data').eq('id', settlementShiftId).single()
+            if (shiftData) {
+                const currentSum = (shiftData as any)?.summary_data || {}
+                const updatedSum = {
+                    ...currentSum,
+                    settlement_outbound_id: orderId || null,
+                    settlement_outbound_code: orderCode || 'Đã lập phiếu',
+                    settlement_outbound_at: new Date().toISOString(),
+                }
+                await (supabase.from('delivery_shifts') as any).update({ summary_data: updatedSum }).eq('id', settlementShiftId)
+
+                setPastShifts(prev => prev.map(s => s.id === settlementShiftId ? { ...s, summary_data: updatedSum } : s))
+            }
+            showToast(`Lập phiếu xuất kết toán ${orderCode ? `(${orderCode}) ` : ''}thành công!`, 'out')
+        } catch (e: any) {
+            console.error('Lỗi khi ghi nhận mã phiếu xuất kết toán vào ca:', e)
+        }
+    }
+
     // Tổng hợp các dòng số liệu theo Sản phẩm + ĐVT (không tính tồn)
     const summarizeLines = (lines: DeliveryJournalRecord[]) => {
         const map: Record<string, { product_name: string; unit: string; in_qty: number; out_qty: number; count: number }> = {}
@@ -913,10 +1147,8 @@ export default function SoLieuPage() {
             return
         }
         if (pinnedProducts.some(p => p.id === product.id)) return
-        const available = product.available_units && product.available_units.length > 0
-            ? product.available_units
-            : (product.unit ? [product.unit] : ['Kg'])
-        const initialUnit = product.unit || available[0] || 'Kg'
+        const available = getProductUnits(product)
+        const initialUnit = getPreferredUnit(available, product.unit)
         const nextList = [...pinnedProducts, { ...product, unit: initialUnit, available_units: available }]
         setSelectedUnitMap(prev => ({ ...prev, [product.id]: initialUnit }))
         updatePinnedProducts(nextList)
@@ -978,7 +1210,25 @@ export default function SoLieuPage() {
 
         const companyId = currentSystem?.company_id || profile?.company_id || null
         const isImport = type === 'in'
-        const nowStr = new Date().toISOString()
+
+        // Xác định thời gian phát sinh của đợt:
+        // Nếu công việc này được mở vào một ngày trong quá khứ (nhập bù), ghép ngày của ca với giờ:phút:giây hiện tại
+        // để đợt nhập nằm đúng ngày của công việc và tăng dần theo thứ tự nhập
+        let nowStr = new Date().toISOString()
+        if (activeShift?.opened_at) {
+            const shiftDate = new Date(activeShift.opened_at)
+            const now = new Date()
+            if (!isNaN(shiftDate.getTime())) {
+                const isSameDay = shiftDate.getFullYear() === now.getFullYear() &&
+                                  shiftDate.getMonth() === now.getMonth() &&
+                                  shiftDate.getDate() === now.getDate()
+                if (!isSameDay) {
+                    const computed = new Date(shiftDate)
+                    computed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds())
+                    nowStr = computed.getTime() < shiftDate.getTime() ? shiftDate.toISOString() : computed.toISOString()
+                }
+            }
+        }
 
         // Tính số thứ tự đợt của sản phẩm này trong công việc này
         const productBatchCount = journalList.filter(j => j.item_name === product.name).length
@@ -1046,18 +1296,19 @@ export default function SoLieuPage() {
         }
     }
 
-    // ===== MOBILE: Bàn phím số nhập nhanh =====
-    const getProductUnits = (product: ProductItem): string[] => {
-        if (product.id.startsWith('custom_')) return availableUnits
-        if (product.available_units && product.available_units.length > 0) return product.available_units
-        return product.unit ? [product.unit] : ['Kg']
-    }
-
+    // ===== MOBILE & DESKTOP: Bàn phím số nhập nhanh =====
     const openPad = (product: ProductItem) => {
         const units = getProductUnits(product)
         setPadProduct(product)
         setPadValue('')
-        setPadUnit(selectedUnitMap[product.id] || product.unit || units[0] || 'Kg')
+        // Ưu tiên đơn vị Thùng trước nếu sản phẩm có cấu hình Thùng
+        const remembered = selectedUnitMap[product.id]
+        const thungUnit = units.find(u => isBoxUnit(u))
+        const preferred = thungUnit || remembered || getPreferredUnit(units, product.unit)
+        setPadUnit(preferred)
+        if (preferred && preferred !== remembered) {
+            handleUnitChange(product.id, preferred)
+        }
     }
 
     const handlePadKey = (key: string) => {
@@ -1253,13 +1504,16 @@ export default function SoLieuPage() {
             return
         }
         try {
+            const openedAtDate = jobOpenedAtInput ? new Date(jobOpenedAtInput) : new Date()
+            const openedAtIso = isNaN(openedAtDate.getTime()) ? new Date().toISOString() : openedAtDate.toISOString()
+
             const payload = {
                 system_code: shiftSystemCode,
                 company_id: currentSystem?.company_id || profile?.company_id || null,
                 status: 'open',
                 opened_by: profile?.id || null,
                 opened_by_name: profile?.full_name || 'Nhân viên kho',
-                opened_at: new Date().toISOString(),
+                opened_at: openedAtIso,
                 notes: jobNameInput.trim(),
                 summary_data: {
                     job_name: jobNameInput.trim(),
@@ -1277,12 +1531,28 @@ export default function SoLieuPage() {
             setOpenShiftModal(false)
             setJobNameInput('')
             setJobNotesInput('')
+            setJobOpenedAtInput(formatDateTimeLocal(new Date()))
 
             // Nạp lại danh sách công việc và tự động active tab công việc mới này
             await loadOpenShifts()
             if (data?.id) {
+                // Nếu mẫu công việc có ghim sẵn sản phẩm, tự động nạp vào bàn làm việc
+                let initialPinned: any[] = []
+                if (selectedJobTemplate?.pinned_product_ids && selectedJobTemplate.pinned_product_ids.length > 0) {
+                    initialPinned = allProducts.filter(p => selectedJobTemplate.pinned_product_ids?.includes(p.id))
+                }
+                try {
+                    localStorage.setItem(`so_lieu_pinned_job_${data.id}`, JSON.stringify(initialPinned))
+                } catch (e) {}
+                setPinnedProducts(initialPinned)
+                setAllJobJournals([])
+                setJournalList([])
+                setSubShifts([])
+                setPadProduct(null)
+                setDraftQtyMap({})
                 setSelectedShiftId(data.id)
             }
+            setSelectedJobTemplate(null)
             setPageView('active')
         } catch (err: any) {
             alert('Lỗi mở công việc: ' + (err?.message || err))
@@ -1433,10 +1703,26 @@ export default function SoLieuPage() {
                 }
             })
 
+            // Gợi ý thời gian đóng ca: nếu là ca nhập bù quá khứ, lấy ngày của ca ghép giờ:phút hiện tại
+            const now = new Date()
+            let suggestedCloseTime = formatDateTimeLocal(now)
+            const openD = new Date(openedAtStr)
+            if (!isNaN(openD.getTime())) {
+                const isSameDay = openD.getFullYear() === now.getFullYear() &&
+                                  openD.getMonth() === now.getMonth() &&
+                                  openD.getDate() === now.getDate()
+                if (!isSameDay) {
+                    const comp = new Date(openD)
+                    comp.setHours(now.getHours(), now.getMinutes())
+                    suggestedCloseTime = formatDateTimeLocal(comp.getTime() < openD.getTime() ? openD : comp)
+                }
+            }
+            setCloseTimeInput(suggestedCloseTime)
+
             setShiftSummary({
                 job_name: currentJobName,
                 from_time: openedAtStr,
-                to_time: new Date().toISOString(),
+                to_time: suggestedCloseTime ? new Date(suggestedCloseTime).toISOString() : new Date().toISOString(),
                 total_records: list.length,
                 units_summary,
                 products_summary
@@ -1451,7 +1737,8 @@ export default function SoLieuPage() {
         if (!activeShift) return
         try {
             const closedJobId = activeShift.id
-            const closedAtStr = new Date().toISOString()
+            const closedAtDate = closeTimeInput ? new Date(closeTimeInput) : new Date()
+            const closedAtStr = isNaN(closedAtDate.getTime()) ? new Date().toISOString() : closedAtDate.toISOString()
             const companyId = currentSystem?.company_id || profile?.company_id || null
 
             // Nếu công việc đã từng bấm Chốt tạm trước đó, tự động chốt luôn đợt cuối (từ lần chốt tạm cuối -> lúc bấm Hoàn thành CV) nếu có phát sinh số liệu
@@ -1766,71 +2053,25 @@ export default function SoLieuPage() {
 
                     {pageView === 'active' ? (
                         <>
-                            {/* Tab công việc đang mở */}
-                            <div className="flex-1 min-w-0 flex items-center gap-1.5 overflow-x-auto scrollbar-none">
-                                {openShifts.map((shift, idx) => {
-                                    const isSelected = activeShift?.id === shift.id
-                                    const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
-                                    return (
-                                        <button
-                                            key={shift.id}
-                                            type="button"
-                                            onClick={() => setSelectedShiftId(shift.id)}
-                                            title={`${jobTitle} • mở lúc ${formatTimeOnly(shift.opened_at)}`}
-                                            className={`h-9 px-3.5 rounded-lg text-sm font-semibold flex items-center gap-2 shrink-0 transition ${
-                                                isSelected
-                                                    ? 'bg-indigo-600 text-white shadow-sm'
-                                                    : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800'
-                                            }`}
-                                        >
-                                            <span className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-white' : 'bg-emerald-500'}`} />
-                                            <span className="max-w-[200px] truncate">{jobTitle}</span>
-                                        </button>
-                                    )
-                                })}
-                                <button
-                                    type="button"
-                                    onClick={() => setOpenShiftModal(true)}
-                                    className="h-9 px-3 rounded-lg text-sm font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center gap-1 shrink-0"
-                                >
-                                    <Plus className="w-4 h-4" />
-                                    {openShifts.length === 0 ? 'Tạo công việc' : 'Thêm CV'}
-                                </button>
-                            </div>
-
-                            {/* Thao tác công việc */}
-                            <div className="flex items-center gap-2 shrink-0">
-                                {activeShift && (
-                                    <>
-                                        <span className="hidden xl:flex items-center gap-1.5 text-xs text-stone-500 mr-1">
-                                            <Clock className="w-3.5 h-3.5" />
-                                            {formatTimeOnly(activeShift.opened_at)}
-                                            {subShifts.length > 0 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowSubShiftsPanel(true)}
-                                                    className="ml-1 text-indigo-600 dark:text-indigo-400 font-semibold hover:underline"
-                                                >
-                                                    • {subShifts.length} lần chốt tạm
-                                                </button>
-                                            )}
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={async () => { await calculateInterimSummary(); setInterimCloseModal(true) }}
-                                            className="h-9 px-3.5 rounded-lg text-sm font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 flex items-center gap-1.5"
-                                        >
-                                            <CheckCircle2 className="w-4 h-4" /> Chốt tạm
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={async () => { await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
-                                            className="h-9 px-3.5 rounded-lg text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5"
-                                        >
-                                            <StopCircle className="w-4 h-4" /> Hoàn thành CV
-                                        </button>
-                                    </>
+                            {/* Thông tin nhanh + Tải lại (danh sách CV được đưa xuống hàng riêng bên dưới) */}
+                            <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-stone-500">
+                                {activeShift ? (
+                                    <span className="truncate">
+                                        Đang nhập cho: <strong className="text-stone-800 dark:text-stone-100">{currentJobName}</strong>
+                                    </span>
+                                ) : (
+                                    <span className="italic">Chưa chọn công việc</span>
                                 )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <Link
+                                    href="/so-lieu/mau-cong-viec"
+                                    className="h-9 px-3 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
+                                    title="Quản lý và tạo mới các công việc mẫu"
+                                >
+                                    <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
+                                    <span>Mẫu CV</span>
+                                </Link>
                                 <button
                                     type="button"
                                     onClick={() => loadJournalData()}
@@ -1889,6 +2130,14 @@ export default function SoLieuPage() {
                             </div>
 
                             <div className="flex items-center gap-2 shrink-0">
+                                <Link
+                                    href="/so-lieu/mau-cong-viec"
+                                    className="h-9 px-3 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
+                                    title="Quản lý và tạo mới các công việc mẫu"
+                                >
+                                    <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
+                                    <span>Mẫu CV</span>
+                                </Link>
                                 <button
                                     type="button"
                                     onClick={() => setOpenShiftModal(true)}
@@ -1909,6 +2158,103 @@ export default function SoLieuPage() {
                         </>
                     )}
                 </div>
+
+                {/* Hàng 1.5: Danh sách công việc đang làm dạng thẻ + Thao tác của CV đang chọn (Desktop) */}
+                {pageView === 'active' && (
+                    <div className="border-t border-stone-100 dark:border-zinc-800">
+                        <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center gap-4">
+                            <div className="flex-1 min-w-0 flex items-stretch gap-2 overflow-x-auto scrollbar-thin pb-0.5">
+                                {openShifts.map((shift, idx) => {
+                                    const isSelected = activeShift?.id === shift.id
+                                    const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
+                                    return (
+                                        <button
+                                            key={shift.id}
+                                            type="button"
+                                            onClick={() => {
+                                                if (activeShift?.id !== shift.id) {
+                                                    setPinnedProducts([])
+                                                    setAllJobJournals([])
+                                                    setJournalList([])
+                                                    setSubShifts([])
+                                                    setPadProduct(null)
+                                                    setDraftQtyMap({})
+                                                }
+                                                setSelectedShiftId(shift.id)
+                                            }}
+                                            title={`${jobTitle} • mở lúc ${formatDateTime(shift.opened_at)}`}
+                                            className={`group relative shrink-0 w-[210px] text-left px-3 py-2 rounded-xl border transition ${
+                                                isSelected
+                                                    ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-700 ring-2 ring-indigo-500/20'
+                                                    : 'bg-white dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 hover:border-indigo-300 hover:bg-stone-50 dark:hover:bg-zinc-800'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-1.5">
+                                                <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-indigo-600 animate-pulse' : 'bg-emerald-500'}`} />
+                                                <span className={`text-sm font-bold truncate ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-800 dark:text-stone-100'}`}>
+                                                    {jobTitle}
+                                                </span>
+                                            </div>
+                                            <div className="mt-0.5 pl-3.5 text-[11px] text-stone-500 flex items-center gap-1 truncate">
+                                                <Clock className="w-3 h-3 shrink-0" />
+                                                <span>Mở {formatTimeOnly(shift.opened_at)}</span>
+                                                {isSelected && (
+                                                    <>
+                                                        <span>•</span>
+                                                        <span>{allJobJournals.length} đợt</span>
+                                                        {subShifts.length > 0 && (
+                                                            <>
+                                                                <span>•</span>
+                                                                <span className="text-amber-600 font-semibold">{subShifts.length} chốt tạm</span>
+                                                            </>
+                                                        )}
+                                                    </>
+                                                )}
+                                            </div>
+                                        </button>
+                                    )
+                                })}
+                                <button
+                                    type="button"
+                                    onClick={() => setOpenShiftModal(true)}
+                                    className="shrink-0 min-w-[150px] px-3 py-2 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 text-sm font-bold flex items-center justify-center gap-1.5 transition"
+                                >
+                                    <Plus className="w-4 h-4" />
+                                    {openShifts.length === 0 ? 'Tạo công việc' : 'Thêm công việc'}
+                                </button>
+                            </div>
+
+                            {activeShift && (
+                                <div className="shrink-0 flex items-center gap-2 pl-4 border-l border-stone-200 dark:border-zinc-700">
+                                    {subShifts.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowSubShiftsPanel(true)}
+                                            className="h-9 px-3 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center gap-1.5"
+                                            title="Xem các lần chốt tạm"
+                                        >
+                                            <Layers className="w-4 h-4" /> {subShifts.length} lần chốt
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={async () => { await calculateInterimSummary(); setInterimCloseModal(true) }}
+                                        className="h-9 px-3.5 rounded-lg text-sm font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 flex items-center gap-1.5"
+                                    >
+                                        <CheckCircle2 className="w-4 h-4" /> Chốt tạm
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={async () => { await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
+                                        className="h-9 px-3.5 rounded-lg text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5"
+                                    >
+                                        <StopCircle className="w-4 h-4" /> Hoàn thành CV
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
 
                 {/* Hàng 2: Tìm kiếm & ghim sản phẩm (chỉ hiện khi Đang làm) */}
                 {pageView === 'active' && activeShift && (
@@ -2231,35 +2577,32 @@ export default function SoLieuPage() {
 
                                         {/* KHỐI CHÍNH BÁO CÁO ĐỐI SOÁT CA (GIỐNG /DELIVERY-SHIFTS) */}
                                         <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-3.5 sm:p-6 shadow-xs space-y-4 sm:space-y-6">
-                                            {/* 1. Header: Tên công việc + Nút thao tác + Giờ mở / Giờ chốt */}
-                                            <div className="border-b border-stone-100 dark:border-zinc-800 pb-4 sm:pb-5 space-y-3 sm:space-y-4">
-                                                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2.5 sm:gap-3">
-                                                    <div>
-                                                        <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-                                                            <h2 className="text-sm sm:text-xl font-bold text-stone-900 dark:text-white break-words">
-                                                                Báo cáo đối soát: {jobTitle}
+                                            {/* 1. Header: Tên công việc + Nút thao tác */}
+                                            <div className="border-b border-stone-100 dark:border-zinc-800 pb-3 sm:pb-3.5">
+                                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-4">
+                                                    <div className="min-w-0 flex-1">
+                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                            <h2 className="text-base sm:text-xl font-black text-stone-900 dark:text-white tracking-tight">
+                                                                {jobTitle}
                                                             </h2>
                                                             {isClosed ? (
-                                                                <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 shrink-0 whitespace-nowrap">
                                                                     ✓ Đã hoàn thành
                                                                 </span>
                                                             ) : (
-                                                                <span className="px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                                                                <span className="px-2.5 py-0.5 rounded-full text-[10px] sm:text-xs font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 flex items-center gap-1.5 shrink-0 whitespace-nowrap">
                                                                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                                                                     Đang diễn ra
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <p className="text-[11px] sm:text-xs text-stone-500 mt-0.5 sm:mt-1">
-                                                            Báo cáo chi tiết các lần chốt ca tạm (đổi ca) và tổng hợp đối soát toàn bộ công việc
-                                                        </p>
                                                     </div>
 
                                                     <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0">
                                                         <button
                                                             type="button"
                                                             onClick={() => handleExportDoneShift(doneSelectedShift, doneLines)}
-                                                            className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs"
+                                                            className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs whitespace-nowrap"
                                                         >
                                                             <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Xuất Excel
                                                         </button>
@@ -2268,7 +2611,7 @@ export default function SoLieuPage() {
                                                                 type="button"
                                                                 onClick={() => handleReopenShift(doneSelectedShift)}
                                                                 title="Mở lại công việc này để tiếp tục nhập số liệu"
-                                                                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold border border-indigo-200 dark:border-indigo-800 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5"
+                                                                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold border border-indigo-200 dark:border-indigo-800 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 flex items-center gap-1.5 whitespace-nowrap"
                                                             >
                                                                 <RotateCcw className="w-3.5 h-3.5" /> Mở lại CV
                                                             </button>
@@ -2279,7 +2622,7 @@ export default function SoLieuPage() {
                                                                     setSelectedShiftId(doneSelectedShift.id)
                                                                     setPageView('active')
                                                                 }}
-                                                                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5"
+                                                                className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 whitespace-nowrap"
                                                             >
                                                                 Tiếp tục nhập →
                                                             </button>
@@ -2288,62 +2631,520 @@ export default function SoLieuPage() {
                                                             type="button"
                                                             onClick={() => handleDeleteDoneShift(doneSelectedShift.id)}
                                                             title="Xóa báo cáo công việc (cần mật khẩu)"
-                                                            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center"
+                                                            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0"
                                                         >
                                                             <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                                                         </button>
                                                     </div>
                                                 </div>
+                                            </div>
 
-                                                {/* 2 ô Giờ mở ca / Giờ chốt ca */}
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 bg-stone-50 dark:bg-zinc-950 p-3 sm:p-3.5 rounded-xl border border-stone-100 dark:border-zinc-800 text-[11px] sm:text-xs">
-                                                    <div>
-                                                        <div className="font-bold text-stone-400 uppercase mb-0.5 sm:mb-1 flex items-center gap-1.5">
-                                                            🟢 Giờ mở công việc
-                                                        </div>
-                                                        <div className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-100">
-                                                            {formatDateTime(doneSelectedShift.opened_at)}
-                                                        </div>
-                                                        <div className="text-stone-500 mt-0.5 sm:mt-1 flex items-center gap-1.5">
-                                                            <User className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Người mở: <strong>{doneSelectedShift.opened_by_name || 'Nhân viên'}</strong>
-                                                        </div>
-                                                    </div>
-                                                    <div>
-                                                        <div className="font-bold text-stone-400 uppercase mb-0.5 sm:mb-1 flex items-center gap-1.5">
-                                                            🔴 Giờ chốt công việc
-                                                        </div>
-                                                        <div className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-100">
-                                                            {doneSelectedShift.closed_at ? (
-                                                                formatDateTime(doneSelectedShift.closed_at)
-                                                            ) : (
-                                                                <span className="text-amber-600 italic">Đang diễn ra...</span>
-                                                            )}
-                                                        </div>
-                                                        {doneSelectedShift.closed_by_name && (
-                                                            <div className="text-stone-500 mt-0.5 sm:mt-1 flex items-center gap-1.5">
-                                                                <User className="w-3 h-3 sm:w-3.5 sm:h-3.5" /> Người chốt: <strong>{doneSelectedShift.closed_by_name}</strong>
-                                                            </div>
+                                            {/* 1. TỔNG HỢP ĐỐI SOÁT CẢ CA (SUM TỔNG) */}
+                                            <div className="space-y-2.5 sm:space-y-3 pt-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setIsMainSummaryExpanded(!isMainSummaryExpanded)}
+                                                    className="w-full flex items-center justify-between py-1 text-left hover:opacity-80 transition group cursor-pointer"
+                                                >
+                                                    <h4 className="font-bold text-stone-800 dark:text-stone-100 flex items-center gap-1.5 text-[11px] sm:text-base">
+                                                        <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500 shrink-0" />
+                                                        <span>Tổng hợp đối soát cả ca (Sum tổng)</span>
+                                                    </h4>
+                                                    <div className="flex items-center gap-1.5 text-stone-400 group-hover:text-stone-600 dark:group-hover:text-stone-200 shrink-0">
+                                                        <span className="text-[10px] sm:text-[11px] font-medium hidden sm:inline">
+                                                            {isMainSummaryExpanded ? 'Thu lại' : 'Mở rộng'}
+                                                        </span>
+                                                        {isMainSummaryExpanded ? (
+                                                            <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-stone-500" />
+                                                        ) : (
+                                                            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-stone-500" />
                                                         )}
                                                     </div>
-                                                </div>
+                                                </button>
+
+                                                {isMainSummaryExpanded && (
+                                                    <div className="space-y-2 sm:space-y-3 pt-1">
+                                                        {/* 3.1. TỔNG HỢP SỐ LIỆU 2 HƯỚNG (NHẬP/XUẤT) */}
+                                                        <div className="bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setIsTwoWayExpanded(!isTwoWayExpanded)}
+                                                                className="w-full p-2.5 sm:p-3.5 flex items-center justify-between gap-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
+                                                            >
+                                                                <span className="text-[10px] sm:text-xs font-extrabold text-stone-700 dark:text-stone-300 uppercase tracking-wider truncate">
+                                                                    📦 TỔNG HỢP 2 HƯỚNG (NHẬP/XUẤT)
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                    <span className="text-[10px] sm:text-[11px] bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">
+                                                                        Tổng {totalBatchesCount} đợt
+                                                                    </span>
+                                                                    {isTwoWayExpanded ? (
+                                                                        <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
+                                                                    ) : (
+                                                                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
+                                                                    )}
+                                                                </div>
+                                                            </button>
+
+                                                            {isTwoWayExpanded && (
+                                                                <div className="p-2.5 sm:p-4 border-t border-stone-100 dark:border-zinc-800/80 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 bg-stone-50/40 dark:bg-zinc-900/30">
+                                                                    {/* Chiều 1: Nhập kho */}
+                                                                    <div className="bg-emerald-50/40 dark:bg-emerald-950/15 border border-emerald-200/70 dark:border-emerald-900/40 rounded-xl p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2">
+                                                                        <div className="flex items-center justify-between border-b border-emerald-200/60 dark:border-emerald-800/50 pb-1.5">
+                                                                            <span className="text-[11px] sm:text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">
+                                                                                1. Nhập kho (SX → Kho)
+                                                                            </span>
+                                                                            <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
+                                                                                {totalInCount} đợt
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                                            {unitsSummaryList.filter(u => u.in_qty > 0).length === 0 ? (
+                                                                                <span className="text-[11px] sm:text-xs text-stone-400 italic">Không có phát sinh nhập</span>
+                                                                            ) : (
+                                                                                unitsSummaryList.filter(u => u.in_qty > 0).map(u => (
+                                                                                    <span key={u.unit} className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-800 text-[11px] sm:text-xs font-bold text-emerald-700 dark:text-emerald-300">
+                                                                                        +{u.in_qty} {u.unit}
+                                                                                    </span>
+                                                                                ))
+                                                                            )}
+                                                                        </div>
+
+                                                                        {unitsSummaryList.some(u => u.in_qty > 0) && (
+                                                                            <div className="pt-2 border-t border-emerald-200/60 dark:border-emerald-800/50 flex items-center justify-between gap-2 flex-wrap">
+                                                                                {doneSelectedShift.summary_data?.settlement_inbound_code ? (
+                                                                                    <a
+                                                                                        href={`/inbound?editCode=${doneSelectedShift.summary_data.settlement_inbound_code}`}
+                                                                                        target="_blank"
+                                                                                        rel="noreferrer"
+                                                                                        className="text-[10px] sm:text-[11px] font-bold text-emerald-800 dark:text-emerald-300 hover:underline flex items-center gap-1"
+                                                                                    >
+                                                                                        ✓ Đã lập: {doneSelectedShift.summary_data.settlement_inbound_code} <ExternalLink className="w-3 h-3" />
+                                                                                    </a>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleOpenInboundModal(doneSelectedShift, summaryRows)}
+                                                                                        className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] sm:text-[11px] flex items-center gap-1 shadow-xs"
+                                                                                    >
+                                                                                        <ArrowDownLeft className="w-3 h-3" /> Làm phiếu nhập kết toán
+                                                                                    </button>
+                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleNavigateToSettlementPage(doneSelectedShift, summaryRows, 'in')}
+                                                                                    className="text-[10px] sm:text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                                                                                >
+                                                                                    Mở trên /inbound <ExternalLink className="w-3 h-3" />
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Chiều 2: Xuất kho */}
+                                                                    <div className="bg-rose-50/40 dark:bg-rose-950/15 border border-rose-200/70 dark:border-rose-900/40 rounded-xl p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2">
+                                                                        <div className="flex items-center justify-between border-b border-rose-200/60 dark:border-rose-800/50 pb-1.5">
+                                                                            <span className="text-[11px] sm:text-xs font-bold text-rose-700 dark:text-rose-400 uppercase">
+                                                                                2. Xuất kho (Kho → SX)
+                                                                            </span>
+                                                                            <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300">
+                                                                                {totalOutCount} đợt
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                                                                            {unitsSummaryList.filter(u => u.out_qty > 0).length === 0 ? (
+                                                                                <span className="text-[11px] sm:text-xs text-stone-400 italic">Không có phát sinh xuất</span>
+                                                                            ) : (
+                                                                                unitsSummaryList.filter(u => u.out_qty > 0).map(u => (
+                                                                                    <span key={u.unit} className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white dark:bg-zinc-900 border border-rose-200 dark:border-rose-800 text-[11px] sm:text-xs font-bold text-rose-700 dark:text-rose-300">
+                                                                                        -{u.out_qty} {u.unit}
+                                                                                    </span>
+                                                                                ))
+                                                                            )}
+                                                                        </div>
+
+                                                                        {unitsSummaryList.some(u => u.out_qty > 0) && (
+                                                                            <div className="pt-2 border-t border-rose-200/60 dark:border-rose-800/50 flex items-center justify-between gap-2 flex-wrap">
+                                                                                {doneSelectedShift.summary_data?.settlement_outbound_code ? (
+                                                                                    <a
+                                                                                        href={`/outbound?editCode=${doneSelectedShift.summary_data.settlement_outbound_code}`}
+                                                                                        target="_blank"
+                                                                                        rel="noreferrer"
+                                                                                        className="text-[10px] sm:text-[11px] font-bold text-rose-800 dark:text-rose-300 hover:underline flex items-center gap-1"
+                                                                                    >
+                                                                                        ✓ Đã lập: {doneSelectedShift.summary_data.settlement_outbound_code} <ExternalLink className="w-3 h-3" />
+                                                                                    </a>
+                                                                                ) : (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleOpenOutboundModal(doneSelectedShift, summaryRows)}
+                                                                                        className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-bold text-[10px] sm:text-[11px] flex items-center gap-1 shadow-xs"
+                                                                                    >
+                                                                                        <ArrowUpRight className="w-3 h-3" /> Làm phiếu xuất kết toán
+                                                                                    </button>
+                                                                                )}
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() => handleNavigateToSettlementPage(doneSelectedShift, summaryRows, 'out')}
+                                                                                    className="text-[10px] sm:text-[11px] font-semibold text-rose-700 dark:text-rose-400 hover:underline flex items-center gap-1"
+                                                                                >
+                                                                                    Mở trên /outbound <ExternalLink className="w-3 h-3" />
+                                                                                </button>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* 3.2. CHI TIẾT THEO ĐƠN VỊ HÀNG HÓA */}
+                                                        <div className="bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setIsUnitsExpanded(!isUnitsExpanded)}
+                                                                className="w-full p-2.5 sm:p-3.5 flex items-center justify-between gap-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
+                                                            >
+                                                                <span className="text-[10px] sm:text-xs font-extrabold text-stone-700 dark:text-stone-300 uppercase tracking-wider truncate">
+                                                                    📊 CHI TIẾT THEO ĐƠN VỊ HÀNG HÓA
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                    <span className="text-[10px] sm:text-[11px] bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">
+                                                                        {unitsSummaryList.length} Đơn vị
+                                                                    </span>
+                                                                    {isUnitsExpanded ? (
+                                                                        <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
+                                                                    ) : (
+                                                                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
+                                                                    )}
+                                                                </div>
+                                                            </button>
+
+                                                            {isUnitsExpanded && (
+                                                                <div className="p-2.5 sm:p-4 border-t border-stone-100 dark:border-zinc-800/80 bg-stone-50/40 dark:bg-zinc-900/30 overflow-x-auto">
+                                                                    <table className="w-full text-left text-[11px] sm:text-sm">
+                                                                        <thead>
+                                                                            <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-400 uppercase text-[10px] sm:text-[11px]">
+                                                                                <th className="pb-1.5 sm:pb-2">ĐVT</th>
+                                                                                <th className="pb-1.5 sm:pb-2 text-right text-emerald-600">Nhập (+)</th>
+                                                                                <th className="pb-1.5 sm:pb-2 text-right text-rose-600">Xuất (-)</th>
+                                                                                <th className="pb-1.5 sm:pb-2 text-right">Số đợt</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                                                            {unitsSummaryList.map(u => (
+                                                                                <tr key={u.unit}>
+                                                                                    <td className="py-2 font-bold text-stone-800 dark:text-stone-100">{u.unit}</td>
+                                                                                    <td className="py-2 text-right font-black text-emerald-600">+{u.in_qty}</td>
+                                                                                    <td className="py-2 text-right font-black text-rose-600">-{u.out_qty}</td>
+                                                                                    <td className="py-2 text-right text-stone-500">{u.in_count + u.out_count} đợt</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            )}
+                                                        </div>
+
+                                                        {/* 3.3. ĐỐI SOÁT CHI TIẾT THEO SẢN PHẨM & TỪNG ĐỢT NHẬP/XUẤT */}
+                                                        <div className="bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setIsProductsExpanded(!isProductsExpanded)}
+                                                                className="w-full p-2.5 sm:p-3.5 flex items-center justify-between gap-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
+                                                            >
+                                                                <span className="text-[10px] sm:text-xs font-extrabold text-stone-700 dark:text-stone-300 uppercase tracking-wider truncate">
+                                                                    📋 TỔNG HỢP THEO SẢN PHẨM (TOÀN CV)
+                                                                </span>
+                                                                <div className="flex items-center gap-1.5 shrink-0">
+                                                                    <span className="text-[10px] sm:text-[11px] bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">
+                                                                        {summaryRows.length} SP
+                                                                    </span>
+                                                                    {isProductsExpanded ? (
+                                                                        <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
+                                                                    ) : (
+                                                                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
+                                                                    )}
+                                                                </div>
+                                                            </button>
+
+                                                            {isProductsExpanded && (
+                                                                <div className="border-t border-stone-100 dark:border-zinc-800/80">
+                                                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 px-2.5 sm:px-4 py-2 bg-stone-50/50 dark:bg-zinc-900/50">
+                                                                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-4 w-full sm:w-auto">
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setDoneTab('summary')}
+                                                                                className={`text-[11px] sm:text-sm font-bold flex items-center justify-center sm:justify-start gap-1.5 py-1.5 sm:py-0 sm:pb-1 rounded-lg sm:rounded-none sm:border-b-2 transition ${
+                                                                                    doneTab === 'summary'
+                                                                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 sm:bg-transparent sm:border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                                                                                        : 'border-transparent text-stone-500 hover:text-stone-800'
+                                                                                }`}
+                                                                            >
+                                                                                <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                                                                                <span>Tổng hợp SP ({summaryRows.length})</span>
+                                                                            </button>
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() => setDoneTab('lines')}
+                                                                                className={`text-[11px] sm:text-sm font-bold flex items-center justify-center sm:justify-start gap-1.5 py-1.5 sm:py-0 sm:pb-1 rounded-lg sm:rounded-none sm:border-b-2 transition ${
+                                                                                    doneTab === 'lines'
+                                                                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 sm:bg-transparent sm:border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                                                                                        : 'border-transparent text-stone-500 hover:text-stone-800'
+                                                                                }`}
+                                                                            >
+                                                                                <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                                                                                <span>Từng đợt ({doneLines.length})</span>
+                                                                            </button>
+                                                                        </div>
+
+                                                                        <div className="flex items-center justify-between sm:justify-end gap-2">
+                                                                            {doneTab === 'lines' && (() => {
+                                                                                const inCount = doneLines.filter(l => l.to_department === 'Kho').length
+                                                                                const outCount = doneLines.filter(l => l.to_department !== 'Kho').length
+                                                                                return (
+                                                                                    <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 bg-stone-200/70 dark:bg-zinc-800 p-0.5 rounded-lg w-full sm:w-auto">
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => setJournalTypeFilter('all')}
+                                                                                            className={`px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                                                                                journalTypeFilter === 'all'
+                                                                                                    ? 'bg-white dark:bg-zinc-900 text-stone-900 dark:text-white shadow-xs'
+                                                                                                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                                                                            }`}
+                                                                                        >
+                                                                                            <span>Tất cả ({doneLines.length})</span>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => setJournalTypeFilter('in')}
+                                                                                            className={`px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                                                                                journalTypeFilter === 'in'
+                                                                                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                                                                                    : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40'
+                                                                                            }`}
+                                                                                        >
+                                                                                            <ArrowDownLeft className="w-3 h-3 shrink-0" />
+                                                                                            <span>Nhập ({inCount})</span>
+                                                                                        </button>
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() => setJournalTypeFilter('out')}
+                                                                                            className={`px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                                                                                journalTypeFilter === 'out'
+                                                                                                    ? 'bg-rose-600 text-white shadow-xs'
+                                                                                                    : 'text-rose-700 dark:text-rose-400 hover:bg-rose-50/60 dark:hover:bg-rose-950/40'
+                                                                                            }`}
+                                                                                        >
+                                                                                            <ArrowUpRight className="w-3 h-3 shrink-0" />
+                                                                                            <span>Xuất ({outCount})</span>
+                                                                                        </button>
+                                                                                    </div>
+                                                                                )
+                                                                            })()}
+                                                                            {doneLinesLoading && <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin shrink-0" />}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {doneTab === 'summary' ? (
+                                                                        <div className="p-2.5 sm:p-4 bg-stone-50/40 dark:bg-zinc-900/30">
+                                                                            {summaryRows.length === 0 ? (
+                                                                                <div className="py-6 text-center text-[11px] sm:text-xs text-stone-400">
+                                                                                    Không có dữ liệu số liệu trong công việc này.
+                                                                                </div>
+                                                                            ) : (
+                                                                                <>
+                                                                                    {/* Mobile: Danh sách thẻ gọn */}
+                                                                                    <div className="sm:hidden divide-y divide-stone-200/70 dark:divide-zinc-800">
+                                                                                        {summaryRows.map((row, idx) => (
+                                                                                            <div key={idx} className="py-2 first:pt-0 last:pb-0 space-y-1">
+                                                                                                <div className="text-[11px] font-bold text-stone-900 dark:text-white leading-snug">
+                                                                                                    {row.product_name}
+                                                                                                </div>
+                                                                                                <div className="flex items-center justify-between text-[10px]">
+                                                                                                    <span className="text-stone-500">
+                                                                                                        ĐVT: <strong className="text-stone-700 dark:text-stone-300">{row.unit}</strong> • {row.count ? `${row.count} đợt` : '-'}
+                                                                                                    </span>
+                                                                                                    <div className="flex items-center gap-1.5">
+                                                                                                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-black">
+                                                                                                            +{row.in_qty}
+                                                                                                        </span>
+                                                                                                        <span className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-black">
+                                                                                                            -{row.out_qty}
+                                                                                                        </span>
+                                                                                                    </div>
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </div>
+
+                                                                                    {/* Desktop: Bảng 5 cột */}
+                                                                                    <table className="hidden sm:table w-full text-left text-xs sm:text-sm">
+                                                                                        <thead>
+                                                                                            <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-400 font-semibold uppercase text-xs">
+                                                                                                <th className="pb-2.5">Sản phẩm</th>
+                                                                                                <th className="pb-2.5">ĐVT</th>
+                                                                                                <th className="pb-2.5 text-right text-emerald-600">Tổng Nhập (+)</th>
+                                                                                                <th className="pb-2.5 text-right text-rose-600">Tổng Xuất (-)</th>
+                                                                                                <th className="pb-2.5 text-right">Số đợt</th>
+                                                                                            </tr>
+                                                                                        </thead>
+                                                                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                                                                            {summaryRows.map((row, idx) => (
+                                                                                                <tr key={idx} className="hover:bg-stone-50 dark:hover:bg-zinc-800/40">
+                                                                                                    <td className="py-3 font-bold text-stone-900 dark:text-white pr-3">
+                                                                                                        {row.product_name}
+                                                                                                    </td>
+                                                                                                    <td className="py-3 text-stone-500 whitespace-nowrap">{row.unit}</td>
+                                                                                                    <td className="py-3 text-right font-black text-base text-emerald-600 tabular-nums">
+                                                                                                        +{row.in_qty}
+                                                                                                    </td>
+                                                                                                    <td className="py-3 text-right font-black text-base text-rose-600 tabular-nums">
+                                                                                                        -{row.out_qty}
+                                                                                                    </td>
+                                                                                                    <td className="py-3 text-right text-xs text-stone-400 whitespace-nowrap">
+                                                                                                        {row.count ? `${row.count} đợt` : '-'}
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            ))}
+                                                                                        </tbody>
+                                                                                    </table>
+                                                                                </>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (() => {
+                                                                        const filteredDoneLines = journalTypeFilter === 'in'
+                                                                            ? doneLines.filter(l => l.to_department === 'Kho')
+                                                                            : journalTypeFilter === 'out'
+                                                                                ? doneLines.filter(l => l.to_department !== 'Kho')
+                                                                                : doneLines
+                                                                        return (
+                                                                            <div className="divide-y divide-stone-100 dark:divide-zinc-800 max-h-[520px] overflow-y-auto">
+                                                                                {filteredDoneLines.length === 0 ? (
+                                                                                    <div className="p-6 text-center text-[11px] sm:text-xs text-stone-400">
+                                                                                        Không có dòng nhật ký nào phù hợp bộ lọc.
+                                                                                    </div>
+                                                                                ) : (
+                                                                                    filteredDoneLines.map(record => {
+                                                                                    const isImport = record.to_department === 'Kho'
+                                                                                    const userNote = cleanUserNotes(record.notes)
+                                                                                    return (
+                                                                                        <div
+                                                                                            key={record.id}
+                                                                                            className="px-2.5 sm:px-4 py-2.5 sm:py-3 flex items-start gap-2 sm:gap-2.5 hover:bg-stone-50 dark:hover:bg-zinc-800/40 text-[11px] sm:text-xs"
+                                                                                        >
+                                                                                            <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center font-bold shrink-0 mt-0.5 ${
+                                                                                                isImport
+                                                                                                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                                                                                                    : 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
+                                                                                            }`}>
+                                                                                                {isImport ? <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                                                                                            </div>
+
+                                                                                            <div className="min-w-0 flex-1 space-y-1">
+                                                                                                {/* Hàng 1: Tên sản phẩm + Nút thao tác Sửa/Xóa (không bao giờ đè lên badge số lượng) */}
+                                                                                                <div className="flex items-start justify-between gap-2">
+                                                                                                    <span className="font-bold text-stone-900 dark:text-white break-words leading-snug min-w-0 flex-1">
+                                                                                                        {record.item_name}
+                                                                                                    </span>
+                                                                                                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                                                                                                        <span className={`hidden sm:inline-flex px-2 py-0.5 rounded-md font-black text-[11px] whitespace-nowrap ${
+                                                                                                            isImport
+                                                                                                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
+                                                                                                                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60'
+                                                                                                        }`}>
+                                                                                                            {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
+                                                                                                        </span>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => handleStartEdit(record)}
+                                                                                                            title="Chỉnh sửa dòng này"
+                                                                                                            className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-stone-100 hover:bg-indigo-50 dark:bg-zinc-800 text-stone-500 hover:text-indigo-600 flex items-center justify-center shrink-0"
+                                                                                                        >
+                                                                                                            <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                                                                                        </button>
+                                                                                                        <button
+                                                                                                            type="button"
+                                                                                                            onClick={() => handleDeleteJournal(record.id)}
+                                                                                                            title="Xóa dòng này"
+                                                                                                            className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-stone-100 hover:bg-rose-50 dark:bg-zinc-800 text-stone-500 hover:text-rose-600 flex items-center justify-center shrink-0"
+                                                                                                        >
+                                                                                                            <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                                                                                        </button>
+                                                                                                    </div>
+                                                                                                </div>
+
+                                                                                                {/* Hàng 2 (Mobile): Badge số lượng */}
+                                                                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                                    <span className={`sm:hidden px-1.5 py-0.5 rounded font-black text-[10px] whitespace-nowrap ${
+                                                                                                        isImport
+                                                                                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
+                                                                                                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60'
+                                                                                                    }`}>
+                                                                                                        {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
+                                                                                                    </span>
+                                                                                                    <span className="hidden sm:inline text-[11px] text-stone-400">
+                                                                                                        {formatDateTime(record.sent_at)} • {record.sent_by_name || 'Nhân viên'}
+                                                                                                        {userNote ? ` • 💬 ${userNote}` : ''}
+                                                                                                    </span>
+                                                                                                </div>
+
+                                                                                                {/* Hàng 3 (Mobile): Thời gian • Người nhập trên 1 dòng thoáng */}
+                                                                                                <div className="sm:hidden text-[10px] text-stone-400 flex items-center gap-1.5 flex-wrap">
+                                                                                                    <span>{formatDateTime(record.sent_at)}</span>
+                                                                                                    <span>•</span>
+                                                                                                    <span>{record.sent_by_name || 'Nhân viên'}</span>
+                                                                                                    {userNote && <span>• 💬 {userNote}</span>}
+                                                                                                </div>
+                                                                                            </div>
+                                                                                        </div>
+                                                                                    )
+                                                                                })
+                                                                            )}
+                                                                        </div>
+                                                                        )
+                                                                    })()}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* 2. CHI TIẾT CÁC LẦN CHỐT CA TẠM (ĐỔI CA) — TIMELINE ACCORDION */}
+                                            <div className="pt-2 border-t border-stone-100 dark:border-zinc-800">
                                             {(() => {
                                                 const effectiveSubShifts = buildEffectiveSubShifts(doneSubShifts, doneLines, doneSelectedShift)
                                                 return (
                                                     <div className="space-y-2 sm:space-y-3">
-                                                        <div className="flex items-center justify-between gap-2">
-                                                            <h4 className="font-bold text-stone-800 dark:text-stone-100 flex items-center gap-1.5 text-[11px] sm:text-sm min-w-0">
+                                                        <div
+                                                            role="button"
+                                                            tabIndex={0}
+                                                            onClick={() => setIsDoneSubShiftsSectionExpanded(!isDoneSubShiftsSectionExpanded)}
+                                                            className="flex items-center justify-between gap-2 cursor-pointer select-none group p-1 -m-1 rounded-lg hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
+                                                        >
+                                                            <div className="flex items-center gap-2 min-w-0">
                                                                 <Layers className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-500 shrink-0" />
-                                                                <span className="truncate">Chi tiết các lần chốt ca tạm (đổi ca)</span>
-                                                            </h4>
-                                                            <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-bold shrink-0 whitespace-nowrap">
-                                                                {effectiveSubShifts.length} lần chốt
-                                                            </span>
+                                                                <h4 className="font-bold text-stone-800 dark:text-stone-100 flex items-center gap-1.5 text-[11px] sm:text-sm min-w-0">
+                                                                    <span className="truncate">Chi tiết các lần chốt ca tạm (đổi ca)</span>
+                                                                </h4>
+                                                                <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 font-bold shrink-0 whitespace-nowrap">
+                                                                    {effectiveSubShifts.length} lần chốt
+                                                                </span>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 text-stone-400 group-hover:text-stone-600 dark:group-hover:text-stone-200 shrink-0">
+                                                                <span className="text-[10px] sm:text-[11px] font-medium hidden sm:inline">
+                                                                    {isDoneSubShiftsSectionExpanded ? 'Thu lại' : 'Mở rộng'}
+                                                                </span>
+                                                                {isDoneSubShiftsSectionExpanded ? (
+                                                                    <ChevronDown className="w-4 h-4 text-stone-500" />
+                                                                ) : (
+                                                                    <ChevronRight className="w-4 h-4 text-stone-500" />
+                                                                )}
+                                                            </div>
                                                         </div>
 
-                                                        {effectiveSubShifts.length === 0 ? (
+                                                        {isDoneSubShiftsSectionExpanded && (
+                                                            effectiveSubShifts.length === 0 ? (
                                                             <div className="bg-amber-50/40 dark:bg-amber-950/10 border border-dashed border-amber-200 dark:border-amber-900/40 rounded-xl px-3.5 py-2.5 text-[11px] sm:text-xs text-stone-500">
                                                                 Công việc này chưa có lần bấm <strong>Chốt tạm</strong> (đổi ca) nào trước khi hoàn thành.
                                                             </div>
@@ -2479,362 +3280,82 @@ export default function SoLieuPage() {
                                                                     )
                                                                 })}
                                                             </div>
-                                                        )}
-                                                    </div>
+                                                        )
+                                                    )}
+                                                </div>
                                                 )
                                             })()}
+                                            </div>
 
-                                            {/* 3. TỔNG HỢP ĐỐI SOÁT CẢ CA (SUM TỔNG) */}
+                                            {/* 3. THÔNG TIN CÔNG VIỆC (MỞ/CHỐT) */}
                                             <div className="space-y-2.5 sm:space-y-3 pt-2 border-t border-stone-100 dark:border-zinc-800">
                                                 <button
                                                     type="button"
-                                                    onClick={() => setIsMainSummaryExpanded(!isMainSummaryExpanded)}
-                                                    className="w-full flex items-center justify-between py-1 text-left hover:opacity-80 transition"
+                                                    onClick={() => setIsInfoExpanded(!isInfoExpanded)}
+                                                    className="w-full flex items-center justify-between py-1 text-left hover:opacity-80 transition group cursor-pointer"
                                                 >
                                                     <h4 className="font-bold text-stone-800 dark:text-stone-100 flex items-center gap-1.5 text-[11px] sm:text-base">
-                                                        <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-orange-500 shrink-0" />
-                                                        Tổng hợp đối soát cả ca (Sum tổng)
+                                                        <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-indigo-500 shrink-0" />
+                                                        <span>Thông tin</span>
                                                     </h4>
-                                                    {isMainSummaryExpanded ? (
-                                                        <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-stone-400 shrink-0" />
-                                                    ) : (
-                                                        <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-stone-400 shrink-0" />
-                                                    )}
+                                                    <div className="flex items-center gap-1.5 text-stone-400 group-hover:text-stone-600 dark:group-hover:text-stone-200 shrink-0">
+                                                        <span className="text-[10px] sm:text-[11px] font-medium hidden sm:inline">
+                                                            {isInfoExpanded ? 'Thu lại' : 'Mở rộng'}
+                                                        </span>
+                                                        {isInfoExpanded ? (
+                                                            <ChevronDown className="w-4 h-4 sm:w-5 sm:h-5 text-stone-500" />
+                                                        ) : (
+                                                            <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-stone-500" />
+                                                        )}
+                                                    </div>
                                                 </button>
 
-                                                {isMainSummaryExpanded && (
-                                                    <div className="space-y-2 sm:space-y-3 pt-1">
-                                                        {/* 3.1. TỔNG HỢP SỐ LIỆU 2 HƯỚNG (NHẬP/XUẤT) */}
-                                                        <div className="bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setIsTwoWayExpanded(!isTwoWayExpanded)}
-                                                                className="w-full p-2.5 sm:p-3.5 flex items-center justify-between gap-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
-                                                            >
-                                                                <span className="text-[10px] sm:text-xs font-extrabold text-stone-700 dark:text-stone-300 uppercase tracking-wider truncate">
-                                                                    📦 TỔNG HỢP 2 HƯỚNG (NHẬP/XUẤT)
+                                                {isInfoExpanded && (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3 text-[11px] sm:text-xs pt-1">
+                                                        <div className="bg-white dark:bg-zinc-950 p-2.5 sm:p-3 rounded-xl border border-stone-200 dark:border-zinc-800 shadow-xs">
+                                                            <div className="font-bold text-stone-400 uppercase mb-1 flex items-center justify-between">
+                                                                <span className="flex items-center gap-1.5 text-emerald-700 dark:text-emerald-400">
+                                                                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                                                                    <span>Giờ mở công việc</span>
                                                                 </span>
-                                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                                    <span className="text-[10px] sm:text-[11px] bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">
-                                                                        Tổng {totalBatchesCount} đợt
-                                                                    </span>
-                                                                    {isTwoWayExpanded ? (
-                                                                        <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
-                                                                    ) : (
-                                                                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
-                                                                    )}
-                                                                </div>
-                                                            </button>
-
-                                                            {isTwoWayExpanded && (
-                                                                <div className="p-2.5 sm:p-4 border-t border-stone-100 dark:border-zinc-800/80 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3 bg-stone-50/40 dark:bg-zinc-900/30">
-                                                                    {/* Chiều 1: Nhập kho */}
-                                                                    <div className="bg-emerald-50/40 dark:bg-emerald-950/15 border border-emerald-200/70 dark:border-emerald-900/40 rounded-xl p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2">
-                                                                        <div className="flex items-center justify-between border-b border-emerald-200/60 dark:border-emerald-800/50 pb-1.5">
-                                                                            <span className="text-[11px] sm:text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">
-                                                                                1. Nhập kho (SX → Kho)
-                                                                            </span>
-                                                                            <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300">
-                                                                                {totalInCount} đợt
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                                                            {unitsSummaryList.filter(u => u.in_qty > 0).length === 0 ? (
-                                                                                <span className="text-[11px] sm:text-xs text-stone-400 italic">Không có phát sinh nhập</span>
-                                                                            ) : (
-                                                                                unitsSummaryList.filter(u => u.in_qty > 0).map(u => (
-                                                                                    <span key={u.unit} className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white dark:bg-zinc-900 border border-emerald-200 dark:border-emerald-800 text-[11px] sm:text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                                                                                        +{u.in_qty} {u.unit}
-                                                                                    </span>
-                                                                                ))
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {/* Chiều 2: Xuất kho */}
-                                                                    <div className="bg-rose-50/40 dark:bg-rose-950/15 border border-rose-200/70 dark:border-rose-900/40 rounded-xl p-2.5 sm:p-3.5 space-y-1.5 sm:space-y-2">
-                                                                        <div className="flex items-center justify-between border-b border-rose-200/60 dark:border-rose-800/50 pb-1.5">
-                                                                            <span className="text-[11px] sm:text-xs font-bold text-rose-700 dark:text-rose-400 uppercase">
-                                                                                2. Xuất kho (Kho → SX)
-                                                                            </span>
-                                                                            <span className="text-[10px] sm:text-[11px] font-bold px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300">
-                                                                                {totalOutCount} đợt
-                                                                            </span>
-                                                                        </div>
-                                                                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                                                                            {unitsSummaryList.filter(u => u.out_qty > 0).length === 0 ? (
-                                                                                <span className="text-[11px] sm:text-xs text-stone-400 italic">Không có phát sinh xuất</span>
-                                                                            ) : (
-                                                                                unitsSummaryList.filter(u => u.out_qty > 0).map(u => (
-                                                                                    <span key={u.unit} className="px-2 py-0.5 sm:px-2.5 sm:py-1 rounded-lg bg-white dark:bg-zinc-900 border border-rose-200 dark:border-rose-800 text-[11px] sm:text-xs font-bold text-rose-700 dark:text-rose-300">
-                                                                                        -{u.out_qty} {u.unit}
-                                                                                    </span>
-                                                                                ))
-                                                                            )}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleUpdateShiftOpenedAt(doneSelectedShift)
+                                                                    }}
+                                                                    title="Chỉnh sửa ngày & giờ mở công việc"
+                                                                    className="text-stone-400 hover:text-indigo-600 dark:hover:text-indigo-400 p-0.5 flex items-center gap-1 font-normal lowercase text-[10px]"
+                                                                >
+                                                                    <Pencil className="w-2.5 h-2.5 sm:w-3 sm:h-3" />
+                                                                    <span>sửa ngày</span>
+                                                                </button>
+                                                            </div>
+                                                            <div className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-100">
+                                                                {formatDateTime(doneSelectedShift.opened_at)}
+                                                            </div>
+                                                            <div className="text-stone-500 mt-1 flex items-center gap-1.5">
+                                                                <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-400" />
+                                                                <span>Người mở: <strong>{doneSelectedShift.opened_by_name || 'Nhân viên'}</strong></span>
+                                                            </div>
                                                         </div>
 
-                                                        {/* 3.2. CHI TIẾT THEO ĐƠN VỊ HÀNG HÓA */}
-                                                        <div className="bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setIsUnitsExpanded(!isUnitsExpanded)}
-                                                                className="w-full p-2.5 sm:p-3.5 flex items-center justify-between gap-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
-                                                            >
-                                                                <span className="text-[10px] sm:text-xs font-extrabold text-stone-700 dark:text-stone-300 uppercase tracking-wider truncate">
-                                                                    📊 CHI TIẾT THEO ĐƠN VỊ HÀNG HÓA
-                                                                </span>
-                                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                                    <span className="text-[10px] sm:text-[11px] bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">
-                                                                        {unitsSummaryList.length} Đơn vị
-                                                                    </span>
-                                                                    {isUnitsExpanded ? (
-                                                                        <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
-                                                                    ) : (
-                                                                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
-                                                                    )}
-                                                                </div>
-                                                            </button>
-
-                                                            {isUnitsExpanded && (
-                                                                <div className="p-2.5 sm:p-4 border-t border-stone-100 dark:border-zinc-800/80 bg-stone-50/40 dark:bg-zinc-900/30 overflow-x-auto">
-                                                                    <table className="w-full text-left text-[11px] sm:text-sm">
-                                                                        <thead>
-                                                                            <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-400 uppercase text-[10px] sm:text-[11px]">
-                                                                                <th className="pb-1.5 sm:pb-2">ĐVT</th>
-                                                                                <th className="pb-1.5 sm:pb-2 text-right text-emerald-600">Nhập (+)</th>
-                                                                                <th className="pb-1.5 sm:pb-2 text-right text-rose-600">Xuất (-)</th>
-                                                                                <th className="pb-1.5 sm:pb-2 text-right">Số đợt</th>
-                                                                            </tr>
-                                                                        </thead>
-                                                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                                                                            {unitsSummaryList.map(u => (
-                                                                                <tr key={u.unit}>
-                                                                                    <td className="py-2 font-bold text-stone-800 dark:text-stone-100">{u.unit}</td>
-                                                                                    <td className="py-2 text-right font-black text-emerald-600">+{u.in_qty}</td>
-                                                                                    <td className="py-2 text-right font-black text-rose-600">-{u.out_qty}</td>
-                                                                                    <td className="py-2 text-right text-stone-500">{u.in_count + u.out_count} đợt</td>
-                                                                                </tr>
-                                                                            ))}
-                                                                        </tbody>
-                                                                    </table>
-                                                                </div>
-                                                            )}
-                                                        </div>
-
-                                                        {/* 3.3. ĐỐI SOÁT CHI TIẾT THEO SẢN PHẨM & TỪNG ĐỢT NHẬP/XUẤT */}
-                                                        <div className="bg-white dark:bg-zinc-950 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-xs">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setIsProductsExpanded(!isProductsExpanded)}
-                                                                className="w-full p-2.5 sm:p-3.5 flex items-center justify-between gap-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-900/50 transition"
-                                                            >
-                                                                <span className="text-[10px] sm:text-xs font-extrabold text-stone-700 dark:text-stone-300 uppercase tracking-wider truncate">
-                                                                    📋 TỔNG HỢP THEO SẢN PHẨM (TOÀN CV)
-                                                                </span>
-                                                                <div className="flex items-center gap-1.5 shrink-0">
-                                                                    <span className="text-[10px] sm:text-[11px] bg-stone-100 dark:bg-zinc-800 px-2 py-0.5 rounded font-medium text-stone-600 dark:text-stone-400 whitespace-nowrap">
-                                                                        {summaryRows.length} SP
-                                                                    </span>
-                                                                    {isProductsExpanded ? (
-                                                                        <ChevronDown className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
-                                                                    ) : (
-                                                                        <ChevronRight className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-stone-400" />
-                                                                    )}
-                                                                </div>
-                                                            </button>
-
-                                                            {isProductsExpanded && (
-                                                                <div className="border-t border-stone-100 dark:border-zinc-800/80">
-                                                                    <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 px-2.5 sm:px-4 py-2 bg-stone-50/50 dark:bg-zinc-900/50">
-                                                                        <div className="grid grid-cols-2 sm:flex sm:items-center gap-1.5 sm:gap-4 w-full sm:w-auto">
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => setDoneTab('summary')}
-                                                                                className={`text-[11px] sm:text-sm font-bold flex items-center justify-center sm:justify-start gap-1.5 py-1.5 sm:py-0 sm:pb-1 rounded-lg sm:rounded-none sm:border-b-2 transition ${
-                                                                                    doneTab === 'summary'
-                                                                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 sm:bg-transparent sm:border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                                                                                        : 'border-transparent text-stone-500 hover:text-stone-800'
-                                                                                }`}
-                                                                            >
-                                                                                <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                                                                                <span>Tổng hợp SP ({summaryRows.length})</span>
-                                                                            </button>
-                                                                            <button
-                                                                                type="button"
-                                                                                onClick={() => setDoneTab('lines')}
-                                                                                className={`text-[11px] sm:text-sm font-bold flex items-center justify-center sm:justify-start gap-1.5 py-1.5 sm:py-0 sm:pb-1 rounded-lg sm:rounded-none sm:border-b-2 transition ${
-                                                                                    doneTab === 'lines'
-                                                                                        ? 'bg-indigo-50/80 dark:bg-indigo-950/50 sm:bg-transparent sm:border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                                                                                        : 'border-transparent text-stone-500 hover:text-stone-800'
-                                                                                }`}
-                                                                            >
-                                                                                <History className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                                                                                <span>Từng đợt ({doneLines.length})</span>
-                                                                            </button>
-                                                                        </div>
-                                                                        {doneLinesLoading && <RefreshCw className="w-4 h-4 text-indigo-500 animate-spin shrink-0 ml-2" />}
-                                                                    </div>
-
-                                                                    {doneTab === 'summary' ? (
-                                                                        <div className="p-2.5 sm:p-4 bg-stone-50/40 dark:bg-zinc-900/30">
-                                                                            {summaryRows.length === 0 ? (
-                                                                                <div className="py-6 text-center text-[11px] sm:text-xs text-stone-400">
-                                                                                    Không có dữ liệu số liệu trong công việc này.
-                                                                                </div>
-                                                                            ) : (
-                                                                                <>
-                                                                                    {/* Mobile: Danh sách thẻ gọn */}
-                                                                                    <div className="sm:hidden divide-y divide-stone-200/70 dark:divide-zinc-800">
-                                                                                        {summaryRows.map((row, idx) => (
-                                                                                            <div key={idx} className="py-2 first:pt-0 last:pb-0 space-y-1">
-                                                                                                <div className="text-[11px] font-bold text-stone-900 dark:text-white leading-snug">
-                                                                                                    {row.product_name}
-                                                                                                </div>
-                                                                                                <div className="flex items-center justify-between text-[10px]">
-                                                                                                    <span className="text-stone-500">
-                                                                                                        ĐVT: <strong className="text-stone-700 dark:text-stone-300">{row.unit}</strong> • {row.count ? `${row.count} đợt` : '-'}
-                                                                                                    </span>
-                                                                                                    <div className="flex items-center gap-1.5">
-                                                                                                        <span className="px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-black">
-                                                                                                            +{row.in_qty}
-                                                                                                        </span>
-                                                                                                        <span className="px-1.5 py-0.5 rounded bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 font-black">
-                                                                                                            -{row.out_qty}
-                                                                                                        </span>
-                                                                                                    </div>
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        ))}
-                                                                                    </div>
-
-                                                                                    {/* Desktop: Bảng 5 cột */}
-                                                                                    <table className="hidden sm:table w-full text-left text-xs sm:text-sm">
-                                                                                        <thead>
-                                                                                            <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-400 font-semibold uppercase text-xs">
-                                                                                                <th className="pb-2.5">Sản phẩm</th>
-                                                                                                <th className="pb-2.5">ĐVT</th>
-                                                                                                <th className="pb-2.5 text-right text-emerald-600">Tổng Nhập (+)</th>
-                                                                                                <th className="pb-2.5 text-right text-rose-600">Tổng Xuất (-)</th>
-                                                                                                <th className="pb-2.5 text-right">Số đợt</th>
-                                                                                            </tr>
-                                                                                        </thead>
-                                                                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                                                                                            {summaryRows.map((row, idx) => (
-                                                                                                <tr key={idx} className="hover:bg-stone-50 dark:hover:bg-zinc-800/40">
-                                                                                                    <td className="py-3 font-bold text-stone-900 dark:text-white pr-3">
-                                                                                                        {row.product_name}
-                                                                                                    </td>
-                                                                                                    <td className="py-3 text-stone-500 whitespace-nowrap">{row.unit}</td>
-                                                                                                    <td className="py-3 text-right font-black text-base text-emerald-600 tabular-nums">
-                                                                                                        +{row.in_qty}
-                                                                                                    </td>
-                                                                                                    <td className="py-3 text-right font-black text-base text-rose-600 tabular-nums">
-                                                                                                        -{row.out_qty}
-                                                                                                    </td>
-                                                                                                    <td className="py-3 text-right text-xs text-stone-400 whitespace-nowrap">
-                                                                                                        {row.count ? `${row.count} đợt` : '-'}
-                                                                                                    </td>
-                                                                                                </tr>
-                                                                                            ))}
-                                                                                        </tbody>
-                                                                                    </table>
-                                                                                </>
-                                                                            )}
-                                                                        </div>
-                                                                    ) : (
-                                                                        <div className="divide-y divide-stone-100 dark:divide-zinc-800 max-h-[520px] overflow-y-auto">
-                                                                            {doneLines.length === 0 ? (
-                                                                                <div className="p-6 text-center text-[11px] sm:text-xs text-stone-400">
-                                                                                    Không có dòng nhật ký nào.
-                                                                                </div>
-                                                                            ) : (
-                                                                                doneLines.map(record => {
-                                                                                    const isImport = record.to_department === 'Kho'
-                                                                                    const userNote = cleanUserNotes(record.notes)
-                                                                                    return (
-                                                                                        <div
-                                                                                            key={record.id}
-                                                                                            className="px-2.5 sm:px-4 py-2.5 sm:py-3 flex items-start gap-2 sm:gap-2.5 hover:bg-stone-50 dark:hover:bg-zinc-800/40 text-[11px] sm:text-xs"
-                                                                                        >
-                                                                                            <div className={`w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center font-bold shrink-0 mt-0.5 ${
-                                                                                                isImport
-                                                                                                    ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
-                                                                                                    : 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
-                                                                                            }`}>
-                                                                                                {isImport ? <ArrowDownLeft className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> : <ArrowUpRight className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
-                                                                                            </div>
-
-                                                                                            <div className="min-w-0 flex-1 space-y-1">
-                                                                                                {/* Hàng 1: Tên sản phẩm + Nút thao tác Sửa/Xóa (không bao giờ đè lên badge số lượng) */}
-                                                                                                <div className="flex items-start justify-between gap-2">
-                                                                                                    <span className="font-bold text-stone-900 dark:text-white break-words leading-snug min-w-0 flex-1">
-                                                                                                        {record.item_name}
-                                                                                                    </span>
-                                                                                                    <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
-                                                                                                        <span className={`hidden sm:inline-flex px-2 py-0.5 rounded-md font-black text-[11px] whitespace-nowrap ${
-                                                                                                            isImport
-                                                                                                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
-                                                                                                                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60'
-                                                                                                        }`}>
-                                                                                                            {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
-                                                                                                        </span>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={() => handleStartEdit(record)}
-                                                                                                            title="Chỉnh sửa dòng này"
-                                                                                                            className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-stone-100 hover:bg-indigo-50 dark:bg-zinc-800 text-stone-500 hover:text-indigo-600 flex items-center justify-center shrink-0"
-                                                                                                        >
-                                                                                                            <Pencil className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                                                                                                        </button>
-                                                                                                        <button
-                                                                                                            type="button"
-                                                                                                            onClick={() => handleDeleteJournal(record.id)}
-                                                                                                            title="Xóa dòng này"
-                                                                                                            className="w-6 h-6 sm:w-8 sm:h-8 rounded-lg sm:rounded-xl bg-stone-100 hover:bg-rose-50 dark:bg-zinc-800 text-stone-500 hover:text-rose-600 flex items-center justify-center shrink-0"
-                                                                                                        >
-                                                                                                            <Trash2 className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
-                                                                                                        </button>
-                                                                                                    </div>
-                                                                                                </div>
-
-                                                                                                {/* Hàng 2 (Mobile): Badge số lượng + Mã phiếu GN nằm riêng 1 hàng rõ ràng */}
-                                                                                                <div className="flex items-center gap-1.5 flex-wrap">
-                                                                                                    <span className={`sm:hidden px-1.5 py-0.5 rounded font-black text-[10px] whitespace-nowrap ${
-                                                                                                        isImport
-                                                                                                            ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
-                                                                                                            : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60'
-                                                                                                    }`}>
-                                                                                                        {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
-                                                                                                    </span>
-                                                                                                    {record.delivery_code && (
-                                                                                                        <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
-                                                                                                            {record.delivery_code}
-                                                                                                        </span>
-                                                                                                    )}
-                                                                                                    <span className="hidden sm:inline text-[11px] text-stone-400">
-                                                                                                        {formatDateTime(record.sent_at)} • {record.sent_by_name || 'Nhân viên'}
-                                                                                                        {userNote ? ` • 💬 ${userNote}` : ''}
-                                                                                                    </span>
-                                                                                                </div>
-
-                                                                                                {/* Hàng 3 (Mobile): Thời gian • Người nhập trên 1 dòng thoáng */}
-                                                                                                <div className="sm:hidden text-[10px] text-stone-400 flex items-center gap-1.5 flex-wrap">
-                                                                                                    <span>{formatDateTime(record.sent_at)}</span>
-                                                                                                    <span>•</span>
-                                                                                                    <span>{record.sent_by_name || 'Nhân viên'}</span>
-                                                                                                    {userNote && <span>• 💬 {userNote}</span>}
-                                                                                                </div>
-                                                                                            </div>
-                                                                                        </div>
-                                                                                    )
-                                                                                })
-                                                                            )}
-                                                                        </div>
-                                                                    )}
+                                                        <div className="bg-white dark:bg-zinc-950 p-2.5 sm:p-3 rounded-xl border border-stone-200 dark:border-zinc-800 shadow-xs">
+                                                            <div className="font-bold text-stone-400 uppercase mb-1 flex items-center gap-1.5 text-rose-700 dark:text-rose-400">
+                                                                <span className="w-2 h-2 rounded-full bg-rose-500 inline-block" />
+                                                                <span>Giờ chốt công việc</span>
+                                                            </div>
+                                                            <div className="text-xs sm:text-sm font-bold text-stone-800 dark:text-stone-100">
+                                                                {doneSelectedShift.closed_at ? (
+                                                                    formatDateTime(doneSelectedShift.closed_at)
+                                                                ) : (
+                                                                    <span className="text-amber-600 italic">Đang diễn ra...</span>
+                                                                )}
+                                                            </div>
+                                                            {doneSelectedShift.closed_by_name && (
+                                                                <div className="text-stone-500 mt-1 flex items-center gap-1.5">
+                                                                    <User className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-stone-400" />
+                                                                    <span>Người chốt: <strong>{doneSelectedShift.closed_by_name}</strong></span>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -3047,7 +3568,7 @@ export default function SoLieuPage() {
                 {/* 5. NHẬT KÝ VÀ BẢNG TỔNG HỢP CỦA CÔNG VIỆC ĐANG CHỌN */}
                 {pageView === 'active' && activeShift && (
                     <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden sm:col-start-1">
-                        <div className="flex items-center justify-between border-b border-stone-200 dark:border-zinc-800 px-2.5 sm:px-4 py-2 sm:py-3 bg-stone-50/50 dark:bg-zinc-950/50">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-stone-50/50 dark:bg-zinc-950/50">
                             <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-4 w-full sm:w-auto">
                                 <button
                                     onClick={() => setActiveTab('feed')}
@@ -3073,10 +3594,62 @@ export default function SoLieuPage() {
                                     <span className="hidden sm:inline">Báo cáo: {currentJobName}</span>
                                 </button>
                             </div>
+
+                            {/* Bộ lọc Tất cả / Nhập / Xuất cho Lịch sử đợt */}
+                            {activeTab === 'feed' && (() => {
+                                const baseLines = allJobJournals.length > 0 ? allJobJournals : journalList
+                                const inCount = baseLines.filter(l => l.to_department === 'Kho').length
+                                const outCount = baseLines.filter(l => l.to_department !== 'Kho').length
+                                return (
+                                    <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 bg-stone-200/70 dark:bg-zinc-800 p-0.5 rounded-lg w-full sm:w-auto shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setJournalTypeFilter('all')}
+                                            className={`px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                                journalTypeFilter === 'all'
+                                                    ? 'bg-white dark:bg-zinc-900 text-stone-900 dark:text-white shadow-xs'
+                                                    : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                            }`}
+                                        >
+                                            <span>Tất cả ({baseLines.length})</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setJournalTypeFilter('in')}
+                                            className={`px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                                journalTypeFilter === 'in'
+                                                    ? 'bg-emerald-600 text-white shadow-xs'
+                                                    : 'text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50/60 dark:hover:bg-emerald-950/40'
+                                            }`}
+                                        >
+                                            <ArrowDownLeft className="w-3 h-3 shrink-0" />
+                                            <span>Nhập ({inCount})</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setJournalTypeFilter('out')}
+                                            className={`px-2 sm:px-2.5 py-1 rounded-md text-[10px] sm:text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                                journalTypeFilter === 'out'
+                                                    ? 'bg-rose-600 text-white shadow-xs'
+                                                    : 'text-rose-700 dark:text-rose-400 hover:bg-rose-50/60 dark:hover:bg-rose-950/40'
+                                            }`}
+                                        >
+                                            <ArrowUpRight className="w-3 h-3 shrink-0" />
+                                            <span>Xuất ({outCount})</span>
+                                        </button>
+                                    </div>
+                                )
+                            })()}
                         </div>
 
                         {/* Tab 1: Realtime Feed (Lịch sử vừa bấm) */}
                         {activeTab === 'feed' && (() => {
+                            const filterLines = (lines: DeliveryJournalRecord[]) => {
+                                if (journalTypeFilter === 'in') return lines.filter(l => l.to_department === 'Kho')
+                                if (journalTypeFilter === 'out') return lines.filter(l => l.to_department !== 'Kho')
+                                return lines
+                            }
+
                             const renderJournalRow = (record: DeliveryJournalRecord) => {
                                 const isImport = record.to_department === 'Kho'
                                 const userNote = cleanUserNotes(record.notes)
@@ -3132,7 +3705,7 @@ export default function SoLieuPage() {
                                                 </div>
                                             </div>
 
-                                            {/* Hàng 2 (Mobile): Badge số lượng + Mã phiếu GN nằm riêng 1 hàng rõ ràng */}
+                                            {/* Hàng 2 (Mobile): Badge số lượng */}
                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                 <span
                                                     className={`sm:hidden px-1.5 py-0.5 rounded-md font-black text-[10px] whitespace-nowrap ${
@@ -3143,11 +3716,6 @@ export default function SoLieuPage() {
                                                 >
                                                     {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
                                                 </span>
-                                                {record.delivery_code && (
-                                                    <span className="px-1.5 py-0.5 rounded text-[9px] sm:text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 shrink-0">
-                                                        {record.delivery_code}
-                                                    </span>
-                                                )}
                                                 <span className="hidden sm:inline text-[11px] text-stone-400">
                                                     {formatDateTime(record.sent_at)} • {record.sent_by_name || 'Nhân viên'}
                                                     {userNote ? ` • 💬 ${userNote}` : ''}
@@ -3176,7 +3744,14 @@ export default function SoLieuPage() {
 
                             // Nếu chưa có lần chốt tạm nào: hiển thị danh sách phẳng thông thường
                             if (subShifts.length === 0) {
-                                const linesToShow = allJobJournals.length > 0 ? allJobJournals : journalList
+                                const linesToShow = filterLines(allJobJournals.length > 0 ? allJobJournals : journalList)
+                                if (linesToShow.length === 0) {
+                                    return (
+                                        <div className="p-6 sm:p-8 text-center text-[11px] sm:text-xs text-stone-400">
+                                            Không có đợt {journalTypeFilter === 'in' ? 'Nhập' : 'Xuất'} nào khớp với bộ lọc.
+                                        </div>
+                                    )
+                                }
                                 return (
                                     <div className="divide-y divide-stone-100 dark:divide-zinc-800 max-h-96 overflow-y-auto">
                                         {linesToShow.map(record => renderJournalRow(record))}
@@ -3186,7 +3761,8 @@ export default function SoLieuPage() {
 
                             // Nếu đã có các lần chốt tạm: phân chia thành Đợt hiện tại và Khung các lần chốt tạm (có thể thu lại / mở rộng)
                             const latestSub = subShifts[subShifts.length - 1]
-                            const currentBatchLines = allJobJournals.filter(l => l.sent_at > latestSub.to_time)
+                            const rawCurrentBatchLines = allJobJournals.filter(l => l.sent_at > latestSub.to_time)
+                            const currentBatchLines = filterLines(rawCurrentBatchLines)
 
                             return (
                                 <div className="p-2.5 sm:p-4 space-y-3.5 sm:space-y-4 max-h-[560px] overflow-y-auto">
@@ -3204,7 +3780,9 @@ export default function SoLieuPage() {
 
                                         {currentBatchLines.length === 0 ? (
                                             <div className="p-3 text-center text-[11px] sm:text-xs text-stone-400 bg-stone-50 dark:bg-zinc-800/40 rounded-xl border border-dashed border-stone-200 dark:border-zinc-700/60">
-                                                Chưa có phát sinh số liệu mới sau lần chốt tạm gần nhất.
+                                                {rawCurrentBatchLines.length === 0
+                                                    ? 'Chưa có phát sinh số liệu mới sau lần chốt tạm gần nhất.'
+                                                    : `Không có đợt ${journalTypeFilter === 'in' ? 'Nhập' : 'Xuất'} nào trong đợt hiện tại.`}
                                             </div>
                                         ) : (
                                             <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-xl divide-y divide-stone-100 dark:divide-zinc-800 overflow-hidden shadow-xs">
@@ -3230,13 +3808,14 @@ export default function SoLieuPage() {
                                                 const isExpanded = expandedFeedSubShifts.has(ss.id)
                                                 const originalIdx = subShifts.findIndex(s => s.id === ss.id)
                                                 const prevToTime = originalIdx > 0 ? subShifts[originalIdx - 1].to_time : ss.from_time
-                                                const subLines = allJobJournals.filter(l =>
+                                                const rawSubLines = allJobJournals.filter(l =>
                                                     originalIdx === 0
                                                         ? (l.sent_at >= ss.from_time && l.sent_at <= ss.to_time)
                                                         : (l.sent_at > prevToTime && l.sent_at <= ss.to_time)
                                                 )
-                                                const totalIn = subLines.filter(l => l.to_department === 'Kho').reduce((s, l) => s + (Number(l.quantity_sent) || 0), 0)
-                                                const totalOut = subLines.filter(l => l.to_department !== 'Kho').reduce((s, l) => s + (Number(l.quantity_sent) || 0), 0)
+                                                const subLines = filterLines(rawSubLines)
+                                                const totalIn = rawSubLines.filter(l => l.to_department === 'Kho').reduce((s, l) => s + (Number(l.quantity_sent) || 0), 0)
+                                                const totalOut = rawSubLines.filter(l => l.to_department !== 'Kho').reduce((s, l) => s + (Number(l.quantity_sent) || 0), 0)
 
                                                 return (
                                                     <div
@@ -3284,7 +3863,9 @@ export default function SoLieuPage() {
                                                             <div className="border-t border-amber-100 dark:border-amber-900/40 divide-y divide-stone-100 dark:divide-zinc-800/80">
                                                                 {subLines.length === 0 ? (
                                                                     <div className="p-3 sm:p-4 text-center text-[11px] sm:text-xs text-stone-400 italic">
-                                                                        Không có đợt ghi nhận nào trong lần chốt này.
+                                                                        {rawSubLines.length === 0
+                                                                            ? 'Không có đợt ghi nhận nào trong lần chốt này.'
+                                                                            : `Không có đợt ${journalTypeFilter === 'in' ? 'Nhập' : 'Xuất'} nào trong lần chốt này.`}
                                                                     </div>
                                                                 ) : (
                                                                     subLines.map(record => renderJournalRow(record))
@@ -3693,7 +4274,7 @@ export default function SoLieuPage() {
 
                 {/* ===== DESKTOP: BẢNG NHẬP SỐ CỐ ĐỊNH BÊN PHẢI ===== */}
                 {pageView === 'active' && activeShift && pinnedProducts.length > 0 && (
-                    <aside className="hidden sm:block sm:col-start-2 sm:row-start-1 sm:row-span-2 sticky top-[124px]">
+                    <aside className="hidden sm:block sm:col-start-2 sm:row-start-1 sm:row-span-2 sticky top-[188px]">
                         {padProduct ? (() => {
                             const units = getProductUnits(padProduct)
                             const qtyNum = parseFloat(padValue) || 0
@@ -3726,7 +4307,10 @@ export default function SoLieuPage() {
                                                 <button
                                                     key={u}
                                                     type="button"
-                                                    onClick={() => setPadUnit(u)}
+                                                    onClick={() => {
+                                                        setPadUnit(u)
+                                                        if (padProduct) handleUnitChange(padProduct.id, u)
+                                                    }}
                                                     className={`h-8 px-3 rounded-lg text-xs font-bold border transition ${
                                                         padUnit === u
                                                             ? 'bg-indigo-600 border-indigo-600 text-white'
@@ -3808,52 +4392,177 @@ export default function SoLieuPage() {
             {/* 6. MODAL MỞ THÊM CÔNG VIỆC MỚI */}
             {openShiftModal && (
                 <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-                    <div className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl border-t sm:border border-stone-200 dark:border-zinc-800 animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
+                    <div className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-2xl max-w-2xl w-full p-5 sm:p-7 shadow-2xl border-t sm:border border-stone-200 dark:border-zinc-800 animate-in fade-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200 max-h-[92vh] flex flex-col">
                         {/* Thanh handle cho mobile */}
                         <div className="w-12 h-1.5 bg-stone-300 dark:bg-zinc-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
 
-                        <div className="flex items-center gap-3 mb-4 shrink-0">
-                            <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 rounded-xl">
-                                <Briefcase className="w-5 h-5" />
+                        <div className="flex items-center justify-between pb-3 mb-3 border-b border-stone-100 dark:border-zinc-800 shrink-0">
+                            <div className="flex items-center gap-3 min-w-0">
+                                <div className="p-2.5 sm:p-3 bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-xl shrink-0">
+                                    <Briefcase className="w-5 h-5 sm:w-6 sm:h-6" />
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="font-bold text-base sm:text-xl text-stone-900 dark:text-white truncate">
+                                        {openShifts.length > 0 ? 'Mở Thêm Công Việc Mới' : 'Mở Ca Công Việc Đầu Tiên'}
+                                    </h3>
+                                    <p className="text-xs sm:text-sm text-stone-500 dark:text-zinc-400">Mỗi công việc có bàn ghim và số liệu thống kê riêng</p>
+                                </div>
                             </div>
-                            <div className="min-w-0 flex-1">
-                                <h3 className="font-bold text-base sm:text-lg text-stone-900 dark:text-white truncate">
-                                    {openShifts.length > 0 ? 'Mở Thêm Công Việc Mới' : 'Mở Ca Công Việc Đầu Tiên'}
-                                </h3>
-                                <p className="text-xs text-stone-500">Mỗi công việc có bàn ghim và số liệu thống kê riêng</p>
-                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setOpenShiftModal(false)}
+                                className="p-2 text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 rounded-lg hover:bg-stone-100 dark:hover:bg-zinc-800 transition shrink-0"
+                                title="Đóng"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
                         </div>
 
-                        <div className="overflow-y-auto flex-1 pr-0.5 space-y-4">
+                        <div className="overflow-y-auto flex-1 pr-1 space-y-4">
+                            {/* 1. Tên công việc */}
                             <div>
-                                <label className="block text-xs font-bold text-stone-700 dark:text-stone-300 mb-1.5">
+                                <label className="block text-xs sm:text-sm font-bold text-stone-700 dark:text-stone-300 mb-1.5">
                                     Tên công việc <span className="text-rose-500">*</span>
                                 </label>
-                                <input
-                                    type="text"
-                                    autoFocus
-                                    value={jobNameInput}
-                                    onChange={e => setJobNameInput(e.target.value)}
-                                    placeholder="Ví dụ: Đóng gói sầu riêng xuất khẩu, Sơ chế mít..."
-                                    className="w-full text-sm font-semibold p-3 sm:p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                />
-                                {/* Gợi ý tên công việc phổ biến */}
-                                <div className="flex flex-wrap gap-1.5 mt-2">
-                                    {['Đóng gói sầu riêng xuất khẩu', 'Rút ruột sầu riêng', 'Sơ chế mít', 'Kiểm hàng container', 'Bốc xếp xưởng 2'].map(suggestion => (
-                                        <button
-                                            key={suggestion}
-                                            type="button"
-                                            onClick={() => setJobNameInput(suggestion)}
-                                            className="text-[11px] px-2.5 py-1 bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 rounded-lg transition active:scale-95"
+                                <div className="relative">
+                                    <input
+                                        type="text"
+                                        autoFocus
+                                        list="job-templates-datalist"
+                                        value={jobNameInput}
+                                        onChange={e => {
+                                            const val = e.target.value
+                                            setJobNameInput(val)
+                                            const match = jobTemplatesList.find(t => t.name.toLowerCase() === val.toLowerCase().trim())
+                                            if (match) {
+                                                if (match.notes && !jobNotesInput) setJobNotesInput(match.notes)
+                                                setSelectedJobTemplate(match)
+                                            }
+                                        }}
+                                        placeholder="Ví dụ: Đóng gói sầu riêng xuất khẩu, Sơ chế mít..."
+                                        className="w-full text-sm sm:text-base font-semibold px-3.5 py-3 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-stone-900 dark:text-white"
+                                    />
+                                    <datalist id="job-templates-datalist">
+                                        {jobTemplatesList.map(tpl => (
+                                            <option key={tpl.id} value={tpl.name} />
+                                        ))}
+                                    </datalist>
+                                </div>
+
+                                {/* Gợi ý mẫu công việc từ danh sách quản lý */}
+                                <div className="mt-3 bg-stone-50/80 dark:bg-zinc-800/50 p-3 sm:p-3.5 rounded-xl border border-stone-200/70 dark:border-zinc-800">
+                                    <div className="flex items-center justify-between mb-2.5">
+                                        <span className="text-xs font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                                            <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
+                                            <span>Chọn nhanh từ mẫu công việc:</span>
+                                        </span>
+                                        <Link
+                                            href="/so-lieu/mau-cong-viec"
+                                            target="_blank"
+                                            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                                            title="Mở trang quản lý & tạo mới công việc mẫu"
                                         >
-                                            {suggestion}
-                                        </button>
-                                    ))}
+                                            <Settings2 className="w-3.5 h-3.5" />
+                                            <span>Quản lý mẫu</span>
+                                        </Link>
+                                    </div>
+                                    {jobTemplatesList.length === 0 ? (
+                                        <p className="text-xs text-stone-400 dark:text-zinc-500 italic">
+                                            Chưa có công việc mẫu cho kho này — bấm &ldquo;Quản lý mẫu&rdquo; để tạo mới.
+                                        </p>
+                                    ) : (
+                                        <div className="flex flex-wrap gap-2">
+                                            {jobTemplatesList.map(tpl => {
+                                                const isSelected = selectedJobTemplate?.id === tpl.id || jobNameInput.trim().toLowerCase() === tpl.name.trim().toLowerCase()
+                                                return (
+                                                    <button
+                                                        key={tpl.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if (isSelected && jobNameInput.trim() === tpl.name.trim()) {
+                                                                // Bấm lại để bỏ chọn
+                                                                setJobNameInput('')
+                                                                setSelectedJobTemplate(null)
+                                                            } else {
+                                                                setJobNameInput(tpl.name)
+                                                                if (tpl.notes) setJobNotesInput(tpl.notes)
+                                                                setSelectedJobTemplate(tpl)
+                                                            }
+                                                        }}
+                                                        className={`text-xs px-3 py-1.5 rounded-lg transition active:scale-95 flex items-center gap-2 border shadow-2xs ${
+                                                            isSelected
+                                                                ? 'bg-indigo-600 border-indigo-600 text-white font-bold'
+                                                                : 'bg-white hover:bg-stone-100 dark:bg-zinc-800 dark:hover:bg-zinc-700 border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-stone-200 font-medium'
+                                                        }`}
+                                                    >
+                                                        {isSelected && <Check className="w-3.5 h-3.5 text-white" />}
+                                                        <span>{tpl.name}</span>
+                                                        {tpl.pinned_product_ids && tpl.pinned_product_ids.length > 0 && (
+                                                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isSelected ? 'bg-indigo-800 text-white' : 'bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400'}`}>
+                                                                {tpl.pinned_product_ids.length} SP
+                                                            </span>
+                                                        )}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             </div>
 
+                            {/* 2. Thời gian bắt đầu công việc (Hỗ trợ nhập bù) */}
                             <div>
-                                <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1.5">
+                                <div className="flex flex-wrap items-center justify-between mb-1.5 gap-2">
+                                    <label className="text-xs sm:text-sm font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5">
+                                        <Calendar className="w-4 h-4 text-indigo-500 shrink-0" />
+                                        <span>Thời gian bắt đầu (Ngày & Giờ)</span>
+                                    </label>
+                                    <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={() => setJobOpenedAtInput(formatDateTimeLocal(new Date()))}
+                                            className="text-xs px-2.5 py-1 rounded-md font-semibold bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800 transition"
+                                        >
+                                            Hiện tại
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const d = new Date()
+                                                d.setDate(d.getDate() - 1)
+                                                setJobOpenedAtInput(formatDateTimeLocal(d))
+                                            }}
+                                            className="text-xs px-2.5 py-1 rounded-md font-semibold bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-zinc-700 transition"
+                                        >
+                                            Hôm qua
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const d = new Date()
+                                                d.setDate(d.getDate() - 2)
+                                                setJobOpenedAtInput(formatDateTimeLocal(d))
+                                            }}
+                                            className="text-xs px-2.5 py-1 rounded-md font-semibold bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 border border-stone-200 dark:border-zinc-700 transition"
+                                        >
+                                            2 ngày trước
+                                        </button>
+                                    </div>
+                                </div>
+                                <input
+                                    type="datetime-local"
+                                    value={jobOpenedAtInput}
+                                    onChange={e => setJobOpenedAtInput(e.target.value)}
+                                    className="w-full text-sm font-semibold p-2.5 sm:p-3 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none text-stone-800 dark:text-stone-100"
+                                />
+                                <p className="text-xs text-stone-500 dark:text-zinc-400 mt-1.5 flex items-center gap-1.5">
+                                    <span>💡</span> <span>Bạn có thể lùi ngày &amp; giờ để <strong>nhập bù số liệu</strong> cho các ca làm việc trước đó.</span>
+                                </p>
+                            </div>
+
+                            {/* 3. Ghi chú thêm */}
+                            <div>
+                                <label className="block text-xs sm:text-sm font-semibold text-stone-700 dark:text-stone-300 mb-1.5">
                                     Ghi chú thêm (tùy chọn):
                                 </label>
                                 <textarea
@@ -3861,22 +4570,22 @@ export default function SoLieuPage() {
                                     onChange={e => setJobNotesInput(e.target.value)}
                                     placeholder="Ghi chú về tổ phụ trách, địa điểm xưởng, ca làm..."
                                     rows={2}
-                                    className="w-full text-xs p-3 sm:p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                                    className="w-full text-xs sm:text-sm p-3 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                                 />
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-2 pt-4 mt-2 border-t border-stone-100 dark:border-zinc-800 shrink-0">
+                        <div className="grid grid-cols-2 gap-3 pt-4 mt-3 border-t border-stone-100 dark:border-zinc-800 shrink-0">
                             <button
                                 onClick={() => setOpenShiftModal(false)}
-                                className="h-11 sm:h-9 px-4 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl transition flex items-center justify-center"
+                                className="h-11 px-4 text-sm font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-xl transition flex items-center justify-center border border-stone-200 dark:border-zinc-700"
                             >
                                 Hủy
                             </button>
                             <button
                                 onClick={handleOpenShift}
                                 disabled={!jobNameInput.trim()}
-                                className="h-11 sm:h-9 px-5 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center"
+                                className="h-11 px-5 text-sm font-bold bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-xl shadow-md transition disabled:opacity-50 flex items-center justify-center"
                             >
                                 Bắt Đầu CV
                             </button>
@@ -3993,8 +4702,20 @@ export default function SoLieuPage() {
                             </button>
                         </div>
 
-                        <div className="text-xs text-stone-500 mb-3 bg-stone-50 dark:bg-zinc-800/60 p-2.5 rounded-xl border border-stone-200 dark:border-zinc-700/60 flex flex-col gap-1 shrink-0">
-                            <div>Thời gian: <strong>{formatDateTime(shiftSummary.from_time)}</strong> đến <strong>{formatDateTime(shiftSummary.to_time)}</strong></div>
+                        <div className="text-xs text-stone-500 mb-3 bg-stone-50 dark:bg-zinc-800/60 p-2.5 rounded-xl border border-stone-200 dark:border-zinc-700/60 flex flex-col gap-1.5 shrink-0">
+                            <div>Thời gian bắt đầu: <strong>{formatDateTime(shiftSummary.from_time)}</strong></div>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 pt-1 border-t border-stone-200 dark:border-zinc-700/50">
+                                <label className="font-semibold text-stone-700 dark:text-stone-300 flex items-center gap-1">
+                                    <Clock className="w-3.5 h-3.5 text-rose-500 shrink-0" />
+                                    <span>Thời gian chốt CV:</span>
+                                </label>
+                                <input
+                                    type="datetime-local"
+                                    value={closeTimeInput}
+                                    onChange={e => setCloseTimeInput(e.target.value)}
+                                    className="text-xs font-semibold p-1.5 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg text-stone-800 dark:text-stone-200"
+                                />
+                            </div>
                             <div>Người thực hiện: <strong>{profile?.full_name || 'Nhân viên kho'}</strong></div>
                         </div>
 
@@ -4406,7 +5127,10 @@ export default function SoLieuPage() {
                                         <button
                                             key={u}
                                             type="button"
-                                            onClick={() => setPadUnit(u)}
+                                            onClick={() => {
+                                                setPadUnit(u)
+                                                if (padProduct) handleUnitChange(padProduct.id, u)
+                                            }}
                                             className={`shrink-0 h-8 px-3 rounded-full text-xs font-bold border transition ${
                                                 padUnit === u
                                                     ? 'bg-indigo-600 border-indigo-600 text-white'
@@ -4500,7 +5224,18 @@ export default function SoLieuPage() {
                                     <button
                                         key={shift.id}
                                         type="button"
-                                        onClick={() => { setSelectedShiftId(shift.id); setMobileJobSheet(false) }}
+                                        onClick={() => {
+                                            if (activeShift?.id !== shift.id) {
+                                                setPinnedProducts([])
+                                                setAllJobJournals([])
+                                                setJournalList([])
+                                                setSubShifts([])
+                                                setPadProduct(null)
+                                                setDraftQtyMap({})
+                                            }
+                                            setSelectedShiftId(shift.id);
+                                            setMobileJobSheet(false);
+                                        }}
                                         className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left border transition ${
                                             isSelected
                                                 ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-300 dark:border-indigo-800'
@@ -4576,6 +5311,13 @@ export default function SoLieuPage() {
                             >
                                 <History className="w-4 h-4 text-stone-500" /> Xem công việc đã hoàn thành ({pastShifts.length})
                             </button>
+                            <Link
+                                href="/so-lieu/mau-cong-viec"
+                                onClick={() => setMobileMenu(false)}
+                                className="w-full py-3 flex items-center gap-2.5 text-left text-xs font-semibold text-indigo-600 dark:text-indigo-400"
+                            >
+                                <Briefcase className="w-4 h-4" /> Quản lý công việc mẫu
+                            </Link>
                             <button
                                 type="button"
                                 onClick={() => { setMobileMenu(false); loadJournalData() }}
@@ -4610,6 +5352,28 @@ export default function SoLieuPage() {
                         <span className="leading-snug">{toast.text}</span>
                     </div>
                 </div>
+            )}
+
+            {/* ===== MODAL LÀM PHIẾU NHẬP KẾT TOÁN CHO CÔNG VIỆC ===== */}
+            {isInboundModalOpen && (
+                <InboundOrderModal
+                    isOpen={isInboundModalOpen}
+                    onClose={() => { setIsInboundModalOpen(false); setInboundInitialData(null); }}
+                    onSuccess={(id) => handleInboundSettlementSuccess(id)}
+                    initialData={inboundInitialData}
+                    systemCode={currentSystem?.code || 'COLD'}
+                />
+            )}
+
+            {/* ===== MODAL LÀM PHIẾU XUẤT KẾT TOÁN CHO CÔNG VIỆC ===== */}
+            {isOutboundModalOpen && (
+                <OutboundOrderModal
+                    isOpen={isOutboundModalOpen}
+                    onClose={() => { setIsOutboundModalOpen(false); setOutboundInitialData(null); }}
+                    onSuccess={(id) => handleOutboundSettlementSuccess(id)}
+                    initialData={outboundInitialData}
+                    systemCode={currentSystem?.code || 'COLD'}
+                />
             )}
         </div>
     )
