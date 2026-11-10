@@ -11,9 +11,11 @@ import { useState } from 'react'
 function DashboardContent({ children }: { children: React.ReactNode }) {
     const { isCollapsed, isReady } = useSidebar()
     const [isHeaderVisible, setIsHeaderVisible] = useState(true)
+    const pathname = usePathname()
 
     // Use fixed width initially to avoid hydration mismatch (w-16 = 64px, w-56 = 224px)
     const marginLeft = isReady ? (isCollapsed ? 'md:ml-16' : 'md:ml-56') : 'md:ml-16'
+    const isSoLieuPage = pathname?.startsWith('/so-lieu')
 
     return (
         <div className="min-h-screen font-sans bg-stone-50 text-stone-800 relative flex flex-col">
@@ -34,15 +36,17 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
                 </div>
             )}
 
-            <main className={`flex-1 p-4 md:p-8 transition-all duration-300 ${marginLeft}`}>
-                <div className="max-w-7xl mx-auto animate-slide-up">
+            <main className={`flex-1 transition-all duration-300 ${marginLeft} ${isSoLieuPage ? 'p-0' : 'p-4 md:p-8'}`}>
+                <div className={isSoLieuPage ? 'w-full' : 'max-w-7xl mx-auto animate-slide-up'}>
                     <RouteProtector>{children}</RouteProtector>
                 </div>
             </main>
 
-            <div className={`transition-all duration-300 ${marginLeft}`}>
-                <Footer />
-            </div>
+            {!isSoLieuPage && (
+                <div className={`transition-all duration-300 ${marginLeft}`}>
+                    <Footer />
+                </div>
+            )}
         </div>
     )
 }

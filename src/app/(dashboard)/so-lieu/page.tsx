@@ -33,7 +33,8 @@ import {
     FileText,
     ExternalLink,
     Settings2,
-    AlertTriangle
+    AlertTriangle,
+    Eye
 } from 'lucide-react'
 import Link from 'next/link'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
@@ -201,12 +202,17 @@ export default function SoLieuPage() {
     const [editNotes, setEditNotes] = useState<string>('')
     const [savingEdit, setSavingEdit] = useState<boolean>(false)
 
+    // Modal xem lịch sử nhập xuất của riêng từng sản phẩm
+    const [historyModalProduct, setHistoryModalProduct] = useState<ProductItem | null>(null)
+    const [historyProductFilter, setHistoryProductFilter] = useState<'all' | 'in' | 'out'>('all')
+
     // MOBILE: Bàn phím số nhập nhanh (bottom sheet), chọn CV, menu thao tác, thông báo
     const [padProduct, setPadProduct] = useState<ProductItem | null>(null)
     const [padValue, setPadValue] = useState<string>('')
     const [padUnit, setPadUnit] = useState<string>('Kg')
     const [padSaving, setPadSaving] = useState<boolean>(false)
     const [mobileJobSheet, setMobileJobSheet] = useState<boolean>(false)
+    const [desktopJobDropdown, setDesktopJobDropdown] = useState<boolean>(false)
     const [mobileMenu, setMobileMenu] = useState<boolean>(false)
     const [toast, setToast] = useState<{ text: string; type: 'in' | 'out' } | null>(null)
     const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1702,14 +1708,30 @@ export default function SoLieuPage() {
         return () => window.removeEventListener('keydown', listener)
     }, [])
 
+    // Hàm lọc sạch các tag kỹ thuật hệ thống ([CV_ID: ...], [PID: ...], [SKU: ...], [Đợt ...], Nhập/Xuất kho)
+    // chỉ giữ lại ghi chú thực tế do người dùng tự gõ thêm
+    const cleanUserNotes = (notes: string | null | undefined) => {
+        if (!notes) return ''
+        const cleaned = notes
+            .replace(/\[CV_ID:\s*[^\]]+\]\s*/gi, '')
+            .replace(/\[PID:\s*[^\]]+\]\s*/gi, '')
+            .replace(/\[SKU:\s*[^\]]*\]\s*/gi, '')
+            .replace(/\[CV:\s*[^\]]+\]\s*/gi, '')
+            .replace(/\[Đợt\s*[^\]]*\]\s*/gi, '')
+            .replace(/\[[^\]]+\]\s*/gi, '')
+            .replace(/\b(nhập kho|xuất kho)\b\s*/gi, '')
+            .trim()
+        if (!cleaned || /^(nhập kho|xuất kho)$/i.test(cleaned)) return ''
+        return cleaned
+    }
+
     // Mở modal sửa từng dòng số liệu
     const handleStartEdit = (record: DeliveryJournalRecord) => {
         setEditingRecord(record)
         setEditQuantity(record.quantity_sent)
         setEditUnit(cleanUnitLabel(record.unit) || record.unit)
         setEditType(record.to_department === 'Kho' ? 'in' : 'out')
-        const cleanNotes = (record.notes || '').replace(/\[CV_ID:\s*[^\]]+\]\s*/gi, '').trim()
-        setEditNotes(cleanNotes)
+        setEditNotes(cleanUserNotes(record.notes))
     }
 
     // Lưu chỉnh sửa dòng số liệu
@@ -2204,17 +2226,6 @@ export default function SoLieuPage() {
         return `${t1} ${date1} → ${t2} ${date2}`
     }
 
-    const cleanUserNotes = (notes: string | null | undefined) => {
-        if (!notes) return ''
-        const cleaned = notes
-            .replace(/\[CV_ID:\s*[^\]]+\]\s*/gi, '')
-            .replace(/\[CV:\s*[^\]]+\]\s*/gi, '')
-            .replace(/\[Đợt\s*\d+\]\s*/gi, '')
-            .trim()
-        if (/^(nhập kho|xuất kho)$/i.test(cleaned)) return ''
-        return cleaned
-    }
-
     return (
         <div className="min-h-[calc(100vh-4rem)] flex flex-col bg-stone-50 dark:bg-zinc-950 text-stone-800 dark:text-stone-100">
             {/* ===== MOBILE HEADER GỌN: Chuyển chế độ Đang làm / Đã hoàn thành + chọn CV + tìm kiếm ===== */}
@@ -2348,22 +2359,23 @@ export default function SoLieuPage() {
                 )}
             </header>
 
-            {/* ===== DESKTOP HEADER GỌN: Hàng 1 = Tiêu đề + Chế độ Đang làm/Đã hoàn thành + Tab CV + Thao tác ===== */}
-            <header className="hidden sm:block bg-white dark:bg-zinc-900 border-b border-stone-200 dark:border-zinc-800 sticky top-0 z-30">
-                <div className="max-w-7xl mx-auto px-6 py-3 flex items-center gap-3">
+            {/* ===== DESKTOP HEADER GỌN: Hàng 1 = Logo + Chuyển chế độ + Tab CV dạng 1 hàng + Thao tác ===== */}
+            <header className="hidden sm:block bg-white dark:bg-zinc-900 border-b border-stone-200 dark:border-zinc-800 sticky top-0 z-30 shadow-xs">
+                {/* Hàng 1: Điều hướng & Quản lý công việc (Siêu mỏng ~42px) */}
+                <div className="max-w-7xl mx-auto px-6 py-1.5 flex items-center gap-3">
                     <div className="flex items-center gap-2 shrink-0">
-                        <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center">
-                            <BarChart3 className="w-5 h-5" />
+                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                            <BarChart3 className="w-4 h-4" />
                         </div>
-                        <h1 className="text-base font-bold text-stone-900 dark:text-white whitespace-nowrap">Bàn Số Liệu</h1>
+                        <h1 className="text-sm font-bold text-stone-900 dark:text-white whitespace-nowrap">Bàn Số Liệu</h1>
                     </div>
 
                     {/* Bộ chuyển chế độ: Đang làm | Đã hoàn thành */}
-                    <div className="inline-flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-xl shrink-0">
+                    <div className="inline-flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg shrink-0">
                         <button
                             type="button"
                             onClick={() => setPageView('active')}
-                            className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                            className={`h-7 px-2.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
                                 pageView === 'active'
                                     ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
                                     : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
@@ -2375,7 +2387,7 @@ export default function SoLieuPage() {
                         <button
                             type="button"
                             onClick={openDoneView}
-                            className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                            className={`h-7 px-2.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
                                 pageView === 'done'
                                     ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
                                     : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
@@ -2386,24 +2398,56 @@ export default function SoLieuPage() {
                         </button>
                     </div>
 
-                    <div className="w-px h-7 bg-stone-200 dark:bg-zinc-700 shrink-0" />
+                    <div className="w-px h-6 bg-stone-200 dark:bg-zinc-700 shrink-0" />
 
                     {pageView === 'active' ? (
                         <>
-                            {/* Thông tin nhanh + Tải lại (danh sách CV được đưa xuống hàng riêng bên dưới) */}
-                            <div className="flex-1 min-w-0 flex items-center gap-2 text-xs text-stone-500">
-                                {activeShift ? (
-                                    <span className="truncate">
-                                        Đang nhập cho: <strong className="text-stone-800 dark:text-stone-100">{currentJobName}</strong>
-                                    </span>
-                                ) : (
-                                    <span className="italic">Chưa chọn công việc</span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
+                            {/* Khoảng trống co giãn giữa bên trái và cụm thao tác bên phải */}
+                            <div className="flex-1 min-w-0" />
+
+                            {/* Cụm thao tác của CV đang chọn */}
+                            {activeShift && (
+                                <div className="shrink-0 flex items-center gap-1.5">
+                                    {subShifts.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowSubShiftsPanel(true)}
+                                            className="h-8 px-2.5 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center gap-1"
+                                            title="Xem các lần chốt tạm"
+                                        >
+                                            <Layers className="w-3.5 h-3.5" /> {subShifts.length} lần chốt
+                                        </button>
+                                    )}
+                                    <button
+                                        type="button"
+                                        onClick={async () => { await calculateInterimSummary(); setInterimCloseModal(true) }}
+                                        className="h-8 px-2.5 rounded-lg text-xs font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 flex items-center gap-1 transition"
+                                    >
+                                        <CheckCircle2 className="w-3.5 h-3.5" /> Chốt tạm
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={async () => { await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
+                                        className="h-8 px-3 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1 transition shadow-xs"
+                                    >
+                                        <StopCircle className="w-3.5 h-3.5" /> Hoàn thành CV
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => handleDeleteOpenShift(activeShift.id, currentJobName)}
+                                        title={`Xóa nhanh công việc "${currentJobName}"`}
+                                        className="h-8 w-8 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0 transition"
+                                    >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Cụm công cụ: Mẫu CV + Reload */}
+                            <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-stone-200 dark:border-zinc-700">
                                 <Link
                                     href="/so-lieu/mau-cong-viec"
-                                    className="h-9 px-3 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
+                                    className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
                                     title="Quản lý và tạo mới các công việc mẫu"
                                 >
                                     <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
@@ -2414,9 +2458,9 @@ export default function SoLieuPage() {
                                     onClick={() => loadJournalData()}
                                     disabled={loadingData}
                                     title="Tải lại số liệu"
-                                    className="w-9 h-9 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
+                                    className="w-8 h-8 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
                                 >
-                                    <RefreshCw className={`w-4 h-4 ${loadingData ? 'animate-spin' : ''}`} />
+                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
                         </>
@@ -2435,7 +2479,7 @@ export default function SoLieuPage() {
                                             key={r.id}
                                             type="button"
                                             onClick={() => { setDoneRange(r.id); loadPastShifts(r.id) }}
-                                            className={`h-8 px-3 transition ${i > 0 ? 'border-l border-stone-200 dark:border-zinc-700' : ''} ${
+                                            className={`h-7 px-2.5 transition ${i > 0 ? 'border-l border-stone-200 dark:border-zinc-700' : ''} ${
                                                 doneRange === r.id
                                                     ? 'bg-indigo-600 text-white'
                                                     : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300 hover:bg-stone-50'
@@ -2446,13 +2490,13 @@ export default function SoLieuPage() {
                                     ))}
                                 </div>
                                 <div className="relative flex-1 max-w-xs">
-                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
                                     <input
                                         type="text"
                                         value={doneSearch}
                                         onChange={e => setDoneSearch(e.target.value)}
                                         placeholder="Tìm công việc hoặc sản phẩm..."
-                                        className="w-full h-8 pl-8 pr-7 text-xs bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        className="w-full h-7 pl-8 pr-7 text-xs bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
                                     />
                                     {doneSearch && (
                                         <button
@@ -2466,10 +2510,10 @@ export default function SoLieuPage() {
                                 </div>
                             </div>
 
-                            <div className="flex items-center gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5 shrink-0">
                                 <Link
                                     href="/so-lieu/mau-cong-viec"
-                                    className="h-9 px-3 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
+                                    className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
                                     title="Quản lý và tạo mới các công việc mẫu"
                                 >
                                     <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
@@ -2478,171 +2522,191 @@ export default function SoLieuPage() {
                                 <button
                                     type="button"
                                     onClick={() => setOpenShiftModal(true)}
-                                    className="h-9 px-3.5 rounded-lg text-sm font-semibold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5"
+                                    className="h-8 px-3 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5"
                                 >
-                                    <Plus className="w-4 h-4" /> Tạo công việc mới
+                                    <Plus className="w-3.5 h-3.5" /> Tạo công việc mới
                                 </button>
                                 <button
                                     type="button"
                                     onClick={() => loadPastShifts(doneRange)}
                                     disabled={doneListLoading}
                                     title="Tải lại danh sách"
-                                    className="w-9 h-9 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
+                                    className="w-8 h-8 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
                                 >
-                                    <RefreshCw className={`w-4 h-4 ${doneListLoading ? 'animate-spin' : ''}`} />
+                                    <RefreshCw className={`w-3.5 h-3.5 ${doneListLoading ? 'animate-spin' : ''}`} />
                                 </button>
                             </div>
                         </>
                     )}
                 </div>
 
-                {/* Hàng 1.5: Danh sách công việc đang làm dạng thẻ + Thao tác của CV đang chọn (Desktop) */}
-                {pageView === 'active' && (
-                    <div className="border-t border-stone-100 dark:border-zinc-800">
-                        <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center gap-4">
-                            <div className="flex-1 min-w-0 flex items-stretch gap-2 overflow-x-auto scrollbar-thin pb-0.5">
-                                {openShifts.map((shift, idx) => {
-                                    const isSelected = activeShift?.id === shift.id
-                                    const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
-                                    return (
-                                        <div key={shift.id} className="group relative shrink-0">
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    if (activeShift?.id !== shift.id) {
-                                                        setPinnedProducts([])
-                                                        setAllJobJournals([])
-                                                        setJournalList([])
-                                                        setSubShifts([])
-                                                        setPadProduct(null)
-                                                        setDraftQtyMap({})
-                                                    }
-                                                    setSelectedShiftId(shift.id)
-                                                }}
-                                                title={`${jobTitle} • mở lúc ${formatDateTime(shift.opened_at)}`}
-                                                className={`text-left px-3.5 py-2 pr-9 rounded-xl border transition shrink-0 whitespace-nowrap ${
-                                                    isSelected
-                                                        ? 'bg-indigo-50 dark:bg-indigo-950/50 border-indigo-400 dark:border-indigo-700 ring-2 ring-indigo-500/20'
-                                                        : 'bg-white dark:bg-zinc-900 border-stone-200 dark:border-zinc-700 hover:border-indigo-300 hover:bg-stone-50 dark:hover:bg-zinc-800'
-                                                }`}
-                                            >
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? 'bg-indigo-600 animate-pulse' : 'bg-emerald-500'}`} />
-                                                    <span className={`text-sm font-bold whitespace-nowrap ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-800 dark:text-stone-100'}`}>
-                                                        {jobTitle}
-                                                    </span>
-                                                </div>
-                                                <div className="mt-0.5 pl-3.5 text-[11px] text-stone-500 flex items-center gap-1 whitespace-nowrap">
-                                                    <Clock className="w-3 h-3 shrink-0" />
-                                                    <span>Mở {formatTimeOnly(shift.opened_at)}</span>
-                                                    {isSelected && (
-                                                        <>
-                                                            <span>•</span>
-                                                            <span>{allJobJournals.length} đợt</span>
-                                                            {subShifts.length > 0 && (
-                                                                <>
-                                                                    <span>•</span>
-                                                                    <span className="text-amber-600 font-semibold">{subShifts.length} chốt tạm</span>
-                                                                </>
-                                                            )}
-                                                        </>
-                                                    )}
-                                                </div>
-                                            </button>
-
-                                            {/* Nút xóa nhanh từng công việc trực tiếp trên thẻ */}
-                                            <button
-                                                type="button"
-                                                onClick={(e) => {
-                                                    e.stopPropagation()
-                                                    handleDeleteOpenShift(shift.id, jobTitle)
-                                                }}
-                                                title={`Xóa công việc "${jobTitle}"`}
-                                                className="absolute top-1.5 right-1.5 w-6 h-6 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition z-10"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </div>
-                                    )
-                                })}
+                {/* Hàng 2: Danh sách công việc (Dropdown) + Tìm kiếm & Ghim sản phẩm (Chỉ hiện khi Đang làm - Siêu mỏng ~34px) */}
+                {pageView === 'active' && activeShift && (
+                    <div className="border-t border-stone-100 dark:border-zinc-800 bg-stone-50/60 dark:bg-zinc-950/40">
+                        <div className="max-w-7xl mx-auto px-6 py-1 flex items-center gap-2.5">
+                            {/* Cụm chọn công việc dạng SỔ XUỐNG (Dropdown): Kéo dài rộng rãi để đọc trọn vẹn tên CV */}
+                            <div className="relative shrink-0">
                                 <button
                                     type="button"
-                                    onClick={() => setOpenShiftModal(true)}
-                                    title="Thêm công việc mới"
-                                    className={`shrink-0 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 font-bold flex items-center justify-center transition active:scale-95 ${
-                                        openShifts.length === 0
-                                            ? 'min-w-[150px] px-4 py-2 gap-1.5 text-sm'
-                                            : 'w-11 self-stretch'
-                                    }`}
+                                    onClick={() => setDesktopJobDropdown(prev => !prev)}
+                                    className="h-8 px-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-zinc-800 hover:bg-indigo-50/50 dark:hover:bg-zinc-700/60 text-stone-900 dark:text-white flex items-center justify-between gap-2.5 transition min-w-[260px] sm:min-w-[320px] lg:min-w-[380px] max-w-lg group shadow-2xs"
+                                    title="Bấm để chọn hoặc chuyển sang công việc khác"
                                 >
-                                    <Plus className="w-5 h-5" />
-                                    {openShifts.length === 0 && <span>Tạo công việc</span>}
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                                        <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse shrink-0" />
+                                        <span className="text-xs font-bold text-stone-900 dark:text-white truncate max-w-[200px] sm:max-w-[250px] lg:max-w-[300px]">
+                                            {currentJobName}
+                                        </span>
+                                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold shrink-0">
+                                            ({allJobJournals.length} đợt)
+                                        </span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 shrink-0 pl-1">
+                                        {openShifts.length > 1 && (
+                                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
+                                                {openShifts.length} việc
+                                            </span>
+                                        )}
+                                        <ChevronDown className={`w-3.5 h-3.5 text-stone-400 group-hover:text-indigo-600 transition-transform duration-200 ${desktopJobDropdown ? 'rotate-180' : ''}`} />
+                                    </div>
                                 </button>
+
+                                {/* Dropdown Menu Sổ Xuống */}
+                                {desktopJobDropdown && (
+                                    <>
+                                        {/* Backdrop trong suốt bắt click outside */}
+                                        <div 
+                                            className="fixed inset-0 z-40" 
+                                            onClick={() => setDesktopJobDropdown(false)} 
+                                        />
+                                        <div className="absolute top-full left-0 mt-1.5 w-88 sm:w-[420px] bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-800 animate-in fade-in zoom-in-95 duration-100">
+                                            {/* Header dropdown */}
+                                            <div className="px-3.5 py-2 bg-stone-50 dark:bg-zinc-850 flex items-center justify-between text-xs font-semibold text-stone-500">
+                                                <span>Danh sách công việc ({openShifts.length} đang mở)</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setDesktopJobDropdown(false); setOpenShiftModal(true); }}
+                                                    className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-bold"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" /> Tạo mới
+                                                </button>
+                                            </div>
+
+                                            {/* Danh sách các công việc */}
+                                            <div className="max-h-72 overflow-y-auto divide-y divide-stone-100 dark:divide-zinc-800/60">
+                                                {openShifts.map((shift, idx) => {
+                                                    const isSelected = activeShift?.id === shift.id
+                                                    const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
+                                                    return (
+                                                        <div
+                                                            key={shift.id}
+                                                            onClick={() => {
+                                                                if (activeShift?.id !== shift.id) {
+                                                                    setPinnedProducts([])
+                                                                    setAllJobJournals([])
+                                                                    setJournalList([])
+                                                                    setSubShifts([])
+                                                                    setPadProduct(null)
+                                                                    setDraftQtyMap({})
+                                                                }
+                                                                setSelectedShiftId(shift.id)
+                                                                setDesktopJobDropdown(false)
+                                                            }}
+                                                            className={`p-3 flex items-center justify-between gap-3 cursor-pointer transition ${
+                                                                isSelected
+                                                                    ? 'bg-indigo-50/70 dark:bg-indigo-950/40'
+                                                                    : 'hover:bg-stone-50 dark:hover:bg-zinc-800/60'
+                                                            }`}
+                                                        >
+                                                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
+                                                                <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${isSelected ? 'bg-indigo-600 ring-2 ring-indigo-300' : 'bg-emerald-500'}`} />
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className={`text-xs font-bold leading-snug break-words ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-800 dark:text-stone-100'}`}>
+                                                                        {jobTitle}
+                                                                    </div>
+                                                                    <div className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
+                                                                        <Clock className="w-3 h-3 shrink-0" />
+                                                                        <span>Mở {formatTimeOnly(shift.opened_at)}</span>
+                                                                        <span>•</span>
+                                                                        <span>{isSelected ? `${allJobJournals.length} đợt` : 'Đang mở'}</span>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                {isSelected && (
+                                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
+                                                                        Đang làm
+                                                                    </span>
+                                                                )}
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation()
+                                                                        handleDeleteOpenShift(shift.id, jobTitle)
+                                                                    }}
+                                                                    title={`Xóa công việc "${jobTitle}"`}
+                                                                    className="w-7 h-7 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 flex items-center justify-center transition"
+                                                                >
+                                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    )
+                                                })}
+                                            </div>
+
+                                            {/* Footer dropdown */}
+                                            <div className="p-2 bg-stone-50/50 dark:bg-zinc-800/30">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setDesktopJobDropdown(false)
+                                                        setOpenShiftModal(true)
+                                                    }}
+                                                    className="w-full h-8 px-3 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center justify-center gap-1.5 transition"
+                                                >
+                                                    <Plus className="w-3.5 h-3.5" />
+                                                    <span>Thêm công việc khác</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
-                            {activeShift && (
-                                <div className="shrink-0 flex items-center gap-2 pl-4 border-l border-stone-200 dark:border-zinc-700">
-                                    {subShifts.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowSubShiftsPanel(true)}
-                                            className="h-9 px-3 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center gap-1.5"
-                                            title="Xem các lần chốt tạm"
-                                        >
-                                            <Layers className="w-4 h-4" /> {subShifts.length} lần chốt
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={async () => { await calculateInterimSummary(); setInterimCloseModal(true) }}
-                                        className="h-9 px-3.5 rounded-lg text-sm font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 flex items-center gap-1.5"
-                                    >
-                                        <CheckCircle2 className="w-4 h-4" /> Chốt tạm
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={async () => { await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
-                                        className="h-9 px-3.5 rounded-lg text-sm font-semibold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1.5"
-                                    >
-                                        <StopCircle className="w-4 h-4" /> Hoàn thành CV
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDeleteOpenShift(activeShift.id, currentJobName)}
-                                        title={`Xóa nhanh công việc "${currentJobName}"`}
-                                        className="h-9 w-9 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0 transition"
-                                    >
-                                        <Trash2 className="w-4 h-4" />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
+                            {/* Nút [+] tạo công việc mới nhanh */}
+                            <button
+                                type="button"
+                                onClick={() => setOpenShiftModal(true)}
+                                title="Thêm công việc mới"
+                                className="h-8 w-8 rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center justify-center shrink-0 transition"
+                            >
+                                <Plus className="w-4 h-4" />
+                            </button>
 
-                {/* Hàng 2: Tìm kiếm & ghim sản phẩm (chỉ hiện khi Đang làm) */}
-                {pageView === 'active' && activeShift && (
-                    <div className="border-t border-stone-100 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/40">
-                        <div className="max-w-7xl mx-auto px-6 py-2.5 flex items-center gap-4">
-                            <div className="relative flex-1 max-w-2xl">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-stone-400" />
+                            <div className="w-px h-5 bg-stone-200 dark:bg-zinc-700 shrink-0" />
+
+                            {/* Ô tìm kiếm sản phẩm để ghim: Kéo dài ra tận chỗ 8 sản phẩm đang ghim */}
+                            <div className="relative flex-1 min-w-0">
+                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
                                 <input
                                     type="text"
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
                                     placeholder="Tìm sản phẩm theo tên, mã hoặc tên gõ tắt để ghim..."
-                                    className="w-full h-10 pl-9 pr-9 text-sm bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none"
+                                    className="w-full h-8 pl-8 pr-8 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none"
                                 />
                                 {searchQuery && (
                                     <button
                                         onClick={() => setSearchQuery('')}
-                                        className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-stone-400 hover:text-stone-600"
+                                        className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-stone-400 hover:text-stone-600"
                                     >
-                                        <X className="w-4 h-4" />
+                                        <X className="w-3.5 h-3.5" />
                                     </button>
                                 )}
                                 {isSearching && (
-                                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
+                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
                                         {searchResults.length > 0 ? (
                                             searchResults.map(p => {
                                                 const isPinned = pinnedProducts.some(pinned => pinned.id === p.id)
@@ -2654,30 +2718,30 @@ export default function SoLieuPage() {
                                                             if (isPinned) handleUnpinProduct(p.id)
                                                             else handlePinProduct(p)
                                                         }}
-                                                        className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-stone-50 dark:hover:bg-zinc-700/50"
+                                                        className="w-full flex items-center gap-3 px-3.5 py-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-700/50"
                                                     >
                                                         <span className="flex-1 min-w-0">
-                                                            <span className="block text-sm font-semibold text-stone-900 dark:text-white">{p.name}</span>
-                                                            <span className="block text-xs text-stone-400 mt-0.5">
+                                                            <span className="block text-xs font-semibold text-stone-900 dark:text-white">{p.name}</span>
+                                                            <span className="block text-[11px] text-stone-400 mt-0.5">
                                                                 {p.sku || 'Chưa có mã'}
                                                                 {p.available_units && p.available_units.length > 0 && ` • ${p.available_units.join(', ')}`}
                                                                 {p.aliases && ` • Gõ tắt: ${p.aliases}`}
                                                             </span>
                                                         </span>
-                                                        <span className={`shrink-0 h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1 ${
+                                                        <span className={`shrink-0 h-7 px-2.5 rounded-md text-xs font-bold flex items-center gap-1 ${
                                                             isPinned ? 'bg-stone-200 dark:bg-zinc-700 text-stone-600 dark:text-stone-300' : 'bg-indigo-600 text-white'
                                                         }`}>
-                                                            {isPinned ? <><Check className="w-3.5 h-3.5" /> Đã ghim</> : <><Pin className="w-3.5 h-3.5" /> Ghim</>}
+                                                            {isPinned ? <><Check className="w-3 h-3" /> Đã ghim</> : <><Pin className="w-3 h-3" /> Ghim</>}
                                                         </span>
                                                     </button>
                                                 )
                                             })
                                         ) : (
-                                            <div className="p-4 text-center">
-                                                <p className="text-xs text-stone-500 mb-2">Không tìm thấy sản phẩm trong danh mục.</p>
+                                            <div className="p-3 text-center">
+                                                <p className="text-xs text-stone-500 mb-1.5">Không tìm thấy sản phẩm trong danh mục.</p>
                                                 <button
                                                     onClick={handleAddCustomProduct}
-                                                    className="h-8 px-3 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
+                                                    className="h-7 px-3 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
                                                 >
                                                     + Ghim hàng tự do: "{searchQuery}"
                                                 </button>
@@ -2692,14 +2756,14 @@ export default function SoLieuPage() {
                                     <button
                                         type="button"
                                         onClick={() => setViewMode('sub-shift')}
-                                        className={`h-8 px-3 ${viewMode === 'sub-shift' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300'}`}
+                                        className={`h-7 px-2.5 ${viewMode === 'sub-shift' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300'}`}
                                     >
                                         Đợt hiện tại
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setViewMode('shift')}
-                                        className={`h-8 px-3 border-l border-stone-200 dark:border-zinc-700 ${viewMode === 'shift' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300'}`}
+                                        className={`h-7 px-2.5 border-l border-stone-200 dark:border-zinc-700 ${viewMode === 'shift' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300'}`}
                                     >
                                         Toàn CV
                                     </button>
@@ -2725,7 +2789,7 @@ export default function SoLieuPage() {
             </header>
 
             {/* 4. BÀN LÀM VIỆC CHÍNH & BÁO CÁO ĐÃ HOÀN THÀNH TÍCH HỢP */}
-            <main className={`flex-1 p-3 sm:p-6 max-w-7xl mx-auto w-full pb-20 sm:pb-8 ${pageView === 'active' && activeShift && pinnedProducts.length > 0 ? 'sm:grid sm:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px] sm:gap-5 sm:items-start' : ''}`}>
+            <main className={`flex-1 p-3 sm:px-6 sm:pt-1 sm:pb-6 max-w-7xl mx-auto w-full pb-20 sm:pb-8 ${pageView === 'active' && activeShift && pinnedProducts.length > 0 ? 'sm:grid sm:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px] sm:gap-5 sm:items-start' : ''}`}>
                 {pageView === 'done' ? (
                     <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[380px_minmax(0,1fr)] sm:gap-5 sm:items-start">
                         {/* Bộ lọc trên Mobile cho tab Đã hoàn thành / Báo cáo */}
@@ -3836,11 +3900,18 @@ export default function SoLieuPage() {
                                 ]))
 
                                 return (
-                                    <button
+                                    <div
                                         key={product.id}
-                                        type="button"
+                                        role="button"
+                                        tabIndex={0}
                                         onClick={() => openPad(product)}
-                                        className={`w-full p-3 text-left transition-colors border-l-4 active:bg-indigo-100/60 dark:active:bg-indigo-950/60 ${
+                                        onKeyDown={e => {
+                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                e.preventDefault()
+                                                openPad(product)
+                                            }
+                                        }}
+                                        className={`w-full p-3 text-left cursor-pointer select-none transition-colors border-l-4 active:bg-indigo-100/60 dark:active:bg-indigo-950/60 ${
                                             effect === 'in'
                                                 ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
                                                 : effect === 'out'
@@ -3859,6 +3930,18 @@ export default function SoLieuPage() {
                                                 }`}>
                                                     {idx + 1}
                                                 </span>
+                                                <button
+                                                    type="button"
+                                                    onClick={e => {
+                                                        e.stopPropagation()
+                                                        setHistoryModalProduct(product)
+                                                        setHistoryProductFilter('all')
+                                                    }}
+                                                    title="Xem lịch sử nhập xuất của riêng sản phẩm này"
+                                                    className="w-5 h-5 rounded flex items-center justify-center text-stone-400 hover:text-indigo-600 hover:bg-indigo-100/70 dark:hover:bg-zinc-800 shrink-0 transition mt-0.5"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                </button>
                                                 <div className="min-w-0 flex-1">
                                                     <span className="block text-[13px] font-bold text-stone-900 dark:text-white leading-snug break-words">
                                                         {product.name}
@@ -3903,15 +3986,15 @@ export default function SoLieuPage() {
                                                 })}
                                             </div>
                                         </div>
-                                    </button>
+                                    </div>
                                 )
                             })}
                         </div>
                     </div>
 
                     {/* ===== DESKTOP: BẢNG DANH SÁCH SẢN PHẨM GỌN - CLICK ĐỂ CHỌN, NHẬP Ở BẢNG BÊN PHẢI ===== */}
-                    <div className="hidden sm:block sm:col-start-1 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden mb-5">
-                        <div className="grid grid-cols-[minmax(0,1fr)_130px_90px_90px_64px_40px] items-center gap-2 px-4 py-2.5 bg-stone-50 dark:bg-zinc-950/60 border-b border-stone-200 dark:border-zinc-800 text-[11px] font-bold uppercase tracking-wide text-stone-400">
+                    <div className="hidden sm:block sm:col-start-1 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden mb-3.5">
+                        <div className="grid grid-cols-[minmax(0,1fr)_120px_75px_75px_50px_32px] items-center gap-2 px-3 py-1.5 bg-stone-50 dark:bg-zinc-950/60 border-b border-stone-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-stone-400">
                             <span>Sản phẩm</span>
                             <span>ĐVT</span>
                             <span className="text-right text-emerald-600">Đã nhập</span>
@@ -3919,7 +4002,7 @@ export default function SoLieuPage() {
                             <span className="text-right">Số đợt</span>
                             <span />
                         </div>
-                        <div className="divide-y divide-stone-100 dark:divide-zinc-800">
+                        <div className="divide-y divide-stone-100 dark:divide-zinc-800/80">
                             {pinnedProducts.map((product, idx) => {
                                 const productUnits = getProductUnits(product)
                                 const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
@@ -3947,7 +4030,7 @@ export default function SoLieuPage() {
                                         role="button"
                                         tabIndex={0}
                                         onClick={() => openPad(product)}
-                                        className={`group grid grid-cols-[minmax(0,1fr)_130px_90px_90px_64px_40px] items-center gap-2 px-4 py-3 cursor-pointer border-l-4 transition-colors ${
+                                        className={`group grid grid-cols-[minmax(0,1fr)_120px_75px_75px_50px_32px] items-center gap-2 px-3 py-1.5 cursor-pointer border-l-4 transition-colors ${
                                             effect === 'in'
                                                 ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
                                                 : effect === 'out'
@@ -3959,9 +4042,9 @@ export default function SoLieuPage() {
                                                 : 'bg-white dark:bg-zinc-900 border-l-indigo-300 dark:border-l-indigo-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800/40'
                                         }`}
                                     >
-                                        {/* Cột 1: STT + Tên sản phẩm + SKU */}
-                                        <div className="min-w-0 flex items-start gap-2.5">
-                                            <span className={`w-6 h-6 shrink-0 rounded-md text-[11px] font-black flex items-center justify-center mt-0.5 ${
+                                        {/* Cột 1: STT + Con mắt xem lịch sử + Tên sản phẩm + SKU (Siêu gọn) */}
+                                        <div className="min-w-0 flex items-center gap-1.5">
+                                            <span className={`w-5 h-5 shrink-0 rounded text-[10px] font-black flex items-center justify-center ${
                                                 isActive
                                                     ? 'bg-indigo-600 text-white shadow-xs'
                                                     : idx % 2 === 1
@@ -3970,18 +4053,30 @@ export default function SoLieuPage() {
                                             }`}>
                                                 {idx + 1}
                                             </span>
-                                            <div className="min-w-0">
-                                                <p className={`text-sm font-semibold leading-snug break-words ${isActive ? 'text-indigo-900 dark:text-indigo-100' : 'text-stone-900 dark:text-white'}`}>
+                                            <button
+                                                type="button"
+                                                onClick={e => {
+                                                    e.stopPropagation()
+                                                    setHistoryModalProduct(product)
+                                                    setHistoryProductFilter('all')
+                                                }}
+                                                title="Xem lịch sử nhập xuất của riêng sản phẩm này"
+                                                className="w-5 h-5 rounded flex items-center justify-center text-stone-400 hover:text-indigo-600 hover:bg-indigo-100/70 dark:hover:bg-zinc-800 shrink-0 transition"
+                                            >
+                                                <Eye className="w-3.5 h-3.5" />
+                                            </button>
+                                            <div className="min-w-0 flex-1">
+                                                <p className={`text-xs font-bold leading-tight break-words ${isActive ? 'text-indigo-900 dark:text-indigo-100' : 'text-stone-900 dark:text-white'}`}>
                                                     {product.name}
                                                 </p>
                                                 {product.sku && (
-                                                    <p className="text-[11px] text-stone-400 font-mono mt-0.5">{product.sku}</p>
+                                                    <p className="text-[10px] text-stone-400 font-mono leading-none mt-0.5">{product.sku}</p>
                                                 )}
                                             </div>
                                         </div>
 
-                                        {/* Cột 2: ĐVT (Hiển thị từng đơn vị của sản phẩm) */}
-                                        <div className="flex flex-col gap-1.5 justify-center" onClick={e => e.stopPropagation()}>
+                                        {/* Cột 2: ĐVT (Nút gọn h-6) */}
+                                        <div className="flex flex-col gap-1 justify-center" onClick={e => e.stopPropagation()}>
                                             {displayUnits.map(u => {
                                                 const isPadActive = isActive && padUnit === u
                                                 const isSelected = rowUnit === u
@@ -3994,7 +4089,7 @@ export default function SoLieuPage() {
                                                             setPadProduct(product)
                                                             setPadUnit(u)
                                                         }}
-                                                        className={`text-left text-xs font-bold px-2 py-1 rounded-lg border transition truncate flex items-center justify-between gap-1 ${
+                                                        className={`text-left text-[11px] font-bold px-2 h-6 rounded-md border transition truncate flex items-center justify-between gap-1 ${
                                                             isPadActive
                                                                 ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                                                                 : isSelected
@@ -4010,14 +4105,14 @@ export default function SoLieuPage() {
                                             })}
                                         </div>
 
-                                        {/* Cột 3: ĐÃ NHẬP (Hiển thị số lượng nhập của từng loại đơn vị) */}
-                                        <div className="flex flex-col gap-1.5 justify-center text-right">
+                                        {/* Cột 3: ĐÃ NHẬP (Gọn gàng font text-sm) */}
+                                        <div className="flex flex-col gap-1 justify-center text-right">
                                             {displayUnits.map(u => {
                                                 const uStats = getProductCount(product.name, u)
                                                 return (
                                                     <div key={u} className="h-6 flex items-center justify-end">
-                                                        <span className={`text-base sm:text-lg font-black tabular-nums ${
-                                                            uStats.inQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-sm'
+                                                        <span className={`text-sm font-black tabular-nums ${
+                                                            uStats.inQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-xs'
                                                         }`}>
                                                             {uStats.inQty > 0 ? `+${uStats.inQty}` : '0'}
                                                         </span>
@@ -4026,14 +4121,14 @@ export default function SoLieuPage() {
                                             })}
                                         </div>
 
-                                        {/* Cột 4: ĐÃ XUẤT (Hiển thị số lượng xuất của từng loại đơn vị) */}
-                                        <div className="flex flex-col gap-1.5 justify-center text-right">
+                                        {/* Cột 4: ĐÃ XUẤT (Gọn gàng font text-sm) */}
+                                        <div className="flex flex-col gap-1 justify-center text-right">
                                             {displayUnits.map(u => {
                                                 const uStats = getProductCount(product.name, u)
                                                 return (
                                                     <div key={u} className="h-6 flex items-center justify-end">
-                                                        <span className={`text-base sm:text-lg font-black tabular-nums ${
-                                                            uStats.outQty > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-sm'
+                                                        <span className={`text-sm font-black tabular-nums ${
+                                                            uStats.outQty > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-xs'
                                                         }`}>
                                                             {uStats.outQty > 0 ? `-${uStats.outQty}` : '0'}
                                                         </span>
@@ -4043,9 +4138,9 @@ export default function SoLieuPage() {
                                         </div>
 
                                         {/* Cột 5: SỐ ĐỢT */}
-                                        <span className="text-right text-xs text-stone-400 tabular-nums">{batchCount}</span>
+                                        <span className="text-right text-[11px] text-stone-400 tabular-nums">{batchCount}</span>
 
-                                        {/* Cột 6: BỎ GHIM */}
+                                        {/* Cột 6: BỎ GHIM (Nút h-6 w-6) */}
                                         <button
                                             type="button"
                                             onClick={e => {
@@ -4053,9 +4148,9 @@ export default function SoLieuPage() {
                                                 if (confirm(`Bỏ ghim "${product.name}" khỏi công việc này?`)) handleUnpinProduct(product.id)
                                             }}
                                             title="Bỏ ghim"
-                                            className="w-8 h-8 rounded-lg flex items-center justify-center text-stone-300 opacity-0 group-hover:opacity-100 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                            className="w-6 h-6 rounded-md flex items-center justify-center text-stone-300 opacity-0 group-hover:opacity-100 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
                                         >
-                                            <PinOff className="w-4 h-4" />
+                                            <PinOff className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 )
@@ -4772,70 +4867,65 @@ export default function SoLieuPage() {
                     </div>
                 )}
 
-                {/* ===== DESKTOP: BẢNG NHẬP SỐ CỐ ĐỊNH BÊN PHẢI (SIÊU GỌN - VỪA KHÍT TẦM MẮT MỌI MÀN HÌNH) ===== */}
+                {/* ===== DESKTOP: BẢNG NHẬP SỐ CỐ ĐỊNH BÊN PHẢI (VỪA KHÍT TẦM MẮT, BÀN PHÍM RỘNG RÃI DỄ BẤM) ===== */}
                 {pageView === 'active' && activeShift && pinnedProducts.length > 0 && (
-                    <aside className="hidden sm:block sm:col-start-2 sm:row-start-1 sm:row-span-2 sticky top-[180px] max-h-[calc(100vh-190px)] overflow-y-auto scrollbar-thin">
+                    <aside className="hidden sm:block sm:col-start-2 sm:row-start-1 sm:row-span-2 sticky top-[76px] max-h-[calc(100vh-82px)] overflow-y-auto scrollbar-none">
                         {padProduct ? (() => {
                             const units = getProductUnits(padProduct)
                             const qtyNum = parseFloat(padValue) || 0
                             const stats = getProductCount(padProduct.name, padUnit)
                             const canSave = qtyNum > 0 && !padSaving
                             return (
-                                <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-sm p-3.5 space-y-2">
-                                    {/* Hàng 1: Tên sản phẩm & Thống kê đã nhập/xuất */}
-                                    <div className="flex items-start justify-between gap-2">
-                                        <div className="min-w-0 flex-1">
-                                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600 dark:text-indigo-400 block leading-tight">
-                                                Đang nhập cho
-                                            </span>
-                                            <h3 className="text-xs sm:text-sm font-bold text-stone-900 dark:text-white leading-tight line-clamp-2 mt-0.5" title={padProduct.name}>
-                                                {padProduct.name}
-                                            </h3>
-                                        </div>
-                                        <div className="flex items-center gap-1 shrink-0">
-                                            <div className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-100 dark:border-emerald-900/40 text-right">
-                                                <span className="text-[9px] font-bold text-emerald-600 block leading-none">Nhập</span>
-                                                <span className="text-xs font-black text-emerald-700 dark:text-emerald-300 tabular-nums">+{stats.inQty}</span>
-                                            </div>
-                                            <div className="px-2 py-0.5 rounded-lg bg-rose-50 dark:bg-rose-950/50 border border-rose-100 dark:border-rose-900/40 text-right">
-                                                <span className="text-[9px] font-bold text-rose-600 block leading-none">Xuất</span>
-                                                <span className="text-xs font-black text-rose-700 dark:text-rose-300 tabular-nums">-{stats.outQty}</span>
-                                            </div>
-                                        </div>
+                                <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-sm p-3 space-y-1">
+                                    {/* Hàng 1: Tên sản phẩm (khung viền border & màu nền nổi bật) */}
+                                    <div className="px-2.5 py-1.5 rounded-xl bg-indigo-50/80 dark:bg-indigo-950/40 border border-indigo-200/80 dark:border-indigo-800/60 shadow-2xs">
+                                        <h3 className="text-xs font-bold text-indigo-950 dark:text-indigo-100 leading-snug line-clamp-2 break-words" title={padProduct.name}>
+                                            {padProduct.name}
+                                        </h3>
                                     </div>
 
-                                    {/* Hàng 2: Chọn ĐVT */}
-                                    <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-0.5">
-                                        <span className="text-[10px] font-bold text-stone-400 uppercase shrink-0">ĐVT:</span>
-                                        <div className="flex flex-wrap gap-1">
-                                            {units.map(u => (
-                                                <button
-                                                    key={u}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setPadUnit(u)
-                                                        if (padProduct) handleUnitChange(padProduct.id, u)
-                                                    }}
-                                                    className={`h-6 px-2.5 rounded-lg text-xs font-bold border transition ${
-                                                        padUnit === u
-                                                            ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
-                                                            : 'bg-stone-50 dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-stone-300 hover:border-indigo-300'
-                                                    }`}
-                                                >
-                                                    {u}
-                                                </button>
-                                            ))}
+                                    {/* Hàng 2: Chọn ĐVT & Thống kê đã nhập/xuất (+/-) */}
+                                    <div className="flex items-center justify-between gap-1.5 py-0.5">
+                                        <div className="flex items-center gap-1 min-w-0 overflow-x-auto scrollbar-none">
+                                            <span className="text-[10px] font-bold text-stone-400 uppercase shrink-0">ĐVT:</span>
+                                            <div className="flex flex-wrap gap-1">
+                                                {units.map(u => (
+                                                    <button
+                                                        key={u}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPadUnit(u)
+                                                            if (padProduct) handleUnitChange(padProduct.id, u)
+                                                        }}
+                                                        className={`h-6 px-2 rounded-lg text-[11px] font-bold border transition ${
+                                                            padUnit === u
+                                                                ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
+                                                                : 'bg-stone-50 dark:bg-zinc-800 border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-stone-300 hover:border-indigo-300'
+                                                        }`}
+                                                    >
+                                                        {u}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-1 shrink-0">
+                                            <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 dark:bg-emerald-950/50 border border-emerald-200/60 dark:border-emerald-900/40 text-[11px] font-black text-emerald-700 dark:text-emerald-300 tabular-nums" title="Tổng đã nhập">
+                                                +{stats.inQty}
+                                            </span>
+                                            <span className="px-1.5 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/50 border border-rose-200/60 dark:border-rose-900/40 text-[11px] font-black text-rose-700 dark:text-rose-300 tabular-nums" title="Tổng đã xuất">
+                                                -{stats.outQty}
+                                            </span>
                                         </div>
                                     </div>
 
                                     {/* Hàng 3: Màn hình số & Nút xóa nhanh */}
-                                    <div className="h-11 rounded-xl bg-stone-100 dark:bg-zinc-800/80 border border-stone-200/80 dark:border-zinc-700 flex items-center justify-between px-3">
+                                    <div className="h-9 rounded-xl bg-stone-100 dark:bg-zinc-800/80 border border-stone-200/80 dark:border-zinc-700 flex items-center justify-between px-3">
                                         <div className="flex items-center gap-1">
                                             {padValue ? (
                                                 <button 
                                                     type="button" 
                                                     onClick={() => handlePadKey('clear')}
-                                                    className="px-1.5 py-0.5 rounded bg-stone-200 hover:bg-rose-100 dark:bg-zinc-700 dark:hover:bg-rose-950/60 text-stone-600 hover:text-rose-600 dark:text-stone-300 dark:hover:text-rose-400 text-[10px] font-bold transition"
+                                                    className="px-2 py-0.5 rounded bg-stone-200 hover:bg-rose-100 dark:bg-zinc-700 dark:hover:bg-rose-950/60 text-stone-600 hover:text-rose-600 dark:text-stone-300 dark:hover:text-rose-400 text-[10px] font-bold transition leading-none"
                                                     title="Xóa số (Esc)"
                                                 >
                                                     XÓA
@@ -4845,7 +4935,7 @@ export default function SoLieuPage() {
                                             )}
                                         </div>
                                         <div className="flex items-baseline gap-1.5">
-                                            <span className={`text-2xl font-black tabular-nums tracking-tight ${padValue ? 'text-stone-900 dark:text-white' : 'text-stone-300 dark:text-zinc-600'}`}>
+                                            <span className={`text-xl font-black tabular-nums tracking-tight ${padValue ? 'text-stone-900 dark:text-white' : 'text-stone-300 dark:text-zinc-600'}`}>
                                                 {padValue || '0'}
                                             </span>
                                             <span className="text-xs font-bold text-stone-500">{padUnit}</span>
@@ -4862,7 +4952,7 @@ export default function SoLieuPage() {
                                                     const cur = parseFloat(padValue) || 0
                                                     setPadValue(String(cur + n))
                                                 }}
-                                                className="h-6 rounded-md bg-stone-50 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200/70 dark:border-zinc-700 text-[11px] font-bold text-stone-700 dark:text-stone-300 transition active:scale-95"
+                                                className="h-5.5 rounded-md bg-stone-50 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 border border-stone-200/70 dark:border-zinc-700 text-[11px] font-bold text-stone-700 dark:text-stone-300 transition active:scale-95 flex items-center justify-center leading-none"
                                                 title={`Cộng thêm ${n}`}
                                             >
                                                 +{n}
@@ -4870,14 +4960,14 @@ export default function SoLieuPage() {
                                         ))}
                                     </div>
 
-                                    {/* Hàng 4: Bàn phím số 3x4 */}
+                                    {/* Hàng 4: Bàn phím số 3x4 (Chiều cao phím vừa vặn h-8.5) */}
                                     <div className="grid grid-cols-3 gap-1">
                                         {['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map(k => (
                                             <button
                                                 key={k}
                                                 type="button"
                                                 onClick={() => handlePadKey(k)}
-                                                className={`h-8 rounded-lg text-base font-bold active:scale-95 transition select-none flex items-center justify-center ${
+                                                className={`h-8.5 rounded-lg text-base font-bold active:scale-95 transition select-none flex items-center justify-center ${
                                                     k === 'del'
                                                         ? 'bg-stone-200 hover:bg-stone-300 dark:bg-zinc-700 text-stone-700 dark:text-stone-200'
                                                         : 'bg-white hover:bg-stone-100 dark:bg-zinc-800/90 dark:hover:bg-zinc-700 border border-stone-200 dark:border-zinc-700 text-stone-900 dark:text-white shadow-2xs'
@@ -4888,33 +4978,33 @@ export default function SoLieuPage() {
                                         ))}
                                     </div>
 
-                                    {/* Hàng 5: Hai nút hành động XUẤT | NHẬP */}
-                                    <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                                    {/* Hàng 5: Hai nút hành động XUẤT | NHẬP (Cao h-9 vừa vặn, không bị đụng đáy) */}
+                                    <div className="grid grid-cols-2 gap-2 pt-0.5">
                                         <button
                                             type="button"
                                             disabled={!canSave}
                                             onClick={() => handlePadConfirm('out')}
-                                            className="h-10 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex items-center justify-center gap-1.5 shadow-sm"
+                                            className="h-9 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-bold transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex items-center justify-center gap-1.5 shadow-xs"
                                             title="Xác nhận Xuất (Phím trừ -)"
                                         >
                                             <ArrowUpRight className="w-4 h-4 shrink-0" />
-                                            <span className="text-xs font-black">XUẤT {qtyNum > 0 ? `(-${padValue})` : ''}</span>
+                                            <span className="text-xs sm:text-sm font-black">XUẤT {qtyNum > 0 ? `(-${padValue})` : ''}</span>
                                         </button>
                                         <button
                                             type="button"
                                             disabled={!canSave}
                                             onClick={() => handlePadConfirm('in')}
-                                            className="h-10 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex items-center justify-center gap-1.5 shadow-sm"
+                                            className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white font-bold transition disabled:bg-stone-200 disabled:text-stone-400 dark:disabled:bg-zinc-800 dark:disabled:text-zinc-600 flex items-center justify-center gap-1.5 shadow-xs"
                                             title="Xác nhận Nhập (Phím cộng +)"
                                         >
                                             <ArrowDownLeft className="w-4 h-4 shrink-0" />
-                                            <span className="text-xs font-black">NHẬP {qtyNum > 0 ? `(+${padValue})` : ''}</span>
+                                            <span className="text-xs sm:text-sm font-black">NHẬP {qtyNum > 0 ? `(+${padValue})` : ''}</span>
                                         </button>
                                     </div>
 
                                     {/* Gợi ý phím tắt */}
                                     <p className="text-[10px] text-stone-400 text-center leading-tight pt-0.5">
-                                        Gõ số trực tiếp • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">+</kbd> Nhập • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">−</kbd> Xuất • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">↑↓</kbd> Đổi SP • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">Esc</kbd> Xóa
+                                        Phím tắt: Số • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">+</kbd> Nhập • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">−</kbd> Xuất • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">↑↓</kbd> Đổi SP • <kbd className="px-1 rounded bg-stone-100 dark:bg-zinc-800 font-mono text-[9px]">Esc</kbd> Xóa
                                     </p>
                                 </div>
                             )
@@ -6014,6 +6104,204 @@ export default function SoLieuPage() {
                     </div>
                 </div>
             )}
+
+            {/* ===== MODAL LỊCH SỬ NHẬP XUẤT RIÊNG CHO SẢN PHẨM ===== */}
+            {historyModalProduct && (() => {
+                const baseLines = allJobJournals.length > 0 ? allJobJournals : journalList
+                // Lọc các đợt phát sinh của riêng sản phẩm này
+                const productLines = baseLines.filter(l => 
+                    l.item_name === historyModalProduct.name || 
+                    (l.notes && l.notes.includes(historyModalProduct.id))
+                )
+
+                // Tính các ĐVT có số liệu của sản phẩm này
+                const units = getProductUnits(historyModalProduct)
+                const activeUnits = units.filter(u => {
+                    const s = getProductCount(historyModalProduct.name, u)
+                    return s.inQty > 0 || s.outQty > 0
+                })
+                const displayUnits = activeUnits.length > 0 ? activeUnits : [historyModalProduct.unit || 'Kg']
+
+                // Lọc theo tab (Tất cả / Nhập / Xuất)
+                const inLines = productLines.filter(l => l.to_department === 'Kho')
+                const outLines = productLines.filter(l => l.to_department !== 'Kho')
+                const filtered = historyProductFilter === 'in' 
+                    ? inLines 
+                    : historyProductFilter === 'out' 
+                    ? outLines 
+                    : productLines
+
+                return (
+                    <div 
+                        className="fixed inset-0 z-[75] bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in duration-200"
+                        onClick={() => setHistoryModalProduct(null)}
+                    >
+                        <div 
+                            className="bg-white dark:bg-zinc-900 rounded-t-3xl sm:rounded-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl border-t sm:border border-stone-200 dark:border-zinc-800 animate-in slide-in-from-bottom-6 sm:zoom-in-95 duration-200 flex flex-col max-h-[90vh]"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {/* Handle bar vuốt chạm mobile */}
+                            <div className="w-12 h-1.5 bg-stone-300 dark:bg-zinc-700 rounded-full mx-auto mb-3 sm:hidden shrink-0" />
+
+                            {/* Header modal */}
+                            <div className="flex items-start justify-between gap-3 pb-3 border-b border-stone-200 dark:border-zinc-800 shrink-0">
+                                <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 text-xs font-bold uppercase tracking-wider mb-0.5">
+                                        <Eye className="w-3.5 h-3.5" /> Lịch sử nhập xuất sản phẩm
+                                    </div>
+                                    <h3 className="text-sm sm:text-base font-bold text-stone-900 dark:text-white leading-snug break-words">
+                                        {historyModalProduct.name}
+                                    </h3>
+                                    {historyModalProduct.sku && (
+                                        <p className="text-[11px] text-stone-400 font-mono mt-0.5">SKU: {historyModalProduct.sku}</p>
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryModalProduct(null)}
+                                    className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 flex items-center justify-center transition shrink-0"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+
+                            {/* Tổng hợp số lượng theo các ĐVT */}
+                            <div className="py-2.5 px-3 bg-stone-50 dark:bg-zinc-800/50 rounded-xl my-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
+                                <span className="font-bold text-stone-500 dark:text-stone-400">Tổng đã phát sinh:</span>
+                                <div className="flex flex-wrap gap-2">
+                                    {displayUnits.map(u => {
+                                        const s = getProductCount(historyModalProduct.name, u)
+                                        return (
+                                            <div key={u} className="flex items-center gap-1.5 px-2 py-0.5 bg-white dark:bg-zinc-900 rounded-lg border border-stone-200 dark:border-zinc-700 font-bold">
+                                                <span className="text-stone-600 dark:text-stone-300">{u}:</span>
+                                                <span className="text-emerald-600 dark:text-emerald-400">+{s.inQty}</span>
+                                                <span className="text-stone-300 dark:text-zinc-600">/</span>
+                                                <span className="text-rose-600 dark:text-rose-400">-{s.outQty}</span>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Bộ lọc Tất cả / Nhập / Xuất */}
+                            <div className="flex items-center gap-1 p-1 bg-stone-100 dark:bg-zinc-800/80 rounded-xl mb-2.5 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryProductFilter('all')}
+                                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition ${
+                                        historyProductFilter === 'all'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                                    }`}
+                                >
+                                    Tất cả ({productLines.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryProductFilter('in')}
+                                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+                                        historyProductFilter === 'in'
+                                            ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-2xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                                    }`}
+                                >
+                                    <ArrowDownLeft className="w-3.5 h-3.5" /> Nhập ({inLines.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryProductFilter('out')}
+                                    className={`flex-1 py-1 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+                                        historyProductFilter === 'out'
+                                            ? 'bg-white dark:bg-zinc-900 text-rose-600 dark:text-rose-400 shadow-2xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                                    }`}
+                                >
+                                    <ArrowUpRight className="w-3.5 h-3.5" /> Xuất ({outLines.length})
+                                </button>
+                            </div>
+
+                            {/* Danh sách các đợt phát sinh */}
+                            <div className="flex-1 overflow-y-auto divide-y divide-stone-100 dark:divide-zinc-800 -mx-4 sm:-mx-6 px-4 sm:px-6">
+                                {filtered.length === 0 ? (
+                                    <div className="py-10 text-center text-xs text-stone-400">
+                                        Chưa có đợt nhập/xuất nào cho sản phẩm này.
+                                    </div>
+                                ) : (
+                                    filtered.map(record => {
+                                        const isImport = record.to_department === 'Kho'
+                                        const userNote = cleanUserNotes(record.notes)
+                                        return (
+                                            <div
+                                                key={record.id}
+                                                className="py-2.5 flex items-start gap-2.5 hover:bg-stone-50 dark:hover:bg-zinc-800/40 text-xs transition"
+                                            >
+                                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold shrink-0 mt-0.5 ${
+                                                    isImport
+                                                        ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400'
+                                                        : 'bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400'
+                                                }`}>
+                                                    {isImport ? <ArrowDownLeft className="w-4 h-4" /> : <ArrowUpRight className="w-4 h-4" />}
+                                                </div>
+
+                                                <div className="min-w-0 flex-1 space-y-0.5">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <span className={`px-2 py-0.5 rounded-md font-black text-xs tabular-nums ${
+                                                            isImport
+                                                                ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60'
+                                                                : 'bg-rose-50 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-200/60 dark:border-rose-800/60'
+                                                        }`}>
+                                                            {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
+                                                        </span>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setHistoryModalProduct(null)
+                                                                    handleStartEdit(record)
+                                                                }}
+                                                                title="Chỉnh sửa đợt này"
+                                                                className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-indigo-50 dark:bg-zinc-800 text-stone-500 hover:text-indigo-600 flex items-center justify-center"
+                                                            >
+                                                                <Pencil className="w-3.5 h-3.5" />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteJournal(record.id)}
+                                                                title="Xóa đợt này"
+                                                                className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-rose-50 dark:bg-zinc-800 text-stone-500 hover:text-rose-600 flex items-center justify-center"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="text-[11px] text-stone-400 flex items-center gap-1.5 flex-wrap">
+                                                        <span>{formatDateTime(record.sent_at)}</span>
+                                                        <span>•</span>
+                                                        <span>{record.sent_by_name || 'Nhân viên'}</span>
+                                                        {userNote && <span className="text-stone-600 dark:text-stone-300 font-medium">💬 {userNote}</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })
+                                )}
+                            </div>
+
+                            {/* Nút đóng ở dưới */}
+                            <div className="pt-3 border-t border-stone-200 dark:border-zinc-800 mt-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryModalProduct(null)}
+                                    className="w-full h-9 rounded-xl bg-stone-100 dark:bg-zinc-800 hover:bg-stone-200 dark:hover:bg-zinc-700 text-stone-700 dark:text-stone-200 text-xs font-bold transition"
+                                >
+                                    Đóng
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )
+            })()}
         </div>
     )
 }
