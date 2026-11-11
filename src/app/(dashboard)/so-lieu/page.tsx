@@ -1511,27 +1511,11 @@ export default function SoLieuPage() {
         const companyId = currentSystem?.company_id || profile?.company_id || null
         const isImport = type === 'in'
 
-        // Xác định thời gian phát sinh của đợt:
-        // Nếu công việc này được mở vào một ngày trong quá khứ (nhập bù), ghép ngày của ca với giờ:phút:giây hiện tại
-        // để đợt nhập nằm đúng ngày của công việc và tăng dần theo thứ tự nhập
-        let nowStr = new Date().toISOString()
-        if (activeShift?.opened_at) {
-            const shiftDate = new Date(activeShift.opened_at)
-            const now = new Date()
-            if (!isNaN(shiftDate.getTime())) {
-                const isSameDay = shiftDate.getFullYear() === now.getFullYear() &&
-                                  shiftDate.getMonth() === now.getMonth() &&
-                                  shiftDate.getDate() === now.getDate()
-                if (!isSameDay) {
-                    const computed = new Date(shiftDate)
-                    computed.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds())
-                    nowStr = computed.getTime() < shiftDate.getTime() ? shiftDate.toISOString() : computed.toISOString()
-                }
-            }
-        }
+        // Thời gian phát sinh của đợt nhập luôn là thời điểm thực tế hiện tại
+        const nowStr = new Date().toISOString()
 
-        // Tính số thứ tự đợt của sản phẩm này trong công việc này
-        const productBatchCount = journalList.filter(j => j.item_name === product.name).length
+        // Tính số thứ tự đợt của sản phẩm này trong toàn bộ công việc (tăng dần liên tục)
+        const productBatchCount = (allJobJournals.length > 0 ? allJobJournals : journalList).filter(j => j.item_name === product.name).length
         const batchNumber = productBatchCount + 1
         const batchCode = `Đợt ${batchNumber}`
 
@@ -2062,20 +2046,8 @@ export default function SoLieuPage() {
                 }
             })
 
-            // Gợi ý thời gian đóng ca: nếu là ca nhập bù quá khứ, lấy ngày của ca ghép giờ:phút hiện tại
-            const now = new Date()
-            let suggestedCloseTime = formatDateTimeLocal(now)
-            const openD = new Date(openedAtStr)
-            if (!isNaN(openD.getTime())) {
-                const isSameDay = openD.getFullYear() === now.getFullYear() &&
-                                  openD.getMonth() === now.getMonth() &&
-                                  openD.getDate() === now.getDate()
-                if (!isSameDay) {
-                    const comp = new Date(openD)
-                    comp.setHours(now.getHours(), now.getMinutes())
-                    suggestedCloseTime = formatDateTimeLocal(comp.getTime() < openD.getTime() ? openD : comp)
-                }
-            }
+            // Gợi ý thời gian đóng ca: lấy thời điểm thực tế hiện tại
+            const suggestedCloseTime = formatDateTimeLocal(new Date())
             setCloseTimeInput(suggestedCloseTime)
 
             setShiftSummary({
