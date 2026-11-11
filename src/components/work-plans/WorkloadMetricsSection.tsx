@@ -24,6 +24,8 @@ import {
     ChevronDown,
     ChevronUp,
     Database,
+    Pencil,
+    FileText,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import {
@@ -33,6 +35,7 @@ import {
     LinkedAccountingOrderSummary,
     LinkedLotDateSummary,
     LinkedApprovedAssignmentSummary,
+    WorkPlanWorkNature,
     DIFFICULTY_CONFIG,
     QUANTITY_FACTOR_PRESETS,
     QuantityFactorPreset,
@@ -64,11 +67,23 @@ interface WorkloadMetricsSectionProps {
     value: WorkloadMetrics
     onChange: (next: WorkloadMetrics) => void
     defaultCollapsed?: boolean
+    // Bản chất công việc: 'statistics' hiện thêm ô "Số phiếu / chứng từ đã tạo"
+    workNature?: WorkPlanWorkNature | null
 }
 
-type ProofSourceTab = 'export_order' | 'inbound' | 'outbound' | 'lots_by_date' | 'approved_assignments'
+type ProofSourceTab =
+    | 'export_order'
+    | 'inbound'
+    | 'outbound'
+    | 'lots_by_date'
+    | 'approved_assignments'
+    | 'manual_entry'
 
 const DIFFICULTY_KEYS: WorkloadDifficulty[] = ['light', 'medium', 'heavy', 'very_heavy']
+
+// Quy đổi mặc định khi nhập tay (người dùng chốt: 1 pallet/vị trí/LOT = 600 kg, 1 thùng/kiện = 20 kg)
+const MANUAL_KG_PER_PALLET = 600
+const MANUAL_KG_PER_PACKAGE = 20
 
 export default function WorkloadMetricsSection({
     systemCode,
@@ -76,7 +91,9 @@ export default function WorkloadMetricsSection({
     value,
     onChange,
     defaultCollapsed = true,
+    workNature = 'labor',
 }: WorkloadMetricsSectionProps) {
+    const isStatistics = workNature === 'statistics'
     const [isExpanded, setIsExpanded] = useState<boolean>(!defaultCollapsed)
     const getInitialSourceTab = (): ProofSourceTab => {
         if ((value.linked_approved_assignments?.length || 0) > 0) return 'approved_assignments'
@@ -84,7 +101,7 @@ export default function WorkloadMetricsSection({
         if ((value.linked_lot_summaries?.length || 0) > 0) return 'lots_by_date'
         if ((value.linked_inbound_orders?.length || 0) > 0) return 'inbound'
         if ((value.linked_outbound_orders?.length || 0) > 0) return 'outbound'
-        return 'approved_assignments'
+        return 'manual_entry'
     }
 
     const [activeSourceTab, setActiveSourceTab] = useState<ProofSourceTab>(getInitialSourceTab)
@@ -124,6 +141,34 @@ export default function WorkloadMetricsSection({
             setAssignDateInput(planDate)
         }
     }, [planDate])
+
+    // Công việc Thống kê: đã gắn phiếu nhập/xuất kế toán thì tự điền số phiếu & số dòng dữ liệu khi ô còn trống
+    useEffect(() => {
+        if (!isStatistics) return
+        const inbound = value.linked_inbound_orders || []
+        const outbound = value.linked_outbound_orders || []
+        const autoDocs = inbound.length + outbound.length
+        const autoRows = [...inbound, ...outbound].reduce(
+            (s, o) => s + (o.items_count || 0),
+            0
+        )
+        const needsDocs = autoDocs > 0 && !(Number(value.documents_count) > 0)
+        const needsRows = autoRows > 0 && !(Number(value.data_rows_count) > 0)
+        if (needsDocs || needsRows) {
+            onChange({
+                ...value,
+                documents_count: needsDocs ? autoDocs : value.documents_count ?? null,
+                data_rows_count: needsRows ? autoRows : value.data_rows_count ?? null,
+            })
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [
+        isStatistics,
+        value.linked_inbound_orders?.length,
+        value.linked_outbound_orders?.length,
+        value.documents_count,
+        value.data_rows_count,
+    ])
 
     const quickDatePills = useMemo(() => {
         const todayStr = toDateStr(new Date())
@@ -964,6 +1009,21 @@ export default function WorkloadMetricsSection({
         )
     }, [outboundOrders, searchOutbound])
 
+    // Công việc Thống kê: số phiếu & số dòng dữ liệu lấy trực tiếp từ phiếu nhập + phiếu xuất kế toán đã gắn
+    const syncStatisticsDocuments = (metrics: WorkloadMetrics): WorkloadMetrics => {
+        if (!isStatistics) return metrics
+        const inbound = metrics.linked_inbound_orders || []
+        const outbound = metrics.linked_outbound_orders || []
+        return {
+            ...metrics,
+            documents_count: inbound.length + outbound.length,
+            data_rows_count: [...inbound, ...outbound].reduce(
+                (s, o) => s + (o.items_count || 0),
+                0
+            ),
+        }
+    }
+
     // Toggle handlers for each of the 4 sources
     const handleToggleExportOrder = (order: LinkedExportOrderSummary) => {
         const current = Array.isArray(value.linked_export_orders)
@@ -994,7 +1054,7 @@ export default function WorkloadMetricsSection({
             ...value,
             linked_inbound_orders: nextLinked,
         })
-        onChange(nextMetrics)
+        onChange(syncStatisticsDocuments(nextMetrics))
     }
 
     const handleToggleOutboundOrder = (order: LinkedAccountingOrderSummary) => {
@@ -1010,7 +1070,7 @@ export default function WorkloadMetricsSection({
             ...value,
             linked_outbound_orders: nextLinked,
         })
-        onChange(nextMetrics)
+        onChange(syncStatisticsDocuments(nextMetrics))
     }
 
     const handleToggleLotSummary = (summary: LinkedLotDateSummary) => {
@@ -1077,6 +1137,28 @@ export default function WorkloadMetricsSection({
                 num !== null ? Math.round((num / currentFactor) * 100) / 100 : null
         }
 
+        // Nhập tay: tự quy đổi khối lượng từ số lượng (1 vị trí/LOT/pallet = 600 kg, 1 thùng/kiện = 20 kg)
+        if (
+            activeSourceTab === 'manual_entry' &&
+            (field === 'positions_count' || field === 'lots_count' || field === 'packages_count')
+        ) {
+            const positionsCount = Number(next.positions_count) || 0
+            const lotsCount = Number(next.lots_count) || 0
+            const packagesCount = Number(next.packages_count) || 0
+            let derivedKg: number | null = null
+            if (field === 'packages_count') {
+                if (packagesCount > 0) derivedKg = packagesCount * MANUAL_KG_PER_PACKAGE
+            } else {
+                const palletsCount = Math.max(positionsCount, lotsCount)
+                if (palletsCount > 0) derivedKg = palletsCount * MANUAL_KG_PER_PALLET
+            }
+            if (derivedKg !== null) {
+                const roundedKg = Math.round(derivedKg * 100) / 100
+                next.weight_kg = roundedKg
+                next.base_weight_kg = Math.round((roundedKg / currentFactor) * 100) / 100
+            }
+        }
+
         if (autoDifficulty) {
             next.difficulty = suggestWorkloadDifficulty(next)
         }
@@ -1109,6 +1191,22 @@ export default function WorkloadMetricsSection({
     const outboundCount = value.linked_outbound_orders?.length || 0
     const lotSummaryCount = value.linked_lot_summaries?.length || 0
     const assignmentCount = value.linked_approved_assignments?.length || 0
+
+    // Tổng số dòng dữ liệu của các phiếu nhập/xuất kế toán đã gắn
+    const autoRowsCount = [
+        ...(value.linked_inbound_orders || []),
+        ...(value.linked_outbound_orders || []),
+    ].reduce((s, o) => s + (o.items_count || 0), 0)
+
+    const manualHasData =
+        (Number(value.positions_count) || 0) > 0 ||
+        (Number(value.lots_count) || 0) > 0 ||
+        (Number(value.packages_count) || 0) > 0 ||
+        (Number(value.weight_kg) || 0) > 0 ||
+        (Number(value.containers_count) || 0) > 0 ||
+        (Number(value.hours_spent) || 0) > 0 ||
+        (Number(value.documents_count) || 0) > 0 ||
+        (Number(value.data_rows_count) || 0) > 0
 
     const distinctSourcesCount =
         (exportCount > 0 ? 1 : 0) +
@@ -1180,20 +1278,308 @@ export default function WorkloadMetricsSection({
             badgeActiveColor: 'bg-white text-blue-700',
             badgeInactiveColor: 'bg-blue-600 text-white',
         },
+        {
+            id: 'manual_entry' as const,
+            title: 'Nhập tay',
+            sub: 'Không cần nguồn dữ liệu',
+            icon: Pencil,
+            iconColor: 'text-violet-600',
+            activeClass:
+                'bg-violet-600 text-white border-violet-600 shadow-md ring-2 ring-violet-200',
+            badgeCount: 0,
+            badgeActiveColor: 'bg-white text-violet-700',
+            badgeInactiveColor: 'bg-violet-600 text-white',
+        },
     ]
 
     const pos = Number(value.positions_count) || 0
     const conts = Number(value.containers_count) || 0
     const kg = Number(value.weight_kg) || 0
     const pkgs = Number(value.packages_count) || 0
+    const docs = Number(value.documents_count) || 0
 
     const hasSummaryData =
         pos > 0 ||
         conts > 0 ||
         kg > 0 ||
         pkgs > 0 ||
+        (Number(value.documents_count) || 0) > 0 ||
+        (Number(value.data_rows_count) || 0) > 0 ||
         !!value.difficulty ||
         hasAnyLinked
+
+    const manualMetricInputs = (
+        <>
+            {/* Quantitative Metrics Grid (Auto-filled from Linked Sources or Manual Entry) */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
+                {isStatistics ? (
+                    <div className="bg-white p-2.5 rounded-xl border border-sky-300 ring-1 ring-sky-100">
+                        <label className="text-[10px] font-bold uppercase text-sky-700 flex items-center gap-1">
+                            <FileText size={11} className="text-sky-600" />
+                            Số Phiếu / Chứng Từ
+                        </label>
+                        <input
+                            type="number"
+                            min={0}
+                            value={value.documents_count ?? ''}
+                            onChange={e =>
+                                updateNumericField('documents_count', e.target.value, false)
+                            }
+                            placeholder="VD: 4"
+                            className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-sky-500"
+                        />
+                        {inboundCount + outboundCount > 0 ? (
+                            <div className="text-[10px] font-semibold text-sky-700 mt-0.5 leading-snug">
+                                Tự động: {inboundCount} phiếu nhập + {outboundCount} phiếu xuất
+                            </div>
+                        ) : (
+                            <div className="text-[10px] font-medium text-stone-500 mt-0.5 leading-snug">
+                                Đếm phiếu đã hoàn thành trong ca
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+                        <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
+                            <MapPin size={11} className="text-amber-600" />
+                            Số Vị Trí Hạ/Xếp
+                        </label>
+                        <input
+                            type="number"
+                            min={0}
+                            value={value.positions_count ?? ''}
+                            onChange={e => updateNumericField('positions_count', e.target.value)}
+                            placeholder="VD: 52"
+                            className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
+                        />
+                        {value.quantity_factor &&
+                            value.quantity_factor !== 1 &&
+                            value.base_positions_count ? (
+                            <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
+                                Gốc: {value.base_positions_count} ({value.quantity_factor_label})
+                            </div>
+                        ) : null}
+                    </div>
+                )}
+
+                {isStatistics ? (
+                    <div className="bg-white p-2.5 rounded-xl border border-sky-300 ring-1 ring-sky-100">
+                        <label className="text-[10px] font-bold uppercase text-sky-700 flex items-center gap-1">
+                            <FileText size={11} className="text-sky-600" />
+                            Số Dòng Dữ Liệu
+                        </label>
+                        <input
+                            type="number"
+                            min={0}
+                            value={value.data_rows_count ?? ''}
+                            onChange={e =>
+                                updateNumericField('data_rows_count', e.target.value, false)
+                            }
+                            placeholder="VD: 40"
+                            className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-sky-500"
+                        />
+                        {autoRowsCount > 0 ? (
+                            <div className="text-[10px] font-semibold text-sky-700 mt-0.5 leading-snug">
+                                Tự động: {autoRowsCount.toLocaleString('vi-VN')} dòng trong{' '}
+                                {inboundCount + outboundCount} phiếu
+                            </div>
+                        ) : (
+                            <div className="text-[10px] font-medium text-stone-500 mt-0.5 leading-snug">
+                                Tổng dòng trong các phiếu đã nhập
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+                        <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
+                            <Boxes size={11} className="text-indigo-600" />
+                            Số LOT / Pallet
+                        </label>
+                        <input
+                            type="number"
+                            min={0}
+                            value={value.lots_count ?? ''}
+                            onChange={e => updateNumericField('lots_count', e.target.value)}
+                            placeholder="VD: 52"
+                            className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
+                        />
+                        {value.quantity_factor &&
+                            value.quantity_factor !== 1 &&
+                            value.base_lots_count ? (
+                            <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
+                                Gốc: {value.base_lots_count} ({value.quantity_factor_label})
+                            </div>
+                        ) : null}
+                    </div>
+                )}
+
+                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
+                        <Package size={11} className="text-emerald-600" />
+                        Số Thùng / Kiện
+                    </label>
+                    <input
+                        type="number"
+                        min={0}
+                        value={value.packages_count ?? ''}
+                        onChange={e => updateNumericField('packages_count', e.target.value)}
+                        placeholder="VD: 1560"
+                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
+                    />
+                    {value.quantity_factor &&
+                        value.quantity_factor !== 1 &&
+                        value.base_packages_count ? (
+                        <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
+                            Gốc: {value.base_packages_count.toLocaleString('vi-VN')} (
+                            {value.quantity_factor_label})
+                        </div>
+                    ) : null}
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
+                        <Scale size={11} className="text-cyan-600" />
+                        Khối Lượng (Kg)
+                    </label>
+                    <input
+                        type="number"
+                        min={0}
+                        value={value.weight_kg ?? ''}
+                        onChange={e => updateNumericField('weight_kg', e.target.value)}
+                        placeholder="VD: 31200"
+                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
+                    />
+                    {value.quantity_factor &&
+                        value.quantity_factor !== 1 &&
+                        value.base_weight_kg ? (
+                        <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
+                            Gốc: {value.base_weight_kg.toLocaleString('vi-VN')} kg (
+                            {value.quantity_factor_label})
+                        </div>
+                    ) : null}
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
+                        <Truck size={11} className="text-rose-600" />
+                        Số Cont Xuất/Nhập
+                    </label>
+                    <input
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        value={value.containers_count ?? ''}
+                        onChange={e => updateNumericField('containers_count', e.target.value)}
+                        placeholder="VD: 1"
+                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
+                    />
+                </div>
+
+                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
+                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
+                        <Clock size={11} className="text-purple-600" />
+                        Số Giờ Thực Hiện
+                    </label>
+                    <input
+                        type="number"
+                        min={0}
+                        step="0.5"
+                        value={value.hours_spent ?? ''}
+                        onChange={e =>
+                            updateNumericField('hours_spent', e.target.value, false)
+                        }
+                        placeholder="VD: 3.5"
+                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
+                    />
+                </div>
+            </div>
+
+            {/* Quantity Multiplier / Fraction Adjustment Bar (1/3, 1/2, 2/3, x1, x1.5, x2, x3) + Clear Explanation Note */}
+            <div className="bg-white rounded-xl border border-indigo-200/90 p-3 space-y-2.5 shadow-2xs">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                        <span>🧮 Hệ số nhân / chia khối lượng thực tế:</span>
+                        <span className="text-[11px] font-normal text-stone-500">
+                            (VD: Đưa ra + đưa vào lại chọn <b>x2</b>; hàng đã bốc sẵn một phần chọn <b>1/3</b> hoặc <b>1/2</b>)
+                        </span>
+                    </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                    {QUANTITY_FACTOR_PRESETS.map(preset => {
+                        const currentFactor = value.quantity_factor || 1
+                        const isActive =
+                            Math.abs(currentFactor - preset.factor) < 0.01
+                        return (
+                            <button
+                                key={preset.key}
+                                type="button"
+                                onClick={() => handleSelectQuantityFactor(preset)}
+                                title={preset.description}
+                                className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold transition-all ${
+                                    isActive
+                                        ? preset.factor === 1
+                                            ? 'bg-stone-800 text-white border-stone-800 shadow-2xs'
+                                            : 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-500/30 shadow-2xs'
+                                        : 'bg-stone-50 hover:bg-indigo-50 text-stone-700 border-stone-200'
+                                }`}
+                            >
+                                {preset.label}
+                            </button>
+                        )
+                    })}
+                </div>
+
+                {/* Adjustment Reason Input & Quick-Pick Reason Chips */}
+                <div className="space-y-1.5 pt-1">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+                        <span className="text-xs font-bold text-indigo-900 shrink-0">
+                            📝 Lý do nhân / chia khối lượng:
+                        </span>
+                        <input
+                            type="text"
+                            value={value.quantity_adjustment_note || ''}
+                            onChange={e =>
+                                onChange({
+                                    ...value,
+                                    quantity_adjustment_note: e.target.value || null,
+                                })
+                            }
+                            placeholder="VD: Đưa ra đưa vào nhân đôi khối lượng / Hôm đó làm 5 tấn nhưng có một số hàng đã được bốc sẵn..."
+                            className="flex-1 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/30 text-xs font-semibold text-stone-800 outline-hidden focus:border-indigo-500 focus:bg-white"
+                        />
+                    </div>
+
+                    {/* Quick reason chips */}
+                    <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[10px] font-bold text-stone-400 uppercase">
+                            Gợi ý nhanh:
+                        </span>
+                        {[
+                            'Đưa ra đưa vào nhân đôi khối lượng (hạ ra dán tem/đai kiện rồi đưa vào lại kho)',
+                            'Hôm đó có một số hàng đã được bốc sẵn từ trước (tính 1/3 khối lượng)',
+                            'Một nửa lượng hàng đã được chuẩn bị sẵn từ ca trước (tính 1/2 khối lượng)',
+                            'Chia khối lượng thực hiện cùng ca/nhóm khác',
+                        ].map(reason => (
+                            <button
+                                key={reason}
+                                type="button"
+                                onClick={() =>
+                                    onChange({
+                                        ...value,
+                                        quantity_adjustment_note: reason,
+                                    })
+                                }
+                                className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-indigo-50 hover:text-indigo-700 text-stone-600 text-[11px] font-medium border border-stone-200 transition-colors text-left"
+                            >
+                                + {reason}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </>
+    )
 
     return (
         <div className="rounded-2xl border border-indigo-200/80 bg-indigo-50/30 p-3.5 sm:p-4 space-y-3.5 transition-all">
@@ -1220,7 +1606,7 @@ export default function WorkloadMetricsSection({
                         </div>
                         {isExpanded ? (
                             <p className="text-[11px] text-stone-500 line-clamp-1">
-                                Gắn số liệu thực tế từ Lệnh xuất kho, Nhập/Xuất kế toán, Số LOT tạo hoặc Duyệt gán vị trí xe nâng
+                                Gắn số liệu thực tế từ Lệnh xuất kho, Nhập/Xuất kế toán, Số LOT tạo, Duyệt gán vị trí xe nâng hoặc tự nhập tay
                             </p>
                         ) : (
                             <div className="flex flex-wrap items-center gap-2 pt-0.5 text-[11px]">
@@ -1229,7 +1615,7 @@ export default function WorkloadMetricsSection({
                                         <span className="text-stone-700 font-bold flex items-center gap-1">
                                             <span>📊 Đã gắn:</span>
                                             {conts > 0 && <b className="text-indigo-700">{conts} Cont</b>}
-                                            {pos > 0 && (
+                                            {!isStatistics && pos > 0 && (
                                                 <span>• <b className="text-indigo-700">{pos} vị trí</b></span>
                                             )}
                                             {kg > 0 && (
@@ -1237,6 +1623,12 @@ export default function WorkloadMetricsSection({
                                             )}
                                             {pkgs > 0 && (
                                                 <span>• <b>{pkgs} {value.package_unit || 'Thùng'}</b></span>
+                                            )}
+                                            {docs > 0 && (
+                                                <span>• <b className="text-sky-700">📄 {docs.toLocaleString('vi-VN')} phiếu</b></span>
+                                            )}
+                                            {Number(value.data_rows_count) > 0 && (
+                                                <span>• <b className="text-sky-700">📋 {Number(value.data_rows_count).toLocaleString('vi-VN')} dòng</b></span>
                                             )}
                                         </span>
                                         {value.difficulty && (
@@ -1293,7 +1685,7 @@ export default function WorkloadMetricsSection({
                         )}
                     </div>
 
-                    {/* Danh sách 5 nguồn dữ liệu xếp dọc */}
+                    {/* Danh sách 6 nguồn dữ liệu xếp dọc */}
                     <div className="flex flex-col gap-1.5">
                         {proofSources.map(src => {
                             const isActive = activeSourceTab === src.id
@@ -1347,6 +1739,18 @@ export default function WorkloadMetricsSection({
                                                 {src.badgeCount}
                                             </span>
                                         )}
+                                        {src.id === 'manual_entry' && manualHasData && (
+                                            <span
+                                                className={`px-1.5 py-0.5 rounded-full text-[10px] font-black shrink-0 ${
+                                                    isActive
+                                                        ? 'bg-white text-violet-700'
+                                                        : 'bg-violet-600 text-white'
+                                                }`}
+                                                title="Đã nhập số liệu tay"
+                                            >
+                                                ✓
+                                            </span>
+                                        )}
                                         <ChevronRight
                                             size={14}
                                             className={`transition-transform ${
@@ -1368,6 +1772,9 @@ export default function WorkloadMetricsSection({
                         </div>
                         <p className="text-[10px] leading-relaxed text-stone-500">
                             Bạn có thể chọn mục ở nguồn này, sau đó click chọn tiếp nguồn khác bên trái để cộng dồn thêm số liệu.
+                        </p>
+                        <p className="text-[10px] leading-relaxed text-stone-500">
+                            Không có chứng từ? Chọn <b>Nhập tay</b> để nhập số liệu trực tiếp.
                         </p>
                     </div>
                 </div>
@@ -1729,6 +2136,10 @@ export default function WorkloadMetricsSection({
                         </div>
                     </div>
 
+                    <p className="text-[11px] text-emerald-900 bg-emerald-50/60 border border-emerald-200 rounded-lg px-2.5 py-1.5">
+                        ℹ️ Phiếu nhập kế toán không có thông tin LOT / vị trí thật — số LOT/Pallet và Số vị trí để trống, bạn tự nhập ở các ô bên dưới nếu cần.
+                    </p>
+
                     {loadingInbound ? (
                         <div className="py-5 text-center text-xs text-stone-500 flex items-center justify-center gap-2">
                             <Loader2 size={15} className="animate-spin text-emerald-600" />
@@ -1832,6 +2243,10 @@ export default function WorkloadMetricsSection({
                             />
                         </div>
                     </div>
+
+                    <p className="text-[11px] text-amber-900 bg-amber-50/60 border border-amber-200 rounded-lg px-2.5 py-1.5">
+                        ℹ️ Phiếu xuất kế toán không có thông tin LOT / vị trí thật — số LOT/Pallet và Số vị trí để trống, bạn tự nhập ở các ô bên dưới nếu cần.
+                    </p>
 
                     {loadingOutbound ? (
                         <div className="py-5 text-center text-xs text-stone-500 flex items-center justify-center gap-2">
@@ -2334,220 +2749,48 @@ export default function WorkloadMetricsSection({
                     </div>
                 )
             })()}
+
+            {/* TAB 6: Manual Entry (Tự nhập số liệu khi không có nguồn dữ liệu cụ thể) */}
+            {activeSourceTab === 'manual_entry' && (
+                <div className="bg-white rounded-xl border border-violet-200 p-3 space-y-3 shadow-xs">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-violet-100">
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-violet-600"></span>
+                            <span className="text-xs font-black text-violet-950 uppercase tracking-wider">
+                                ✍️ Bảng nhập tay số liệu chứng minh
+                            </span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-200">
+                            Không cần chứng từ / nguồn dữ liệu
+                        </span>
+                    </div>
+
+                    {isStatistics ? (
+                        <p className="text-[11px] font-semibold text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
+                            📊 Công việc <b>Thống kê / Ghi chép</b>: nhập <b>Số phiếu / chứng từ</b> và <b>Số dòng dữ liệu</b>
+                            (tổng số dòng đã nhập trong các phiếu) để chấm độ chính xác và hoàn thành trong ngày. Bước
+                            Báo cáo & Xếp hạng <b>không ghi sản lượng và giờ làm</b> cho việc này.
+                        </p>
+                    ) : (
+                        <>
+                            <p className="text-[11px] text-stone-500 leading-relaxed">
+                                Nhập trực tiếp số liệu thực tế đã thực hiện (vị trí hạ/xếp, LOT/pallet, thùng/kiện, khối lượng, cont, số giờ).
+                                Số liệu nhập tay được dùng ngay để tính độ nặng / nhẹ và phân bổ hiệu suất cho công việc.
+                            </p>
+                            <p className="text-[11px] font-semibold text-violet-800 bg-violet-50 border border-violet-200 rounded-lg px-2.5 py-1.5">
+                                ⚖️ Tự quy đổi khối lượng theo ô vừa nhập: 1 vị trí / LOT / pallet = <b>600 kg</b>; 1 thùng / kiện = <b>20 kg</b>.
+                                Nhập tay trực tiếp ô Khối lượng nếu muốn giá trị khác.
+                            </p>
+                        </>
+                    )}
+
+                    {manualMetricInputs}
+                </div>
+            )}
                 </div>
             </div>
 
-            {/* Quantitative Metrics Grid (Auto-filled from Linked Sources or Manual Entry) */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2.5">
-                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
-                        <MapPin size={11} className="text-amber-600" />
-                        Số Vị Trí Hạ/Xếp
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        value={value.positions_count ?? ''}
-                        onChange={e => updateNumericField('positions_count', e.target.value)}
-                        placeholder="VD: 52"
-                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
-                    />
-                    {value.quantity_factor &&
-                        value.quantity_factor !== 1 &&
-                        value.base_positions_count ? (
-                        <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
-                            Gốc: {value.base_positions_count} ({value.quantity_factor_label})
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
-                        <Boxes size={11} className="text-indigo-600" />
-                        Số LOT / Pallet
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        value={value.lots_count ?? ''}
-                        onChange={e => updateNumericField('lots_count', e.target.value)}
-                        placeholder="VD: 52"
-                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
-                    />
-                    {value.quantity_factor &&
-                        value.quantity_factor !== 1 &&
-                        value.base_lots_count ? (
-                        <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
-                            Gốc: {value.base_lots_count} ({value.quantity_factor_label})
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
-                        <Package size={11} className="text-emerald-600" />
-                        Số Thùng / Kiện
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        value={value.packages_count ?? ''}
-                        onChange={e => updateNumericField('packages_count', e.target.value)}
-                        placeholder="VD: 1560"
-                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
-                    />
-                    {value.quantity_factor &&
-                        value.quantity_factor !== 1 &&
-                        value.base_packages_count ? (
-                        <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
-                            Gốc: {value.base_packages_count.toLocaleString('vi-VN')} (
-                            {value.quantity_factor_label})
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
-                        <Scale size={11} className="text-cyan-600" />
-                        Khối Lượng (Kg)
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        value={value.weight_kg ?? ''}
-                        onChange={e => updateNumericField('weight_kg', e.target.value)}
-                        placeholder="VD: 31200"
-                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
-                    />
-                    {value.quantity_factor &&
-                        value.quantity_factor !== 1 &&
-                        value.base_weight_kg ? (
-                        <div className="text-[10px] font-semibold text-indigo-600 mt-0.5">
-                            Gốc: {value.base_weight_kg.toLocaleString('vi-VN')} kg (
-                            {value.quantity_factor_label})
-                        </div>
-                    ) : null}
-                </div>
-
-                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
-                        <Truck size={11} className="text-rose-600" />
-                        Số Cont Xuất/Nhập
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        value={value.containers_count ?? ''}
-                        onChange={e => updateNumericField('containers_count', e.target.value)}
-                        placeholder="VD: 1"
-                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
-                    />
-                </div>
-
-                <div className="bg-white p-2.5 rounded-xl border border-stone-200">
-                    <label className="text-[10px] font-bold uppercase text-stone-500 flex items-center gap-1">
-                        <Clock size={11} className="text-purple-600" />
-                        Số Giờ Thực Hiện
-                    </label>
-                    <input
-                        type="number"
-                        min={0}
-                        step="0.5"
-                        value={value.hours_spent ?? ''}
-                        onChange={e =>
-                            updateNumericField('hours_spent', e.target.value, false)
-                        }
-                        placeholder="VD: 3.5"
-                        className="w-full mt-1 text-sm font-black text-stone-900 outline-hidden border-b border-transparent focus:border-indigo-500"
-                    />
-                </div>
-            </div>
-
-            {/* Quantity Multiplier / Fraction Adjustment Bar (1/3, 1/2, 2/3, x1, x1.5, x2, x3) + Clear Explanation Note */}
-            <div className="bg-white rounded-xl border border-indigo-200/90 p-3 space-y-2.5 shadow-2xs">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
-                        <span>🧮 Hệ số nhân / chia khối lượng thực tế:</span>
-                        <span className="text-[11px] font-normal text-stone-500">
-                            (VD: Đưa ra + đưa vào lại chọn <b>x2</b>; hàng đã bốc sẵn một phần chọn <b>1/3</b> hoặc <b>1/2</b>)
-                        </span>
-                    </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-1.5">
-                    {QUANTITY_FACTOR_PRESETS.map(preset => {
-                        const currentFactor = value.quantity_factor || 1
-                        const isActive =
-                            Math.abs(currentFactor - preset.factor) < 0.01
-                        return (
-                            <button
-                                key={preset.key}
-                                type="button"
-                                onClick={() => handleSelectQuantityFactor(preset)}
-                                title={preset.description}
-                                className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold transition-all ${
-                                    isActive
-                                        ? preset.factor === 1
-                                            ? 'bg-stone-800 text-white border-stone-800 shadow-2xs'
-                                            : 'bg-indigo-600 text-white border-indigo-600 ring-2 ring-indigo-500/30 shadow-2xs'
-                                        : 'bg-stone-50 hover:bg-indigo-50 text-stone-700 border-stone-200'
-                                }`}
-                            >
-                                {preset.label}
-                            </button>
-                        )
-                    })}
-                </div>
-
-                {/* Adjustment Reason Input & Quick-Pick Reason Chips */}
-                <div className="space-y-1.5 pt-1">
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                        <span className="text-xs font-bold text-indigo-900 shrink-0">
-                            📝 Lý do nhân / chia khối lượng:
-                        </span>
-                        <input
-                            type="text"
-                            value={value.quantity_adjustment_note || ''}
-                            onChange={e =>
-                                onChange({
-                                    ...value,
-                                    quantity_adjustment_note: e.target.value || null,
-                                })
-                            }
-                            placeholder="VD: Đưa ra đưa vào nhân đôi khối lượng / Hôm đó làm 5 tấn nhưng có một số hàng đã được bốc sẵn..."
-                            className="flex-1 px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50/30 text-xs font-semibold text-stone-800 outline-hidden focus:border-indigo-500 focus:bg-white"
-                        />
-                    </div>
-
-                    {/* Quick reason chips */}
-                    <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[10px] font-bold text-stone-400 uppercase">
-                            Gợi ý nhanh:
-                        </span>
-                        {[
-                            'Đưa ra đưa vào nhân đôi khối lượng (hạ ra dán tem/đai kiện rồi đưa vào lại kho)',
-                            'Hôm đó có một số hàng đã được bốc sẵn từ trước (tính 1/3 khối lượng)',
-                            'Một nửa lượng hàng đã được chuẩn bị sẵn từ ca trước (tính 1/2 khối lượng)',
-                            'Chia khối lượng thực hiện cùng ca/nhóm khác',
-                        ].map(reason => (
-                            <button
-                                key={reason}
-                                type="button"
-                                onClick={() =>
-                                    onChange({
-                                        ...value,
-                                        quantity_adjustment_note: reason,
-                                    })
-                                }
-                                className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-indigo-50 hover:text-indigo-700 text-stone-600 text-[11px] font-medium border border-stone-200 transition-colors text-left"
-                            >
-                                + {reason}
-                            </button>
-                        ))}
-                    </div>
-                </div>
-            </div>
+            {activeSourceTab !== 'manual_entry' && manualMetricInputs}
 
             {/* Custom Metric Note (For non-export tasks like cleaning, ice breaking, training) */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">

@@ -2723,3 +2723,199 @@ User nhìn hàng tab Excel thấy tên dài tràn màn hình và muốn sheet "C
 
 - `npx vitest run` 3 file: inventoryContainerSheet (16), inventoryDistributionSheet (13), stocktakeReconciliation (17) → **46/46 pass**; các assertion thứ tự sheet cập nhật theo thứ tự mới `Tổng hợp → [Phân bố tồn kho] → [Container tồn kho] → [Lấp đầy theo khu] → Chi tiết`.
 - `npx tsc --noEmit` lọc 4 file đụng tới → sạch.
+
+# Walkthrough: Nguồn "Nhập tay" cho Số liệu chứng minh công việc (`/work/plans`)
+
+## Yêu cầu
+
+Modal "Số Liệu & Chứng Từ Chứng Minh Công Việc" trước đây luôn mở vào một nguồn dữ liệu (mặc định "Duyệt gán vị trí"), trong khi thực tế có công việc không có chứng từ/nguồn cụ thể nên phải nhập số liệu trực tiếp.
+
+## Sửa (`src/components/work-plans/WorkloadMetricsSection.tsx`)
+
+- Thêm `ProofSourceTab = 'manual_entry'` và một card nguồn thứ 6 **"Nhập tay — Không cần nguồn dữ liệu"** (icon bút chì, tông violet) trong danh sách nguồn bên trái.
+- `getInitialSourceTab()` khi chưa gắn nguồn nào giờ trả `'manual_entry'` thay vì `'approved_assignments'` — mở modal là thấy ngay form nhập, không bị "bắt chọn nguồn".
+- Tách khối **lưới 6 chỉ số** (Vị trí hạ/xếp, LOT/Pallet, Thùng/Kiện, Kg, Cont, Giờ) + **thanh hệ số nhân/chia** (1/3…x3, lý do, gợi ý nhanh) thành biến `manualMetricInputs` dùng chung: render trong tab "Nhập tay"; với các nguồn khác vẫn render ở cuối như cũ (`activeSourceTab !== 'manual_entry'` để không hiện trùng 2 lần).
+- Card "Nhập tay" hiện dấu ✓ khi đã có số liệu tay; thêm dòng gợi ý trong khung "Mẹo cộng dồn".
+- Không đổi schema, không đổi types: số liệu nhập tay vẫn ghi vào cùng `WorkloadMetrics` nên luồng `suggestWorkloadDifficulty` / phân bổ KPI và module `work_plan` giữ nguyên; không đụng Kho Đông Lạnh (thay đổi thuần UI trong component dùng chung, chỉ hiển thị khi module `work_plan` bật).
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `WorkloadMetricsSection` → không có lỗi.
+- `git diff --stat`: 282 thêm / 210 xóa (do di chuyển khối JSX, không phải viết lại toàn file).
+- Chưa xác minh bằng trình duyệt: `:3000` đang chạy bản build cũ nên cần rebuild (hỏi trước) hoặc chạy dev để thấy card "Nhập tay".
+
+# Walkthrough: Nhập tay tự quy đổi khối lượng (600 kg/pallet, 20 kg/thùng)
+
+## Yêu cầu
+
+Trong "Nhập tay", user muốn khỏi gõ Kg: 1 vị trí / 1 LOT (pallet) = 600 kg, 1 thùng/kiện = 20 kg.
+
+## Sửa (`src/components/work-plans/WorkloadMetricsSection.tsx`)
+
+- Thêm hằng `MANUAL_KG_PER_PALLET = 600`, `MANUAL_KG_PER_PACKAGE = 20`.
+- `updateNumericField`: chỉ khi `activeSourceTab === 'manual_entry'` và người dùng sửa `positions_count`/`lots_count`/`packages_count` thì tự điền `weight_kg` (và `base_weight_kg` theo hệ số hiện hành):
+  - Sửa ô Thùng/Kiện → Kg = số thùng × 20.
+  - Sửa ô Vị trí hoặc LOT → Kg = max(vị trí, LOT) × 600 (vị trí và LOT là cùng một pallet nên không cộng dồn).
+  - Ô nào vừa nhập thì quyết định (nhập thùng sau thì thùng thắng, nhập vị trí/LOT sau thì pallet thắng); gõ thẳng ô Kg vẫn ghi đè được.
+- Không đổi hành vi các nguồn dữ liệu khác: điều kiện chỉ chạy trong tab Nhập tay, nên luồng cộng dồn từ Lệnh xuất/Nhập-Xuất kế toán/LOT/Duyệt gán vị trí giữ nguyên.
+- Thêm dòng nhắc quy đổi trong bảng Nhập tay.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `WorkloadMetricsSection` → sạch.
+- Chưa thử được trên trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev.
+
+# Walkthrough: Nguồn Nhập/Xuất kế toán không tự quy LOT / vị trí
+
+## Yêu cầu
+
+User chốt: phiếu nhập/xuất kế toán không có thông tin LOT/vị trí thật nên **để trống cho tự nhập**, không quy đổi tự động (trước đây LOT bị lấy bằng số dòng hàng, VD 4 dòng → "4 LOT").
+
+## Sửa (`src/components/work-plans/types.ts`)
+
+- `recalculateWorkloadFromLinkedSources`: bỏ `inboundList.items_count` và `outboundList.items_count` khỏi `sumLots`. LOT/vị trí chỉ cộng từ các nguồn có dữ liệu thật (Lệnh xuất kho, Số LOT tạo, Duyệt gán vị trí); nếu đã nhập tay thì giữ nguyên giá trị nhập tay.
+- Không quy từ thùng hay kg sang LOT/vị trí (user từ chối cả 2 cách quy đổi).
+
+## Sửa (`src/components/work-plans/WorkloadMetricsSection.tsx`)
+
+- Thêm dòng nhắc trong bảng chọn Nhập kế toán và Xuất kế toán: phiếu không có LOT/vị trí, hai ô đó để trống và tự nhập ở lưới chỉ số bên dưới.
+
+## Kiểm chứng
+
+- `npx vitest run src/components/work-plans/__tests__/workPlanParser.test.ts` → **12/12 pass** (cập nhật kỳ vọng: nhập 5 dòng + 17 LOT thật → `lots_count = 17`, trước là 22).
+- `npx tsc --noEmit` lọc `work-plans/types`, `WorkloadMetricsSection` → sạch.
+
+# Walkthrough: Phân loại Lao động tay chân vs Thống kê / Ghi chép (không ghi sản lượng & giờ làm)
+
+## Yêu cầu
+
+Ở bước 2 "Giao việc ca" cần đánh dấu được công việc nào là **lao động tay chân**, công việc nào là **thống kê / ghi chép**. Việc thống kê (VD "Số liệu thống kê" của Giang, Da Ti) không có tay chân, chỉ cần **độ chính xác và hoàn thành trong ngày**; vì vậy ở bước 4 "Báo cáo & Xếp hạng", cột **Sản lượng & Giờ làm không được ghi** cho các việc này.
+
+## Schema (`supabase/migrations/20261111100000_add_work_nature_to_work_plan_items.sql`)
+
+- Thêm cột `work_plan_items.work_nature text NOT NULL DEFAULT 'labor'` + check `('labor','statistics')`.
+- 10 dòng cũ tự nhận `'labor'` — không đổi dữ liệu lịch sử, không đụng logic Kho Đông Lạnh; cột nằm trong bảng đã lọc `system_code` nên vẫn cô lập phân hệ.
+
+## Sửa (`src/components/work-plans/types.ts`)
+
+- Thêm `WorkPlanWorkNature = 'labor' | 'statistics'`, `WORK_NATURE_CONFIG` (nhãn/màu/mô tả) và field `work_nature?: WorkPlanWorkNature | null` trên `WorkPlanItem`.
+
+## Sửa (`src/components/work-plans/WorkPlansView.tsx`)
+
+- Form "Giao việc ca" có nút chọn **🏋️ Lao động** / **📊 Thống kê** (mặc định Lao động); chọn Thống kê hiện dòng nhắc: không có tay chân, chấm độ chính xác + hoàn thành trong ngày, bước Báo cáo không ghi sản lượng/giờ.
+- Mỗi hàng công việc có chip bản chất bấm được để đổi qua lại (`handleToggleWorkNature`, lưu ngay vào DB).
+- Lưu `work_nature` khi thêm việc mới; việc từ thư viện mẫu / nhập nhanh mặc định `'labor'`; **chuyển việc tồn sang mai giữ nguyên bản chất**.
+
+## Sửa (`src/components/work-plans/WorkPlanAnalyticsTab.tsx`)
+
+- `addStat`: nếu `work_nature === 'statistics'` thì **bỏ qua ghi giờ làm** (`empDayHoursMap`) và **không cộng** vị trí / thùng / kg / cont / điểm quy đổi khối lượng; chấm KPI với độ khó chuẩn (Năng suất 40đ) + Chất lượng (sao đánh giá) + An toàn + Kỷ luật.
+- KPI tổng `totalPositions` lọc bỏ việc thống kê.
+- Bảng xếp hạng: tên nhân sự có chip "📊 N thống kê"; cột Sản lượng & Giờ làm hiện "📊 Không ghi (thống kê)" nếu chỉ làm thống kê, hoặc ghi chú "N việc thống kê không tính" nếu làm lẫn.
+- Drawer chi tiết: dòng tổng kết nêu số việc thống kê; từng việc thống kê hiện badge 📊 và dòng "Không ghi sản lượng & giờ làm".
+
+## Sửa (`src/components/work-plans/AnalyticsExportCardModal.tsx`)
+
+- Thẻ Zalo/ảnh báo cáo nhận cùng `rows` nên tự đúng số liệu; riêng ô Sản lượng & Giờ làm và dòng tóm tắt nhân sự hiện "📊 Không ghi (thống kê)" thay vì "0 vt / 0.0 tấn".
+
+## Kiểm chứng
+
+- Migration áp vào Supabase local: cột `work_nature` NOT NULL DEFAULT `'labor'`, check constraint đủ 2 giá trị; 10/10 dòng cũ = `labor`.
+- `npx tsc --noEmit` lọc 4 file work-plans vừa sửa → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **12/12 pass**.
+- Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.
+
+# Walkthrough: Trường "Số phiếu / chứng từ đã tạo" cho công việc Thống kê
+
+## Yêu cầu
+
+Với công việc đã đánh dấu **Thống kê**, thay vì sản lượng tay chân/giờ làm, cần ghi nhận **số phiếu / chứng từ / bảng số liệu đã tạo** để chấm độ chính xác và hoàn thành trong ngày.
+
+## Sửa (`src/components/work-plans/types.ts`)
+
+- Thêm `WorkloadMetrics.documents_count?: number | null` (lưu chung JSONB `work_plan_items.workload_metrics`, **không cần migration**).
+- `hasWorkloadData` và `formatWorkloadSummaryText` nhận thêm `documents_count` → nút "Số liệu" trên hàng công việc sáng đúng và summary hiện "📄 N phiếu đã tạo".
+
+## Sửa (`src/components/work-plans/WorkloadMetricsSection.tsx` + `WorkloadMetricsModal.tsx`)
+
+- `WorkloadMetricsModal` truyền `workNature={item.work_nature || 'labor'}`.
+- Khi `workNature === 'statistics'`:
+  - Hiện panel sky-blue **"📄 Số phiếu / chứng từ đã tạo"** phía trên lưới 6 chỉ số (ô số + ghi chú: dùng chấm độ chính xác/tiến độ, **không dùng tính sản lượng tay chân hay giờ làm**).
+  - Khung "Bảng nhập tay" đổi lời nhắc sang nội dung thống kê (ẩn dòng quy đổi 600 kg/20 kg không còn phù hợp).
+- Công việc lao động giữ nguyên toàn bộ giao diện cũ.
+
+## Sửa (`src/components/work-plans/WorkPlansView.tsx`)
+
+- Khối số liệu bên phải hàng công việc: nếu là thống kê, hiện panel riêng **"Dữ liệu thống kê / ghi chép"** (📄 Phiếu đã tạo + ⭐ Chất lượng + ghi chú không ghi sản lượng/giờ) thay cho lưới vị trí/tấn/thùng/cont.
+
+## Sửa (`src/components/work-plans/WorkPlanAnalyticsTab.tsx`)
+
+- `EmployeeStatRow` thêm `totalDocuments`; cộng `documents_count` theo `share_percent` cho việc thống kê.
+- KPI tổng thêm `totalDocuments`; thẻ "Tổng Vị Trí Đã Hạ/Xếp" hiện thêm dòng "📄 N phiếu thống kê đã tạo".
+- Bảng xếp hạng: việc thống kê chỉ có phiếu hiện "📄 N phiếu đã tạo" (thay vì "Không ghi"); drawer chi tiết hiện số phiếu ở dòng tổng kết và từng việc.
+- Sheet Excel "Hiệu suất & KPI Nhân viên" thêm 2 cột **📊 Việc thống kê** và **📄 Số phiếu đã tạo**.
+
+## Sửa (`src/components/work-plans/AnalyticsExportCardModal.tsx`)
+
+- Thẻ ảnh/Zalo: ô Sản lượng & Giờ làm hiện "📄 N phiếu đã tạo" cho nhân sự chỉ làm thống kê; dòng tóm tắt nhân sự, text copy Zalo và thẻ tổng quan cũng hiện số phiếu.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc các file vừa sửa → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **12/12 pass**.
+- Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.
+
+# Walkthrough: Thay ô "Số Vị Trí Hạ/Xếp" bằng "Số Phiếu / Chứng Từ" (công việc Thống kê)
+
+## Yêu cầu
+
+Với công việc đã đánh dấu **Thống kê**, bỏ hẳn ô **Số Vị Trí Hạ/Xếp** trong lưới thông số và thay bằng ô **Số phiếu / chứng từ**; số phiếu lấy trực tiếp từ nguồn **Nhập / Xuất kế toán** đã gắn (VD: 2 phiếu nhập + 2 phiếu xuất = 4 phiếu).
+
+## Sửa (`src/components/work-plans/WorkloadMetricsSection.tsx`)
+
+- Bỏ panel sky-blue "📄 Số phiếu / chứng từ đã tạo" đứng riêng phía trên lưới (thay đổi của walkthrough trước).
+- Ô đầu tiên trong lưới thông số nay có điều kiện theo `workNature`:
+  - **Thống kê**: ô **"Số Phiếu / Chứng Từ"** gắn với `value.documents_count`, viền sky-blue; dưới ô hiện dòng tự động **"Tự động: N phiếu nhập + M phiếu xuất"** khi đã gắn nguồn kế toán, ngược lại hiện gợi ý "Đếm phiếu đã hoàn thành trong ca".
+  - **Lao động**: giữ nguyên ô **"Số Vị Trí Hạ/Xếp"** (`positions_count`) và dòng "Gốc / hệ số" như cũ.
+- Toggle nguồn **Nhập kế toán** / **Xuất kế toán** gọi `syncStatisticsDocuments` sau khi tính lại → `documents_count = số phiếu nhập + số phiếu xuất` đang gắn (kể cả khi bỏ hết về 0). Các nguồn khác (Lệnh xuất, LOT, Duyệt gán vị trí) **không** đụng tới số phiếu.
+- Thêm `useEffect` điền bù: nếu là thống kê, đã gắn phiếu nhập/xuất mà ô số phiếu còn trống/0 thì tự điền đúng tổng (dữ liệu cũ trước thay đổi này).
+- Summary thu gọn không còn hiện "N vị trí" cho công việc thống kê; vẫn hiện "📄 N phiếu".
+
+## Sửa (`src/components/work-plans/types.ts`)
+
+- Giữ `documents_count` trong `WorkloadMetrics`; **không** để `recalculateWorkloadFromLinkedSources` tự ghi `documents_count` (tránh việc lao động gắn phiếu kế toán cũng bị hiện "N phiếu") — việc đồng bộ chỉ diễn ra ở component khi `workNature === 'statistics'`.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc các file work-plans vừa sửa → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **12/12 pass**.
+- Việc Giang / Da Ti đã nhập trước đây cần được đánh dấu **📊 Thống kê** ở bước 2 một lần; sau đó số phiếu sẽ tự lấy từ nguồn Nhập/Xuất đã gắn.
+- Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.
+
+# Walkthrough: Thay ô "Số LOT / Pallet" bằng "Số Dòng Dữ Liệu" (công việc Thống kê)
+
+## Yêu cầu
+
+Tiếp nối thay đổi ô đầu lưới, với công việc **Thống kê** ô **Số LOT / Pallet** cũng được thay tại chỗ bằng ô **Số dòng dữ liệu** — tức tổng số dòng dữ liệu đã nhập trong các phiếu (mỗi phiếu có thể có nhiều dòng).
+
+## Sửa (`src/components/work-plans/types.ts`)
+
+- Thêm `WorkloadMetrics.data_rows_count?: number | null` (JSONB, **không cần migration**).
+- `hasWorkloadData` và `formatWorkloadSummaryText` nhận thêm `data_rows_count` → summary hiện "📋 N dòng dữ liệu".
+
+## Sửa (`src/components/work-plans/WorkloadMetricsSection.tsx`)
+
+- Ô thứ 2 của lưới thông số có điều kiện theo `workNature`:
+  - **Thống kê**: ô **"Số Dòng Dữ Liệu"** gắn với `data_rows_count`, viền sky-blue; dưới ô hiện **"Tự động: N dòng trong M phiếu"** = tổng `items_count` của các phiếu nhập/xuất kế toán đã gắn; chưa gắn nguồn thì hiện gợi ý "Tổng dòng trong các phiếu đã nhập".
+  - **Lao động**: giữ nguyên ô **"Số LOT / Pallet"** (`lots_count`) và dòng "Gốc / hệ số".
+- `syncStatisticsDocuments` (toggle nguồn Nhập/Xuất) cập nhật đồng thời `documents_count` và `data_rows_count`; `useEffect` điền bù cho dữ liệu cũ còn trống.
+- Summary thu gọn thêm "📋 N dòng"; `manualHasData` / `hasSummaryData` tính cả `data_rows_count`.
+
+## Sửa (`src/components/work-plans/WorkPlansView.tsx`)
+
+- Panel "Dữ liệu thống kê / ghi chép" bên phải hàng công việc: 3 ô **📄 Phiếu**, **📋 Dòng dữ liệu**, **⭐ Chất lượng**.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc các file work-plans vừa sửa → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **12/12 pass**.
+- Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.

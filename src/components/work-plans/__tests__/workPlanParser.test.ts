@@ -126,7 +126,8 @@ describe('workPlanParser & helpers', () => {
         })
 
         expect(recalculated.positions_count).toBe(15)
-        expect(recalculated.lots_count).toBe(22)
+        // Phiếu nhập/xuất kế toán không có LOT thật → chỉ cộng LOT từ nguồn có dữ liệu thật
+        expect(recalculated.lots_count).toBe(17)
         expect(recalculated.packages_count).toBe(710)
         expect(recalculated.weight_kg).toBe(14200)
         expect(recalculated.difficulty).toBe('light') // < 45 vị trí / < 27 tấn => light

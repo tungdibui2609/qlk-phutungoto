@@ -99,6 +99,11 @@ export interface WorkloadMetrics {
     weight_kg?: number | null
     containers_count?: number | null
     hours_spent?: number | null
+    // Công việc Thống kê / Ghi chép: số phiếu, biên bản, bảng số liệu đã hoàn thành trong ca
+    // (không dùng để tính sản lượng tay chân hay giờ làm)
+    documents_count?: number | null
+    // Tổng số dòng dữ liệu đã nhập trong các phiếu (VD: 4 phiếu × ~10 dòng/phiếu)
+    data_rows_count?: number | null
     custom_metric_label?: string | null
     custom_metric_value?: string | null
     external_link?: string | null
@@ -235,6 +240,39 @@ export interface TaskTypeConfig {
     badgeClass: string
     description: string
     baseScore: number
+}
+
+// ==========================================
+// BẢN CHẤT CÔNG VIỆC: LAO ĐỘNG TAY CHÂN VS THỐNG KÊ / GHI CHÉP
+// Công việc thống kê không phát sinh sản lượng tay chân và không ghi giờ làm ở báo cáo;
+// chỉ chấm độ chính xác và hoàn thành trong ngày.
+// ==========================================
+export type WorkPlanWorkNature = 'labor' | 'statistics'
+
+export interface WorkNatureConfig {
+    label: string
+    shortLabel: string
+    badgeEmoji: string
+    badgeClass: string
+    description: string
+}
+
+export const WORK_NATURE_CONFIG: Record<WorkPlanWorkNature, WorkNatureConfig> = {
+    labor: {
+        label: 'Lao động tay chân',
+        shortLabel: 'Lao động',
+        badgeEmoji: '🏋️',
+        badgeClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        description: 'Bốc xếp, hạ/xếp hàng, vệ sinh... có sản lượng và giờ làm thực tế',
+    },
+    statistics: {
+        label: 'Thống kê / Ghi chép',
+        shortLabel: 'Thống kê',
+        badgeEmoji: '📊',
+        badgeClass: 'bg-sky-50 text-sky-800 border-sky-200',
+        description:
+            'Ghi chép, thống kê số liệu, chứng từ... không có tay chân; chấm độ chính xác và hoàn thành trong ngày, không ghi sản lượng & giờ làm',
+    },
 }
 
 export const TASK_TYPE_CONFIG: Record<WorkPlanTaskType, TaskTypeConfig> = {
@@ -663,6 +701,7 @@ export interface WorkPlanItem {
     description?: string | null
     category: string | null
     priority: WorkPlanPriority
+    work_nature?: WorkPlanWorkNature | null // 'labor' (mặc định) | 'statistics' (không ghi sản lượng & giờ làm)
     location_note: string | null
     assignees: WorkPlanAssignee[]
     images: string[]
@@ -1121,12 +1160,12 @@ export function recalculateWorkloadFromLinkedSources(
         lotSummaries.reduce((s, l) => s + (l.assigned_positions_count || 0), 0) +
         approvedAssignments.reduce((s, a) => s + (a.approved_count || 0), 0)
 
+    // Phiếu nhập/xuất kế toán không có thông tin LOT/vị trí thật và không quy đổi tự động —
+    // để trống cho người dùng tự nhập, tránh lấy số dòng hàng làm số LOT.
     const sumLots =
         exportList.reduce((s, o) => s + (o.lots_count || 0), 0) +
         lotSummaries.reduce((s, l) => s + (l.lots_count || 0), 0) +
-        approvedAssignments.reduce((s, a) => s + (a.lots_count || 0), 0) +
-        inboundList.reduce((s, o) => s + (o.items_count || 0), 0) +
-        outboundList.reduce((s, o) => s + (o.items_count || 0), 0)
+        approvedAssignments.reduce((s, a) => s + (a.lots_count || 0), 0)
 
     const getPackagesFromSummary = (item: {
         packages_count?: number | null
@@ -1278,6 +1317,8 @@ export function hasWorkloadData(metrics?: WorkloadMetrics | null): boolean {
         (metrics.weight_kg && metrics.weight_kg > 0) ||
         (metrics.containers_count && metrics.containers_count > 0) ||
         (metrics.hours_spent && metrics.hours_spent > 0) ||
+        (metrics.documents_count && metrics.documents_count > 0) ||
+        (metrics.data_rows_count && metrics.data_rows_count > 0) ||
         metrics.custom_metric_value ||
         metrics.quantity_adjustment_note
     )
@@ -1316,6 +1357,12 @@ export function formatWorkloadSummaryText(metrics?: WorkloadMetrics | null): str
     }
     if (metrics.hours_spent && metrics.hours_spent > 0) {
         parts.push(`${metrics.hours_spent} Giờ`)
+    }
+    if (metrics.documents_count && metrics.documents_count > 0) {
+        parts.push(`📄 ${metrics.documents_count.toLocaleString('vi-VN')} phiếu đã tạo`)
+    }
+    if (metrics.data_rows_count && metrics.data_rows_count > 0) {
+        parts.push(`📋 ${metrics.data_rows_count.toLocaleString('vi-VN')} dòng dữ liệu`)
     }
     if (metrics.quantity_adjustment_note) {
         parts.push(`Lý do hệ số: ${metrics.quantity_adjustment_note}`)

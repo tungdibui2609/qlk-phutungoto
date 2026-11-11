@@ -45,6 +45,8 @@ export interface EmployeeStatExportRow {
     primaryTasksCompleted: number
     secondaryTasksAssigned: number
     secondaryTasksCompleted: number
+    statisticsTasksAssigned?: number
+    statisticsTasksCompleted?: number
     primaryKpiScore: number
     secondaryBonusPoints: number
     productivityScore: number
@@ -55,6 +57,7 @@ export interface EmployeeStatExportRow {
     totalPositions: number
     totalWeightKg: number
     totalContainers: number
+    totalDocuments?: number
     totalPenaltyPoints?: number
     totalBonusPoints?: number
     incidentsCount?: number
@@ -86,6 +89,7 @@ interface AnalyticsExportCardModalProps {
         uncompleted: number
         avgProgress: number
         totalPositions: number
+        totalDocuments?: number
         avgStars: string | number | null
     }
 }
@@ -198,17 +202,23 @@ export default function AnalyticsExportCardModal({
         lines.push(`🏆 *BÁO CÁO HIỆU SUẤT & XẾP HẠNG KPI NHÂN SỰ*`)
         lines.push(`🏢 Phân hệ: ${systemName}${companyName ? ` • ${companyName}` : ''}`)
         lines.push(`📅 Thời gian: ${dateTitle}`)
-        lines.push(`📊 Tổng việc: ${kpis.total} việc (Hoàn thành ${kpis.avgProgress}%) • Sản lượng: ${kpis.totalPositions} vị trí`)
+        lines.push(`📊 Tổng việc: ${kpis.total} việc (Hoàn thành ${kpis.avgProgress}%) • Sản lượng: ${kpis.totalPositions} vị trí${(kpis.totalDocuments || 0) > 0 ? ` • 📄 ${kpis.totalDocuments} phiếu thống kê` : ''}`)
         lines.push(`===================================`)
 
         lines.push(`🏅 *BẢNG XẾP HẠNG TOP THI ĐUA:*`)
         rows.forEach((r, idx) => {
             const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : `#${idx + 1}`
-            const taskStr = `Việc: ${r.primaryTasksCompleted}/${r.primaryTasksAssigned} chính${r.secondaryTasksCompleted > 0 ? ` +${r.secondaryTasksCompleted} phụ` : ''}`
+            const statsStr = (r.statisticsTasksAssigned || 0) > 0
+                ? ` • 📊 ${r.statisticsTasksCompleted || 0}/${r.statisticsTasksAssigned} thống kê`
+                : ''
+            const taskStr = `Việc: ${r.primaryTasksCompleted}/${r.primaryTasksAssigned} chính${r.secondaryTasksCompleted > 0 ? ` +${r.secondaryTasksCompleted} phụ` : ''}${statsStr}`
             const totalH = r.totalWorkHours || 0
             const otH = r.totalOvertimeHours || 0
             const hourStr = totalH > 0 ? ` • ⏱️ ${totalH}h${otH > 0 ? ` (+${otH}h OT)` : ''}` : ''
-            const prodStr = `${r.totalPositions} vt • ${(r.totalWeightKg / 1000).toFixed(1)} tấn${hourStr}`
+            const statsOnly = (r.statisticsTasksAssigned || 0) > 0 && r.totalPositions === 0 && r.totalWeightKg === 0 && totalH === 0
+            const prodStr = statsOnly
+                ? ((r.totalDocuments || 0) > 0 ? `📄 ${r.totalDocuments} phiếu đã tạo (thống kê)` : `📊 Không ghi sản lượng/giờ (thống kê)`)
+                : `${r.totalPositions} vt • ${(r.totalWeightKg / 1000).toFixed(1)} tấn${hourStr}${(r.statisticsTasksAssigned || 0) > 0 && (r.totalDocuments || 0) > 0 ? ` • 📄 ${r.totalDocuments} phiếu (TK)` : ''}`
             lines.push(`${medal} *${r.name}*: *${r.netKpiScore}đ* (${r.gradeLabel})`)
             lines.push(`   ├ ${taskStr} • SL: ${prodStr}`)
             lines.push(`   └ Điểm 4 Trụ Cột: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore} 🛡️${r.safetyScore} 📋${r.disciplineScore})${r.secondaryBonusPoints > 0 ? ` • Việc phụ: +${r.secondaryBonusPoints}đ` : ''}`)
@@ -460,6 +470,11 @@ export default function AnalyticsExportCardModal({
                                 </div>
                                 <div className="text-[10px] text-stone-500">
                                     Tương đương pallet / LOT hạ xếp
+                                    {(kpis.totalDocuments || 0) > 0 && (
+                                        <span className="block text-sky-700 font-bold mt-0.5">
+                                            📄 {(kpis.totalDocuments || 0).toLocaleString('vi-VN')} phiếu thống kê đã tạo
+                                        </span>
+                                    )}
                                 </div>
                             </div>
 
@@ -572,16 +587,31 @@ export default function AnalyticsExportCardModal({
 
                                                         {/* Sản lượng & Giờ làm / Tốc độ */}
                                                         <td className="w-[125px] px-3 py-2.5 text-right font-extrabold text-amber-800 text-[11px] whitespace-nowrap">
-                                                            <div>{r.totalPositions > 0 ? `${r.totalPositions} vt` : `${(r.totalWeightKg / 1000).toFixed(1)} tấn`}</div>
-                                                            {(r.totalWorkHours || 0) > 0 && (
-                                                                <div className="text-[10px] text-indigo-700 font-bold">
-                                                                    ⏱️ {r.totalWorkHours}h{(r.totalOvertimeHours || 0) > 0 ? ` (+${r.totalOvertimeHours}h OT)` : ''}
+                                                            {(r.statisticsTasksAssigned || 0) > 0 && r.totalPositions === 0 && r.totalWeightKg === 0 && (r.totalWorkHours || 0) === 0 ? (
+                                                                <div className="text-sky-700 text-[10px]">
+                                                                    {(r.totalDocuments || 0) > 0
+                                                                        ? `📄 ${(r.totalDocuments || 0).toLocaleString('vi-VN')} phiếu đã tạo`
+                                                                        : '📊 Không ghi (thống kê)'}
                                                                 </div>
-                                                            )}
-                                                            {r.totalPositions > 0 && r.totalWeightKg > 0 && (
-                                                                <div className="text-[10px] text-stone-400 font-normal">
-                                                                    {(r.totalWeightKg / 1000).toFixed(1)} tấn
-                                                                </div>
+                                                            ) : (
+                                                                <>
+                                                                    <div>{r.totalPositions > 0 ? `${r.totalPositions} vt` : `${(r.totalWeightKg / 1000).toFixed(1)} tấn`}</div>
+                                                                    {(r.totalWorkHours || 0) > 0 && (
+                                                                        <div className="text-[10px] text-indigo-700 font-bold">
+                                                                            ⏱️ {r.totalWorkHours}h{(r.totalOvertimeHours || 0) > 0 ? ` (+${r.totalOvertimeHours}h OT)` : ''}
+                                                                        </div>
+                                                                    )}
+                                                                    {r.totalPositions > 0 && r.totalWeightKg > 0 && (
+                                                                        <div className="text-[10px] text-stone-400 font-normal">
+                                                                            {(r.totalWeightKg / 1000).toFixed(1)} tấn
+                                                                        </div>
+                                                                    )}
+                                                                    {(r.statisticsTasksAssigned || 0) > 0 && (r.totalDocuments || 0) > 0 && (
+                                                                        <div className="text-[10px] text-sky-700 font-bold">
+                                                                            📄 {r.totalDocuments} phiếu (TK)
+                                                                        </div>
+                                                                    )}
+                                                                </>
                                                             )}
                                                         </td>
 
@@ -701,7 +731,19 @@ export default function AnalyticsExportCardModal({
                                                                 </span>
                                                             </div>
                                                             <div className="text-[10px] text-stone-500 flex items-center gap-2">
-                                                                <span>Sản lượng: <b className="text-amber-800">{emp.totalPositions} vị trí</b> • {(emp.totalWeightKg / 1000).toFixed(1)} tấn</span>
+                                                                {(emp.statisticsTasksAssigned || 0) > 0 && emp.totalPositions === 0 && emp.totalWeightKg === 0 && (emp.totalWorkHours || 0) === 0 ? (
+                                                                    <span className="text-sky-700 font-bold">
+                                                                        {(emp.totalDocuments || 0) > 0
+                                                                            ? `📄 ${(emp.totalDocuments || 0).toLocaleString('vi-VN')} phiếu đã tạo (thống kê)`
+                                                                            : '📊 Việc thống kê — không ghi sản lượng & giờ làm'}
+                                                                    </span>
+                                                                ) : (
+                                                                    <span>Sản lượng: <b className="text-amber-800">{emp.totalPositions} vị trí</b> • {(emp.totalWeightKg / 1000).toFixed(1)} tấn
+                                                                        {(emp.statisticsTasksAssigned || 0) > 0 && (emp.totalDocuments || 0) > 0 && (
+                                                                            <b className="text-sky-700"> • 📄 {emp.totalDocuments} phiếu (TK)</b>
+                                                                        )}
+                                                                    </span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                     </div>

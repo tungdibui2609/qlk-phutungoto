@@ -36,6 +36,7 @@ import {
     BookmarkPlus,
     ArrowRight,
     BookOpen,
+    FileText,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useSystem } from '@/contexts/SystemContext'
@@ -57,6 +58,8 @@ import {
     DIFFICULTY_CONFIG,
     WorkPlanTaskType,
     TASK_TYPE_CONFIG,
+    WorkPlanWorkNature,
+    WORK_NATURE_CONFIG,
     getWarehouseBadge,
     formatVNDate,
     formatVNDateSlash,
@@ -121,6 +124,7 @@ export default function WorkPlansView() {
     const [newCategory, setNewCategory] = useState<string>('Vận hành kho')
     const [newPriority, setNewPriority] = useState<WorkPlanPriority>('normal')
     const [newTaskType, setNewTaskType] = useState<WorkPlanTaskType>('primary')
+    const [newWorkNature, setNewWorkNature] = useState<WorkPlanWorkNature>('labor')
     const [newLocation, setNewLocation] = useState<string>('')
     const [newAssignees, setNewAssignees] = useState<WorkPlanAssignee[]>([])
     const [assigneeInput, setAssigneeInput] = useState<string>('')
@@ -405,6 +409,7 @@ export default function WorkPlansView() {
                     description: matchedDesc,
                     category: newCategory,
                     priority: newPriority,
+                    work_nature: newWorkNature,
                     location_note: newLocation.trim() || null,
                     assignees: finalAssignees,
                     status: 'pending',
@@ -423,6 +428,7 @@ export default function WorkPlansView() {
             setNewAssignees([])
             setAssigneeInput('')
             setNewTaskType('primary')
+            setNewWorkNature('labor')
             showToast(`Đã thêm mục #${nextOrder} vào kế hoạch`, 'success')
         } catch (err) {
             console.error('Add item error:', err)
@@ -460,6 +466,32 @@ export default function WorkPlansView() {
         }
     }
 
+    // Toggle Work Nature (Lao động tay chân <-> Thống kê / Ghi chép)
+    const handleToggleWorkNature = async (item: WorkPlanItem) => {
+        const current: WorkPlanWorkNature = item.work_nature || 'labor'
+        const next: WorkPlanWorkNature = current === 'labor' ? 'statistics' : 'labor'
+        try {
+            const { data, error } = await (supabase as any)
+                .from('work_plan_items')
+                .update({ work_nature: next, updated_at: new Date().toISOString() })
+                .eq('id', item.id)
+                .eq('system_code', systemCode)
+                .select('*')
+                .single()
+            if (error) throw error
+            setItems(prev => prev.map(i => (i.id === item.id ? data : i)))
+            showToast(
+                next === 'statistics'
+                    ? '📊 Đã đánh dấu công việc Thống kê / Ghi chép — bước Báo cáo sẽ không ghi sản lượng & giờ làm'
+                    : '🏋️ Đã chuyển về công việc Lao động tay chân (có sản lượng & giờ làm)',
+                'success'
+            )
+        } catch (err) {
+            console.error('Toggle work nature error:', err)
+            showToast('Không thể đổi bản chất công việc', 'error')
+        }
+    }
+
     // Add Template from Library into active plan
     const handleAddTemplateToPlan = async (template: WorkTaskTemplate) => {
         try {
@@ -479,6 +511,7 @@ export default function WorkPlansView() {
                     description: template.description || null,
                     category: template.category,
                     priority: template.default_priority,
+                    work_nature: 'labor',
                     location_note: template.target_system_name || null,
                     assignees: [],
                     status: 'pending',
@@ -518,6 +551,7 @@ export default function WorkPlansView() {
                 description: t.description || null,
                 category: t.category,
                 priority: t.default_priority,
+                work_nature: 'labor',
                 location_note: t.target_system_name || null,
                 assignees: [],
                 status: 'pending',
@@ -809,6 +843,7 @@ export default function WorkPlansView() {
                 description: src.description || null,
                 category: src.category,
                 priority: src.priority,
+                work_nature: src.work_nature || 'labor',
                 location_note: src.location_note,
                 assignees: src.assignees || [],
                 status: 'pending',
@@ -1671,6 +1706,33 @@ export default function WorkPlansView() {
                                             <option value="urgent">Ưu tiên: Khẩn cấp</option>
                                         </select>
 
+                                        {/* Bản chất công việc: Lao động tay chân vs Thống kê / Ghi chép */}
+                                        <div
+                                            className="inline-flex rounded-xl border border-stone-300 bg-white overflow-hidden text-xs font-bold"
+                                            title="Thống kê / Ghi chép: không có tay chân, chấm độ chính xác & hoàn thành trong ngày; bước Báo cáo không ghi sản lượng & giờ làm"
+                                        >
+                                            {(['labor', 'statistics'] as WorkPlanWorkNature[]).map(nature => {
+                                                const cfg = WORK_NATURE_CONFIG[nature]
+                                                const active = newWorkNature === nature
+                                                return (
+                                                    <button
+                                                        key={nature}
+                                                        type="button"
+                                                        onClick={() => setNewWorkNature(nature)}
+                                                        className={`px-2.5 py-2 transition-colors ${
+                                                            active
+                                                                ? nature === 'statistics'
+                                                                    ? 'bg-sky-600 text-white'
+                                                                    : 'bg-emerald-600 text-white'
+                                                                : 'text-stone-600 hover:bg-stone-100'
+                                                        }`}
+                                                    >
+                                                        {cfg.badgeEmoji} {cfg.shortLabel}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+
                                         <button
                                             type="submit"
                                             disabled={!newContent.trim() || addingItem}
@@ -1768,6 +1830,17 @@ export default function WorkPlansView() {
                                         ))}
                                     </datalist>
                                 </div>
+
+                                {newWorkNature === 'statistics' && (
+                                    <div className="flex items-start gap-1.5 pl-10 text-[11px] text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
+                                        <span className="shrink-0">📊</span>
+                                        <span>
+                                            Công việc <b>Thống kê / Ghi chép</b>: không có lao động tay chân, chấm theo
+                                            <b> độ chính xác</b> và <b>hoàn thành trong ngày</b>. Bước Báo cáo & Xếp hạng sẽ
+                                            <b> không ghi sản lượng và giờ làm</b> cho việc này.
+                                        </span>
+                                    </div>
+                                )}
                             </form>
                         )}
 
@@ -1991,6 +2064,28 @@ export default function WorkPlansView() {
                                                                                     {item.category}
                                                                                 </span>
                                                                             )}
+
+                                                                            {/* Bản chất công việc: bấm để đổi Lao động tay chân <-> Thống kê / Ghi chép */}
+                                                                            {(() => {
+                                                                                const nature: WorkPlanWorkNature = item.work_nature || 'labor'
+                                                                                const cfg = WORK_NATURE_CONFIG[nature]
+                                                                                return (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => handleToggleWorkNature(item)}
+                                                                                        className={`px-2 py-0.5 rounded-md border text-[11px] font-extrabold inline-flex items-center gap-1 transition-colors cursor-pointer ${cfg.badgeClass} ${
+                                                                                            nature === 'statistics' ? 'ring-1 ring-sky-300' : 'opacity-80 hover:opacity-100'
+                                                                                        }`}
+                                                                                        title={`${cfg.description} — Bấm để đổi`}
+                                                                                    >
+                                                                                        <span>{cfg.badgeEmoji}</span>
+                                                                                        <span>{cfg.shortLabel}</span>
+                                                                                        {nature === 'statistics' && (
+                                                                                            <span className="text-[9px] font-bold opacity-75">(không sản lượng/giờ)</span>
+                                                                                        )}
+                                                                                    </button>
+                                                                                )
+                                                                            })()}
                                                                         </div>
                                                                     </div>
 
@@ -2254,6 +2349,53 @@ export default function WorkPlansView() {
                                                     {(() => {
                                                         const wl = item.workload_metrics
                                                         const hasData = hasWorkloadData(wl)
+
+                                                        // Công việc Thống kê / Ghi chép: hiển thị số phiếu đã tạo, không dùng sản lượng/giờ
+                                                        if (item.work_nature === 'statistics') {
+                                                            const docs = Number(wl?.documents_count) || 0
+                                                            const rows = Number(wl?.data_rows_count) || 0
+                                                            return (
+                                                                <div
+                                                                    onClick={() => setItemForWorkloadModal(item)}
+                                                                    className="group/stats cursor-pointer rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50/80 via-white to-sky-50/40 p-3 hover:border-sky-400 hover:shadow-xs transition-all flex flex-col justify-between h-full space-y-2"
+                                                                    title="Bấm để nhập số phiếu / chứng từ và số dòng dữ liệu cho công việc thống kê"
+                                                                >
+                                                                    <div className="flex items-center justify-between text-xs pb-1.5 border-b border-sky-100">
+                                                                        <span className="font-black text-sky-950 flex items-center gap-1.5 text-[11px] uppercase tracking-wider">
+                                                                            <FileText size={13} className="text-sky-700" />
+                                                                            <span>Dữ liệu thống kê / ghi chép</span>
+                                                                        </span>
+                                                                        <span className="text-[11px] font-bold text-sky-700 group-hover/stats:underline flex items-center gap-0.5">
+                                                                            Sửa <ChevronRight size={12} />
+                                                                        </span>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-3 gap-1.5 text-xs">
+                                                                        <div className="bg-white/95 p-1.5 rounded-xl border border-sky-100 shadow-2xs flex flex-col text-center">
+                                                                            <span className="text-[10px] font-semibold text-stone-500">📄 Phiếu</span>
+                                                                            <span className="text-sm font-black text-sky-900 mt-0.5 truncate">
+                                                                                {docs > 0 ? docs.toLocaleString('vi-VN') : '-'}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="bg-white/95 p-1.5 rounded-xl border border-sky-100 shadow-2xs flex flex-col text-center">
+                                                                            <span className="text-[10px] font-semibold text-stone-500">📋 Dòng dữ liệu</span>
+                                                                            <span className="text-sm font-black text-sky-900 mt-0.5 truncate">
+                                                                                {rows > 0 ? rows.toLocaleString('vi-VN') : '-'}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="bg-white/95 p-1.5 rounded-xl border border-sky-100 shadow-2xs flex flex-col text-center">
+                                                                            <span className="text-[10px] font-semibold text-stone-500">⭐ Chất lượng</span>
+                                                                            <span className="text-sm font-black text-amber-800 mt-0.5 truncate">
+                                                                                {item.rating_stars ? `${item.rating_stars}/5` : '-'}
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="text-[10px] text-sky-800 bg-white/80 px-2 py-1 rounded-lg border border-sky-100/80">
+                                                                        Không ghi sản lượng &amp; giờ làm ở báo cáo — chấm độ chính xác &amp; hoàn thành trong ngày.
+                                                                    </div>
+                                                                </div>
+                                                            )
+                                                        }
+
                                                         if (!hasData || !wl) {
                                                             return (
                                                                 <button

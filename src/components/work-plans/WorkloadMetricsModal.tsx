@@ -85,6 +85,7 @@ export default function WorkloadMetricsModal({
                         value={workloadMetrics}
                         onChange={setWorkloadMetrics}
                         defaultCollapsed={false}
+                        workNature={item.work_nature || 'labor'}
                     />
 
                     {/* NEW: Phân bổ sản lượng cá nhân & Ghi nhận vi phạm / lỗi xét KPI */}

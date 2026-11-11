@@ -71,6 +71,7 @@ export interface EmployeeStatRow {
     totalPackages: number
     totalWeightKg: number
     totalContainers: number
+    totalDocuments: number // Số phiếu / chứng từ đã tạo của công việc thống kê
     totalPenaltyPoints: number
     totalBonusPoints: number
     safetyPenaltyPoints: number
@@ -83,6 +84,9 @@ export interface EmployeeStatRow {
     primaryTasksCompleted: number
     secondaryTasksAssigned: number
     secondaryTasksCompleted: number
+    // Công việc Thống kê / Ghi chép: không ghi sản lượng & giờ làm
+    statisticsTasksAssigned: number
+    statisticsTasksCompleted: number
     primaryKpiScore: number // Điểm ca chuẩn (thang 100đ)
     secondaryBonusPoints: number // Điểm việc phụ / tăng cường cộng dồn
     // 4 Trụ Cột KPI Chuẩn (Thang 100 Điểm)
@@ -219,10 +223,18 @@ export default function WorkPlanAnalyticsTab({
                   ).toFixed(1)
                 : null
 
-        const totalPositions = active.reduce(
-            (s, i) => s + (Number(i.workload_metrics?.positions_count) || 0),
-            0
-        )
+        const totalPositions = active
+            .filter(i => i.work_nature !== 'statistics')
+            .reduce(
+                (s, i) => s + (Number(i.workload_metrics?.positions_count) || 0),
+                0
+            )
+        const totalDocuments = active
+            .filter(i => i.work_nature === 'statistics')
+            .reduce(
+                (s, i) => s + (Number(i.workload_metrics?.documents_count) || 0),
+                0
+            )
         const distinctDays = new Set(active.map(i => i.plan_date)).size
 
         return {
@@ -233,6 +245,7 @@ export default function WorkPlanAnalyticsTab({
             avgProgress,
             avgStars,
             totalPositions,
+            totalDocuments,
             distinctDays,
         }
     }, [items])
@@ -251,20 +264,24 @@ export default function WorkPlanAnalyticsTab({
         ) => {
             if (item.status === 'cancelled') return
             const normKey = keyName.trim().toLowerCase()
+            // Thống kê / ghi chép: không có lao động tay chân → không ghi sản lượng & giờ làm
+            const isStatistics = item.work_nature === 'statistics'
 
-            // Ghi nhận giờ làm ca chuẩn & giờ tăng ca theo ngày
-            const itemDate = item.plan_date || 'default_date'
-            let dayMap = empDayHoursMap.get(normKey)
-            if (!dayMap) {
-                dayMap = new Map<string, { regular: number; ot: number }>()
-                empDayHoursMap.set(normKey, dayMap)
+            // Ghi nhận giờ làm ca chuẩn & giờ tăng ca theo ngày (bỏ qua công việc thống kê)
+            if (!isStatistics) {
+                const itemDate = item.plan_date || 'default_date'
+                let dayMap = empDayHoursMap.get(normKey)
+                if (!dayMap) {
+                    dayMap = new Map<string, { regular: number; ot: number }>()
+                    empDayHoursMap.set(normKey, dayMap)
+                }
+                const curDay = dayMap.get(itemDate) || { regular: 0, ot: 0 }
+                const reg = typeof ev?.regular_hours === 'number' && !isNaN(ev.regular_hours) ? ev.regular_hours : 8
+                const ot = typeof ev?.overtime_hours === 'number' && !isNaN(ev.overtime_hours) ? ev.overtime_hours : 0
+                const nextReg = Math.max(curDay.regular, reg)
+                const nextOt = curDay.ot + ot
+                dayMap.set(itemDate, { regular: nextReg, ot: nextOt })
             }
-            const curDay = dayMap.get(itemDate) || { regular: 0, ot: 0 }
-            const reg = typeof ev?.regular_hours === 'number' && !isNaN(ev.regular_hours) ? ev.regular_hours : 8
-            const ot = typeof ev?.overtime_hours === 'number' && !isNaN(ev.overtime_hours) ? ev.overtime_hours : 0
-            const nextReg = Math.max(curDay.regular, reg)
-            const nextOt = curDay.ot + ot
-            dayMap.set(itemDate, { regular: nextReg, ot: nextOt })
 
             if (!map.has(normKey)) {
                 map.set(normKey, {
@@ -285,6 +302,7 @@ export default function WorkPlanAnalyticsTab({
                     totalPackages: 0,
                     totalWeightKg: 0,
                     totalContainers: 0,
+                    totalDocuments: 0,
                     totalPenaltyPoints: 0,
                     totalBonusPoints: 0,
                     safetyPenaltyPoints: 0,
@@ -296,6 +314,8 @@ export default function WorkPlanAnalyticsTab({
                     primaryTasksCompleted: 0,
                     secondaryTasksAssigned: 0,
                     secondaryTasksCompleted: 0,
+                    statisticsTasksAssigned: 0,
+                    statisticsTasksCompleted: 0,
                     primaryKpiScore: 0,
                     secondaryBonusPoints: 0,
                     productivityScore: 0,
@@ -333,18 +353,21 @@ export default function WorkPlanAnalyticsTab({
             const itemTotalConts = Number(wl?.containers_count) || 0
 
             // Phân bổ sản lượng cá nhân theo % đóng góp
-            const myPos = Math.round(((itemTotalPos * sharePercent) / 100) * 10) / 10
-            const myPkg = Math.round((itemTotalPkg * sharePercent) / 100)
-            const myKg = Math.round((itemTotalKg * sharePercent) / 100)
-            const myConts = Math.round(((itemTotalConts * sharePercent) / 100) * 10) / 10
+            // Công việc thống kê / ghi chép không có sản lượng tay chân
+            const myPos = isStatistics ? 0 : Math.round(((itemTotalPos * sharePercent) / 100) * 10) / 10
+            const myPkg = isStatistics ? 0 : Math.round((itemTotalPkg * sharePercent) / 100)
+            const myKg = isStatistics ? 0 : Math.round((itemTotalKg * sharePercent) / 100)
+            const myConts = isStatistics ? 0 : Math.round(((itemTotalConts * sharePercent) / 100) * 10) / 10
 
-            row.totalPositions += myPos
-            row.totalPackages += myPkg
-            row.totalWeightKg += myKg
-            row.totalContainers += myConts
+            if (!isStatistics) {
+                row.totalPositions += myPos
+                row.totalPackages += myPkg
+                row.totalWeightKg += myKg
+                row.totalContainers += myConts
 
-            // Điểm quy đổi khối lượng đảm nhận trong ca
-            row.weightedScore += mult * (sharePercent / 100)
+                // Điểm quy đổi khối lượng đảm nhận trong ca
+                row.weightedScore += mult * (sharePercent / 100)
+            }
 
             // Lỗi vi phạm và thưởng của người này trong task
             let taskPenalty = 0
@@ -390,8 +413,8 @@ export default function WorkPlanAnalyticsTab({
             // Tính điểm KPI theo chuẩn 100% (4 Trụ Cột, tiến độ không trừ oan năng suất việc làm 2 ngày)
             const taskKpi = calculateAssigneeTaskStandardKpi({
                 userPositions: myPos,
-                diffMultiplier: mult,
-                difficulty: wl?.difficulty,
+                diffMultiplier: isStatistics ? 1.0 : mult,
+                difficulty: isStatistics ? null : wl?.difficulty,
                 progressPercent: item.progress_percent || 0,
                 ratingStars: item.rating_stars,
                 incidents: ev?.incidents || [],
@@ -412,6 +435,14 @@ export default function WorkPlanAnalyticsTab({
                 if (item.status === 'completed') row.primaryTasksCompleted += 1
                 row.productivityScore += taskKpi.productivityScore
                 row.qualityScore += taskKpi.qualityScore
+            }
+
+            if (isStatistics) {
+                row.totalDocuments += Math.round(
+                    ((Number(wl?.documents_count) || 0) * sharePercent) / 100
+                )
+                row.statisticsTasksAssigned += 1
+                if (item.status === 'completed') row.statisticsTasksCompleted += 1
             }
 
             if (item.status === 'completed') row.completed += 1
@@ -576,6 +607,8 @@ export default function WorkPlanAnalyticsTab({
                 { header: '⭐ Việc chính đã giao', key: 'primaryAssigned', width: 20 },
                 { header: '⭐ Việc chính hoàn thành', key: 'primaryCompleted', width: 22 },
                 { header: '➕ Việc phụ hỗ trợ', key: 'secondaryTasks', width: 18 },
+                { header: '📊 Việc thống kê', key: 'statisticsTasks', width: 18 },
+                { header: '📄 Số phiếu đã tạo', key: 'documents', width: 18 },
                 { header: 'Tổng vị trí cá nhân (vt)', key: 'positions', width: 20 },
                 { header: 'Tổng khối lượng (Kg)', key: 'weightKg', width: 20 },
                 { header: '⏱️ Giờ chuẩn (h)', key: 'regularHours', width: 16 },
@@ -609,6 +642,8 @@ export default function WorkPlanAnalyticsTab({
                     primaryAssigned: emp.primaryTasksAssigned,
                     primaryCompleted: emp.primaryTasksCompleted,
                     secondaryTasks: `${emp.secondaryTasksCompleted} / ${emp.secondaryTasksAssigned}`,
+                    statisticsTasks: `${emp.statisticsTasksCompleted} / ${emp.statisticsTasksAssigned}`,
+                    documents: emp.totalDocuments > 0 ? emp.totalDocuments : '-',
                     positions: emp.totalPositions || '-',
                     weightKg: emp.totalWeightKg > 0 ? emp.totalWeightKg : '-',
                     regularHours: emp.totalRegularHours > 0 ? `${emp.totalRegularHours}h` : '-',
@@ -839,6 +874,11 @@ export default function WorkPlanAnalyticsTab({
                     </div>
                     <div className="text-xs text-stone-500 mt-1">
                         Tổng hợp từ số liệu Lệnh xuất kho liên kết
+                        {kpis.totalDocuments > 0 && (
+                            <span className="block text-sky-700 font-bold mt-0.5">
+                                📄 {kpis.totalDocuments.toLocaleString('vi-VN')} phiếu thống kê đã tạo
+                            </span>
+                        )}
                     </div>
                 </div>
 
@@ -905,7 +945,7 @@ export default function WorkPlanAnalyticsTab({
                                     <th className="px-3 py-3 text-left">Nhân viên / Tổ đội</th>
                                     <th className="px-2.5 py-3 text-center" title="Số việc chính được giao trong ca và tỷ lệ hoàn tất">⭐ Việc chính</th>
                                     <th className="px-2.5 py-3 text-center" title="Số việc phụ / tăng cường được hỗ trợ">➕ Việc phụ</th>
-                                    <th className="px-2.5 py-3 text-center" title="Sản lượng thực tế, số giờ làm và tốc độ năng suất trong 1 giờ">Sản Lượng & Giờ Làm</th>
+                                    <th className="px-2.5 py-3 text-center" title="Sản lượng thực tế, số giờ làm và tốc độ năng suất trong 1 giờ. Công việc Thống kê / Ghi chép không được ghi vào cột này.">Sản Lượng & Giờ Làm</th>
                                     <th className="px-2 py-3 text-center" title="Trụ cột Năng suất: Chuẩn 40đ (Nhẹ 40đ, Vừa 42đ, Nặng 45đ, Rất nặng 50đ theo khối lượng)">⚡ N.Suất</th>
                                     <th className="px-2 py-3 text-center" title="Trụ cột Chất lượng thực hiện việc chính (Tối đa 20đ)">⭐ C.Lượng</th>
                                     <th className="px-2 py-3 text-center" title="Trụ cột An toàn lao động & Hàng hóa (Gốc 20đ, trừ lỗi)">🛡️ A.Toàn</th>
@@ -931,6 +971,14 @@ export default function WorkPlanAnalyticsTab({
                                                 <span>{row.name}</span>
                                                 {row.hasSevereIncident && (
                                                     <span className="w-2 h-2 rounded-full bg-rose-600 animate-pulse inline-block" title="Có lỗi vi phạm an toàn nghiêm trọng" />
+                                                )}
+                                                {row.statisticsTasksAssigned > 0 && (
+                                                    <span
+                                                        className="px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-extrabold"
+                                                        title="Công việc Thống kê / Ghi chép: chấm độ chính xác & hoàn thành trong ngày, không ghi sản lượng & giờ làm"
+                                                    >
+                                                        📊 {row.statisticsTasksAssigned} thống kê
+                                                    </span>
                                                 )}
                                             </div>
                                             <div className="text-[11px] text-stone-500">
@@ -976,7 +1024,25 @@ export default function WorkPlanAnalyticsTab({
                                                     </span>
                                                 )}
                                                 {row.totalPositions === 0 && row.totalWeightKg === 0 && row.totalWorkHours === 0 && (
-                                                    <span className="text-xs text-stone-300">-</span>
+                                                    row.statisticsTasksAssigned > 0 ? (
+                                                        <span className="px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold" title="Công việc thống kê / ghi chép không ghi sản lượng & giờ làm">
+                                                            {row.totalDocuments > 0
+                                                                ? `📄 ${row.totalDocuments.toLocaleString('vi-VN')} phiếu đã tạo`
+                                                                : '📊 Không ghi (thống kê)'}
+                                                        </span>
+                                                    ) : (
+                                                        <span className="text-xs text-stone-300">-</span>
+                                                    )
+                                                )}
+                                                {row.statisticsTasksAssigned > 0 && row.totalDocuments > 0 && (row.totalPositions > 0 || row.totalWeightKg > 0 || row.totalWorkHours > 0) && (
+                                                    <span className="text-[10px] text-sky-700 font-bold" title="Số phiếu / chứng từ đã tạo của việc thống kê">
+                                                        📄 {row.totalDocuments.toLocaleString('vi-VN')} phiếu (thống kê)
+                                                    </span>
+                                                )}
+                                                {row.statisticsTasksAssigned > 0 && (row.totalPositions > 0 || row.totalWeightKg > 0 || row.totalWorkHours > 0) && (
+                                                    <span className="text-[9px] text-sky-700 font-semibold" title="Chỉ tính các việc lao động; việc thống kê không ghi sản lượng/giờ">
+                                                        📊 {row.statisticsTasksAssigned} việc thống kê không tính
+                                                    </span>
                                                 )}
                                             </div>
                                         </td>
@@ -1101,6 +1167,15 @@ export default function WorkPlanAnalyticsTab({
                                 </h4>
                                 <p className="text-[11px] text-stone-500 mt-0.5">
                                     ⭐ Việc chính: <b>{selectedEmployee.primaryTasksCompleted}/{selectedEmployee.primaryTasksAssigned}</b> (Đạt {selectedEmployee.primaryKpiScore}/100đ chuẩn) • ➕ Việc phụ hỗ trợ: <b>{selectedEmployee.secondaryTasksCompleted}/{selectedEmployee.secondaryTasksAssigned}</b> (+{selectedEmployee.secondaryBonusPoints}đ) • Tổng sản lượng: <b>{selectedEmployee.totalPositions} vị trí</b> ({selectedEmployee.totalWeightKg.toLocaleString('vi-VN')} kg) • ⏱️ Giờ làm: <b>{selectedEmployee.totalWorkHours}h</b> ({selectedEmployee.totalRegularHours}h chuẩn{selectedEmployee.totalOvertimeHours > 0 ? ` + ${selectedEmployee.totalOvertimeHours}h OT` : ''})
+                                    {selectedEmployee.statisticsTasksAssigned > 0 && (
+                                        <span className="text-sky-700 font-semibold">
+                                            {' '}• 📊 <b>{selectedEmployee.statisticsTasksCompleted}/{selectedEmployee.statisticsTasksAssigned}</b> việc thống kê
+                                            {selectedEmployee.totalDocuments > 0 && (
+                                                <> • 📄 <b>{selectedEmployee.totalDocuments.toLocaleString('vi-VN')}</b> phiếu đã tạo</>
+                                            )}
+                                            {' '}(không ghi sản lượng & giờ làm)
+                                        </span>
+                                    )}
                                 </p>
                             </div>
                             <button
@@ -1210,8 +1285,10 @@ export default function WorkPlanAnalyticsTab({
                                 )
 
                                 const itemMult = DIFFICULTY_CONFIG[item.workload_metrics?.difficulty || 'medium']?.multiplier || 1.0
-                                const itemTotalPos = Number(item.workload_metrics?.positions_count) || 0
-                                const itemTotalKg = Number(item.workload_metrics?.weight_kg) || 0
+                                const isStatisticsTask = item.work_nature === 'statistics'
+                                const itemTotalPos = isStatisticsTask ? 0 : Number(item.workload_metrics?.positions_count) || 0
+                                const itemTotalKg = isStatisticsTask ? 0 : Number(item.workload_metrics?.weight_kg) || 0
+                                const itemDocs = isStatisticsTask ? Number(item.workload_metrics?.documents_count) || 0 : 0
                                 const itemShare = myEval?.share_percent ?? 100
                                 const userPos = Math.round(((itemTotalPos * itemShare) / 100) * 10) / 10
                                 const userKg = Math.round((itemTotalKg * itemShare) / 100)
@@ -1219,8 +1296,8 @@ export default function WorkPlanAnalyticsTab({
 
                                 const taskKpi = calculateAssigneeTaskStandardKpi({
                                     userPositions: userPos,
-                                    diffMultiplier: itemMult,
-                                    difficulty: item.workload_metrics?.difficulty,
+                                    diffMultiplier: isStatisticsTask ? 1.0 : itemMult,
+                                    difficulty: isStatisticsTask ? null : item.workload_metrics?.difficulty,
                                     progressPercent: item.progress_percent || 0,
                                     ratingStars: item.rating_stars,
                                     incidents: myEval?.incidents || [],
@@ -1252,6 +1329,14 @@ export default function WorkPlanAnalyticsTab({
                                                         ⭐ Việc chính
                                                     </span>
                                                 )}
+                                                {isStatisticsTask && (
+                                                    <span
+                                                        className="px-1.5 py-0.2 rounded-md bg-sky-50 text-sky-800 font-extrabold text-[10px] border border-sky-200"
+                                                        title="Công việc thống kê / ghi chép: không ghi sản lượng & giờ làm, chấm độ chính xác & hoàn thành trong ngày"
+                                                    >
+                                                        📊 Thống kê
+                                                    </span>
+                                                )}
                                             </div>
 
                                             {/* Tổng Điểm KPI của Công Việc Này */}
@@ -1277,12 +1362,20 @@ export default function WorkPlanAnalyticsTab({
                                                 <span className="font-bold text-stone-800">
                                                     Đóng góp: {itemShare}%
                                                 </span>
-                                                {(userPos > 0 || userKg > 0) && (
-                                                    <span className="text-amber-700 font-medium bg-amber-50/80 px-1.5 py-0.2 rounded border border-amber-200">
-                                                        📦 {userPos} vị trí • {userKg.toLocaleString('vi-VN')} kg
+                                                {isStatisticsTask ? (
+                                                    <span className="text-sky-700 font-medium bg-sky-50 px-1.5 py-0.2 rounded border border-sky-200">
+                                                        {itemDocs > 0
+                                                            ? `📄 ${itemDocs.toLocaleString('vi-VN')} phiếu đã tạo`
+                                                            : '📄 Chưa nhập số phiếu — không ghi sản lượng & giờ làm'}
                                                     </span>
+                                                ) : (
+                                                    (userPos > 0 || userKg > 0) && (
+                                                        <span className="text-amber-700 font-medium bg-amber-50/80 px-1.5 py-0.2 rounded border border-amber-200">
+                                                            📦 {userPos} vị trí • {userKg.toLocaleString('vi-VN')} kg
+                                                        </span>
+                                                    )
                                                 )}
-                                                {wlText && (
+                                                {wlText && !isStatisticsTask && (
                                                     <span className="text-stone-400 text-[10px] hidden lg:inline">
                                                         (Toàn việc: {wlText})
                                                     </span>
@@ -1351,6 +1444,7 @@ export default function WorkPlanAnalyticsTab({
                     uncompleted: kpis.uncompleted,
                     avgProgress: kpis.avgProgress,
                     totalPositions: kpis.totalPositions,
+                    totalDocuments: kpis.totalDocuments,
                     avgStars: kpis.avgStars,
                 }}
             />
