@@ -3930,18 +3930,6 @@ export default function SoLieuPage() {
                                                 }`}>
                                                     {idx + 1}
                                                 </span>
-                                                <button
-                                                    type="button"
-                                                    onClick={e => {
-                                                        e.stopPropagation()
-                                                        setHistoryModalProduct(product)
-                                                        setHistoryProductFilter('all')
-                                                    }}
-                                                    title="Xem lịch sử nhập xuất của riêng sản phẩm này"
-                                                    className="w-5 h-5 rounded flex items-center justify-center text-stone-400 hover:text-indigo-600 hover:bg-indigo-100/70 dark:hover:bg-zinc-800 shrink-0 transition mt-0.5"
-                                                >
-                                                    <Eye className="w-3.5 h-3.5" />
-                                                </button>
                                                 <div className="min-w-0 flex-1">
                                                     <span className="block text-[13px] font-bold text-stone-900 dark:text-white leading-snug break-words">
                                                         {product.name}
@@ -3950,6 +3938,18 @@ export default function SoLieuPage() {
                                                         <span className="block text-[10px] text-stone-400 font-mono mt-0.5">{product.sku}</span>
                                                     )}
                                                 </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={e => {
+                                                        e.stopPropagation()
+                                                        setHistoryModalProduct(product)
+                                                        setHistoryProductFilter('all')
+                                                    }}
+                                                    title="Xem lịch sử nhập xuất của riêng sản phẩm này"
+                                                    className="w-7 h-7 rounded-lg bg-stone-100 hover:bg-indigo-50 dark:bg-zinc-800 flex items-center justify-center text-stone-500 hover:text-indigo-600 shrink-0 transition"
+                                                >
+                                                    <Eye className="w-3.5 h-3.5" />
+                                                </button>
                                             </div>
 
                                             {/* Danh sách hiển thị số lượng của từng loại đơn vị */}
@@ -3994,12 +3994,13 @@ export default function SoLieuPage() {
 
                     {/* ===== DESKTOP: BẢNG DANH SÁCH SẢN PHẨM GỌN - CLICK ĐỂ CHỌN, NHẬP Ở BẢNG BÊN PHẢI ===== */}
                     <div className="hidden sm:block sm:col-start-1 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden mb-3.5">
-                        <div className="grid grid-cols-[minmax(0,1fr)_120px_75px_75px_50px_32px] items-center gap-2 px-3 py-1.5 bg-stone-50 dark:bg-zinc-950/60 border-b border-stone-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                        <div className="grid grid-cols-[minmax(0,1fr)_32px_102px_68px_68px_48px_28px] items-center gap-2 px-3 py-1.5 bg-stone-50 dark:bg-zinc-950/60 border-b border-stone-200 dark:border-zinc-800 text-[10px] font-bold uppercase tracking-wider text-stone-400">
                             <span>Sản phẩm</span>
-                            <span>ĐVT</span>
-                            <span className="text-right text-emerald-600">Đã nhập</span>
-                            <span className="text-right text-rose-600">Đã xuất</span>
-                            <span className="text-right">Số đợt</span>
+                            <span className="text-center" title="Lịch sử nhập xuất">LS</span>
+                            <span className="text-center">ĐVT</span>
+                            <span className="text-center text-emerald-600">Đã nhập</span>
+                            <span className="text-center text-rose-600">Đã xuất</span>
+                            <span className="text-center">Số đợt</span>
                             <span />
                         </div>
                         <div className="divide-y divide-stone-100 dark:divide-zinc-800/80">
@@ -4030,7 +4031,7 @@ export default function SoLieuPage() {
                                         role="button"
                                         tabIndex={0}
                                         onClick={() => openPad(product)}
-                                        className={`group grid grid-cols-[minmax(0,1fr)_120px_75px_75px_50px_32px] items-center gap-2 px-3 py-1.5 cursor-pointer border-l-4 transition-colors ${
+                                        className={`group grid grid-cols-[minmax(0,1fr)_32px_102px_68px_68px_48px_28px] items-center gap-2 px-3 py-1.5 cursor-pointer border-l-4 transition-colors ${
                                             effect === 'in'
                                                 ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
                                                 : effect === 'out'
@@ -4042,8 +4043,8 @@ export default function SoLieuPage() {
                                                 : 'bg-white dark:bg-zinc-900 border-l-indigo-300 dark:border-l-indigo-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800/40'
                                         }`}
                                     >
-                                        {/* Cột 1: STT + Con mắt xem lịch sử + Tên sản phẩm + SKU (Siêu gọn) */}
-                                        <div className="min-w-0 flex items-center gap-1.5">
+                                        {/* Cột 1: STT + Tên sản phẩm + SKU (Siêu gọn) */}
+                                        <div className="min-w-0 flex items-center gap-2">
                                             <span className={`w-5 h-5 shrink-0 rounded text-[10px] font-black flex items-center justify-center ${
                                                 isActive
                                                     ? 'bg-indigo-600 text-white shadow-xs'
@@ -4053,18 +4054,6 @@ export default function SoLieuPage() {
                                             }`}>
                                                 {idx + 1}
                                             </span>
-                                            <button
-                                                type="button"
-                                                onClick={e => {
-                                                    e.stopPropagation()
-                                                    setHistoryModalProduct(product)
-                                                    setHistoryProductFilter('all')
-                                                }}
-                                                title="Xem lịch sử nhập xuất của riêng sản phẩm này"
-                                                className="w-5 h-5 rounded flex items-center justify-center text-stone-400 hover:text-indigo-600 hover:bg-indigo-100/70 dark:hover:bg-zinc-800 shrink-0 transition"
-                                            >
-                                                <Eye className="w-3.5 h-3.5" />
-                                            </button>
                                             <div className="min-w-0 flex-1">
                                                 <p className={`text-xs font-bold leading-tight break-words ${isActive ? 'text-indigo-900 dark:text-indigo-100' : 'text-stone-900 dark:text-white'}`}>
                                                     {product.name}
@@ -4075,7 +4064,23 @@ export default function SoLieuPage() {
                                             </div>
                                         </div>
 
-                                        {/* Cột 2: ĐVT (Nút gọn h-6) */}
+                                        {/* Cột 2: Con mắt xem lịch sử riêng sản phẩm */}
+                                        <div className="flex items-center justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={e => {
+                                                    e.stopPropagation()
+                                                    setHistoryModalProduct(product)
+                                                    setHistoryProductFilter('all')
+                                                }}
+                                                title="Xem lịch sử nhập xuất của riêng sản phẩm này"
+                                                className="w-6 h-6 rounded-md flex items-center justify-center text-stone-400 hover:text-indigo-600 hover:bg-indigo-100/70 dark:hover:bg-zinc-800 transition"
+                                            >
+                                                <Eye className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
+
+                                        {/* Cột 3: ĐVT (Căn giữa, hiện đầy đủ tên đơn vị kể cả khi đang chọn) */}
                                         <div className="flex flex-col gap-1 justify-center" onClick={e => e.stopPropagation()}>
                                             {displayUnits.map(u => {
                                                 const isPadActive = isActive && padUnit === u
@@ -4089,7 +4094,7 @@ export default function SoLieuPage() {
                                                             setPadProduct(product)
                                                             setPadUnit(u)
                                                         }}
-                                                        className={`text-left text-[11px] font-bold px-2 h-6 rounded-md border transition truncate flex items-center justify-between gap-1 ${
+                                                        className={`w-full text-center text-[11px] font-bold px-1.5 h-6 rounded-md border transition whitespace-nowrap flex items-center justify-center ${
                                                             isPadActive
                                                                 ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
                                                                 : isSelected
@@ -4098,19 +4103,18 @@ export default function SoLieuPage() {
                                                         }`}
                                                         title={`Bấm để chọn nhập theo ${u}`}
                                                     >
-                                                        <span className="truncate">{u}</span>
-                                                        {isPadActive && <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0 animate-pulse" />}
+                                                        <span>{u}</span>
                                                     </button>
                                                 )
                                             })}
                                         </div>
 
-                                        {/* Cột 3: ĐÃ NHẬP (Gọn gàng font text-sm) */}
-                                        <div className="flex flex-col gap-1 justify-center text-right">
+                                        {/* Cột 4: ĐÃ NHẬP (Căn giữa) */}
+                                        <div className="flex flex-col gap-1 justify-center text-center">
                                             {displayUnits.map(u => {
                                                 const uStats = getProductCount(product.name, u)
                                                 return (
-                                                    <div key={u} className="h-6 flex items-center justify-end">
+                                                    <div key={u} className="h-6 flex items-center justify-center">
                                                         <span className={`text-sm font-black tabular-nums ${
                                                             uStats.inQty > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-xs'
                                                         }`}>
@@ -4121,12 +4125,12 @@ export default function SoLieuPage() {
                                             })}
                                         </div>
 
-                                        {/* Cột 4: ĐÃ XUẤT (Gọn gàng font text-sm) */}
-                                        <div className="flex flex-col gap-1 justify-center text-right">
+                                        {/* Cột 5: ĐÃ XUẤT (Căn giữa) */}
+                                        <div className="flex flex-col gap-1 justify-center text-center">
                                             {displayUnits.map(u => {
                                                 const uStats = getProductCount(product.name, u)
                                                 return (
-                                                    <div key={u} className="h-6 flex items-center justify-end">
+                                                    <div key={u} className="h-6 flex items-center justify-center">
                                                         <span className={`text-sm font-black tabular-nums ${
                                                             uStats.outQty > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-stone-300 dark:text-zinc-700 font-semibold text-xs'
                                                         }`}>
@@ -4137,21 +4141,23 @@ export default function SoLieuPage() {
                                             })}
                                         </div>
 
-                                        {/* Cột 5: SỐ ĐỢT */}
-                                        <span className="text-right text-[11px] text-stone-400 tabular-nums">{batchCount}</span>
+                                        {/* Cột 6: SỐ ĐỢT (Căn giữa) */}
+                                        <span className="text-center text-[11px] text-stone-400 tabular-nums">{batchCount}</span>
 
-                                        {/* Cột 6: BỎ GHIM (Nút h-6 w-6) */}
-                                        <button
-                                            type="button"
-                                            onClick={e => {
-                                                e.stopPropagation()
-                                                if (confirm(`Bỏ ghim "${product.name}" khỏi công việc này?`)) handleUnpinProduct(product.id)
-                                            }}
-                                            title="Bỏ ghim"
-                                            className="w-6 h-6 rounded-md flex items-center justify-center text-stone-300 opacity-0 group-hover:opacity-100 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                                        >
-                                            <PinOff className="w-3.5 h-3.5" />
-                                        </button>
+                                        {/* Cột 7: BỎ GHIM (Nút h-6 w-6 căn giữa) */}
+                                        <div className="flex items-center justify-center">
+                                            <button
+                                                type="button"
+                                                onClick={e => {
+                                                    e.stopPropagation()
+                                                    if (confirm(`Bỏ ghim "${product.name}" khỏi công việc này?`)) handleUnpinProduct(product.id)
+                                                }}
+                                                title="Bỏ ghim"
+                                                className="w-6 h-6 rounded-md flex items-center justify-center text-stone-300 opacity-0 group-hover:opacity-100 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                                            >
+                                                <PinOff className="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </div>
                                 )
                             })}
