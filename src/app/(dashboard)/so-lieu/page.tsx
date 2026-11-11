@@ -34,8 +34,10 @@ import {
     ExternalLink,
     Settings2,
     AlertTriangle,
-    Eye
+    Eye,
+    Zap
 } from 'lucide-react'
+
 import Link from 'next/link'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
@@ -67,6 +69,15 @@ interface ProductItem {
     internal_code?: string | null
     internal_name?: string | null
     available_units?: string[]
+}
+
+interface OrderTypeItem {
+    id: string
+    code: string | null
+    name: string
+    scope?: string | null
+    system_code?: string | null
+    is_active?: boolean
 }
 
 interface DeliveryJournalRecord {
@@ -117,6 +128,36 @@ export default function SoLieuPage() {
     const [jobOpenedAtInput, setJobOpenedAtInput] = useState<string>(() => formatDateTimeLocal())
     const [jobTemplatesList, setJobTemplatesList] = useState<JobTemplate[]>([])
     const [selectedJobTemplate, setSelectedJobTemplate] = useState<JobTemplate | null>(null)
+    const [jobOrderTypeId, setJobOrderTypeId] = useState<string>('')
+
+    const handleOpenCreateShiftModal = () => {
+        setJobOpenedAtInput(formatDateTimeLocal(new Date()))
+        setOpenShiftModal(true)
+    }
+
+    // Danh sách Loại phiếu (Kế toán) theo phân hệ
+    const [orderTypes, setOrderTypes] = useState<OrderTypeItem[]>([])
+    const [closeOrderTypeId, setCloseOrderTypeId] = useState<string>('')
+
+    const refreshOrderTypes = useCallback(async () => {
+        if (!currentSystem?.code) return
+        try {
+            const { data } = await (supabase as any)
+                .from('order_types')
+                .select('id, code, name, scope, system_code, is_active')
+                .eq('system_code', currentSystem.code)
+                .eq('is_active', true)
+                .order('code', { ascending: true })
+            if (data) setOrderTypes(data)
+        } catch (e) {
+            console.error('Error fetching order types in so-lieu:', e)
+        }
+    }, [currentSystem?.code])
+
+    useEffect(() => {
+        refreshOrderTypes()
+    }, [refreshOrderTypes])
+
 
     // Modal chốt sổ (hoàn thành công việc)
     const [closeShiftModal, setCloseShiftModal] = useState(false)
@@ -173,6 +214,19 @@ export default function SoLieuPage() {
     const [searchResults, setSearchResults] = useState<ProductItem[]>([])
     const [isSearching, setIsSearching] = useState(false)
     const [pinnedProducts, setPinnedProducts] = useState<ProductItem[]>([])
+
+    // Chế độ thanh tìm kiếm:
+    // 'filter': Tìm nhanh sản phẩm đã ghim để nhập số liệu (Chế độ 2)
+    // 'pin': Tìm sản phẩm trong danh mục kho để ghim vào công việc (Chế độ 1)
+    const [searchMode, setSearchMode] = useState<'filter' | 'pin'>('filter')
+
+    // Danh sách sản phẩm ghim được hiển thị trên bảng (được lọc khi searchMode === 'filter')
+    const displayedPinnedProducts = useMemo(() => {
+        if (searchMode !== 'filter' || !searchQuery.trim()) return pinnedProducts
+        const q = searchQuery.trim()
+        return pinnedProducts.filter(p => matchSearch(p, q))
+    }, [pinnedProducts, searchMode, searchQuery])
+
 
     // Danh mục đơn vị tính có sẵn
     const [availableUnits, setAvailableUnits] = useState<string[]>([
@@ -402,7 +456,7 @@ export default function SoLieuPage() {
                 const jobTagName = currentJobName ? `[CV: ${currentJobName}]` : ''
                 allJobJournals.forEach(r => {
                     const notesStr = r.notes || ''
-                    const belongsToShift = notesStr.includes(jobTagId) || (jobTagName && notesStr.includes(jobTagName))
+                    const belongsToShift = notesStr.includes(jobTagId)
                     if (!belongsToShift) return
                     const itemName = (r.item_name || '').trim()
                     if (!itemName) return
@@ -674,15 +728,30 @@ export default function SoLieuPage() {
 
         setLoadingData(true)
         try {
-            const { data, error } = await (supabase as any)
+            // 1. Ưu tiên lọc tuyệt đối theo CV_ID của công việc hiện tại (đảm bảo cô lập 100% giữa các công việc cùng tên)
+            let { data, error } = await (supabase as any)
                 .from('delivery_journal')
                 .select('*')
                 .eq('company_id', companyId)
                 .eq('system_code', shiftSystemCode)
-                // Lọc đúng công việc này thông qua CV_ID hoặc tên công việc
-                .or(`notes.ilike.%[CV_ID: ${activeShift.id}]%,notes.ilike.%[CV: ${currentJobName}]%`)
-                .gte('sent_at', activeShift.opened_at)
+                .ilike('notes', `%[CV_ID: ${activeShift.id}]%`)
                 .order('sent_at', { ascending: false })
+
+            // 2. Chỉ fallback theo tên công việc đối với các công việc cổ ngày xưa chưa từng được đánh tag CV_ID
+            if (!error && (!data || data.length === 0) && currentJobName) {
+                const { data: legacyData } = await (supabase as any)
+                    .from('delivery_journal')
+                    .select('*')
+                    .eq('company_id', companyId)
+                    .eq('system_code', shiftSystemCode)
+                    .gte('sent_at', activeShift.opened_at)
+                    .ilike('notes', `%[CV: ${currentJobName}]%`)
+                    .not('notes', 'ilike', '%[CV_ID:%')
+                    .order('sent_at', { ascending: false })
+                if (legacyData && legacyData.length > 0) {
+                    data = legacyData
+                }
+            }
 
             if (!error && data) {
                 const allList = data as DeliveryJournalRecord[]
@@ -775,20 +844,15 @@ export default function SoLieuPage() {
         const jobName = shift.summary_data?.job_name || ''
         setDoneLinesLoading(true)
         try {
-            let query = (supabase as any)
-                .from('delivery_journal')
-                .select('*')
-                .eq('company_id', companyId)
-                .eq('system_code', shiftSystemCode)
-                .gte('sent_at', shift.opened_at)
-                .order('sent_at', { ascending: true })
-            query = jobName
-                ? query.or(`notes.ilike.%[CV_ID: ${shift.id}]%,notes.ilike.%[CV: ${jobName}]%`)
-                : query.ilike('notes', `%[CV_ID: ${shift.id}]%`)
-            if (shift.closed_at) query = query.lte('sent_at', shift.closed_at)
-
-            const [linesRes, subRes] = await Promise.all([
-                query,
+            // 1. Ưu tiên lọc tuyệt đối theo CV_ID của công việc
+            const [idLinesRes, subRes] = await Promise.all([
+                (supabase as any)
+                    .from('delivery_journal')
+                    .select('*')
+                    .eq('company_id', companyId)
+                    .eq('system_code', shiftSystemCode)
+                    .ilike('notes', `%[CV_ID: ${shift.id}]%`)
+                    .order('sent_at', { ascending: true }),
                 (supabase as any)
                     .from('delivery_sub_shifts')
                     .select('*')
@@ -796,9 +860,25 @@ export default function SoLieuPage() {
                     .eq('system_code', shiftSystemCode)
                     .order('sub_shift_number', { ascending: true })
             ])
-            if (linesRes.error) throw linesRes.error
-            setDoneLines(linesRes.data || [])
-            setDoneSubShifts(subRes.data || [])
+
+            let linesData = idLinesRes?.data || []
+            // 2. Chỉ fallback theo tên công việc cho các ca cổ chưa có gắn tag CV_ID
+            if (linesData.length === 0 && jobName) {
+                let fallbackQuery = (supabase as any)
+                    .from('delivery_journal')
+                    .select('*')
+                    .eq('company_id', companyId)
+                    .eq('system_code', shiftSystemCode)
+                    .gte('sent_at', shift.opened_at)
+                    .ilike('notes', `%[CV: ${jobName}]%`)
+                    .not('notes', 'ilike', '%[CV_ID:%')
+                    .order('sent_at', { ascending: true })
+                if (shift.closed_at) fallbackQuery = fallbackQuery.lte('sent_at', shift.closed_at)
+                const { data: fbData } = await fallbackQuery
+                linesData = fbData || []
+            }
+            setDoneLines(linesData)
+            setDoneSubShifts(subRes?.data || [])
         } catch (err) {
             console.error('Error loading done job lines:', err)
             setDoneLines([])
@@ -843,8 +923,7 @@ export default function SoLieuPage() {
 
         // Kiểm tra xem công việc này có phát sinh đợt số liệu nào chưa
         const shiftRecords = allJobJournals.filter(j =>
-            (j.notes && j.notes.includes(`[CV_ID: ${shiftId}]`)) ||
-            (j.notes && j.notes.includes(`[CV: ${jobTitle}]`))
+            j.notes && j.notes.includes(`[CV_ID: ${shiftId}]`)
         )
 
         setDeleteTargetShift({
@@ -867,7 +946,7 @@ export default function SoLieuPage() {
                     .from('delivery_journal')
                     .delete()
                     .eq('system_code', shiftSystemCode)
-                    .or(`notes.ilike.%[CV_ID: ${shiftId}]%,notes.ilike.%[CV: ${jobTitle}]%`)
+                    .ilike('notes', `%[CV_ID: ${shiftId}]%`)
 
                 // 2. Xóa các đợt chốt tạm
                 await (supabase as any)
@@ -1190,7 +1269,9 @@ export default function SoLieuPage() {
         return {
             items,
             description: jobTitle,
-            orderTypeName: 'Sản Xuất',
+            orderTypeName: shift?.summary_data?.order_type_name || 'Sản Xuất',
+            orderTypeId: shift?.summary_data?.order_type_id || undefined,
+            orderTypeCode: shift?.summary_data?.order_type_code || undefined,
             shiftId: shift.id,
             jobName: jobTitle,
             settlementType: type,
@@ -1432,12 +1513,21 @@ export default function SoLieuPage() {
         }
         setIsSearching(true)
         const q = searchQuery.trim()
-        const matches = allProducts
-            .filter(p => matchSearch(p, q))
-            .sort((a, b) => calculateSearchScore(b, q) - calculateSearchScore(a, q))
+        if (searchMode === 'pin') {
+            // Chế độ 1: Tìm trong danh mục kho để ghim vào công việc
+            const matches = allProducts
+                .filter(p => matchSearch(p, q))
+                .sort((a, b) => calculateSearchScore(b, q) - calculateSearchScore(a, q))
+            setSearchResults(matches.slice(0, 15))
+        } else {
+            // Chế độ 2: Tìm trong các sản phẩm đã ghim để nhập số liệu nhanh
+            const matches = pinnedProducts
+                .filter(p => matchSearch(p, q))
+                .sort((a, b) => calculateSearchScore(b, q) - calculateSearchScore(a, q))
+            setSearchResults(matches.slice(0, 20))
+        }
+    }, [searchQuery, allProducts, pinnedProducts, searchMode])
 
-        setSearchResults(matches.slice(0, 15))
-    }, [searchQuery, allProducts])
 
     // Ghim sản phẩm vào bàn làm việc của công việc đang chọn
     const handlePinProduct = (product: ProductItem) => {
@@ -1679,12 +1769,14 @@ export default function SoLieuPage() {
         if (e.key === '-') { e.preventDefault(); handlePadConfirm('out'); return }
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
             e.preventDefault()
-            const idx = pinnedProducts.findIndex(p => p.id === padProduct.id)
+            const currentList = displayedPinnedProducts.length > 0 ? displayedPinnedProducts : pinnedProducts
+            const idx = currentList.findIndex(p => p.id === padProduct.id)
             const next = e.key === 'ArrowDown'
-                ? Math.min(pinnedProducts.length - 1, idx + 1)
+                ? Math.min(currentList.length - 1, idx + 1)
                 : Math.max(0, idx - 1)
-            if (pinnedProducts[next] && next !== idx) openPad(pinnedProducts[next])
+            if (currentList[next] && next !== idx) openPad(currentList[next])
         }
+
     }
     useEffect(() => {
         const listener = (e: KeyboardEvent) => padKeyHandlerRef.current(e)
@@ -1850,6 +1942,7 @@ export default function SoLieuPage() {
                     })
             }
 
+            const chosenType = orderTypes.find(t => t.id === jobOrderTypeId)
             const payload = {
                 system_code: shiftSystemCode,
                 company_id: currentSystem?.company_id || profile?.company_id || null,
@@ -1863,6 +1956,9 @@ export default function SoLieuPage() {
                     job_notes: jobNotesInput.trim() || null,
                     template_id: matchedTemplate?.id || null,
                     pinned_products: initialPinned,
+                    order_type_id: jobOrderTypeId || null,
+                    order_type_name: chosenType?.name || null,
+                    order_type_code: chosenType?.code || null,
                 }
             }
             const { data, error } = await (supabase as any)
@@ -1876,6 +1972,7 @@ export default function SoLieuPage() {
             setOpenShiftModal(false)
             setJobNameInput('')
             setJobNotesInput('')
+            setJobOrderTypeId('')
             setJobOpenedAtInput(formatDateTimeLocal(new Date()))
 
             if (data?.id) {
@@ -1915,7 +2012,7 @@ export default function SoLieuPage() {
                 .select('*')
                 .eq('company_id', companyId)
                 .eq('system_code', shiftSystemCode)
-                .or(`notes.ilike.%[CV_ID: ${activeShift.id}]%,notes.ilike.%[CV: ${currentJobName}]%`)
+                .ilike('notes', `%[CV_ID: ${activeShift.id}]%`)
                 .gte('sent_at', fromTime)
 
             if (error) throw error
@@ -2011,7 +2108,7 @@ export default function SoLieuPage() {
                 .select('*')
                 .eq('company_id', companyId)
                 .eq('system_code', shiftSystemCode)
-                .or(`notes.ilike.%[CV_ID: ${activeShift.id}]%,notes.ilike.%[CV: ${currentJobName}]%`)
+                .ilike('notes', `%[CV_ID: ${activeShift.id}]%`)
                 .gte('sent_at', openedAtStr)
 
             if (error) throw error
@@ -2080,7 +2177,7 @@ export default function SoLieuPage() {
                     .select('*')
                     .eq('company_id', companyId)
                     .eq('system_code', shiftSystemCode)
-                    .or(`notes.ilike.%[CV_ID: ${closedJobId}]%,notes.ilike.%[CV: ${currentJobName}]%`)
+                    .ilike('notes', `%[CV_ID: ${closedJobId}]%`)
                     .gt('sent_at', lastSubShift.to_time)
 
                 if (remList && remList.length > 0) {
@@ -2130,15 +2227,20 @@ export default function SoLieuPage() {
                 }
             }
 
+            const chosenCloseType = orderTypes.find(t => t.id === closeOrderTypeId)
             const payload = {
                 status: 'closed',
                 closed_by: profile?.id || null,
                 closed_by_name: profile?.full_name || 'Nhân viên kho',
                 closed_at: closedAtStr,
                 summary_data: {
+                    ...(activeShift?.summary_data || {}),
                     job_name: currentJobName,
                     pinned_products: pinnedProducts,
-                    ...(shiftSummary || {})
+                    ...(shiftSummary || {}),
+                    order_type_id: closeOrderTypeId || activeShift?.summary_data?.order_type_id || null,
+                    order_type_name: chosenCloseType?.name || activeShift?.summary_data?.order_type_name || null,
+                    order_type_code: chosenCloseType?.code || activeShift?.summary_data?.order_type_code || null,
                 },
                 notes: closeNotes ? `[CV: ${currentJobName}] ${closeNotes}` : `[CV: ${currentJobName}] Hoàn thành công việc`,
             }
@@ -2152,6 +2254,7 @@ export default function SoLieuPage() {
 
             setCloseShiftModal(false)
             setCloseNotes('')
+            setCloseOrderTypeId('')
             setShiftSummary(null)
 
             // Nạp lại danh sách công việc đang mở & đã hoàn thành, chuyển sang xem công việc vừa hoàn thành
@@ -2251,7 +2354,7 @@ export default function SoLieuPage() {
                             ) : (
                                 <button
                                     type="button"
-                                    onClick={() => setOpenShiftModal(true)}
+                                    onClick={() => handleOpenCreateShiftModal()}
                                     className="flex-1 h-10 px-3 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                                 >
                                     <Plus className="w-3.5 h-3.5" /> Tạo công việc
@@ -2269,64 +2372,163 @@ export default function SoLieuPage() {
 
                         {activeShift && (
                             <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                                {/* Bấm vào kính lúp để đổi chế độ trên Mobile */}
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchMode(prev => prev === 'filter' ? 'pin' : 'filter')
+                                        setSearchQuery('')
+                                    }}
+                                    title="Bấm chuyển đổi chế độ tìm kiếm"
+                                    className={`absolute left-1.5 top-1/2 -translate-y-1/2 h-7 px-2 rounded-lg flex items-center gap-1 transition-all z-10 cursor-pointer shadow-2xs ${
+                                        searchMode === 'filter'
+                                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                            : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                    }`}
+                                >
+                                    <Search className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="text-[10px] font-black tracking-tight select-none">
+                                        {searchMode === 'filter' ? 'Nhập' : 'Ghim'}
+                                    </span>
+                                </button>
                                 <input
                                     type="text"
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
-                                    placeholder="Tìm & ghim sản phẩm..."
-                                    className="w-full h-9 pl-8 pr-8 text-xs bg-stone-100 dark:bg-zinc-800 border border-transparent focus:border-indigo-400 rounded-xl focus:outline-none"
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault()
+                                            if (searchMode === 'filter') {
+                                                const target = searchResults[0] || displayedPinnedProducts[0]
+                                                if (target) {
+                                                    openPad(target)
+                                                    setSearchQuery('')
+                                                }
+                                            }
+                                        }
+                                    }}
+                                    placeholder={
+                                        searchMode === 'filter'
+                                            ? 'Tìm SP đã ghim (Bấm 🔍 đổi chế độ)'
+                                            : 'Tìm SP từ kho (Bấm 🔍 đổi chế độ)'
+                                    }
+                                    className={`w-full h-9 pl-[76px] pr-8 text-xs placeholder:text-[10.5px] placeholder:text-stone-400 dark:placeholder:text-zinc-500 bg-stone-100 dark:bg-zinc-800 border rounded-xl focus:outline-none transition ${
+                                        searchMode === 'filter'
+                                            ? 'border-indigo-300 dark:border-indigo-700/60 focus:border-indigo-500'
+                                            : 'border-amber-300 dark:border-amber-700/60 focus:border-amber-500'
+                                    }`}
+
                                 />
-                                {searchQuery && (
-                                    <button
-                                        onClick={() => setSearchQuery('')}
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-stone-400"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                                {isSearching && (
-                                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
-                                        {searchResults.length > 0 ? (
-                                            searchResults.map(p => {
-                                                const isPinned = pinnedProducts.some(pinned => pinned.id === p.id)
-                                                return (
+
+
+
+                                    {searchQuery && (
+                                        <button
+                                            onClick={() => setSearchQuery('')}
+                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-stone-400"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    )}
+                                    {isSearching && searchMode === 'pin' && (
+                                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
+                                            {searchResults.length > 0 ? (
+                                                searchResults.map(p => {
+                                                    const isPinned = pinnedProducts.some(pinned => pinned.id === p.id)
+                                                    return (
+                                                        <button
+                                                            key={p.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                if (isPinned) handleUnpinProduct(p.id)
+                                                                else handlePinProduct(p)
+                                                            }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-stone-100 dark:active:bg-zinc-700"
+                                                        >
+                                                            <span className="flex-1 min-w-0">
+                                                                <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
+                                                                <span className="block text-[10px] text-stone-400 mt-0.5">{p.sku || 'Chưa có mã'}</span>
+                                                            </span>
+                                                            <span className={`shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
+                                                                isPinned ? 'bg-stone-200 dark:bg-zinc-700 text-stone-600 dark:text-stone-300' : 'bg-indigo-600 text-white'
+                                                            }`}>
+                                                                {isPinned ? <><Check className="w-3 h-3" /> Đã ghim</> : <><Pin className="w-3 h-3" /> Ghim</>}
+                                                            </span>
+                                                        </button>
+                                                    )
+                                                })
+                                            ) : (
+                                                <div className="p-3.5 text-center">
+                                                    <p className="text-[11px] text-stone-500 mb-2">Không tìm thấy sản phẩm.</p>
                                                     <button
-                                                        key={p.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (isPinned) handleUnpinProduct(p.id)
-                                                            else handlePinProduct(p)
-                                                        }}
-                                                        className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-stone-100 dark:active:bg-zinc-700"
+                                                        onClick={handleAddCustomProduct}
+                                                        className="h-8 px-3 text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
                                                     >
-                                                        <span className="flex-1 min-w-0">
-                                                            <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
-                                                            <span className="block text-[10px] text-stone-400 mt-0.5">{p.sku || 'Chưa có mã'}</span>
-                                                        </span>
-                                                        <span className={`shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
-                                                            isPinned ? 'bg-stone-200 dark:bg-zinc-700 text-stone-600 dark:text-stone-300' : 'bg-indigo-600 text-white'
-                                                        }`}>
-                                                            {isPinned ? <><Check className="w-3 h-3" /> Đã ghim</> : <><Pin className="w-3 h-3" /> Ghim</>}
-                                                        </span>
+                                                        + Ghim hàng tự do: "{searchQuery}"
                                                     </button>
-                                                )
-                                            })
-                                        ) : (
-                                            <div className="p-3.5 text-center">
-                                                <p className="text-[11px] text-stone-500 mb-2">Không tìm thấy sản phẩm.</p>
-                                                <button
-                                                    onClick={handleAddCustomProduct}
-                                                    className="h-8 px-3 text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
-                                                >
-                                                    + Ghim hàng tự do: "{searchQuery}"
-                                                </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {isSearching && searchMode === 'filter' && (
+                                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
+                                            <div className="px-3 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center justify-between">
+                                                <span>Tìm thấy {searchResults.length} sản phẩm đã ghim</span>
                                             </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
+                                            {searchResults.length > 0 ? (
+                                                searchResults.map((p, sIdx) => {
+                                                    const origIdx = pinnedProducts.findIndex(x => x.id === p.id)
+                                                    const productUnits = getProductUnits(p)
+                                                    const currentUnit = selectedUnitMap[p.id] || p.unit || productUnits[0] || 'Kg'
+                                                    const counts = getProductCount(p.name, currentUnit)
+                                                    return (
+                                                        <button
+                                                            key={p.id}
+                                                            type="button"
+                                                            onClick={() => {
+                                                                openPad(p)
+                                                                setSearchQuery('')
+                                                            }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-indigo-50 dark:active:bg-zinc-700"
+                                                        >
+                                                            <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold flex items-center justify-center shrink-0">
+                                                                {origIdx >= 0 ? origIdx + 1 : sIdx + 1}
+                                                            </span>
+                                                            <span className="flex-1 min-w-0">
+                                                                <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
+                                                                <span className="block text-[10px] text-stone-400 mt-0.5">
+                                                                    {p.sku || 'Chưa có mã'} • ĐVT: {currentUnit}
+                                                                    {(counts.inQty > 0 || counts.outQty > 0) && (
+                                                                        <span className="ml-1.5 font-bold">
+                                                                            {counts.inQty > 0 && <span className="text-emerald-600 mr-1">+{counts.inQty}</span>}
+                                                                            {counts.outQty > 0 && <span className="text-rose-600">-{counts.outQty}</span>}
+                                                                        </span>
+                                                                    )}
+                                                                </span>
+                                                            </span>
+                                                            <span className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-bold bg-indigo-600 text-white flex items-center gap-1 shadow-xs">
+                                                                <Zap className="w-3 h-3 fill-white" /> Nhập
+                                                            </span>
+                                                        </button>
+                                                    )
+                                                })
+                                            ) : (
+                                                <div className="p-3.5 text-center">
+                                                    <p className="text-[11px] text-stone-500 mb-2">Không tìm thấy sản phẩm đã ghim nào khớp với "{searchQuery}".</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setSearchMode('pin')}
+                                                        className="h-8 px-3 text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
+                                                    >
+                                                        Tìm trong kho để ghim
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
                         )}
+
                     </>
                 )}
             </header>
@@ -2399,7 +2601,7 @@ export default function SoLieuPage() {
                                     </button>
                                     <button
                                         type="button"
-                                        onClick={async () => { await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
+                                        onClick={async () => { setCloseOrderTypeId(activeShift?.summary_data?.order_type_id || ''); await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
                                         className="h-8 px-3 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1 transition shadow-xs"
                                     >
                                         <StopCircle className="w-3.5 h-3.5" /> Hoàn thành CV
@@ -2493,7 +2695,7 @@ export default function SoLieuPage() {
                                 </Link>
                                 <button
                                     type="button"
-                                    onClick={() => setOpenShiftModal(true)}
+                                    onClick={() => handleOpenCreateShiftModal()}
                                     className="h-8 px-3 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5"
                                 >
                                     <Plus className="w-3.5 h-3.5" /> Tạo công việc mới
@@ -2557,7 +2759,7 @@ export default function SoLieuPage() {
                                                 <span>Danh sách công việc ({openShifts.length} đang mở)</span>
                                                 <button
                                                     type="button"
-                                                    onClick={() => { setDesktopJobDropdown(false); setOpenShiftModal(true); }}
+                                                    onClick={() => { setDesktopJobDropdown(false); handleOpenCreateShiftModal(); }}
                                                     className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-bold"
                                                 >
                                                     <Plus className="w-3.5 h-3.5" /> Tạo mới
@@ -2634,7 +2836,7 @@ export default function SoLieuPage() {
                                                     type="button"
                                                     onClick={() => {
                                                         setDesktopJobDropdown(false)
-                                                        setOpenShiftModal(true)
+                                                        handleOpenCreateShiftModal()
                                                     }}
                                                     className="w-full h-8 px-3 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center justify-center gap-1.5 transition"
                                                 >
@@ -2650,7 +2852,7 @@ export default function SoLieuPage() {
                             {/* Nút [+] tạo công việc mới nhanh */}
                             <button
                                 type="button"
-                                onClick={() => setOpenShiftModal(true)}
+                                onClick={() => handleOpenCreateShiftModal()}
                                 title="Thêm công việc mới"
                                 className="h-8 w-8 rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center justify-center shrink-0 transition"
                             >
@@ -2659,16 +2861,57 @@ export default function SoLieuPage() {
 
                             <div className="w-px h-5 bg-stone-200 dark:bg-zinc-700 shrink-0" />
 
-                            {/* Ô tìm kiếm sản phẩm để ghim: Kéo dài ra tận chỗ 8 sản phẩm đang ghim */}
+                            {/* Ô tìm kiếm sản phẩm: Bấm vào kính lúp ở đầu ô để đổi chế độ */}
                             <div className="relative flex-1 min-w-0">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setSearchMode(prev => prev === 'filter' ? 'pin' : 'filter')
+                                        setSearchQuery('')
+                                    }}
+                                    title="Bấm chuyển đổi chế độ tìm kiếm"
+                                    className={`absolute left-1.5 top-1/2 -translate-y-1/2 h-6 px-1.5 rounded-md flex items-center gap-1 transition-all z-10 cursor-pointer shadow-2xs ${
+                                        searchMode === 'filter'
+                                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
+                                            : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                                    }`}
+                                >
+                                    <Search className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="text-[10px] font-black tracking-tight select-none">
+                                        {searchMode === 'filter' ? 'Nhập' : 'Ghim'}
+                                    </span>
+                                </button>
                                 <input
                                     type="text"
                                     value={searchQuery}
                                     onChange={e => setSearchQuery(e.target.value)}
-                                    placeholder="Tìm sản phẩm theo tên, mã hoặc tên gõ tắt để ghim..."
-                                    className="w-full h-8 pl-8 pr-8 text-xs bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent focus:outline-none"
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            e.preventDefault()
+                                            if (searchMode === 'filter') {
+                                                const target = searchResults[0] || displayedPinnedProducts[0]
+                                                if (target) {
+                                                    openPad(target)
+                                                    setSearchQuery('')
+                                                }
+                                            }
+                                        }
+                                    }}
+                                    placeholder={
+                                        searchMode === 'filter'
+                                            ? 'Tìm SP đã ghim để nhập số (Bấm 🔍 đổi chế độ)'
+                                            : 'Tìm SP trong kho để ghim (Bấm 🔍 đổi chế độ)'
+                                    }
+                                    className={`w-full h-8 pl-[78px] pr-8 text-xs placeholder:text-[10.5px] placeholder:text-stone-400 dark:placeholder:text-zinc-500 bg-white dark:bg-zinc-800 border rounded-lg focus:ring-2 focus:border-transparent focus:outline-none transition ${
+                                        searchMode === 'filter'
+                                            ? 'border-indigo-200 dark:border-indigo-800/80 focus:ring-indigo-500'
+                                            : 'border-amber-200 dark:border-amber-800/80 focus:ring-amber-500'
+                                    }`}
+
                                 />
+
+
+
                                 {searchQuery && (
                                     <button
                                         onClick={() => setSearchQuery('')}
@@ -2677,7 +2920,7 @@ export default function SoLieuPage() {
                                         <X className="w-3.5 h-3.5" />
                                     </button>
                                 )}
-                                {isSearching && (
+                                {isSearching && searchMode === 'pin' && (
                                     <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
                                         {searchResults.length > 0 ? (
                                             searchResults.map(p => {
@@ -2721,7 +2964,67 @@ export default function SoLieuPage() {
                                         )}
                                     </div>
                                 )}
+                                {isSearching && searchMode === 'filter' && (
+                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
+                                        <div className="px-3 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center justify-between">
+                                            <span>Tìm thấy {searchResults.length} sản phẩm đã ghim (Bấm hoặc nhấn Enter để nhập số)</span>
+                                            <span className="text-[10px] text-stone-400">Esc để đóng</span>
+                                        </div>
+                                        {searchResults.length > 0 ? (
+                                            searchResults.map((p, sIdx) => {
+                                                const origIdx = pinnedProducts.findIndex(x => x.id === p.id)
+                                                const productUnits = getProductUnits(p)
+                                                const currentUnit = selectedUnitMap[p.id] || p.unit || productUnits[0] || 'Kg'
+                                                const counts = getProductCount(p.name, currentUnit)
+                                                return (
+                                                    <button
+                                                        key={p.id}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            openPad(p)
+                                                            setSearchQuery('')
+                                                        }}
+                                                        className={`w-full flex items-center gap-3 px-3.5 py-2 text-left hover:bg-indigo-50/50 dark:hover:bg-zinc-700/50 transition ${
+                                                            sIdx === 0 ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''
+                                                        }`}
+                                                    >
+                                                        <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold flex items-center justify-center shrink-0">
+                                                            {origIdx >= 0 ? origIdx + 1 : sIdx + 1}
+                                                        </span>
+                                                        <span className="flex-1 min-w-0">
+                                                            <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
+                                                            <span className="block text-[11px] text-stone-400 mt-0.5">
+                                                                {p.sku || 'Chưa có mã'} • ĐVT: <span className="font-semibold text-stone-600 dark:text-stone-300">{currentUnit}</span>
+                                                                {(counts.inQty > 0 || counts.outQty > 0) && (
+                                                                    <span className="ml-2 font-bold">
+                                                                        {counts.inQty > 0 && <span className="text-emerald-600 mr-1.5">+{counts.inQty}</span>}
+                                                                        {counts.outQty > 0 && <span className="text-rose-600">-{counts.outQty}</span>}
+                                                                    </span>
+                                                                )}
+                                                            </span>
+                                                        </span>
+                                                        <span className="shrink-0 h-7 px-3 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1 shadow-xs">
+                                                            <Zap className="w-3 h-3 fill-white" /> Nhập số
+                                                        </span>
+                                                    </button>
+                                                )
+                                            })
+                                        ) : (
+                                            <div className="p-4 text-center">
+                                                <p className="text-xs text-stone-500 mb-2">Không tìm thấy sản phẩm đã ghim nào khớp với "{searchQuery}".</p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setSearchMode('pin')}
+                                                    className="h-7 px-3 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
+                                                >
+                                                    Chuyển sang tìm trong kho để ghim SP này
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
+
 
                             {subShifts.length > 0 && (
                                 <div className="inline-flex rounded-lg border border-stone-200 dark:border-zinc-700 overflow-hidden text-xs font-semibold shrink-0">
@@ -2742,19 +3045,24 @@ export default function SoLieuPage() {
                                 </div>
                             )}
 
-                            <div className="ml-auto flex items-center gap-3 text-xs text-stone-500 shrink-0">
-                                <span><strong className="text-stone-800 dark:text-white">{pinnedProducts.length}</strong> sản phẩm đang ghim</span>
+                            <div className="ml-auto flex items-center gap-2 text-xs text-stone-500 shrink-0">
+                                <span>Đã ghim: <strong className="text-stone-800 dark:text-white">{pinnedProducts.length} SP</strong></span>
                                 {pinnedProducts.length > 0 && (
                                     <button
+                                        type="button"
                                         onClick={() => {
-                                            if (confirm(`Bỏ ghim toàn bộ sản phẩm của "${currentJobName}"?`)) updatePinnedProducts([])
+                                            if (confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa toàn bộ danh sách ${pinnedProducts.length} sản phẩm đã ghim của công việc "${currentJobName}" không?\n\n(Thao tác này sẽ dọn sạch danh sách sản phẩm trên bàn làm việc!)`)) {
+                                                updatePinnedProducts([])
+                                            }
                                         }}
-                                        className="text-stone-400 hover:text-rose-600 flex items-center gap-1"
+                                        title="Xóa toàn bộ danh sách sản phẩm đã ghim"
+                                        className="w-7 h-7 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center transition"
                                     >
-                                        <Trash2 className="w-3.5 h-3.5" /> Xóa hết
+                                        <Trash2 className="w-3.5 h-3.5" />
                                     </button>
                                 )}
                             </div>
+
                         </div>
                     </div>
                 )}
@@ -3764,6 +4072,13 @@ export default function SoLieuPage() {
                                                                     <span>Người chốt: <strong>{doneSelectedShift.closed_by_name}</strong></span>
                                                                 </div>
                                                             )}
+                                                            {doneSelectedShift.summary_data?.order_type_name && (
+                                                                <div className="text-stone-500 mt-1 flex items-center gap-1.5">
+                                                                    <FileText className="w-3 h-3 sm:w-3.5 sm:h-3.5 text-indigo-500" />
+                                                                    <span>Loại phiếu: <strong className="text-indigo-600 dark:text-indigo-400">{doneSelectedShift.summary_data.order_type_code ? `${doneSelectedShift.summary_data.order_type_code} - ` : ''}{doneSelectedShift.summary_data.order_type_name}</strong></span>
+                                                                </div>
+                                                            )}
+
                                                         </div>
                                                     </div>
                                                 )}
@@ -3798,7 +4113,7 @@ export default function SoLieuPage() {
                         </p>
                         <div className="flex flex-wrap items-center justify-center gap-2.5 sm:gap-3">
                             <button
-                                onClick={() => setOpenShiftModal(true)}
+                                onClick={() => handleOpenCreateShiftModal()}
                                 className="px-4 py-2.5 sm:px-6 sm:py-3 text-xs sm:text-sm font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-600/25 active:scale-95 transition flex items-center gap-1.5 sm:gap-2"
                             >
                                 <Play className="w-3.5 h-3.5 sm:w-4 sm:h-4 fill-white" />
@@ -3854,54 +4169,80 @@ export default function SoLieuPage() {
                             </span>
                         </div>
                         <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl divide-y divide-stone-200 dark:divide-zinc-700/80 overflow-hidden shadow-xs">
-                            {pinnedProducts.map((product, idx) => {
-                                const productUnits = getProductUnits(product)
-                                const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
-                                const effect = pulseEffect[product.id]
-                                const isAltRow = idx % 2 === 1
+                            {displayedPinnedProducts.length === 0 ? (
+                                <div className="p-6 text-center text-xs text-stone-500">
+                                    <p className="font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                                        Không tìm thấy sản phẩm đã ghim nào khớp với "{searchQuery}"
+                                    </p>
+                                    <div className="flex items-center justify-center gap-2 mt-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchQuery('')}
+                                            className="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 font-semibold text-xs"
+                                        >
+                                            Xóa tìm kiếm
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchMode('pin')}
+                                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-xs"
+                                        >
+                                            Tìm trong kho để ghim
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                displayedPinnedProducts.map((product, idx) => {
+                                    const origIdx = pinnedProducts.findIndex(p => p.id === product.id)
+                                    const displayIdx = origIdx >= 0 ? origIdx + 1 : idx + 1
+                                    const productUnits = getProductUnits(product)
+                                    const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
+                                    const effect = pulseEffect[product.id]
+                                    const isAltRow = idx % 2 === 1
 
-                                // Lấy tất cả các đơn vị đã phát sinh số liệu trong ca
-                                const activeUnits = productUnits.filter(u => {
-                                    const s = getProductCount(product.name, u)
-                                    return s.inQty > 0 || s.outQty > 0
-                                })
-                                // Hiển thị tất cả các đơn vị có số liệu + đơn vị đang chọn
-                                const displayUnits = Array.from(new Set([
-                                    ...(activeUnits.length > 0 ? activeUnits : [currentUnit]),
-                                    currentUnit
-                                ]))
+                                    // Lấy tất cả các đơn vị đã phát sinh số liệu trong ca
+                                    const activeUnits = productUnits.filter(u => {
+                                        const s = getProductCount(product.name, u)
+                                        return s.inQty > 0 || s.outQty > 0
+                                    })
+                                    // Hiển thị tất cả các đơn vị có số liệu + đơn vị đang chọn
+                                    const displayUnits = Array.from(new Set([
+                                        ...(activeUnits.length > 0 ? activeUnits : [currentUnit]),
+                                        currentUnit
+                                    ]))
 
-                                return (
-                                    <div
-                                        key={product.id}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => openPad(product)}
-                                        onKeyDown={e => {
-                                            if (e.key === 'Enter' || e.key === ' ') {
-                                                e.preventDefault()
-                                                openPad(product)
-                                            }
-                                        }}
-                                        className={`w-full p-3 text-left cursor-pointer select-none transition-colors border-l-4 active:bg-indigo-100/60 dark:active:bg-indigo-950/60 ${
-                                            effect === 'in'
-                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
-                                                : effect === 'out'
-                                                ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
-                                                : isAltRow
-                                                ? 'bg-amber-50/35 dark:bg-zinc-800/50 border-l-amber-500'
-                                                : 'bg-white dark:bg-zinc-900 border-l-indigo-600'
-                                        }`}
-                                    >
-                                        <div className="w-full">
-                                            <div className="flex items-start gap-2">
-                                                <span className={`w-5 h-5 shrink-0 rounded-md text-[10px] font-black flex items-center justify-center mt-0.5 ${
-                                                    isAltRow
-                                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                                                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
-                                                }`}>
-                                                    {idx + 1}
-                                                </span>
+                                    return (
+                                        <div
+                                            key={product.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => openPad(product)}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' || e.key === ' ') {
+                                                    e.preventDefault()
+                                                    openPad(product)
+                                                }
+                                            }}
+                                            className={`w-full p-3 text-left cursor-pointer select-none transition-colors border-l-4 active:bg-indigo-100/60 dark:active:bg-indigo-950/60 ${
+                                                effect === 'in'
+                                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
+                                                    : effect === 'out'
+                                                    ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
+                                                    : isAltRow
+                                                    ? 'bg-amber-50/35 dark:bg-zinc-800/50 border-l-amber-500'
+                                                    : 'bg-white dark:bg-zinc-900 border-l-indigo-600'
+                                            }`}
+                                        >
+                                            <div className="w-full">
+                                                <div className="flex items-start gap-2">
+                                                    <span className={`w-5 h-5 shrink-0 rounded-md text-[10px] font-black flex items-center justify-center mt-0.5 ${
+                                                        isAltRow
+                                                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                                            : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
+                                                    }`}>
+                                                        {displayIdx}
+                                                    </span>
+
                                                 <div className="min-w-0 flex-1">
                                                     <span className="block text-[13px] font-bold text-stone-900 dark:text-white leading-snug break-words">
                                                         {product.name}
@@ -3960,7 +4301,8 @@ export default function SoLieuPage() {
                                         </div>
                                     </div>
                                 )
-                            })}
+                            })
+                        )}
                         </div>
                     </div>
 
@@ -3976,56 +4318,85 @@ export default function SoLieuPage() {
                             <span />
                         </div>
                         <div className="divide-y divide-stone-100 dark:divide-zinc-800/80">
-                            {pinnedProducts.map((product, idx) => {
-                                const productUnits = getProductUnits(product)
-                                const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
-                                const isActive = padProduct?.id === product.id
-                                const rowUnit = isActive ? padUnit : currentUnit
-                                const effect = pulseEffect[product.id]
-                                const batchCount = journalList.filter(j => j.item_name === product.name).length
+                            {displayedPinnedProducts.length === 0 ? (
+                                <div className="p-8 text-center text-xs text-stone-500">
+                                    <p className="font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                                        Không tìm thấy sản phẩm đã ghim nào khớp với "{searchQuery}"
+                                    </p>
+                                    <p className="text-[11px] text-stone-400 mb-3">
+                                        Sản phẩm này chưa được ghim vào công việc hoặc gõ sai từ khóa.
+                                    </p>
+                                    <div className="flex items-center justify-center gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchQuery('')}
+                                            className="px-3 py-1.5 rounded-lg bg-stone-100 dark:bg-zinc-800 text-stone-700 dark:text-stone-300 font-semibold text-xs hover:bg-stone-200"
+                                        >
+                                            Xóa tìm kiếm
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setSearchMode('pin')}
+                                            className="px-3 py-1.5 rounded-lg bg-indigo-600 text-white font-semibold text-xs hover:bg-indigo-700"
+                                        >
+                                            Tìm trong kho để ghim
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                displayedPinnedProducts.map((product, idx) => {
+                                    const origIdx = pinnedProducts.findIndex(p => p.id === product.id)
+                                    const displayIdx = origIdx >= 0 ? origIdx + 1 : idx + 1
+                                    const productUnits = getProductUnits(product)
+                                    const currentUnit = selectedUnitMap[product.id] || product.unit || productUnits[0] || 'Kg'
+                                    const isActive = padProduct?.id === product.id
+                                    const rowUnit = isActive ? padUnit : currentUnit
+                                    const effect = pulseEffect[product.id]
+                                    const batchCount = journalList.filter(j => j.item_name === product.name).length
 
-                                // Lấy tất cả các đơn vị đã phát sinh số liệu trong ca
-                                const activeUnits = productUnits.filter(u => {
-                                    const s = getProductCount(product.name, u)
-                                    return s.inQty > 0 || s.outQty > 0
-                                })
+                                    // Lấy tất cả các đơn vị đã phát sinh số liệu trong ca
+                                    const activeUnits = productUnits.filter(u => {
+                                        const s = getProductCount(product.name, u)
+                                        return s.inQty > 0 || s.outQty > 0
+                                    })
 
-                                // Danh sách các đơn vị sẽ hiển thị trên dòng:
-                                // Bao gồm đơn vị đang active trên pad/selected, cộng với TẤT CẢ các đơn vị đã phát sinh số liệu
-                                const displayUnits = Array.from(new Set([
-                                    rowUnit,
-                                    ...activeUnits
-                                ]))
+                                    // Danh sách các đơn vị sẽ hiển thị trên dòng:
+                                    // Bao gồm đơn vị đang active trên pad/selected, cộng với TẤT CẢ các đơn vị đã phát sinh số liệu
+                                    const displayUnits = Array.from(new Set([
+                                        rowUnit,
+                                        ...activeUnits
+                                    ]))
 
-                                return (
-                                    <div
-                                        key={product.id}
-                                        role="button"
-                                        tabIndex={0}
-                                        onClick={() => openPad(product)}
-                                        className={`group grid grid-cols-[minmax(0,1fr)_32px_102px_68px_68px_48px_28px] items-center gap-2 px-3 py-1.5 cursor-pointer border-l-4 transition-colors ${
-                                            effect === 'in'
-                                                ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
-                                                : effect === 'out'
-                                                ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
-                                                : isActive
-                                                ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-l-indigo-600'
-                                                : idx % 2 === 1
-                                                ? 'bg-amber-50/25 dark:bg-zinc-800/40 border-l-amber-400 hover:bg-amber-50/40'
-                                                : 'bg-white dark:bg-zinc-900 border-l-indigo-300 dark:border-l-indigo-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800/40'
-                                        }`}
-                                    >
-                                        {/* Cột 1: STT + Tên sản phẩm + SKU (Siêu gọn) */}
-                                        <div className="min-w-0 flex items-center gap-2">
-                                            <span className={`w-5 h-5 shrink-0 rounded text-[10px] font-black flex items-center justify-center ${
-                                                isActive
-                                                    ? 'bg-indigo-600 text-white shadow-xs'
+                                    return (
+                                        <div
+                                            key={product.id}
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => openPad(product)}
+                                            className={`group grid grid-cols-[minmax(0,1fr)_32px_102px_68px_68px_48px_28px] items-center gap-2 px-3 py-1.5 cursor-pointer border-l-4 transition-colors ${
+                                                effect === 'in'
+                                                    ? 'bg-emerald-50 dark:bg-emerald-950/40 border-l-emerald-500'
+                                                    : effect === 'out'
+                                                    ? 'bg-rose-50 dark:bg-rose-950/40 border-l-rose-500'
+                                                    : isActive
+                                                    ? 'bg-indigo-50/80 dark:bg-indigo-950/50 border-l-indigo-600'
                                                     : idx % 2 === 1
-                                                    ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
-                                                    : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
-                                            }`}>
-                                                {idx + 1}
-                                            </span>
+                                                    ? 'bg-amber-50/25 dark:bg-zinc-800/40 border-l-amber-400 hover:bg-amber-50/40'
+                                                    : 'bg-white dark:bg-zinc-900 border-l-indigo-300 dark:border-l-indigo-800/60 hover:bg-stone-50 dark:hover:bg-zinc-800/40'
+                                            }`}
+                                        >
+                                            {/* Cột 1: STT + Tên sản phẩm + SKU (Siêu gọn) */}
+                                            <div className="min-w-0 flex items-center gap-2">
+                                                <span className={`w-5 h-5 shrink-0 rounded text-[10px] font-black flex items-center justify-center ${
+                                                    isActive
+                                                        ? 'bg-indigo-600 text-white shadow-xs'
+                                                        : idx % 2 === 1
+                                                        ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                                                        : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-800'
+                                                }`}>
+                                                    {displayIdx}
+                                                </span>
+
                                             <div className="min-w-0 flex-1">
                                                 <p className={`text-xs font-bold leading-tight break-words ${isActive ? 'text-indigo-900 dark:text-indigo-100' : 'text-stone-900 dark:text-white'}`}>
                                                     {product.name}
@@ -4132,10 +4503,12 @@ export default function SoLieuPage() {
                                         </div>
                                     </div>
                                 )
-                            })}
+                            })
+                        )}
                         </div>
                     </div>
                     </>
+
                 )}
 
                 {/* 5. NHẬT KÝ VÀ BẢNG TỔNG HỢP CỦA CÔNG VIỆC ĐANG CHỌN */}
@@ -5116,6 +5489,29 @@ export default function SoLieuPage() {
                                 </div>
                             </div>
 
+                            {/* Loại phiếu kế toán (Tự động điền khi tạo phiếu kết toán) */}
+                            <div>
+                                <label className="text-xs sm:text-sm font-bold text-stone-700 dark:text-stone-300 flex items-center gap-1.5 mb-1.5">
+                                    <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
+                                    <span>Loại phiếu (Kế toán)</span>
+                                </label>
+                                <select
+                                    value={jobOrderTypeId}
+                                    onChange={e => setJobOrderTypeId(e.target.value)}
+                                    className="w-full text-xs sm:text-sm px-3 py-2 sm:py-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium text-stone-800 dark:text-stone-100"
+                                >
+                                    <option value="">-- Mặc định (hoặc chọn khi chốt ca / làm phiếu) --</option>
+                                    {orderTypes.map(ot => (
+                                        <option key={ot.id} value={ot.id}>
+                                            {ot.code ? `${ot.code} - ` : ''}{ot.name}{ot.scope && ot.scope !== 'both' ? ` (${ot.scope === 'inbound' ? 'Nhập' : 'Xuất'})` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                                <p className="text-[11px] text-stone-400 mt-1">
+                                    Gán trước loại phiếu để tự động điền sẵn khi tạo phiếu nhập/xuất kho kế toán.
+                                </p>
+                            </div>
+
                             {/* 2. Thời gian bắt đầu công việc (Hỗ trợ nhập bù) */}
                             <div>
                                 <div className="flex flex-wrap items-center justify-between mb-1.5 gap-2">
@@ -5347,6 +5743,25 @@ export default function SoLieuPage() {
                                     ))}
                                 </tbody>
                             </table>
+                        </div>
+
+                                                {/* Chọn / đổi loại phiếu trước khi đóng */}
+                        <div className="mb-3 shrink-0">
+                            <label className="block text-xs font-semibold text-stone-700 dark:text-stone-300 mb-1">
+                                Loại phiếu kế toán:
+                            </label>
+                            <select
+                                value={closeOrderTypeId}
+                                onChange={e => setCloseOrderTypeId(e.target.value)}
+                                className="w-full text-xs p-2.5 bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium text-stone-800 dark:text-stone-100"
+                            >
+                                <option value="">-- Mặc định (hoặc chọn loại phiếu) --</option>
+                                {orderTypes.map(ot => (
+                                    <option key={ot.id} value={ot.id}>
+                                        {ot.code ? `${ot.code} - ` : ''}{ot.name}{ot.scope && ot.scope !== 'both' ? ` (${ot.scope === 'inbound' ? 'Nhập' : 'Xuất'})` : ''}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="mb-3 shrink-0">
@@ -5884,7 +6299,7 @@ export default function SoLieuPage() {
                         </div>
                         <button
                             type="button"
-                            onClick={() => { setMobileJobSheet(false); setOpenShiftModal(true) }}
+                            onClick={() => { setMobileJobSheet(false); handleOpenCreateShiftModal(); }}
                             className="mt-2.5 h-10 rounded-xl border-2 border-dashed border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center gap-1.5"
                         >
                             <Plus className="w-3.5 h-3.5" /> Thêm công việc mới
@@ -5926,7 +6341,7 @@ export default function SoLieuPage() {
                                     )}
                                     <button
                                         type="button"
-                                        onClick={async () => { setMobileMenu(false); await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
+                                        onClick={async () => { setMobileMenu(false); setCloseOrderTypeId(activeShift?.summary_data?.order_type_id || ''); await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
                                         className="w-full py-3 flex items-center gap-2.5 text-left text-xs font-semibold text-rose-600"
                                     >
                                         <StopCircle className="w-4 h-4" /> Hoàn thành công việc
