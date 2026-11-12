@@ -28,6 +28,7 @@ import {
     calculateWorkSpeed,
     WorkPlanTaskType,
     WorkPlanItemStatus,
+    WorkPlanWorkNature,
 } from './types'
 
 interface AssigneeEvaluationSectionProps {
@@ -40,6 +41,7 @@ interface AssigneeEvaluationSectionProps {
     onChange: (next: WorkPlanAssigneeEvaluation[]) => void
     activeAssigneeName?: string | null
     onSelectAssignee?: (name: string) => void
+    workNature?: WorkPlanWorkNature | null
 }
 
 export default function AssigneeEvaluationSection({
@@ -52,7 +54,9 @@ export default function AssigneeEvaluationSection({
     onChange,
     activeAssigneeName = null,
     onSelectAssignee,
+    workNature = null,
 }: AssigneeEvaluationSectionProps) {
+    const isStatistics = workNature === 'statistics'
     // State popover thêm lỗi cho từng nhân viên
     const [activeIncidentPickerAssignee, setActiveIncidentPickerAssignee] = useState<string | null>(null)
     const [customIncidentName, setCustomIncidentName] = useState<string>('')
@@ -500,6 +504,7 @@ export default function AssigneeEvaluationSection({
                         customProductivityScore: ev.custom_productivity_score,
                         customQualityScore: ev.custom_quality_score,
                         sharePercent: share,
+                        workNature,
                     })
 
                     const totalPenalty = (ev.incidents || []).reduce((s, i) => s + (i.penalty_points || 0), 0)
@@ -773,9 +778,13 @@ export default function AssigneeEvaluationSection({
                                         </button>
                                     </div>
 
-                                    {/* 5 Nhóm Lỗi Quy Chuẩn (Thống kê, Xe nâng, Hàng hóa, Vận hành, 5S) */}
+                                    {/* 5 Nhóm Lỗi Quy Chuẩn — thống kê ẩn nhóm Xe nâng, lao động ẩn nhóm Thống kê/Dữ liệu */}
                                     <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1">
-                                        {DEFAULT_INCIDENT_TEMPLATES.map(grp => (
+                                        {DEFAULT_INCIDENT_TEMPLATES.filter(grp =>
+                                            isStatistics
+                                                ? grp.group !== 'safety_forklift'
+                                                : grp.group !== 'inventory_statistics'
+                                        ).map(grp => (
                                             <div key={grp.group} className="space-y-1">
                                                 <div className="text-[10px] font-extrabold uppercase text-stone-500 flex items-center gap-1">
                                                     <span>{grp.icon}</span>
@@ -908,7 +917,7 @@ export default function AssigneeEvaluationSection({
                                             <input
                                                 type="number"
                                                 min={0}
-                                                max={50}
+                                                max={standardKpi.productivityMax}
                                                 step={0.5}
                                                 value={
                                                     ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null
@@ -920,14 +929,14 @@ export default function AssigneeEvaluationSection({
                                                     const val = rawVal === '' ? null : Number(rawVal)
                                                     updateEvaluation(ev.assignee_name, prev => ({
                                                         ...prev,
-                                                        custom_productivity_score: val === null ? null : Math.max(0, Math.min(50, val))
+                                                        custom_productivity_score: val === null ? null : Math.max(0, Math.min(standardKpi.productivityMax, val))
                                                     }))
                                                 }}
                                                 className="w-12 px-1 py-0.5 rounded border border-indigo-200 bg-white text-center font-black text-xs text-indigo-950 shadow-2xs focus:ring-1 focus:ring-indigo-500"
-                                                title="Quản lý có thể gõ trực tiếp điểm hỗ trợ mong muốn (0-50đ)"
+                                                title={`Quản lý có thể gõ trực tiếp điểm hỗ trợ mong muốn (0-${standardKpi.productivityMax}đ)`}
                                             />
                                             <span className="text-stone-400 font-bold text-[10px]">
-                                                đ (Chuẩn {getProductivityScoreByDifficulty(workloadMetrics.difficulty, diffMultiplier)}đ × {share}%)
+                                                đ (Chuẩn {isStatistics ? standardKpi.productivityMax : getProductivityScoreByDifficulty(workloadMetrics.difficulty, diffMultiplier)}đ × {share}%)
                                             </span>
                                             {ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null && (
                                                 <button
@@ -968,6 +977,14 @@ export default function AssigneeEvaluationSection({
                                             }`}>
                                                 {standardKpi.gradeLabel}
                                             </span>
+                                            {isStatistics && (
+                                                <span
+                                                    className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-black"
+                                                    title="Việc thống kê không vận hành xe nâng nên không có trụ An toàn; 20đ dồn sang Năng suất. Mốc Năng suất theo độ nặng: Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40. Chất lượng 40đ khi hoàn thành 100% và số liệu đúng; mỗi lỗi sai số liệu trừ 10–25đ (không trừ trùng vào Kỷ luật), việc tồn đọng tự trừ theo % việc còn lại. Số sao chỉ tham khảo."
+                                                >
+                                                    📊 Thống kê: Năng suất trần 40đ (mốc 30–40) • Chất lượng 40đ • Không có An toàn
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="text-xs font-black text-stone-900">
                                             Tổng việc chính: <span className="text-indigo-600 text-sm font-black">{standardKpi.totalKpi}</span>
@@ -975,8 +992,8 @@ export default function AssigneeEvaluationSection({
                                         </div>
                                     </div>
 
-                                    {/* Chi tiết 4 Trụ Cột */}
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 pt-1 text-[11px]">
+                                    {/* Chi tiết 3 Trụ Cột (thống kê) / 4 Trụ Cột (lao động) */}
+                                    <div className={`grid grid-cols-2 ${isStatistics ? 'sm:grid-cols-3' : 'sm:grid-cols-4'} gap-1.5 pt-1 text-[11px]`}>
                                         <div className={`p-1.5 rounded-lg border flex items-center justify-between gap-1 ${
                                             ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null
                                                 ? 'bg-amber-50/80 border-amber-300'
@@ -989,7 +1006,7 @@ export default function AssigneeEvaluationSection({
                                                 <input
                                                     type="number"
                                                     min={0}
-                                                    max={50}
+                                                    max={standardKpi.productivityMax}
                                                     step={0.5}
                                                     value={
                                                         ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null
@@ -1001,13 +1018,13 @@ export default function AssigneeEvaluationSection({
                                                         const val = rawVal === '' ? null : Number(rawVal)
                                                         updateEvaluation(ev.assignee_name, prev => ({
                                                             ...prev,
-                                                            custom_productivity_score: val === null ? null : Math.max(0, Math.min(50, val))
+                                                            custom_productivity_score: val === null ? null : Math.max(0, Math.min(standardKpi.productivityMax, val))
                                                         }))
                                                     }}
                                                     className="w-11 px-1 py-0.5 rounded border border-stone-300 bg-white text-center font-black text-xs text-stone-900 shadow-2xs focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-                                                    title="Quản lý có thể chấm tay trực tiếp (0-50đ). Xóa ô để quay về tự động."
+                                                    title={`Quản lý có thể chấm tay trực tiếp (0-${standardKpi.productivityMax}đ). Xóa ô để quay về tự động.`}
                                                 />
-                                                <span className="text-stone-400 font-bold text-[10px]">/40-50đ</span>
+                                                <span className="text-stone-400 font-bold text-[10px]">/{standardKpi.productivityMax}đ</span>
                                                 {ev.custom_productivity_score !== undefined && ev.custom_productivity_score !== null && (
                                                     <button
                                                         type="button"
@@ -1037,7 +1054,7 @@ export default function AssigneeEvaluationSection({
                                                 <input
                                                     type="number"
                                                     min={0}
-                                                    max={20}
+                                                    max={standardKpi.qualityMax}
                                                     step={1}
                                                     value={
                                                         ev.custom_quality_score !== undefined && ev.custom_quality_score !== null
@@ -1049,13 +1066,13 @@ export default function AssigneeEvaluationSection({
                                                         const val = rawVal === '' ? null : Number(rawVal)
                                                         updateEvaluation(ev.assignee_name, prev => ({
                                                             ...prev,
-                                                            custom_quality_score: val === null ? null : Math.max(0, Math.min(20, val))
+                                                            custom_quality_score: val === null ? null : Math.max(0, Math.min(standardKpi.qualityMax, val))
                                                         }))
                                                     }}
                                                     className="w-11 px-1 py-0.5 rounded border border-stone-300 bg-white text-center font-black text-xs text-amber-800 shadow-2xs focus:ring-1 focus:ring-amber-500 focus:border-amber-500"
-                                                    title="Quản lý có thể chấm tay trực tiếp (0-20đ) cho riêng người này. Xóa ô để quay về tự động."
+                                                    title={`Quản lý có thể chấm tay trực tiếp (0-${standardKpi.qualityMax}đ) cho riêng người này. Xóa ô để quay về tự động.`}
                                                 />
-                                                <span className="text-stone-400 font-bold text-[10px]">/20đ</span>
+                                                <span className="text-stone-400 font-bold text-[10px]">/{standardKpi.qualityMax}đ</span>
                                                 {ev.custom_quality_score !== undefined && ev.custom_quality_score !== null ? (
                                                     <button
                                                         type="button"
@@ -1066,30 +1083,50 @@ export default function AssigneeEvaluationSection({
                                                             }))
                                                         }}
                                                         className="text-stone-400 hover:text-rose-600 font-black text-[11px] leading-none px-0.5"
-                                                        title="Bỏ chấm tay, khôi phục gợi ý theo sao tổng quan của công việc"
+                                                        title={isStatistics ? 'Bỏ chấm tay, khôi phục điểm chất lượng tự động theo lỗi số liệu & ghi chép' : 'Bỏ chấm tay, khôi phục điểm chất lượng tự động theo lỗi hàng hóa'}
                                                     >
                                                         ✕
                                                     </button>
-                                                ) : ratingStars ? (
-                                                    <span className="text-[10px] text-amber-600 font-bold">({ratingStars}⭐)</span>
                                                 ) : null}
                                             </div>
                                         </div>
-                                        <div className={`p-1.5 rounded-lg border flex items-center justify-between ${
-                                            standardKpi.safetyScore < 20 ? 'bg-rose-50 border-rose-200' : 'bg-stone-50 border-stone-200'
-                                        }`}>
-                                            <span className={standardKpi.safetyScore < 20 ? 'text-rose-700 font-bold' : 'text-stone-600'}>
-                                                🛡️ An toàn:
-                                            </span>
-                                            <span className={`font-black ${standardKpi.safetyScore < 20 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                                                {standardKpi.safetyScore}/20đ
-                                            </span>
-                                        </div>
+                                        {!isStatistics && (
+                                            <div className={`p-1.5 rounded-lg border flex items-center justify-between ${
+                                                standardKpi.safetyScore < standardKpi.safetyMax ? 'bg-rose-50 border-rose-200' : 'bg-stone-50 border-stone-200'
+                                            }`}>
+                                                <span className={standardKpi.safetyScore < standardKpi.safetyMax ? 'text-rose-700 font-bold' : 'text-stone-600'}>
+                                                    🛡️ An toàn:
+                                                </span>
+                                                <span className={`font-black ${standardKpi.safetyScore < standardKpi.safetyMax ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                                    {standardKpi.safetyScore}/{standardKpi.safetyMax}đ
+                                                </span>
+                                            </div>
+                                        )}
                                         <div className="p-1.5 rounded-lg bg-stone-50 border border-stone-200 flex items-center justify-between">
                                             <span className="text-stone-600">📋 Kỷ luật 5S:</span>
-                                            <span className="font-black text-indigo-700">{standardKpi.disciplineScore}/15đ</span>
+                                            <span className="font-black text-indigo-700">{standardKpi.disciplineScore}/{standardKpi.disciplineMax}đ</span>
                                         </div>
                                     </div>
+
+                                    {isStatistics && (
+                                        <div className="text-[10px] text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2 py-1.5 leading-relaxed">
+                                            📊 <b>Việc thống kê:</b> không vận hành xe nâng nên <b>không có trụ An toàn</b>;
+                                            20đ được dồn sang Năng suất — trần <b>40đ</b>, mốc đạt theo độ nặng
+                                            (Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40) × % hoàn thành.
+                                            Số liệu đúng tuyệt đối = <b>{standardKpi.qualityMax}/{standardKpi.qualityMax}đ</b> chất lượng;
+                                            mọi lỗi hàng hóa, số liệu &amp; ghi chép (quên quét tem, chậm cập nhật, sai lệch bàn giao) đều trừ vào Chất lượng (10–25đ/lỗi), <b>không trừ trùng</b>;
+                                            để việc tồn đọng trong ca thì Chất lượng <b>tự trừ theo % việc còn lại</b> (hoặc trừ đúng mức phạt nếu Quản lý ghi lỗi “Chưa xong việc trong ca”);
+                                            số sao nghiệm thu chỉ để tham khảo.
+                                        </div>
+                                    )}
+
+                                    {!isStatistics && (
+                                        <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
+                                            🚜 <b>Việc lao động:</b> hàng hóa nguyên vẹn, giao nhận đúng chủng loại và hoàn thành 100% việc = <b>{standardKpi.qualityMax}/{standardKpi.qualityMax}đ</b> chất lượng.
+                                            Chỉ trừ lỗi <b>hàng hóa</b> (10–40đ/lỗi) và <b>việc tồn đọng</b> (tự trừ theo % việc còn lại) — lỗi số liệu/ghi chép thuộc việc thống kê nên không xuất hiện ở đây;
+                                            An toàn chỉ trừ lỗi xe nâng; số sao nghiệm thu chỉ để tham khảo.
+                                        </div>
+                                    )}
 
                                     {standardKpi.hasSevereIncident && (
                                         <div className="text-[11px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-md border border-rose-200">

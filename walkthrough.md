@@ -2919,3 +2919,458 @@ Tiếp nối thay đổi ô đầu lưới, với công việc **Thống kê** �
 - `npx tsc --noEmit` lọc các file work-plans vừa sửa → không lỗi.
 - `npx vitest run src/components/work-plans/__tests__` → **12/12 pass**.
 - Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.
+
+# Walkthrough: Bỏ mục "Đánh Giá Cá Nhân & Ghi Nhận Lỗi Vi Phạm (Xét KPI)" khỏi modal Số liệu chứng minh
+
+## Yêu cầu
+
+Modal **"Số Liệu & Chứng Từ Chứng Minh Công Việc"** chỉ nên chứa số liệu/chứng từ; phần đánh giá cá nhân, giờ làm và vi phạm KPI đã có ở **bước 3 – Đánh giá**, không cần lặp lại.
+
+## Sửa (`src/components/work-plans/WorkloadMetricsModal.tsx`)
+
+- Bỏ khối `<AssigneeEvaluationSection />` (Đánh giá cá nhân, giờ làm & tăng ca, vi phạm/thưởng điểm, đóng góp %).
+- Giữ nguyên `assignee_evaluations` đã có: modal vẫn đọc từ `workload_metrics` (fallback `item.assignee_evaluations`) và ghi trả lại khi lưu, **không xóa dữ liệu KPI** của bước 3.
+- Nút "Xóa trắng số liệu" chỉ xóa số liệu chứng minh, **không còn xóa đánh giá cá nhân**.
+- Đổi nhãn nút lưu thành "Lưu số liệu chứng minh".
+
+`AssigneeEvaluationSection` vẫn dùng ở `EvaluateItemModal` (bước 3) nên không thay đổi chức năng đánh giá.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `WorkloadMetricsModal.tsx` → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **12/12 pass**.
+- Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.
+
+# Walkthrough: Thang điểm KPI riêng cho công việc Thống kê (Năng suất 20đ – Chất lượng 40đ)
+
+## Yêu cầu
+
+Với công việc **Thống kê / Ghi chép**, độ chính xác số liệu (đúng/sai) mới là yếu tố quyết định, nên **giảm trọng số Năng suất và tăng trọng số Chất lượng**, vẫn giữ tổng 100 điểm.
+
+## Thang điểm mới (chỉ áp dụng khi `work_nature = 'statistics'`)
+
+| Trụ cột | Lao động (giữ nguyên) | Thống kê (mới) |
+|---|---|---|
+| Năng suất | 40–50đ theo độ nặng (Nhẹ 40 • Vừa 42 • Nặng 45 • Rất nặng 50) | **20đ** – theo % hoàn thành công việc |
+| Chất lượng | 20đ | **40đ** – theo số sao nghiệm thu (5⭐=40, 4⭐=32, 3⭐=24, 2⭐=16, 1⭐=8) |
+| An toàn & Hàng hóa | 20đ | 20đ |
+| Kỷ luật & 5S | 15đ | **20đ** – trừ lỗi, cộng thưởng nhưng chặn trần 20đ |
+| **Tổng việc chính** | 100đ | **100đ** |
+
+Việc phụ vẫn cộng mở trần trên 100 điểm; với công việc thống kê, điểm chuẩn của việc phụ tính theo trần Năng suất 20đ × % đóng góp.
+
+## Sửa
+
+- `src/components/work-plans/types.ts`: thêm `KPI_PILLARS_STATISTICS` (20/40/20/20); `calculateAssigneeTaskStandardKpi` nhận `workNature`, tính trần Năng suất/Chất lượng/Kỷ luật động; `TaskStandardKpiScore` trả thêm `productivityMax`, `qualityMax`, `safetyMax`, `disciplineMax`.
+- `src/components/work-plans/EvaluateItemModal.tsx` + `AssigneeEvaluationSection.tsx` (bước 3): truyền `workNature`; các ô nhập Năng suất/Chất lượng dùng trần động; mẫu số hiển thị `/{productivityMax}đ`, `/{qualityMax}đ`, `/{disciplineMax}đ`; thêm badge "📊 Thống kê: Năng suất 20đ • Chất lượng 40đ".
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx`: cột bảng, tooltip, thẻ drawer và dòng chi tiết từng việc dùng trần động (`productivityMax`, `qualityMax`, `disciplineMax`); Excel xuất kèm mẫu số thực tế (ví dụ "32 / 40đ").
+- `src/components/work-plans/AnalyticsExportCardModal.tsx`: thẻ xuất Zalo hiển thị đúng mẫu số từng trụ cột theo loại việc; bảng tổng hợp có mẫu số nhỏ dưới điểm.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`: thêm khối "📊 Thang Điểm Riêng Cho Công Việc Thống Kê / Ghi Chép" (4 thẻ, badge "Tổng vẫn 100 điểm").
+
+## Ảnh hưởng dữ liệu cũ
+
+- Việc lao động không đổi (vẫn 40–50/20/20/15).
+- Việc thống kê đã gắn cờ **📊 Thống kê** ở bước 2 sẽ tự động chấm lại theo thang mới; việc thống kê chưa gắn cờ vẫn chấm theo thang lao động cho tới khi được đánh dấu.
+- Nhân sự làm lẫn lao động + thống kê: bảng tổng hợp lấy trần trung bình theo số việc chính; Kỷ luật gốc 20đ chỉ khi **toàn bộ** việc chính là thống kê, còn lại giữ 15đ.
+
+## Kiểm chứng
+
+- Thêm test "uses the statistics scale (Năng suất 20đ, Chất lượng 40đ, Kỷ luật 20đ) for statistics work" — kiểm tra cả trường hợp đủ 100% (20+32+20+20 = 92) và hoàn thành 50% (10+40+20+20 = 90), đồng thời xác nhận việc lao động vẫn ra 42/45.
+- `npx tsc --noEmit` lọc các file work-plans vừa sửa → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **13/13 pass**.
+- Chưa xác minh bằng trình duyệt: `:3000` là bản build cũ, cần rebuild (hỏi trước) hoặc chạy dev `:3001`.
+
+# Walkthrough: Điều chỉnh thang điểm Thống kê — Chất lượng theo đúng/sai, Năng suất theo độ nặng
+
+> Mục này thay thế cách chấm ở mục "Thang điểm KPI riêng cho công việc Thống kê" phía trên: bỏ quy đổi sao (5⭐=40 … 4⭐=32), thay bằng chấm đúng/sai số liệu.
+
+## Yêu cầu
+
+- Chất lượng việc thống kê chỉ có **đúng hoặc sai**: số liệu không có lỗi thì tuyệt đối 40/40đ, không có mức 32đ gây lẫn lộn.
+- Năng suất thống kê phải theo **độ nặng khối lượng**: nhiều số liệu (nặng) = 20đ, nhẹ thì hạ mốc để **cân bằng với ngày công lao động**, tránh việc nhẹ vẫn đạt tối đa.
+- Vẫn giữ bộ chọn sao ở bước 3 nhưng chỉ để **tham khảo**, không ảnh hưởng điểm thống kê.
+
+## Thang điểm chốt
+
+| Trụ cột | Lao động | Thống kê |
+|---|---|---|
+| Năng suất | Nhẹ 40 • Vừa 42 • Nặng 45 • Rất nặng 50 | **Nhẹ 10 • Vừa 12 • Nặng 15 • Rất nặng 20** × % hoàn thành |
+| Chất lượng | 20đ theo sao | **40đ**, đúng tuyệt đối = 40; mỗi lỗi số liệu trừ 10–25đ |
+| An toàn & Hàng hóa | 20đ | 20đ |
+| Kỷ luật & 5S | 15đ | 20đ |
+| **Tổng tối đa** | 95 / 97 / 100 / 105 | **90 / 92 / 95 / 100** |
+
+Lỗi số liệu lấy từ nhóm mẫu lỗi sẵn có **"Thống kê, Kiểm đếm & Dữ liệu kho"** (sai số lượng/vị trí -15, sai LOT -25, chậm cập nhật -10…). Các lỗi này **chỉ trừ vào Chất lượng**, không trừ trùng vào Kỷ luật. Lỗi nghiêm trọng (sai LOT) vẫn khóa hạng A/A+ như quy chế chung.
+
+## Sửa
+
+- `src/components/work-plans/types.ts`: thêm `getStatisticsProductivityByDifficulty` (10/12/15/20); `calculateAssigneeTaskStandardKpi` dùng mốc này cho Năng suất thống kê, Chất lượng thống kê bỏ quy đổi sao và trừ theo lỗi nhóm `inventory_statistics`, Kỷ luật thống kê không trừ lỗi số liệu lần 2.
+- `src/components/work-plans/WorkloadMetricsSection.tsx`: khối chọn độ nặng khi là việc thống kê hiển thị đúng mốc 10/12/15/20, ẩn nút "Tự động gợi ý" (gợi ý cũ dựa trên Cont/vị trí/tấn không phù hợp).
+- `src/components/work-plans/AssigneeEvaluationSection.tsx`: badge và ghi chú nêu rõ đúng = 40đ, lỗi trừ 10–25đ, sao chỉ tham khảo; mẫu số chất lượng/kỷ luật động theo trần.
+- Các nơi gọi `calculateAssigneeTaskStandardKpi` (`EvaluateItemModal`, `WorkPlanAnalyticsTab`, `AnalyticsExportCardModal`) truyền `difficulty` của công việc thay vì ép `null` cho thống kê, để năng suất ra đúng mốc 10–20.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`: cập nhật khối quy chế thống kê (bảng mốc năng suất, quy tắc đúng/sai, tổng tối đa theo độ nặng); drawer/Excel hiển thị đúng mẫu số thực tế.
+
+## Kiểm chứng
+
+- Test cập nhật lại trong `src/components/work-plans/__tests__/workPlanParser.test.ts`: nhẹ 10đ + đúng số liệu 40đ + kỷ luật 20đ = 90đ; nặng 15đ → 95đ; rất nặng → 100đ; hoàn thành 50% → 5đ năng suất; 1 lỗi sai số lượng (-15) → chất lượng 25đ, kỷ luật vẫn 20đ, tổng 80đ hạng B; sai LOT (-25, nghiêm trọng) → chất lượng 15đ, khóa hạng C; lao động giữ nguyên 42/45 và 4⭐ = 16/20.
+- `npx tsc --noEmit` lọc các file work-plans vừa sửa → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **13/13 pass**.
+
+# Walkthrough: Sửa trần Năng suất thống kê về 20đ (mốc độ nặng chỉ là điểm đạt)
+
+## Vấn đề
+
+Bản trước lấy mốc độ nặng làm luôn trần trụ cột, nên việc nhẹ hiển thị **10/10đ** — trông như đã đạt tối đa, che mất việc khối lượng còn nhẹ.
+
+## Cách tính chốt
+
+- **Trần Năng suất thống kê luôn = 20đ** (không đổi theo độ nặng).
+- Độ nặng chỉ quyết định **mốc đạt**: Nhẹ 10 • Vừa 12 • Nặng 15 • Rất nặng 20, nhân theo % hoàn thành.
+- Ví dụ: việc nhẹ hoàn thành 100% hiển thị **10/20đ**; việc nặng **15/20đ**; rất nặng **20/20đ**. Tổng ngày vẫn 90/92/95/100đ.
+- Quản lý chấm tay vẫn bị chặn ở trần 20đ.
+
+## Sửa
+
+- `src/components/work-plans/types.ts`: tách `prodMax` (luôn 20) khỏi `statBaseScore` (mốc 10/12/15/20); năng suất = mốc × % hoàn thành.
+- `src/components/work-plans/AssigneeEvaluationSection.tsx`: badge ghi "Năng suất trần 20đ (mốc 10–20)"; bỏ hậu tố "(4⭐)" cạnh điểm chất lượng của việc thống kê; ghi chú nêu rõ trần và mốc.
+- `src/components/work-plans/WorkloadMetricsSection.tsx`: nút chọn độ nặng hiển thị mốc dạng `10/20đ … 20/20đ`.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`: ghi "10 – 20 / 20 điểm", trần trụ cột luôn 20đ.
+- Bảng/drawer/Excel/thẻ Zalo tự hiện `/20` theo `productivityMax`.
+
+## Kiểm chứng
+
+- Test cập nhật: nhẹ = 10/20 (tổng 90), nặng = 15/20 (95), rất nặng = 20/20 (100), hoàn thành 50% = 5/20, lỗi số liệu không đổi tổng 80.
+- `npx tsc --noEmit` lọc file work-plans → không lỗi; `npx vitest run src/components/work-plans/__tests__` → **13/13 pass**.
+
+# Walkthrough: Cân bằng điểm lao động với thống kê — Chất lượng tuyệt đối, Năng suất hạ mốc
+
+## Yêu cầu
+
+- Cùng một ngày hoàn thành tốt, việc lao động và việc thống kê phải ra **cùng tổng điểm** (trước đó thống kê 90đ còn lao động 91đ).
+- Chất lượng lao động trong ngày cũng là **tuyệt đối** (không lỗi hàng hóa = đủ điểm), nên **hạ mốc Năng suất** theo độ nặng cho phù hợp.
+
+## Thang điểm lao động mới
+
+| Trụ cột | Mốc |
+|---|---|
+| Năng suất (trần 45đ) | **Nhẹ 35 • Vừa 37 • Nặng 40 • Rất nặng 45** |
+| Chất lượng | **20đ tuyệt đối** — trừ theo lỗi hàng hóa (10–40đ/lỗi) |
+| An toàn | 20đ — chỉ trừ lỗi an toàn/xe nâng |
+| Kỷ luật & 5S | 15đ |
+| **Tổng tối đa** | **90 / 92 / 95 / 100đ** — trùng khớp thang Thống kê |
+
+Số sao nghiệm thu ở bước 3 chỉ còn để tham khảo cho cả hai loại việc, không quyết định điểm chất lượng.
+
+## Phân bổ lỗi (không trừ trùng)
+
+- **Lao động:** lỗi nhóm *Hàng hóa, Bốc vác & Chất lượng* → trừ **Chất lượng**; lỗi nhóm *An toàn xe nâng* → trừ **An toàn**; lỗi vận hành/kỷ luật/số liệu → trừ **Kỷ luật**.
+- **Thống kê:** lỗi nhóm *Thống kê, Kiểm đếm & Dữ liệu kho* → trừ **Chất lượng**; lỗi an toàn/hàng hóa → trừ **An toàn**.
+
+## Sửa
+
+- `src/components/work-plans/types.ts`: mốc `getProductivityScoreByDifficulty` đổi thành 35/37/40/45; chất lượng lao động bỏ quy đổi sao, trừ theo lỗi hàng hóa; `quality_goods` không còn trừ vào An toàn của việc lao động; `DIFFICULTY_CONFIG` cập nhật nhãn/mô tả/tổng ca.
+- `src/components/work-plans/AssigneeEvaluationSection.tsx`: bỏ hậu tố "(x⭐)" cạnh điểm chất lượng; thêm ghi chú chất lượng tuyệt đối cho việc lao động; đổi tooltip khôi phục chấm tay.
+- `src/components/work-plans/EvaluateItemModal.tsx`: ghi rõ số sao chỉ tham khảo.
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx`: tooltip/cột/drawer hiển thị mốc 35–45đ và ghi chú chất lượng theo lỗi.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`: cập nhật 4 trụ cột (năng suất 35–45, chất lượng tuyệt đối theo lỗi hàng hóa, an toàn chỉ lỗi xe nâng), ví dụ minh họa và bảng tổng tối đa 90/92/95/100.
+
+## Kiểm chứng
+
+- Test cập nhật: lao động nhẹ/vừa/nặng/rất nặng = 35/37/40/45; nặng 40 + chất lượng 20 + an toàn 20 + kỷ luật 15 = 95 (Hạng A); rất nặng = 100 (A+); lỗi rách tem -10 → chất lượng 10, an toàn vẫn 20, tổng 85; lao động Vừa 4⭐ = 37 + 20 + 20 + 15 = 92 — bằng đúng tổng ngày Thống kê mức Vừa.
+- `npx tsc --noEmit` lọc file work-plans → không lỗi; `npx vitest run src/components/work-plans/__tests__` → **13/13 pass**.
+
+---
+
+# Walkthrough: Thống nhất nhóm lỗi → trụ KPI cho cả Lao động và Thống kê
+
+## Vấn đề
+
+Trước đây cùng một nhóm lỗi rơi vào trụ khác nhau tùy loại công việc:
+- Lỗi `quality_goods` (rách tem, đổ hàng): lao động → Chất lượng, nhưng thống kê → An toàn.
+- Lỗi `inventory_statistics` (sai LOT): thống kê → Chất lượng, nhưng lao động → Kỷ luật.
+- "Quên quét tem" nằm ở nhóm Vận hành (Kỷ luật) trong khi "chậm cập nhật phần mềm" nằm ở nhóm Số liệu (Chất lượng).
+
+Hệ quả: cùng một lỗi nhưng mức trừ và trụ bị trừ khác nhau, khó giải thích cho công nhân.
+
+## Quy tắc chốt (áp dụng cho CẢ HAI loại việc, chỉ khác trần điểm)
+
+| Nhóm lỗi | Trụ bị trừ | Trần trụ |
+|---|---|---|
+| `safety_forklift` (xe nâng, tốc độ, còi, quá tải) | **An toàn** | 20đ |
+| `quality_goods` (hàng hóa, bao bì, nhiệt độ) | **Chất lượng** | Lao động 20đ • Thống kê 40đ |
+| `inventory_statistics` (sai số lượng, vị trí, LOT, tem) | **Chất lượng** | Lao động 20đ • Thống kê 40đ |
+| Ghi chép: quên quét tem, chậm cập nhật phần mềm, sai lệch bàn giao | **Chất lượng** | Lao động 20đ • Thống kê 40đ |
+| `operations` (chưa xong việc, chậm tiến độ, đai lỏng), `discipline_5s`, `other` | **Kỷ luật** | Lao động 15đ • Thống kê 20đ |
+
+Không có lỗi nào bị trừ hai lần. Lỗi mức `severe` vẫn khóa hạng C như trước.
+
+## Thay đổi kỹ thuật
+
+- `src/components/work-plans/types.ts`
+  - `calculateAssigneeTaskStandardKpi`: Chất lượng nhận `quality_goods` + `inventory_statistics` + 3 type ghi chép (`missed_scan`, `delayed_system_update`, `handover_discrepancy`) cho cả hai loại việc; An toàn chỉ nhận `safety_forklift`; Kỷ luật nhận `operations`/`discipline_5s`/`other` và bỏ qua các type ghi chép (kể cả bản ghi cũ còn gắn group `operations`).
+  - `DEFAULT_INCIDENT_TEMPLATES`: chuyển "Quên quét tem" từ nhóm Vận hành sang nhóm Thống kê/Dữ liệu kho.
+  - `KPI_PILLARS` / `KPI_PILLARS_STATISTICS`: nhãn An toàn đổi thành "An toàn lao động".
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx`: bảng tổng hợp chỉ cộng lỗi xe nâng vào cột An toàn; lỗi hàng hóa/số liệu/ghi chép không cộng lại (đã nằm trong điểm Chất lượng từng việc); còn lại mới vào Kỷ luật.
+- `src/components/work-plans/AssigneeEvaluationSection.tsx`: ghi chú dưới ô điểm nêu rõ cả hai loại việc đều trừ lỗi hàng hóa + số liệu/ghi chép vào Chất lượng, An toàn chỉ trừ lỗi xe nâng.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`: bổ sung mục ghi chép vào trụ Chất lượng của lao động; trụ An toàn nêu rõ không trừ trùng lỗi hàng hóa; bảng thống kê ghi "Chất lượng = lỗi số liệu & ghi chép", "An toàn = chỉ lỗi xe nâng".
+
+## Kiểm chứng
+
+- Thêm test "routes every incident group to the same fixed pillar for both labor and statistics":
+  - Lao động Vừa + sai số liệu 15đ → chất lượng 5, an toàn 20, kỷ luật 15, tổng 77.
+  - Thống kê Nặng + rách tem 10đ → chất lượng 30/40, an toàn 20, kỷ luật 20, tổng 85.
+  - Bản ghi cũ `missed_scan` (group `operations`) → chất lượng 10, kỷ luật 15, tổng 82.
+  - Lỗi xe nâng 5đ → an toàn 15, chất lượng 20, kỷ luật 15, tổng 87.
+- `npx vitest run src/components/work-plans/__tests__` → **14/14 pass**.
+- `npx tsc --noEmit` lọc file work-plans → không lỗi.
+
+---
+
+# Walkthrough: Bỏ trụ An toàn của việc Thống kê, dồn 20đ sang Năng suất
+
+## Lý do
+
+Việc thống kê thuần số liệu không vận hành xe nâng, nên trụ "An toàn 20đ" chỉ còn là điểm mặc định gần như không thể mất — làm điểm ngày của thống kê bị neo cao và khó giải thích so với lao động. Hai loại việc vẫn phải giữ tổng ngày bằng nhau (90 / 92 / 95 / 100đ) theo yêu cầu trước đó.
+
+## Quyết định (người dùng chọn)
+
+Bỏ trụ An toàn khỏi việc thống kê và **dồn 20đ vào Năng suất**:
+
+| Trụ (Thống kê) | Trước | Sau |
+|---|---|---|
+| Năng suất | 10–20 / 20đ | **30–40 / 40đ** (Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40) |
+| Chất lượng | 40đ | 40đ (không đổi, trừ 10–25đ/lỗi số liệu & ghi chép) |
+| An toàn | 20đ | **không có** |
+| Kỷ luật & 5S | 20đ | 20đ |
+| **Tổng ngày** | 90/92/95/100 | **90/92/95/100** (giữ nguyên) |
+
+Chọn dồn vào Năng suất thay vì Chất lượng để một lỗi số liệu 15đ vẫn bị trừ đúng 15đ trên nền 40đ (nếu dồn vào Chất lượng 60đ thì lỗi bị phạt nhẹ đi theo tỷ lệ).
+
+## Xử lý lỗi xe nâng trên việc thống kê
+
+- Ẩn nhóm lỗi "Vận hành xe nâng & An toàn kho" khỏi danh sách chọn lỗi khi việc là Thống kê.
+- Bản ghi cũ (nếu có) dính lỗi xe nâng trên việc thống kê: trừ vào **Kỷ luật**; lỗi mức `severe` vẫn khóa hạng C toàn cục như quy tắc chung.
+- Điều kiện khóa hạng C do "điểm An toàn ≤ 5" chỉ áp dụng cho việc lao động.
+
+## Thay đổi kỹ thuật
+
+- `src/components/work-plans/types.ts`
+  - `getStatisticsProductivityByDifficulty` → 30/32/35/40.
+  - `KPI_PILLARS_STATISTICS` còn 3 trụ (Năng suất 40 • Chất lượng 40 • Kỷ luật 20).
+  - `calculateAssigneeTaskStandardKpi`: `prodMax = 40` khi thống kê; `safetyMax = 0`, `safetyScore = 0`; lỗi `safety_forklift` của thống kê chuyển sang Kỷ luật; khóa hạng C theo an toàn chỉ áp dụng lao động.
+- `src/components/work-plans/AssigneeEvaluationSection.tsx`: thẻ An toàn ẩn với thống kê (lưới 3 thẻ thay vì 4), badge Năng suất trần 40đ/mốc 30–40, ghi chú giải thích; ẩn nhóm lỗi xe nâng khi thống kê.
+- `src/components/work-plans/WorkloadMetricsSection.tsx`: nhãn độ nặng thống kê hiển thị mốc `x/40đ`.
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx`: bảng/drawer hiển thị "—" ở cột An toàn cho người chỉ làm thống kê; Năng suất hiển thị trên trần trung bình 40đ; điểm tổng hợp không cộng trụ An toàn cho người chỉ làm thống kê; Excel xuất "—" và header "An toàn (đ)".
+- `src/components/work-plans/AnalyticsExportCardModal.tsx`: ẩn chip An toàn của từng việc thống kê; bảng nhân sự hiển thị "—"; dòng Zalo bỏ 🛡️ khi không có trụ An toàn.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`: khối Thống kê còn 3 trụ, Năng suất 30–40/40đ, ghi rõ 20đ đã gồm trụ An toàn; tổng ngày 90/92/95/100 giữ nguyên.
+
+## Kiểm chứng
+
+- Test cập nhật:
+  - Thống kê Nhẹ: 30/40 + 40 + 20 = 90 (A); Vừa 92; Nặng 95; Rất nặng 100.
+  - Hoàn thành 50%: 15 + 40 + 20 = 75.
+  - Sai số liệu 15đ (Nặng): 35 + 25 + 20 = 80 (B); sai LOT severe → 70 nhưng khóa C.
+  - Lỗi xe nâng trên việc thống kê: An toàn 0/0, Kỷ luật 15/20, tổng 85.
+  - Lao động giữ nguyên 92đ (Vừa) và cột An toàn 20đ.
+- `npx vitest run src/components/work-plans/__tests__` → **14/14 pass**.
+- `npx tsc --noEmit` lọc file work-plans → không lỗi.
+
+# Walkthrough: Rà soát lại tab "5. Quy Chế KPI" cho khớp mô hình chấm điểm hiện tại
+
+## Mục tiêu
+
+Sau khi thống nhất (a) nhóm lỗi → trụ KPI và (b) bỏ trụ An toàn của việc Thống kê, tab quy chế vẫn còn nhiều câu chữ của thang điểm cũ (sao nghiệm thu, năng suất 40–50đ, ví dụ 35đ…). Đợt này rà toàn bộ tab và sửa lại cho khớp code.
+
+## Những chỗ đã sửa
+
+- **Chip điều hướng**: "2. 4 Trụ Cột KPI (100đ)" → "2. Thang Điểm Ca (100đ)" vì thống kê chỉ có 3 trụ.
+- **Thẻ tổng quan 2**: "việc chính đạt 95–100đ" → "90–100đ tùy độ nặng".
+- **Thẻ tổng quan 3**: bỏ câu "an toàn là trên hết" chung chung, thay bằng quy tắc **mỗi lỗi chỉ trừ đúng một trụ** (xe nâng → An toàn; hàng hóa/số liệu/ghi chép → Chất lượng; vận hành/5S → Kỷ luật); severe → Hạng C.
+- **Mục 2**:
+  - Tiêu đề nêu rõ "Lao Động 4 Trụ Cột • Thống Kê 3 Trụ Cột"; badge phải "Việc chính tối đa: 100 Điểm" (trước ghi "Tổng Ca Chuẩn: 100 Điểm" dễ hiểu nhầm).
+  - Năng suất lao động: 35–45đ, mốc Nhẹ 35 • Vừa 37 • Nặng 40 • Rất nặng 45, tổng ca 90/92/95/100.
+  - Chất lượng lao động: bỏ hoàn toàn thang 5⭐/4⭐/3⭐/2⭐/1⭐ (20/16/12/8/4), thay bằng **trừ theo lỗi thực tế** trên nền 20đ; thêm dòng lỗi ghi sai số lượng / vị trí kệ / mã LOT khi kiểm đếm (15–25đ); số sao chỉ để tham khảo.
+  - An toàn lao động: ghi rõ chỉ áp dụng việc lao động (có xe nâng), thống kê không có trụ này, lỗi hàng hóa/ghi chép đã trừ ở Chất lượng nên không trừ trùng.
+  - Khối Thống kê: 3 trụ Năng suất 30–40/40 • Chất lượng 40 • Kỷ luật 20, tổng 90/92/95/100 bằng đúng ngày công lao động.
+- **Mục 3**: ví dụ việc phụ sửa "mức Vừa 35đ → +17.5đ" thành **"Vừa 37đ → +18.5đ"** (40đ Nặng × 18% = +7.2đ vẫn đúng).
+- **Mục 4**:
+  - Đổi tên "Danh Mục Lỗi Vi Phạm & Mức Trừ Điểm Kỷ Luật" → **"Danh Mục Lỗi Vi Phạm & Trụ Cột Bị Trừ Điểm"** (trước đây ngụ ý mọi lỗi đều trừ Kỷ luật).
+  - Thêm badge trên từng nhóm lỗi ghi rõ **"Trừ vào: …"**: xe nâng → An toàn (việc lao động); hàng hóa + thống kê/dữ liệu → Chất lượng; vận hành + 5S + khác → Kỷ luật.
+  - Điều khoản đặc biệt tách 2 ý: (1) severe → Hạng C cho **cả hai loại việc**; (2) **chỉ việc lao động** mới bị khóa C khi An toàn ≤ 5đ; lỗi xe nâng trên việc thống kê trừ vào Kỷ luật.
+- **Mục 5**: phụ đề "Bé Ngoan = Chất lượng & Kỷ luật 5S" (bỏ chữ An toàn vì thống kê không có trụ này); tiêu chí A+ đổi thành "không vi phạm lỗi an toàn / chất lượng / kỷ luật"; dòng Hạng C ghi thêm "hoặc có sự cố Nghiêm trọng".
+- **FAQ**:
+  - Q3 viết lại: Chất lượng tính theo **lỗi thực tế của riêng từng người**, không chia theo sao của cả nhóm; 20/20đ (lao động) hoặc 40/40đ (thống kê) nếu không có lỗi được ghi nhận.
+  - Thêm **Q5**: việc thống kê không có trụ An toàn, 20đ dồn sang Năng suất, tổng ngày vẫn 90/92/95/100, lỗi số liệu trừ Chất lượng, severe vẫn khóa C.
+- **Dọn code**: bỏ các import không còn dùng (`Scale`, `ShieldAlert`, `Award`, `Trophy`, `CheckCircle2`, `Zap`, `Star`, `Layers`, `Calendar`, `HelpCircle`, `ArrowRight`, `Users`, `Package`, `TrendingUp`, `Sparkles`, `Check`, `KPI_PILLARS`, `TASK_TYPE_CONFIG`, `DIFFICULTY_CONFIG`, `RATING_CONFIG`); thêm bảng tra `INCIDENT_GROUP_PILLAR` để badge trụ cột không lệch với logic chấm điểm.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **14/14 pass** (logic chấm điểm không đổi, chỉ sửa văn bản hướng dẫn).
+- `git diff --stat` chỉ 1 file `KpiRulesHandbookTab.tsx` (+131/−59), không có file lạ.
+
+# Walkthrough: Tái cấu trúc quy chế KPI theo 2 loại công việc
+
+## Yêu cầu
+
+Tab quy chế phải **giới thiệu ngay từ đầu có 2 loại công việc** — Lao động và Thống kê — rồi từ đó mới suy ra các tiêu chí/thang điểm, thay vì nhảy thẳng vào 4 trụ cột chung.
+
+## Thay đổi (`src/components/work-plans/KpiRulesHandbookTab.tsx`)
+
+- **Mục 1** thêm khối "🧭 Hai Loại Công Việc — Gốc Của Mọi Tiêu Chí":
+  - 🌱 **Lao động** (bốc xếp, dỡ cont, xe nâng, đai kiện…): 4 trụ — Năng suất 35–45/45 • Chất lượng 20 • An toàn 20 • Kỷ luật 15.
+  - 📊 **Thống kê** (kiểm đếm, ghi chép, nhập liệu…): 3 trụ — Năng suất 30–40/40 • Chất lượng 40 • Kỷ luật 20.
+  - Hai thẻ ghi rõ cùng tổng ngày 90/92/95/100đ; kèm câu nối: từ 2 loại này suy ra cách trừ lỗi (xe nâng → An toàn ở lao động / Kỷ luật ở thống kê; hàng hóa & ghi chép → Chất lượng; vận hành & 5S → Kỷ luật), và bước 3 chỉ quyết định cách cộng điểm, không đổi loại việc.
+- **Mục 2** tách thành 2 khối có tiêu đề rõ:
+  - **A. VIỆC LAO ĐỘNG — 4 TRỤ CỘT** (4 thẻ, badge "Tổng ngày 90/92/95/100đ").
+  - **B. VIỆC THỐNG KÊ / GHI CHÉP — 3 TRỤ CỘT**: nâng khối thống kê từ dạng thu gọn thành 3 thẻ đầy đủ (Năng suất 30–40/40 • Chất lượng 40 • Kỷ luật 20), kèm lý giải "vì sao không có trụ An toàn".
+- **Mục 3**: ghi rõ áp dụng cho cả 2 loại việc; "việc chính được chấm theo thang điểm của đúng loại việc đó"; badge "Tối đa 100đ" thay "Chuẩn ca: 100đ".
+- **Chip điều hướng**: "1. Tôn Chỉ & 2 Loại Việc", "2. Thang Điểm Theo Loại Việc".
+- Đồng bộ lại ví dụ: bỏ "Kiểm đếm" khỏi mức Nhẹ của lao động (kiểm đếm là việc thống kê); đổi lỗi "khi kiểm đếm" ở thẻ Chất lượng lao động thành "trên phiếu bàn giao".
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **14/14 pass** (chỉ thay đổi nội dung hiển thị).
+
+# Walkthrough: Sửa thẻ "Chất lượng thực hiện" của việc Lao động cho khớp danh mục lỗi
+
+## Vấn đề
+
+Thẻ II. Chất lượng (lao động) ghi mức trừ không khớp `DEFAULT_INCIDENT_TEMPLATES` và không khớp trần 20đ của trụ:
+- "Rách thùng… Trừ 10đ/lỗi" — thực tế nĩa xe đâm rách thùng/bao bì là **20đ**.
+- "Đâm rách bao bì, lẫn LOT, sai nhiệt độ: 15–35đ/lỗi" — gộp 3 mức khác nhau (20 / 15 / 35) thành một khoảng.
+- "Rơi đổ hàng: Trừ 40đ (0đ, khóa hạng A)" — trụ chỉ có 20đ nên "trừ 40đ" tối nghĩa; và lỗi `severe` khóa **Hạng C**, không phải "hạng A".
+- Thẻ An toàn: "Va quẹt chân kệ / nâng quá tải (0đ, khóa hạng A)" — cũng phải là **Hạng C** (cả 2 lỗi đều `severe`).
+
+## Sửa (`src/components/work-plans/KpiRulesHandbookTab.tsx`)
+
+Thẻ Chất lượng lao động liệt kê đúng từng mức lỗi:
+- Mờ/rách tem, mất barcode; bốc xếp sai quy cách: **−10đ/lỗi**
+- Quên quét tem, chậm cập nhật phần mềm, sai lệch bàn giao: **−10đ/lỗi**
+- Ghi sai số lượng, sai vị trí kệ; xếp lẫn LOT trên pallet: **−15đ/lỗi**
+- Nĩa xe đâm rách thùng/bao bì: **−20đ/lỗi**
+- Ghi sai mã LOT; để hàng ngoài nhiệt độ lạnh quá giờ: **−25–35đ (còn 0đ)**
+- Làm đổ/rơi kiện, pallet: **−40đ (còn 0đ)**
+- Ghi chú: điểm trụ không xuống dưới 0đ; 3 lỗi Nghiêm trọng (sai LOT, sai nhiệt độ, đổ/rơi hàng) **khóa Hạng C**.
+
+Thẻ Chất lượng thống kê chỉnh tương tự: sai số lượng / vị trí kệ / dán nhầm tem nhãn = 15đ; sai mã LOT (severe) = 25đ → 0đ, khóa Hạng C (bỏ câu "0đ, khóa hạng A").
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- Chỉ sửa nội dung hiển thị, không đổi công thức `qualScore = max(0, qualMax − tổng lỗi)`.
+
+# Walkthrough: Tinh gọn thẻ Chất lượng lao động + thêm lỗi "lấy hàng không đúng"
+
+## Yêu cầu
+
+Thẻ II. Chất lượng (lao động) chỉ giữ lỗi hàng hóa — bỏ các lỗi ghi chép/số liệu (thuộc việc thống kê) — và bổ sung lỗi **lấy hàng không đúng, tự ý, không theo chỉ dẫn**.
+
+## Thay đổi
+
+- `src/components/work-plans/KpiRulesHandbookTab.tsx` — thẻ Chất lượng lao động còn:
+  - Không lỗi hàng hóa: 20/20đ
+  - Bốc xếp sai quy cách / nghiêng lệch kiện: −10đ
+  - Xếp lẫn LOT trên pallet không phân tách: −15đ
+  - **Lấy hàng không đúng, tự ý, không theo chỉ dẫn: −15đ**
+  - Nĩa xe đâm rách thùng / bao bì: −20đ
+  - Để hàng ngoài nhiệt độ lạnh quá giờ: −35đ (còn 0đ)
+  - Làm đổ / rơi kiện, pallet: −40đ (còn 0đ)
+  - Đã bỏ: mờ/rách tem & mất barcode, quên quét tem / chậm cập nhật / sai lệch bàn giao, ghi sai số lượng / vị trí kệ, ghi sai mã LOT.
+- `src/components/work-plans/types.ts` — thêm template lỗi vào nhóm `quality_goods`:
+  `wrong_item_picked` — "Lấy hàng không đúng / Tự ý lấy hàng không theo chỉ dẫn", severity `moderate`, penalty **15đ**. Nhờ vậy lỗi xuất hiện cả ở mục 4 (Quy chế) và trong bộ chọn lỗi khi đánh giá KPI.
+
+## Lưu ý
+
+Các lỗi ghi chép/số liệu vẫn trừ vào **Chất lượng** nếu quản lý ghi nhận trên việc lao động (engine không đổi, mục 4 vẫn liệt kê đầy đủ) — thẻ tóm tắt của lao động chỉ không lặp lại chúng nữa; chi tiết đầy đủ nằm ở thẻ Chất lượng của việc thống kê và mục 4.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **14/14 pass**.
+
+# Walkthrough: Bỏ mâu thuẫn "trụ 20đ nhưng trừ 35–40đ" ở thẻ Chất lượng
+
+## Vấn đề
+
+Thẻ II. Chất lượng của việc lao động có trần 20đ nhưng vẫn liệt kê "trừ 35đ / 40đ", nhìn như phép trừ vô lý. Thẻ thống kê lại ghi "25đ → còn 0đ" trong khi trần là 40đ (đúng phải còn 15đ).
+
+## Sửa (`src/components/work-plans/KpiRulesHandbookTab.tsx`)
+
+- Hai lỗi Nghiêm trọng của lao động đổi sang mô tả đúng bản chất:
+  - Để hàng ngoài nhiệt độ lạnh quá giờ: **mất trụ Chất lượng (0đ), khóa Hạng C**.
+  - Làm đổ / rơi kiện, pallet: **mất trụ Chất lượng (0đ), khóa Hạng C**.
+- Ghi chú cuối thẻ: "Lỗi lớn hơn trần trụ chỉ đưa trụ về 0đ (không trừ âm)."
+- Thẻ thống kê: sai mã LOT 25đ trên trần 40đ → **còn 15đ**, khóa Hạng C.
+- Mục 4 thêm một dòng giải thích: điểm trừ áp lên trần của đúng trụ, trụ không âm, phần dư không trừ sang trụ khác; lỗi Nghiêm trọng vẫn khóa Hạng C.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- Không đổi engine: `qualScore = max(0, qualMax − tổng lỗi)`.
+
+# Walkthrough: Lỗi ghi chép/số liệu chỉ thuộc việc Thống kê
+
+## Quyết định
+
+Người dùng chốt: **lỗi ghi chép / số liệu (quên quét tem, chậm cập nhật phần mềm, sai lệch bàn giao, ghi sai số lượng/vị trí kệ/mã LOT, dán nhầm tem)** chỉ tồn tại ở **việc thống kê**. Việc lao động tay chân không có nhóm lỗi này.
+
+## Thay đổi
+
+- `src/components/work-plans/types.ts` — `calculateAssigneeTaskStandardKpi`:
+  - Chất lượng lao động **chỉ** nhận lỗi `quality_goods`.
+  - Lỗi `inventory_statistics` + 3 lỗi ghi chép chỉ trừ Chất lượng khi `isStatistics`.
+  - Nếu lỡ ghi nhận các lỗi này trên việc lao động → dồn sang **Kỷ luật** (không mất điểm phạt), tương tự cách lỗi xe nâng trên việc thống kê bị dồn sang Kỷ luật.
+- `src/components/work-plans/AssigneeEvaluationSection.tsx`:
+  - Bộ chọn lỗi: thống kê ẩn nhóm **Xe nâng**; lao động ẩn nhóm **Thống kê, Kiểm đếm & Dữ liệu kho**.
+  - Ghi chú dưới bộ chọn của lao động: chỉ trừ lỗi hàng hóa (10–40đ), lỗi ghi chép/số liệu không xuất hiện.
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx` — phân bổ lỗi vào trụ theo đúng nature của từng task: hàng hóa → Chất lượng (cả hai); số liệu/ghi chép → Chất lượng chỉ khi thống kê, ngược lại Kỷ luật; xe nâng → An toàn ở lao động, Kỷ luật ở thống kê.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`:
+  - Badge nhóm lỗi đổi thành "Chất lượng (việc thống kê)".
+  - Câu nối 2 loại việc + mục 4 nêu rõ lỗi ghi chép/số liệu chỉ có ở việc thống kê và việc lao động đã ẩn nhóm này.
+  - Thẻ Chất lượng lao động thêm dòng "Lỗi ghi chép / số liệu thuộc việc thống kê nên không có trong danh sách lỗi của việc tay chân."
+- `src/components/work-plans/__tests__/workPlanParser.test.ts` — cập nhật 2 case:
+  - Lao động + `wrong_quantity_count` 15đ → Chất lượng giữ 20, Kỷ luật 0, tổng vẫn 77.
+  - Lao động + `missed_scan` (group cũ `operations`) 10đ → Chất lượng 20, Kỷ luật 5, tổng vẫn 82.
+
+## Kiểm chứng
+
+- `npx vitest run src/components/work-plans/__tests__` → **14/14 pass**.
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+
+# Walkthrough: Việc tồn đọng trong ngày trừ trụ Chất lượng (cả Lao động và Thống kê)
+
+## Quyết định
+
+Người dùng chốt: **để công việc tồn đọng không giải quyết trong ngày thì trụ Chất lượng bị giảm ở cả 2 loại việc**, theo cơ chế **tự động theo % việc còn lại**:
+
+- Trụ Chất lượng chỉ đạt trần khi công việc hoàn thành **100%**.
+- Còn bao nhiêu % việc thì mất đúng bấy nhiêu % trụ: lao động 20đ → còn 30% việc mất 6đ; thống kê 40đ → còn 30% việc mất 12đ.
+- Không cần Quản lý ghi lỗi. Nếu Quản lý **có** ghi lỗi "Chưa xong việc trong ca" (`incomplete_task`) thì lấy đúng mức phạt của lỗi đó và **bỏ phần tự động** để không trừ hai lần.
+- Quản lý chấm tay Chất lượng (`customQualityScore`) thì quyền chấm tay quyết định, bỏ qua cả hai.
+
+## Thay đổi
+
+- `src/components/work-plans/types.ts` — `calculateAssigneeTaskStandardKpi`:
+  - `incomplete_task` được xếp vào **Chất lượng** cho cả hai loại việc (trước đây nằm ở nhóm `operations` → Kỷ luật).
+  - Thêm % việc còn lại: `remaining = taskStatus === 'completed' ? 0 : 100 − progressPercent` (kẹp 0–100).
+  - Tự trừ `qualMax × remaining%` khi **không** có lỗi tồn đọng và **không** chấm tay; trụ không âm.
+  - Vòng lặp Kỷ luật bỏ qua `incomplete_task` để không trừ trùng.
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx` — phân bổ lỗi: `incomplete_task` không cộng vào `disciplinePenaltyPoints` nữa (đi theo Chất lượng).
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`:
+  - Thẻ Chất lượng **Lao động** và **Thống kê** thêm dòng "Để việc tồn đọng trong ca: trừ theo % việc còn lại" (ví dụ 30% → 6đ / 12đ).
+  - Câu nối 2 loại việc + phụ đề mục 4 nêu việc tồn đọng trừ Chất lượng ở cả hai loại.
+  - Badge nhóm `operations` đổi thành "Chất lượng (tồn đọng) • Kỷ luật"; riêng lỗi `incomplete_task` có nhãn "→ Trừ ⭐ Chất lượng (cả 2 loại việc)".
+  - Khối điều khoản đặc biệt thêm đoạn giải thích cơ chế tự động, không cộng dồn, chấm tay được ưu tiên.
+- `src/components/work-plans/AssigneeEvaluationSection.tsx` — ghi chú dưới bộ chọn lỗi của cả hai loại việc nêu việc tồn đọng tự trừ theo % còn lại.
+- `src/components/work-plans/__tests__/workPlanParser.test.ts`:
+  - Case partial 60% (lao động) → Chất lượng 12đ, Kỷ luật 15đ, tổng 87đ.
+  - Case có lỗi `incomplete_task` (−5đ) → Chất lượng 15đ, Kỷ luật giữ 15đ, tổng 90đ (không cộng dồn).
+  - Thống kê xong 50% → Chất lượng 20/40đ, tổng 55đ (Hạng C).
+  - Thêm test riêng: lao động 70% → 14đ; thống kê 70% → 28đ; 0% → 0đ; chấm tay được ưu tiên; lỗi hàng hóa + tồn đọng cùng lúc.
+
+## Kiểm chứng
+
+- `npx vitest run src/components/work-plans/__tests__` → **15/15 pass**.
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.

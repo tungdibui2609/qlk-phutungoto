@@ -309,35 +309,37 @@ describe('workPlanParser & helpers', () => {
 
     it('ensures partial/in-progress tasks do NOT reduce productivity score for multi-day tasks, but subjective delay is penalized via incident', () => {
         // Test 4 mốc độ nặng công việc theo khối lượng:
-        // Nhẹ 40đ (Tổng ca 95đ) • Vừa 42đ • Nặng 45đ • Rất nặng 50đ
+        // Nhẹ 35đ (Tổng ca 90đ) • Vừa 37đ • Nặng 40đ • Rất nặng 45đ (trần trụ cột 45đ)
         const resLight = calculateAssigneeTaskStandardKpi({ userPositions: 0, difficulty: 'light', taskStatus: 'completed' })
-        expect(resLight.productivityScore).toBe(40)
+        expect(resLight.productivityScore).toBe(35)
 
         const resMedium = calculateAssigneeTaskStandardKpi({ userPositions: 0, difficulty: 'medium', taskStatus: 'completed' })
-        expect(resMedium.productivityScore).toBe(42)
+        expect(resMedium.productivityScore).toBe(37)
 
         const resHeavy = calculateAssigneeTaskStandardKpi({ userPositions: 0, difficulty: 'heavy', taskStatus: 'completed' })
-        expect(resHeavy.productivityScore).toBe(45)
+        expect(resHeavy.productivityScore).toBe(40)
 
         const resVeryHeavy = calculateAssigneeTaskStandardKpi({ userPositions: 0, difficulty: 'very_heavy', taskStatus: 'completed' })
-        expect(resVeryHeavy.productivityScore).toBe(50)
+        expect(resVeryHeavy.productivityScore).toBe(45)
 
         // Case 1: Công việc mức Nặng (heavy), làm 2 ngày, ngày 1 mới "Một phần" (progressPercent = 60%)
-        // Nhân viên làm việc hết mình cả ca -> Năng suất vẫn đạt trọn vẹn 45đ theo độ nặng!
+        // Năng suất vẫn đạt trọn vẹn 40đ theo độ nặng, nhưng Chất lượng bị trừ theo 40% việc còn tồn
+        // (20đ × 40% = 8đ) vì việc chưa giải quyết xong trong ngày.
         const resultDay1 = calculateAssigneeTaskStandardKpi({
             userPositions: 0,
             difficulty: 'heavy',
             diffMultiplier: 1.5,
             progressPercent: 60,
-            ratingStars: 4, // 4 sao = 16đ
+            ratingStars: 4, // sao chỉ tham khảo, không trừ điểm chất lượng
             taskStatus: 'partial',
         })
-        expect(resultDay1.productivityScore).toBe(45)
-        expect(resultDay1.qualityScore).toBe(16)
-        expect(resultDay1.totalKpi).toBe(96) // 45 + 16 + 20 + 15 = 96đ (Hạng A - Tốt)
+        expect(resultDay1.productivityScore).toBe(40)
+        expect(resultDay1.qualityScore).toBe(12) // 20 - 8 (tự trừ 40% việc còn lại)
+        expect(resultDay1.totalKpi).toBe(87) // 40 + 12 + 20 + 15 = 87đ (Hạng A)
         expect(resultDay1.grade).toBe('A')
 
-        // Case 2: Nhân viên lười biếng / chậm trễ do chủ quan -> Quản lý gán lỗi vi phạm (-5đ)
+        // Case 2: Quản lý ghi lỗi "Chưa xong việc trong ca" (-5đ) -> trừ Chất lượng đúng mức phạt,
+        // KHÔNG tự trừ thêm theo % còn lại (không cộng dồn), Kỷ luật giữ nguyên 15đ
         const resultWithDelayIncident = calculateAssigneeTaskStandardKpi({
             userPositions: 0,
             difficulty: 'heavy',
@@ -357,9 +359,32 @@ describe('workPlanParser & helpers', () => {
                 },
             ],
         })
-        expect(resultWithDelayIncident.productivityScore).toBe(45)
-        expect(resultWithDelayIncident.disciplineScore).toBe(10) // 15 - 5 = 10đ
-        expect(resultWithDelayIncident.totalKpi).toBe(91) // 45 + 16 + 20 + 10 = 91đ (Hạng A)
+        expect(resultWithDelayIncident.productivityScore).toBe(40)
+        expect(resultWithDelayIncident.qualityScore).toBe(15) // 20 - 5, không trừ tự động thêm
+        expect(resultWithDelayIncident.disciplineScore).toBe(15) // không trừ trùng vào Kỷ luật
+        expect(resultWithDelayIncident.totalKpi).toBe(90) // 40 + 15 + 20 + 15 = 90đ (Hạng A)
+
+        // Case 2b: Lỗi hàng hóa (rách tem -10) trừ thẳng vào Chất lượng, KHÔNG trừ trùng vào An toàn
+        const resultWithGoodsIncident = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            diffMultiplier: 1.5,
+            progressPercent: 100,
+            taskStatus: 'completed',
+            incidents: [
+                {
+                    id: 'inc_goods',
+                    type: 'torn_label',
+                    name: 'Làm mờ, rách tem / Mất mã barcode kiện hàng',
+                    group: 'quality_goods',
+                    severity: 'minor',
+                    penalty_points: 10,
+                },
+            ],
+        })
+        expect(resultWithGoodsIncident.qualityScore).toBe(10) // 20 - 10
+        expect(resultWithGoodsIncident.safetyScore).toBe(20) // không trừ lần 2
+        expect(resultWithGoodsIncident.totalKpi).toBe(85) // 40 + 10 + 20 + 15
 
         // Case 3: Task bị cancelled -> Năng suất và KPI = 0
         const resultCancelled = calculateAssigneeTaskStandardKpi({
@@ -380,9 +405,9 @@ describe('workPlanParser & helpers', () => {
             ratingStars: 5, // 5 sao = 20đ
             taskStatus: 'completed',
         })
-        expect(resultGroupMember.productivityScore).toBe(50)
+        expect(resultGroupMember.productivityScore).toBe(45)
         expect(resultGroupMember.qualityScore).toBe(20)
-        expect(resultGroupMember.totalKpi).toBe(105) // 50 + 20 + 20 + 15 = 105đ (Hạng A+ - Xuất sắc vượt trần)
+        expect(resultGroupMember.totalKpi).toBe(100) // 45 + 20 + 20 + 15 = 100đ (Hạng A+ - Xuất sắc)
         expect(resultGroupMember.grade).toBe('A+')
         expect(resultGroupMember.gradeLabel).toBe('🌸 Bé Khỏe Bé Ngoan (A+)')
 
@@ -392,7 +417,7 @@ describe('workPlanParser & helpers', () => {
             difficulty: 'heavy',
             diffMultiplier: 1.5,
             progressPercent: 60,
-            ratingStars: 3, // Chung cả việc là 3 sao (12đ)
+            ratingStars: 3, // sao tham khảo, không quyết định điểm chất lượng
             taskStatus: 'partial',
             customProductivityScore: 38, // Chấm tay năng suất 38
             customQualityScore: 20, // Riêng người này làm rất đẹp, chấm tay 20/20
@@ -403,7 +428,7 @@ describe('workPlanParser & helpers', () => {
         expect(resultCustomScores.grade).toBe('A')
 
         // Case 6: Việc phụ / hỗ trợ ngoài ca -> Điểm hỗ trợ tự động tỷ lệ thuận theo % đóng góp
-        // Việc phụ mức Nặng (45đ), người đóng góp 18% -> 45 * 18% = 8.1 điểm hỗ trợ
+        // Việc phụ mức Nặng (40đ), người đóng góp 18% -> 40 * 18% = 7.2 điểm hỗ trợ
         const resultSupport18 = calculateAssigneeTaskStandardKpi({
             userPositions: 2.2,
             difficulty: 'heavy',
@@ -412,10 +437,10 @@ describe('workPlanParser & helpers', () => {
             sharePercent: 18,
             taskStatus: 'completed',
         })
-        expect(resultSupport18.bonusOverTargetPoints).toBe(8.1)
-        expect(resultSupport18.totalKpi).toBe(8.1)
+        expect(resultSupport18.bonusOverTargetPoints).toBe(7.2)
+        expect(resultSupport18.totalKpi).toBe(7.2)
 
-        // Việc phụ mức Vừa (42đ), người đóng góp 50% -> 42 * 50% = 21 điểm hỗ trợ
+        // Việc phụ mức Vừa (37đ), người đóng góp 50% -> 37 * 50% = 18.5 điểm hỗ trợ
         const resultSupport50 = calculateAssigneeTaskStandardKpi({
             userPositions: 6.0,
             difficulty: 'medium',
@@ -424,15 +449,15 @@ describe('workPlanParser & helpers', () => {
             sharePercent: 50,
             taskStatus: 'completed',
         })
-        expect(resultSupport50.bonusOverTargetPoints).toBe(21)
-        expect(resultSupport50.totalKpi).toBe(21)
+        expect(resultSupport50.bonusOverTargetPoints).toBe(18.5)
+        expect(resultSupport50.totalKpi).toBe(18.5)
 
         // Case 7: Kiểm tra ngưỡng xếp loại mới chuẩn 100đ
-        // Đạt 100đ trở lên -> Xuất sắc (A+)
+        // Đạt 100đ trở lên -> Xuất sắc (A+) — dùng mức Rất nặng 45đ
         const resultScore100 = calculateAssigneeTaskStandardKpi({
             userPositions: 10,
-            difficulty: 'heavy',
-            diffMultiplier: 1.5,
+            difficulty: 'very_heavy',
+            diffMultiplier: 2.0,
             progressPercent: 100,
             ratingStars: 5,
             taskStatus: 'completed',
@@ -456,6 +481,262 @@ describe('workPlanParser & helpers', () => {
         expect(resultScoreLow.totalKpi).toBe(59) // 20 + 4 + 20 + 15 = 59đ
         expect(resultScoreLow.grade).toBe('C')
         expect(resultScoreLow.gradeLabel).toBe('⚠️ Chưa Ngoan (C)')
+    })
+
+    it('uses the statistics scale (Năng suất 30-40đ trên trần 40đ, không có An toàn, Chất lượng 40đ, Kỷ luật 20đ) for statistics work', () => {
+        // Việc nhẹ, số liệu đúng tuyệt đối: sao nghiệm thu KHÔNG ảnh hưởng chất lượng
+        const light = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            progressPercent: 100,
+            ratingStars: 4,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+        })
+        expect(light.productivityMax).toBe(40) // trần trụ cột 40đ (đã gồm 20đ của An toàn)
+        expect(light.qualityMax).toBe(40)
+        expect(light.safetyMax).toBe(0) // không vận hành xe nâng -> không có trụ An toàn
+        expect(light.safetyScore).toBe(0)
+        expect(light.disciplineMax).toBe(20)
+        expect(light.productivityScore).toBe(30) // Nhẹ đạt mốc 30/40
+        expect(light.qualityScore).toBe(40) // đúng số liệu = tuyệt đối, không phụ thuộc sao
+        expect(light.totalKpi).toBe(90) // 30 + 40 + 20 — bằng ngày lao động mức Nhẹ
+        expect(light.grade).toBe('A')
+
+        // Việc nặng = mốc 35/40 năng suất, cân bằng với ngày công lao động
+        const heavy = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+        })
+        expect(heavy.productivityMax).toBe(40)
+        expect(heavy.productivityScore).toBe(35)
+        expect(heavy.totalKpi).toBe(95)
+
+        const veryHeavy = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'very_heavy',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+        })
+        expect(veryHeavy.productivityMax).toBe(40)
+        expect(veryHeavy.productivityScore).toBe(40)
+        expect(veryHeavy.totalKpi).toBe(100)
+
+        // Hoàn thành 50% -> năng suất nhân theo % hoàn thành, Chất lượng cũng tự trừ 50% việc còn lại
+        const halfDone = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            progressPercent: 50,
+            ratingStars: 5,
+            taskStatus: 'partial',
+            workNature: 'statistics',
+        })
+        expect(halfDone.productivityScore).toBe(15) // 30 × 50%
+        expect(halfDone.qualityScore).toBe(20) // 40 - 20 (50% việc còn tồn)
+        expect(halfDone.totalKpi).toBe(55) // 15 + 20 + 20
+        expect(halfDone.grade).toBe('C')
+
+        // Sai số liệu: trừ thẳng vào Chất lượng, KHÔNG trừ trùng vào Kỷ luật
+        const dataError = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+            incidents: [
+                { id: '1', type: 'wrong_quantity_count', name: 'Ghi sai số lượng', group: 'inventory_statistics', severity: 'moderate', penalty_points: 15 },
+            ],
+        })
+        expect(dataError.qualityScore).toBe(25) // 40 - 15
+        expect(dataError.disciplineScore).toBe(20) // không bị trừ lần 2
+        expect(dataError.totalKpi).toBe(80) // 35 + 25 + 20
+        expect(dataError.grade).toBe('B')
+
+        // Sai LOT là lỗi nghiêm trọng -> khóa hạng A
+        const severeDataError = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+            incidents: [
+                { id: '2', type: 'wrong_lot_code', name: 'Ghi sai mã LOT', group: 'inventory_statistics', severity: 'severe', penalty_points: 25 },
+            ],
+        })
+        expect(severeDataError.qualityScore).toBe(15)
+        expect(severeDataError.hasSevereIncident).toBe(true)
+        expect(severeDataError.grade).toBe('C')
+
+        // Lỗi xe nâng hiếm gặp trên việc thống kê (bản ghi cũ) -> trừ Kỷ luật, không có trụ An toàn
+        const statsForkliftError = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+            incidents: [
+                { id: '3', type: 'no_horn', name: 'Không bấm còi', group: 'safety_forklift', severity: 'minor', penalty_points: 5 },
+            ],
+        })
+        expect(statsForkliftError.safetyMax).toBe(0)
+        expect(statsForkliftError.safetyScore).toBe(0)
+        expect(statsForkliftError.disciplineScore).toBe(15) // 20 - 5
+        expect(statsForkliftError.totalKpi).toBe(85) // 30 + 40 + 15
+
+        // Lao động giữ nguyên thang cũ
+        const labor = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 100,
+            ratingStars: 4,
+            taskStatus: 'completed',
+            workNature: 'labor',
+        })
+        expect(labor.productivityScore).toBe(37)
+        expect(labor.productivityMax).toBe(45)
+        expect(labor.qualityMax).toBe(20)
+        expect(labor.qualityScore).toBe(20) // chất lượng tuyệt đối, sao chỉ tham khảo
+        expect(labor.disciplineMax).toBe(15)
+        expect(labor.totalKpi).toBe(92) // 37 + 20 + 20 + 15 — bằng đúng tổng ngày Thống kê mức Vừa
+    })
+
+    it('deducts the Quality pillar proportionally when work is left pending during the day (both work natures)', () => {
+        // Lao động: việc nặng, mới xong 70% -> Chất lượng còn 30% trụ = 20 - 6 = 14đ
+        const laborPending = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 70,
+            taskStatus: 'partial',
+            workNature: 'labor',
+        })
+        expect(laborPending.qualityMax).toBe(20)
+        expect(laborPending.qualityScore).toBe(14)
+        expect(laborPending.totalKpi).toBe(89) // 40 + 14 + 20 + 15
+
+        // Thống kê: việc nặng, xong 70% -> Chất lượng còn 30% của 40đ = 28đ
+        const statsPending = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 70,
+            taskStatus: 'partial',
+            workNature: 'statistics',
+        })
+        expect(statsPending.qualityMax).toBe(40)
+        expect(statsPending.qualityScore).toBe(28)
+        expect(statsPending.totalKpi).toBe(72.5) // 35×70% = 24.5 + 28 + 20
+
+        // Hoàn thành 100% mới được trọn trụ Chất lượng
+        const statsCompleted = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+        })
+        expect(statsCompleted.qualityScore).toBe(40)
+
+        // Chưa làm gì trong ngày (uncompleted, 0%) -> mất trọn trụ Chất lượng
+        const laborUntouched = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 0,
+            taskStatus: 'uncompleted',
+            workNature: 'labor',
+        })
+        expect(laborUntouched.qualityScore).toBe(0)
+
+        // Quản lý chấm tay Chất lượng -> quyền chấm tay quyết định, không tự trừ
+        const customQuality = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 40,
+            taskStatus: 'partial',
+            workNature: 'labor',
+            customQualityScore: 18,
+        })
+        expect(customQuality.qualityScore).toBe(18)
+
+        // Lỗi hàng hóa + việc tồn đọng cùng lúc -> trừ cả hai trên trụ Chất lượng (không âm)
+        const goodsAndPending = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 50,
+            taskStatus: 'partial',
+            workNature: 'labor',
+            incidents: [
+                { id: 'g1', type: 'torn_label', name: 'Rách tem', group: 'quality_goods', severity: 'minor', penalty_points: 10 },
+            ],
+        })
+        expect(goodsAndPending.qualityScore).toBe(0) // 20 - 10 - 10 = 0
+        expect(goodsAndPending.safetyScore).toBe(20)
+        expect(goodsAndPending.disciplineScore).toBe(15)
+    })
+
+    it('applies each incident group only to its own work nature and routes mismatches to discipline', () => {
+        // Lao động không có việc ghi chép/số liệu: nếu lỡ ghi nhận thì trừ Kỷ luật, không trừ Chất lượng
+        const laborDataError = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'labor',
+            incidents: [
+                { id: '1', type: 'wrong_quantity_count', name: 'Ghi sai số lượng', group: 'inventory_statistics', severity: 'moderate', penalty_points: 15 },
+            ],
+        })
+        expect(laborDataError.qualityScore).toBe(20) // Chất lượng lao động chỉ nhận lỗi hàng hóa
+        expect(laborDataError.safetyScore).toBe(20)
+        expect(laborDataError.disciplineScore).toBe(0) // 15 - 15
+        expect(laborDataError.totalKpi).toBe(77) // 37 + 20 + 20 + 0
+
+        // Thống kê + lỗi hàng hóa -> trừ Chất lượng (trước đây bị đẩy sang An toàn)
+        const statsGoodsError = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'heavy',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'statistics',
+            incidents: [
+                { id: '2', type: 'torn_label', name: 'Rách tem', group: 'quality_goods', severity: 'minor', penalty_points: 10 },
+            ],
+        })
+        expect(statsGoodsError.qualityScore).toBe(30) // 40 - 10
+        expect(statsGoodsError.safetyMax).toBe(0) // thống kê không có trụ An toàn
+        expect(statsGoodsError.safetyScore).toBe(0)
+        expect(statsGoodsError.disciplineScore).toBe(20)
+        expect(statsGoodsError.totalKpi).toBe(85) // 35 + 30 + 20
+
+        // Lỗi ghi chép lưu dưới group cũ 'operations' trên việc lao động -> trừ Kỷ luật (không áp dụng cho tay chân)
+        const legacyMissedScan = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'labor',
+            incidents: [
+                { id: '3', type: 'missed_scan', name: 'Quên quét tem', group: 'operations', severity: 'minor', penalty_points: 10 },
+            ],
+        })
+        expect(legacyMissedScan.qualityScore).toBe(20)
+        expect(legacyMissedScan.disciplineScore).toBe(5) // 15 - 10
+        expect(legacyMissedScan.totalKpi).toBe(82) // 37 + 20 + 20 + 5
+
+        // Lỗi xe nâng trên việc lao động -> trừ An toàn (việc thống kê đã có case riêng ở trên)
+        const forkliftError = calculateAssigneeTaskStandardKpi({
+            userPositions: 0,
+            difficulty: 'medium',
+            progressPercent: 100,
+            taskStatus: 'completed',
+            workNature: 'labor',
+            incidents: [
+                { id: '4', type: 'no_horn', name: 'Không bấm còi', group: 'safety_forklift', severity: 'minor', penalty_points: 5 },
+            ],
+        })
+        expect(forkliftError.safetyScore).toBe(15) // 20 - 5
+        expect(forkliftError.qualityScore).toBe(20)
+        expect(forkliftError.disciplineScore).toBe(15)
+        expect(forkliftError.totalKpi).toBe(87) // 37 + 20 + 15 + 15
     })
 
     it('calculates work speed correctly with regular hours (8h) and overtime hours (OT)', () => {

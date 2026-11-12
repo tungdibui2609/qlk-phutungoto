@@ -177,6 +177,7 @@ export const DEFAULT_INCIDENT_TEMPLATES: IncidentGroupTemplate[] = [
             { type: 'wrong_box_label', name: 'Dán nhầm tem nhãn / Dán sai quy cách thùng', severity: 'moderate', penalty: 15 },
             { type: 'delayed_system_update', name: 'Chậm cập nhật phần mềm / Quên chốt xuất nhập', severity: 'minor', penalty: 10 },
             { type: 'handover_discrepancy', name: 'Sai lệch số liệu bàn giao ca / Thiếu biên bản', severity: 'minor', penalty: 10 },
+            { type: 'missed_scan', name: 'Quên quét tem / Bỏ sót kiện hàng khi xuất nhập', severity: 'minor', penalty: 10 },
         ],
     },
     {
@@ -195,6 +196,7 @@ export const DEFAULT_INCIDENT_TEMPLATES: IncidentGroupTemplate[] = [
         groupLabel: 'Hàng hóa, Bốc vác & Chất lượng',
         icon: '📦',
         items: [
+            { type: 'wrong_item_picked', name: 'Lấy hàng không đúng / Tự ý lấy hàng không theo chỉ dẫn', severity: 'moderate', penalty: 15 },
             { type: 'fork_puncture', name: 'Nĩa xe đâm rách thùng / Bao bì', severity: 'moderate', penalty: 20 },
             { type: 'dropped_pallet', name: 'Làm đổ / Rơi kiện / Pallet hàng', severity: 'severe', penalty: 40 },
             { type: 'cold_chain_breach', name: 'Để hàng ngoài nhiệt độ lạnh quá giờ', severity: 'severe', penalty: 35 },
@@ -210,7 +212,6 @@ export const DEFAULT_INCIDENT_TEMPLATES: IncidentGroupTemplate[] = [
         items: [
             { type: 'incomplete_task', name: 'Chưa xong việc trong ca (chủ quan)', severity: 'minor', penalty: 5 },
             { type: 'slow_task_progress', name: 'Chậm tiến độ / Kéo dài ca làm việc', severity: 'minor', penalty: 5 },
-            { type: 'missed_scan', name: 'Quên quét tem / Bỏ sót kiện hàng khi xuất nhập', severity: 'minor', penalty: 10 },
             { type: 'loose_strapping', name: 'Đai hàng lỏng / Quấn màng co ẩu', severity: 'minor', penalty: 5 },
         ],
     },
@@ -300,18 +301,50 @@ export const TASK_TYPE_CONFIG: Record<WorkPlanTaskType, TaskTypeConfig> = {
 export const KPI_PILLARS = {
     productivity: { label: 'Năng suất', max: 45, weight: 0.45 },
     quality: { label: 'Chất lượng', max: 20, weight: 0.2 },
-    safety: { label: 'An toàn & Hàng hóa', max: 20, weight: 0.2 },
+    safety: { label: 'An toàn lao động', max: 20, weight: 0.2 },
     discipline: { label: 'Kỷ luật & 5S', max: 15, weight: 0.15 },
 } as const
+
+/**
+ * Thang điểm riêng cho công việc Thống kê / Ghi chép.
+ * Việc thống kê không vận hành xe nâng nên KHÔNG có trụ An toàn;
+ * 20đ của trụ đó được dồn sang Năng suất để tổng ngày vẫn bằng lao động (90/92/95/100đ).
+ * Năng suất 30–40đ theo độ nặng • Chất lượng 40đ (đúng tuyệt đối, trừ theo lỗi) • Kỷ luật 20đ.
+ */
+export const KPI_PILLARS_STATISTICS = {
+    productivity: { label: 'Năng suất', max: 40, weight: 0.4 },
+    quality: { label: 'Chất lượng', max: 40, weight: 0.4 },
+    discipline: { label: 'Kỷ luật & 5S', max: 20, weight: 0.2 },
+} as const
+
+/**
+ * Điểm Năng suất cơ sở cho việc Thống kê theo độ nặng (trần 40đ).
+ * Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40 — cộng Chất lượng 40 + Kỷ luật 20
+ * cho ra tổng ngày 90/92/95/100, trùng khít thang lao động.
+ */
+export function getStatisticsProductivityByDifficulty(
+    difficulty?: WorkloadDifficulty | null,
+    diffMultiplier?: number
+): number {
+    if (difficulty === 'very_heavy' || (diffMultiplier && diffMultiplier >= 2.0)) return 40
+    if (difficulty === 'heavy' || (diffMultiplier && diffMultiplier >= 1.5)) return 35
+    if (difficulty === 'medium' || (diffMultiplier && diffMultiplier >= 1.2)) return 32
+    return 30 // light (x1.0) hoặc mặc định chuẩn cơ sở
+}
 
 export interface TaskStandardKpiScore {
     taskType: WorkPlanTaskType
     totalKpi: number // Với việc chính: thang 0 - 100đ (mở trần 105đ với việc rất nặng); Với việc phụ: cộng dồn vào KPI ngày (+10đ đến +50đ)
     bonusOverTargetPoints: number // Điểm việc phụ / vượt mức cộng dồn
-    productivityScore: number // Chuẩn 40đ (Nhẹ 40đ, Vừa 42đ, Nặng 45đ, Rất nặng 50đ)
-    qualityScore: number // Tối đa 20đ
-    safetyScore: number // Gốc 20đ (trừ lỗi an toàn)
-    disciplineScore: number // Gốc 15đ (trừ lỗi 5S + cộng thưởng)
+    productivityScore: number // Lao động: 35-45đ theo độ nặng • Thống kê: mốc 30-40đ trên trần 40đ (Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40)
+    qualityScore: number // Lao động: tối đa 20đ (lỗi hàng hóa/ghi chép) • Thống kê: tối đa 40đ, trừ theo lỗi sai số liệu
+    safetyScore: number // Lao động: gốc 20đ (trừ lỗi xe nâng) • Thống kê: 0đ — không có trụ An toàn
+    disciplineScore: number // Gốc 15đ (thống kê 20đ) - trừ lỗi 5S + cộng thưởng
+    // Trần điểm tương ứng để giao diện hiển thị đúng mẫu số
+    productivityMax: number
+    qualityMax: number
+    safetyMax: number
+    disciplineMax: number
     grade: 'A+' | 'A' | 'B' | 'C'
     gradeLabel: string
     hasSevereIncident: boolean
@@ -319,24 +352,30 @@ export interface TaskStandardKpiScore {
 
 /**
  * Xác định điểm Năng Suất cơ sở theo Mức Độ Khối Lượng công việc
- * Chuẩn cơ sở 40đ cho việc nhẹ (tổng ca đạt 95đ - Hạng A)
- * Nhẹ: 40đ • Vừa: 42đ • Nặng: 45đ • Rất nặng: 50đ
+ * Chất lượng lao động đã là tuyệt đối (20đ khi không lỗi hàng hóa) nên Năng suất hạ mốc
+ * để tổng ngày bằng đúng thang của việc Thống kê: 90 / 92 / 95 / 100đ
+ * Nhẹ: 35đ • Vừa: 37đ • Nặng: 40đ • Rất nặng: 45đ (trần trụ cột 45đ)
  */
 export function getProductivityScoreByDifficulty(
     difficulty?: WorkloadDifficulty | null,
     diffMultiplier?: number
 ): number {
-    if (difficulty === 'very_heavy' || (diffMultiplier && diffMultiplier >= 2.0)) return 50
-    if (difficulty === 'heavy' || (diffMultiplier && diffMultiplier >= 1.5)) return 45
-    if (difficulty === 'medium' || (diffMultiplier && diffMultiplier >= 1.2)) return 42
-    return 40 // light (x1.0) hoặc mặc định chuẩn cơ sở
+    if (difficulty === 'very_heavy' || (diffMultiplier && diffMultiplier >= 2.0)) return 45
+    if (difficulty === 'heavy' || (diffMultiplier && diffMultiplier >= 1.5)) return 40
+    if (difficulty === 'medium' || (diffMultiplier && diffMultiplier >= 1.2)) return 37
+    return 35 // light (x1.0) hoặc mặc định chuẩn cơ sở
 }
 
 /**
  * Tính điểm KPI chuẩn trên thang 100% cho từng nhân sự
- * Thang 4 Trụ Cột: Năng suất 40-50đ • Chất lượng 20đ • An toàn 20đ • Kỷ luật 15đ
- * Năng suất phân theo khối lượng: Nhẹ 40đ • Vừa 42đ • Nặng 45đ • Rất nặng 50đ
+ * Thang 4 Trụ Cột: Năng suất 35-45đ • Chất lượng 20đ • An toàn 20đ • Kỷ luật 15đ
+ * Riêng việc Thống kê: Năng suất mốc 30-40đ (trần 40đ) • Chất lượng 40đ (trừ lỗi số liệu) • Không có trụ An toàn • Kỷ luật 20đ
+ * Năng suất phân theo khối lượng: Nhẹ 35đ • Vừa 37đ • Nặng 40đ • Rất nặng 45đ
  * Hỗ trợ phân định Việc chính (chuẩn 100đ) vs Việc phụ (cộng thêm điểm lên 120 - 150đ)
+ * Nhóm lỗi → trụ là cố định cho cả hai loại việc:
+ *   An toàn (20đ, chỉ lao động) = lỗi vận hành xe nâng;
+ *   Chất lượng (20đ lao động / 40đ thống kê) = lỗi hàng hóa + lỗi số liệu/ghi chép;
+ *   Kỷ luật (15đ lao động / 20đ thống kê) = lỗi vận hành/tiến độ, 5S và khác.
  */
 export function calculateAssigneeTaskStandardKpi(params: {
     userPositions: number
@@ -351,6 +390,8 @@ export function calculateAssigneeTaskStandardKpi(params: {
     taskType?: WorkPlanTaskType
     taskStatus?: WorkPlanItemStatus
     sharePercent?: number
+    // Công việc Thống kê / Ghi chép dùng thang điểm riêng: Năng suất tối đa 40đ (đã gồm 20đ An toàn), Chất lượng tối đa 40đ
+    workNature?: WorkPlanWorkNature | null
 }): TaskStandardKpiScore {
     const {
         userPositions,
@@ -365,12 +406,24 @@ export function calculateAssigneeTaskStandardKpi(params: {
         taskType = 'primary',
         taskStatus = 'completed',
         sharePercent = 100,
+        workNature = null,
     } = params
 
     // Nếu công việc bị hoãn / hủy bỏ hoàn toàn trong ca thì không tính điểm năng suất
     const isCancelled = taskStatus === 'cancelled'
+    const isStatistics = workNature === 'statistics'
 
-    // 1. Trụ Cột Năng Suất (Chuẩn 40đ: Nhẹ 40đ, Vừa 42đ, Nặng 45đ, Rất nặng 50đ)
+    // Thống kê không có trụ An toàn nên 20đ dồn vào Năng suất: trần 40đ, mốc 30/32/35/40
+    const prodMax = isStatistics ? 40 : 45
+    const statBaseScore = getStatisticsProductivityByDifficulty(difficulty, diffMultiplier)
+    const qualMax = isStatistics ? 40 : 20
+    // Việc thống kê không vận hành xe nâng → không có trụ An toàn
+    const safetyMax = isStatistics ? 0 : 20
+    const discMax = isStatistics ? 20 : 15
+
+    // 1. Trụ Cột Năng Suất
+    // Lao động: Nhẹ 35 • Vừa 37 • Nặng 40 • Rất nặng 45 (trần trụ cột 45đ)
+    // Thống kê: trần 40đ, mốc theo độ nặng Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40, nhân theo % hoàn thành
     // Nếu Quản lý tự chấm tay (customProductivityScore) thì ưu tiên tuyệt đối điểm chấm tay của quản lý
     let prodScore = 0
     const baseDifficultyScore = getProductivityScoreByDifficulty(difficulty, diffMultiplier)
@@ -378,63 +431,108 @@ export function calculateAssigneeTaskStandardKpi(params: {
     if (isCancelled) {
         prodScore = 0
     } else if (customProductivityScore !== null && customProductivityScore !== undefined) {
-        prodScore = Math.max(0, Math.min(50, customProductivityScore))
+        prodScore = Math.max(0, Math.min(prodMax, customProductivityScore))
     } else if (taskType === 'secondary') {
         // VỚI VIỆC PHỤ / HỖ TRỢ:
         // Điểm hỗ trợ được tự động tính theo % đóng góp thực tế vào công việc
-        // Cơ sở điểm dựa theo độ nặng (Nhẹ 40đ, Vừa 42đ, Nặng 45đ, Rất nặng 50đ)
         const share = typeof sharePercent === 'number' ? Math.max(0, Math.min(100, sharePercent)) : 100
-        prodScore = Math.round(((baseDifficultyScore * share) / 100) * 10) / 10
+        const baseScore = isStatistics ? statBaseScore : baseDifficultyScore
+        prodScore = Math.round(((baseScore * share) / 100) * 10) / 10
+    } else if (isStatistics) {
+        // VỚI VIỆC THỐNG KÊ: mốc năng suất theo độ nặng × % hoàn thành, trên trần 40đ
+        prodScore =
+            Math.round((statBaseScore * Math.max(0, Math.min(100, progressPercent))) / 100 * 10) / 10
     } else {
-        // VỚI VIỆC CHÍNH:
+        // VỚI VIỆC CHÍNH LAO ĐỘNG:
         // Điểm Năng suất đạt trực tiếp theo độ nặng của công việc
         prodScore = baseDifficultyScore
     }
 
-    // 2. Trụ Cột Chất Lượng (Tối đa 20đ)
+    // 2. Trụ Cột Chất Lượng (Lao động tối đa 20đ • Thống kê tối đa 40đ)
     // Nếu Quản lý tự chấm tay riêng (customQualityScore) thì ưu tiên điểm chấm tay của nhân sự đó
-    let qualScore = 20
+    // Chất lượng là tuyệt đối: không có lỗi thì đạt trần (Lao động 20đ / Thống kê 40đ).
+    // Nhóm lỗi → trụ:
+    //   Chất lượng = lỗi hàng hóa + việc tồn đọng (cả hai loại việc) + lỗi số liệu/ghi chép (CHỈ việc THỐNG KÊ)
+    //   An toàn    = chỉ lỗi vận hành xe nâng (safety_forklift), chỉ việc LAO ĐỘNG; thống kê không có trụ này
+    //   Kỷ luật    = lỗi vận hành/tiến độ khác, 5S, khác; lỗi không áp dụng cho loại việc (xe nâng ở thống kê,
+    //                số liệu/ghi chép ở lao động) cũng dồn về đây để không mất điểm phạt
+    // Số sao nghiệm thu chỉ mang tính tham khảo, không ảnh hưởng điểm chất lượng.
+    const NOTE_TAKING_INCIDENT_TYPES = ['missed_scan', 'delayed_system_update', 'handover_discrepancy']
+    const BACKLOG_INCIDENT_TYPE = 'incomplete_task'
+    const hasBacklogIncident = incidents.some(inc => inc.type === BACKLOG_INCIDENT_TYPE)
+    let qualityDeduction = 0
+    let laborDataErrorPenalty = 0
+    incidents.forEach(inc => {
+        const isDataOrNoteIncident =
+            inc.group === 'inventory_statistics' || NOTE_TAKING_INCIDENT_TYPES.includes(inc.type)
+        if (
+            inc.group === 'quality_goods' ||
+            inc.type === BACKLOG_INCIDENT_TYPE ||
+            (isStatistics && isDataOrNoteIncident)
+        ) {
+            qualityDeduction += inc.penalty_points || 0
+        } else if (!isStatistics && isDataOrNoteIncident) {
+            // Việc lao động không có lỗi ghi chép/số liệu → nếu lỡ ghi nhận thì trừ vào Kỷ luật
+            laborDataErrorPenalty += inc.penalty_points || 0
+        }
+    })
+
+    // Việc tồn đọng trong ngày trừ Chất lượng ở cả 2 loại việc:
+    // - Quản lý đã ghi lỗi "Chưa xong việc trong ca" → lấy đúng mức phạt đó, KHÔNG trừ thêm tự động
+    // - Chưa ghi lỗi → tự trừ theo % việc còn lại (chỉ đạt trần khi hoàn thành 100%)
+    // - Quản lý chấm tay Chất lượng → quyền chấm tay quyết định, bỏ qua cả hai
+    const remainingPercent =
+        taskStatus === 'completed' ? 0 : Math.max(0, Math.min(100, 100 - progressPercent))
+    const autoBacklogPenalty =
+        hasBacklogIncident || remainingPercent <= 0
+            ? 0
+            : Math.round(((qualMax * remainingPercent) / 100) * 10) / 10
+
+    let qualScore = qualMax
     if (isCancelled) {
         qualScore = 0
     } else if (customQualityScore !== null && customQualityScore !== undefined) {
-        qualScore = Math.max(0, Math.min(20, customQualityScore))
-    } else if (ratingStars !== null && ratingStars !== undefined) {
-        if (ratingStars >= 5) qualScore = 20
-        else if (ratingStars >= 4) qualScore = 16
-        else if (ratingStars >= 3) qualScore = 12
-        else if (ratingStars >= 2) qualScore = 8
-        else qualScore = 4
+        qualScore = Math.max(0, Math.min(qualMax, customQualityScore))
     } else {
-        // Mặc định đạt yêu cầu chuẩn (20đ) khi không chấm sao thủ công
-        qualScore = 20
+        qualScore = Math.max(0, Math.round((qualMax - qualityDeduction - autoBacklogPenalty) * 10) / 10)
     }
 
-    // 3. Trụ Cột An Toàn Lao Động & Hàng Hóa (Gốc 20đ, trừ lỗi)
+    // 3. Trụ Cột An Toàn Lao Động (Gốc 20đ, chỉ áp dụng cho việc LAO ĐỘNG)
+    // Việc thống kê không vận hành xe nâng nên safetyMax = 0; nếu có bản ghi lỗi xe nâng
+    // trên việc thống kê thì trừ vào Kỷ luật, còn lỗi nghiêm trọng vẫn khóa hạng C.
     let safetyDeduction = 0
+    let statisticsSafetyPenalty = 0
     let hasSevere = false
     incidents.forEach(inc => {
-        if (inc.group === 'safety_forklift' || inc.group === 'quality_goods') {
-            safetyDeduction += inc.penalty_points || 0
+        if (inc.group === 'safety_forklift') {
+            if (isStatistics) {
+                statisticsSafetyPenalty += inc.penalty_points || 0
+            } else {
+                safetyDeduction += inc.penalty_points || 0
+            }
         }
         if (inc.severity === 'severe') {
             hasSevere = true
         }
     })
-    const safetyScore = isCancelled ? 0 : Math.max(0, 20 - safetyDeduction)
+    const safetyScore = isCancelled ? 0 : Math.max(0, safetyMax - safetyDeduction)
 
-    // 4. Trụ Cột Kỷ Luật & 5S (Gốc 15đ, trừ lỗi + cộng thưởng)
-    let disciplineDeduction = 0
+    // 4. Trụ Cột Kỷ Luật & 5S (Gốc 15đ, thống kê 20đ; trừ lỗi + cộng thưởng)
+    // Nhận lỗi vận hành/tiến độ, 5S, khác + lỗi không áp dụng cho loại việc này
+    let disciplineDeduction = statisticsSafetyPenalty + laborDataErrorPenalty
     incidents.forEach(inc => {
-        if (
-            inc.group === 'operations' ||
-            inc.group === 'discipline_5s' ||
-            inc.group === 'inventory_statistics' ||
-            inc.group === 'other'
-        ) {
+        // Việc tồn đọng đã trừ ở Chất lượng cho cả 2 loại việc
+        if (inc.type === BACKLOG_INCIDENT_TYPE) return
+        // Lỗi ghi chép (kể cả bản ghi cũ còn gắn group 'operations'): thống kê trừ ở Chất lượng,
+        // lao động đã gom vào laborDataErrorPenalty
+        if (NOTE_TAKING_INCIDENT_TYPES.includes(inc.type)) return
+        // Lỗi xe nâng của việc lao động đã trừ ở An toàn; của việc thống kê đã gom ở trên
+        if (inc.group === 'safety_forklift') return
+        if (inc.group === 'operations' || inc.group === 'discipline_5s' || inc.group === 'other') {
             disciplineDeduction += inc.penalty_points || 0
         }
     })
-    const discScore = isCancelled ? 0 : Math.min(20, Math.max(0, 15 - disciplineDeduction + bonusPoints))
+    const discScore = isCancelled ? 0 : Math.min(20, Math.max(0, discMax - disciplineDeduction + bonusPoints))
 
     // Xử lý theo Việc chính hay Việc phụ:
     let bonusOverTargetPoints = 0
@@ -459,7 +557,7 @@ export function calculateAssigneeTaskStandardKpi(params: {
     if (isCancelled) {
         grade = 'C'
         gradeLabel = 'Hoãn / Hủy'
-    } else if (hasSevere || safetyScore <= 5 || (taskType === 'primary' && totalKpi < 70)) {
+    } else if (hasSevere || (!isStatistics && safetyScore <= 5) || (taskType === 'primary' && totalKpi < 70)) {
         grade = 'C'
         gradeLabel = hasSevere ? '⚠️ Chưa Ngoan (Sự cố)' : '⚠️ Chưa Ngoan (C)'
     } else if (totalKpi >= 100) {
@@ -484,6 +582,10 @@ export function calculateAssigneeTaskStandardKpi(params: {
         qualityScore: qualScore,
         safetyScore,
         disciplineScore: discScore,
+        productivityMax: prodMax,
+        qualityMax: qualMax,
+        safetyMax,
+        disciplineMax: discMax,
         grade,
         gradeLabel,
         hasSevereIncident: hasSevere,
@@ -814,47 +916,47 @@ export const DIFFICULTY_CONFIG: Record<
 > = {
     light: {
         label: 'Nhẹ',
-        shortLabel: 'Nhẹ (40đ)',
+        shortLabel: 'Nhẹ (35đ)',
         multiplier: 1.0,
-        baseScore: 40,
+        baseScore: 35,
         badgeEmoji: '🌱',
         bgClass: 'bg-sky-50',
         textClass: 'text-sky-700',
         borderClass: 'border-sky-200',
-        description: 'Công việc nhẹ nhàng (< 1 Cont / < 45 vị trí / < 27 tấn) • Năng suất chuẩn: 40đ (Tổng ca 95đ)',
+        description: 'Công việc nhẹ nhàng (< 1 Cont / < 45 vị trí / < 27 tấn) • Năng suất chuẩn: 35đ (Tổng ca 90đ)',
     },
     medium: {
         label: 'Vừa',
-        shortLabel: 'Vừa (42đ)',
+        shortLabel: 'Vừa (37đ)',
         multiplier: 1.2,
-        baseScore: 42,
+        baseScore: 37,
         badgeEmoji: '⚡',
         bgClass: 'bg-indigo-50',
         textClass: 'text-indigo-700',
         borderClass: 'border-indigo-200',
-        description: 'Khối lượng trung bình (1 – 3 Cont / 45 – 179 vị trí / 27 – 107 tấn) • Năng suất: 42đ',
+        description: 'Khối lượng trung bình (1 – 3 Cont / 45 – 179 vị trí / 27 – 107 tấn) • Năng suất: 37đ (Tổng ca 92đ)',
     },
     heavy: {
         label: 'Nặng',
-        shortLabel: 'Nặng (45đ)',
+        shortLabel: 'Nặng (40đ)',
         multiplier: 1.5,
-        baseScore: 45,
+        baseScore: 40,
         badgeEmoji: '💪',
         bgClass: 'bg-orange-50',
         textClass: 'text-orange-700',
         borderClass: 'border-orange-200',
-        description: 'Công việc nặng (4 – 7 Cont / 180 – 359 vị trí / 108 – 215 tấn) • Năng suất: 45đ (Tổng ca 100đ)',
+        description: 'Công việc nặng (4 – 7 Cont / 180 – 359 vị trí / 108 – 215 tấn) • Năng suất: 40đ (Tổng ca 95đ)',
     },
     very_heavy: {
         label: 'Rất nặng',
-        shortLabel: 'Rất nặng (50đ)',
+        shortLabel: 'Rất nặng (45đ)',
         multiplier: 2.0,
-        baseScore: 50,
+        baseScore: 45,
         badgeEmoji: '🔥',
         bgClass: 'bg-rose-50',
         textClass: 'text-rose-700',
         borderClass: 'border-rose-200',
-        description: 'Khối lượng rất lớn (≥ 8 Cont / ≥ 360 vị trí / ≥ 216 tấn) • Năng suất: 50đ (Mở trần 105đ)',
+        description: 'Khối lượng rất lớn (≥ 8 Cont / ≥ 360 vị trí / ≥ 216 tấn) • Năng suất: 45đ (Tổng ca 100đ)',
     },
 }
 

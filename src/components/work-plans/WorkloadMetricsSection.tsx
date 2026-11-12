@@ -37,6 +37,7 @@ import {
     LinkedApprovedAssignmentSummary,
     WorkPlanWorkNature,
     DIFFICULTY_CONFIG,
+    getStatisticsProductivityByDifficulty,
     QUANTITY_FACTOR_PRESETS,
     QuantityFactorPreset,
     parseUnitWeightKg,
@@ -2816,27 +2817,32 @@ export default function WorkloadMetricsSection({
                 <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-stone-700 flex items-center gap-1.5">
                         <Flame size={14} className="text-orange-600" />
-                        Đánh giá Mức độ Nặng / Nhẹ của công việc (Hệ số quy đổi hiệu suất):
+                        {isStatistics
+                            ? 'Mức độ khối lượng thống kê (mốc Năng suất 30–40đ):'
+                            : 'Đánh giá Mức độ Nặng / Nhẹ của công việc (Hệ số quy đổi hiệu suất):'}
                     </label>
-                    <button
-                        type="button"
-                        onClick={() =>
-                            onChange({
-                                ...value,
-                                difficulty: suggestWorkloadDifficulty(value),
-                            })
-                        }
-                        className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                    >
-                        <Sparkles size={12} />
-                        Tự động gợi ý theo số liệu
-                    </button>
+                    {!isStatistics && (
+                        <button
+                            type="button"
+                            onClick={() =>
+                                onChange({
+                                    ...value,
+                                    difficulty: suggestWorkloadDifficulty(value),
+                                })
+                            }
+                            className="text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                        >
+                            <Sparkles size={12} />
+                            Tự động gợi ý theo số liệu
+                        </button>
+                    )}
                 </div>
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                     {DIFFICULTY_KEYS.map(dKey => {
                         const cfg = DIFFICULTY_CONFIG[dKey]
                         const active = value.difficulty === dKey
+                        const statScore = getStatisticsProductivityByDifficulty(dKey)
                         return (
                             <button
                                 key={dKey}
@@ -2858,11 +2864,13 @@ export default function WorkloadMetricsSection({
                                         {cfg.badgeEmoji} {cfg.label}
                                     </span>
                                     <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-white/80 border border-current/15">
-                                        {cfg.baseScore}đ (x{cfg.multiplier})
+                                        {isStatistics ? `${statScore}/40đ` : `${cfg.baseScore}đ (x${cfg.multiplier})`}
                                     </span>
                                 </div>
                                 <div className="text-[10px] opacity-80 mt-1 line-clamp-2 leading-tight">
-                                    {cfg.description}
+                                    {isStatistics
+                                        ? `Khối lượng số liệu ${cfg.label.toLowerCase()} • Mốc ${statScore}/40đ`
+                                        : cfg.description}
                                 </div>
                             </button>
                         )

@@ -52,7 +52,11 @@ export interface EmployeeStatExportRow {
     productivityScore: number
     qualityScore: number
     safetyScore: number
+    safetyMax?: number
     disciplineScore: number
+    productivityMax?: number
+    qualityMax?: number
+    disciplineMax?: number
     netKpiScore: number
     totalPositions: number
     totalWeightKg: number
@@ -221,7 +225,8 @@ export default function AnalyticsExportCardModal({
                 : `${r.totalPositions} vt • ${(r.totalWeightKg / 1000).toFixed(1)} tấn${hourStr}${(r.statisticsTasksAssigned || 0) > 0 && (r.totalDocuments || 0) > 0 ? ` • 📄 ${r.totalDocuments} phiếu (TK)` : ''}`
             lines.push(`${medal} *${r.name}*: *${r.netKpiScore}đ* (${r.gradeLabel})`)
             lines.push(`   ├ ${taskStr} • SL: ${prodStr}`)
-            lines.push(`   └ Điểm 4 Trụ Cột: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore} 🛡️${r.safetyScore} 📋${r.disciplineScore})${r.secondaryBonusPoints > 0 ? ` • Việc phụ: +${r.secondaryBonusPoints}đ` : ''}`)
+            const safetyStr = r.safetyMax === 0 ? '' : ` 🛡️${r.safetyScore}`
+            lines.push(`   └ Điểm trụ cột: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore}${safetyStr} 📋${r.disciplineScore})${r.secondaryBonusPoints > 0 ? ` • Việc phụ: +${r.secondaryBonusPoints}đ` : ''}`)
         })
 
         if (exportMode === 'comprehensive' || exportMode === 'detail') {
@@ -237,9 +242,12 @@ export default function AnalyticsExportCardModal({
                         const myEval = evals.find(
                             e => e.assignee_name?.trim().toLowerCase() === r.name.trim().toLowerCase()
                         )
-                        const itemMult = DIFFICULTY_CONFIG[item.workload_metrics?.difficulty || 'medium']?.multiplier || 1.0
-                        const itemTotalPos = Number(item.workload_metrics?.positions_count) || 0
-                        const itemTotalKg = Number(item.workload_metrics?.weight_kg) || 0
+                        const isStatisticsTask = item.work_nature === 'statistics'
+                        const itemMult = isStatisticsTask
+                            ? 1.0
+                            : DIFFICULTY_CONFIG[item.workload_metrics?.difficulty || 'medium']?.multiplier || 1.0
+                        const itemTotalPos = isStatisticsTask ? 0 : Number(item.workload_metrics?.positions_count) || 0
+                        const itemTotalKg = isStatisticsTask ? 0 : Number(item.workload_metrics?.weight_kg) || 0
                         const itemShare = myEval?.share_percent ?? 100
                         const userPos = Math.round(((itemTotalPos * itemShare) / 100) * 10) / 10
                         const userKg = Math.round((itemTotalKg * itemShare) / 100)
@@ -258,6 +266,7 @@ export default function AnalyticsExportCardModal({
                             customProductivityScore: myEval?.custom_productivity_score,
                             customQualityScore: myEval?.custom_quality_score,
                             sharePercent: itemShare,
+                            workNature: item.work_nature,
                         })
 
                         const typeTag = isSecondaryTask ? '[Việc phụ]' : '[Việc chính]'
@@ -618,15 +627,19 @@ export default function AnalyticsExportCardModal({
                                                         {/* 4 Trụ Cột */}
                                                         <td className="w-[65px] px-2 py-2.5 text-center font-bold text-stone-900 whitespace-nowrap">
                                                             {r.productivityScore}
+                                                            <span className="text-[10px] text-stone-400 font-normal">/{r.productivityMax ?? 45}</span>
                                                         </td>
                                                         <td className="w-[65px] px-2 py-2.5 text-center font-bold text-amber-700 whitespace-nowrap">
                                                             {r.qualityScore}
+                                                            <span className="text-[10px] text-amber-400 font-normal">/{r.qualityMax ?? 20}</span>
                                                         </td>
-                                                        <td className={`w-[65px] px-2 py-2.5 text-center font-bold whitespace-nowrap ${r.safetyScore < 20 ? 'text-rose-600' : 'text-emerald-700'}`}>
-                                                            {r.safetyScore}
+                                                        <td className={`w-[65px] px-2 py-2.5 text-center font-bold whitespace-nowrap ${r.safetyMax === 0 ? 'text-stone-300' : r.safetyScore < (r.safetyMax ?? 20) ? 'text-rose-600' : 'text-emerald-700'}`}>
+                                                            {r.safetyMax === 0 ? '—' : r.safetyScore}
+                                                            <span className="text-[10px] text-stone-400 font-normal">{r.safetyMax === 0 ? '' : `/${r.safetyMax ?? 20}`}</span>
                                                         </td>
                                                         <td className="w-[65px] px-2 py-2.5 text-center font-bold text-indigo-700 whitespace-nowrap">
                                                             {r.disciplineScore}
+                                                            <span className="text-[10px] text-indigo-300 font-normal">/{r.disciplineMax ?? 15}</span>
                                                         </td>
 
                                                         {/* Điểm việc chính */}
@@ -779,9 +792,12 @@ export default function AnalyticsExportCardModal({
                                                             const myEval = evals.find(
                                                                 e => e.assignee_name?.trim().toLowerCase() === emp.name.trim().toLowerCase()
                                                             )
-                                                            const itemMult = DIFFICULTY_CONFIG[item.workload_metrics?.difficulty || 'medium']?.multiplier || 1.0
-                                                            const itemTotalPos = Number(item.workload_metrics?.positions_count) || 0
-                                                            const itemTotalKg = Number(item.workload_metrics?.weight_kg) || 0
+                                                            const isStatisticsTask = item.work_nature === 'statistics'
+                                                            const itemMult = isStatisticsTask
+                                                                ? 1.0
+                                                                : DIFFICULTY_CONFIG[item.workload_metrics?.difficulty || 'medium']?.multiplier || 1.0
+                                                            const itemTotalPos = isStatisticsTask ? 0 : Number(item.workload_metrics?.positions_count) || 0
+                                                            const itemTotalKg = isStatisticsTask ? 0 : Number(item.workload_metrics?.weight_kg) || 0
                                                             const itemShare = myEval?.share_percent ?? 100
                                                             const userPos = Math.round(((itemTotalPos * itemShare) / 100) * 10) / 10
                                                             const userKg = Math.round((itemTotalKg * itemShare) / 100)
@@ -800,6 +816,7 @@ export default function AnalyticsExportCardModal({
                                                                 customProductivityScore: myEval?.custom_productivity_score,
                                                                 customQualityScore: myEval?.custom_quality_score,
                                                                 sharePercent: itemShare,
+                                                                workNature: item.work_nature,
                                                             })
 
                                                             return (
@@ -855,10 +872,12 @@ export default function AnalyticsExportCardModal({
                                                                         </div>
 
                                                                         <div className="flex items-center gap-2 text-[10px] font-semibold text-stone-600">
-                                                                            <span>⚡ {taskKpi.productivityScore}đ</span>
-                                                                            <span>⭐ {taskKpi.qualityScore}/20đ</span>
-                                                                            <span className={taskKpi.safetyScore < 20 ? 'text-rose-600 font-bold' : ''}>🛡️ {taskKpi.safetyScore}/20đ</span>
-                                                                            <span>📋 {taskKpi.disciplineScore}/15đ</span>
+                                                                            <span>⚡ {taskKpi.productivityScore}/{taskKpi.productivityMax}đ</span>
+                                                                            <span>⭐ {taskKpi.qualityScore}/{taskKpi.qualityMax}đ</span>
+                                                                            {taskKpi.safetyMax > 0 && (
+                                                                                <span className={taskKpi.safetyScore < taskKpi.safetyMax ? 'text-rose-600 font-bold' : ''}>🛡️ {taskKpi.safetyScore}/{taskKpi.safetyMax}đ</span>
+                                                                            )}
+                                                                            <span>📋 {taskKpi.disciplineScore}/{taskKpi.disciplineMax}đ</span>
                                                                         </div>
                                                                     </div>
                                                                 </div>
@@ -889,7 +908,11 @@ export default function AnalyticsExportCardModal({
                                                 ) : (
                                                     <div className="text-[10px] font-bold text-emerald-700 flex items-center gap-1 bg-emerald-50/70 px-2.5 py-1 rounded-lg border border-emerald-100">
                                                         <CheckCircle2 size={12} />
-                                                        <span>An toàn & 5S đạt tối đa 35/35đ (Không có vi phạm hay sự cố)</span>
+                                                        <span>
+                                                            {emp.safetyMax === 0
+                                                                ? 'Kỷ luật 5S đạt tối đa 20/20đ (Không có vi phạm hay sự cố)'
+                                                                : 'An toàn & 5S đạt tối đa 35/35đ (Không có vi phạm hay sự cố)'}
+                                                        </span>
                                                     </div>
                                                 )}
                                             </div>

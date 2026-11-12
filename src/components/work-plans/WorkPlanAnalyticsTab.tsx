@@ -90,10 +90,17 @@ export interface EmployeeStatRow {
     primaryKpiScore: number // Điểm ca chuẩn (thang 100đ)
     secondaryBonusPoints: number // Điểm việc phụ / tăng cường cộng dồn
     // 4 Trụ Cột KPI Chuẩn (Thang 100 Điểm)
-    productivityScore: number // Tối đa 40đ (vượt mức max 45đ)
-    qualityScore: number // Tối đa 25đ
-    safetyScore: number // Gốc 20đ
-    disciplineScore: number // Gốc 15đ
+    productivityScore: number // Lao động 35-45đ • Thống kê mốc 30-40đ (trần 40đ)
+    qualityScore: number // Lao động tối đa 20đ • Thống kê tối đa 40đ
+    safetyScore: number // Gốc 20đ; 0 khi chỉ làm việc thống kê
+    safetyMax: number // 20 (lao động) hoặc 0 (chỉ thống kê — không có trụ An toàn)
+    disciplineScore: number // Gốc 15đ (thống kê 20đ)
+    productivityMaxTotal: number // Tổng trần năng suất các việc chính (để chia trung bình)
+    qualityMaxTotal: number // Tổng trần chất lượng các việc chính
+    statisticsPrimaryTasks: number // Số việc chính thuộc loại Thống kê
+    productivityMax: number // Trần năng suất hiển thị (45 hoặc 40)
+    qualityMax: number // Trần chất lượng hiển thị (20 hoặc 40)
+    disciplineMax: number // Gốc kỷ luật hiển thị (15 hoặc 20)
     netKpiScore: number // Tổng điểm KPI chuẩn (Thang 100đ + Việc phụ -> lên 150đ+)
     weightedScore: number // Điểm quy đổi khối lượng
     // Thời gian làm việc, tăng ca (OT) & Tốc độ năng suất theo giờ
@@ -321,7 +328,14 @@ export default function WorkPlanAnalyticsTab({
                     productivityScore: 0,
                     qualityScore: 0,
                     safetyScore: 20,
+                    safetyMax: 20,
                     disciplineScore: 15,
+                    productivityMaxTotal: 0,
+                    qualityMaxTotal: 0,
+                    statisticsPrimaryTasks: 0,
+                    productivityMax: 45,
+                    qualityMax: 20,
+                    disciplineMax: 15,
                     netKpiScore: 0,
                     weightedScore: 0,
                     totalRegularHours: 0,
@@ -389,10 +403,28 @@ export default function WorkPlanAnalyticsTab({
                             taskDate: item.plan_date,
                         })
 
-                        if (inc.group === 'safety_forklift' || inc.group === 'quality_goods') {
-                            row.safetyPenaltyPoints += pen
-                        } else {
-                            row.disciplinePenaltyPoints += pen
+                        // Nhóm lỗi → trụ khớp với engine:
+                        //   Chất lượng = hàng hóa + việc tồn đọng (cả hai loại) + số liệu/ghi chép (chỉ thống kê)
+                        //   An toàn    = xe nâng (chỉ lao động)
+                        //   Kỷ luật    = vận hành/5S/khác + lỗi không áp dụng cho loại việc này
+                        const isNoteTaking =
+                            inc.type === 'missed_scan' ||
+                            inc.type === 'delayed_system_update' ||
+                            inc.type === 'handover_discrepancy'
+                        const isDataOrNote = inc.group === 'inventory_statistics' || isNoteTaking
+                        const belongsToQuality =
+                            inc.group === 'quality_goods' ||
+                            inc.type === 'incomplete_task' ||
+                            (isStatistics && isDataOrNote)
+                        if (inc.group === 'safety_forklift') {
+                            if (isStatistics) row.disciplinePenaltyPoints += pen
+                            else row.safetyPenaltyPoints += pen
+                        } else if (!belongsToQuality) {
+                            if (isDataOrNote) {
+                                row.disciplinePenaltyPoints += pen
+                            } else if (inc.group === 'operations' || inc.group === 'discipline_5s' || inc.group === 'other') {
+                                row.disciplinePenaltyPoints += pen
+                            }
                         }
 
                         if (inc.severity === 'severe') {
@@ -414,7 +446,7 @@ export default function WorkPlanAnalyticsTab({
             const taskKpi = calculateAssigneeTaskStandardKpi({
                 userPositions: myPos,
                 diffMultiplier: isStatistics ? 1.0 : mult,
-                difficulty: isStatistics ? null : wl?.difficulty,
+                difficulty: wl?.difficulty,
                 progressPercent: item.progress_percent || 0,
                 ratingStars: item.rating_stars,
                 incidents: ev?.incidents || [],
@@ -424,6 +456,7 @@ export default function WorkPlanAnalyticsTab({
                 customProductivityScore: ev?.custom_productivity_score,
                 customQualityScore: ev?.custom_quality_score,
                 sharePercent: sharePercent,
+                workNature: isStatistics ? 'statistics' : 'labor',
             })
 
             if (taskType === 'secondary') {
@@ -435,6 +468,9 @@ export default function WorkPlanAnalyticsTab({
                 if (item.status === 'completed') row.primaryTasksCompleted += 1
                 row.productivityScore += taskKpi.productivityScore
                 row.qualityScore += taskKpi.qualityScore
+                row.productivityMaxTotal += taskKpi.productivityMax
+                row.qualityMaxTotal += taskKpi.qualityMax
+                if (isStatistics) row.statisticsPrimaryTasks += 1
             }
 
             if (isStatistics) {
@@ -489,15 +525,27 @@ export default function WorkPlanAnalyticsTab({
             const avgStars =
                 r.ratedCount > 0 ? Number((r.totalStars / r.ratedCount).toFixed(1)) : null
 
-            // 1. Năng suất TB Việc chính (thang 45đ)
+            // 1. Năng suất TB Việc chính (lao động thang 45đ, thống kê thang 20đ)
             const baseTasksCount = r.primaryTasksAssigned > 0 ? r.primaryTasksAssigned : r.totalAssigned
             const prodAvg = baseTasksCount > 0 ? Math.round((r.productivityScore / baseTasksCount) * 10) / 10 : 0
-            // 2. Chất lượng TB Việc chính (thang 20đ)
+            // 2. Chất lượng TB Việc chính (lao động thang 20đ, thống kê thang 40đ)
             const qualAvg = baseTasksCount > 0 ? Math.round((r.qualityScore / baseTasksCount) * 10) / 10 : 0
-            // 3. An toàn lao động & Hàng hóa (gốc 20đ, trừ lỗi)
-            const safeScore = Math.max(0, 20 - r.safetyPenaltyPoints)
-            // 4. Kỷ luật & 5S (gốc 15đ, trừ lỗi + cộng thưởng)
-            const discScore = Math.min(20, Math.max(0, 15 - r.disciplinePenaltyPoints + r.totalBonusPoints))
+            const prodMax =
+                baseTasksCount > 0 && r.productivityMaxTotal > 0
+                    ? Math.round((r.productivityMaxTotal / baseTasksCount) * 10) / 10
+                    : 45
+            const qualMax =
+                baseTasksCount > 0 && r.qualityMaxTotal > 0
+                    ? Math.round((r.qualityMaxTotal / baseTasksCount) * 10) / 10
+                    : 20
+            // 3. An toàn lao động (gốc 20đ, trừ lỗi xe nâng) — việc thống kê không có trụ này
+            const isStatisticsOnly =
+                r.statisticsPrimaryTasks > 0 && r.statisticsPrimaryTasks === r.primaryTasksAssigned
+            const safetyMax = isStatisticsOnly ? 0 : 20
+            const safeScore = isStatisticsOnly ? 0 : Math.max(0, 20 - r.safetyPenaltyPoints)
+            // 4. Kỷ luật & 5S (lao động gốc 15đ, thống kê gốc 20đ; trừ lỗi + cộng thưởng)
+            const discBase = isStatisticsOnly ? 20 : 15
+            const discScore = Math.min(20, Math.max(0, discBase - r.disciplinePenaltyPoints + r.totalBonusPoints))
 
             // ĐIỂM VIỆC CHÍNH (Chuẩn 100 điểm)
             const rawPrimaryKpi = prodAvg + qualAvg + safeScore + discScore
@@ -512,7 +560,7 @@ export default function WorkPlanAnalyticsTab({
             // Xếp loại danh hiệu Bé Khỏe Bé Ngoan (Thang ca chuẩn 100đ + Việc phụ mở trần)
             let grade: 'A+' | 'A' | 'B' | 'C' = 'B'
             let gradeLabel = '🌱 Cần Cố Gắng (B)'
-            if (r.hasSevereIncident || safeScore <= 5 || primaryKpiScore < 70) {
+            if (r.hasSevereIncident || (!isStatisticsOnly && safeScore <= 5) || primaryKpiScore < 70) {
                 grade = 'C'
                 gradeLabel = r.hasSevereIncident ? '⚠️ Chưa Ngoan (Sự cố)' : '⚠️ Chưa Ngoan (C)'
             } else if (netKpiScore >= 100) {
@@ -559,7 +607,11 @@ export default function WorkPlanAnalyticsTab({
                 productivityScore: prodAvg,
                 qualityScore: qualAvg,
                 safetyScore: safeScore,
+                safetyMax,
                 disciplineScore: discScore,
+                productivityMax: prodMax,
+                qualityMax: qualMax,
+                disciplineMax: discBase,
                 primaryKpiScore,
                 secondaryBonusPoints,
                 totalPositions: Math.round(r.totalPositions * 10) / 10,
@@ -614,10 +666,10 @@ export default function WorkPlanAnalyticsTab({
                 { header: '⏱️ Giờ chuẩn (h)', key: 'regularHours', width: 16 },
                 { header: '⚡ Tăng ca OT (h)', key: 'overtimeHours', width: 16 },
                 { header: '⏱️ Tổng giờ làm (h)', key: 'totalHours', width: 18 },
-                { header: '⚡ Năng suất việc chính (/40-50đ)', key: 'prodScore', width: 24 },
-                { header: '⭐ Chất lượng (/20đ)', key: 'qualScore', width: 18 },
-                { header: '🛡️ An toàn (/20đ)', key: 'safeScore', width: 18 },
-                { header: '📋 Kỷ luật & 5S (/15đ)', key: 'discScore', width: 20 },
+                { header: '⚡ Năng suất việc chính (đ)', key: 'prodScore', width: 24 },
+                { header: '⭐ Chất lượng (đ)', key: 'qualScore', width: 18 },
+                { header: '🛡️ An toàn (đ)', key: 'safeScore', width: 18 },
+                { header: '📋 Kỷ luật & 5S (đ)', key: 'discScore', width: 20 },
                 { header: '🎯 Điểm Việc Chính (/100đ)', key: 'primaryKpi', width: 24 },
                 { header: '➕ Điểm Việc Phụ (+đ)', key: 'secondaryBonus', width: 22 },
                 { header: '⚠️ Lỗi vi phạm', key: 'incidentsCount', width: 16 },
@@ -649,10 +701,10 @@ export default function WorkPlanAnalyticsTab({
                     regularHours: emp.totalRegularHours > 0 ? `${emp.totalRegularHours}h` : '-',
                     overtimeHours: emp.totalOvertimeHours > 0 ? `+${emp.totalOvertimeHours}h` : '-',
                     totalHours: emp.totalWorkHours > 0 ? `${emp.totalWorkHours}h` : '-',
-                    prodScore: `${emp.productivityScore} / 45đ`,
-                    qualScore: `${emp.qualityScore} / 20đ`,
-                    safeScore: `${emp.safetyScore} / 20đ`,
-                    discScore: `${emp.disciplineScore} / 15đ`,
+                    prodScore: `${emp.productivityScore} / ${emp.productivityMax}đ`,
+                    qualScore: `${emp.qualityScore} / ${emp.qualityMax}đ`,
+                    safeScore: emp.safetyMax === 0 ? '—' : `${emp.safetyScore} / ${emp.safetyMax}đ`,
+                    discScore: `${emp.disciplineScore} / ${emp.disciplineMax}đ`,
                     primaryKpi: `${emp.primaryKpiScore} / 100đ`,
                     secondaryBonus: emp.secondaryBonusPoints > 0 ? `+${emp.secondaryBonusPoints}đ` : '0đ',
                     incidentsCount: emp.incidentsCount || 0,
@@ -946,10 +998,10 @@ export default function WorkPlanAnalyticsTab({
                                     <th className="px-2.5 py-3 text-center" title="Số việc chính được giao trong ca và tỷ lệ hoàn tất">⭐ Việc chính</th>
                                     <th className="px-2.5 py-3 text-center" title="Số việc phụ / tăng cường được hỗ trợ">➕ Việc phụ</th>
                                     <th className="px-2.5 py-3 text-center" title="Sản lượng thực tế, số giờ làm và tốc độ năng suất trong 1 giờ. Công việc Thống kê / Ghi chép không được ghi vào cột này.">Sản Lượng & Giờ Làm</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột Năng suất: Chuẩn 40đ (Nhẹ 40đ, Vừa 42đ, Nặng 45đ, Rất nặng 50đ theo khối lượng)">⚡ N.Suất</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột Năng suất: Lao động 35–45đ (Nhẹ 35, Vừa 37, Nặng 40, Rất nặng 45) • Thống kê 30–40đ theo độ nặng (không có trụ An toàn)">⚡ N.Suất</th>
                                     <th className="px-2 py-3 text-center" title="Trụ cột Chất lượng thực hiện việc chính (Tối đa 20đ)">⭐ C.Lượng</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột An toàn lao động & Hàng hóa (Gốc 20đ, trừ lỗi)">🛡️ A.Toàn</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột Kỷ luật & 5S (Gốc 15đ, trừ lỗi + thưởng)">📋 K.Luật</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột An toàn lao động (Gốc 20đ, chỉ trừ lỗi vận hành xe nâng)">🛡️ A.Toàn</th>
+                                    <th className="px-2 py-3 text-center" title="Trụ cột Kỷ luật & 5S (lao động gốc 15đ, thống kê gốc 20đ; trừ lỗi + thưởng)">📋 K.Luật</th>
                                     <th className="px-3 py-3 text-center" title="Điểm việc chính theo thang chuẩn 100đ">⭐ Điểm Chính</th>
                                     <th className="px-3 py-3 text-center" title="Điểm việc phụ cộng thêm không giới hạn trần">➕ Việc Phụ</th>
                                     <th className="px-3 py-3 text-center" title="Tổng KPI thực tế mở trần (có thể đạt 120đ - 150đ+)">🎯 TỔNG KPI</th>
@@ -1046,36 +1098,51 @@ export default function WorkPlanAnalyticsTab({
                                                 )}
                                             </div>
                                         </td>
-                                        {/* Trụ Cột 1: Năng Suất (/40đ) */}
+                                        {/* Trụ Cột 1: Năng Suất (lao động /45đ, thống kê /40đ) */}
                                         <td className="px-2 py-3 text-center font-bold text-stone-800">
-                                            <span className={`px-1.5 py-0.5 rounded-md text-xs ${
-                                                row.productivityScore >= 36 ? 'bg-emerald-50 text-emerald-800 font-black' : 'bg-stone-50 text-stone-700'
-                                            }`}>
+                                            <span
+                                                title={`Năng suất: ${row.productivityScore}/${row.productivityMax}đ`}
+                                                className={`px-1.5 py-0.5 rounded-md text-xs ${
+                                                    row.productivityScore >= row.productivityMax * 0.8
+                                                        ? 'bg-emerald-50 text-emerald-800 font-black'
+                                                        : 'bg-stone-50 text-stone-700'
+                                                }`}
+                                            >
                                                 {row.productivityScore}
                                             </span>
                                         </td>
-                                        {/* Trụ Cột 2: Chất Lượng (/25đ) */}
+                                        {/* Trụ Cột 2: Chất Lượng (lao động /20đ, thống kê /40đ) */}
                                         <td className="px-2 py-3 text-center font-bold text-amber-700">
-                                            <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 text-xs">
+                                            <span
+                                                title={`Chất lượng: ${row.qualityScore}/${row.qualityMax}đ`}
+                                                className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 text-xs"
+                                            >
                                                 {row.qualityScore}
                                             </span>
                                         </td>
-                                        {/* Trụ Cột 3: An Toàn (/20đ) */}
+                                        {/* Trụ Cột 3: An Toàn (/20đ) — việc thống kê không có trụ này */}
                                         <td className="px-2 py-3 text-center">
-                                            <span className={`px-1.5 py-0.5 rounded-md text-xs font-bold ${
-                                                row.safetyScore < 20
-                                                    ? 'bg-rose-50 text-rose-700 border border-rose-200 font-black'
-                                                    : 'bg-emerald-50 text-emerald-700'
-                                            }`}>
-                                                {row.safetyScore}
-                                                {row.safetyPenaltyPoints > 0 && (
-                                                    <span className="text-[10px] text-rose-600 block font-normal">(-{row.safetyPenaltyPoints})</span>
-                                                )}
-                                            </span>
+                                            {row.safetyMax === 0 ? (
+                                                <span className="text-stone-300 font-bold text-xs" title="Việc thống kê không vận hành xe nâng nên không có trụ An toàn; 20đ đã dồn sang Năng suất">—</span>
+                                            ) : (
+                                                <span className={`px-1.5 py-0.5 rounded-md text-xs font-bold ${
+                                                    row.safetyScore < row.safetyMax
+                                                        ? 'bg-rose-50 text-rose-700 border border-rose-200 font-black'
+                                                        : 'bg-emerald-50 text-emerald-700'
+                                                }`}>
+                                                    {row.safetyScore}
+                                                    {row.safetyPenaltyPoints > 0 && (
+                                                        <span className="text-[10px] text-rose-600 block font-normal">(-{row.safetyPenaltyPoints})</span>
+                                                    )}
+                                                </span>
+                                            )}
                                         </td>
-                                        {/* Trụ Cột 4: Kỷ Luật & 5S (/15đ) */}
+                                        {/* Trụ Cột 4: Kỷ Luật & 5S (lao động /15đ, thống kê /20đ) */}
                                         <td className="px-2 py-3 text-center">
-                                            <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-bold">
+                                            <span
+                                                title={`Kỷ luật & 5S: ${row.disciplineScore}/${row.disciplineMax}đ`}
+                                                className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 text-xs font-bold"
+                                            >
                                                 {row.disciplineScore}
                                                 {row.totalBonusPoints > 0 && (
                                                     <span className="text-[10px] text-emerald-600 block font-bold">(+{row.totalBonusPoints})</span>
@@ -1187,32 +1254,38 @@ export default function WorkPlanAnalyticsTab({
                             </button>
                         </div>
 
-                        {/* Thẻ hiển thị Điểm Việc Chính (4 Trụ Cột /100đ) & Việc Phụ Cộng Thêm */}
-                        <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
+                        {/* Thẻ hiển thị Điểm Việc Chính (3 Trụ Cột cho thống kê / 4 Trụ Cột cho lao động) & Việc Phụ Cộng Thêm */}
+                        <div className={`grid grid-cols-2 ${selectedEmployee.safetyMax === 0 ? 'md:grid-cols-4' : 'md:grid-cols-5'} gap-2.5`}>
                             <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
-                                <div className="text-[10px] font-bold text-stone-500 uppercase">⚡ N.Suất Việc Chính (40-50đ)</div>
-                                <div className="text-lg font-black text-stone-900 mt-1">{selectedEmployee.productivityScore} <span className="text-xs text-stone-400 font-normal">/ 50 đ</span></div>
-                                <div className="text-[10px] text-stone-500 mt-0.5">Nhẹ 40 • Vừa 42 • Nặng 45 • Rất nặng 50</div>
-                            </div>
-                            <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
-                                <div className="text-[10px] font-bold text-stone-500 uppercase">⭐ Chất Lượng (Max 20)</div>
-                                <div className="text-lg font-black text-amber-700 mt-1">{selectedEmployee.qualityScore} <span className="text-xs text-amber-600 font-normal">/ 20 đ</span></div>
-                                <div className="text-[10px] text-stone-500 mt-0.5">Điểm sao đánh giá của Quản lý</div>
-                            </div>
-                            <div className={`p-3 rounded-xl border shadow-2xs ${selectedEmployee.safetyScore < 20 ? 'bg-rose-50 border-rose-200' : 'bg-white border-stone-200'}`}>
-                                <div className={`text-[10px] font-bold uppercase ${selectedEmployee.safetyScore < 20 ? 'text-rose-700' : 'text-stone-500'}`}>
-                                    🛡️ An Toàn (Gốc 20)
-                                </div>
-                                <div className={`text-lg font-black mt-1 ${selectedEmployee.safetyScore < 20 ? 'text-rose-700' : 'text-emerald-700'}`}>
-                                    {selectedEmployee.safetyScore} <span className="text-xs opacity-70 font-normal">/ 20 đ</span>
-                                </div>
+                                <div className="text-[10px] font-bold text-stone-500 uppercase">⚡ N.Suất Việc Chính ({selectedEmployee.safetyMax === 0 ? 'mốc 30–40 / trần 40đ' : '35–45đ'})</div>
+                                <div className="text-lg font-black text-stone-900 mt-1">{selectedEmployee.productivityScore} <span className="text-xs text-stone-400 font-normal">/ {selectedEmployee.productivityMax} đ</span></div>
                                 <div className="text-[10px] text-stone-500 mt-0.5">
-                                    {selectedEmployee.safetyPenaltyPoints > 0 ? `Trừ -${selectedEmployee.safetyPenaltyPoints}đ lỗi an toàn` : '✓ Tuyệt đối an toàn'}
+                                    {selectedEmployee.safetyMax === 0
+                                        ? 'Việc thống kê: Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40 × % hoàn thành'
+                                        : 'Nhẹ 35 • Vừa 37 • Nặng 40 • Rất nặng 45'}
                                 </div>
                             </div>
                             <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
-                                <div className="text-[10px] font-bold text-stone-500 uppercase">📋 Kỷ Luật & 5S (Gốc 15)</div>
-                                <div className="text-lg font-black text-indigo-700 mt-1">{selectedEmployee.disciplineScore} <span className="text-xs text-indigo-400 font-normal">/ 15 đ</span></div>
+                                <div className="text-[10px] font-bold text-stone-500 uppercase">⭐ Chất Lượng (Max {selectedEmployee.qualityMax})</div>
+                                <div className="text-lg font-black text-amber-700 mt-1">{selectedEmployee.qualityScore} <span className="text-xs text-amber-600 font-normal">/ {selectedEmployee.qualityMax} đ</span></div>
+                                <div className="text-[10px] text-stone-500 mt-0.5">Không lỗi hàng hóa / số liệu = tối đa; trừ theo lỗi</div>
+                            </div>
+                            {selectedEmployee.safetyMax > 0 && (
+                                <div className={`p-3 rounded-xl border shadow-2xs ${selectedEmployee.safetyScore < selectedEmployee.safetyMax ? 'bg-rose-50 border-rose-200' : 'bg-white border-stone-200'}`}>
+                                    <div className={`text-[10px] font-bold uppercase ${selectedEmployee.safetyScore < selectedEmployee.safetyMax ? 'text-rose-700' : 'text-stone-500'}`}>
+                                        🛡️ An Toàn (Gốc {selectedEmployee.safetyMax})
+                                    </div>
+                                    <div className={`text-lg font-black mt-1 ${selectedEmployee.safetyScore < selectedEmployee.safetyMax ? 'text-rose-700' : 'text-emerald-700'}`}>
+                                        {selectedEmployee.safetyScore} <span className="text-xs opacity-70 font-normal">/ {selectedEmployee.safetyMax} đ</span>
+                                    </div>
+                                    <div className="text-[10px] text-stone-500 mt-0.5">
+                                        {selectedEmployee.safetyPenaltyPoints > 0 ? `Trừ -${selectedEmployee.safetyPenaltyPoints}đ lỗi an toàn` : '✓ Tuyệt đối an toàn'}
+                                    </div>
+                                </div>
+                            )}
+                            <div className="p-3 rounded-xl bg-white border border-stone-200 shadow-2xs">
+                                <div className="text-[10px] font-bold text-stone-500 uppercase">📋 Kỷ Luật & 5S (Gốc {selectedEmployee.disciplineMax})</div>
+                                <div className="text-lg font-black text-indigo-700 mt-1">{selectedEmployee.disciplineScore} <span className="text-xs text-indigo-400 font-normal">/ {selectedEmployee.disciplineMax} đ</span></div>
                                 <div className="text-[10px] text-stone-500 mt-0.5">
                                     {selectedEmployee.totalBonusPoints > 0 ? `+${selectedEmployee.totalBonusPoints}đ thưởng công hiến` : '✓ Tuân thủ nội quy ca'}
                                 </div>
@@ -1297,7 +1370,7 @@ export default function WorkPlanAnalyticsTab({
                                 const taskKpi = calculateAssigneeTaskStandardKpi({
                                     userPositions: userPos,
                                     diffMultiplier: isStatisticsTask ? 1.0 : itemMult,
-                                    difficulty: isStatisticsTask ? null : item.workload_metrics?.difficulty,
+                                    difficulty: item.workload_metrics?.difficulty,
                                     progressPercent: item.progress_percent || 0,
                                     ratingStars: item.rating_stars,
                                     incidents: myEval?.incidents || [],
@@ -1307,6 +1380,7 @@ export default function WorkPlanAnalyticsTab({
                                     customProductivityScore: myEval?.custom_productivity_score,
                                     customQualityScore: myEval?.custom_quality_score,
                                     sharePercent: itemShare,
+                                    workNature: item.work_nature,
                                 })
 
                                 return (
@@ -1385,16 +1459,18 @@ export default function WorkPlanAnalyticsTab({
                                             {/* Chi tiết 4 Trụ Cột của việc này */}
                                             <div className="flex flex-wrap items-center gap-1.5 font-bold">
                                                 <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
-                                                    ⚡ N.Suất: <b className="text-stone-900">{taskKpi.productivityScore}đ</b>
+                                                    ⚡ N.Suất: <b className="text-stone-900">{taskKpi.productivityScore}/{taskKpi.productivityMax}đ</b>
                                                 </span>
                                                 <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
-                                                    ⭐ C.Lượng: <b className="text-amber-700">{taskKpi.qualityScore}/20đ</b>
+                                                    ⭐ C.Lượng: <b className="text-amber-700">{taskKpi.qualityScore}/{taskKpi.qualityMax}đ</b>
                                                 </span>
+                                                {taskKpi.safetyMax > 0 && (
+                                                    <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
+                                                        🛡️ A.Toàn: <b className={taskKpi.safetyScore < taskKpi.safetyMax ? 'text-rose-600' : 'text-emerald-700'}>{taskKpi.safetyScore}/{taskKpi.safetyMax}đ</b>
+                                                    </span>
+                                                )}
                                                 <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
-                                                    🛡️ A.Toàn: <b className={taskKpi.safetyScore < 20 ? 'text-rose-600' : 'text-emerald-700'}>{taskKpi.safetyScore}/20đ</b>
-                                                </span>
-                                                <span className="px-1.5 py-0.5 rounded bg-stone-50 border border-stone-200 text-stone-700">
-                                                    📋 Kỷ luật: <b className="text-indigo-700">{taskKpi.disciplineScore}/15đ</b>
+                                                    📋 Kỷ luật: <b className="text-indigo-700">{taskKpi.disciplineScore}/{taskKpi.disciplineMax}đ</b>
                                                 </span>
                                             </div>
                                         </div>

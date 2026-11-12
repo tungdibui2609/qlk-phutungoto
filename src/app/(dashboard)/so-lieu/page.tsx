@@ -35,7 +35,9 @@ import {
     Settings2,
     AlertTriangle,
     Eye,
-    Zap
+    Zap,
+    CheckSquare,
+    Square
 } from 'lucide-react'
 
 import Link from 'next/link'
@@ -200,6 +202,52 @@ export default function SoLieuPage() {
     const [doneTab, setDoneTab] = useState<'summary' | 'lines'>('summary')
     const [doneListLoading, setDoneListLoading] = useState(false)
     const [doneLinesLoading, setDoneLinesLoading] = useState(false)
+
+    // Chế độ xem trong phần Đã hoàn thành: 'single' (từng CV) | 'by-date' (báo cáo theo ngày) | 'by-product' (báo cáo theo sản phẩm) | 'custom' (báo cáo tùy chọn)
+    const [doneViewMode, setDoneViewMode] = useState<'single' | 'by-date' | 'by-product' | 'custom'>('single')
+
+    // Cho Báo cáo theo ngày (hỗ trợ cả 1 ngày, Khoảng ngày Từ - Đến, và Tùy chọn nhiều ngày):
+    const [byDateFilterType, setByDateFilterType] = useState<'range' | 'multi'>('range')
+    const [byDateRange, setByDateRange] = useState<{ from: string; to: string }>(() => {
+        const today = new Date()
+        const y = today.getFullYear()
+        const m = String(today.getMonth() + 1).padStart(2, '0')
+        const d = String(today.getDate()).padStart(2, '0')
+        const todayStr = `${y}-${m}-${d}`
+        return { from: todayStr, to: todayStr }
+    })
+    const [byDateMultiDates, setByDateMultiDates] = useState<Set<string>>(() => {
+        const today = new Date()
+        const y = today.getFullYear()
+        const m = String(today.getMonth() + 1).padStart(2, '0')
+        const d = String(today.getDate()).padStart(2, '0')
+        return new Set([`${y}-${m}-${d}`])
+    })
+    const [byDateCustomAddInput, setByDateCustomAddInput] = useState<string>('')
+    const [byDateLines, setByDateLines] = useState<DeliveryJournalRecord[]>([])
+    const [byDateLoading, setByDateLoading] = useState(false)
+
+    // Cho Báo cáo theo sản phẩm:
+    const [byProdTimeFilter, setByProdTimeFilter] = useState<'today' | '7days' | '30days' | 'all' | 'custom'>('7days')
+    const [byProdRange, setByProdRange] = useState<{ from: string; to: string }>(() => {
+        const today = new Date()
+        const past7 = new Date()
+        past7.setDate(today.getDate() - 6)
+        const format = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+        return { from: format(past7), to: format(today) }
+    })
+    const [byProdSearch, setByProdSearch] = useState<string>('')
+    const [byProdLines, setByProdLines] = useState<DeliveryJournalRecord[]>([])
+    const [byProdLoading, setByProdLoading] = useState<boolean>(false)
+    const [expandedProdKeys, setExpandedProdKeys] = useState<Set<string>>(new Set())
+
+    // Cho Báo cáo tùy chọn (tích chọn công việc):
+    const [customSelectedIds, setCustomSelectedIds] = useState<Set<string>>(new Set())
+    const [customLines, setCustomLines] = useState<DeliveryJournalRecord[]>([])
+    const [customLoading, setCustomLoading] = useState(false)
+
+    // Trạng thái mở rộng chi tiết của từng ca trong bảng danh sách các công việc báo cáo
+    const [expandedShiftIdsInReport, setExpandedShiftIdsInReport] = useState<Set<string>>(new Set())
 
     // 1.1 Modal làm phiếu nhập / xuất kết toán cho công việc
     const [isInboundModalOpen, setIsInboundModalOpen] = useState(false)
@@ -1208,6 +1256,334 @@ export default function SoLieuPage() {
         }
     }
 
+    // Helper lấy chuỗi YYYY-MM-DD theo giờ địa phương
+    const getShiftLocalDateString = (isoString?: string) => {
+        if (!isoString) return ''
+        const d = new Date(isoString)
+        if (isNaN(d.getTime())) return ''
+        const y = d.getFullYear()
+        const m = String(d.getMonth() + 1).padStart(2, '0')
+        const day = String(d.getDate()).padStart(2, '0')
+        return `${y}-${m}-${day}`
+    }
+
+    // Tải các dòng số liệu cho danh sách nhiều công việc (báo cáo ngày hoặc tùy chọn)
+    const fetchLinesForShifts = useCallback(async (shifts: any[]): Promise<DeliveryJournalRecord[]> => {
+        if (!shifts || shifts.length === 0 || !shiftSystemCode) return []
+        const companyId = currentSystem?.company_id || profile?.company_id
+        if (!companyId) return []
+
+        try {
+            const allLines: DeliveryJournalRecord[] = []
+
+            await Promise.all(
+                shifts.map(async s => {
+                    const jobName = s.summary_data?.job_name || ''
+                    // 1. Tìm theo CV_ID
+                    const { data: idData } = await (supabase as any)
+                        .from('delivery_journal')
+                        .select('*')
+                        .eq('company_id', companyId)
+                        .eq('system_code', shiftSystemCode)
+                        .ilike('notes', `%[CV_ID: ${s.id}]%`)
+                        .order('sent_at', { ascending: true })
+
+                    let sLines = (idData || []) as DeliveryJournalRecord[]
+
+                    // 2. Fallback cho các ca cổ chưa được gắn tag CV_ID (giống loadDoneLines)
+                    if (sLines.length === 0 && jobName) {
+                        let fallbackQuery = (supabase as any)
+                            .from('delivery_journal')
+                            .select('*')
+                            .eq('company_id', companyId)
+                            .eq('system_code', shiftSystemCode)
+                            .gte('sent_at', s.opened_at)
+                            .ilike('notes', `%[CV: ${jobName}]%`)
+                            .not('notes', 'ilike', '%[CV_ID:%')
+                            .order('sent_at', { ascending: true })
+                        if (s.closed_at) fallbackQuery = fallbackQuery.lte('sent_at', s.closed_at)
+                        const { data: fbData } = await fallbackQuery
+                        if (fbData && fbData.length > 0) {
+                            sLines = fbData.map((l: any) => ({
+                                ...l,
+                                notes: `${l.notes || ''} [CV_ID: ${s.id}]`
+                            }))
+                        }
+                    }
+
+                    allLines.push(...sLines)
+                })
+            )
+
+            return allLines
+        } catch (err) {
+            console.error('Lỗi tải nhật ký nhiều công việc:', err)
+            return []
+        }
+    }, [currentSystem, profile, shiftSystemCode])
+
+    // Helper tự động đối soát tìm mã SKU của sản phẩm theo tên hoặc ID
+    const findProductSku = useCallback((pName: string, pId?: string, pinnedList?: any[]) => {
+        const cleanName = (pName || '').trim().toLowerCase()
+        if (!cleanName && !pId) return ''
+
+        // 1. Tìm trong danh sách sản phẩm đã ghim của ca
+        if (pinnedList && pinnedList.length > 0) {
+            const foundPin = pinnedList.find((pin: any) =>
+                (pId && pin.id === pId) ||
+                ((pin.name || '').trim().toLowerCase() === cleanName)
+            )
+            if (foundPin?.sku) return foundPin.sku
+        }
+
+        // 2. Tìm trong danh mục sản phẩm toàn kho (allProducts)
+        if (allProducts && allProducts.length > 0) {
+            const foundAll = allProducts.find((ap: any) =>
+                (pId && ap.id === pId) ||
+                ((ap.name || '').trim().toLowerCase() === cleanName)
+            )
+            if (foundAll?.sku) return foundAll.sku
+            if ((foundAll as any)?.code) return (foundAll as any).code
+
+            // 3. Fallback tìm tương đối nếu tên có khác biệt nhẹ khoảng trắng/ký tự
+            const foundApprox = allProducts.find((ap: any) => {
+                const aName = (ap.name || '').trim().toLowerCase()
+                return aName.length > 3 && (aName.includes(cleanName) || cleanName.includes(aName))
+            })
+            if (foundApprox?.sku) return foundApprox.sku
+            if ((foundApprox as any)?.code) return (foundApprox as any).code
+        }
+
+        return ''
+    }, [allProducts])
+
+    // Hàm gom số liệu mặt hàng tổng hợp từ nhiều công việc (kết hợp thông minh giữa dòng nhật ký và summary_data của từng ca)
+    const aggregateShiftsProducts = (shifts: any[], lines: DeliveryJournalRecord[]) => {
+        const prodMap: Record<string, {
+            product_id?: string;
+            sku?: string;
+            product_name: string;
+            unit: string;
+            in_qty: number;
+            out_qty: number;
+            count: number;
+            jobs: { id: string; name: string; in_qty: number; out_qty: number }[];
+        }> = {}
+
+        shifts.forEach((s, sIdx) => {
+            const jobName = s.summary_data?.job_name || s.notes?.replace(/\[CV:[^\]]*\]/g, '').replace(/\[CV_ID:[^\]]*\]/g, '').trim() || `Công việc #${sIdx + 1}`
+            const sLines = lines.filter(l => (l.notes || '').includes(`[CV_ID: ${s.id}]`))
+            const rawProds = sLines.length > 0
+                ? summarizeLines(sLines, s)
+                : Object.values(s.summary_data?.products_summary || {}).map((p: any) => ({
+                    product_id: p.product_id,
+                    sku: p.sku || '',
+                    product_name: p.product_name,
+                    unit: p.unit,
+                    in_qty: Number(p.in_qty) || 0,
+                    out_qty: Number(p.out_qty) || 0,
+                    count: (Number(p.in_count) || 0) + (Number(p.out_count) || 0)
+                }))
+
+            rawProds.forEach(p => {
+                const u = cleanUnitLabel(p.unit) || p.unit || 'ĐVT'
+                const key = `${(p.product_name || '').trim()}___${u}`
+                const inQ = Number(p.in_qty) || 0
+                const outQ = Number(p.out_qty) || 0
+
+                if (!prodMap[key]) {
+                    prodMap[key] = {
+                        product_id: p.product_id,
+                        sku: p.sku || '',
+                        product_name: p.product_name,
+                        unit: u,
+                        in_qty: 0,
+                        out_qty: 0,
+                        count: 0,
+                        jobs: []
+                    }
+                }
+                prodMap[key].in_qty += inQ
+                prodMap[key].out_qty += outQ
+                prodMap[key].count += Number(p.count) || 1
+
+                // Ghi nhận tên công việc chứa sản phẩm này
+                const existingJob = prodMap[key].jobs.find(j => j.id === s.id)
+                if (!existingJob) {
+                    prodMap[key].jobs.push({
+                        id: s.id,
+                        name: jobName,
+                        in_qty: inQ,
+                        out_qty: outQ
+                    })
+                } else {
+                    existingJob.in_qty += inQ
+                    existingJob.out_qty += outQ
+                }
+            })
+        })
+
+        return Object.values(prodMap)
+    }
+
+    // Xuất Excel tổng hợp cho nhiều công việc (Báo cáo theo ngày hoặc Báo cáo tùy chọn)
+    const handleExportMultiShifts = async (
+        reportTitle: string,
+        shifts: any[],
+        lines: DeliveryJournalRecord[],
+        fileName: string
+    ) => {
+        try {
+            const ExcelJS = (await import('exceljs')).default
+            const wb = new ExcelJS.Workbook()
+
+            // 1. Sheet Tổng hợp
+            const ws1 = wb.addWorksheet('Tổng hợp')
+            const titleRow = ws1.addRow([reportTitle.toUpperCase()])
+            titleRow.font = { bold: true, size: 14 }
+            ws1.addRow([`Kho: ${currentSystem?.name || ''}`])
+            ws1.addRow([`Số công việc tham gia: ${shifts.length} công việc`])
+            ws1.addRow([`Thời gian xuất: ${formatDateTime(new Date().toISOString())}`])
+            ws1.addRow([])
+
+            // Bảng mặt hàng
+            const hSec1 = ws1.addRow(['1. TỔNG HỢP THEO MẶT HÀNG'])
+            hSec1.font = { bold: true, size: 11 }
+            const h1 = ws1.addRow(['STT', 'Sản phẩm', 'Công việc', 'ĐVT', 'Tổng nhập (+)', 'Tổng xuất (-)', 'Số đợt'])
+            h1.font = { bold: true }
+            h1.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } }
+
+            const prodRows = aggregateShiftsProducts(shifts, lines)
+
+            prodRows.forEach((r, idx) => {
+                const jobListStr = (r.jobs || []).map((j: any) => j.name).join(', ')
+                ws1.addRow([
+                    idx + 1,
+                    r.product_name,
+                    jobListStr,
+                    r.unit,
+                    r.in_qty,
+                    r.out_qty,
+                    r.count
+                ])
+            })
+            ws1.addRow([])
+
+            // Bảng Đơn vị tính
+            const hSec2 = ws1.addRow(['2. TỔNG HỢP THEO ĐƠN VỊ TÍNH'])
+            hSec2.font = { bold: true, size: 11 }
+            const h2 = ws1.addRow(['STT', 'Đơn vị tính', 'Tổng nhập (+)', 'Tổng xuất (-)'])
+            h2.font = { bold: true }
+            h2.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } }
+
+            const unitMap: Record<string, { unit: string; in_qty: number; out_qty: number }> = {}
+            prodRows.forEach(r => {
+                const u = r.unit || 'ĐVT'
+                if (!unitMap[u]) unitMap[u] = { unit: u, in_qty: 0, out_qty: 0 }
+                unitMap[u].in_qty += r.in_qty
+                unitMap[u].out_qty += r.out_qty
+            })
+            Object.values(unitMap).forEach((u, idx) => {
+                ws1.addRow([
+                    idx + 1,
+                    u.unit,
+                    u.in_qty,
+                    u.out_qty
+                ])
+            })
+            ws1.addRow([])
+
+            // Bảng Danh sách công việc
+            const hSec3 = ws1.addRow(['3. DANH SÁCH CÁC CÔNG VIỆC'])
+            hSec3.font = { bold: true, size: 11 }
+            const h3 = ws1.addRow(['STT', 'Tên công việc', 'Trạng thái', 'Mở lúc', 'Đóng lúc', 'Người phụ trách', 'Số SP', 'Số đợt'])
+            h3.font = { bold: true }
+            h3.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } }
+
+            shifts.forEach((s, idx) => {
+                const pCount = Object.keys(s.summary_data?.products_summary || {}).length
+                const rCount = s.summary_data?.total_records ?? 0
+                ws1.addRow([
+                    idx + 1,
+                    s.summary_data?.job_name || s.notes || `Công việc #${idx + 1}`,
+                    s.status === 'closed' ? 'Đã chốt' : 'Đang mở',
+                    formatDateTime(s.opened_at),
+                    s.closed_at ? formatDateTime(s.closed_at) : 'Chưa chốt',
+                    s.closed_by_name || s.opened_by_name || '',
+                    pCount,
+                    rCount
+                ])
+            })
+
+            ws1.columns = [
+                { width: 6 },
+                { width: 45 },
+                { width: 18 },
+                { width: 14 },
+                { width: 14 },
+                { width: 14 },
+                { width: 18 },
+                { width: 10 }
+            ]
+
+            // 2. Sheet Chi tiết nhật ký
+            if (lines.length > 0) {
+                const ws2 = wb.addWorksheet('Chi tiết đợt')
+                const hLine = ws2.addRow(['STT', 'Thời gian', 'Mã công việc', 'Đợt', 'Sản phẩm', 'Loại', 'Số lượng', 'ĐVT', 'Người thực hiện', 'Ghi chú'])
+                hLine.font = { bold: true }
+                hLine.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE0E7FF' } }
+
+                const shiftMap: Record<string, string> = {}
+                shifts.forEach(s => {
+                    shiftMap[s.id] = s.summary_data?.job_name || s.notes || 'Công việc'
+                })
+
+                lines.forEach((l, idx) => {
+                    const isImport = l.to_department === 'Kho'
+                    const m = (l.notes || '').match(/\[CV_ID:\s*([^\]]+)\]/i)
+                    const sId = m ? m[1].trim() : ''
+                    const jName = shiftMap[sId] || ''
+                    ws2.addRow([
+                        idx + 1,
+                        formatDateTime(l.sent_at),
+                        jName,
+                        l.delivery_code || '',
+                        l.item_name,
+                        isImport ? 'Nhập (+)' : 'Xuất (-)',
+                        l.quantity_sent,
+                        l.unit,
+                        l.sent_by_name || '',
+                        l.notes || ''
+                    ])
+                })
+
+                ws2.columns = [
+                    { width: 6 },
+                    { width: 20 },
+                    { width: 30 },
+                    { width: 10 },
+                    { width: 45 },
+                    { width: 12 },
+                    { width: 12 },
+                    { width: 14 },
+                    { width: 22 },
+                    { width: 30 }
+                ]
+            }
+
+            const buf = await wb.xlsx.writeBuffer()
+            const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+            const url = URL.createObjectURL(blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `${fileName}.xlsx`
+            a.click()
+            URL.revokeObjectURL(url)
+        } catch (err: any) {
+            alert('Lỗi xuất Excel: ' + (err?.message || err))
+        }
+    }
+
     // Chuẩn bị dữ liệu phiếu kết toán Nhập / Xuất từ công việc đã chọn (Dựa trực tiếp vào MÃ SẢN PHẨM / ID đã ghim)
     const buildSettlementData = (shift: any, rows: any[], type: 'in' | 'out') => {
         const jobTitle = shift.summary_data?.job_name || shift.notes || 'Công việc'
@@ -1444,6 +1820,207 @@ export default function SoLieuPage() {
             return title.includes(q) || closer.includes(q) || prods.includes(q)
         })
     }, [pastShifts, doneSearch, doneStatusFilter])
+
+    // Danh sách các ngày có công việc trong pastShifts
+    const availableDates = useMemo(() => {
+        const dates = new Set<string>()
+        pastShifts.forEach(s => {
+            const op = getShiftLocalDateString(s.opened_at)
+            const cl = getShiftLocalDateString(s.closed_at)
+            if (op) dates.add(op)
+            if (cl) dates.add(cl)
+        })
+        return Array.from(dates).sort().reverse()
+    }, [pastShifts])
+
+    // Danh sách các công việc thuộc mốc thời gian đang chọn (Báo cáo theo ngày / khoảng ngày / tùy chọn nhiều ngày)
+    const shiftsOnSelectedDate = useMemo(() => {
+        return pastShifts.filter(s => {
+            const op = getShiftLocalDateString(s.opened_at)
+            const cl = getShiftLocalDateString(s.closed_at)
+            if (byDateFilterType === 'range') {
+                const minD = byDateRange.from <= byDateRange.to ? byDateRange.from : byDateRange.to
+                const maxD = byDateRange.from <= byDateRange.to ? byDateRange.to : byDateRange.from
+                const opMatch = op ? (op >= minD && op <= maxD) : false
+                const clMatch = cl ? (cl >= minD && cl <= maxD) : false
+                return opMatch || clMatch
+            } else {
+                return (op && byDateMultiDates.has(op)) || (cl && byDateMultiDates.has(cl))
+            }
+        })
+    }, [pastShifts, byDateFilterType, byDateRange, byDateMultiDates])
+
+    // Tiêu đề báo cáo và tên file xuất Excel tự động thích ứng:
+    const byDateReportInfo = useMemo(() => {
+        if (byDateFilterType === 'range') {
+            const minD = byDateRange.from <= byDateRange.to ? byDateRange.from : byDateRange.to
+            const maxD = byDateRange.from <= byDateRange.to ? byDateRange.to : byDateRange.from
+            const fromDisplay = minD.split('-').reverse().join('/')
+            const toDisplay = maxD.split('-').reverse().join('/')
+            if (minD === maxD) {
+                return {
+                    title: `Báo Cáo Tổng Hợp Ngày: ${fromDisplay}`,
+                    excelTitle: `BÁO CÁO TỔNG HỢP NGÀY ${fromDisplay}`,
+                    fileName: `Bao_cao_ngay_${minD}`,
+                    label: `ngày ${fromDisplay}`
+                }
+            }
+            return {
+                title: `Báo Cáo Tổng Hợp: Từ ${fromDisplay} đến ${toDisplay}`,
+                excelTitle: `BÁO CÁO TỔNG HỢP TỪ ${fromDisplay} ĐẾN ${toDisplay}`,
+                fileName: `Bao_cao_tu_${minD}_den_${maxD}`,
+                label: `khoảng từ ${fromDisplay} đến ${toDisplay}`
+            }
+        } else {
+            const sorted = Array.from(byDateMultiDates).sort()
+            if (sorted.length === 0) {
+                return {
+                    title: 'Báo Cáo Tổng Hợp: Chưa chọn ngày nào',
+                    excelTitle: 'BÁO CÁO TỔNG HỢP',
+                    fileName: 'Bao_cao',
+                    label: 'chưa chọn ngày nào'
+                }
+            }
+            if (sorted.length === 1) {
+                const dDisplay = sorted[0].split('-').reverse().join('/')
+                return {
+                    title: `Báo Cáo Tổng Hợp Ngày: ${dDisplay}`,
+                    excelTitle: `BÁO CÁO TỔNG HỢP NGÀY ${dDisplay}`,
+                    fileName: `Bao_cao_ngay_${sorted[0]}`,
+                    label: `ngày ${dDisplay}`
+                }
+            }
+            const dateListDisplay = sorted.map(d => d.split('-').reverse().slice(0, 2).join('/')).join(', ')
+            return {
+                title: `Báo Cáo Tổng Hợp: ${sorted.length} ngày (${dateListDisplay})`,
+                excelTitle: `BÁO CÁO TỔNG HỢP ${sorted.length} NGÀY (${sorted.map(d => d.split('-').reverse().join('/')).join(', ')})`,
+                fileName: `Bao_cao_${sorted.length}_ngay_${sorted.join('_')}`,
+                label: `${sorted.length} ngày đã chọn`
+            }
+        }
+    }, [byDateFilterType, byDateRange, byDateMultiDates])
+
+    // Danh sách các công việc được tick chọn (Báo cáo tùy chọn)
+    const customSelectedShifts = useMemo(() => {
+        return pastShifts.filter(s => customSelectedIds.has(s.id))
+    }, [pastShifts, customSelectedIds])
+
+    // Danh sách các công việc theo mốc thời gian cho Báo cáo theo sản phẩm
+    const shiftsForProductReport = useMemo(() => {
+        if (byProdTimeFilter === 'all') return pastShifts
+        const todayStr = getShiftLocalDateString(new Date().toISOString())
+        if (byProdTimeFilter === 'today') {
+            return pastShifts.filter(s => {
+                const op = getShiftLocalDateString(s.opened_at)
+                const cl = getShiftLocalDateString(s.closed_at)
+                return op === todayStr || cl === todayStr
+            })
+        }
+        let fromStr = byProdRange.from
+        let toStr = byProdRange.to
+        if (byProdTimeFilter === '7days') {
+            const today = new Date()
+            const past7 = new Date()
+            past7.setDate(today.getDate() - 6)
+            fromStr = getShiftLocalDateString(past7.toISOString())
+            toStr = todayStr
+        } else if (byProdTimeFilter === '30days') {
+            const today = new Date()
+            const past30 = new Date()
+            past30.setDate(today.getDate() - 29)
+            fromStr = getShiftLocalDateString(past30.toISOString())
+            toStr = todayStr
+        }
+        const minD = fromStr <= toStr ? fromStr : toStr
+        const maxD = fromStr <= toStr ? toStr : fromStr
+        return pastShifts.filter(s => {
+            const op = getShiftLocalDateString(s.opened_at)
+            const cl = getShiftLocalDateString(s.closed_at)
+            const opMatch = op ? (op >= minD && op <= maxD) : false
+            const clMatch = cl ? (cl >= minD && cl <= maxD) : false
+            return opMatch || clMatch
+        })
+    }, [pastShifts, byProdTimeFilter, byProdRange])
+
+    // Danh sách sản phẩm tổng hợp có lọc theo tìm kiếm cho Báo cáo theo sản phẩm
+    const aggregatedProductsForReport = useMemo(() => {
+        const prods = aggregateShiftsProducts(shiftsForProductReport, byProdLines)
+        if (!byProdSearch.trim()) return prods
+        const q = byProdSearch.trim().toLowerCase()
+        return prods.filter(p => {
+            const name = (p.product_name || '').toLowerCase()
+            const sku = (p.sku || '').toLowerCase()
+            const jobs = (p.jobs || []).map((j: any) => j.name.toLowerCase()).join(' ')
+            return name.includes(q) || sku.includes(q) || jobs.includes(q)
+        })
+    }, [shiftsForProductReport, byProdLines, byProdSearch])
+
+    // Tự động tải nhật ký các dòng cho Báo cáo theo sản phẩm
+    useEffect(() => {
+        if (pageView !== 'done' || doneViewMode !== 'by-product') return
+        let isMounted = true
+        setByProdLoading(true)
+        fetchLinesForShifts(shiftsForProductReport).then(lines => {
+            if (isMounted) {
+                setByProdLines(lines)
+                setByProdLoading(false)
+            }
+        })
+        return () => { isMounted = false }
+    }, [pageView, doneViewMode, shiftsForProductReport, fetchLinesForShifts])
+
+    // Tự động tải nhật ký các dòng cho Báo cáo theo ngày khi đổi ngày hoặc danh sách ca thay đổi
+    useEffect(() => {
+        if (pageView !== 'done' || doneViewMode !== 'by-date') return
+        let isMounted = true
+        setByDateLoading(true)
+        fetchLinesForShifts(shiftsOnSelectedDate).then(lines => {
+            if (isMounted) {
+                setByDateLines(lines)
+                setByDateLoading(false)
+            }
+        })
+        return () => { isMounted = false }
+    }, [pageView, doneViewMode, shiftsOnSelectedDate, fetchLinesForShifts])
+
+    // Tự động tải nhật ký các dòng cho Báo cáo tùy chọn khi danh sách ca được tick thay đổi
+    useEffect(() => {
+        if (pageView !== 'done' || doneViewMode !== 'custom') return
+        if (customSelectedShifts.length === 0) {
+            setCustomLines([])
+            setCustomLoading(false)
+            return
+        }
+        let isMounted = true
+        setCustomLoading(true)
+        fetchLinesForShifts(customSelectedShifts).then(lines => {
+            if (isMounted) {
+                setCustomLines(lines)
+                setCustomLoading(false)
+            }
+        })
+        return () => { isMounted = false }
+    }, [pageView, doneViewMode, customSelectedShifts, fetchLinesForShifts])
+
+    // Toggle tick chọn 1 công việc
+    const toggleSelectShift = (id: string) => {
+        setCustomSelectedIds(prev => {
+            const next = new Set(prev)
+            if (next.has(id)) next.delete(id)
+            else next.add(id)
+            return next
+        })
+    }
+
+    // Chọn tất cả các công việc đang hiển thị
+    const handleSelectAllCustomShifts = () => {
+        setCustomSelectedIds(new Set(filteredPastShifts.map(s => s.id)))
+    }
+
+    // Bỏ chọn tất cả
+    const handleDeselectAllCustomShifts = () => {
+        setCustomSelectedIds(new Set())
+    }
 
     // Load ban đầu & Realtime subscription
     useEffect(() => {
@@ -2301,6 +2878,382 @@ export default function SoLieuPage() {
         return `${t1} ${date1} → ${t2} ${date2}`
     }
 
+    // Render bảng Báo cáo tổng hợp gộp nhiều công việc (Dùng cho cả Báo cáo theo ngày & Báo cáo tùy chọn)
+    const renderAggregatedReportView = (
+        title: string,
+        shifts: any[],
+        lines: DeliveryJournalRecord[],
+        loading: boolean,
+        onExport: () => void,
+        exportButtonText: string
+    ) => {
+        // Tính toán số liệu mặt hàng
+        const prodRows = aggregateShiftsProducts(shifts, lines)
+
+        // Tính toán số liệu đơn vị tính
+        const unitMap: Record<string, { unit: string; in_qty: number; out_qty: number; count: number }> = {}
+        prodRows.forEach(r => {
+            const u = r.unit || 'ĐVT'
+            if (!unitMap[u]) unitMap[u] = { unit: u, in_qty: 0, out_qty: 0, count: 0 }
+            unitMap[u].in_qty += r.in_qty
+            unitMap[u].out_qty += r.out_qty
+            unitMap[u].count += r.count
+        })
+        const unitRows = Object.values(unitMap)
+
+        return (
+            <div className="space-y-4">
+                {/* Thanh tiêu đề báo cáo & Nút Xuất Excel */}
+                <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                            <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400">
+                                <BarChart3 className="w-5 h-5" />
+                            </span>
+                            <h2 className="text-base sm:text-lg font-bold text-stone-900 dark:text-white">
+                                {title}
+                            </h2>
+                        </div>
+                        <div className="text-xs text-stone-500 flex items-center gap-2 flex-wrap">
+                            <span>Kho: <strong className="text-stone-700 dark:text-stone-300">{currentSystem?.name}</strong></span>
+                            <span>•</span>
+                            <span>Tổng số: <strong className="text-indigo-600 dark:text-indigo-400">{shifts.length} công việc</strong></span>
+                            <span>•</span>
+                            <span>Phát sinh: <strong className="text-emerald-600">{prodRows.length} mặt hàng</strong></span>
+                        </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={onExport}
+                            disabled={loading || prodRows.length === 0}
+                            className="h-9 px-4 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white flex items-center gap-1.5 shadow-xs transition disabled:opacity-50"
+                        >
+                            <Download className="w-4 h-4" />
+                            <span>{exportButtonText}</span>
+                        </button>
+                    </div>
+                </div>
+
+                {loading ? (
+                    <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-12 text-center text-xs text-stone-400 flex flex-col items-center gap-2">
+                        <RefreshCw className="w-5 h-5 text-indigo-500 animate-spin" />
+                        <span>Đang tổng hợp số liệu từ các công việc...</span>
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {/* BẢNG 1: CHI TIẾT THEO MẶT HÀNG */}
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
+                            <div className="px-4 py-3 border-b border-stone-200 dark:border-zinc-800 bg-stone-50/60 dark:bg-zinc-950/60 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Tag className="w-4 h-4 text-sky-500" />
+                                    <span className="text-xs font-bold uppercase tracking-wider text-stone-800 dark:text-stone-200">
+                                        1. Chi tiết theo Mặt Hàng
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-50 dark:bg-sky-950/60 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800">
+                                        {prodRows.length} SP
+                                    </span>
+                                </div>
+                            </div>
+
+                            {prodRows.length === 0 ? (
+                                <div className="p-8 text-center text-xs text-stone-400">
+                                    Chưa có phát sinh số liệu trong danh sách công việc này.
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs text-left">
+                                        <thead className="bg-stone-50 dark:bg-zinc-950 text-stone-500 text-[11px] uppercase border-b border-stone-200 dark:border-zinc-800">
+                                            <tr>
+                                                <th className="py-2.5 px-3 font-semibold text-center w-12">STT</th>
+                                                <th className="py-2.5 px-3 font-semibold">Sản phẩm</th>
+                                                <th className="py-2.5 px-3 font-semibold text-center w-28">ĐVT</th>
+                                                <th className="py-2.5 px-3 font-semibold text-right text-emerald-600 w-32">Nhập (+)</th>
+                                                <th className="py-2.5 px-3 font-semibold text-right text-rose-600 w-32">Xuất (-)</th>
+                                                <th className="py-2.5 px-3 font-semibold text-center w-24">Số đợt</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                            {prodRows.map((r, idx) => {
+                                                return (
+                                                    <tr key={`${r.product_name}_${r.unit}_${idx}`} className="hover:bg-stone-50/60 dark:hover:bg-zinc-800/40">
+                                                        <td className="py-2.5 px-3 text-center text-stone-400 font-mono text-[11px]">{idx + 1}</td>
+                                                        <td className="py-2.5 px-3">
+                                                            <div className="font-semibold text-stone-900 dark:text-white leading-tight">
+                                                                {r.product_name}
+                                                            </div>
+                                                            {r.jobs && r.jobs.length > 0 && (
+                                                                <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                                                                    {r.jobs.map((j: any, jIdx: number) => (
+                                                                        <span
+                                                                            key={jIdx}
+                                                                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 border border-stone-200/60 dark:border-zinc-700/60"
+                                                                        >
+                                                                            <Briefcase className="w-2.5 h-2.5 text-amber-500 shrink-0" />
+                                                                            <span>{j.name}</span>
+                                                                            {r.jobs.length > 1 && (
+                                                                                <span className="text-[9px] text-stone-400 font-normal">
+                                                                                    (N:{j.in_qty > 0 ? `+${j.in_qty}` : '0'}/X:{j.out_qty > 0 ? `-${j.out_qty}` : '0'})
+                                                                                </span>
+                                                                            )}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </td>
+                                                        <td className="py-2.5 px-3 text-center font-bold text-indigo-600 dark:text-indigo-400">{r.unit}</td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-emerald-600">
+                                                            {r.in_qty > 0 ? `+${r.in_qty.toLocaleString('vi-VN')}` : '0'}
+                                                        </td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-rose-600">
+                                                            {r.out_qty > 0 ? `-${r.out_qty.toLocaleString('vi-VN')}` : '0'}
+                                                        </td>
+                                                        <td className="py-2.5 px-3 text-center text-stone-500">{r.count}</td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* BẢNG 2: TỔNG HỢP THEO ĐƠN VỊ TÍNH */}
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
+                            <div className="px-4 py-3 border-b border-stone-200 dark:border-zinc-800 bg-stone-50/60 dark:bg-zinc-950/60 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Layers className="w-4 h-4 text-indigo-500" />
+                                    <span className="text-xs font-bold uppercase tracking-wider text-stone-800 dark:text-stone-200">
+                                        2. Tổng hợp theo Đơn Vị Tính
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800">
+                                        {unitRows.length} ĐVT
+                                    </span>
+                                </div>
+                            </div>
+
+                            {unitRows.length === 0 ? (
+                                <div className="p-8 text-center text-xs text-stone-400">
+                                    Chưa có phát sinh số liệu.
+                                </div>
+                            ) : (
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-xs text-left">
+                                        <thead className="bg-stone-50 dark:bg-zinc-950 text-stone-500 text-[11px] uppercase border-b border-stone-200 dark:border-zinc-800">
+                                            <tr>
+                                                <th className="py-2.5 px-3 font-semibold text-center w-12">STT</th>
+                                                <th className="py-2.5 px-3 font-semibold">Đơn vị tính</th>
+                                                <th className="py-2.5 px-3 font-semibold text-right text-emerald-600 w-36">Nhập (+)</th>
+                                                <th className="py-2.5 px-3 font-semibold text-right text-rose-600 w-36">Xuất (-)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                            {unitRows.map((u, idx) => {
+                                                return (
+                                                    <tr key={`${u.unit}_${idx}`} className="hover:bg-stone-50/60 dark:hover:bg-zinc-800/40">
+                                                        <td className="py-2.5 px-3 text-center text-stone-400 font-mono text-[11px]">{idx + 1}</td>
+                                                        <td className="py-2.5 px-3 font-bold text-stone-900 dark:text-white">{u.unit}</td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-emerald-600">
+                                                            {u.in_qty > 0 ? `+${u.in_qty.toLocaleString('vi-VN')}` : '0'}
+                                                        </td>
+                                                        <td className="py-2.5 px-3 text-right font-bold text-rose-600">
+                                                            {u.out_qty > 0 ? `-${u.out_qty.toLocaleString('vi-VN')}` : '0'}
+                                                        </td>
+                                                    </tr>
+                                                )
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* BẢNG 3: DANH SÁCH CÁC CÔNG VIỆC THAM GIA */}
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
+                            <div className="px-4 py-3 border-b border-stone-200 dark:border-zinc-800 bg-stone-50/60 dark:bg-zinc-950/60 flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <Briefcase className="w-4 h-4 text-amber-500" />
+                                    <span className="text-xs font-bold uppercase tracking-wider text-stone-800 dark:text-stone-200">
+                                        3. Danh sách các công việc ({shifts.length})
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="divide-y divide-stone-100 dark:divide-zinc-800">
+                                {shifts.map((s, idx) => {
+                                    const jobTitle = s.summary_data?.job_name || s.notes || `Công việc #${idx + 1}`
+                                    const pCount = Object.keys(s.summary_data?.products_summary || {}).length
+                                    const rCount = s.summary_data?.total_records ?? 0
+                                    const isClosed = s.status === 'closed'
+                                    const isExpanded = expandedShiftIdsInReport.has(s.id)
+
+                                    // Lấy danh sách sản phẩm của riêng công việc này
+                                    const shiftLines = lines.filter(l => (l.notes || '').includes(`[CV_ID: ${s.id}]`))
+                                    const rawShiftProds: any[] = shiftLines.length > 0
+                                        ? summarizeLines(shiftLines, s)
+                                        : Object.values(s.summary_data?.products_summary || {})
+                                    const shiftProdList = rawShiftProds.map((p: any) => ({
+                                        ...p,
+                                        sku: p.sku || findProductSku(p.product_name, p.product_id, s.summary_data?.pinned_products)
+                                    }))
+
+                                    return (
+                                        <div key={s.id || idx} className="p-3.5 hover:bg-stone-50/50 dark:hover:bg-zinc-800/30 transition">
+                                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                <div
+                                                    className="space-y-1 flex-1 cursor-pointer"
+                                                    onClick={() => {
+                                                        setExpandedShiftIdsInReport(prev => {
+                                                            const next = new Set(prev)
+                                                            if (next.has(s.id)) next.delete(s.id)
+                                                            else next.add(s.id)
+                                                            return next
+                                                        })
+                                                    }}
+                                                >
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-bold text-xs sm:text-sm text-stone-900 dark:text-white hover:text-indigo-600 transition">
+                                                            {jobTitle}
+                                                        </span>
+                                                        {isClosed ? (
+                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                Đã chốt
+                                                            </span>
+                                                        ) : (
+                                                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                                Đang mở
+                                                            </span>
+                                                        )}
+                                                        {/* Chú ý: Đóng ca vào ngày hôm sau */}
+                                                        {s.closed_at && getShiftLocalDateString(s.opened_at) !== getShiftLocalDateString(s.closed_at) && (
+                                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                                <span>🌙 Đóng ca vào ngày hôm sau ({formatDateTime(s.closed_at)})</span>
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[11px] text-stone-500 flex items-center gap-2 flex-wrap">
+                                                        <span className="flex items-center gap-1">
+                                                            <Clock className="w-3 h-3 text-stone-400" />
+                                                            {formatDateTime(s.opened_at)} → {s.closed_at ? formatDateTime(s.closed_at) : 'Hiện tại'}
+                                                        </span>
+                                                        <span>•</span>
+                                                        <span>Người chốt/mở: <strong className="text-stone-700 dark:text-stone-300">{s.closed_by_name || s.opened_by_name || 'Nhân viên'}</strong></span>
+                                                        <span>•</span>
+                                                        <span>{pCount} SP • {rCount} đợt</span>
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setExpandedShiftIdsInReport(prev => {
+                                                            const next = new Set(prev)
+                                                            if (next.has(s.id)) next.delete(s.id)
+                                                            else next.add(s.id)
+                                                            return next
+                                                        })
+                                                    }}
+                                                    className={`self-start sm:self-auto h-7 px-3 rounded-lg border text-[11px] font-bold transition flex items-center gap-1.5 ${
+                                                        isExpanded
+                                                            ? 'bg-indigo-50 dark:bg-indigo-950/60 border-indigo-300 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 shadow-2xs'
+                                                            : 'border-stone-200 dark:border-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-800 text-stone-600 dark:text-stone-300'
+                                                    }`}
+                                                >
+                                                    <Eye className="w-3.5 h-3.5 text-indigo-500" />
+                                                    <span>{isExpanded ? 'Thu gọn kết quả' : 'Xem chi tiết ca'}</span>
+                                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-180 text-indigo-500' : 'text-stone-400'}`} />
+                                                </button>
+                                            </div>
+
+                                            {/* KHU VỰC MỞ RỘNG KẾT QUẢ CHI TIẾT NGAY TẠI CHỖ */}
+                                            {isExpanded && (
+                                                <div className="mt-3 pt-3 border-t border-stone-200/80 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/50 -mx-3.5 -mb-3.5 p-3.5 rounded-b-xl space-y-3">
+                                                    {/* Bảng sản phẩm của riêng công việc này */}
+                                                    <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-2xs">
+                                                        <div className="px-3 py-2 bg-stone-100/70 dark:bg-zinc-800/60 border-b border-stone-200 dark:border-zinc-800 flex items-center justify-between text-[11px] font-bold">
+                                                            <div className="flex items-center gap-1.5 text-stone-700 dark:text-stone-200">
+                                                                <Tag className="w-3.5 h-3.5 text-indigo-500" />
+                                                                <span>Chi tiết sản phẩm ({shiftProdList.length} SP)</span>
+                                                            </div>
+                                                            {shiftLines.length > 0 && (
+                                                                <span className="text-stone-400 font-normal">{shiftLines.length} lượt ghi nhận</span>
+                                                            )}
+                                                        </div>
+
+                                                        {shiftProdList.length === 0 ? (
+                                                            <div className="p-3 text-center text-[11px] text-stone-400">
+                                                                Chưa có phát sinh số liệu trong công việc này.
+                                                            </div>
+                                                        ) : (
+                                                            <div className="overflow-x-auto">
+                                                                <table className="w-full text-[11px] text-left">
+                                                                    <thead className="bg-stone-50 dark:bg-zinc-950 text-stone-400 text-[10px] uppercase border-b border-stone-100 dark:border-zinc-800">
+                                                                        <tr>
+                                                                            <th className="py-2 px-3 text-center w-8">STT</th>
+                                                                            <th className="py-2 px-3">Sản phẩm</th>
+                                                                            <th className="py-2 px-3 text-center w-24">ĐVT</th>
+                                                                            <th className="py-2 px-3 text-right text-emerald-600 w-32">Nhập (+)</th>
+                                                                            <th className="py-2 px-3 text-right text-rose-600 w-32">Xuất (-)</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody className="divide-y divide-stone-100 dark:divide-zinc-800/60">
+                                                                        {shiftProdList.map((p: any, pIdx: number) => {
+                                                                            const inQ = Number(p.in_qty) || 0
+                                                                            const outQ = Number(p.out_qty) || 0
+                                                                            return (
+                                                                                <tr key={pIdx} className="hover:bg-stone-50/50 dark:hover:bg-zinc-800/30">
+                                                                                    <td className="py-2 px-3 text-center text-stone-400 text-[10px]">{pIdx + 1}</td>
+                                                                                    <td className="py-2 px-3 font-semibold text-stone-900 dark:text-white">
+                                                                                        {p.product_name}
+                                                                                    </td>
+                                                                                    <td className="py-2 px-3 text-center font-bold text-indigo-600 dark:text-indigo-400">{p.unit}</td>
+                                                                                    <td className="py-2 px-3 text-right font-bold text-emerald-600">
+                                                                                        {inQ > 0 ? `+${inQ.toLocaleString('vi-VN')}` : '0'}
+                                                                                    </td>
+                                                                                    <td className="py-2 px-3 text-right font-bold text-rose-600">
+                                                                                        {outQ > 0 ? `-${outQ.toLocaleString('vi-VN')}` : '0'}
+                                                                                    </td>
+                                                                                </tr>
+                                                                            )
+                                                                        })}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Ghi chú & Nút chuyển sang xem trang quản trị riêng nếu muốn */}
+                                                    <div className="flex items-center justify-between gap-2 text-[11px] text-stone-500 pt-1">
+                                                        <span className="truncate italic">
+                                                            {s.notes ? s.notes.replace(/\[CV:[^\]]*\]/g, '').replace(/\[CV_ID:[^\]]*\]/g, '').trim() || 'Không có ghi chú thêm.' : 'Không có ghi chú thêm.'}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation()
+                                                                selectDoneShift(s)
+                                                                setDoneViewMode('single')
+                                                            }}
+                                                            className="shrink-0 text-indigo-600 dark:text-indigo-400 font-bold hover:underline flex items-center gap-1"
+                                                        >
+                                                            <span>Mở trang chi tiết ca</span>
+                                                            <ExternalLink className="w-3 h-3" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        )
+    }
+
     return (
         <div className="min-h-[calc(100vh-4rem)] flex flex-col bg-stone-50 dark:bg-zinc-950 text-stone-800 dark:text-stone-100">
             {/* ===== MOBILE HEADER GỌN: Chuyển chế độ Đang làm / Đã hoàn thành + chọn CV + tìm kiếm ===== */}
@@ -3071,7 +4024,91 @@ export default function SoLieuPage() {
             {/* 4. BÀN LÀM VIỆC CHÍNH & BÁO CÁO ĐÃ HOÀN THÀNH TÍCH HỢP */}
             <main className={`flex-1 p-3 sm:px-6 sm:pt-1 sm:pb-6 max-w-7xl mx-auto w-full pb-20 sm:pb-8 ${pageView === 'active' && activeShift && pinnedProducts.length > 0 ? 'sm:grid sm:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px] sm:gap-5 sm:items-start' : ''}`}>
                 {pageView === 'done' ? (
-                    <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[380px_minmax(0,1fr)] sm:gap-5 sm:items-start">
+                    <div className="space-y-4">
+                        {/* THANH MENU 3 CHẾ ĐỘ XEM TRONG TAB ĐÃ HOÀN THÀNH */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 p-2 bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-xs">
+                            <div className="inline-flex p-1 bg-stone-100 dark:bg-zinc-800/80 rounded-xl gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => setDoneViewMode('single')}
+                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                                        doneViewMode === 'single'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                                    }`}
+                                >
+                                    <FileText className="w-3.5 h-3.5" />
+                                    <span>Từng công việc</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDoneViewMode('by-date')
+                                        if (availableDates.length > 0 && !shiftsOnSelectedDate.length) {
+                                            const latest = availableDates[0]
+                                            setByDateRange({ from: latest, to: latest })
+                                            setByDateMultiDates(new Set([latest]))
+                                        }
+                                    }}
+                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                                        doneViewMode === 'by-date'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                                    }`}
+                                >
+                                    <Calendar className="w-3.5 h-3.5" />
+                                    <span>Báo cáo theo ngày</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setDoneViewMode('by-product')}
+                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                                        doneViewMode === 'by-product'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                                    }`}
+                                >
+                                    <Layers className="w-3.5 h-3.5" />
+                                    <span>Báo cáo theo sản phẩm</span>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        setDoneViewMode('custom')
+                                        if (customSelectedIds.size === 0 && pastShifts.length > 0) {
+                                            setCustomSelectedIds(new Set([pastShifts[0].id]))
+                                        }
+                                    }}
+                                    className={`h-8 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                                        doneViewMode === 'custom'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900 dark:hover:text-stone-200'
+                                    }`}
+                                >
+                                    <CheckSquare className="w-3.5 h-3.5" />
+                                    <span>Báo cáo tùy chọn {customSelectedIds.size > 0 && `(${customSelectedIds.size} CV)`}</span>
+                                </button>
+                            </div>
+
+                            <div className="text-[11px] text-stone-500 flex items-center gap-2 px-2">
+                                {doneViewMode === 'single' && (
+                                    <span>Xem chi tiết đối soát từng công việc</span>
+                                )}
+                                {doneViewMode === 'by-date' && (
+                                    <span>Gộp tất cả công việc trong ngày vào 1 bảng</span>
+                                )}
+                                {doneViewMode === 'by-product' && (
+                                    <span>Tổng hợp số liệu xuất/nhập chi tiết gom theo từng mặt hàng</span>
+                                )}
+                                {doneViewMode === 'custom' && (
+                                    <span>Tích chọn các công việc để gộp báo cáo & xuất Excel</span>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* 1. CHẾ ĐỘ: TỪNG CÔNG VIỆC */}
+                        {doneViewMode === 'single' && (
+                            <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[380px_minmax(0,1fr)] sm:gap-5 sm:items-start">
                         {/* Bộ lọc trên Mobile cho tab Đã hoàn thành / Báo cáo */}
                         {!doneSelectedShift && (
                             <div className="sm:hidden space-y-1.5">
@@ -3198,6 +4235,11 @@ export default function SoLieuPage() {
                                                     <span>
                                                         {formatDateTime(shift.opened_at)} → {shift.closed_at ? formatDateTime(shift.closed_at) : 'Hiện tại'}
                                                     </span>
+                                                    {shift.closed_at && getShiftLocalDateString(shift.opened_at) !== getShiftLocalDateString(shift.closed_at) && (
+                                                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                            🌙 Đóng ca vào ngày hôm sau
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div className="mt-1 flex items-center justify-between text-[10px] sm:text-[11px] text-stone-400">
                                                     <span>
@@ -4100,7 +5142,536 @@ export default function SoLieuPage() {
                             })()}
                         </div>
                     </div>
-                ) : !activeShift ? (
+                )}
+
+                {/* 2. CHẾ ĐỘ: BÁO CÁO THEO NGÀY / KHOẢNG NGÀY / TÙY CHỌN NHIỀU NGÀY */}
+                {doneViewMode === 'by-date' && (
+                    <div className="space-y-4">
+                        {/* Thanh điều khiển chọn thời gian */}
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-3.5 shadow-xs space-y-3">
+                            {/* Phân nhánh: Khoảng ngày Từ - Đến HOẶC Tùy chọn nhiều ngày */}
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-stone-100 dark:border-zinc-800">
+                                <div className="inline-flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg gap-1 self-start">
+                                    <button
+                                        type="button"
+                                        onClick={() => setByDateFilterType('range')}
+                                        className={`h-7 px-3 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
+                                            byDateFilterType === 'range'
+                                                ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                        }`}
+                                    >
+                                        <Calendar className="w-3.5 h-3.5" />
+                                        <span>Mốc thời gian (Từ ngày ➔ Đến ngày)</span>
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setByDateFilterType('multi')}
+                                        className={`h-7 px-3 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
+                                            byDateFilterType === 'multi'
+                                                ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                        }`}
+                                    >
+                                        <CheckSquare className="w-3.5 h-3.5" />
+                                        <span>Tùy chọn nhiều ngày {byDateMultiDates.size > 0 && `(${byDateMultiDates.size})`}</span>
+                                    </button>
+                                </div>
+
+                                <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                                    <span>Đang xem:</span>
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/40">
+                                        {byDateReportInfo.title.replace('Báo Cáo Tổng Hợp: ', '').replace('Báo Cáo Tổng Hợp Ngày: ', '')}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Khối điều khiển chi tiết theo chế độ */}
+                            {byDateFilterType === 'range' ? (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-bold text-stone-700 dark:text-stone-300">Từ:</span>
+                                        <input
+                                            type="date"
+                                            value={byDateRange.from}
+                                            onChange={e => setByDateRange(prev => ({ ...prev, from: e.target.value }))}
+                                            className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        />
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-xs font-bold text-stone-700 dark:text-stone-300">Đến:</span>
+                                        <input
+                                            type="date"
+                                            value={byDateRange.to}
+                                            onChange={e => setByDateRange(prev => ({ ...prev, to: e.target.value }))}
+                                            className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        />
+                                    </div>
+
+                                    {/* Các nút chọn nhanh */}
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const todayStr = getShiftLocalDateString(new Date().toISOString())
+                                                setByDateRange({ from: todayStr, to: todayStr })
+                                            }}
+                                            className={`h-8 px-2.5 rounded-lg border text-xs font-semibold transition ${
+                                                byDateRange.from === byDateRange.to && byDateRange.from === getShiftLocalDateString(new Date().toISOString())
+                                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                                    : 'border-stone-200 dark:border-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-800 text-stone-600 dark:text-stone-300'
+                                            }`}
+                                        >
+                                            Hôm nay
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const yest = new Date()
+                                                yest.setDate(yest.getDate() - 1)
+                                                const yestStr = getShiftLocalDateString(yest.toISOString())
+                                                setByDateRange({ from: yestStr, to: yestStr })
+                                            }}
+                                            className={`h-8 px-2.5 rounded-lg border text-xs font-semibold transition ${
+                                                byDateRange.from === byDateRange.to && byDateRange.from !== getShiftLocalDateString(new Date().toISOString()) && availableDates.includes(byDateRange.from)
+                                                    ? 'bg-stone-200 dark:bg-zinc-700 text-stone-800 dark:text-stone-200 border-stone-300'
+                                                    : 'border-stone-200 dark:border-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-800 text-stone-600 dark:text-stone-300'
+                                            }`}
+                                        >
+                                            Hôm qua
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const today = new Date()
+                                                const past7 = new Date()
+                                                past7.setDate(today.getDate() - 6)
+                                                setByDateRange({
+                                                    from: getShiftLocalDateString(past7.toISOString()),
+                                                    to: getShiftLocalDateString(today.toISOString())
+                                                })
+                                            }}
+                                            className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-800 text-xs font-semibold text-stone-600 dark:text-stone-300 transition"
+                                        >
+                                            7 ngày qua
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const today = new Date()
+                                                const past30 = new Date()
+                                                past30.setDate(today.getDate() - 29)
+                                                setByDateRange({
+                                                    from: getShiftLocalDateString(past30.toISOString()),
+                                                    to: getShiftLocalDateString(today.toISOString())
+                                                })
+                                            }}
+                                            className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-800 text-xs font-semibold text-stone-600 dark:text-stone-300 transition"
+                                        >
+                                            30 ngày qua
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                const today = new Date()
+                                                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+                                                setByDateRange({
+                                                    from: getShiftLocalDateString(firstDay.toISOString()),
+                                                    to: getShiftLocalDateString(today.toISOString())
+                                                })
+                                            }}
+                                            className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 hover:bg-stone-100 dark:hover:bg-zinc-800 text-xs font-semibold text-stone-600 dark:text-stone-300 transition"
+                                        >
+                                            Tháng này
+                                        </button>
+                                    </div>
+
+                                    {/* Các ngày gần đây có công việc (Click nhanh để xem đơn ngày) */}
+                                    {availableDates.length > 0 && (
+                                        <div className="flex items-center gap-1 ml-auto overflow-x-auto py-0.5">
+                                            <span className="text-[11px] text-stone-400 mr-1">Xem nhanh ngày:</span>
+                                            {availableDates.slice(0, 6).map(dateStr => (
+                                                <button
+                                                    key={dateStr}
+                                                    type="button"
+                                                    onClick={() => setByDateRange({ from: dateStr, to: dateStr })}
+                                                    className={`h-7 px-2 rounded-md text-[11px] font-semibold transition ${
+                                                        byDateRange.from === dateStr && byDateRange.to === dateStr
+                                                            ? 'bg-indigo-600 text-white'
+                                                            : 'bg-stone-100 dark:bg-zinc-800 text-stone-600 dark:text-stone-300 hover:bg-stone-200 dark:hover:bg-zinc-700'
+                                                    }`}
+                                                >
+                                                    {dateStr.split('-').reverse().slice(0, 2).join('/')}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (
+                                /* Chế độ TÙY CHỌN NHIỀU NGÀY */
+                                <div className="space-y-2.5">
+                                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                                        <div className="flex items-center gap-1.5">
+                                            <span className="text-xs font-bold text-stone-700 dark:text-stone-300">
+                                                Bấm vào ngày để chọn/bỏ chọn (hỗ trợ chọn ngày ngắt quãng):
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={() => setByDateMultiDates(new Set(availableDates))}
+                                                className="h-7 px-2.5 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/30 text-indigo-600 dark:text-indigo-400 text-[11px] font-bold hover:bg-indigo-100 transition"
+                                            >
+                                                Chọn tất cả ngày có dữ liệu ({availableDates.length})
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setByDateMultiDates(new Set())}
+                                                className="h-7 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 text-[11px] font-semibold transition"
+                                            >
+                                                Bỏ chọn tất cả
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* Danh sách ngày có dữ liệu để tick chọn */}
+                                    <div className="flex items-center gap-1.5 flex-wrap p-2 bg-stone-50 dark:bg-zinc-800/60 rounded-xl border border-stone-200/80 dark:border-zinc-800">
+                                        {availableDates.length === 0 ? (
+                                            <span className="text-xs text-stone-400 italic">Chưa có ngày nào có dữ liệu công việc.</span>
+                                        ) : (
+                                            availableDates.map(dateStr => {
+                                                const isSelected = byDateMultiDates.has(dateStr)
+                                                // Đếm số ca của ngày này
+                                                const count = pastShifts.filter(s => {
+                                                    const op = getShiftLocalDateString(s.opened_at)
+                                                    const cl = getShiftLocalDateString(s.closed_at)
+                                                    return op === dateStr || cl === dateStr
+                                                }).length
+
+                                                return (
+                                                    <button
+                                                        key={dateStr}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setByDateMultiDates(prev => {
+                                                                const next = new Set(prev)
+                                                                if (next.has(dateStr)) next.delete(dateStr)
+                                                                else next.add(dateStr)
+                                                                return next
+                                                            })
+                                                        }}
+                                                        className={`h-7 px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                                                            isSelected
+                                                                ? 'bg-indigo-600 text-white shadow-xs'
+                                                                : 'bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800'
+                                                        }`}
+                                                    >
+                                                        {isSelected && <Check className="w-3.5 h-3.5" />}
+                                                        <span>{dateStr.split('-').reverse().slice(0, 2).join('/')}</span>
+                                                        <span className={`text-[10px] px-1 py-0.2 rounded-full ${isSelected ? 'bg-indigo-700 text-indigo-100' : 'bg-stone-100 dark:bg-zinc-800 text-stone-500'}`}>
+                                                            {count} việc
+                                                        </span>
+                                                    </button>
+                                                )
+                                            })
+                                        )}
+
+                                        {/* Ô chọn thêm ngày tự do nếu cần */}
+                                        <div className="flex items-center gap-1 ml-auto">
+                                            <input
+                                                type="date"
+                                                value={byDateCustomAddInput}
+                                                onChange={e => setByDateCustomAddInput(e.target.value)}
+                                                className="h-7 px-2 rounded-md border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-semibold focus:outline-none"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    if (!byDateCustomAddInput) return
+                                                    setByDateMultiDates(prev => new Set([...prev, byDateCustomAddInput]))
+                                                    setByDateCustomAddInput('')
+                                                }}
+                                                className="h-7 px-2 rounded-md bg-stone-200 dark:bg-zinc-700 text-stone-700 dark:text-stone-200 text-xs font-bold hover:bg-stone-300 transition"
+                                            >
+                                                + Thêm
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {shiftsOnSelectedDate.length === 0 ? (
+                            <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-12 text-center text-xs text-stone-400 space-y-2">
+                                <Calendar className="w-8 h-8 text-stone-300 dark:text-zinc-700 mx-auto" />
+                                <p className="font-semibold text-stone-600 dark:text-stone-300">
+                                    Không có công việc nào phát sinh trong {byDateReportInfo.label}
+                                </p>
+                                <p className="text-[11px] text-stone-400">
+                                    Vui lòng chọn mốc thời gian khác hoặc chuyển sang bộ lọc "Tất cả" trên thanh công cụ để tải thêm lịch sử.
+                                </p>
+                            </div>
+                        ) : (
+                            renderAggregatedReportView(
+                                byDateReportInfo.title,
+                                shiftsOnSelectedDate,
+                                byDateLines,
+                                byDateLoading,
+                                () => handleExportMultiShifts(
+                                    byDateReportInfo.excelTitle,
+                                    shiftsOnSelectedDate,
+                                    byDateLines,
+                                    byDateReportInfo.fileName
+                                ),
+                                'Xuất Excel Báo Cáo'
+                            )
+                        )}
+                    </div>
+                )}
+
+                {/* 2.5. CHẾ ĐỘ: BÁO CÁO THEO SẢN PHẨM */}
+                {doneViewMode === 'by-product' && (
+                    <div className="space-y-4">
+                        {/* Thanh điều khiển thời gian & Tìm kiếm sản phẩm */}
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-3.5 shadow-xs space-y-3">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-stone-100 dark:border-zinc-800">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="text-xs font-bold text-stone-700 dark:text-stone-300 mr-1">Thời gian:</span>
+                                    <div className="inline-flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg gap-1">
+                                        {(['today', '7days', '30days', 'all', 'custom'] as const).map(tf => {
+                                            const label = tf === 'today' ? 'Hôm nay' : tf === '7days' ? '7 ngày' : tf === '30days' ? '30 ngày' : tf === 'all' ? 'Tất cả' : 'Khoảng ngày'
+                                            return (
+                                                <button
+                                                    key={tf}
+                                                    type="button"
+                                                    onClick={() => setByProdTimeFilter(tf)}
+                                                    className={`h-7 px-2.5 rounded-md text-xs font-bold transition ${
+                                                        byProdTimeFilter === tf
+                                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                                            : 'text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                                    }`}
+                                                >
+                                                    {label}
+                                                </button>
+                                            )
+                                        })}
+                                    </div>
+
+                                    {byProdTimeFilter === 'custom' && (
+                                        <div className="flex items-center gap-1.5 ml-2">
+                                            <input
+                                                type="date"
+                                                value={byProdRange.from}
+                                                onChange={e => setByProdRange(prev => ({ ...prev, from: e.target.value }))}
+                                                className="h-7 px-2 rounded-md border border-stone-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-semibold"
+                                            />
+                                            <span className="text-stone-400 text-xs">➔</span>
+                                            <input
+                                                type="date"
+                                                value={byProdRange.to}
+                                                onChange={e => setByProdRange(prev => ({ ...prev, to: e.target.value }))}
+                                                className="h-7 px-2 rounded-md border border-stone-200 dark:border-zinc-700 bg-stone-50 dark:bg-zinc-800 text-xs font-semibold"
+                                            />
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="text-[11px] text-stone-500 dark:text-stone-400 flex items-center gap-1.5">
+                                    <span>Gom từ:</span>
+                                    <span className="font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded-md border border-indigo-100 dark:border-indigo-900/40">
+                                        {shiftsForProductReport.length} công việc
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* Ô tìm kiếm mặt hàng */}
+                            <div className="relative">
+                                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-2.5" />
+                                <input
+                                    type="text"
+                                    value={byProdSearch}
+                                    onChange={e => setByProdSearch(e.target.value)}
+                                    placeholder="Tìm kiếm theo tên sản phẩm, mã SKU hoặc tên công việc phát sinh..."
+                                    className="w-full h-9 pl-9 pr-8 rounded-xl border border-stone-200 dark:border-zinc-700 bg-stone-50/50 dark:bg-zinc-800/50 text-xs text-stone-800 dark:text-stone-200 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
+                                />
+                                {byProdSearch && (
+                                    <button
+                                        type="button"
+                                        onClick={() => setByProdSearch('')}
+                                        className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600"
+                                    >
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Nội dung báo cáo theo sản phẩm */}
+                        {aggregatedProductsForReport.length === 0 ? (
+                            <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl p-12 text-center text-xs text-stone-400 space-y-2">
+                                <Layers className="w-8 h-8 text-stone-300 dark:text-zinc-700 mx-auto" />
+                                <p className="font-semibold text-stone-600 dark:text-stone-300">
+                                    {byProdSearch.trim()
+                                        ? `Không tìm thấy mặt hàng nào khớp với "${byProdSearch}"`
+                                        : 'Không có phát sinh sản phẩm nào trong mốc thời gian này'}
+                                </p>
+                                <p className="text-[11px] text-stone-400">
+                                    Vui lòng chuyển mốc thời gian sang "Tất cả" hoặc xóa bộ lọc tìm kiếm.
+                                </p>
+                            </div>
+                        ) : (
+                            renderAggregatedReportView(
+                                `Báo Cáo Tổng Hợp Theo Sản Phẩm (${aggregatedProductsForReport.length} Mặt Hàng)`,
+                                shiftsForProductReport,
+                                byProdLines,
+                                byProdLoading,
+                                () => handleExportMultiShifts(
+                                    `BÁO CÁO TỔNG HỢP THEO MẶT HÀNG (${aggregatedProductsForReport.length} SẢN PHẨM)`,
+                                    shiftsForProductReport,
+                                    byProdLines,
+                                    `Bao_cao_san_pham_${byProdTimeFilter}`
+                                ),
+                                'Xuất Excel Báo Cáo Sản Phẩm'
+                            )
+                        )}
+                    </div>
+                )}
+
+                {/* 3. CHẾ ĐỘ: BÁO CÁO TÙY CHỌN (TÍCH CHỌN NHIỀU CÔNG VIỆC) */}
+                {doneViewMode === 'custom' && (
+                    <div className="space-y-3 sm:space-y-0 sm:grid sm:grid-cols-[340px_minmax(0,1fr)] lg:grid-cols-[380px_minmax(0,1fr)] sm:gap-5 sm:items-start">
+                        {/* CỘT TRÁI: DANH SÁCH CÔNG VIỆC CÓ CHECKBOX */}
+                        <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl overflow-hidden shadow-xs">
+                            <div className="p-3 border-b border-stone-200 dark:border-zinc-800 bg-stone-50/60 dark:bg-zinc-950/60 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold uppercase tracking-wide text-stone-600 dark:text-stone-300">
+                                        Tích chọn công việc ({customSelectedIds.size}/{filteredPastShifts.length})
+                                    </span>
+                                    {customLoading && <RefreshCw className="w-3.5 h-3.5 text-indigo-500 animate-spin" />}
+                                </div>
+
+                                <div className="flex items-center justify-between gap-2 pt-1 border-t border-stone-200 dark:border-zinc-800">
+                                    <button
+                                        type="button"
+                                        onClick={handleSelectAllCustomShifts}
+                                        className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1"
+                                    >
+                                        <CheckSquare className="w-3.5 h-3.5" />
+                                        Chọn tất cả ({filteredPastShifts.length})
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={handleDeselectAllCustomShifts}
+                                        className="text-[11px] font-bold text-stone-500 hover:text-stone-800 dark:hover:text-stone-200"
+                                    >
+                                        Bỏ chọn
+                                    </button>
+                                </div>
+
+                                <div className="relative">
+                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
+                                    <input
+                                        type="text"
+                                        value={doneSearch}
+                                        onChange={e => setDoneSearch(e.target.value)}
+                                        placeholder="Lọc danh sách..."
+                                        className="w-full h-8 pl-8 pr-7 text-xs bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+                            </div>
+
+                            {filteredPastShifts.length === 0 ? (
+                                <div className="p-8 text-center text-xs text-stone-400">
+                                    Không tìm thấy công việc nào.
+                                </div>
+                            ) : (
+                                <div className="divide-y divide-stone-100 dark:divide-zinc-800 max-h-[calc(100vh-280px)] overflow-y-auto">
+                                    {filteredPastShifts.map((shift, idx) => {
+                                        const isChecked = customSelectedIds.has(shift.id)
+                                        const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc #${idx + 1}`
+                                        const pCount = Object.keys(shift.summary_data?.products_summary || {}).length
+                                        const rCount = shift.summary_data?.total_records ?? 0
+                                        const isClosed = shift.status === 'closed'
+                                        return (
+                                            <div
+                                                key={shift.id || idx}
+                                                onClick={() => toggleSelectShift(shift.id)}
+                                                className={`w-full text-left px-3.5 py-3 transition cursor-pointer flex items-start gap-3 border-l-4 ${
+                                                    isChecked
+                                                        ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-l-indigo-600'
+                                                        : 'border-l-transparent hover:bg-stone-50 dark:hover:bg-zinc-800/40'
+                                                }`}
+                                            >
+                                                <div className="pt-0.5 shrink-0">
+                                                    {isChecked ? (
+                                                        <CheckSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                                                    ) : (
+                                                        <Square className="w-4 h-4 text-stone-300 dark:text-zinc-600" />
+                                                    )}
+                                                </div>
+
+                                                <div className="flex-1 min-w-0 space-y-1">
+                                                    <div className="flex items-start justify-between gap-1.5">
+                                                        <span className="font-bold text-xs sm:text-sm text-stone-900 dark:text-white leading-snug break-words">
+                                                            {jobTitle}
+                                                        </span>
+                                                        {isClosed ? (
+                                                            <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                                                Đã chốt
+                                                            </span>
+                                                        ) : (
+                                                            <span className="shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
+                                                                Đang mở
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                    <div className="text-[10px] text-stone-500 flex items-center gap-1.5 flex-wrap">
+                                                        <Clock className="w-3 h-3 text-stone-400" />
+                                                        <span>{formatDateTime(shift.opened_at)} → {shift.closed_at ? formatDateTime(shift.closed_at) : 'Hiện tại'}</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-stone-400">
+                                                        <span>{shift.closed_by_name || shift.opened_by_name || 'Nhân viên'} • {pCount} SP • {rCount} đợt</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* CỘT PHẢI: BÁO CÁO CÁC CÔNG VIỆC ĐÃ TÍCH */}
+                        <div>
+                            {customSelectedShifts.length === 0 ? (
+                                <div className="bg-white dark:bg-zinc-900 border border-dashed border-stone-300 dark:border-zinc-800 rounded-2xl p-12 text-center text-xs text-stone-400 space-y-2">
+                                    <CheckSquare className="w-8 h-8 text-stone-300 dark:text-zinc-700 mx-auto" />
+                                    <p className="font-semibold text-stone-600 dark:text-stone-300">
+                                        Chưa có công việc nào được chọn
+                                    </p>
+                                    <p className="text-[11px] text-stone-400">
+                                        Hãy tích chọn ít nhất 1 công việc ở danh sách bên trái để tạo bảng báo cáo tổng hợp và xuất file Excel.
+                                    </p>
+                                </div>
+                            ) : (
+                                renderAggregatedReportView(
+                                    `Báo Cáo Tổng Hợp: ${customSelectedShifts.length} Công Việc Đã Chọn`,
+                                    customSelectedShifts,
+                                    customLines,
+                                    customLoading,
+                                    () => handleExportMultiShifts(
+                                        `BÁO CÁO TỔNG HỢP (${customSelectedShifts.length} CÔNG VIỆC)`,
+                                        customSelectedShifts,
+                                        customLines,
+                                        `Bao_cao_tuy_chon_${customSelectedShifts.length}_cong_viec`
+                                    ),
+                                    'Xuất Excel Báo Cáo Đã Chọn'
+                                )
+                            )}
+                        </div>
+                    </div>
+                )}
+            </div>
+        ) : !activeShift ? (
                     <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-center border-2 border-dashed border-stone-200 dark:border-zinc-800 rounded-2xl bg-white/60 dark:bg-zinc-900/40 p-5 sm:p-6">
                         <div className="w-12 h-12 sm:w-16 sm:h-16 bg-indigo-50 dark:bg-indigo-950/60 rounded-2xl flex items-center justify-center text-indigo-600 mb-3 sm:mb-4 shadow-sm">
                             <Briefcase className="w-6 h-6 sm:w-8 sm:h-8" />

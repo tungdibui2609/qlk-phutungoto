@@ -348,6 +348,7 @@ export default function EvaluateItemModal({
                                         const kpi = calculateAssigneeTaskStandardKpi({
                                             userPositions: userPos,
                                             diffMultiplier,
+                                            difficulty: item.workload_metrics?.difficulty,
                                             progressPercent: progress,
                                             ratingStars: rating ? RATING_CONFIG[rating]?.stars ?? null : null,
                                             incidents: ev?.incidents || [],
@@ -357,6 +358,7 @@ export default function EvaluateItemModal({
                                             customProductivityScore: ev?.custom_productivity_score,
                                             customQualityScore: ev?.custom_quality_score,
                                             sharePercent: share,
+                                            workNature: item.work_nature,
                                         })
                                         const isActive = activeTab.trim().toLowerCase() === a.name.trim().toLowerCase()
                                         const hasIncidents = (ev?.incidents || []).length > 0
@@ -574,7 +576,7 @@ export default function EvaluateItemModal({
                                                 2. Đánh giá chất lượng chung của công việc (Gợi ý tự động)
                                             </label>
                                             <span className="text-[11px] text-stone-500 italic">
-                                                (Gợi ý ban đầu — Quản lý có thể chọn nhân viên bên trái để chấm điểm riêng)
+                                                (Tham khảo — điểm chất lượng chấm theo lỗi thực tế bên phải)
                                             </span>
                                         </div>
                                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
@@ -751,6 +753,7 @@ export default function EvaluateItemModal({
                                     onChange={setAssigneeEvaluations}
                                     activeAssigneeName={activeTab}
                                     onSelectAssignee={setActiveTab}
+                                    workNature={item.work_nature}
                                 />
                             </div>
                         )}

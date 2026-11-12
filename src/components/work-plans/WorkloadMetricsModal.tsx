@@ -4,7 +4,6 @@ import React, { useState, useEffect } from 'react'
 import { X, Scale, CheckCircle2, RotateCcw } from 'lucide-react'
 import { WorkPlanItem, WorkloadMetrics, WorkPlanAssigneeEvaluation } from './types'
 import WorkloadMetricsSection from './WorkloadMetricsSection'
-import AssigneeEvaluationSection from './AssigneeEvaluationSection'
 
 interface WorkloadMetricsModalProps {
     item: WorkPlanItem | null
@@ -88,24 +87,13 @@ export default function WorkloadMetricsModal({
                         workNature={item.work_nature || 'labor'}
                     />
 
-                    {/* NEW: Phân bổ sản lượng cá nhân & Ghi nhận vi phạm / lỗi xét KPI */}
-                    <AssigneeEvaluationSection
-                        assignees={item.assignees || []}
-                        workloadMetrics={workloadMetrics}
-                        progressPercent={item.progress_percent || 100}
-                        taskStatus={item.status}
-                        value={assigneeEvaluations}
-                        onChange={setAssigneeEvaluations}
-                    />
+                    {/* Đánh giá cá nhân / vi phạm KPI nằm ở bước 3 (Đánh giá), không lặp lại tại đây */}
 
                     {/* Footer Actions */}
                     <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-stone-200">
                         <button
                             type="button"
-                            onClick={() => {
-                                setWorkloadMetrics({})
-                                setAssigneeEvaluations([])
-                            }}
+                            onClick={() => setWorkloadMetrics({})}
                             className="px-3.5 py-2 rounded-xl border border-stone-200 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-200 text-stone-600 text-xs font-bold flex items-center gap-1.5 transition-colors"
                         >
                             <RotateCcw size={14} />
@@ -126,7 +114,7 @@ export default function WorkloadMetricsModal({
                                 className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-sm font-bold shadow-sm flex items-center gap-2 transition-all"
                             >
                                 <CheckCircle2 size={16} />
-                                {saving ? 'Đang lưu...' : 'Lưu số liệu & Phân bổ KPI'}
+                                {saving ? 'Đang lưu...' : 'Lưu số liệu chứng minh'}
                             </button>
                         </div>
                     </div>
