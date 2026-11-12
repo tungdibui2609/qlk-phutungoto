@@ -11,6 +11,8 @@ import {
     applyQuantityFactorToMetrics,
     calculateAssigneeTaskStandardKpi,
     calculateWorkSpeed,
+    getStatisticsDocumentCounts,
+    getEvaluationHours,
 } from '../types'
 
 describe('workPlanParser & helpers', () => {
@@ -671,6 +673,106 @@ describe('workPlanParser & helpers', () => {
         expect(goodsAndPending.qualityScore).toBe(0) // 20 - 10 - 10 = 0
         expect(goodsAndPending.safetyScore).toBe(20)
         expect(goodsAndPending.disciplineScore).toBe(15)
+    })
+
+    it('derives statistics document/row counts from linked accounting orders when nothing is stored yet', () => {
+        const inboundOrder = (
+            id: string,
+            code: string,
+            items_count: number
+        ) => ({
+            id,
+            code,
+            order_kind: 'inbound' as const,
+            status: 'completed',
+            items_count,
+            total_quantity: items_count,
+            unit: 'thùng',
+        })
+        const outboundOrder = (
+            id: string,
+            code: string,
+            items_count: number
+        ) => ({
+            ...inboundOrder(id, code, items_count),
+            order_kind: 'outbound' as const,
+        })
+        const legacyMetrics = {
+            linked_inbound_orders: [
+                inboundOrder('i1', '0026/1126/A', 2),
+                inboundOrder('i2', '0025/1126/A', 3),
+            ],
+            linked_outbound_orders: [outboundOrder('o1', '0042/1126/B', 1)],
+        }
+        expect(getStatisticsDocumentCounts(legacyMetrics)).toEqual({
+            documents: 3,
+            rows: 6,
+        })
+
+        // Số đã lưu (kể cả nhập tay) luôn được ưu tiên
+        expect(
+            getStatisticsDocumentCounts({
+                ...legacyMetrics,
+                documents_count: 10,
+                data_rows_count: 50,
+            })
+        ).toEqual({ documents: 10, rows: 50 })
+
+        expect(getStatisticsDocumentCounts(null)).toEqual({ documents: 0, rows: 0 })
+
+        // Tóm tắt số liệu của việc thống kê cũng suy ra từ phiếu đã gắn
+        const summary = formatWorkloadSummaryText(legacyMetrics, 'statistics')
+        expect(summary).toContain('3 phiếu đã tạo')
+        expect(summary).toContain('6 dòng dữ liệu')
+
+        // Việc lao động giữ nguyên: không tự hiển thị số phiếu suy ra
+        expect(formatWorkloadSummaryText(legacyMetrics, 'labor')).not.toContain('phiếu đã tạo')
+    })
+
+    it('sums work hours from assignee evaluations and treats missing hours as the 8h standard shift', () => {
+        expect(getEvaluationHours(null)).toEqual({
+            regular: 0,
+            overtime: 0,
+            total: 0,
+            hasData: false,
+            isDefault: false,
+        })
+
+        const evaluated = getEvaluationHours({
+            assignee_evaluations: [
+                { assignee_name: 'Giang', share_percent: 100, regular_hours: 8, overtime_hours: 2 },
+                { assignee_name: 'Da Ti', share_percent: 100, regular_hours: 6 },
+            ],
+        })
+        expect(evaluated).toEqual({
+            regular: 14,
+            overtime: 2,
+            total: 16,
+            hasData: true,
+            isDefault: false,
+        })
+
+        // Đánh giá cũ chưa lưu giờ -> hiểu là ca chuẩn 8h, OT 0h
+        const legacy = getEvaluationHours({
+            assignee_evaluations: [{ assignee_name: 'Trôi', share_percent: 100 }],
+        })
+        expect(legacy).toEqual({
+            regular: 8,
+            overtime: 0,
+            total: 8,
+            hasData: true,
+            isDefault: false,
+        })
+
+        // Đã đánh giá nhưng chưa lưu giờ từng người -> tạm tính ca chuẩn 8h/người
+        expect(
+            getEvaluationHours(null, { assigneeCount: 2, assumeStandardShift: true })
+        ).toEqual({ regular: 16, overtime: 0, total: 16, hasData: true, isDefault: true })
+
+        // Chưa đánh giá (giao việc) -> không có giờ
+        expect(
+            getEvaluationHours(null, { assigneeCount: 2, assumeStandardShift: false })
+        ).toEqual({ regular: 0, overtime: 0, total: 0, hasData: false, isDefault: false })
     })
 
     it('applies each incident group only to its own work nature and routes mismatches to discipline', () => {

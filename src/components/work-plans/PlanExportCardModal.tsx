@@ -176,7 +176,7 @@ export default function PlanExportCardModal({
                     assigneeLines.push(`\n   👤 Chưa phân công`)
                 }
 
-                const wlText = formatWorkloadSummaryText(item.workload_metrics)
+                const wlText = formatWorkloadSummaryText(item.workload_metrics, item.work_nature)
                 const wlLine = wlText ? `\n   📊 Khối lượng: ${wlText}` : ''
                 lines.push(
                     `${idx + 1}. *${item.content}*${locStr}${catStr}${descStr}${assigneeLines.join('')}${wlLine}`
@@ -228,7 +228,7 @@ export default function PlanExportCardModal({
                     )
                 }
 
-                const wlText = formatWorkloadSummaryText(item.workload_metrics)
+                const wlText = formatWorkloadSummaryText(item.workload_metrics, item.work_nature)
                 const wlLine = wlText ? `\n   📦 Số liệu: ${wlText}` : ''
                 const noteStr = item.evaluation_note
                     ? `\n   ↳ Nhận xét: ${item.evaluation_note}`
@@ -707,7 +707,8 @@ export default function PlanExportCardModal({
                                             ? RATING_CONFIG[item.rating]
                                             : null
                                         const wlSummary = formatWorkloadSummaryText(
-                                            item.workload_metrics
+                                            item.workload_metrics,
+                                            item.work_nature
                                         )
                                         return (
                                             <div

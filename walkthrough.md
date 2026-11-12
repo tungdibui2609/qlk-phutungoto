@@ -3374,3 +3374,71 @@ Người dùng chốt: **để công việc tồn đọng không giải quyết 
 
 - `npx vitest run src/components/work-plans/__tests__` → **15/15 pass**.
 - `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+
+# Walkthrough: Số phiếu / số dòng của việc Thống kê tự suy ra từ phiếu kế toán đã gắn
+
+## Nguyên nhân
+
+Thẻ "Dữ liệu thống kê / ghi chép" của việc Thống kê đọc trực tiếp `workload_metrics.documents_count` và `data_rows_count`. Hai trường này chỉ được ghi khi panel Số liệu được mở và bấm lưu (hoặc khi bật/tắt phiếu nhập–xuất kế toán). Các việc cũ đã gắn phiếu nhưng chưa từng lưu hai trường này nên hiển thị `—`, dù trong `linked_inbound_orders` / `linked_outbound_orders` đã có dữ liệu.
+
+## Cách sửa
+
+- `src/components/work-plans/types.ts` — thêm `getStatisticsDocumentCounts(metrics)`:
+  - `documents = inbound.length + outbound.length`, `rows = Σ items_count` của các phiếu đã gắn.
+  - Nếu đã có `documents_count` / `data_rows_count` > 0 (kể cả nhập tay) thì **ưu tiên số đã lưu**, chỉ suy ra khi trống.
+- `formatWorkloadSummaryText(metrics, workNature?)` nhận thêm loại việc: với việc Thống kê thì dùng số suy ra để câu tóm tắt vẫn hiện "N phiếu đã tạo / N dòng dữ liệu"; việc Lao động giữ nguyên.
+- `src/components/work-plans/WorkPlansView.tsx` — thẻ "Dữ liệu thống kê / ghi chép" dùng helper (Phiếu / Dòng dữ liệu).
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx` — tổng `totalDocuments`, phân bổ theo người và dòng "📄 N phiếu đã tạo" trong ngăn chi tiết dùng helper; file Excel "Khối lượng" truyền thêm `work_nature`.
+- `PlanExportCardModal.tsx`, `EvaluateItemModal.tsx` — truyền `item.work_nature` khi tóm tắt số liệu.
+- Không sửa dữ liệu production: chỉ tính lúc đọc, nên lần lưu sau vẫn tự đồng bộ về DB như cũ.
+
+## Kiểm chứng
+
+- Item thật `e868d420…` (11.11.2026, việc Thống kê, completed): DB không có `documents_count`/`data_rows_count`, nhưng có 2 phiếu nhập + 2 phiếu xuất, mỗi phiếu 1 dòng → thẻ giờ hiện **4 phiếu / 4 dòng**.
+- `npx vitest run src/components/work-plans/__tests__` → **16/16 pass** (thêm test cho helper: suy ra, ưu tiên số đã lưu, tóm tắt thống kê vs lao động).
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+
+# Walkthrough: Hiển thị Giờ làm trên thẻ công việc (lấy từ Đánh giá sau nghiệm thu)
+
+## Quyết định
+
+Người dùng chốt: **giờ làm không nhập lúc giao việc; sau khi đánh giá mới có giờ làm và thẻ công việc lấy dữ liệu của người được đánh giá.** Giờ làm lưu theo từng người trong `workload_metrics.assignee_evaluations[]` (`regular_hours` mặc định 8h, `overtime_hours` mặc định 0h).
+
+## Thay đổi
+
+- `src/components/work-plans/types.ts` — thêm `getEvaluationHours(metrics)`:
+  - Cộng `regular_hours` và `overtime_hours` của tất cả người được đánh giá; thiếu giờ thì hiểu là ca chuẩn 8h/0h OT (đúng như mặc định ở bộ đánh giá).
+  - `hasData = false` khi chưa có đánh giá nào → thẻ hiện `—` (lúc giao việc).
+- `src/components/work-plans/WorkPlansView.tsx`:
+  - Thẻ **Dữ liệu thống kê / ghi chép**: lưới đổi 3 → 4 ô (2×2), thêm ô **⏱️ Giờ làm**; có OT thì hiện thêm dòng "+Nh OT". Ghi chú cuối thẻ đổi thành "Giờ làm lấy từ phần Đánh giá sau nghiệm thu".
+  - Thẻ **Số liệu khối lượng thực tế** (việc lao động): thêm ô **⏱️ Giờ làm** khi có dữ liệu — ưu tiên giờ từ đánh giá, trước khi đánh giá thì dùng `hours_spent` nhập tay nếu có.
+- `src/components/work-plans/__tests__/workPlanParser.test.ts` — test `getEvaluationHours`: chưa đánh giá → `hasData=false`; 8h+2h OT và 6h → tổng 16h (OT 2h); đánh giá cũ không lưu giờ → 8h/0h.
+
+## Kiểm chứng
+
+- `npx vitest run src/components/work-plans/__tests__` → **17/17 pass**.
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- Dữ liệu thật: item `b8bc74ab…` (09.11.2026, lao động) có 2 người đánh giá 8h/0h → thẻ hiện **16h**; các item chưa đánh giá (kể cả item 11.11.2026 trong ảnh) hiện **—** cho tới khi lưu đánh giá.
+
+# Walkthrough (tiếp): Giờ làm hiện ngay sau đánh giá + luôn có ô Giờ làm ở việc tay chân
+
+## Vì sao trước đó thẻ vẫn "—"
+
+Item Thống kê 11.11.2026 đã chấm 4/5 (trạng thái completed) nhưng `workload_metrics.assignee_evaluations` rỗng: bộ đánh giá chỉ tạo giờ mặc định (8h/người) khi Quản lý chạm vào phần chia % / giờ, nên lần lưu đánh giá đó không ghi giờ nào.
+
+## Thay đổi
+
+- `src/components/work-plans/EvaluateItemModal.tsx` — khi mở modal Đánh giá, nếu chưa có đánh giá từng người thì tự khởi tạo danh sách mặc định (chia % đều, ca chuẩn **8h**, OT **0h**, đúng như bộ đánh giá). Từ nay mọi lần lưu đánh giá đều ghi giờ làm.
+- `src/components/work-plans/types.ts` — `getEvaluationHours(metrics, { assigneeCount, assumeStandardShift })`:
+  - Có đánh giá từng người → cộng giờ thực tế như trước.
+  - Chưa có nhưng item **đã đánh giá** (có `evaluated_at` / số sao / trạng thái khác pending–cancelled) → tạm tính **8h × số người**, đánh dấu `isDefault = true`.
+  - Chưa đánh giá (đang giao việc) → không có giờ.
+- `src/components/work-plans/WorkPlansView.tsx`:
+  - Cả hai thẻ đều truyền `assigneeCount` + cờ đã đánh giá; khi số giờ là tạm tính thì dưới giá trị có dòng nhỏ "ca chuẩn" và tooltip giải thích.
+  - Thẻ **Số liệu khối lượng thực tế** (lao động) giờ **luôn hiện ô ⏱️ Giờ làm**, kể cả khi chưa có giờ (hiện `—`).
+
+## Kiểm chứng
+
+- Item trong ảnh (2 người, đã chấm 4/5) → thẻ hiện **16h (ca chuẩn)**; việc lao động đang chờ → ô Giờ làm hiện `—`.
+- `npx vitest run src/components/work-plans/__tests__` → **17/17 pass**.
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.

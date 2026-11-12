@@ -980,7 +980,7 @@ export default function AssigneeEvaluationSection({
                                             {isStatistics && (
                                                 <span
                                                     className="px-2 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 text-[10px] font-black"
-                                                    title="Việc thống kê không vận hành xe nâng nên không có trụ An toàn; 20đ dồn sang Năng suất. Mốc Năng suất theo độ nặng: Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40. Chất lượng 40đ khi hoàn thành 100% và số liệu đúng; mỗi lỗi sai số liệu trừ 10–25đ (không trừ trùng vào Kỷ luật), việc tồn đọng tự trừ theo % việc còn lại. Số sao chỉ tham khảo."
+                                                    title="Việc thống kê không vận hành xe nâng nên không có nhóm An toàn; 20đ dồn sang Năng suất. Mốc Năng suất theo độ nặng: Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40. Chất lượng 40đ khi hoàn thành 100% và số liệu đúng; mỗi lỗi sai số liệu trừ 10–25đ (không trừ trùng vào Kỷ luật), việc tồn đọng tự trừ theo % việc còn lại."
                                                 >
                                                     📊 Thống kê: Năng suất trần 40đ (mốc 30–40) • Chất lượng 40đ • Không có An toàn
                                                 </span>
@@ -1110,13 +1110,12 @@ export default function AssigneeEvaluationSection({
 
                                     {isStatistics && (
                                         <div className="text-[10px] text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2 py-1.5 leading-relaxed">
-                                            📊 <b>Việc thống kê:</b> không vận hành xe nâng nên <b>không có trụ An toàn</b>;
+                                            📊 <b>Việc thống kê:</b> không vận hành xe nâng nên <b>không có nhóm An toàn</b>;
                                             20đ được dồn sang Năng suất — trần <b>40đ</b>, mốc đạt theo độ nặng
                                             (Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40) × % hoàn thành.
                                             Số liệu đúng tuyệt đối = <b>{standardKpi.qualityMax}/{standardKpi.qualityMax}đ</b> chất lượng;
                                             mọi lỗi hàng hóa, số liệu &amp; ghi chép (quên quét tem, chậm cập nhật, sai lệch bàn giao) đều trừ vào Chất lượng (10–25đ/lỗi), <b>không trừ trùng</b>;
-                                            để việc tồn đọng trong ca thì Chất lượng <b>tự trừ theo % việc còn lại</b> (hoặc trừ đúng mức phạt nếu Quản lý ghi lỗi “Chưa xong việc trong ca”);
-                                            số sao nghiệm thu chỉ để tham khảo.
+                                            để việc tồn đọng trong ca thì Chất lượng <b>tự trừ theo % việc còn lại</b> (hoặc trừ đúng mức phạt nếu Quản lý ghi lỗi “Chưa xong việc trong ca”).
                                         </div>
                                     )}
 
@@ -1124,7 +1123,7 @@ export default function AssigneeEvaluationSection({
                                         <div className="text-[10px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5 leading-relaxed">
                                             🚜 <b>Việc lao động:</b> hàng hóa nguyên vẹn, giao nhận đúng chủng loại và hoàn thành 100% việc = <b>{standardKpi.qualityMax}/{standardKpi.qualityMax}đ</b> chất lượng.
                                             Chỉ trừ lỗi <b>hàng hóa</b> (10–40đ/lỗi) và <b>việc tồn đọng</b> (tự trừ theo % việc còn lại) — lỗi số liệu/ghi chép thuộc việc thống kê nên không xuất hiện ở đây;
-                                            An toàn chỉ trừ lỗi xe nâng; số sao nghiệm thu chỉ để tham khảo.
+                                            An toàn chỉ trừ lỗi xe nâng.
                                         </div>
                                     )}
 

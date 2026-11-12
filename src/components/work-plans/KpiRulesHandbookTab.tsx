@@ -150,7 +150,7 @@ export default function KpiRulesHandbookTab({
                                 <span>An Toàn & Kỷ Luật Tuyệt Đối</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed">
-                                Trong môi trường kho bãi và nhà máy (vận hành xe nâng, bốc xếp hàng hóa, kiểm kê số liệu, làm việc phòng lạnh), mỗi nhóm lỗi chỉ trừ đúng một trụ và chỉ thuộc loại việc phù hợp: lỗi xe nâng → <b>An toàn</b> (chỉ việc lao động); lỗi hàng hóa → <b>Chất lượng</b> (cả hai loại việc); lỗi số liệu &amp; ghi chép → <b>Chất lượng</b> (chỉ việc thống kê); lỗi vận hành, 5S → <b>Kỷ luật</b>. Sự cố nghiêm trọng sẽ hạ danh hiệu xuống Hạng C.
+                                Trong môi trường kho bãi và nhà máy (vận hành xe nâng, bốc xếp hàng hóa, kiểm kê số liệu, làm việc phòng lạnh), mỗi nhóm lỗi chỉ trừ đúng một nhóm điểm và chỉ thuộc loại việc phù hợp: lỗi xe nâng → <b>An toàn</b> (chỉ việc lao động); lỗi hàng hóa → <b>Chất lượng</b> (cả hai loại việc); lỗi số liệu &amp; ghi chép → <b>Chất lượng</b> (chỉ việc thống kê); lỗi vận hành, 5S → <b>Kỷ luật</b>. Sự cố nghiêm trọng sẽ hạ danh hiệu xuống Hạng C.
                             </p>
                         </div>
                     </div>
@@ -173,7 +173,7 @@ export default function KpiRulesHandbookTab({
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="font-black text-emerald-900 text-sm">🌱 CÔNG VIỆC LAO ĐỘNG</span>
                                     <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white text-[10px] font-black shrink-0">
-                                        4 trụ cột
+                                        4 nhóm điểm
                                     </span>
                                 </div>
                                 <p className="text-stone-700 leading-relaxed">
@@ -195,14 +195,14 @@ export default function KpiRulesHandbookTab({
                                 <div className="flex items-center justify-between gap-2">
                                     <span className="font-black text-sky-900 text-sm">📊 CÔNG VIỆC THỐNG KÊ</span>
                                     <span className="px-2 py-0.5 rounded-lg bg-sky-600 text-white text-[10px] font-black shrink-0">
-                                        3 trụ cột
+                                        3 nhóm điểm
                                     </span>
                                 </div>
                                 <p className="text-stone-700 leading-relaxed">
                                     Kiểm đếm, ghi chép sổ sách, nhập liệu, đối chiếu số liệu… — <b>không vận hành xe nâng</b>, sản phẩm chính là <b>con số chính xác</b>.
                                 </p>
                                 <div className="bg-white rounded-xl border border-sky-100 p-2.5 space-y-1 text-[11px] text-stone-700">
-                                    <div>• ⚡ Năng suất: <b>30 – 40 / 40đ</b> (đã gồm 20đ của trụ An toàn)</div>
+                                    <div>• ⚡ Năng suất: <b>30 – 40 / 40đ</b> (đã gồm 20đ của nhóm An toàn)</div>
                                     <div>• ⭐ Chất lượng: <b>40đ</b> (số liệu đúng tuyệt đối)</div>
                                     <div>• 🛡️ An toàn: <b>không có</b></div>
                                     <div>• 📋 Kỷ luật &amp; 5S: <b>20đ</b></div>
@@ -214,7 +214,7 @@ export default function KpiRulesHandbookTab({
                         </div>
 
                         <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-[11px] text-stone-700 leading-relaxed">
-                            <b>Từ 2 loại việc này suy ra cách trừ lỗi:</b> lỗi hàng hóa trừ <b>Chất lượng</b> ở cả hai loại việc; <b>việc tồn đọng trong ngày</b> (chưa xong việc) cũng trừ <b>Chất lượng</b> ở cả hai loại; lỗi số liệu &amp; ghi chép <b>chỉ có ở việc thống kê</b> và trừ <b>Chất lượng</b> (việc lao động không hiện nhóm lỗi này); lỗi vận hành &amp; 5S trừ <b>Kỷ luật</b>; riêng lỗi xe nâng trừ <b>An toàn</b> ở việc lao động và trừ <b>Kỷ luật</b> ở việc thống kê (vì thống kê không có trụ An toàn). Bước 3 (Việc chính / việc phụ) chỉ quyết định <b>cách cộng điểm</b>, không đổi loại việc.
+                            <b>Từ 2 loại việc này suy ra cách trừ lỗi:</b> lỗi hàng hóa trừ <b>Chất lượng</b> ở cả hai loại việc; <b>việc tồn đọng trong ngày</b> (chưa xong việc) cũng trừ <b>Chất lượng</b> ở cả hai loại; lỗi số liệu &amp; ghi chép <b>chỉ có ở việc thống kê</b> và trừ <b>Chất lượng</b> (việc lao động không hiện nhóm lỗi này); lỗi vận hành &amp; 5S trừ <b>Kỷ luật</b>; riêng lỗi xe nâng trừ <b>An toàn</b> ở việc lao động và trừ <b>Kỷ luật</b> ở việc thống kê (vì thống kê không có nhóm An toàn). Bước 3 (Việc chính / việc phụ) chỉ quyết định <b>cách cộng điểm</b>, không đổi loại việc.
                         </div>
                     </div>
                 </div>
@@ -230,7 +230,7 @@ export default function KpiRulesHandbookTab({
                             </div>
                             <div>
                                 <h2 className="text-base sm:text-lg font-black text-stone-900">
-                                    2. Thang Điểm Ca Chuẩn (Lao Động 4 Trụ Cột • Thống Kê 3 Trụ Cột)
+                                    2. Thang Điểm Ca Chuẩn (Lao Động 4 Nhóm Điểm • Thống Kê 3 Nhóm Điểm)
                                 </h2>
                                 <p className="text-xs text-stone-500">
                                     Áp dụng cho công việc chính trong ca; việc thống kê dùng thang riêng bên dưới
@@ -242,12 +242,12 @@ export default function KpiRulesHandbookTab({
                         </span>
                     </div>
 
-                    {/* A. Việc lao động — 4 trụ cột */}
+                    {/* A. Việc lao động — 4 nhóm điểm */}
                     <div className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <h3 className="font-black text-emerald-900 text-sm flex items-center gap-1.5">
                                 <span>🌱</span>
-                                <span>A. VIỆC LAO ĐỘNG — 4 TRỤ CỘT</span>
+                                <span>A. VIỆC LAO ĐỘNG — 4 NHÓM ĐIỂM</span>
                             </h3>
                             <span className="px-2 py-0.5 rounded-lg bg-emerald-600 text-white font-black text-[10px]">
                                 Tổng ngày 90 / 92 / 95 / 100đ
@@ -255,7 +255,7 @@ export default function KpiRulesHandbookTab({
                         </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                        {/* Trụ Cột 1: Năng Suất */}
+                        {/* Nhóm điểm 1: Năng Suất */}
                         <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 relative overflow-hidden">
                             <div className="flex items-center justify-between">
                                 <span className="text-xl">⚡</span>
@@ -265,7 +265,7 @@ export default function KpiRulesHandbookTab({
                             </div>
                             <h3 className="font-black text-stone-900 text-sm">I. NĂNG SUẤT THỰC HIỆN</h3>
                             <p className="text-[11px] text-stone-600 leading-relaxed">
-                                Trần trụ cột 45đ. Điểm theo độ nặng khối lượng, hạ mốc để tổng ngày cân bằng với việc Thống kê:
+                                Mức tối đa 45đ. Điểm theo độ nặng khối lượng, hạ mốc để tổng ngày cân bằng với việc Thống kê:
                             </p>
                             <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
                                 <div>• <b>🌱 Nhẹ:</b> <span className="text-emerald-700 font-bold">35 điểm</span> (Dán tem, 5S, việc nhẹ &rarr; Tổng ca <b>90đ - Hạng A</b>)</div>
@@ -275,7 +275,7 @@ export default function KpiRulesHandbookTab({
                             </div>
                         </div>
 
-                        {/* Trụ Cột 2: Chất Lượng */}
+                        {/* Nhóm điểm 2: Chất Lượng */}
                         <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 relative overflow-hidden">
                             <div className="flex items-center justify-between">
                                 <span className="text-xl">⭐</span>
@@ -294,15 +294,15 @@ export default function KpiRulesHandbookTab({
                                 <div>• <b>Xếp lẫn LOT trên pallet không phân tách:</b> Trừ 15đ/lỗi</div>
                                 <div>• <b>Lấy hàng không đúng, tự ý, không theo chỉ dẫn:</b> Trừ 15đ/lỗi</div>
                                 <div>• <b>Nĩa xe đâm rách thùng / bao bì:</b> Trừ 20đ/lỗi</div>
-                                <div>• <b>Để hàng ngoài nhiệt độ lạnh quá giờ:</b> Mất trụ Chất lượng (0đ), khóa <b>Hạng C</b></div>
-                                <div>• <b>Làm đổ / rơi kiện, pallet:</b> Mất trụ Chất lượng (0đ), khóa <b>Hạng C</b></div>
+                                <div>• <b>Để hàng ngoài nhiệt độ lạnh quá giờ:</b> Mất nhóm Chất lượng (0đ), khóa <b>Hạng C</b></div>
+                                <div>• <b>Làm đổ / rơi kiện, pallet:</b> Mất nhóm Chất lượng (0đ), khóa <b>Hạng C</b></div>
                                 <div className="text-stone-500 border-t border-stone-200 pt-1">
-                                    Việc tồn đọng chỉ trừ <b>Chất lượng</b>, không trừ lại Kỷ luật. Còn bao nhiêu % việc chưa xong thì trừ đúng bấy nhiêu % trụ — <b>hoàn thành 100% mới đạt trần 20đ</b>. Nếu Quản lý đã ghi lỗi “Chưa xong việc trong ca” thì lấy đúng mức phạt của lỗi đó, <b>không cộng dồn</b> với phần tự trừ; lỗi lớn hơn trần trụ chỉ đưa trụ về 0đ (không trừ âm), số sao nghiệm thu chỉ để tham khảo.
+                                    Việc tồn đọng chỉ trừ <b>Chất lượng</b>, không trừ lại Kỷ luật. Còn bao nhiêu % việc chưa xong thì trừ đúng bấy nhiêu % <b>điểm tối đa của nhóm</b> — <b>hoàn thành 100% mới đạt mức tối đa 20đ</b>. Nếu Quản lý đã ghi lỗi “Chưa xong việc trong ca” thì lấy đúng mức phạt của lỗi đó, <b>không cộng dồn</b> với phần tự trừ; lỗi lớn hơn mức tối đa chỉ làm <b>điểm của nhóm đó về 0đ</b> (không trừ âm).
                                 </div>
                             </div>
                         </div>
 
-                        {/* Trụ Cột 3: An Toàn */}
+                        {/* Nhóm điểm 3: An Toàn */}
                         <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 relative overflow-hidden">
                             <div className="flex items-center justify-between">
                                 <span className="text-xl">🛡️</span>
@@ -313,7 +313,7 @@ export default function KpiRulesHandbookTab({
                             <h3 className="font-black text-stone-900 text-sm">III. AN TOÀN LAO ĐỘNG</h3>
                             <p className="text-[11px] text-stone-600 leading-relaxed">
                                 Áp dụng cho <b>việc lao động</b> (có vận hành xe nâng). Điểm gốc 20đ, bảo toàn tuyệt đối nếu không xảy ra sự cố an toàn / xe nâng.
-                                Việc thống kê không có trụ này. Lỗi hàng hóa và lỗi ghi chép đã trừ ở Chất lượng nên không trừ trùng tại đây.
+                                Việc thống kê không có nhóm này. Lỗi hàng hóa và lỗi ghi chép đã trừ ở Chất lượng nên không trừ trùng tại đây.
                             </p>
                             <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
                                 <div>• <b>Không có sự cố:</b> 20/20 điểm</div>
@@ -322,7 +322,7 @@ export default function KpiRulesHandbookTab({
                             </div>
                         </div>
 
-                        {/* Trụ Cột 4: Kỷ Luật & 5S */}
+                        {/* Nhóm điểm 4: Kỷ Luật & 5S */}
                         <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2 relative overflow-hidden">
                             <div className="flex items-center justify-between">
                                 <span className="text-xl">📋</span>
@@ -345,12 +345,12 @@ export default function KpiRulesHandbookTab({
 
                     </div>
 
-                    {/* B. Việc thống kê — 3 trụ cột */}
+                    {/* B. Việc thống kê — 3 nhóm điểm */}
                     <div className="space-y-3 border-t border-stone-200 pt-4">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                             <h3 className="font-black text-sky-900 text-sm flex items-center gap-1.5">
                                 <span>📊</span>
-                                <span>B. VIỆC THỐNG KÊ / GHI CHÉP — 3 TRỤ CỘT</span>
+                                <span>B. VIỆC THỐNG KÊ / GHI CHÉP — 3 NHÓM ĐIỂM</span>
                             </h3>
                             <span className="px-2 py-0.5 rounded-lg bg-sky-600 text-white font-black text-[10px]">
                                 Tổng ngày 90 / 92 / 95 / 100đ
@@ -358,7 +358,7 @@ export default function KpiRulesHandbookTab({
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            {/* Trụ Cột 1: Năng Suất */}
+                            {/* Nhóm điểm 1: Năng Suất */}
                             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xl">⚡</span>
@@ -368,7 +368,7 @@ export default function KpiRulesHandbookTab({
                                 </div>
                                 <h3 className="font-black text-stone-900 text-sm">I. NĂNG SUẤT THỰC HIỆN</h3>
                                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                                    Trần 40đ, đã gồm 20đ của trụ An toàn được dồn sang vì thống kê không vận hành xe nâng:
+                                    Trần 40đ, đã gồm 20đ của nhóm An toàn được dồn sang vì thống kê không vận hành xe nâng:
                                 </p>
                                 <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
                                     <div>• <b>🌱 Nhẹ:</b> <span className="text-emerald-700 font-bold">30 điểm</span> (tổng ca <b>90đ - Hạng A</b>)</div>
@@ -379,7 +379,7 @@ export default function KpiRulesHandbookTab({
                                 </div>
                             </div>
 
-                            {/* Trụ Cột 2: Chất Lượng */}
+                            {/* Nhóm điểm 2: Chất Lượng */}
                             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xl">⭐</span>
@@ -389,7 +389,7 @@ export default function KpiRulesHandbookTab({
                                 </div>
                                 <h3 className="font-black text-stone-900 text-sm">II. CHẤT LƯỢNG SỐ LIỆU</h3>
                                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                                    <b>Đây là trụ cột quan trọng nhất</b> của việc thống kê (nặng gấp đôi việc lao động): sản phẩm chính là <b>con số chính xác</b>, việc phải <b>giải quyết xong trong ngày</b>.
+                                    <b>Đây là nhóm điểm quan trọng nhất</b> của việc thống kê (nặng gấp đôi việc lao động): sản phẩm chính là <b>con số chính xác</b>, việc phải <b>giải quyết xong trong ngày</b>.
                                 </p>
                                 <div className="text-[10px] bg-white p-2.5 rounded-xl border border-stone-200 space-y-1 text-stone-600">
                                     <div>• <b>Hoàn thành 100% &amp; số liệu đúng tuyệt đối:</b> 40/40 điểm</div>
@@ -397,11 +397,11 @@ export default function KpiRulesHandbookTab({
                                     <div>• <b>Quên quét tem, chậm cập nhật phần mềm, sai lệch bàn giao:</b> Trừ 10đ/lỗi</div>
                                     <div>• <b>Ghi sai số lượng, sai vị trí kệ; dán nhầm tem nhãn:</b> Trừ 15đ/lỗi</div>
                                     <div>• <b>Ghi sai mã LOT (Nghiêm trọng):</b> Trừ 25đ (còn 15đ), khóa Hạng C</div>
-                                    <div className="text-stone-400">Việc tồn đọng &amp; lỗi ghi chép chỉ trừ Chất lượng, không trừ trùng vào Kỷ luật. Số sao chỉ tham khảo.</div>
+                                    <div className="text-stone-400">Việc tồn đọng &amp; lỗi ghi chép chỉ trừ Chất lượng, không trừ trùng vào Kỷ luật.</div>
                                 </div>
                             </div>
 
-                            {/* Trụ Cột 3: Kỷ Luật & 5S */}
+                            {/* Nhóm điểm 3: Kỷ Luật & 5S */}
                             <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-2">
                                 <div className="flex items-center justify-between">
                                     <span className="text-xl">📋</span>
@@ -423,7 +423,7 @@ export default function KpiRulesHandbookTab({
                         </div>
 
                         <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 text-[11px] text-sky-900 leading-relaxed">
-                            <b>Vì sao không có trụ An toàn?</b> Việc thống kê không vận hành xe nâng, nên 20đ của trụ An toàn được dồn vào Năng suất để <b>tổng ngày bằng đúng người lao động cùng độ nặng</b> (90 / 92 / 95 / 100đ). Sự cố <b>Nghiêm trọng</b> vẫn khóa Hạng C như mọi người.
+                            <b>Vì sao không có nhóm An toàn?</b> Việc thống kê không vận hành xe nâng, nên 20đ của nhóm An toàn được dồn vào Năng suất để <b>tổng ngày bằng đúng người lao động cùng độ nặng</b> (90 / 92 / 95 / 100đ). Sự cố <b>Nghiêm trọng</b> vẫn khóa Hạng C như mọi người.
                         </div>
                     </div>
                 </div>
@@ -462,7 +462,7 @@ export default function KpiRulesHandbookTab({
                             </p>
                             <div className="space-y-1.5 text-xs text-stone-600 bg-white p-3 rounded-xl border border-stone-200">
                                 <div className="font-bold text-stone-800">📌 Quy tắc tính điểm:</div>
-                                <div>• Điểm số việc chính được chấm theo <b>thang điểm của đúng loại việc đó</b>: lao động 4 trụ cột / thống kê 3 trụ cột.</div>
+                                <div>• Điểm số việc chính được chấm theo <b>thang điểm của đúng loại việc đó</b>: lao động 4 nhóm điểm / thống kê 3 nhóm điểm.</div>
                                 <div>• <b>Nếu bạn làm 2 hoặc 3 việc chính trong ngày:</b> Điểm việc chính sẽ được <b>lấy trung bình cộng</b> để quy về thang ca chuẩn 100đ (tránh trường hợp tính cộng dồn ảo lên 200–300đ).</div>
                             </div>
                         </div>
@@ -540,10 +540,10 @@ export default function KpiRulesHandbookTab({
                             </div>
                             <div>
                                 <h2 className="text-base sm:text-lg font-black text-stone-900">
-                                    4. Danh Mục Lỗi Vi Phạm & Trụ Cột Bị Trừ Điểm
+                                    4. Danh Mục Lỗi Vi Phạm & Nhóm Điểm Bị Trừ
                                 </h2>
                                 <p className="text-xs text-stone-500">
-                                    Mỗi lỗi chỉ trừ đúng <b>một trụ cột</b>: xe nâng &rarr; An toàn (chỉ việc lao động), hàng hóa &rarr; Chất lượng (cả hai loại), việc tồn đọng &rarr; Chất lượng (cả hai loại), số liệu &amp; ghi chép &rarr; Chất lượng (chỉ việc thống kê), vận hành &amp; 5S &rarr; Kỷ luật
+                                    Mỗi lỗi chỉ trừ đúng <b>một nhóm điểm</b>: xe nâng &rarr; An toàn (chỉ việc lao động), hàng hóa &rarr; Chất lượng (cả hai loại), việc tồn đọng &rarr; Chất lượng (cả hai loại), số liệu &amp; ghi chép &rarr; Chất lượng (chỉ việc thống kê), vận hành &amp; 5S &rarr; Kỷ luật
                                 </p>
                             </div>
                         </div>
@@ -609,10 +609,10 @@ export default function KpiRulesHandbookTab({
                             Bất kỳ nhân sự nào để xảy ra sự cố thuộc mức <b>Nghiêm trọng (Severe)</b> sẽ <b>tự động bị xếp Hạng C (Cần cải thiện)</b> bất kể năng suất có cao đến đâu — áp dụng cho cả việc lao động lẫn việc thống kê.
                         </p>
                         <p className="leading-relaxed text-[11px]">
-                            Điểm trừ áp lên <b>trần của đúng trụ bị trừ</b> và mỗi trụ <b>không âm</b>: lỗi lớn hơn trần (ví dụ lỗi 35–40đ trên trụ Chất lượng của việc lao động chỉ có 20đ) chỉ đưa trụ về <b>0đ</b>, phần dư không trừ sang trụ khác; lỗi Nghiêm trọng khi đó vẫn khóa <b>Hạng C</b>.
+                            Điểm trừ chỉ áp lên <b>mức điểm tối đa của đúng nhóm bị trừ</b> và mỗi nhóm điểm <b>không âm</b>: lỗi lớn hơn mức tối đa đó (ví dụ lỗi 35–40đ trên nhóm Chất lượng của việc lao động chỉ có 20đ) chỉ làm <b>điểm của nhóm đó về 0đ</b>, phần dư không trừ sang nhóm khác; lỗi Nghiêm trọng khi đó vẫn khóa <b>Hạng C</b>.
                         </p>
                         <p className="leading-relaxed text-[11px]">
-                            <b>Việc tồn đọng trong ngày</b> trừ <b>Chất lượng</b> ở cả lao động và thống kê: nếu Quản lý đã ghi lỗi <b>“Chưa xong việc trong ca”</b> thì trừ đúng mức phạt của lỗi đó; nếu chưa ghi lỗi thì hệ thống <b>tự trừ theo % việc còn lại</b> (chỉ đạt trần Chất lượng khi hoàn thành 100%). Hai cách không cộng dồn, và Quản lý chấm tay Chất lượng thì quyền chấm tay quyết định.
+                            <b>Việc tồn đọng trong ngày</b> trừ <b>Chất lượng</b> ở cả lao động và thống kê: nếu Quản lý đã ghi lỗi <b>“Chưa xong việc trong ca”</b> thì trừ đúng mức phạt của lỗi đó; nếu chưa ghi lỗi thì hệ thống <b>tự trừ theo % việc còn lại</b> (chỉ đạt mức tối đa của Chất lượng khi hoàn thành 100%). Hai cách không cộng dồn, và Quản lý chấm tay Chất lượng thì quyền chấm tay quyết định.
                         </p>
                         <p className="leading-relaxed text-[11px]">
                             Riêng <b>việc lao động</b>, nếu điểm An toàn tụt xuống <b>&le; 5đ</b> cũng bị khóa Hạng C. Lỗi không thuộc loại việc thì dồn về <b>Kỷ luật</b> để không mất điểm phạt: lỗi xe nâng ghi nhận trên việc thống kê, và lỗi số liệu / ghi chép ghi nhận trên việc lao động (bộ chọn lỗi đã ẩn hai nhóm này theo loại việc).
@@ -766,7 +766,7 @@ export default function KpiRulesHandbookTab({
                                 <span>Nếu tôi làm việc cẩn thận, sản phẩm rất đẹp nhưng công việc chung chỉ được đánh giá 3 sao thì sao?</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed pl-6">
-                                <b>Trả lời:</b> Điểm <b>Chất lượng tính theo lỗi thực tế của riêng bạn</b>, không chia theo sao của cả nhóm. Số sao nghiệm thu chỉ để tham khảo. Nếu <b>hoàn thành 100% phần việc</b> và không có lỗi hàng hóa, lỗi số liệu hay lỗi ghi chép nào ghi nhận cho bạn, bạn vẫn được tối đa (20/20đ việc lao động, 40/40đ việc thống kê) dù cả nhóm chỉ 3 sao; ngược lại, lỗi của bạn vẫn bị trừ đúng mức dù nhóm 5 sao. Việc còn tồn trong ngày thì Chất lượng tự trừ theo % việc còn lại.
+                                <b>Trả lời:</b> Điểm <b>Chất lượng tính theo lỗi thực tế của riêng bạn</b>, không chia theo sao của cả nhóm. Nếu <b>hoàn thành 100% phần việc</b> và không có lỗi hàng hóa, lỗi số liệu hay lỗi ghi chép nào ghi nhận cho bạn, bạn vẫn được tối đa (20/20đ việc lao động, 40/40đ việc thống kê) dù cả nhóm chỉ 3 sao; ngược lại, lỗi của bạn vẫn bị trừ đúng mức dù nhóm 5 sao. Việc còn tồn trong ngày thì Chất lượng tự trừ theo % việc còn lại.
                             </p>
                         </div>
 
@@ -783,10 +783,10 @@ export default function KpiRulesHandbookTab({
                         <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-1.5">
                             <div className="font-extrabold text-stone-900 text-sm flex items-center gap-1.5">
                                 <span className="text-indigo-600">Q5:</span>
-                                <span>Tôi làm việc thống kê, kiểm đếm thì có trụ An toàn không? Điểm có bị thấp hơn người bốc vác không?</span>
+                                <span>Tôi làm việc thống kê, kiểm đếm thì có nhóm An toàn không? Điểm có bị thấp hơn người bốc vác không?</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed pl-6">
-                                <b>Trả lời:</b> Việc thống kê <b>không có trụ An toàn</b> vì không vận hành xe nâng; 20đ của trụ này được dồn sang Năng suất, nên thang gồm <b>Năng suất 40đ • Chất lượng 40đ • Kỷ luật &amp; 5S 20đ</b>. Tổng ngày vẫn bằng đúng người lao động cùng độ nặng: <b>Nhẹ 90đ • Vừa 92đ • Nặng 95đ • Rất nặng 100đ</b>. Lỗi số liệu / ghi chép trừ vào Chất lượng (không trừ trùng ở Kỷ luật); sự cố nghiêm trọng vẫn khóa Hạng C như mọi người.
+                                <b>Trả lời:</b> Việc thống kê <b>không có nhóm An toàn</b> vì không vận hành xe nâng; 20đ của nhóm này được dồn sang Năng suất, nên thang gồm <b>Năng suất 40đ • Chất lượng 40đ • Kỷ luật &amp; 5S 20đ</b>. Tổng ngày vẫn bằng đúng người lao động cùng độ nặng: <b>Nhẹ 90đ • Vừa 92đ • Nặng 95đ • Rất nặng 100đ</b>. Lỗi số liệu / ghi chép trừ vào Chất lượng (không trừ trùng ở Kỷ luật); sự cố nghiêm trọng vẫn khóa Hạng C như mọi người.
                             </p>
                         </div>
                     </div>

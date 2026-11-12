@@ -20,6 +20,7 @@ import {
     WorkPlanItemStatus,
     WorkPlanRating,
     WorkloadMetrics,
+    WorkPlanAssignee,
     WorkPlanAssigneeEvaluation,
     ITEM_STATUS_CONFIG,
     RATING_CONFIG,
@@ -58,6 +59,29 @@ const RATING_KEYS: WorkPlanRating[] = [
     'needs_improvement',
     'poor',
 ]
+
+// Người được giao việc mặc định có ca chuẩn 8h, OT 0h — khởi tạo sẵn để lần đánh giá nào
+// cũng lưu được giờ làm, kể cả khi Quản lý không mở bảng chia % / giờ từng người.
+function buildDefaultAssigneeEvaluations(
+    assignees: WorkPlanAssignee[]
+): WorkPlanAssigneeEvaluation[] {
+    if (assignees.length === 0) return []
+    const defaultShare = Math.round(100 / assignees.length)
+    return assignees.map((a, idx) => ({
+        assignee_id: a.id,
+        assignee_name: a.name,
+        share_percent:
+            idx === assignees.length - 1
+                ? 100 - defaultShare * (assignees.length - 1)
+                : defaultShare,
+        role: assignees.length === 1 ? 'equal' : idx === 0 ? 'main' : 'support',
+        task_type: a.task_type || 'primary',
+        regular_hours: a.regular_hours ?? 8,
+        overtime_hours: a.overtime_hours ?? 0,
+        incidents: [],
+        bonus_points: 0,
+    }))
+}
 
 export default function EvaluateItemModal({
     item,
@@ -100,9 +124,13 @@ export default function EvaluateItemModal({
             setImages(Array.isArray(item.completion_images) ? item.completion_images : [])
             setWorkloadMetrics(item.workload_metrics || {})
             const initialEvals =
-                item.workload_metrics?.assignee_evaluations ||
-                item.assignee_evaluations ||
-                []
+                item.workload_metrics?.assignee_evaluations?.length
+                    ? item.workload_metrics.assignee_evaluations
+                    : item.assignee_evaluations?.length
+                        ? item.assignee_evaluations
+                        : buildDefaultAssigneeEvaluations(
+                              Array.isArray(item.assignees) ? item.assignees : []
+                          )
             setAssigneeEvaluations(initialEvals)
             setCarryOverTomorrow(false)
             setActiveTab('overview')
@@ -479,7 +507,7 @@ export default function EvaluateItemModal({
                                         )}
                                         {hasWorkloadData(workloadMetrics) && (
                                             <span className="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
-                                                ⚖️ Số liệu: {formatWorkloadSummaryText(workloadMetrics)}
+                                                ⚖️ Số liệu: {formatWorkloadSummaryText(workloadMetrics, item.work_nature)}
                                             </span>
                                         )}
                                     </div>

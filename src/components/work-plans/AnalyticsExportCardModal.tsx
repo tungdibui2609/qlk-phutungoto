@@ -226,7 +226,7 @@ export default function AnalyticsExportCardModal({
             lines.push(`${medal} *${r.name}*: *${r.netKpiScore}đ* (${r.gradeLabel})`)
             lines.push(`   ├ ${taskStr} • SL: ${prodStr}`)
             const safetyStr = r.safetyMax === 0 ? '' : ` 🛡️${r.safetyScore}`
-            lines.push(`   └ Điểm trụ cột: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore}${safetyStr} 📋${r.disciplineScore})${r.secondaryBonusPoints > 0 ? ` • Việc phụ: +${r.secondaryBonusPoints}đ` : ''}`)
+            lines.push(`   └ Điểm các nhóm: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore}${safetyStr} 📋${r.disciplineScore})${r.secondaryBonusPoints > 0 ? ` • Việc phụ: +${r.secondaryBonusPoints}đ` : ''}`)
         })
 
         if (exportMode === 'comprehensive' || exportMode === 'detail') {
@@ -503,7 +503,7 @@ export default function AnalyticsExportCardModal({
                                     {rows.length} <span className="text-xs text-indigo-500 font-bold">nhân viên</span>
                                 </div>
                                 <div className="text-[10px] text-stone-500">
-                                    Xét theo 4 trụ cột chuẩn
+                                    Xét theo 4 nhóm điểm chuẩn
                                 </div>
                             </div>
                         </div>
@@ -704,7 +704,7 @@ export default function AnalyticsExportCardModal({
                                         </span>
                                     </h2>
                                     <span className="text-[10px] text-stone-500 font-medium">
-                                        Minh bạch sản lượng, đóng góp %, điểm 4 trụ cột và vi phạm
+                                        Minh bạch sản lượng, đóng góp %, điểm 4 nhóm và vi phạm
                                     </span>
                                 </div>
 

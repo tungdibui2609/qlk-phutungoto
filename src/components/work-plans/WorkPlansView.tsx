@@ -66,6 +66,8 @@ import {
     getDayOfWeekVN,
     buildDefaultPlanTitle,
     hasWorkloadData,
+    getStatisticsDocumentCounts,
+    getEvaluationHours,
 } from './types'
 import BulkImportModal from './BulkImportModal'
 import EvaluateItemModal from './EvaluateItemModal'
@@ -2350,10 +2352,26 @@ export default function WorkPlansView() {
                                                         const wl = item.workload_metrics
                                                         const hasData = hasWorkloadData(wl)
 
+                                                        // Đã nghiệm thu (chấm sao / chuyển trạng thái) nhưng chưa lưu giờ từng người
+                                                        // -> tạm tính ca chuẩn 8h/người, đúng mặc định của bộ đánh giá
+                                                        const isEvaluated = Boolean(
+                                                            item.evaluated_at ||
+                                                            item.rating_stars ||
+                                                            (item.status !== 'pending' && item.status !== 'cancelled')
+                                                        )
+                                                        const hoursOptions = {
+                                                            assigneeCount: Array.isArray(item.assignees)
+                                                                ? item.assignees.length
+                                                                : 0,
+                                                            assumeStandardShift: isEvaluated,
+                                                        }
+
                                                         // Công việc Thống kê / Ghi chép: hiển thị số phiếu đã tạo, không dùng sản lượng/giờ
                                                         if (item.work_nature === 'statistics') {
-                                                            const docs = Number(wl?.documents_count) || 0
-                                                            const rows = Number(wl?.data_rows_count) || 0
+                                                            const statsCounts = getStatisticsDocumentCounts(wl)
+                                                            const docs = statsCounts.documents
+                                                            const rows = statsCounts.rows
+                                                            const evalHours = getEvaluationHours(wl, hoursOptions)
                                                             return (
                                                                 <div
                                                                     onClick={() => setItemForWorkloadModal(item)}
@@ -2369,7 +2387,7 @@ export default function WorkPlansView() {
                                                                             Sửa <ChevronRight size={12} />
                                                                         </span>
                                                                     </div>
-                                                                    <div className="grid grid-cols-3 gap-1.5 text-xs">
+                                                                    <div className="grid grid-cols-2 gap-1.5 text-xs">
                                                                         <div className="bg-white/95 p-1.5 rounded-xl border border-sky-100 shadow-2xs flex flex-col text-center">
                                                                             <span className="text-[10px] font-semibold text-stone-500">📄 Phiếu</span>
                                                                             <span className="text-sm font-black text-sky-900 mt-0.5 truncate">
@@ -2382,6 +2400,31 @@ export default function WorkPlansView() {
                                                                                 {rows > 0 ? rows.toLocaleString('vi-VN') : '-'}
                                                                             </span>
                                                                         </div>
+                                                                        <div
+                                                                            className="bg-white/95 p-1.5 rounded-xl border border-sky-100 shadow-2xs flex flex-col text-center"
+                                                                            title={
+                                                                                evalHours.isDefault
+                                                                                    ? 'Chưa nhập giờ đánh giá — tạm tính ca chuẩn 8h/người'
+                                                                                    : undefined
+                                                                            }
+                                                                        >
+                                                                            <span className="text-[10px] font-semibold text-stone-500">⏱️ Giờ làm</span>
+                                                                            <span className="text-sm font-black text-sky-900 mt-0.5 truncate">
+                                                                                {evalHours.hasData && evalHours.total > 0
+                                                                                    ? `${evalHours.total.toLocaleString('vi-VN')}h`
+                                                                                    : '-'}
+                                                                            </span>
+                                                                            {evalHours.overtime > 0 && (
+                                                                                <span className="text-[9px] font-bold text-amber-700">
+                                                                                    +{evalHours.overtime.toLocaleString('vi-VN')}h OT
+                                                                                </span>
+                                                                            )}
+                                                                            {evalHours.isDefault && (
+                                                                                <span className="text-[9px] font-semibold text-stone-400">
+                                                                                    ca chuẩn
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
                                                                         <div className="bg-white/95 p-1.5 rounded-xl border border-sky-100 shadow-2xs flex flex-col text-center">
                                                                             <span className="text-[10px] font-semibold text-stone-500">⭐ Chất lượng</span>
                                                                             <span className="text-sm font-black text-amber-800 mt-0.5 truncate">
@@ -2390,7 +2433,7 @@ export default function WorkPlansView() {
                                                                         </div>
                                                                     </div>
                                                                     <div className="text-[10px] text-sky-800 bg-white/80 px-2 py-1 rounded-lg border border-sky-100/80">
-                                                                        Không ghi sản lượng &amp; giờ làm ở báo cáo — chấm độ chính xác &amp; hoàn thành trong ngày.
+                                                                        Không ghi sản lượng ở báo cáo — chấm độ chính xác &amp; hoàn thành trong ngày. Giờ làm lấy từ phần Đánh giá sau nghiệm thu.
                                                                     </div>
                                                                 </div>
                                                             )
@@ -2421,6 +2464,15 @@ export default function WorkPlansView() {
                                                             wl.difficulty && DIFFICULTY_CONFIG[wl.difficulty]
                                                                 ? DIFFICULTY_CONFIG[wl.difficulty]
                                                                 : null
+
+                                                        // Giờ làm: lấy từ đánh giá sau nghiệm thu; trước đó dùng số giờ nhập tay nếu có
+                                                        const evalHours = getEvaluationHours(wl, hoursOptions)
+                                                        const displayHours = evalHours.hasData
+                                                            ? evalHours.total
+                                                            : Number(wl.hours_spent) || 0
+                                                        const displayOvertime = evalHours.hasData
+                                                            ? evalHours.overtime
+                                                            : 0
 
                                                         return (
                                                             <div
@@ -2500,6 +2552,33 @@ export default function WorkPlansView() {
                                                                             </span>
                                                                         </div>
                                                                     )}
+
+                                                                    {/* 7. Giờ làm (từ đánh giá sau nghiệm thu) */}
+                                                                    <div
+                                                                        className="bg-white/95 p-1.5 rounded-xl border border-indigo-100 shadow-2xs flex flex-col text-center"
+                                                                        title={
+                                                                            evalHours.isDefault
+                                                                                ? 'Chưa nhập giờ đánh giá — tạm tính ca chuẩn 8h/người'
+                                                                                : undefined
+                                                                        }
+                                                                    >
+                                                                        <span className="text-[10px] font-semibold text-stone-500">⏱️ Giờ làm</span>
+                                                                        <span className="text-xs font-black text-indigo-800 mt-0.5 truncate">
+                                                                            {displayHours > 0
+                                                                                ? `${displayHours.toLocaleString('vi-VN')}h`
+                                                                                : '-'}
+                                                                        </span>
+                                                                        {displayOvertime > 0 && (
+                                                                            <span className="text-[9px] font-bold text-amber-700">
+                                                                                +{displayOvertime.toLocaleString('vi-VN')}h OT
+                                                                            </span>
+                                                                        )}
+                                                                        {evalHours.isDefault && (
+                                                                            <span className="text-[9px] font-semibold text-stone-400">
+                                                                                ca chuẩn
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
 
                                                                 {/* Footer ghi chú hệ số hoặc chứng từ nếu có */}

@@ -31,6 +31,7 @@ import {
     calculateAssigneeTaskStandardKpi,
     calculateWorkSpeed,
     WorkPlanTaskType,
+    getStatisticsDocumentCounts,
 } from './types'
 import ExcelJS from 'exceljs'
 import { saveAs } from 'file-saver'
@@ -93,7 +94,7 @@ export interface EmployeeStatRow {
     productivityScore: number // Lao động 35-45đ • Thống kê mốc 30-40đ (trần 40đ)
     qualityScore: number // Lao động tối đa 20đ • Thống kê tối đa 40đ
     safetyScore: number // Gốc 20đ; 0 khi chỉ làm việc thống kê
-    safetyMax: number // 20 (lao động) hoặc 0 (chỉ thống kê — không có trụ An toàn)
+    safetyMax: number // 20 (lao động) hoặc 0 (chỉ thống kê — không có nhóm An toàn)
     disciplineScore: number // Gốc 15đ (thống kê 20đ)
     productivityMaxTotal: number // Tổng trần năng suất các việc chính (để chia trung bình)
     qualityMaxTotal: number // Tổng trần chất lượng các việc chính
@@ -239,7 +240,7 @@ export default function WorkPlanAnalyticsTab({
         const totalDocuments = active
             .filter(i => i.work_nature === 'statistics')
             .reduce(
-                (s, i) => s + (Number(i.workload_metrics?.documents_count) || 0),
+                (s, i) => s + getStatisticsDocumentCounts(i.workload_metrics).documents,
                 0
             )
         const distinctDays = new Set(active.map(i => i.plan_date)).size
@@ -475,7 +476,7 @@ export default function WorkPlanAnalyticsTab({
 
             if (isStatistics) {
                 row.totalDocuments += Math.round(
-                    ((Number(wl?.documents_count) || 0) * sharePercent) / 100
+                    (getStatisticsDocumentCounts(wl).documents * sharePercent) / 100
                 )
                 row.statisticsTasksAssigned += 1
                 if (item.status === 'completed') row.statisticsTasksCompleted += 1
@@ -768,7 +769,7 @@ export default function WorkPlanAnalyticsTab({
                     individualEval: evalText || '-',
                     difficulty: diffLabel,
                     positions: wl?.positions_count || '-',
-                    workload: formatWorkloadSummaryText(wl) || '-',
+                    workload: formatWorkloadSummaryText(wl, item.work_nature) || '-',
                     status: ITEM_STATUS_CONFIG[item.status]?.label || item.status,
                     progress: `${item.progress_percent}%`,
                     rating: item.rating ? RATING_CONFIG[item.rating].label : '-',
@@ -998,10 +999,10 @@ export default function WorkPlanAnalyticsTab({
                                     <th className="px-2.5 py-3 text-center" title="Số việc chính được giao trong ca và tỷ lệ hoàn tất">⭐ Việc chính</th>
                                     <th className="px-2.5 py-3 text-center" title="Số việc phụ / tăng cường được hỗ trợ">➕ Việc phụ</th>
                                     <th className="px-2.5 py-3 text-center" title="Sản lượng thực tế, số giờ làm và tốc độ năng suất trong 1 giờ. Công việc Thống kê / Ghi chép không được ghi vào cột này.">Sản Lượng & Giờ Làm</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột Năng suất: Lao động 35–45đ (Nhẹ 35, Vừa 37, Nặng 40, Rất nặng 45) • Thống kê 30–40đ theo độ nặng (không có trụ An toàn)">⚡ N.Suất</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột Chất lượng thực hiện việc chính (Tối đa 20đ)">⭐ C.Lượng</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột An toàn lao động (Gốc 20đ, chỉ trừ lỗi vận hành xe nâng)">🛡️ A.Toàn</th>
-                                    <th className="px-2 py-3 text-center" title="Trụ cột Kỷ luật & 5S (lao động gốc 15đ, thống kê gốc 20đ; trừ lỗi + thưởng)">📋 K.Luật</th>
+                                    <th className="px-2 py-3 text-center" title="Nhóm điểm Năng suất: Lao động 35–45đ (Nhẹ 35, Vừa 37, Nặng 40, Rất nặng 45) • Thống kê 30–40đ theo độ nặng (không có nhóm An toàn)">⚡ N.Suất</th>
+                                    <th className="px-2 py-3 text-center" title="Nhóm điểm Chất lượng thực hiện việc chính (Tối đa 20đ)">⭐ C.Lượng</th>
+                                    <th className="px-2 py-3 text-center" title="Nhóm điểm An toàn lao động (Gốc 20đ, chỉ trừ lỗi vận hành xe nâng)">🛡️ A.Toàn</th>
+                                    <th className="px-2 py-3 text-center" title="Nhóm điểm Kỷ luật & 5S (lao động gốc 15đ, thống kê gốc 20đ; trừ lỗi + thưởng)">📋 K.Luật</th>
                                     <th className="px-3 py-3 text-center" title="Điểm việc chính theo thang chuẩn 100đ">⭐ Điểm Chính</th>
                                     <th className="px-3 py-3 text-center" title="Điểm việc phụ cộng thêm không giới hạn trần">➕ Việc Phụ</th>
                                     <th className="px-3 py-3 text-center" title="Tổng KPI thực tế mở trần (có thể đạt 120đ - 150đ+)">🎯 TỔNG KPI</th>
@@ -1120,10 +1121,10 @@ export default function WorkPlanAnalyticsTab({
                                                 {row.qualityScore}
                                             </span>
                                         </td>
-                                        {/* Trụ Cột 3: An Toàn (/20đ) — việc thống kê không có trụ này */}
+                                        {/* Nhóm điểm 3: An Toàn (/20đ) — việc thống kê không có nhóm này */}
                                         <td className="px-2 py-3 text-center">
                                             {row.safetyMax === 0 ? (
-                                                <span className="text-stone-300 font-bold text-xs" title="Việc thống kê không vận hành xe nâng nên không có trụ An toàn; 20đ đã dồn sang Năng suất">—</span>
+                                                <span className="text-stone-300 font-bold text-xs" title="Việc thống kê không vận hành xe nâng nên không có nhóm An toàn; 20đ đã dồn sang Năng suất">—</span>
                                             ) : (
                                                 <span className={`px-1.5 py-0.5 rounded-md text-xs font-bold ${
                                                     row.safetyScore < row.safetyMax
@@ -1349,7 +1350,10 @@ export default function WorkPlanAnalyticsTab({
                             {selectedEmployee.items.map(item => {
                                 const st = ITEM_STATUS_CONFIG[item.status]
                                 const rt = item.rating ? RATING_CONFIG[item.rating] : null
-                                const wlText = formatWorkloadSummaryText(item.workload_metrics)
+                                const wlText = formatWorkloadSummaryText(
+                                    item.workload_metrics,
+                                    item.work_nature
+                                )
 
                                 // Tìm đánh giá cá nhân cho nhân viên này trong task
                                 const evals = item.workload_metrics?.assignee_evaluations || []
@@ -1361,7 +1365,9 @@ export default function WorkPlanAnalyticsTab({
                                 const isStatisticsTask = item.work_nature === 'statistics'
                                 const itemTotalPos = isStatisticsTask ? 0 : Number(item.workload_metrics?.positions_count) || 0
                                 const itemTotalKg = isStatisticsTask ? 0 : Number(item.workload_metrics?.weight_kg) || 0
-                                const itemDocs = isStatisticsTask ? Number(item.workload_metrics?.documents_count) || 0 : 0
+                                const itemDocs = isStatisticsTask
+                                    ? getStatisticsDocumentCounts(item.workload_metrics).documents
+                                    : 0
                                 const itemShare = myEval?.share_percent ?? 100
                                 const userPos = Math.round(((itemTotalPos * itemShare) / 100) * 10) / 10
                                 const userKg = Math.round((itemTotalKg * itemShare) / 100)

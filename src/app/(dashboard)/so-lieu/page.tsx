@@ -324,6 +324,150 @@ export default function SoLieuPage() {
         toastTimerRef.current = setTimeout(() => setToast(null), 2500)
     }
 
+    // ── CƠ CHẾ HOẠT ĐỘNG NGOẠI TUYẾN (OFFLINE CHO KHO ĐÔNG LẠNH) ──
+    const [isOnline, setIsOnline] = useState<boolean>(true)
+    const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0)
+    const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false)
+
+    interface WebOfflineAction {
+        id: string
+        type: 'CREATE_SHIFT' | 'SUBMIT_JOURNAL' | 'UPDATE_JOURNAL' | 'DELETE_JOURNAL' | 'CLOSE_SHIFT'
+        payload: any
+        shiftId?: string
+        timestamp: number
+    }
+
+    const getWebOfflineQueue = useCallback((sysCode: string): WebOfflineAction[] => {
+        if (typeof window === 'undefined') return []
+        try {
+            const raw = localStorage.getItem(`solieu_web_queue_${sysCode}`)
+            return raw ? JSON.parse(raw) : []
+        } catch {
+            return []
+        }
+    }, [])
+
+    const saveWebOfflineQueue = useCallback((sysCode: string, queue: WebOfflineAction[]) => {
+        if (typeof window === 'undefined') return
+        try {
+            localStorage.setItem(`solieu_web_queue_${sysCode}`, JSON.stringify(queue))
+        } catch (e) {
+            console.warn('Lỗi lưu offline queue web:', e)
+        }
+    }, [])
+
+    const refreshOfflineCount = useCallback(() => {
+        if (!shiftSystemCode) return
+        const q = getWebOfflineQueue(shiftSystemCode)
+        setOfflineQueueCount(q.length)
+    }, [shiftSystemCode, getWebOfflineQueue])
+
+    // Đồng bộ toàn bộ dữ liệu ghi nhận ngoại tuyến lên máy chủ Supabase
+    const syncOfflineWebData = useCallback(async () => {
+        if (!shiftSystemCode || isSyncingOffline) return
+        const queue = getWebOfflineQueue(shiftSystemCode)
+        if (queue.length === 0) return
+
+        setIsSyncingOffline(true)
+        const tempShiftIdMap: Record<string, string> = {}
+        const remainingQueue: WebOfflineAction[] = []
+        let syncedCount = 0
+
+        for (const action of queue) {
+            try {
+                if (action.type === 'CREATE_SHIFT') {
+                    const { insertPayload, tempShiftId } = action.payload
+                    const { data: realShift, error } = await (supabase as any)
+                        .from('delivery_shifts')
+                        .insert([insertPayload])
+                        .select()
+                        .single()
+                    if (error) throw error
+                    if (realShift) {
+                        tempShiftIdMap[tempShiftId] = realShift.id
+                        syncedCount++
+                    }
+                } else if (action.type === 'SUBMIT_JOURNAL') {
+                    const origPayload = action.payload
+                    const shiftId = action.shiftId || ''
+                    const realShiftId = tempShiftIdMap[shiftId] || shiftId
+                    let finalNotes = origPayload.notes || ''
+                    if (shiftId && finalNotes.includes(shiftId)) {
+                        finalNotes = finalNotes.replace(`[CV_ID: ${shiftId}]`, `[CV_ID: ${realShiftId}]`)
+                    }
+                    const payload = {
+                        ...origPayload,
+                        notes: finalNotes,
+                    }
+                    const { error } = await (supabase as any)
+                        .from('delivery_journal')
+                        .insert([payload])
+                    if (error) throw error
+                    syncedCount++
+                } else if (action.type === 'UPDATE_JOURNAL') {
+                    const { id, payload } = action.payload
+                    const { error } = await (supabase as any)
+                        .from('delivery_journal')
+                        .update(payload)
+                        .eq('id', id)
+                    if (error) throw error
+                    syncedCount++
+                } else if (action.type === 'DELETE_JOURNAL') {
+                    const { id } = action.payload
+                    const { error } = await (supabase as any)
+                        .from('delivery_journal')
+                        .delete()
+                        .eq('id', id)
+                    if (error) throw error
+                    syncedCount++
+                } else if (action.type === 'CLOSE_SHIFT') {
+                    const { payload, shiftId } = action.payload
+                    const realShiftId = tempShiftIdMap[shiftId] || shiftId
+                    const { error } = await (supabase as any)
+                        .from('delivery_shifts')
+                        .update(payload)
+                        .eq('id', realShiftId)
+                    if (error) throw error
+                    syncedCount++
+                }
+            } catch (err: any) {
+                console.warn('Lỗi sync action web:', action.type, err?.message)
+                remainingQueue.push(action)
+            }
+        }
+
+        saveWebOfflineQueue(shiftSystemCode, remainingQueue)
+        setOfflineQueueCount(remainingQueue.length)
+        setIsSyncingOffline(false)
+
+        if (syncedCount > 0) {
+            showToast(`Đã đồng bộ ${syncedCount} lượt số liệu lên máy chủ thành công!`, 'in')
+            loadOpenShifts()
+            loadJournalData()
+        }
+    }, [shiftSystemCode, isSyncingOffline, getWebOfflineQueue, saveWebOfflineQueue])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        setIsOnline(navigator.onLine)
+        refreshOfflineCount()
+
+        const handleOnline = () => {
+            setIsOnline(true)
+            syncOfflineWebData()
+        }
+        const handleOffline = () => {
+            setIsOnline(false)
+        }
+
+        window.addEventListener('online', handleOnline)
+        window.addEventListener('offline', handleOffline)
+        return () => {
+            window.removeEventListener('online', handleOnline)
+            window.removeEventListener('offline', handleOffline)
+        }
+    }, [shiftSystemCode, refreshOfflineCount, syncOfflineWebData])
+
     // Helper làm sạch sai số số thực trong tên đơn vị (ví dụ: "Thùng (9.600000000000001kg)" -> "Thùng (9.6kg)")
     const cleanUnitLabel = (u?: string | null): string => {
         if (!u) return ''
@@ -2227,6 +2371,11 @@ export default function SoLieuPage() {
         }
 
         try {
+            // Nếu trình duyệt đang mất mạng, lưu ngay vào bộ nhớ máy ngoại tuyến
+            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                throw new Error('OFFLINE_BROWSER')
+            }
+
             const { error } = await (supabase as any)
                 .from('delivery_journal')
                 .insert([payload])
@@ -2241,9 +2390,46 @@ export default function SoLieuPage() {
             )
             return true
         } catch (err: any) {
-            console.error('Confirm batch error:', err)
-            alert('Lỗi lưu đợt: ' + (err?.message || err))
-            return false
+            console.warn('Lưu trực tiếp thất bại, chuyển sang lưu Ngoại Tuyến:', err)
+
+            // Lưu ngoại tuyến vào React state để phản hồi 0ms
+            const offlineRecordId = `offline_web_jn_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+            const offlineRecord: DeliveryJournalRecord = {
+                id: offlineRecordId,
+                delivery_code: batchCode,
+                item_name: product.name,
+                quantity_sent: qty,
+                unit: currentUnit,
+                from_department: isImport ? 'Sản xuất' : 'Kho',
+                to_department: isImport ? 'Kho' : 'Sản xuất',
+                status: isImport ? 'received_by_warehouse' : 'received_by_production',
+                notes: payload.notes,
+                sent_by_name: profile?.full_name || 'Nhân viên',
+                sent_at: nowStr,
+                system_code: shiftSystemCode,
+            }
+
+            setJournalList(prev => [offlineRecord, ...prev])
+            setAllJobJournals(prev => [offlineRecord, ...prev])
+            setDraftQtyMap(prev => ({ ...prev, [product.id]: 0 }))
+
+            // Đẩy vào hàng đợi ngoại tuyến của trình duyệt
+            const queue = getWebOfflineQueue(shiftSystemCode)
+            queue.push({
+                id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                type: 'SUBMIT_JOURNAL',
+                payload,
+                shiftId: activeShift.id,
+                timestamp: Date.now(),
+            })
+            saveWebOfflineQueue(shiftSystemCode, queue)
+            setOfflineQueueCount(queue.length)
+
+            showToast(
+                `NGOẠI TUYẾN • ${isImport ? 'Đã NHẬP' : 'Đã XUẤT'} ${isImport ? '+' : '-'}${qty} ${currentUnit} • ${product.name} (Lưu máy)`,
+                type
+            )
+            return true
         }
     }
 
@@ -2485,59 +2671,65 @@ export default function SoLieuPage() {
         return productStats[key] || { inQty: 0, outQty: 0, inCount: 0, outCount: 0, unit: u }
     }
 
-    // 9. XỬ LÝ MỞ THÊM CÔNG VIỆC MỚI (CÓ THỂ MỞ NHIỀU CÔNG VIỆC CÙNG LÚC)
+    // 9. XỬ LÝ MỞ THÊM CÔNG VIỆC MỚI (CÓ THỂ MỞ NHIỀU CÔNG VIỆC CÙNG LÚC - HỖ TRỢ OFFLINE KHO ĐÔNG)
     const handleOpenShift = async () => {
         if (!shiftSystemCode) return
         if (!jobNameInput.trim()) {
             alert('Vui lòng nhập Tên công việc trước khi bắt đầu!')
             return
         }
+
+        const openedAtDate = jobOpenedAtInput ? new Date(jobOpenedAtInput) : new Date()
+        const openedAtIso = isNaN(openedAtDate.getTime()) ? new Date().toISOString() : openedAtDate.toISOString()
+
+        // Tìm mẫu công việc tương ứng (ưu tiên mẫu đang chọn, hoặc tự khớp theo tên công việc)
+        const matchedTemplate = selectedJobTemplate || jobTemplatesList.find(
+            t => t.name.trim().toLowerCase() === jobNameInput.trim().toLowerCase()
+        )
+
+        // Chuẩn bị danh sách sản phẩm ghim sẵn từ mẫu công việc trước khi lưu DB
+        let initialPinned: ProductItem[] = []
+        if (matchedTemplate?.pinned_product_ids && matchedTemplate.pinned_product_ids.length > 0) {
+            initialPinned = matchedTemplate.pinned_product_ids
+                .map(pid => allProducts.find(p => p.id === pid))
+                .filter(Boolean)
+                .map(p => {
+                    const item = p as ProductItem
+                    const units = getProductUnits(item)
+                    const prefUnit = getPreferredUnit(units, item.unit)
+                    return {
+                        ...item,
+                        unit: prefUnit,
+                        available_units: units,
+                    }
+                })
+        }
+
+        const chosenType = orderTypes.find(t => t.id === jobOrderTypeId)
+        const payload = {
+            system_code: shiftSystemCode,
+            company_id: currentSystem?.company_id || profile?.company_id || null,
+            status: 'open',
+            opened_by: profile?.id || null,
+            opened_by_name: profile?.full_name || 'Nhân viên kho',
+            opened_at: openedAtIso,
+            notes: jobNameInput.trim(),
+            summary_data: {
+                job_name: jobNameInput.trim(),
+                job_notes: jobNotesInput.trim() || null,
+                template_id: matchedTemplate?.id || null,
+                pinned_products: initialPinned,
+                order_type_id: jobOrderTypeId || null,
+                order_type_name: chosenType?.name || null,
+                order_type_code: chosenType?.code || null,
+            }
+        }
+
         try {
-            const openedAtDate = jobOpenedAtInput ? new Date(jobOpenedAtInput) : new Date()
-            const openedAtIso = isNaN(openedAtDate.getTime()) ? new Date().toISOString() : openedAtDate.toISOString()
-
-            // Tìm mẫu công việc tương ứng (ưu tiên mẫu đang chọn, hoặc tự khớp theo tên công việc)
-            const matchedTemplate = selectedJobTemplate || jobTemplatesList.find(
-                t => t.name.trim().toLowerCase() === jobNameInput.trim().toLowerCase()
-            )
-
-            // Chuẩn bị danh sách sản phẩm ghim sẵn từ mẫu công việc trước khi lưu DB
-            let initialPinned: ProductItem[] = []
-            if (matchedTemplate?.pinned_product_ids && matchedTemplate.pinned_product_ids.length > 0) {
-                initialPinned = matchedTemplate.pinned_product_ids
-                    .map(pid => allProducts.find(p => p.id === pid))
-                    .filter(Boolean)
-                    .map(p => {
-                        const item = p as ProductItem
-                        const units = getProductUnits(item)
-                        const prefUnit = getPreferredUnit(units, item.unit)
-                        return {
-                            ...item,
-                            unit: prefUnit,
-                            available_units: units,
-                        }
-                    })
+            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                throw new Error('OFFLINE_BROWSER')
             }
 
-            const chosenType = orderTypes.find(t => t.id === jobOrderTypeId)
-            const payload = {
-                system_code: shiftSystemCode,
-                company_id: currentSystem?.company_id || profile?.company_id || null,
-                status: 'open',
-                opened_by: profile?.id || null,
-                opened_by_name: profile?.full_name || 'Nhân viên kho',
-                opened_at: openedAtIso,
-                notes: jobNameInput.trim(),
-                summary_data: {
-                    job_name: jobNameInput.trim(),
-                    job_notes: jobNotesInput.trim() || null,
-                    template_id: matchedTemplate?.id || null,
-                    pinned_products: initialPinned,
-                    order_type_id: jobOrderTypeId || null,
-                    order_type_name: chosenType?.name || null,
-                    order_type_code: chosenType?.code || null,
-                }
-            }
             const { data, error } = await (supabase as any)
                 .from('delivery_shifts')
                 .insert([payload])
@@ -2572,7 +2764,55 @@ export default function SoLieuPage() {
             setSelectedJobTemplate(null)
             setPageView('active')
         } catch (err: any) {
-            alert('Lỗi mở công việc: ' + (err?.message || err))
+            console.warn('Mở công việc online thất bại, chuyển sang chế độ Ngoại Tuyến:', err)
+            const tempShiftId = `offline_shift_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`
+            const offlineShift = {
+                id: tempShiftId,
+                system_code: shiftSystemCode,
+                company_id: currentSystem?.company_id || profile?.company_id || null,
+                status: 'open',
+                opened_by: profile?.id || null,
+                opened_by_name: profile?.full_name || 'Nhân viên kho',
+                opened_at: openedAtIso,
+                notes: jobNameInput.trim(),
+                summary_data: {
+                    job_name: jobNameInput.trim(),
+                    job_notes: jobNotesInput.trim() || null,
+                    template_id: matchedTemplate?.id || null,
+                    pinned_products: initialPinned,
+                    order_type_id: jobOrderTypeId || null,
+                    order_type_name: chosenType?.name || null,
+                    order_type_code: chosenType?.code || null,
+                    is_offline: true,
+                }
+            }
+
+            setOpenShifts(prev => [offlineShift as any, ...prev])
+            setSelectedShiftId(tempShiftId)
+            setPinnedProducts(initialPinned)
+            setAllJobJournals([])
+            setJournalList([])
+            setSubShifts([])
+            setPadProduct(null)
+            setDraftQtyMap({})
+            setOpenShiftModal(false)
+            setJobNameInput('')
+            setJobNotesInput('')
+            setJobOrderTypeId('')
+            setPageView('active')
+
+            const queue = getWebOfflineQueue(shiftSystemCode)
+            queue.push({
+                id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                type: 'CREATE_SHIFT',
+                payload: { insertPayload: payload, tempShiftId },
+                shiftId: tempShiftId,
+                timestamp: Date.now(),
+            })
+            saveWebOfflineQueue(shiftSystemCode, queue)
+            setOfflineQueueCount(queue.length)
+
+            showToast('ĐÃ MỞ CÔNG VIỆC NGOẠI TUYẾN (Lưu an toàn trong máy)', 'in')
         }
     }
 
@@ -2821,6 +3061,11 @@ export default function SoLieuPage() {
                 },
                 notes: closeNotes ? `[CV: ${currentJobName}] ${closeNotes}` : `[CV: ${currentJobName}] Hoàn thành công việc`,
             }
+
+            if (typeof navigator !== 'undefined' && !navigator.onLine) {
+                throw new Error('OFFLINE_BROWSER')
+            }
+
             const { data: closedShiftData, error } = await (supabase as any)
                 .from('delivery_shifts')
                 .update(payload)
@@ -2843,7 +3088,50 @@ export default function SoLieuPage() {
             }
             showToast(`Đã hoàn thành "${currentJobName}" • Đang hiển thị báo cáo`, 'in')
         } catch (err: any) {
-            alert('Lỗi chốt công việc: ' + (err?.message || err))
+            console.warn('Chốt công việc online thất bại, chuyển sang chốt Ngoại Tuyến:', err)
+            const closedJobId = activeShift.id
+            const closedAtStr = new Date().toISOString()
+            const payload = {
+                status: 'closed',
+                closed_by: profile?.id || null,
+                closed_by_name: profile?.full_name || 'Nhân viên kho',
+                closed_at: closedAtStr,
+                summary_data: {
+                    ...(activeShift?.summary_data || {}),
+                    job_name: currentJobName,
+                    pinned_products: pinnedProducts,
+                    ...(shiftSummary || {}),
+                },
+                notes: closeNotes ? `[CV: ${currentJobName}] ${closeNotes}` : `[CV: ${currentJobName}] Hoàn thành công việc (Ngoại tuyến)`,
+            }
+
+            setOpenShifts(prev => prev.filter(s => s.id !== closedJobId))
+            const closedShiftObj = {
+                ...activeShift,
+                ...payload,
+            }
+            setPastShifts(prev => [closedShiftObj as any, ...prev])
+
+            if (shiftSystemCode) {
+                const queue = getWebOfflineQueue(shiftSystemCode)
+                queue.push({
+                    id: `act_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+                    type: 'CLOSE_SHIFT',
+                    payload: { payload, shiftId: closedJobId },
+                    shiftId: closedJobId,
+                    timestamp: Date.now(),
+                })
+                saveWebOfflineQueue(shiftSystemCode, queue)
+                setOfflineQueueCount(queue.length)
+            }
+
+            setCloseShiftModal(false)
+            setCloseNotes('')
+            setCloseOrderTypeId('')
+            setShiftSummary(null)
+            setPageView('done')
+            setDoneSelectedId(closedJobId)
+            showToast(`ĐÃ CHỐT CÔNG VIỆC NGOẠI TUYẾN • "${currentJobName}" (Lưu an toàn trong máy)`, 'in')
         }
     }
 
@@ -3256,6 +3544,40 @@ export default function SoLieuPage() {
 
     return (
         <div className="min-h-[calc(100vh-4rem)] flex flex-col bg-stone-50 dark:bg-zinc-950 text-stone-800 dark:text-stone-100">
+            {/* ===== BANNER CẢNH BÁO CHẾ ĐỘ NGOẠI TUYẾN / KHO ĐÔNG LẠNH ===== */}
+            {(!isOnline || offlineQueueCount > 0) && (
+                <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-4 h-4" />
+                        </div>
+                        <div className="min-w-0">
+                            <div className="text-xs font-bold truncate">
+                                {!isOnline
+                                    ? '⚠️ Đang làm việc Ngoại Tuyến (Offline trong Kho Đông Lạnh)'
+                                    : '📡 Có số liệu ngoại tuyến sẵn sàng đồng bộ'}
+                            </div>
+                            <div className="text-[11px] text-amber-700/80 dark:text-amber-300/80 truncate">
+                                {offlineQueueCount > 0
+                                    ? `Đang lưu an toàn ${offlineQueueCount} thao tác trong máy • Bấm Đồng bộ khi có sóng mạng.`
+                                    : 'Mất sóng Internet. Bạn vẫn có thể nhập/xuất và mở/đóng ca bình thường không gián đoạn.'}
+                            </div>
+                        </div>
+                    </div>
+
+                    {offlineQueueCount > 0 && (
+                        <button
+                            type="button"
+                            onClick={syncOfflineWebData}
+                            disabled={isSyncingOffline}
+                            className="shrink-0 h-8 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition disabled:opacity-50"
+                        >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
+                            <span>{isSyncingOffline ? 'Đang gửi...' : 'Đồng bộ ngay'}</span>
+                        </button>
+                    )}
+                </div>
+            )}
             {/* ===== MOBILE HEADER GỌN: Chuyển chế độ Đang làm / Đã hoàn thành + chọn CV + tìm kiếm ===== */}
             <header className="sm:hidden sticky top-0 z-30 bg-white dark:bg-zinc-900 border-b border-stone-200 dark:border-zinc-800 px-3 pt-2 pb-2 space-y-1.5">
                 {/* Chuyển nhanh: Đang làm | Đã hoàn thành */}

@@ -1399,6 +1399,68 @@ export function applyQuantityFactorToMetrics(
     return updated
 }
 
+// Số phiếu / số dòng dữ liệu của việc thống kê: ưu tiên số đã lưu (có thể nhập tay),
+// nếu chưa có thì suy ra từ phiếu nhập/xuất kế toán đã gắn — tránh hiển thị "-" với dữ liệu cũ.
+export function getStatisticsDocumentCounts(metrics?: WorkloadMetrics | null): {
+    documents: number
+    rows: number
+} {
+    const inbound = metrics?.linked_inbound_orders || []
+    const outbound = metrics?.linked_outbound_orders || []
+    const linkedDocuments = inbound.length + outbound.length
+    const linkedRows = [...inbound, ...outbound].reduce(
+        (s, o) => s + (Number(o.items_count) || 0),
+        0
+    )
+    const storedDocuments = Number(metrics?.documents_count) || 0
+    const storedRows = Number(metrics?.data_rows_count) || 0
+    return {
+        documents: storedDocuments > 0 ? storedDocuments : linkedDocuments,
+        rows: storedRows > 0 ? storedRows : linkedRows,
+    }
+}
+
+// Giờ làm sau nghiệm thu: lấy từ đánh giá của từng người (ca chuẩn mặc định 8h, OT mặc định 0h).
+// Lúc giao việc chưa có giờ — chỉ khi Quản lý đã đánh giá mới có dữ liệu để hiển thị.
+export interface EvaluationHoursSummary {
+    regular: number
+    overtime: number
+    total: number
+    hasData: boolean
+    isDefault: boolean
+}
+
+export function getEvaluationHours(
+    metrics?: WorkloadMetrics | null,
+    options?: { assigneeCount?: number; assumeStandardShift?: boolean }
+): EvaluationHoursSummary {
+    const evaluations = metrics?.assignee_evaluations || []
+    if (evaluations.length === 0) {
+        // Đã đánh giá nhưng chưa lưu giờ từng người -> tạm tính ca chuẩn 8h/người như bộ đánh giá
+        const assigneeCount = options?.assigneeCount || 0
+        if (options?.assumeStandardShift && assigneeCount > 0) {
+            const regular = assigneeCount * 8
+            return { regular, overtime: 0, total: regular, hasData: true, isDefault: true }
+        }
+        return { regular: 0, overtime: 0, total: 0, hasData: false, isDefault: false }
+    }
+    const regular = evaluations.reduce((sum, ev) => {
+        const raw = Number(ev.regular_hours ?? 8)
+        return sum + (Number.isFinite(raw) ? raw : 8)
+    }, 0)
+    const overtime = evaluations.reduce((sum, ev) => {
+        const raw = Number(ev.overtime_hours ?? 0)
+        return sum + (Number.isFinite(raw) ? raw : 0)
+    }, 0)
+    return {
+        regular,
+        overtime,
+        total: Math.round((regular + overtime) * 10) / 10,
+        hasData: true,
+        isDefault: false,
+    }
+}
+
 export function hasWorkloadData(metrics?: WorkloadMetrics | null): boolean {
     if (!metrics) return false
     return Boolean(
@@ -1426,7 +1488,10 @@ export function hasWorkloadData(metrics?: WorkloadMetrics | null): boolean {
     )
 }
 
-export function formatWorkloadSummaryText(metrics?: WorkloadMetrics | null): string {
+export function formatWorkloadSummaryText(
+    metrics?: WorkloadMetrics | null,
+    workNature?: WorkPlanItem['work_nature'] | null
+): string {
     if (!hasWorkloadData(metrics) || !metrics) return ''
     const parts: string[] = []
     if (metrics.difficulty && DIFFICULTY_CONFIG[metrics.difficulty]) {
@@ -1460,11 +1525,15 @@ export function formatWorkloadSummaryText(metrics?: WorkloadMetrics | null): str
     if (metrics.hours_spent && metrics.hours_spent > 0) {
         parts.push(`${metrics.hours_spent} Giờ`)
     }
-    if (metrics.documents_count && metrics.documents_count > 0) {
-        parts.push(`📄 ${metrics.documents_count.toLocaleString('vi-VN')} phiếu đã tạo`)
+    const statisticsCounts =
+        workNature === 'statistics' ? getStatisticsDocumentCounts(metrics) : null
+    const documentsCount = statisticsCounts ? statisticsCounts.documents : metrics.documents_count
+    const dataRowsCount = statisticsCounts ? statisticsCounts.rows : metrics.data_rows_count
+    if (documentsCount && documentsCount > 0) {
+        parts.push(`📄 ${documentsCount.toLocaleString('vi-VN')} phiếu đã tạo`)
     }
-    if (metrics.data_rows_count && metrics.data_rows_count > 0) {
-        parts.push(`📋 ${metrics.data_rows_count.toLocaleString('vi-VN')} dòng dữ liệu`)
+    if (dataRowsCount && dataRowsCount > 0) {
+        parts.push(`📋 ${dataRowsCount.toLocaleString('vi-VN')} dòng dữ liệu`)
     }
     if (metrics.quantity_adjustment_note) {
         parts.push(`Lý do hệ số: ${metrics.quantity_adjustment_note}`)
