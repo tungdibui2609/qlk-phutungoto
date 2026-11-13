@@ -10,7 +10,6 @@ import {
     Trophy,
     Award,
     Calendar,
-    Target,
     ListFilter,
     CheckCircle2,
     AlertTriangle,
@@ -48,7 +47,8 @@ export interface EmployeeStatExportRow {
     statisticsTasksAssigned?: number
     statisticsTasksCompleted?: number
     primaryKpiScore: number
-    secondaryBonusPoints: number
+    supportPoints: number
+    hasPrimaryTasks?: boolean
     productivityScore: number
     qualityScore: number
     safetyScore: number
@@ -57,7 +57,6 @@ export interface EmployeeStatExportRow {
     productivityMax?: number
     qualityMax?: number
     disciplineMax?: number
-    netKpiScore: number
     totalPositions: number
     totalWeightKg: number
     totalContainers: number
@@ -223,16 +222,19 @@ export default function AnalyticsExportCardModal({
             const prodStr = statsOnly
                 ? ((r.totalDocuments || 0) > 0 ? `📄 ${r.totalDocuments} phiếu đã tạo (thống kê)` : `📊 Không ghi sản lượng/giờ (thống kê)`)
                 : `${r.totalPositions} vt • ${(r.totalWeightKg / 1000).toFixed(1)} tấn${hourStr}${(r.statisticsTasksAssigned || 0) > 0 && (r.totalDocuments || 0) > 0 ? ` • 📄 ${r.totalDocuments} phiếu (TK)` : ''}`
-            lines.push(`${medal} *${r.name}*: *${r.netKpiScore}đ* (${r.gradeLabel})`)
+            const scoreStr = r.hasPrimaryTasks === false
+                ? `*${r.supportPoints}đ hỗ trợ*`
+                : `*${r.primaryKpiScore}đ*`
+            lines.push(`${medal} *${r.name}*: ${scoreStr} (${r.gradeLabel})`)
             lines.push(`   ├ ${taskStr} • SL: ${prodStr}`)
             const safetyStr = r.safetyMax === 0 ? '' : ` 🛡️${r.safetyScore}`
-            lines.push(`   └ Điểm các nhóm: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore}${safetyStr} 📋${r.disciplineScore})${r.secondaryBonusPoints > 0 ? ` • Việc phụ: +${r.secondaryBonusPoints}đ` : ''}`)
+            lines.push(`   └ Điểm nhóm việc chính: ${r.primaryKpiScore}/100đ (⚡${r.productivityScore} ⭐${r.qualityScore}${safetyStr} 📋${r.disciplineScore})${r.supportPoints > 0 ? ` • ➕ Điểm hỗ trợ kỳ: +${r.supportPoints}đ` : ''}`)
         })
 
         if (exportMode === 'comprehensive' || exportMode === 'detail') {
             lines.push(`\n📋 *CHI TIẾT CÔNG VIỆC TỪNG NHÂN SỰ TRONG NGÀY:*`)
             rows.forEach((r, idx) => {
-                lines.push(`\n👤 *#${idx + 1}. ${r.name}* (Tổng KPI: *${r.netKpiScore}đ* • ${r.gradeLabel})`)
+                lines.push(`\n👤 *#${idx + 1}. ${r.name}* (KPI ngày: *${r.primaryKpiScore}đ* • Điểm hỗ trợ kỳ: *+${r.supportPoints}đ* • ${r.gradeLabel})`)
                 const items = r.items || []
                 if (items.length === 0) {
                     lines.push(`   (Không có dữ liệu chi tiết công việc)`)
@@ -269,10 +271,10 @@ export default function AnalyticsExportCardModal({
                             workNature: item.work_nature,
                         })
 
-                        const typeTag = isSecondaryTask ? '[Việc phụ]' : '[Việc chính]'
+                        const typeTag = isSecondaryTask ? '[Việc hỗ trợ]' : '[Việc chính]'
                         const prodTag = userPos > 0 ? ` • ${userPos} vt (${userKg}kg)` : ''
                         const scoreTag = isSecondaryTask
-                            ? `+${taskKpi.bonusOverTargetPoints}đ Thưởng`
+                            ? `+${taskKpi.bonusOverTargetPoints}đ điểm hỗ trợ`
                             : `KPI: ${taskKpi.totalKpi}/100đ`
 
                         lines.push(`   - ${typeTag} ${item.content} (${item.progress_percent}%)${prodTag} ➔ ${scoreTag}`)
@@ -534,9 +536,9 @@ export default function AnalyticsExportCardModal({
                                                 <th className="w-[65px] px-2 py-2.5 text-center whitespace-nowrap">🛡️ A.Toàn</th>
                                                 <th className="w-[65px] px-2 py-2.5 text-center whitespace-nowrap">📋 K.Luật</th>
                                                 <th className="w-[95px] px-3 py-2.5 text-center whitespace-nowrap">⭐ Điểm chính</th>
-                                                <th className="w-[85px] px-3 py-2.5 text-center whitespace-nowrap">➕ Việc phụ</th>
+                                                <th className="w-[85px] px-3 py-2.5 text-center whitespace-nowrap">➕ Hỗ trợ</th>
                                                 <th className="w-[115px] px-3.5 py-2.5 text-center bg-indigo-50 text-indigo-900 font-black whitespace-nowrap">
-                                                    🎯 Tổng KPI
+                                                    🎯 KPI Ngày
                                                 </th>
                                                 <th className="w-[150px] px-3.5 py-2.5 text-center whitespace-nowrap">
                                                     Xếp loại
@@ -648,23 +650,28 @@ export default function AnalyticsExportCardModal({
                                                             <span className="text-[10px] text-stone-400 font-normal">/100</span>
                                                         </td>
 
-                                                        {/* Việc phụ */}
+                                                        {/* Điểm hỗ trợ (tích lũy kỳ) */}
                                                         <td className="w-[85px] px-3 py-2.5 text-center whitespace-nowrap">
-                                                            {r.secondaryBonusPoints > 0 ? (
+                                                            {r.supportPoints > 0 ? (
                                                                 <span className="font-black text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200 text-[11px]">
-                                                                    +{r.secondaryBonusPoints}đ
+                                                                    +{r.supportPoints}đ
                                                                 </span>
                                                             ) : (
                                                                 <span className="text-stone-300 text-xs">-</span>
                                                             )}
                                                         </td>
 
-                                                        {/* Tổng KPI */}
+                                                        {/* KPI ngày (chỉ việc chính) */}
                                                         <td className="w-[115px] px-3.5 py-2.5 text-center bg-indigo-50/70 whitespace-nowrap">
-                                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-600 text-white font-black text-xs shadow-2xs whitespace-nowrap">
-                                                                <Target size={11} />
-                                                                {r.netKpiScore} đ
-                                                            </span>
+                                                            {r.hasPrimaryTasks === false ? (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-purple-100 text-purple-800 font-black text-[11px] border border-purple-200 whitespace-nowrap">
+                                                                    Chỉ hỗ trợ
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-indigo-600 text-white font-black text-xs shadow-2xs whitespace-nowrap">
+                                                                    {r.primaryKpiScore} đ
+                                                                </span>
+                                                            )}
                                                         </td>
 
                                                         {/* Xếp Loại - Danh hiệu Bé Khỏe Bé Ngoan */}
@@ -765,13 +772,13 @@ export default function AnalyticsExportCardModal({
                                                         <span className="text-[11px] font-bold text-stone-600">
                                                             Chính: <b>{emp.primaryKpiScore}/100đ</b>
                                                         </span>
-                                                        {emp.secondaryBonusPoints > 0 && (
+                                                        {emp.supportPoints > 0 && (
                                                             <span className="text-[11px] font-black text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-200">
-                                                                +{emp.secondaryBonusPoints}đ phụ
+                                                                +{emp.supportPoints}đ hỗ trợ kỳ
                                                             </span>
                                                         )}
                                                         <span className="px-2.5 py-1 rounded-xl bg-indigo-600 text-white font-black text-xs shadow-2xs">
-                                                            {emp.netKpiScore} điểm
+                                                            {emp.hasPrimaryTasks === false ? 'Chỉ hỗ trợ' : `${emp.primaryKpiScore} điểm`}
                                                         </span>
                                                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg border bg-white text-stone-700 border-stone-200">
                                                             {emp.gradeLabel}
@@ -846,7 +853,7 @@ export default function AnalyticsExportCardModal({
                                                                             </span>
                                                                             {isSecondaryTask ? (
                                                                                 <span className="font-black text-purple-700 bg-purple-50 px-2 py-0.5 rounded-lg border border-purple-200 text-[11px]">
-                                                                                    Thưởng: +{taskKpi.bonusOverTargetPoints}đ
+                                                                                    Điểm hỗ trợ: +{taskKpi.bonusOverTargetPoints}đ
                                                                                 </span>
                                                                             ) : (
                                                                                 <span className="font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg border border-indigo-200 text-[11px]">

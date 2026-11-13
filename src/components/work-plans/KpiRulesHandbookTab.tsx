@@ -88,7 +88,7 @@ export default function KpiRulesHandbookTab({
                         {[
                             { id: 'overview', label: '1. Tôn Chỉ & 2 Loại Việc', icon: '🎯' },
                             { id: 'pillars', label: '2. Thang Điểm Theo Loại Việc', icon: '⚖️' },
-                            { id: 'task_types', label: '3. Việc Chính vs Phụ (+đ)', icon: '➕' },
+                            { id: 'task_types', label: '3. Việc Chính vs Hỗ Trợ', icon: '➕' },
                             { id: 'incidents', label: '4. Bảng Lỗi & Trừ Điểm', icon: '⚠️' },
                             { id: 'ranking', label: '5. Thang Bậc Xếp Loại', icon: '🏆' },
                             { id: 'faq', label: '6. Hỏi Đáp (FAQ)', icon: '❓' },
@@ -140,7 +140,7 @@ export default function KpiRulesHandbookTab({
                                 <span>Đánh Giá Theo Thực Tế Cống Hiến</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed">
-                                Khi làm việc theo đội nhóm (lái xe nâng, bốc vác xếp dỡ, đai kiện hàng, thống kê kiểm đếm hàng khay...), hệ thống phân bổ theo % đóng góp thực tế. Người hoàn thành việc chính đạt 90–100đ tùy độ nặng, người tăng cường hỗ trợ việc phụ được cộng dồn điểm thi đua mở trần lên 120đ - 150đ+.
+                                Khi làm việc theo đội nhóm (lái xe nâng, bốc vác xếp dỡ, đai kiện hàng, thống kê kiểm đếm hàng khay...), hệ thống phân bổ theo % đóng góp thực tế. Người hoàn thành việc chính đạt 90–100đ tùy độ nặng. Người tăng cường hỗ trợ việc phụ được ghi nhận <b>điểm hỗ trợ riêng</b>, tích lũy theo tuần/tháng/năm để đánh giá mức độ tích cực hỗ trợ — không cộng vào điểm ngày và không kéo hạng thi đua ngày.
                             </p>
                         </div>
 
@@ -214,7 +214,7 @@ export default function KpiRulesHandbookTab({
                         </div>
 
                         <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-[11px] text-stone-700 leading-relaxed">
-                            <b>Từ 2 loại việc này suy ra cách trừ lỗi:</b> lỗi hàng hóa trừ <b>Chất lượng</b> ở cả hai loại việc; <b>việc tồn đọng trong ngày</b> (chưa xong việc) cũng trừ <b>Chất lượng</b> ở cả hai loại; lỗi số liệu &amp; ghi chép <b>chỉ có ở việc thống kê</b> và trừ <b>Chất lượng</b> (việc lao động không hiện nhóm lỗi này); lỗi vận hành &amp; 5S trừ <b>Kỷ luật</b>; riêng lỗi xe nâng trừ <b>An toàn</b> ở việc lao động và trừ <b>Kỷ luật</b> ở việc thống kê (vì thống kê không có nhóm An toàn). Bước 3 (Việc chính / việc phụ) chỉ quyết định <b>cách cộng điểm</b>, không đổi loại việc.
+                            <b>Từ 2 loại việc này suy ra cách trừ lỗi:</b> lỗi hàng hóa trừ <b>Chất lượng</b> ở cả hai loại việc; <b>việc tồn đọng trong ngày</b> (chưa xong việc) cũng trừ <b>Chất lượng</b> ở cả hai loại; lỗi số liệu &amp; ghi chép <b>chỉ có ở việc thống kê</b> và trừ <b>Chất lượng</b> (việc lao động không hiện nhóm lỗi này); lỗi vận hành &amp; 5S trừ <b>Kỷ luật</b>; riêng lỗi xe nâng trừ <b>An toàn</b> ở việc lao động và trừ <b>Kỷ luật</b> ở việc thống kê (vì thống kê không có nhóm An toàn). Bước 3 (Việc chính / việc hỗ trợ) chỉ quyết định <b>điểm được ghi vào đâu</b> — việc chính vào điểm ngày, việc phụ vào điểm hỗ trợ tích lũy — không đổi loại việc.
                         </div>
                     </div>
                 </div>
@@ -395,8 +395,9 @@ export default function KpiRulesHandbookTab({
                                     <div>• <b>Hoàn thành 100% &amp; số liệu đúng tuyệt đối:</b> 40/40 điểm</div>
                                     <div>• <b>Để việc tồn đọng trong ca:</b> Trừ theo % việc còn lại (còn 30% việc → trừ 12đ)</div>
                                     <div>• <b>Quên quét tem, chậm cập nhật phần mềm, sai lệch bàn giao:</b> Trừ 10đ/lỗi</div>
-                                    <div>• <b>Ghi sai số lượng, sai vị trí kệ; dán nhầm tem nhãn:</b> Trừ 15đ/lỗi</div>
-                                    <div>• <b>Ghi sai mã LOT (Nghiêm trọng):</b> Trừ 25đ (còn 15đ), khóa Hạng C</div>
+                                    <div>• <b>Ghi sai số lượng, sai vị trí kệ; ghi sai mã LOT:</b> Trừ 15đ/lỗi</div>
+                                    <div>• <b>Cố ý sửa số liệu / che giấu sai lệch (Nghiêm trọng):</b> Trừ 25đ (còn 15đ), khóa Hạng C</div>
+                                    <div className="text-sky-700 font-semibold">• <b>Số liệu hôm nay thường hôm sau mới tổng kết:</b> lỗi phát hiện khi đối soát hôm sau vẫn trừ vào Chất lượng của công việc thống kê <b>ngày có số liệu</b> (không dồn sang việc ngày hôm sau), nên điểm ngày hôm trước có thể được cập nhật lại.</div>
                                     <div className="text-stone-400">Việc tồn đọng &amp; lỗi ghi chép chỉ trừ Chất lượng, không trừ trùng vào Kỷ luật.</div>
                                 </div>
                             </div>
@@ -429,7 +430,7 @@ export default function KpiRulesHandbookTab({
                 </div>
             )}
 
-            {/* PHẦN 3: VIỆC CHÍNH VS VIỆC PHỤ / HỖ TRỢ (CƠ CHẾ MỞ TRẦN 150 ĐIỂM) */}
+            {/* PHẦN 3: VIỆC CHÍNH (ĐIỂM NGÀY) VS VIỆC HỖ TRỢ (ĐIỂM HỖ TRỢ TÍCH LŨY) */}
             {(activeSection === 'overview' || activeSection === 'task_types') && (
                 <div className="bg-white rounded-3xl p-6 sm:p-8 border border-stone-200 shadow-xs space-y-5">
                     <div className="flex items-center justify-between border-b border-stone-200 pb-3">
@@ -439,10 +440,10 @@ export default function KpiRulesHandbookTab({
                             </div>
                             <div>
                                 <h2 className="text-base sm:text-lg font-black text-stone-900">
-                                    3. Phân Loại Việc Chính vs Việc Phụ (Cơ Chế Mở Trần Điểm)
+                                    3. Phân Loại Việc Chính &amp; Việc Hỗ Trợ (Điểm Ngày vs Điểm Hỗ Trợ)
                                 </h2>
                                 <p className="text-xs text-stone-500">
-                                    Cách cộng điểm khi một người đảm nhận nhiều việc trong ngày — áp dụng cho cả việc lao động và việc thống kê
+                                    Việc chính chấm điểm ngày theo thang 100đ; việc phụ / tăng cường tích lũy điểm hỗ trợ riêng theo tuần, tháng, năm — áp dụng cho cả việc lao động và việc thống kê
                                 </p>
                             </div>
                         </div>
@@ -464,24 +465,27 @@ export default function KpiRulesHandbookTab({
                                 <div className="font-bold text-stone-800">📌 Quy tắc tính điểm:</div>
                                 <div>• Điểm số việc chính được chấm theo <b>thang điểm của đúng loại việc đó</b>: lao động 4 nhóm điểm / thống kê 3 nhóm điểm.</div>
                                 <div>• <b>Nếu bạn làm 2 hoặc 3 việc chính trong ngày:</b> Điểm việc chính sẽ được <b>lấy trung bình cộng</b> để quy về thang ca chuẩn 100đ (tránh trường hợp tính cộng dồn ảo lên 200–300đ).</div>
+                                <div>• Đây là điểm dùng để <b>xếp hạng và xét danh hiệu Bé Khỏe Bé Ngoan trong ngày</b>.</div>
                             </div>
                         </div>
 
-                        {/* Thẻ Việc Phụ */}
+                        {/* Thẻ Việc Hỗ Trợ */}
                         <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-50/70 to-stone-50 border border-purple-200 space-y-3">
                             <div className="flex items-center justify-between">
                                 <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-900 font-black text-xs border border-purple-300 flex items-center gap-1">
                                     ➕ VIỆC PHỤ / TĂNG CƯỜNG (SECONDARY TASK)
                                 </span>
-                                <span className="text-xs font-black text-purple-700">Mở Trần Lên 120đ - 150đ+</span>
+                                <span className="text-xs font-black text-purple-700">Điểm hỗ trợ tích lũy kỳ</span>
                             </div>
                             <p className="text-xs text-stone-700 leading-relaxed">
                                 Là công việc bạn <b>hỗ trợ đồng đội, làm thêm ngoài ca chính, hoặc tăng cường giải phóng hàng gấp</b>.
                             </p>
                             <div className="space-y-1.5 text-xs text-stone-600 bg-white p-3 rounded-xl border border-stone-200">
-                                <div className="font-bold text-stone-800">📌 Quy tắc cộng dồn mở trần:</div>
-                                <div>• <b>Cộng thẳng vào Tổng điểm KPI:</b> Toàn bộ điểm việc phụ được cộng dồn trực tiếp.</div>
-                                <div>• <b>Tỷ lệ thuận theo % đóng góp:</b> Điểm hỗ trợ = Điểm năng suất độ nặng × (% đóng góp / 100) (Ví dụ: Việc mức Vừa 37đ, bạn phụ 50% khối lượng &rarr; được cộng ngay <b>+18.5đ</b> thưởng; việc mức Nặng 40đ bạn phụ 18% &rarr; được cộng <b>+7.2đ</b>).</div>
+                                <div className="font-bold text-stone-800">📌 Quy tắc điểm hỗ trợ:</div>
+                                <div>• <b>Không cộng vào điểm ngày:</b> điểm hỗ trợ được quản lý ở <b>mục riêng</b>, không làm thay đổi điểm KPI ngày, không kéo hạng và không đổi danh hiệu Bé Khỏe Bé Ngoan trong ngày.</div>
+                                <div>• <b>Tỷ lệ thuận theo % đóng góp:</b> Điểm hỗ trợ = Điểm năng suất độ nặng × (% đóng góp / 100) (Ví dụ: việc mức Vừa 37đ, bạn phụ 50% khối lượng &rarr; <b>+18.5đ</b> hỗ trợ; việc mức Nặng 40đ bạn phụ 18% &rarr; <b>+7.2đ</b>).</div>
+                                <div>• <b>Cộng dồn theo kỳ:</b> Toàn bộ điểm hỗ trợ trong tuần / tháng / năm được cộng lại để đánh giá <b>mức độ tích cực hỗ trợ</b> cuối tuần, cuối tháng, cuối năm.</div>
+                                <div>• <b>Chỉ làm việc hỗ trợ:</b> nhân sự không có việc chính trong kỳ được <b>xếp riêng theo điểm hỗ trợ</b>, không bị xếp hạng C oan vì điểm ngày trống.</div>
                             </div>
                         </div>
                     </div>
@@ -518,13 +522,13 @@ export default function KpiRulesHandbookTab({
                     <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200 text-xs space-y-2">
                         <div className="font-black text-stone-900 flex items-center gap-1.5">
                             <span>💡</span>
-                            <span>Ví dụ minh họa cách tính tổng điểm KPI cuối ngày của nhân viên Giang:</span>
+                            <span>Ví dụ minh họa cuối ngày của nhân viên Giang:</span>
                         </div>
                         <div className="space-y-1 text-stone-700 leading-relaxed pl-5 list-disc">
-                            <div>1. <b>Việc chính (8h):</b> Giang đảm nhận bốc xếp và dỡ cont lạnh (mức Rất nặng), hoàn thành tốt, không lỗi hàng hóa → <b>100 điểm</b> (Năng suất 45đ • Chất lượng tuyệt đối 20đ • An toàn 20đ • Kỷ luật & 5S 15đ).</div>
-                            <div>2. <b>Việc phụ (+2h Tăng ca):</b> Giang tăng cường hỗ trợ đai kiện cho tổ xuất hàng (mức Nặng 40đ) với 18% đóng góp &rarr; Được cộng thêm <b>+7.2 điểm</b> việc phụ.</div>
+                            <div>1. <b>Việc chính (8h):</b> Giang đảm nhận bốc xếp và dỡ cont lạnh (mức Rất nặng), hoàn thành tốt, không lỗi hàng hóa → <b>100 điểm KPI ngày</b> (Năng suất 45đ • Chất lượng tuyệt đối 20đ • An toàn 20đ • Kỷ luật &amp; 5S 15đ).</div>
+                            <div>2. <b>Việc phụ (+2h Tăng ca):</b> Giang tăng cường hỗ trợ đai kiện cho tổ xuất hàng (mức Nặng 40đ) với 18% đóng góp &rarr; ghi nhận thêm <b>+7.2 điểm hỗ trợ</b> vào mục điểm hỗ trợ của kỳ.</div>
                             <div>3. <b>Tổng thời gian làm việc:</b> 8h chuẩn + 2h tăng ca = <b>10 giờ làm việc cống hiến</b>.</div>
-                            <div>4. <b>Tổng điểm KPI cuối ngày:</b> 100 + 7.2 = <b>107.2 điểm</b> &rarr; <b>Đạt Hạng Xuất sắc (A+)</b> và đứng vị trí Top 1 Bảng Thi Đua!</div>
+                            <div>4. <b>Kết quả:</b> KPI ngày vẫn là <b>100 điểm</b> &rarr; <b>Hạng A+</b> (điểm hỗ trợ không kéo hạng). Đồng thời Giang tích lũy <b>+7.2 điểm hỗ trợ</b> trong kỳ — căn cứ đánh giá mức độ tích cực hỗ trợ cuối tuần / tháng / năm.</div>
                         </div>
                     </div>
                 </div>
@@ -617,6 +621,9 @@ export default function KpiRulesHandbookTab({
                         <p className="leading-relaxed text-[11px]">
                             Riêng <b>việc lao động</b>, nếu điểm An toàn tụt xuống <b>&le; 5đ</b> cũng bị khóa Hạng C. Lỗi không thuộc loại việc thì dồn về <b>Kỷ luật</b> để không mất điểm phạt: lỗi xe nâng ghi nhận trên việc thống kê, và lỗi số liệu / ghi chép ghi nhận trên việc lao động (bộ chọn lỗi đã ẩn hai nhóm này theo loại việc).
                         </p>
+                        <p className="leading-relaxed text-[11px]">
+                            <b>Việc thống kê thường chốt số liệu vào ngày hôm sau:</b> lỗi phát hiện khi đối soát / tổng kết hôm sau vẫn <b>trừ vào Chất lượng của công việc thống kê ngày có số liệu</b> (ngày hôm trước), đúng mức lỗi như danh mục — <b>không dồn sang việc của ngày hôm sau</b> và không mất lỗi vì ghi nhận muộn. Điểm của ngày hôm trước vì thế có thể được cập nhật lại sau đối soát.
+                        </p>
                     </div>
                 </div>
             )}
@@ -661,7 +668,7 @@ export default function KpiRulesHandbookTab({
                                         ≥ 100 điểm
                                     </td>
                                     <td className="px-4 py-3 text-stone-700 leading-relaxed">
-                                        Hoàn thành xuất sắc khối lượng công việc lớn hoặc có tăng cường hỗ trợ việc phụ; năng suất vượt trội; không vi phạm bất kỳ lỗi an toàn / chất lượng / kỷ luật nào. Nhận ngay <b>Bông Hoa Đỏ</b>!
+                                        Hoàn thành xuất sắc khối lượng việc chính trong kỳ; năng suất vượt trội; không vi phạm bất kỳ lỗi an toàn / chất lượng / kỷ luật nào. Nhận ngay <b>Bông Hoa Đỏ</b>!
                                     </td>
                                     <td className="px-4 py-3 text-center font-bold text-rose-800">
                                         Biểu dương Top đầu thi đua, tấm gương làm việc năng suất và an toàn mẫu mực.
@@ -746,7 +753,7 @@ export default function KpiRulesHandbookTab({
                                 <span>Nếu trong một ngày tôi được giao 2 việc chính, điểm của tôi có cộng thành 200 điểm không?</span>
                             </div>
                             <p className="text-stone-600 leading-relaxed pl-6">
-                                <b>Trả lời:</b> Không cộng dồn thành 200 điểm. Các công việc chính trong ngày sẽ được <b>tính trung bình cộng quy về thang ca chuẩn 100 điểm</b>. Nếu bạn muốn đạt trên 100 điểm (để được Hạng A+), bạn có thể nhận thêm <b>Việc phụ</b> (hỗ trợ ca khác, làm thêm ngoài ca), điểm việc phụ sẽ được cộng thẳng mở trần lên 120đ – 150đ+.
+                                <b>Trả lời:</b> Không cộng dồn thành 200 điểm. Các công việc chính trong ngày sẽ được <b>tính trung bình cộng quy về thang ca chuẩn 100 điểm</b>. Việc phụ / tăng cường không cộng vào điểm ngày; điểm hỗ trợ được tích lũy riêng theo kỳ để đánh giá mức độ tích cực hỗ trợ cuối tuần / tháng / năm.
                             </p>
                         </div>
 
@@ -787,6 +794,16 @@ export default function KpiRulesHandbookTab({
                             </div>
                             <p className="text-stone-600 leading-relaxed pl-6">
                                 <b>Trả lời:</b> Việc thống kê <b>không có nhóm An toàn</b> vì không vận hành xe nâng; 20đ của nhóm này được dồn sang Năng suất, nên thang gồm <b>Năng suất 40đ • Chất lượng 40đ • Kỷ luật &amp; 5S 20đ</b>. Tổng ngày vẫn bằng đúng người lao động cùng độ nặng: <b>Nhẹ 90đ • Vừa 92đ • Nặng 95đ • Rất nặng 100đ</b>. Lỗi số liệu / ghi chép trừ vào Chất lượng (không trừ trùng ở Kỷ luật); sự cố nghiêm trọng vẫn khóa Hạng C như mọi người.
+                            </p>
+                        </div>
+
+                        <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 space-y-1.5">
+                            <div className="font-extrabold text-stone-900 text-sm flex items-center gap-1.5">
+                                <span className="text-indigo-600">Q6:</span>
+                                <span>Số liệu hôm nay sang hôm sau mới tổng kết, nếu hôm sau mới phát hiện lỗi thì trừ điểm của ngày nào?</span>
+                            </div>
+                            <p className="text-stone-600 leading-relaxed pl-6">
+                                <b>Trả lời:</b> Trừ vào <b>Chất lượng của công việc thống kê ngày có số liệu</b> — tức ngày hôm trước — đúng mức lỗi như bảng trên, <b>không dồn sang việc của ngày hôm sau</b>. Vì vậy điểm của ngày hôm trước có thể được cập nhật lại sau khi đối soát; việc ghi nhận muộn không làm mất lỗi.
                             </p>
                         </div>
                     </div>

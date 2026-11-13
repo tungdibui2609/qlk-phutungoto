@@ -13,6 +13,7 @@ import {
     calculateWorkSpeed,
     getStatisticsDocumentCounts,
     getEvaluationHours,
+    DEFAULT_INCIDENT_TEMPLATES,
 } from '../types'
 
 describe('workPlanParser & helpers', () => {
@@ -430,6 +431,7 @@ describe('workPlanParser & helpers', () => {
         expect(resultCustomScores.grade).toBe('A')
 
         // Case 6: Việc phụ / hỗ trợ ngoài ca -> Điểm hỗ trợ tự động tỷ lệ thuận theo % đóng góp
+        // Điểm này được tích lũy vào mục "điểm hỗ trợ" của kỳ (không cộng vào điểm KPI ngày, không kéo hạng)
         // Việc phụ mức Nặng (40đ), người đóng góp 18% -> 40 * 18% = 7.2 điểm hỗ trợ
         const resultSupport18 = calculateAssigneeTaskStandardKpi({
             userPositions: 2.2,
@@ -556,7 +558,7 @@ describe('workPlanParser & helpers', () => {
         expect(dataError.totalKpi).toBe(80) // 35 + 25 + 20
         expect(dataError.grade).toBe('B')
 
-        // Sai LOT là lỗi nghiêm trọng -> khóa hạng A
+        // Cố ý sửa / che giấu số liệu là lỗi nghiêm trọng nhất -> khóa hạng A
         const severeDataError = calculateAssigneeTaskStandardKpi({
             userPositions: 0,
             difficulty: 'heavy',
@@ -564,7 +566,7 @@ describe('workPlanParser & helpers', () => {
             taskStatus: 'completed',
             workNature: 'statistics',
             incidents: [
-                { id: '2', type: 'wrong_lot_code', name: 'Ghi sai mã LOT', group: 'inventory_statistics', severity: 'severe', penalty_points: 25 },
+                { id: '2', type: 'falsified_data', name: 'Cố ý sửa số liệu / Che giấu sai lệch', group: 'inventory_statistics', severity: 'severe', penalty_points: 25 },
             ],
         })
         expect(severeDataError.qualityScore).toBe(15)
@@ -729,7 +731,7 @@ describe('workPlanParser & helpers', () => {
         expect(formatWorkloadSummaryText(legacyMetrics, 'labor')).not.toContain('phiếu đã tạo')
     })
 
-    it('sums work hours from assignee evaluations and treats missing hours as the 8h standard shift', () => {
+    it('averages work hours per assignee from evaluations and treats missing hours as the 8h standard shift', () => {
         expect(getEvaluationHours(null)).toEqual({
             regular: 0,
             overtime: 0,
@@ -745,9 +747,9 @@ describe('workPlanParser & helpers', () => {
             ],
         })
         expect(evaluated).toEqual({
-            regular: 14,
-            overtime: 2,
-            total: 16,
+            regular: 7,
+            overtime: 1,
+            total: 8,
             hasData: true,
             isDefault: false,
         })
@@ -764,15 +766,32 @@ describe('workPlanParser & helpers', () => {
             isDefault: false,
         })
 
-        // Đã đánh giá nhưng chưa lưu giờ từng người -> tạm tính ca chuẩn 8h/người
+        // Đã đánh giá nhưng chưa lưu giờ từng người -> ca chuẩn 8h/người (trung bình vẫn 8h)
         expect(
             getEvaluationHours(null, { assigneeCount: 2, assumeStandardShift: true })
-        ).toEqual({ regular: 16, overtime: 0, total: 16, hasData: true, isDefault: true })
+        ).toEqual({ regular: 8, overtime: 0, total: 8, hasData: true, isDefault: true })
 
         // Chưa đánh giá (giao việc) -> không có giờ
         expect(
             getEvaluationHours(null, { assigneeCount: 2, assumeStandardShift: false })
         ).toEqual({ regular: 0, overtime: 0, total: 0, hasData: false, isDefault: false })
+    })
+
+    it('keeps exactly one severe incident for statistics work: falsifying data, not a wrong LOT code', () => {
+        const statsGroup = DEFAULT_INCIDENT_TEMPLATES.find(g => g.group === 'inventory_statistics')
+        expect(statsGroup).toBeTruthy()
+        const severeItems = statsGroup!.items.filter(i => i.severity === 'severe')
+        expect(severeItems).toHaveLength(1)
+        expect(severeItems[0]).toMatchObject({
+            type: 'falsified_data',
+            penalty: 25,
+        })
+
+        const lotError = statsGroup!.items.find(i => i.type === 'wrong_lot_code')
+        expect(lotError).toMatchObject({ severity: 'moderate', penalty: 15 })
+
+        // Dán tem nhãn / quy cách thùng là việc của sản xuất, không nằm trong lỗi của kho
+        expect(statsGroup!.items.some(i => i.type === 'wrong_box_label')).toBe(false)
     })
 
     it('applies each incident group only to its own work nature and routes mismatches to discipline', () => {

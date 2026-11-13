@@ -459,7 +459,7 @@ export default function WorkPlansView() {
             if (error) throw error
             setItems(prev => prev.map(i => (i.id === item.id ? data : i)))
             showToast(
-                `Đã chuyển thành ${nextType === 'secondary' ? '➕ Việc phụ / Tăng cường (Mở trần điểm)' : '⭐ Việc chính trong ca (Chuẩn 100đ)'}!`,
+                `Đã chuyển thành ${nextType === 'secondary' ? '➕ Việc phụ / Tăng cường (Điểm hỗ trợ tích lũy theo kỳ)' : '⭐ Việc chính trong ca (Chuẩn 100đ)'}!`,
                 'success'
             )
         } catch (err) {
@@ -1769,9 +1769,9 @@ export default function WorkPlansView() {
                                                             ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
                                                             : 'bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-200'
                                                     }`}
-                                                    title="Bấm để đổi giữa ⭐ Việc chính (chuẩn 100đ) và ➕ Việc phụ (cộng điểm mở trần lên 150đ) cho người này"
+                                                    title="Bấm để đổi giữa ⭐ Việc chính (chấm điểm ngày, chuẩn 100đ) và ➕ Việc hỗ trợ (tích lũy điểm hỗ trợ theo kỳ, không cộng vào điểm ngày) cho người này"
                                                 >
-                                                    {isSec ? '➕ Việc phụ (+đ)' : '⭐ Việc chính'}
+                                                    {isSec ? '➕ Việc hỗ trợ' : '⭐ Việc chính'}
                                                 </button>
                                                 <button
                                                     type="button"
@@ -2157,9 +2157,9 @@ export default function WorkPlansView() {
                                                                                         ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
                                                                                         : 'bg-emerald-100 text-emerald-900 border-emerald-300 hover:bg-emerald-200'
                                                                                 }`}
-                                                                                title="Bấm để chuyển đổi giữa ⭐ Việc chính (100đ chuẩn) và ➕ Việc phụ (cộng điểm mở trần lên 150đ) cho nhân sự này"
+                                                                                title="Bấm để chuyển đổi giữa ⭐ Việc chính (chấm điểm ngày, 100đ chuẩn) và ➕ Việc hỗ trợ (tích lũy điểm hỗ trợ theo kỳ) cho nhân sự này"
                                                                             >
-                                                                                {isSec ? '➕ Việc phụ (+đ)' : '⭐ Việc chính'}
+                                                                                {isSec ? '➕ Việc hỗ trợ' : '⭐ Việc chính'}
                                                                             </button>
                                                                             <button
                                                                                 type="button"

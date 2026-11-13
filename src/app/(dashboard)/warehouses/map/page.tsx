@@ -34,6 +34,8 @@ import { MapSearchStats } from './_components/MapSearchStats'
 import { LotBulkPrintModal } from '@/components/warehouse/map/LotBulkPrintModal'
 import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 import { WarehouseHistoryModal } from './_components/WarehouseHistoryModal'
+import { WarehouseAdjustmentReviewModal } from './_components/WarehouseAdjustmentReviewModal'
+import { getWarehouseProposals } from '@/lib/warehouseAdjustmentService'
 import { SelectWarehouseModal } from '@/components/warehouse/map/SelectWarehouseModal'
 import { SelectHallModal } from '@/components/warehouse/map/SelectHallModal'
 import { SelectMoveDestinationModal } from '@/components/warehouse/map/SelectMoveDestinationModal'
@@ -379,6 +381,40 @@ function WarehouseMapContent() {
             setAssignLot(null)
         }
     }, [assignLotId])
+
+    // Warehouse Adjustment Proposals State
+    const [isProposalsModalOpen, setIsProposalsModalOpen] = useState(false)
+    const [pendingProposalCount, setPendingProposalCount] = useState(0)
+
+    const refreshProposalCount = useCallback(async () => {
+        if (!systemType) return
+        try {
+            const list = await getWarehouseProposals(supabase, systemType, 'PENDING')
+            setPendingProposalCount(list.length)
+        } catch {
+            // ignore
+        }
+    }, [systemType])
+
+    useEffect(() => {
+        refreshProposalCount()
+        const interval = setInterval(refreshProposalCount, 30000)
+        return () => clearInterval(interval)
+    }, [refreshProposalCount])
+
+    const handleFocusPosition = useCallback((positionId: string, positionCode?: string) => {
+        if (positionCode) {
+            setSearchTerm(positionCode)
+        }
+        const el = document.getElementById(`pos-${positionId}`) || document.getElementById(`position-${positionId}`)
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            el.classList.add('animate-pulse', 'ring-4', 'ring-amber-500')
+            setTimeout(() => {
+                el.classList.remove('animate-pulse', 'ring-4', 'ring-amber-500')
+            }, 5000)
+        }
+    }, [setSearchTerm])
 
     // Helper for position updates with logging
     async function updatePositionsWithLog(updates: { id: string, lot_id: string | null }[]) {
@@ -1630,6 +1666,8 @@ function WarehouseMapContent() {
                 displayInternalCode={displayInternalCode}
                 setDisplayInternalCode={setDisplayInternalCode}
                 onOpenHistory={() => setIsHistoryOpen(true)}
+                onOpenProposals={() => setIsProposalsModalOpen(true)}
+                pendingProposalCount={pendingProposalCount}
             />
 
             <MapBanners
@@ -2331,6 +2369,21 @@ function WarehouseMapContent() {
                         const el = document.getElementById(`pos-${posId}`) || document.getElementById(posId)
                         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
                     }
+                }}
+            />
+
+            {/* Warehouse Adjustment Proposals Review Modal */}
+            <WarehouseAdjustmentReviewModal
+                isOpen={isProposalsModalOpen}
+                onClose={() => setIsProposalsModalOpen(false)}
+                supabase={supabase}
+                systemCode={systemType || ''}
+                currentUserName={profile?.full_name || profile?.email || 'Quản lý'}
+                currentUserId={profile?.id}
+                onFocusPosition={handleFocusPosition}
+                onProposalApproved={() => {
+                    fetchData()
+                    refreshProposalCount()
                 }}
             />
         </div>

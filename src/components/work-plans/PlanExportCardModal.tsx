@@ -20,9 +20,11 @@ import {
     DIFFICULTY_CONFIG,
     getWarehouseBadge,
     formatVNDate,
+    formatVNDateSlash,
     getDayOfWeekVN,
     hasWorkloadData,
     formatWorkloadSummaryText,
+    getStatisticsDocumentCounts,
 } from './types'
 import { useToast } from '@/components/ui/ToastProvider'
 
@@ -35,6 +37,169 @@ interface PlanExportCardModalProps {
     systemName: string
     companyName?: string | null
     defaultMode?: 'plan' | 'evaluation'
+}
+
+interface WorkloadStatChip {
+    key: string
+    icon: string
+    value: string
+    className: string
+}
+
+// Tách số liệu khối lượng thành từng chip riêng để dễ đọc trên phiếu/ảnh Zalo
+function buildWorkloadStats(item: WorkPlanItem) {
+    const m = item.workload_metrics
+    const chips: WorkloadStatChip[] = []
+    const inbound: string[] = []
+    const outbound: string[] = []
+    const exportOrders: string[] = []
+    const notes: string[] = []
+
+    if (!m || !hasWorkloadData(m)) {
+        return { chips, inbound, outbound, exportOrders, notes }
+    }
+
+    if (m.difficulty && DIFFICULTY_CONFIG[m.difficulty]) {
+        const d = DIFFICULTY_CONFIG[m.difficulty]
+        chips.push({
+            key: 'difficulty',
+            icon: d.badgeEmoji,
+            value: `${d.label} ×${d.multiplier}`,
+            className: `${d.bgClass} ${d.textClass} ${d.borderClass}`,
+        })
+    }
+    if (m.quantity_factor_label) {
+        chips.push({
+            key: 'factor',
+            icon: '✖️',
+            value: `Hệ số ${m.quantity_factor_label}`,
+            className: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+        })
+    }
+
+    const positions = Number(m.positions_count) || 0
+    const lots = Number(m.lots_count) || 0
+    const packages = Number(m.packages_count) || 0
+    const weightKg = Number(m.weight_kg) || 0
+    const containers = Number(m.containers_count) || 0
+    const hours = Number(m.hours_spent) || 0
+
+    if (positions > 0) {
+        chips.push({
+            key: 'positions',
+            icon: '📍',
+            value: `${positions.toLocaleString('vi-VN')} vị trí`,
+            className: 'bg-amber-50 text-amber-800 border-amber-200',
+        })
+    }
+    if (lots > 0) {
+        chips.push({
+            key: 'lots',
+            icon: '🧊',
+            value: `${lots.toLocaleString('vi-VN')} LOT`,
+            className: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+        })
+    }
+    if (packages > 0) {
+        chips.push({
+            key: 'packages',
+            icon: '📦',
+            value: `${packages.toLocaleString('vi-VN')} ${m.package_unit || 'Thùng'}`,
+            className: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+        })
+    }
+    if (weightKg > 0) {
+        chips.push({
+            key: 'weight',
+            icon: '⚖️',
+            value:
+                weightKg >= 1000
+                    ? `${(weightKg / 1000).toFixed(1)} tấn`
+                    : `${weightKg.toLocaleString('vi-VN')} kg`,
+            className: 'bg-stone-50 text-stone-700 border-stone-200',
+        })
+    }
+    if (containers > 0) {
+        chips.push({
+            key: 'containers',
+            icon: '🚛',
+            value: `${containers.toLocaleString('vi-VN')} cont`,
+            className: 'bg-stone-50 text-stone-700 border-stone-200',
+        })
+    }
+    if (hours > 0) {
+        chips.push({
+            key: 'hours',
+            icon: '⏱️',
+            value: `${hours} giờ`,
+            className: 'bg-stone-50 text-stone-700 border-stone-200',
+        })
+    }
+
+    const statisticsCounts =
+        item.work_nature === 'statistics' ? getStatisticsDocumentCounts(m) : null
+    const documents = statisticsCounts ? statisticsCounts.documents : Number(m.documents_count) || 0
+    const dataRows = statisticsCounts ? statisticsCounts.rows : Number(m.data_rows_count) || 0
+    if (documents > 0) {
+        chips.push({
+            key: 'documents',
+            icon: '📄',
+            value: `${documents.toLocaleString('vi-VN')} phiếu`,
+            className: 'bg-sky-50 text-sky-800 border-sky-200',
+        })
+    }
+    if (dataRows > 0) {
+        chips.push({
+            key: 'dataRows',
+            icon: '📋',
+            value: `${dataRows.toLocaleString('vi-VN')} dòng dữ liệu`,
+            className: 'bg-sky-50 text-sky-800 border-sky-200',
+        })
+    }
+    if (m.custom_metric_value) {
+        chips.push({
+            key: 'custom',
+            icon: '📌',
+            value: m.custom_metric_label
+                ? `${m.custom_metric_label}: ${m.custom_metric_value}`
+                : m.custom_metric_value,
+            className: 'bg-stone-50 text-stone-700 border-stone-200',
+        })
+    }
+
+    if (m.quantity_adjustment_note) {
+        notes.push(`Lý do hệ số: ${m.quantity_adjustment_note}`)
+    }
+    const lotSummaries = m.linked_lot_summaries || []
+    if (lotSummaries.length > 0) {
+        notes.push(
+            `LOT tạo: ${lotSummaries
+                .map(
+                    l =>
+                        `${l.lots_count} LOT (${l.date_label || formatVNDateSlash(l.created_date)}${l.zone_name && l.zone_name !== 'Tất cả kho' ? ` - ${l.zone_name}` : ''
+                        })`
+                )
+                .join(', ')}`
+        )
+    }
+    const approvedAssignments = m.linked_approved_assignments || []
+    if (approvedAssignments.length > 0) {
+        notes.push(
+            `Đưa lên kệ: ${approvedAssignments
+                .map(
+                    a =>
+                        `${a.approved_count} vị trí (${a.date_label || formatVNDateSlash(a.action_date)}${a.zone_name && a.zone_name !== 'Tất cả kho' ? ` - ${a.zone_name}` : ''
+                        })`
+                )
+                .join(', ')}`
+        )
+    }
+
+    ;(m.linked_inbound_orders || []).forEach(o => inbound.push(o.code))
+    ;(m.linked_outbound_orders || []).forEach(o => outbound.push(o.code))
+    ;(m.linked_export_orders || []).forEach(o => exportOrders.push(o.code))
+
+    return { chips, inbound, outbound, exportOrders, notes }
 }
 
 export default function PlanExportCardModal({
@@ -706,10 +871,12 @@ export default function PlanExportCardModal({
                                         const rt = item.rating
                                             ? RATING_CONFIG[item.rating]
                                             : null
-                                        const wlSummary = formatWorkloadSummaryText(
-                                            item.workload_metrics,
-                                            item.work_nature
-                                        )
+                                        const wlStats = buildWorkloadStats(item)
+                                        const hasDocuments =
+                                            wlStats.inbound.length +
+                                                wlStats.outbound.length +
+                                                wlStats.exportOrders.length >
+                                            0
                                         return (
                                             <div
                                                 key={item.id}
@@ -797,9 +964,76 @@ export default function PlanExportCardModal({
                                                             )
                                                         })()}
 
-                                                        {wlSummary && (
-                                                            <div className="mt-2 text-xs font-bold text-amber-800 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 inline-block">
-                                                                📊 {wlSummary}
+                                                        {(wlStats.chips.length > 0 ||
+                                                            hasDocuments ||
+                                                            wlStats.notes.length > 0) && (
+                                                            <div className="mt-2 rounded-xl border border-stone-200 bg-white overflow-hidden">
+                                                                {wlStats.chips.length > 0 && (
+                                                                    <div className="flex flex-wrap items-center gap-1.5 px-2.5 py-2">
+                                                                        {wlStats.chips.map(chip => (
+                                                                            <span
+                                                                                key={chip.key}
+                                                                                className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-1 text-[11px] font-bold leading-tight ${chip.className}`}
+                                                                            >
+                                                                                <span className="text-[11px]">{chip.icon}</span>
+                                                                                <span>{chip.value}</span>
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {(hasDocuments ||
+                                                                    wlStats.notes.length > 0) && (
+                                                                    <div
+                                                                        className={`px-2.5 py-1.5 bg-stone-50/80 space-y-1 ${wlStats.chips.length > 0
+                                                                            ? 'border-t border-stone-100'
+                                                                            : ''
+                                                                            }`}
+                                                                    >
+                                                                        {hasDocuments && (
+                                                                            <div className="flex flex-wrap items-center gap-1">
+                                                                                <span className="text-[9px] font-black uppercase tracking-wider text-stone-400 mr-0.5">
+                                                                                    Chứng từ
+                                                                                </span>
+                                                                                {wlStats.inbound.map(code => (
+                                                                                    <span
+                                                                                        key={`nk-${code}`}
+                                                                                        className="inline-flex items-center gap-1 rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-bold text-sky-800"
+                                                                                    >
+                                                                                        <span className="text-[9px] font-black text-sky-500">NK</span>
+                                                                                        {code}
+                                                                                    </span>
+                                                                                ))}
+                                                                                {wlStats.outbound.map(code => (
+                                                                                    <span
+                                                                                        key={`xk-${code}`}
+                                                                                        className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-bold text-emerald-800"
+                                                                                    >
+                                                                                        <span className="text-[9px] font-black text-emerald-500">XK</span>
+                                                                                        {code}
+                                                                                    </span>
+                                                                                ))}
+                                                                                {wlStats.exportOrders.map(code => (
+                                                                                    <span
+                                                                                        key={`lenh-${code}`}
+                                                                                        className="inline-flex items-center gap-1 rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10px] font-bold text-violet-800"
+                                                                                    >
+                                                                                        <span className="text-[9px] font-black text-violet-500">LỆNH</span>
+                                                                                        {code}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        {wlStats.notes.map((note, noteIdx) => (
+                                                                            <div
+                                                                                key={noteIdx}
+                                                                                className="text-[10px] text-stone-500 leading-snug"
+                                                                            >
+                                                                                {note}
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
                                                         {cardMode === 'evaluation' &&

@@ -14,7 +14,6 @@ import {
     MapPin,
     ShieldAlert,
     CheckCircle2,
-    Target,
     Camera,
     BookOpen,
 } from 'lucide-react'
@@ -80,7 +79,7 @@ export interface EmployeeStatRow {
     hasSevereIncident: boolean
     incidentsCount: number
     incidentsList: EmployeeIncidentItem[]
-    // Phân định Việc chính (100đ cơ bản) vs Việc phụ (Cộng thêm mở trần lên 150đ)
+    // Phân định Việc chính (chấm điểm ngày) vs Việc phụ (điểm hỗ trợ tích lũy riêng theo kỳ)
     primaryTasksAssigned: number
     primaryTasksCompleted: number
     secondaryTasksAssigned: number
@@ -88,8 +87,9 @@ export interface EmployeeStatRow {
     // Công việc Thống kê / Ghi chép: không ghi sản lượng & giờ làm
     statisticsTasksAssigned: number
     statisticsTasksCompleted: number
-    primaryKpiScore: number // Điểm ca chuẩn (thang 100đ)
-    secondaryBonusPoints: number // Điểm việc phụ / tăng cường cộng dồn
+    primaryKpiScore: number // Điểm KPI ngày — chỉ tính việc chính (thang 100đ)
+    supportPoints: number // Điểm hỗ trợ tích lũy trong kỳ — không cộng vào điểm ngày, không kéo hạng
+    hasPrimaryTasks: boolean // false = chỉ làm việc hỗ trợ trong kỳ, xếp hạng theo điểm hỗ trợ
     // 4 Trụ Cột KPI Chuẩn (Thang 100 Điểm)
     productivityScore: number // Lao động 35-45đ • Thống kê mốc 30-40đ (trần 40đ)
     qualityScore: number // Lao động tối đa 20đ • Thống kê tối đa 40đ
@@ -102,7 +102,6 @@ export interface EmployeeStatRow {
     productivityMax: number // Trần năng suất hiển thị (45 hoặc 40)
     qualityMax: number // Trần chất lượng hiển thị (20 hoặc 40)
     disciplineMax: number // Gốc kỷ luật hiển thị (15 hoặc 20)
-    netKpiScore: number // Tổng điểm KPI chuẩn (Thang 100đ + Việc phụ -> lên 150đ+)
     weightedScore: number // Điểm quy đổi khối lượng
     // Thời gian làm việc, tăng ca (OT) & Tốc độ năng suất theo giờ
     totalRegularHours: number
@@ -325,7 +324,8 @@ export default function WorkPlanAnalyticsTab({
                     statisticsTasksAssigned: 0,
                     statisticsTasksCompleted: 0,
                     primaryKpiScore: 0,
-                    secondaryBonusPoints: 0,
+                    supportPoints: 0,
+                    hasPrimaryTasks: false,
                     productivityScore: 0,
                     qualityScore: 0,
                     safetyScore: 20,
@@ -337,7 +337,6 @@ export default function WorkPlanAnalyticsTab({
                     productivityMax: 45,
                     qualityMax: 20,
                     disciplineMax: 15,
-                    netKpiScore: 0,
                     weightedScore: 0,
                     totalRegularHours: 0,
                     totalOvertimeHours: 0,
@@ -439,7 +438,7 @@ export default function WorkPlanAnalyticsTab({
             row.totalPenaltyPoints += taskPenalty
             row.totalBonusPoints += taskBonus
 
-            // Phân định Việc chính vs Việc phụ / Tăng cường
+            // Phân định Việc chính (chấm điểm ngày) vs Việc hỗ trợ (tích lũy điểm riêng)
             const itemTaskType: WorkPlanTaskType = item.workload_metrics?.task_type || 'primary'
             const taskType: WorkPlanTaskType = ev?.task_type || itemTaskType
 
@@ -461,10 +460,12 @@ export default function WorkPlanAnalyticsTab({
             })
 
             if (taskType === 'secondary') {
+                // Việc hỗ trợ: tích lũy điểm hỗ trợ riêng theo kỳ, KHÔNG cộng vào điểm ngày
                 row.secondaryTasksAssigned += 1
                 if (item.status === 'completed') row.secondaryTasksCompleted += 1
-                row.secondaryBonusPoints += taskKpi.bonusOverTargetPoints
+                row.supportPoints += taskKpi.bonusOverTargetPoints
             } else {
+                row.hasPrimaryTasks = true
                 row.primaryTasksAssigned += 1
                 if (item.status === 'completed') row.primaryTasksCompleted += 1
                 row.productivityScore += taskKpi.productivityScore
@@ -548,29 +549,36 @@ export default function WorkPlanAnalyticsTab({
             const discBase = isStatisticsOnly ? 20 : 15
             const discScore = Math.min(20, Math.max(0, discBase - r.disciplinePenaltyPoints + r.totalBonusPoints))
 
-            // ĐIỂM VIỆC CHÍNH (Chuẩn 100 điểm)
+            // ĐIỂM KPI NGÀY (Chuẩn 100 điểm) — chỉ tính việc chính
             const rawPrimaryKpi = prodAvg + qualAvg + safeScore + discScore
-            const primaryKpiScore = Math.min(110, Math.round(rawPrimaryKpi * 10) / 10)
+            const hasPrimaryTasks = r.hasPrimaryTasks
+            const primaryKpiScore = hasPrimaryTasks
+                ? Math.min(110, Math.round(rawPrimaryKpi * 10) / 10)
+                : 0
 
-            // ĐIỂM VIỆC PHỤ / LÀM THÊM (MỞ TRẦN CỘNG DỒN)
-            const secondaryBonusPoints = Math.round(r.secondaryBonusPoints * 10) / 10
+            // ĐIỂM HỖ TRỢ TÍCH LŨY TRONG KỲ — quản lý riêng để đánh giá tuần/tháng/năm
+            // Không cộng vào điểm ngày và không kéo hạng thi đua ngày
+            const supportPoints = Math.round(r.supportPoints * 10) / 10
 
-            // TỔNG ĐIỂM KPI (Có thể đạt 120đ, 150đ, 180đ+)
-            const netKpiScore = Math.round((primaryKpiScore + secondaryBonusPoints) * 10) / 10
-
-            // Xếp loại danh hiệu Bé Khỏe Bé Ngoan (Thang ca chuẩn 100đ + Việc phụ mở trần)
+            // Xếp loại danh hiệu Bé Khỏe Bé Ngoan — chỉ dựa trên điểm việc chính
             let grade: 'A+' | 'A' | 'B' | 'C' = 'B'
             let gradeLabel = '🌱 Cần Cố Gắng (B)'
-            if (r.hasSevereIncident || (!isStatisticsOnly && safeScore <= 5) || primaryKpiScore < 70) {
+            if (r.hasSevereIncident) {
                 grade = 'C'
-                gradeLabel = r.hasSevereIncident ? '⚠️ Chưa Ngoan (Sự cố)' : '⚠️ Chưa Ngoan (C)'
-            } else if (netKpiScore >= 100) {
+                gradeLabel = '⚠️ Chưa Ngoan (Sự cố)'
+            } else if (!hasPrimaryTasks) {
+                grade = 'B'
+                gradeLabel = '➕ Chỉ hỗ trợ'
+            } else if ((!isStatisticsOnly && safeScore <= 5) || primaryKpiScore < 70) {
+                grade = 'C'
+                gradeLabel = '⚠️ Chưa Ngoan (C)'
+            } else if (primaryKpiScore >= 100) {
                 grade = 'A+'
                 gradeLabel = '🌸 Bé Khỏe Bé Ngoan (A+)'
-            } else if (netKpiScore >= 85) {
+            } else if (primaryKpiScore >= 85) {
                 grade = 'A'
                 gradeLabel = '⭐ Bé Ngoan (A)'
-            } else if (netKpiScore >= 70) {
+            } else if (primaryKpiScore >= 70) {
                 grade = 'B'
                 gradeLabel = '🌱 Cần Cố Gắng (B)'
             } else {
@@ -614,7 +622,8 @@ export default function WorkPlanAnalyticsTab({
                 qualityMax: qualMax,
                 disciplineMax: discBase,
                 primaryKpiScore,
-                secondaryBonusPoints,
+                supportPoints,
+                hasPrimaryTasks,
                 totalPositions: Math.round(r.totalPositions * 10) / 10,
                 totalContainers: Math.round(r.totalContainers * 10) / 10,
                 weightedScore: Math.round(r.weightedScore * 10) / 10,
@@ -625,20 +634,28 @@ export default function WorkPlanAnalyticsTab({
                 speedWeightTonsPerHour: speedInfo.weightTonsPerHour,
                 speedPackagesPerHour: speedInfo.packagesPerHour,
                 speedSummaryText: speedInfo.speedSummaryText,
-                netKpiScore,
                 grade,
                 gradeLabel,
             }
         })
 
-        rows.sort(
-            (a, b) =>
-                b.netKpiScore - a.netKpiScore ||
-                b.secondaryBonusPoints - a.secondaryBonusPoints ||
-                b.primaryKpiScore - a.primaryKpiScore ||
+        rows.sort((a, b) => {
+            // Người có việc chính xếp theo điểm KPI ngày; người chỉ làm việc hỗ trợ
+            // xếp phía sau theo điểm hỗ trợ tích lũy trong kỳ
+            if (a.hasPrimaryTasks !== b.hasPrimaryTasks) return a.hasPrimaryTasks ? -1 : 1
+            if (a.hasPrimaryTasks) {
+                return (
+                    b.primaryKpiScore - a.primaryKpiScore ||
+                    b.completed - a.completed ||
+                    b.avgProgress - a.avgProgress
+                )
+            }
+            return (
+                b.supportPoints - a.supportPoints ||
                 b.completed - a.completed ||
                 b.avgProgress - a.avgProgress
-        )
+            )
+        })
 
         const q = searchEmployee.trim().toLowerCase()
         if (!q) return rows
@@ -659,7 +676,7 @@ export default function WorkPlanAnalyticsTab({
                 { header: 'Phân loại', key: 'type', width: 15 },
                 { header: '⭐ Việc chính đã giao', key: 'primaryAssigned', width: 20 },
                 { header: '⭐ Việc chính hoàn thành', key: 'primaryCompleted', width: 22 },
-                { header: '➕ Việc phụ hỗ trợ', key: 'secondaryTasks', width: 18 },
+                { header: '➕ Việc hỗ trợ (xong/giao)', key: 'secondaryTasks', width: 20 },
                 { header: '📊 Việc thống kê', key: 'statisticsTasks', width: 18 },
                 { header: '📄 Số phiếu đã tạo', key: 'documents', width: 18 },
                 { header: 'Tổng vị trí cá nhân (vt)', key: 'positions', width: 20 },
@@ -671,11 +688,10 @@ export default function WorkPlanAnalyticsTab({
                 { header: '⭐ Chất lượng (đ)', key: 'qualScore', width: 18 },
                 { header: '🛡️ An toàn (đ)', key: 'safeScore', width: 18 },
                 { header: '📋 Kỷ luật & 5S (đ)', key: 'discScore', width: 20 },
-                { header: '🎯 Điểm Việc Chính (/100đ)', key: 'primaryKpi', width: 24 },
-                { header: '➕ Điểm Việc Phụ (+đ)', key: 'secondaryBonus', width: 22 },
+                { header: '🎯 Điểm KPI ngày (/100đ)', key: 'primaryKpi', width: 22 },
+                { header: '➕ Điểm hỗ trợ tích lũy (đ)', key: 'supportPoints', width: 24 },
                 { header: '⚠️ Lỗi vi phạm', key: 'incidentsCount', width: 16 },
                 { header: 'Điểm phạt (-đ)', key: 'penalty', width: 16 },
-                { header: '🏆 TỔNG ĐIỂM KPI (Mở trần)', key: 'netKpi', width: 28 },
                 { header: 'Tiến độ TB (%)', key: 'avgProgress', width: 16 },
                 { header: 'Xếp loại thi đua', key: 'grade', width: 22 },
             ]
@@ -706,11 +722,10 @@ export default function WorkPlanAnalyticsTab({
                     qualScore: `${emp.qualityScore} / ${emp.qualityMax}đ`,
                     safeScore: emp.safetyMax === 0 ? '—' : `${emp.safetyScore} / ${emp.safetyMax}đ`,
                     discScore: `${emp.disciplineScore} / ${emp.disciplineMax}đ`,
-                    primaryKpi: `${emp.primaryKpiScore} / 100đ`,
-                    secondaryBonus: emp.secondaryBonusPoints > 0 ? `+${emp.secondaryBonusPoints}đ` : '0đ',
+                    primaryKpi: emp.hasPrimaryTasks ? `${emp.primaryKpiScore} / 100đ` : '— (chỉ hỗ trợ)',
+                    supportPoints: emp.supportPoints > 0 ? `+${emp.supportPoints}đ` : '0đ',
                     incidentsCount: emp.incidentsCount || 0,
                     penalty: emp.totalPenaltyPoints ? `-${emp.totalPenaltyPoints}đ` : '-',
-                    netKpi: `${emp.netKpiScore} điểm`,
                     avgProgress: `${emp.avgProgress}%`,
                     grade: emp.gradeLabel || emp.grade,
                 })
@@ -981,6 +996,10 @@ export default function WorkPlanAnalyticsTab({
                     </div>
                 </div>
 
+                <div className="mx-5 mt-3 px-3 py-2 rounded-xl bg-purple-50/80 border border-purple-200 text-[11px] text-purple-900 leading-relaxed">
+                    <b>➕ Điểm hỗ trợ được quản lý riêng:</b> điểm việc phụ / tăng cường được tích lũy theo kỳ đang chọn để đánh giá thi đua <b>tuần / tháng / năm</b>. Điểm này <b>không cộng vào KPI ngày</b> và <b>không kéo hạng</b> thi đua ngày. Nhân sự chỉ làm việc hỗ trợ trong kỳ được xếp riêng theo điểm hỗ trợ.
+                </div>
+
                 {loading ? (
                     <div className="p-12 text-center text-sm text-stone-500">
                         Đang tổng hợp dữ liệu hiệu suất...
@@ -997,15 +1016,15 @@ export default function WorkPlanAnalyticsTab({
                                     <th className="px-2 py-3 text-center w-10">Hạng</th>
                                     <th className="px-3 py-3 text-left">Nhân viên / Tổ đội</th>
                                     <th className="px-2.5 py-3 text-center" title="Số việc chính được giao trong ca và tỷ lệ hoàn tất">⭐ Việc chính</th>
-                                    <th className="px-2.5 py-3 text-center" title="Số việc phụ / tăng cường được hỗ trợ">➕ Việc phụ</th>
+                                    <th className="px-2.5 py-3 text-center" title="Số việc hỗ trợ / tăng cường trong kỳ">➕ Hỗ trợ</th>
                                     <th className="px-2.5 py-3 text-center" title="Sản lượng thực tế, số giờ làm và tốc độ năng suất trong 1 giờ. Công việc Thống kê / Ghi chép không được ghi vào cột này.">Sản Lượng & Giờ Làm</th>
                                     <th className="px-2 py-3 text-center" title="Nhóm điểm Năng suất: Lao động 35–45đ (Nhẹ 35, Vừa 37, Nặng 40, Rất nặng 45) • Thống kê 30–40đ theo độ nặng (không có nhóm An toàn)">⚡ N.Suất</th>
                                     <th className="px-2 py-3 text-center" title="Nhóm điểm Chất lượng thực hiện việc chính (Tối đa 20đ)">⭐ C.Lượng</th>
                                     <th className="px-2 py-3 text-center" title="Nhóm điểm An toàn lao động (Gốc 20đ, chỉ trừ lỗi vận hành xe nâng)">🛡️ A.Toàn</th>
                                     <th className="px-2 py-3 text-center" title="Nhóm điểm Kỷ luật & 5S (lao động gốc 15đ, thống kê gốc 20đ; trừ lỗi + thưởng)">📋 K.Luật</th>
                                     <th className="px-3 py-3 text-center" title="Điểm việc chính theo thang chuẩn 100đ">⭐ Điểm Chính</th>
-                                    <th className="px-3 py-3 text-center" title="Điểm việc phụ cộng thêm không giới hạn trần">➕ Việc Phụ</th>
-                                    <th className="px-3 py-3 text-center" title="Tổng KPI thực tế mở trần (có thể đạt 120đ - 150đ+)">🎯 TỔNG KPI</th>
+                                    <th className="px-3 py-3 text-center" title="Điểm KPI ngày — chỉ tính việc chính, thang chuẩn 100đ">🎯 KPI Ngày</th>
+                                    <th className="px-3 py-3 text-center" title="Điểm hỗ trợ tích lũy trong kỳ đang chọn — quản lý riêng để đánh giá tuần/tháng/năm. Không cộng vào điểm ngày và không kéo hạng thi đua ngày.">➕ Điểm Hỗ Trợ</th>
                                     <th className="px-3 py-3 text-center">Xếp loại</th>
                                     <th className="px-3 py-3 text-right">Chi tiết</th>
                                 </tr>
@@ -1045,7 +1064,7 @@ export default function WorkPlanAnalyticsTab({
                                             <span className="text-emerald-700 font-extrabold">{row.primaryTasksCompleted}</span>
                                             <span className="text-stone-400 font-normal"> / {row.primaryTasksAssigned}</span>
                                         </td>
-                                        {/* ➕ Việc phụ */}
+                                        {/* ➕ Việc hỗ trợ */}
                                         <td className="px-2.5 py-3 text-center font-bold">
                                             {row.secondaryTasksAssigned > 0 ? (
                                                 <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-xs font-black">
@@ -1150,43 +1169,38 @@ export default function WorkPlanAnalyticsTab({
                                                 )}
                                             </span>
                                         </td>
-                                        {/* ⭐ ĐIỂM VIỆC CHÍNH (/100đ chuẩn) */}
+                                        {/* 🎯 ĐIỂM KPI NGÀY (chỉ việc chính, thang 100đ) */}
                                         <td className="px-3 py-3 text-center">
-                                            <span className="px-2 py-0.5 rounded-lg bg-stone-100 text-stone-800 text-xs font-black">
-                                                {row.primaryKpiScore} <span className="text-[10px] text-stone-400 font-normal">/100đ</span>
-                                            </span>
+                                            {row.hasPrimaryTasks ? (
+                                                <span className="px-2 py-0.5 rounded-lg bg-stone-100 text-stone-800 text-xs font-black">
+                                                    {row.primaryKpiScore} <span className="text-[10px] text-stone-400 font-normal">/100đ</span>
+                                                </span>
+                                            ) : (
+                                                <span className="text-[10px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-1.5 py-0.5 rounded-md" title="Không có việc chính trong kỳ — nhân sự chỉ làm việc hỗ trợ, xếp hạng theo điểm hỗ trợ">
+                                                    Chỉ hỗ trợ
+                                                </span>
+                                            )}
                                         </td>
-                                        {/* ➕ ĐIỂM VIỆC PHỤ (+đ mở trần) */}
+                                        {/* ➕ ĐIỂM HỖ TRỢ TÍCH LŨY TRONG KỲ */}
                                         <td className="px-3 py-3 text-center">
-                                            {row.secondaryBonusPoints > 0 ? (
-                                                <span className="px-2 py-0.5 rounded-lg bg-purple-100 text-purple-800 text-xs font-black shadow-2xs">
-                                                    +{row.secondaryBonusPoints}đ
+                                            {row.supportPoints > 0 ? (
+                                                <span
+                                                    className="px-2 py-0.5 rounded-lg bg-purple-100 text-purple-800 text-xs font-black shadow-2xs"
+                                                    title={`${row.secondaryTasksCompleted}/${row.secondaryTasksAssigned} việc hỗ trợ hoàn tất • Tích lũy trong kỳ, không cộng vào điểm ngày`}
+                                                >
+                                                    +{row.supportPoints}đ
                                                 </span>
                                             ) : (
                                                 <span className="text-xs text-stone-300">-</span>
                                             )}
                                         </td>
-                                        {/* 🎯 TỔNG ĐIỂM KPI (MỞ TRẦN ĐẠT 120-150đ+) */}
-                                        <td className="px-3 py-3 text-center">
-                                            <span
-                                                className={`px-2.5 py-1 rounded-xl text-white text-xs font-black shadow-xs inline-flex items-center gap-1 ${
-                                                    row.netKpiScore >= 120
-                                                        ? 'bg-gradient-to-r from-purple-600 to-pink-600 animate-pulse'
-                                                        : row.netKpiScore >= 100
-                                                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600'
-                                                        : 'bg-gradient-to-r from-indigo-600 to-indigo-700'
-                                                }`}
-                                                title={`Tổng KPI = Điểm Việc Chính (${row.primaryKpiScore}đ) + Thưởng Việc Phụ (+${row.secondaryBonusPoints}đ)`}
-                                            >
-                                                <Target size={12} />
-                                                {row.netKpiScore} đ
-                                            </span>
-                                        </td>
                                         {/* Xếp Loại */}
                                         <td className="px-3 py-3 text-center">
                                             <span
                                                 className={`inline-block px-2.5 py-0.5 rounded-lg text-xs font-black border shadow-2xs ${
-                                                    row.grade === 'A+'
+                                                    !row.hasPrimaryTasks
+                                                        ? 'bg-purple-50 text-purple-800 border-purple-300'
+                                                        : row.grade === 'A+'
                                                         ? 'bg-rose-50 text-rose-700 border-rose-300 ring-1 ring-rose-200'
                                                         : row.grade === 'A'
                                                         ? 'bg-amber-50 text-amber-800 border-amber-300'
@@ -1230,11 +1244,13 @@ export default function WorkPlanAnalyticsTab({
                                 <h4 className="text-xs font-black uppercase tracking-wider text-indigo-950 flex flex-wrap items-center gap-2">
                                     <span>Bảng Đánh Giá KPI Nhân Sự: {selectedEmployee.name}</span>
                                     <span className="px-3 py-1 rounded-full bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-700 text-white text-xs font-black shadow-xs">
-                                        🎯 TỔNG KPI: {selectedEmployee.netKpiScore} ĐIỂM ({selectedEmployee.gradeLabel})
+                                        {selectedEmployee.hasPrimaryTasks
+                                            ? `🎯 KPI NGÀY: ${selectedEmployee.primaryKpiScore} ĐIỂM (${selectedEmployee.gradeLabel})`
+                                            : `➕ CHỈ HỖ TRỢ: ${selectedEmployee.supportPoints} ĐIỂM HỖ TRỢ`}
                                     </span>
                                 </h4>
                                 <p className="text-[11px] text-stone-500 mt-0.5">
-                                    ⭐ Việc chính: <b>{selectedEmployee.primaryTasksCompleted}/{selectedEmployee.primaryTasksAssigned}</b> (Đạt {selectedEmployee.primaryKpiScore}/100đ chuẩn) • ➕ Việc phụ hỗ trợ: <b>{selectedEmployee.secondaryTasksCompleted}/{selectedEmployee.secondaryTasksAssigned}</b> (+{selectedEmployee.secondaryBonusPoints}đ) • Tổng sản lượng: <b>{selectedEmployee.totalPositions} vị trí</b> ({selectedEmployee.totalWeightKg.toLocaleString('vi-VN')} kg) • ⏱️ Giờ làm: <b>{selectedEmployee.totalWorkHours}h</b> ({selectedEmployee.totalRegularHours}h chuẩn{selectedEmployee.totalOvertimeHours > 0 ? ` + ${selectedEmployee.totalOvertimeHours}h OT` : ''})
+                                    ⭐ Việc chính: <b>{selectedEmployee.primaryTasksCompleted}/{selectedEmployee.primaryTasksAssigned}</b> {selectedEmployee.hasPrimaryTasks ? `(Đạt ${selectedEmployee.primaryKpiScore}/100đ chuẩn)` : '(không có việc chính trong kỳ)'} • ➕ Việc hỗ trợ: <b>{selectedEmployee.secondaryTasksCompleted}/{selectedEmployee.secondaryTasksAssigned}</b> (<span className="text-purple-700 font-bold">+{selectedEmployee.supportPoints}đ hỗ trợ tích lũy kỳ</span>) • Tổng sản lượng: <b>{selectedEmployee.totalPositions} vị trí</b> ({selectedEmployee.totalWeightKg.toLocaleString('vi-VN')} kg) • ⏱️ Giờ làm: <b>{selectedEmployee.totalWorkHours}h</b> ({selectedEmployee.totalRegularHours}h chuẩn{selectedEmployee.totalOvertimeHours > 0 ? ` + ${selectedEmployee.totalOvertimeHours}h OT` : ''})
                                     {selectedEmployee.statisticsTasksAssigned > 0 && (
                                         <span className="text-sky-700 font-semibold">
                                             {' '}• 📊 <b>{selectedEmployee.statisticsTasksCompleted}/{selectedEmployee.statisticsTasksAssigned}</b> việc thống kê
@@ -1291,14 +1307,14 @@ export default function WorkPlanAnalyticsTab({
                                     {selectedEmployee.totalBonusPoints > 0 ? `+${selectedEmployee.totalBonusPoints}đ thưởng công hiến` : '✓ Tuân thủ nội quy ca'}
                                 </div>
                             </div>
-                            {/* Thẻ Việc Phụ / Tăng Cường (Mở Trần) */}
-                            <div className={`p-3 rounded-xl border shadow-2xs ${selectedEmployee.secondaryBonusPoints > 0 ? 'bg-purple-50/80 border-purple-200' : 'bg-white border-stone-200'}`}>
-                                <div className="text-[10px] font-bold text-purple-900 uppercase">➕ Việc Phụ / Tăng Cường</div>
+                            {/* Thẻ Điểm Hỗ Trợ (tích lũy riêng theo kỳ) */}
+                            <div className={`p-3 rounded-xl border shadow-2xs ${selectedEmployee.supportPoints > 0 ? 'bg-purple-50/80 border-purple-200' : 'bg-white border-stone-200'}`}>
+                                <div className="text-[10px] font-bold text-purple-900 uppercase">➕ Điểm Hỗ Trợ (tích lũy kỳ)</div>
                                 <div className="text-lg font-black text-purple-700 mt-1">
-                                    +{selectedEmployee.secondaryBonusPoints} <span className="text-xs text-purple-400 font-normal">điểm</span>
+                                    +{selectedEmployee.supportPoints} <span className="text-xs text-purple-400 font-normal">điểm</span>
                                 </div>
                                 <div className="text-[10px] text-purple-600 mt-0.5 font-medium">
-                                    {selectedEmployee.secondaryTasksCompleted} việc phụ hoàn tất (Mở trần)
+                                    {selectedEmployee.secondaryTasksCompleted}/{selectedEmployee.secondaryTasksAssigned} việc hỗ trợ hoàn tất • dùng đánh giá tuần/tháng/năm, không kéo hạng ngày
                                 </div>
                             </div>
                         </div>
@@ -1402,7 +1418,7 @@ export default function WorkPlanAnalyticsTab({
                                                 <span className="text-sm font-black">#{item.sort_order}. {item.content}</span>
                                                 {isSecondaryTask ? (
                                                     <span className="px-1.5 py-0.2 rounded-md bg-purple-100 text-purple-800 font-extrabold text-[10px] border border-purple-200">
-                                                        ➕ Việc phụ (+đ)
+                                                        ➕ Việc hỗ trợ
                                                     </span>
                                                 ) : (
                                                     <span className="px-1.5 py-0.2 rounded-md bg-amber-50 text-amber-800 font-extrabold text-[10px] border border-amber-200">
@@ -1426,7 +1442,7 @@ export default function WorkPlanAnalyticsTab({
                                                 </span>
                                                 {isSecondaryTask ? (
                                                     <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-black text-xs border border-purple-200 shadow-2xs">
-                                                        Thưởng: +{taskKpi.bonusOverTargetPoints}đ
+                                                        Điểm hỗ trợ: +{taskKpi.bonusOverTargetPoints}đ
                                                     </span>
                                                 ) : (
                                                     <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 font-black text-xs border border-indigo-200 shadow-2xs">

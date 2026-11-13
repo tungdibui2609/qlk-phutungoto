@@ -115,7 +115,7 @@ export interface WorkloadMetrics {
     base_lots_count?: number | null
     base_packages_count?: number | null
     base_weight_kg?: number | null
-    // Phân loại Việc chính (100đ cơ bản) vs Việc phụ / Hỗ trợ (cộng thêm điểm lên 120-150đ)
+    // Phân loại Việc chính (chấm điểm ngày) vs Việc phụ / Hỗ trợ (tích lũy điểm hỗ trợ riêng theo kỳ)
     task_type?: WorkPlanTaskType | null
     // Đánh giá KPI & Ghi nhận vi phạm theo từng cá nhân
     assignee_evaluations?: WorkPlanAssigneeEvaluation[]
@@ -171,10 +171,10 @@ export const DEFAULT_INCIDENT_TEMPLATES: IncidentGroupTemplate[] = [
         groupLabel: 'Thống kê, Kiểm đếm & Dữ liệu kho',
         icon: '📊',
         items: [
+            { type: 'falsified_data', name: 'Cố ý sửa số liệu / Che giấu sai lệch', severity: 'severe', penalty: 25 },
             { type: 'wrong_quantity_count', name: 'Ghi sai số lượng / Lệch kiện so với thực tế', severity: 'moderate', penalty: 15 },
             { type: 'wrong_rack_location', name: 'Ghi sai vị trí kệ / Nhầm vị trí lưu kho', severity: 'moderate', penalty: 15 },
-            { type: 'wrong_lot_code', name: 'Ghi sai mã LOT / Nhầm LOT sản xuất', severity: 'severe', penalty: 25 },
-            { type: 'wrong_box_label', name: 'Dán nhầm tem nhãn / Dán sai quy cách thùng', severity: 'moderate', penalty: 15 },
+            { type: 'wrong_lot_code', name: 'Ghi sai mã LOT / Nhầm LOT sản xuất', severity: 'moderate', penalty: 15 },
             { type: 'delayed_system_update', name: 'Chậm cập nhật phần mềm / Quên chốt xuất nhập', severity: 'minor', penalty: 10 },
             { type: 'handover_discrepancy', name: 'Sai lệch số liệu bàn giao ca / Thiếu biên bản', severity: 'minor', penalty: 10 },
             { type: 'missed_scan', name: 'Quên quét tem / Bỏ sót kiện hàng khi xuất nhập', severity: 'minor', penalty: 10 },
@@ -287,10 +287,10 @@ export const TASK_TYPE_CONFIG: Record<WorkPlanTaskType, TaskTypeConfig> = {
     },
     secondary: {
         label: 'Việc phụ / Tăng cường / Làm thêm',
-        shortLabel: 'Việc phụ',
+        shortLabel: 'Việc hỗ trợ',
         badgeEmoji: '➕',
         badgeClass: 'bg-indigo-50 text-indigo-800 border-indigo-200',
-        description: 'Làm thêm / Hỗ trợ ca khác (Mở trần, cộng thêm điểm thưởng vượt mức lên 120đ - 150đ+)',
+        description: 'Làm thêm / Hỗ trợ ca khác: điểm hỗ trợ được tích lũy riêng theo kỳ để đánh giá tuần/tháng/năm, không cộng vào điểm ngày và không kéo hạng thi đua ngày',
         baseScore: 20,
     },
 }
@@ -334,8 +334,8 @@ export function getStatisticsProductivityByDifficulty(
 
 export interface TaskStandardKpiScore {
     taskType: WorkPlanTaskType
-    totalKpi: number // Với việc chính: thang 0 - 100đ (mở trần 105đ với việc rất nặng); Với việc phụ: cộng dồn vào KPI ngày (+10đ đến +50đ)
-    bonusOverTargetPoints: number // Điểm việc phụ / vượt mức cộng dồn
+    totalKpi: number // Với việc chính: thang 0 - 100đ (mở trần 105đ với việc rất nặng); Với việc phụ: 0 (điểm hỗ trợ nằm ở bonusOverTargetPoints)
+    bonusOverTargetPoints: number // Điểm hỗ trợ của việc phụ — tích lũy riêng theo kỳ, không cộng vào điểm ngày
     productivityScore: number // Lao động: 35-45đ theo độ nặng • Thống kê: mốc 30-40đ trên trần 40đ (Nhẹ 30 • Vừa 32 • Nặng 35 • Rất nặng 40)
     qualityScore: number // Lao động: tối đa 20đ (lỗi hàng hóa/ghi chép) • Thống kê: tối đa 40đ, trừ theo lỗi sai số liệu
     safetyScore: number // Lao động: gốc 20đ (trừ lỗi xe nâng) • Thống kê: 0đ — không có trụ An toàn
@@ -371,7 +371,7 @@ export function getProductivityScoreByDifficulty(
  * Thang 4 Trụ Cột: Năng suất 35-45đ • Chất lượng 20đ • An toàn 20đ • Kỷ luật 15đ
  * Riêng việc Thống kê: Năng suất mốc 30-40đ (trần 40đ) • Chất lượng 40đ (trừ lỗi số liệu) • Không có trụ An toàn • Kỷ luật 20đ
  * Năng suất phân theo khối lượng: Nhẹ 35đ • Vừa 37đ • Nặng 40đ • Rất nặng 45đ
- * Hỗ trợ phân định Việc chính (chuẩn 100đ) vs Việc phụ (cộng thêm điểm lên 120 - 150đ)
+ * Hỗ trợ phân định Việc chính (chấm điểm ngày) vs Việc phụ (điểm hỗ trợ tích lũy riêng theo kỳ)
  * Nhóm lỗi → trụ là cố định cho cả hai loại việc:
  *   An toàn (20đ, chỉ lao động) = lỗi vận hành xe nâng;
  *   Chất lượng (20đ lao động / 40đ thống kê) = lỗi hàng hóa + lỗi số liệu/ghi chép;
@@ -539,7 +539,7 @@ export function calculateAssigneeTaskStandardKpi(params: {
     let totalKpi = 0
 
     if (taskType === 'secondary') {
-        // Việc phụ / Làm thêm / Hỗ trợ: Là điểm năng suất cộng thêm mở trần (Bonus points)
+        // Việc phụ / Làm thêm / Hỗ trợ: điểm hỗ trợ tích lũy riêng theo kỳ, không cộng vào điểm ngày
         const taskPenalty = safetyDeduction + disciplineDeduction
         bonusOverTargetPoints = isCancelled
             ? 0
@@ -1421,6 +1421,7 @@ export function getStatisticsDocumentCounts(metrics?: WorkloadMetrics | null): {
 }
 
 // Giờ làm sau nghiệm thu: lấy từ đánh giá của từng người (ca chuẩn mặc định 8h, OT mặc định 0h).
+// Hiển thị trên thẻ là giờ TRUNG BÌNH mỗi người, không cộng dồn giờ của cả nhóm.
 // Lúc giao việc chưa có giờ — chỉ khi Quản lý đã đánh giá mới có dữ liệu để hiển thị.
 export interface EvaluationHoursSummary {
     regular: number
@@ -1436,22 +1437,26 @@ export function getEvaluationHours(
 ): EvaluationHoursSummary {
     const evaluations = metrics?.assignee_evaluations || []
     if (evaluations.length === 0) {
-        // Đã đánh giá nhưng chưa lưu giờ từng người -> tạm tính ca chuẩn 8h/người như bộ đánh giá
+        // Đã đánh giá nhưng chưa lưu giờ từng người -> ca chuẩn 8h/người như bộ đánh giá
         const assigneeCount = options?.assigneeCount || 0
         if (options?.assumeStandardShift && assigneeCount > 0) {
-            const regular = assigneeCount * 8
-            return { regular, overtime: 0, total: regular, hasData: true, isDefault: true }
+            return { regular: 8, overtime: 0, total: 8, hasData: true, isDefault: true }
         }
         return { regular: 0, overtime: 0, total: 0, hasData: false, isDefault: false }
     }
-    const regular = evaluations.reduce((sum, ev) => {
-        const raw = Number(ev.regular_hours ?? 8)
-        return sum + (Number.isFinite(raw) ? raw : 8)
-    }, 0)
-    const overtime = evaluations.reduce((sum, ev) => {
-        const raw = Number(ev.overtime_hours ?? 0)
-        return sum + (Number.isFinite(raw) ? raw : 0)
-    }, 0)
+    const sum = evaluations.reduce(
+        (acc, ev) => {
+            const reg = Number(ev.regular_hours ?? 8)
+            const ot = Number(ev.overtime_hours ?? 0)
+            acc.regular += Number.isFinite(reg) ? reg : 8
+            acc.overtime += Number.isFinite(ot) ? ot : 0
+            return acc
+        },
+        { regular: 0, overtime: 0 }
+    )
+    const divisor = evaluations.length
+    const regular = Math.round((sum.regular / divisor) * 10) / 10
+    const overtime = Math.round((sum.overtime / divisor) * 10) / 10
     return {
         regular,
         overtime,

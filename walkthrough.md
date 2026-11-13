@@ -3442,3 +3442,104 @@ Item Thống kê 11.11.2026 đã chấm 4/5 (trạng thái completed) nhưng `wo
 - Item trong ảnh (2 người, đã chấm 4/5) → thẻ hiện **16h (ca chuẩn)**; việc lao động đang chờ → ô Giờ làm hiện `—`.
 - `npx vitest run src/components/work-plans/__tests__` → **17/17 pass**.
 - `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+
+# Walkthrough (tiếp): Giờ làm trên thẻ là TRUNG BÌNH mỗi người, không cộng dồn
+
+Người dùng chốt: **giờ làm hiển thị trên thẻ là giờ trung bình của những người được đánh giá**, không cộng dồn cả nhóm.
+
+- `getEvaluationHours` đổi từ tổng sang trung bình: `regular` / `overtime` / `total` = tổng giờ ÷ số người được đánh giá (làm tròn 1 chữ số thập phân).
+- Trường hợp đã đánh giá nhưng chưa lưu giờ từng người: ca chuẩn 8h/người → thẻ hiện **8h** (không còn 16h với 2 người).
+- Test cập nhật: (8h + 2h OT) và 6h → trung bình 8h (7h thường + 1h OT); 1 người 8h → 8h; chưa đánh giá → `—`.
+- `npx vitest run src/components/work-plans/__tests__` → 17/17 pass; `tsc --noEmit` lọc `work-plans` → không lỗi.
+
+# Walkthrough: Quy chế Thống kê — trừ điểm phát sinh của ngày hôm sau
+
+Người dùng chốt: **số liệu thống kê thường sang ngày hôm sau mới tổng kết**, nên lỗi đối soát phát hiện hôm sau vẫn phải bị trừ điểm — và trừ vào đúng công việc thống kê của **ngày có số liệu**.
+
+## Thay đổi (chỉ nội dung quy chế, không đổi engine)
+
+- `src/components/work-plans/KpiRulesHandbookTab.tsx`:
+  - Thẻ **II. CHẤT LƯỢNG SỐ LIỆU** thêm dòng nổi bật: lỗi phát hiện khi đối soát hôm sau vẫn trừ vào Chất lượng của công việc ngày có số liệu (không dồn sang việc ngày hôm sau), điểm ngày hôm trước có thể được cập nhật lại.
+  - Khối **Điều khoản an toàn đặc biệt** (mục 4) thêm điều khoản cùng nội dung, nêu rõ không mất lỗi vì ghi nhận muộn.
+  - FAQs thêm **Q6**: "Số liệu hôm nay sang hôm sau mới tổng kết, nếu hôm sau mới phát hiện lỗi thì trừ điểm của ngày nào?" → trừ Chất lượng của việc thống kê ngày có số liệu, không dồn sang ngày hôm sau.
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `KpiRulesHandbook` → không lỗi.
+
+# Walkthrough: Đổi lỗi Nghiêm trọng nhất của việc Thống kê sang "Cố ý sửa / che giấu số liệu"
+
+Người dùng chốt: "Ghi sai mã LOT" **không phù hợp** làm lỗi nghiêm trọng nhất của việc thống kê. Lỗi nặng nhất phải là **Cố ý sửa số liệu / Che giấu sai lệch** (lỗi liêm chính dữ liệu) — 25đ, khóa Hạng C.
+
+## Thay đổi
+
+- `src/components/work-plans/types.ts` — danh mục lỗi `inventory_statistics` (nguồn duy nhất cho bộ chọn lỗi + Quy chế):
+  - Thêm `falsified_data` — "Cố ý sửa số liệu / Che giấu sai lệch", **severe, 25đ** (đứng đầu nhóm).
+  - Hạ `wrong_lot_code` từ severe 25đ xuống **moderate, 15đ** (cùng mức ghi sai số lượng / vị trí kệ / tem nhãn).
+- `src/components/work-plans/KpiRulesHandbookTab.tsx` — thẻ II. CHẤT LƯỢNG SỐ LIỆU và mục 4 (tự render từ danh mục) khớp mức mới; dòng 15đ gộp thêm "sai mã LOT", dòng 25đ đổi sang lỗi cố ý sửa/che giấu số liệu.
+- `src/components/work-plans/__tests__/workPlanParser.test.ts`:
+  - Test khóa Hạng C dùng `falsified_data` thay `wrong_lot_code`.
+  - Thêm test chặn hồi quy: nhóm Thống kê chỉ có **đúng 1 lỗi severe** là `falsified_data` 25đ; `wrong_lot_code` là moderate 15đ.
+
+## Kiểm chứng
+
+- `npx vitest run src/components/work-plans/__tests__` → **18/18 pass**.
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- Lưu ý: lỗi đã ghi trước đây lưu severity/điểm riêng trong từng bản ghi đánh giá nên không bị đổi hồi tố.
+
+# Walkthrough: Bỏ lỗi "Dán nhầm tem nhãn / Dán sai quy cách thùng" khỏi Thống kê
+
+Người dùng chốt: dán tem nhãn / quy cách thùng là **việc của sản xuất**, không phải việc của kho.
+
+- `src/components/work-plans/types.ts` — xóa `wrong_box_label` khỏi nhóm lỗi `inventory_statistics` (nhóm còn 7 lỗi; bộ chọn lỗi và mục 4 Quy chế tự cập nhật).
+- `src/components/work-plans/KpiRulesHandbookTab.tsx` — dòng 15đ của thẻ Chất lượng số liệu bỏ "; dán nhầm tem nhãn".
+- `src/components/work-plans/__tests__/workPlanParser.test.ts` — test danh mục khẳng định `wrong_box_label` không còn trong lỗi của kho.
+- Lỗi đã ghi trước đây vẫn giữ nguyên trong bản ghi đánh giá cũ (không hồi tố).
+- `npx vitest run src/components/work-plans/__tests__` → 18/18 pass; `tsc` lọc `work-plans` → không lỗi.
+
+# Walkthrough: Tách "Điểm hỗ trợ" thành mục riêng — không cộng vào điểm ngày, không kéo hạng
+
+Người dùng chốt: việc phụ / tăng cường **không cộng trực tiếp vào hệ số điểm ngày**; quản lý thành **một mục điểm hỗ trợ riêng** để biết ai tích cực hỗ trợ, làm cơ sở đánh giá **tuần / tháng / năm**. Ba quyết định kèm theo:
+1. Điểm hỗ trợ **không kéo hạng** thi đua ngày.
+2. **Giữ công thức hiện tại** cho từng việc hỗ trợ: điểm năng suất theo độ nặng × % đóng góp (engine không đổi).
+3. Người **chỉ làm việc hỗ trợ** trong kỳ được **xếp theo điểm hỗ trợ**.
+
+## Thay đổi
+
+- `src/components/work-plans/WorkPlanAnalyticsTab.tsx`:
+  - `EmployeeStatRow`: bỏ `netKpiScore`, đổi `secondaryBonusPoints` → `supportPoints`; thêm `hasPrimaryTasks`.
+  - Điểm ngày (`primaryKpiScore`) **chỉ tính việc chính**; việc hỗ trợ chỉ cộng vào `supportPoints` (tích lũy theo khoảng ngày đang chọn = kỳ báo cáo).
+  - Xếp hạng: người có việc chính xếp theo điểm KPI ngày (không dùng điểm hỗ trợ làm tiêu chí phụ); người chỉ làm việc hỗ trợ xếp phía sau theo điểm hỗ trợ, gắn nhãn **"➕ Chỉ hỗ trợ"** thay vì bị xếp C oan.
+  - Bảng: cột **🎯 KPI Ngày** (chỉ việc chính) và cột riêng **➕ Điểm Hỗ Trợ** (tích lũy kỳ); thêm dải giải thích ngay trên bảng. Drawer chi tiết hiển thị điểm hỗ trợ kỳ và số việc hỗ trợ hoàn tất.
+  - Excel: cột "Điểm KPI ngày (/100đ)" + "Điểm hỗ trợ tích lũy (đ)"; bỏ cột "TỔNG ĐIỂM KPI (Mở trần)".
+- `src/components/work-plans/AnalyticsExportCardModal.tsx` — bảng xếp hạng và nội dung copy Zalo đổi sang **KPI ngày / Điểm hỗ trợ kỳ**; nhãn "Tổng KPI" bỏ; phiếu chi tiết hiển thị điểm hỗ trợ riêng.
+- `src/components/work-plans/KpiRulesHandbookTab.tsx` — mục 3 viết lại: **Việc chính (điểm ngày)** vs **Việc phụ / tăng cường (điểm hỗ trợ tích lũy kỳ)**; bỏ "Mở trần 120–150đ", bỏ ví dụ cộng thẳng 100 + 7.2 = 107.2; nêu rõ không kéo hạng, cộng dồn tuần/tháng/năm, người chỉ hỗ trợ xếp riêng. FAQ Q1 cập nhật theo.
+- `src/components/work-plans/types.ts` — mô tả loại việc phụ và `bonusOverTargetPoints` đổi sang ngữ nghĩa "điểm hỗ trợ tích lũy riêng"; công thức engine giữ nguyên.
+- Đồng bộ nhãn ở `WorkPlansView.tsx`, `AssigneeEvaluationSection.tsx`, `EvaluateItemModal.tsx` ("Việc hỗ trợ", "điểm hỗ trợ tích lũy theo kỳ").
+
+## Kiểm chứng
+
+- Công thức từng việc hỗ trợ không đổi: engine vẫn trả `bonusOverTargetPoints` (Nặng 40đ × 18% = 7.2đ; Vừa 37đ × 50% = 18.5đ).
+- `npx vitest run src/components/work-plans/__tests__` → **18/18 pass**.
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- Không đổi dữ liệu đã lưu: chỉ thay cách tổng hợp/hiển thị; mở lại kỳ cũ sẽ thấy điểm ngày tách khỏi điểm hỗ trợ ngay.
+
+# Walkthrough: Số liệu khối lượng trên phiếu Báo cáo & Đánh giá (Kiểu Hiện Đại) tách thành chip
+
+Người dùng gửi ảnh phiếu "Báo cáo & Đánh giá công việc ngày 12.11.2026" (Kiểu Hiện Đại) và phản hồi dòng số liệu khối lượng dưới mỗi công việc "rất khó chịu" — trước đây là một dải amber dài dạng văn bản nối bằng dấu `•` (độ nặng • hệ số • thùng • tấn • phiếu • dòng • mã phiếu nhập/xuất kế toán) nên rất khó đọc khi chụp ảnh gửi Zalo.
+
+## Thay đổi
+
+- `src/components/work-plans/PlanExportCardModal.tsx` (chỉ phần render phiếu, không đổi dữ liệu/engine):
+  - Thêm helper `buildWorkloadStats(item)` tách `workload_metrics` thành: `chips` (từng chỉ số khối lượng), `inbound` / `outbound` / `exportOrders` (mã chứng từ), `notes` (lý do hệ số, LOT đã tạo, vị trí đã đưa lên kệ). Việc Thống kê vẫn suy ra số phiếu/số dòng bằng `getStatisticsDocumentCounts` như logic thẻ.
+  - Bỏ dải amber nối chuỗi; thay bằng panel trắng có viền nhạt gồm **2 tầng**:
+    1. Hàng chip chỉ số: độ nặng (màu theo `DIFFICULTY_CONFIG`), hệ số khối lượng, vị trí, LOT, thùng, tấn/kg, container, giờ, số phiếu, số dòng, chỉ số tùy chỉnh — mỗi số một chip màu riêng, tự xuống dòng.
+    2. Dải "Chứng từ": mã phiếu nhập kế toán (xanh dương), phiếu xuất kế toán (xanh lá), lệnh xuất (tím) — mỗi mã một chip, kèm nhãn NK / XK / LỆNH.
+  - Ghi chú dài (lý do hệ số, LOT tạo, vị trí đưa lên kệ) chuyển xuống dòng chữ xám nhỏ, không còn chen trong chuỗi số liệu.
+  - `formatWorkloadSummaryText` giữ nguyên cho bản copy văn bản Zalo (vẫn là văn bản thuần, không đổi).
+
+## Kiểm chứng
+
+- `npx tsc --noEmit` lọc `work-plans` → không lỗi.
+- `npx vitest run src/components/work-plans/__tests__` → **18/18 pass**.
+- Không thay đổi cấu trúc `workload_metrics`, không migration, không ảnh hưởng phân hệ kho đông lạnh.

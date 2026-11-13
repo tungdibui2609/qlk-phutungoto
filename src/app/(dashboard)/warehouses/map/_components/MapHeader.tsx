@@ -1,6 +1,6 @@
 'use client'
 
-import { Map, Printer, Settings, Hash, Clock } from 'lucide-react'
+import { Map, Printer, Settings, Hash, Clock, Layers } from 'lucide-react'
 import Protected from '@/components/auth/Protected'
 
 interface MapHeaderProps {
@@ -18,6 +18,8 @@ interface MapHeaderProps {
     displayInternalCode: boolean
     setDisplayInternalCode: (val: boolean) => void
     onOpenHistory: () => void
+    onOpenProposals?: () => void
+    pendingProposalCount?: number
 }
 
 export function MapHeader({
@@ -34,7 +36,9 @@ export function MapHeader({
     isMobile,
     displayInternalCode,
     setDisplayInternalCode,
-    onOpenHistory
+    onOpenHistory,
+    onOpenProposals,
+    pendingProposalCount
 }: MapHeaderProps) {
     const handlePrint = () => {
         const params = new URLSearchParams()
@@ -68,6 +72,22 @@ export function MapHeader({
             </div>
 
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1 sm:pb-0">
+                {onOpenProposals && (
+                    <button
+                        onClick={onOpenProposals}
+                        className="px-3 py-1.5 sm:px-4 sm:py-2 bg-gradient-to-r from-amber-500/10 to-orange-500/10 border border-amber-500/30 hover:border-amber-500/60 text-amber-700 dark:text-amber-300 rounded-lg font-semibold flex items-center gap-2 transition-all shadow-sm text-sm"
+                        title="Xem các phiếu đề xuất điều chỉnh vị trí kho từ App"
+                    >
+                        <Layers size={18} className="text-amber-500" />
+                        <span className="whitespace-nowrap">Đề xuất điều chỉnh</span>
+                        {pendingProposalCount != null && pendingProposalCount > 0 && (
+                            <span className="px-1.5 py-0.5 rounded-full text-xs font-black bg-amber-500 text-white animate-pulse">
+                                {pendingProposalCount}
+                            </span>
+                        )}
+                    </button>
+                )}
+
                 <button
                     onClick={onOpenHistory}
                     className="px-3 py-1.5 sm:px-4 sm:py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-lg font-medium flex items-center gap-2 transition-colors shadow-sm text-sm"

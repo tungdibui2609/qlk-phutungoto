@@ -419,7 +419,7 @@ export default function EvaluateItemModal({
                                                             </div>
                                                             <div className="text-[10px] text-stone-500 flex items-center gap-1">
                                                                 <span>
-                                                                    {taskType === 'secondary' ? '➕ Việc phụ' : '⭐ Việc chính'}
+                                                                    {taskType === 'secondary' ? '➕ Việc hỗ trợ' : '⭐ Việc chính'}
                                                                 </span>
                                                                 <span>•</span>
                                                                 <span className="font-bold text-stone-700">{share}%</span>

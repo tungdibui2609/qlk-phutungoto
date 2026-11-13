@@ -490,7 +490,7 @@ export default function AssigneeEvaluationSection({
                     )
                     const assigneeTaskType: WorkPlanTaskType = ev.task_type || matchingAssignee?.task_type || 'primary'
 
-                    // Tính điểm KPI chuẩn theo mô hình 4 Trụ Cột (Hỗ trợ việc chính vs việc phụ mở trần 150đ)
+                    // Tính điểm KPI chuẩn theo mô hình 4 Trụ Cột (việc chính chấm điểm ngày, việc hỗ trợ tích lũy riêng)
                     const standardKpi = calculateAssigneeTaskStandardKpi({
                         userPositions: userPos,
                         diffMultiplier,
@@ -526,7 +526,7 @@ export default function AssigneeEvaluationSection({
                                     <div>
                                         <div className="text-xs font-black text-stone-900 flex items-center gap-1.5">
                                             <span>{ev.assignee_name}</span>
-                                            {/* Nút chuyển Việc chính vs Việc phụ riêng cho người này */}
+                                            {/* Nút chuyển Việc chính vs Việc hỗ trợ riêng cho người này */}
                                             <button
                                                 type="button"
                                                 onClick={() => {
@@ -542,9 +542,9 @@ export default function AssigneeEvaluationSection({
                                                         ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
                                                         : 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                                 }`}
-                                                title="Bấm để chuyển đổi giữa Việc chính (chuẩn 100đ) và Việc phụ (cộng thêm điểm lên 150đ)"
+                                                title="Bấm để chuyển đổi giữa Việc chính (chấm điểm ngày, chuẩn 100đ) và Việc hỗ trợ (tích lũy điểm hỗ trợ theo kỳ)"
                                             >
-                                                {assigneeTaskType === 'secondary' ? '➕ Việc phụ (+điểm)' : '⭐ Việc chính'}
+                                                {assigneeTaskType === 'secondary' ? '➕ Việc hỗ trợ' : '⭐ Việc chính'}
                                             </button>
                                         </div>
                                         <div className="text-[10px] text-stone-400">
@@ -902,13 +902,13 @@ export default function AssigneeEvaluationSection({
                                         <div className="flex items-center gap-1.5">
                                             <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 animate-pulse" />
                                             <span className="font-black text-indigo-950 uppercase tracking-wide">
-                                                ➕ Điểm Việc Phụ / Tăng Cường Được Cộng Thêm:
+                                                ➕ Điểm Hỗ Trợ Ghi Nhận Cho Kỳ:
                                             </span>
                                         </div>
                                         <div className="flex items-center gap-1 text-indigo-900 font-black">
                                             <span className="text-base text-indigo-700 font-black">+{standardKpi.bonusOverTargetPoints}</span>
                                             <span className="text-xs font-bold text-indigo-600">điểm</span>
-                                            <span className="text-[10px] text-stone-500 font-normal ml-1">(Cộng dồn mở trần 150đ)</span>
+                                            <span className="text-[10px] text-stone-500 font-normal ml-1">(tích lũy theo tuần/tháng/năm, không cộng vào điểm ngày)</span>
                                         </div>
                                     </div>
                                     <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] px-1 text-stone-600">
@@ -955,7 +955,7 @@ export default function AssigneeEvaluationSection({
                                             )}
                                         </div>
                                         <div className="text-[10px] text-stone-400 italic">
-                                            * Điểm việc phụ / hỗ trợ được cộng thẳng vào tổng điểm KPI ngày của nhân sự
+                                            * Điểm việc hỗ trợ được tích lũy vào mục điểm hỗ trợ riêng theo kỳ — không cộng vào điểm KPI ngày và không kéo hạng thi đua ngày
                                         </div>
                                     </div>
                                 </div>
