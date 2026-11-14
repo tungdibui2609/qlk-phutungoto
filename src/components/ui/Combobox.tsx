@@ -56,17 +56,19 @@ export function Combobox({
     const containerRef = useRef<HTMLDivElement>(null)
     const inputRef = useRef<HTMLInputElement>(null)
     const dropdownRef = useRef<HTMLDivElement>(null)
-    const [coords, setCoords] = useState({ top: 0, left: 0, width: 0 })
+    const [coords, setCoords] = useState({ top: 0, left: 0, width: 0, maxWidth: 560 })
 
     // Update coordinates when opening and on scroll/resize
     useEffect(() => {
         const updateCoords = () => {
             if (isOpen && containerRef.current) {
                 const rect = containerRef.current.getBoundingClientRect()
+                const availableWidth = window.innerWidth - rect.left - 16
                 setCoords({
                     top: rect.bottom,
                     left: rect.left,
-                    width: rect.width
+                    width: rect.width,
+                    maxWidth: Math.max(rect.width, Math.min(560, availableWidth))
                 })
             }
         }
@@ -244,7 +246,9 @@ export function Combobox({
                     style={{
                         top: coords.top + 4, // 4px gap
                         left: coords.left,
-                        width: coords.width,
+                        minWidth: coords.width,
+                        width: 'max-content',
+                        maxWidth: coords.maxWidth,
                     }}
                 >
                     {isLoading ? (
@@ -287,15 +291,15 @@ export function Combobox({
                                         renderOption(option, searchTerm)
                                     ) : (
                                         <div className="flex flex-col text-left py-0.5 min-w-0 flex-1 pr-2">
-                                            <span className="truncate font-medium">{option.label}</span>
+                                            <span className="font-medium whitespace-normal break-words leading-snug">{option.label}</span>
                                             {option.aliases && (
-                                                <span className="text-[10px] text-stone-400 dark:text-zinc-400 truncate mt-0.5">
+                                                <span className="text-[10px] text-stone-400 dark:text-zinc-400 whitespace-normal break-words mt-0.5">
                                                     Viết tắt: {option.aliases}
                                                 </span>
                                             )}
                                         </div>
                                     )}
-                                    {option.value === value && <Check size={16} />}
+                                    {option.value === value && <Check size={16} className="shrink-0" />}
                                 </button>
                             ))}
                         </div>
