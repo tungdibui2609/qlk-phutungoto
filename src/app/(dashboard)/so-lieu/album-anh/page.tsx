@@ -247,8 +247,17 @@ export default function SoLieuAlbumPage() {
         const months = new Map<string, MonthNode>()
         for (const img of images) {
             const { monthKey, monthLabel, dateKey, dateLabel } = getImageDayInfo(img.captured_at)
-            const jobName = img.job_name || 'Công việc không tên'
-            const jobKey = `${dateKey}::${img.shift_id}`
+            const baseJobName = img.job_name || 'Công việc không tên'
+            const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+            const refTag = refMatch ? (refMatch[2] === 'end' ? 'REF_END' : refMatch[2] === 'start' ? 'REF_START' : 'REF') : null
+            const jobName = refTag === 'REF_START'
+                ? `${baseJobName} › 📌 Tham chiếu Đầu`
+                : refTag === 'REF_END'
+                    ? `${baseJobName} › 📌 Tham chiếu Cuối`
+                    : refTag === 'REF'
+                        ? `${baseJobName} › 📌 Tham chiếu`
+                        : baseJobName
+            const jobKey = refTag ? `${dateKey}::${img.shift_id}::${refTag}` : `${dateKey}::${img.shift_id}`
 
             let mNode = months.get(monthKey)
             if (!mNode) {
@@ -293,6 +302,13 @@ export default function SoLieuAlbumPage() {
         for (const img of images) {
             const { dateKey, dateLabel } = getImageDayInfo(img.captured_at)
             const jobName = img.job_name || 'Công việc không tên'
+            const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+            const childKey = refMatch
+                ? (refMatch[2] === 'end' ? '__REF_END__' : refMatch[2] === 'start' ? '__REF_START__' : '__REF__')
+                : dateKey
+            const childLabel = refMatch
+                ? (refMatch[2] === 'end' ? '📌 Tham chiếu Cuối' : refMatch[2] === 'start' ? '📌 Tham chiếu Đầu' : '📌 Tham chiếu')
+                : dateLabel
 
             let jNode = jobs.get(jobName)
             if (!jNode) {
@@ -302,19 +318,27 @@ export default function SoLieuAlbumPage() {
             jNode.count++
             if (dateKey > jNode.latestDateKey) jNode.latestDateKey = dateKey
 
-            let dNode = jNode.dates.get(dateKey)
+            let dNode = jNode.dates.get(childKey)
             if (!dNode) {
-                dNode = { dateKey, dateLabel, count: 0 }
-                jNode.dates.set(dateKey, dNode)
+                dNode = { dateKey: childKey, dateLabel: childLabel, count: 0 }
+                jNode.dates.set(childKey, dNode)
             }
             dNode.count++
         }
 
+        const refOrder: Record<string, number> = { __REF_START__: 0, __REF_END__: 1, __REF__: 2 }
         return Array.from(jobs.values())
             .sort((a, b) => b.latestDateKey.localeCompare(a.latestDateKey) || a.jobName.localeCompare(b.jobName))
             .map((j) => ({
                 ...j,
-                dates: Array.from(j.dates.values()).sort((a, b) => b.dateKey.localeCompare(a.dateKey)),
+                dates: Array.from(j.dates.values()).sort((a, b) => {
+                    const ra = refOrder[a.dateKey]
+                    const rb = refOrder[b.dateKey]
+                    if (ra !== undefined && rb !== undefined) return ra - rb
+                    if (ra !== undefined) return -1
+                    if (rb !== undefined) return 1
+                    return b.dateKey.localeCompare(a.dateKey)
+                }),
             }))
     }, [images])
 
@@ -337,17 +361,28 @@ export default function SoLieuAlbumPage() {
                 const jName = selectedJobDateKey.slice(0, sepIdx)
                 const dKey = selectedJobDateKey.slice(sepIdx + 2)
                 list = list.filter((img) => {
+                    if ((img.job_name || 'Công việc không tên') !== jName) return false
+                    const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+                    if (dKey === '__REF_START__') return Boolean(refMatch && refMatch[2] === 'start')
+                    if (dKey === '__REF_END__') return Boolean(refMatch && refMatch[2] === 'end')
+                    if (dKey === '__REF__') return Boolean(refMatch && !refMatch[2])
+                    if (refMatch) return false
                     const info = getImageDayInfo(img.captured_at)
-                    return (img.job_name || 'Công việc không tên') === jName && info.dateKey === dKey
+                    return info.dateKey === dKey
                 })
             } else if (selectedJobName) {
                 list = list.filter((img) => (img.job_name || 'Công việc không tên') === selectedJobName)
             }
         } else if (selectedTreeJob) {
-            const [dKey, sId] = selectedTreeJob.split('::')
+            const [dKey, sId, refTag] = selectedTreeJob.split('::')
             list = list.filter((img) => {
                 const info = getImageDayInfo(img.captured_at)
-                return info.dateKey === dKey && img.shift_id === sId
+                if (info.dateKey !== dKey || img.shift_id !== sId) return false
+                const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+                if (refTag === 'REF_START') return Boolean(refMatch && refMatch[2] === 'start')
+                if (refTag === 'REF_END') return Boolean(refMatch && refMatch[2] === 'end')
+                if (refTag === 'REF') return Boolean(refMatch && !refMatch[2])
+                return !refMatch
             })
         } else if (selectedTreeDate) {
             list = list.filter((img) => getImageDayInfo(img.captured_at).dateKey === selectedTreeDate)

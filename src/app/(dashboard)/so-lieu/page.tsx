@@ -193,12 +193,15 @@ export default function SoLieuPage() {
     const [imageJournalTarget, setImageJournalTarget] = useState<WebJournalImageTarget | null>(null)
     const [shiftImageCount, setShiftImageCount] = useState(0)
     const [journalImageCounts, setJournalImageCounts] = useState<Record<string, number>>({})
+    const [reconcileImagesMap, setReconcileImagesMap] = useState<Record<string, { start: OperationImageRecord[]; end: OperationImageRecord[] }>>({})
+    const [uploadingReconcileKey, setUploadingReconcileKey] = useState<string | null>(null)
 
     const refreshShiftImageCounts = useCallback(async (targetShiftId?: string | null) => {
         const sId = targetShiftId || activeShift?.id
         if (!sId || !currentSystem?.code || String(sId).startsWith('offline_')) {
             setShiftImageCount(0)
             setJournalImageCounts({})
+            setReconcileImagesMap({})
             return
         }
         try {
@@ -210,12 +213,21 @@ export default function SoLieuPage() {
             })
             setShiftImageCount(list.length)
             const map: Record<string, number> = {}
+            const refMap: Record<string, { start: OperationImageRecord[]; end: OperationImageRecord[] }> = {}
             for (const img of list) {
                 if (img.journal_id) {
                     map[img.journal_id] = (map[img.journal_id] || 0) + 1
                 }
+                const m = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+                if (m && m[1]) {
+                    const k = m[1]
+                    const phase = m[2] === 'end' ? 'end' : 'start'
+                    if (!refMap[k]) refMap[k] = { start: [], end: [] }
+                    refMap[k][phase].push(img)
+                }
             }
             setJournalImageCounts(map)
+            setReconcileImagesMap(refMap)
         } catch {
             // ignore
         }
@@ -384,11 +396,43 @@ export default function SoLieuPage() {
                 if (error) throw error
                 setOpenShifts((prev: any[]) => prev.map(s => (s.id === activeShift.id ? { ...s, summary_data: nextSummary } : s)))
             }
-            showToast('Đã lưu dữ liệu đối chiếu cuối ca!', 'in')
+            showToast('Đã lưu dữ liệu tham chiếu!', 'in')
         } catch (err: any) {
-            alert('Lỗi lưu đối chiếu: ' + (err?.message || err))
+            alert('Lỗi lưu tham chiếu: ' + (err?.message || err))
         } finally {
             setSavingReconcile(false)
+        }
+    }
+
+    const handleUploadReconcileImages = async (
+        reconcileKey: string,
+        phase: 'start' | 'end',
+        itemName: string,
+        unit: string,
+        fileList: FileList | null
+    ) => {
+        if (!fileList || fileList.length === 0 || !activeShift?.id || !currentSystem?.code) return
+        setUploadingReconcileKey(`${reconcileKey}:${phase}`)
+        try {
+            await uploadOperationImages({
+                systemCode: currentSystem.code,
+                companyId: currentSystem?.company_id || profile?.company_id || null,
+                shiftId: activeShift.id,
+                jobName: activeShift.summary_data?.job_name || activeShift.notes || '',
+                scope: 'shift',
+                itemName: reconcileKey === '__TOTAL__' ? 'Tham chiếu tổng' : itemName,
+                unit,
+                notes: `[THAM_CHIEU:${reconcileKey}:${phase}]`,
+                files: Array.from(fileList),
+                capturedBy: profile?.id || null,
+                capturedByName: profile?.full_name || null,
+            })
+            await refreshShiftImageCounts(activeShift.id)
+            showToast(`Đã tải lên ${fileList.length} ảnh tham chiếu ${phase === 'start' ? 'đầu' : 'cuối'}!`, 'in')
+        } catch (err: any) {
+            alert('Lỗi tải ảnh tham chiếu: ' + (err?.message || err))
+        } finally {
+            setUploadingReconcileKey(null)
         }
     }
     const [journalTypeFilter, setJournalTypeFilter] = useState<'all' | 'in' | 'out'>('all')
@@ -6667,7 +6711,7 @@ export default function SoLieuPage() {
                                     }`}
                                 >
                                     <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                                    <span>Đối chiếu</span>
+                                    <span>Tham chiếu</span>
                                 </button>
                             </div>
 
@@ -7264,7 +7308,7 @@ export default function SoLieuPage() {
                                             </button>
                                             {isUnitsExpanded && (
                                                 <div className="p-2.5 sm:p-4 border-t border-stone-100 dark:border-zinc-800/80 bg-stone-50/40 dark:bg-zinc-900/30 overflow-x-auto">
-                                                    <table className="w-full text-left text-[11px] sm:text-xs">
+                                                    <table className="w-full text-left border-collapse text-xs">
                                                         <thead>
                                                             <tr className="border-b border-stone-200 dark:border-zinc-800 text-stone-400 uppercase text-[10px] sm:text-[11px]">
                                                                 <th className="pb-1.5 sm:pb-2">ĐVT</th>
@@ -7501,10 +7545,17 @@ export default function SoLieuPage() {
                                                             : 'border-stone-200 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/60'
                                                     }`}
                                                 >
-                                                    <button
-                                                        type="button"
+                                                    <div
+                                                        role="button"
+                                                        tabIndex={0}
                                                         onClick={() => setExpandedReconcileKeys(prev => ({ ...prev, [key]: !prev[key] }))}
-                                                        className="w-full p-3 text-left flex flex-wrap items-center justify-between gap-2 hover:bg-black/2 dark:hover:bg-white/2 transition"
+                                                        onKeyDown={ev => {
+                                                            if (ev.key === 'Enter' || ev.key === ' ') {
+                                                                ev.preventDefault()
+                                                                setExpandedReconcileKeys(prev => ({ ...prev, [key]: !prev[key] }))
+                                                            }
+                                                        }}
+                                                        className="w-full p-3 text-left flex flex-wrap items-center justify-between gap-2 hover:bg-black/2 dark:hover:bg-white/2 transition cursor-pointer"
                                                     >
                                                         <div className="min-w-0 flex-1">
                                                             <p className="text-xs sm:text-sm font-bold text-stone-900 dark:text-white flex items-center gap-1.5 flex-wrap">
@@ -7524,23 +7575,42 @@ export default function SoLieuPage() {
                                                                         </span>
                                                                     </>
                                                                 )}
+                                                                {((reconcileImagesMap[key]?.start.length || 0) > 0 || (reconcileImagesMap[key]?.end.length || 0) > 0) && (
+                                                                    <>
+                                                                        <span>•</span>
+                                                                        <span className="text-indigo-600 dark:text-indigo-400 font-semibold">
+                                                                            📷 Đầu: {reconcileImagesMap[key]?.start.length || 0} / Cuối: {reconcileImagesMap[key]?.end.length || 0}
+                                                                        </span>
+                                                                    </>
+                                                                )}
                                                             </div>
                                                         </div>
-                                                        <div className="flex items-center gap-2 shrink-0">
-                                                            {hasNums && (
-                                                                <span className={`px-2.5 py-1 rounded-full text-xs font-black ${
+                                                        <div
+                                                            className="flex items-center gap-2 shrink-0"
+                                                            onClick={ev => ev.stopPropagation()}
+                                                        >
+                                                            <select
+                                                                value={entry.calcType}
+                                                                onChange={ev => updateEntry(key, defaultTarget, { calcType: ev.target.value as any })}
+                                                                className="h-8 px-2 rounded-xl border border-amber-200 dark:border-amber-800/70 bg-white dark:bg-zinc-900 text-xs font-bold text-amber-700 dark:text-amber-300"
+                                                            >
+                                                                <option value="diff">Đếm Tồn (Đuôi - Đầu)</option>
+                                                                <option value="inclusive">Đếm STT (Đuôi - Đầu + 1)</option>
+                                                            </select>
+                                                            {!isExpanded && hasNums && (
+                                                                <span className={`px-2 py-1 rounded-full text-[11px] font-black ${
                                                                     isMatched
                                                                         ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
                                                                         : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
                                                                 }`}>
-                                                                    {isMatched ? `✓ Khớp (${calcQty})` : `⚠ Lệch ${delta > 0 ? `+${delta}` : delta} (Đếm: ${calcQty})`}
+                                                                    {isMatched ? `✓ Khớp (${calcQty})` : `⚠ Lệch ${delta > 0 ? `+${delta}` : delta}`}
                                                                 </span>
                                                             )}
                                                             {isExpanded
                                                                 ? <ChevronDown className="w-4 h-4 text-stone-400" />
                                                                 : <ChevronRight className="w-4 h-4 text-stone-400" />}
                                                         </div>
-                                                    </button>
+                                                    </div>
 
                                                     {isExpanded && (
                                                         <div className="px-3 pb-3 pt-2 border-t border-stone-200/70 dark:border-zinc-800/70 space-y-2.5">
@@ -7549,8 +7619,8 @@ export default function SoLieuPage() {
                                                                     VD: Đầu ca có 3 pallet không ngoài sảnh, cuối ca đếm được 10 pallet không → phát sinh 7 để so với tổng các SP của công việc.
                                                                 </p>
                                                             )}
-                                                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
-                                                                <div className="sm:col-span-3">
+                                                            <div className="grid grid-cols-2 sm:grid-cols-12 gap-2 items-end">
+                                                                <div className="col-span-2 sm:col-span-3">
                                                                     <label className="block text-[10px] font-bold text-stone-500 mb-1">So với</label>
                                                                     <select
                                                                         value={entry.targetType}
@@ -7584,27 +7654,89 @@ export default function SoLieuPage() {
                                                                         className="w-full h-9 px-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-black text-stone-900 dark:text-white"
                                                                     />
                                                                 </div>
-                                                                <div className="sm:col-span-3">
-                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Kiểu đếm</label>
-                                                                    <select
-                                                                        value={entry.calcType}
-                                                                        onChange={ev => updateEntry(key, defaultTarget, { calcType: ev.target.value as any })}
-                                                                        className="w-full h-9 px-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-amber-700 dark:text-amber-300"
-                                                                    >
-                                                                        <option value="diff">Đếm Tồn (Đuôi - Đầu)</option>
-                                                                        <option value="inclusive">Đếm STT (Đuôi - Đầu + 1)</option>
-                                                                    </select>
-                                                                </div>
                                                                 <div className="sm:col-span-2">
-                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Ghi chú</label>
-                                                                    <input
-                                                                        type="text"
-                                                                        value={entry.note || ''}
-                                                                        onChange={ev => updateEntry(key, defaultTarget, { note: ev.target.value })}
-                                                                        placeholder="Ghi chú..."
-                                                                        className="w-full h-9 px-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs text-stone-700 dark:text-stone-200"
-                                                                    />
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Kết quả</label>
+                                                                    <div className="w-full h-9 px-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/30 flex items-center justify-center text-sm font-black text-amber-700 dark:text-amber-300">
+                                                                        {hasNums ? calcQty : '—'}
+                                                                    </div>
                                                                 </div>
+                                                                <div className="sm:col-span-3">
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Tham chiếu</label>
+                                                                    {hasNums ? (
+                                                                        <div className={`w-full h-9 px-2.5 rounded-xl flex items-center justify-center text-xs font-black ${
+                                                                            isMatched
+                                                                                ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60'
+                                                                                : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300 border border-rose-200 dark:border-rose-800/60'
+                                                                        }`}>
+                                                                            {isMatched ? '✓ Khớp' : `⚠ Lệch ${delta > 0 ? `+${delta}` : delta}`}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <div className="w-full h-9 px-2 rounded-xl flex items-center justify-center text-[11px] font-medium text-stone-400 bg-stone-100/80 dark:bg-zinc-900 border border-dashed border-stone-200 dark:border-zinc-700">
+                                                                            Chờ số...
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <input
+                                                                    type="text"
+                                                                    value={entry.note || ''}
+                                                                    onChange={ev => updateEntry(key, defaultTarget, { note: ev.target.value })}
+                                                                    placeholder="Ghi chú tham chiếu (tùy chọn)..."
+                                                                    className="w-full h-9 px-3 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs text-stone-700 dark:text-stone-200"
+                                                                />
+                                                            </div>
+                                                            {/* Ảnh tham chiếu Đầu / Cuối cho thẻ này */}
+                                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                                {([
+                                                                    { phase: 'start' as const, label: 'Ảnh tham chiếu ĐẦU', badge: 'ĐẦU', badgeCls: 'bg-sky-600/90', btnCls: 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800' },
+                                                                    { phase: 'end' as const, label: 'Ảnh tham chiếu CUỐI', badge: 'CUỐI', badgeCls: 'bg-amber-600/90', btnCls: 'bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800' },
+                                                                ]).map(cfg => {
+                                                                    const imgs = reconcileImagesMap[key]?.[cfg.phase] || []
+                                                                    const isUp = uploadingReconcileKey === `${key}:${cfg.phase}`
+                                                                    return (
+                                                                        <div key={cfg.phase} className="rounded-xl border border-stone-200/80 dark:border-zinc-800 bg-white/70 dark:bg-zinc-900/50 p-2.5 space-y-2">
+                                                                            <div className="flex items-center justify-between gap-2">
+                                                                                <span className="text-[11px] font-bold text-stone-600 dark:text-stone-300 flex items-center gap-1.5">
+                                                                                    <Camera className="w-3.5 h-3.5 text-amber-500" />
+                                                                                    {cfg.label} ({imgs.length})
+                                                                                </span>
+                                                                                <label className={`cursor-pointer px-2 py-1 rounded-lg border text-[11px] font-bold transition flex items-center gap-1 ${cfg.btnCls}`}>
+                                                                                    <Camera className="w-3 h-3" />
+                                                                                    <span>{isUp ? 'Đang tải...' : '+ Thêm'}</span>
+                                                                                    <input
+                                                                                        type="file"
+                                                                                        accept="image/*"
+                                                                                        multiple
+                                                                                        disabled={isUp}
+                                                                                        className="hidden"
+                                                                                        onChange={ev => {
+                                                                                            handleUploadReconcileImages(key, cfg.phase, row.product_name, row.unit, ev.target.files)
+                                                                                            ev.target.value = ''
+                                                                                        }}
+                                                                                    />
+                                                                                </label>
+                                                                            </div>
+                                                                            {imgs.length > 0 && (
+                                                                                <div className="flex flex-wrap gap-1.5">
+                                                                                    {imgs.map(img => (
+                                                                                        <button
+                                                                                            key={img.id}
+                                                                                            type="button"
+                                                                                            onClick={() => setPreviewHistoryImage(img)}
+                                                                                            className="relative w-12 h-12 rounded-lg overflow-hidden border border-stone-200 dark:border-zinc-700 hover:ring-2 hover:ring-amber-500 transition"
+                                                                                        >
+                                                                                            <img src={img.public_url} alt={img.item_name || ''} className="w-full h-full object-cover" />
+                                                                                            <span className={`absolute bottom-0.5 right-0.5 px-1 rounded text-[8px] font-black text-white ${cfg.badgeCls}`}>
+                                                                                                {cfg.badge}
+                                                                                            </span>
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )
+                                                                })}
                                                             </div>
                                                             <p className="text-[10px] text-stone-500 dark:text-stone-400">
                                                                 {entry.calcType === 'diff'
