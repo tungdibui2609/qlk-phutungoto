@@ -265,6 +265,19 @@ export default function BankInboundPage() {
         }
     }
 
+    const handleBatchPrint = () => {
+        if (selectedOrderIds.size === 0) return
+        const orderedIds = orders
+            .filter(o => selectedOrderIds.has(o.id))
+            .map(o => o.id)
+        const idsToPrint = orderedIds.length > 0 ? orderedIds : Array.from(selectedOrderIds)
+        if (idsToPrint.length === 1) {
+            window.open(`/print/inbound?id=${idsToPrint[0]}&type=internal&source=bank&size=A5&autoPrint=1`, '_blank')
+        } else {
+            window.open(`/print/inbound?ids=${idsToPrint.join(',')}&type=internal&source=bank&size=A5&autoPrint=1`, '_blank')
+        }
+    }
+
     // Export to Excel
     const handleExportExcel = async () => {
         if (orders.length === 0) {
@@ -362,7 +375,26 @@ export default function BankInboundPage() {
                         Lập và quản lý các phiếu nhập riêng cho ngân hàng (hoàn toàn không ảnh hưởng đến tồn kho thực tế)
                     </p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                    {selectedOrderIds.size > 0 && (
+                        <div className="flex items-center gap-1.5 bg-blue-50 border border-blue-200 rounded-lg p-1">
+                            <button
+                                onClick={handleBatchPrint}
+                                className="flex items-center gap-2 h-8 px-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors shadow-xs font-semibold text-xs cursor-pointer"
+                                title="In liên tiếp các phiếu đã chọn (khổ A5 máy in kim)"
+                            >
+                                <Printer size={15} />
+                                In {selectedOrderIds.size} phiếu (A5)
+                            </button>
+                            <button
+                                onClick={() => setSelectedOrderIds(new Set())}
+                                className="h-8 px-2 text-stone-500 hover:text-stone-800 hover:bg-blue-100/70 rounded-md text-xs transition-colors cursor-pointer"
+                                title="Bỏ chọn tất cả"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    )}
                     <button
                         onClick={handleExportExcel}
                         className="flex items-center gap-2 h-10 px-4 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors shadow-sm font-medium text-xs"
@@ -635,9 +667,9 @@ export default function BankInboundPage() {
                                                         <div className="inline-flex items-center justify-end gap-1">
                                                             {/* Quick Print Button */}
                                                             <button
-                                                                onClick={() => window.open(`/print/inbound?id=${order.id}&type=bank&source=bank`, '_blank')}
+                                                                onClick={() => window.open(`/print/inbound?id=${order.id}&type=internal&source=bank&size=A5&autoPrint=1`, '_blank')}
                                                                 className="p-1.5 text-stone-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                                                                title="In chứng từ VietinBank"
+                                                                title="In nhanh phiếu nội bộ (A5)"
                                                             >
                                                                 <Printer size={15} />
                                                             </button>

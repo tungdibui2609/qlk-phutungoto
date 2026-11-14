@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Printer, Loader2, Download, Hash, FileSpreadsheet } from 'lucide-react'
@@ -42,26 +42,329 @@ interface InboundOrder {
     company_id?: string
 }
 
+interface InboundPrintContentProps {
+    orderIdOverride?: string
+    isBatchItem?: boolean
+    isLastBatchItem?: boolean
+    batchPrintSize?: 'A4' | 'A5'
+    batchPrintType?: 'internal' | 'official' | 'bank'
+    batchDisplayInternalCode?: boolean
+    onBatchReady?: (id: string) => void
+}
+
 export default function InboundPrintPage() {
     return (
         <React.Suspense fallback={<div className="p-8 text-center">Đang tải...</div>}>
-            <InboundPrintContent />
+            <InboundPrintRouter />
         </React.Suspense>
     )
 }
 
-function InboundPrintContent() {
+function InboundPrintRouter() {
     const searchParams = useSearchParams()
-    const orderId = searchParams.get('id')
+    const idsParam = searchParams.get('ids')
+    const orderIds = idsParam
+        ? idsParam.split(',').map(s => s.trim()).filter(Boolean)
+        : []
+
+    if (orderIds.length > 0) {
+        return <BatchInboundPrint orderIds={orderIds} />
+    }
+
+    return <InboundPrintContent />
+}
+
+function BatchInboundPrint({ orderIds }: { orderIds: string[] }) {
+    const searchParams = useSearchParams()
+    const typeParam = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
+    const sizeParam = searchParams.get('size')?.toUpperCase() === 'A5' ? 'A5' : 'A4'
+    const autoPrintParam = searchParams.get('autoPrint') === '1' || searchParams.get('autoPrint') === 'true'
+
+    const [printSize, setPrintSize] = useState<'A4' | 'A5'>(sizeParam)
+    const [currentPrintType, setCurrentPrintType] = useState<'internal' | 'official' | 'bank'>(typeParam || 'internal')
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [readyIds, setReadyIds] = useState<Set<string>>(new Set())
+    const hasAutoPrintedRef = useRef(false)
+
+    const isBank = currentPrintType === 'bank'
+
+    const handleBatchReady = useCallback((id: string) => {
+        setReadyIds(prev => {
+            if (prev.has(id)) return prev
+            const next = new Set(prev)
+            next.add(id)
+            return next
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!autoPrintParam || hasAutoPrintedRef.current) return
+        if (readyIds.size < orderIds.length) return
+
+        hasAutoPrintedRef.current = true
+        const timer = setTimeout(() => {
+            window.print()
+        }, 450)
+        return () => clearTimeout(timer)
+    }, [autoPrintParam, readyIds.size, orderIds.length])
+
+    return (
+        <div className="min-h-screen bg-stone-100 print:bg-white py-4 print:py-0">
+            {/* Batch status bar (screen only) */}
+            <div className="max-w-4xl mx-auto mb-3 px-4 py-2.5 bg-white border border-stone-200 rounded-xl shadow-xs flex items-center justify-between gap-3 print:hidden">
+                <div className="text-xs text-stone-600">
+                    In hàng loạt: <strong className="text-stone-900">{orderIds.length}</strong> phiếu
+                    {' • '}Khổ giấy: <strong className="text-emerald-700">{printSize === 'A5' ? 'A5 ngang (máy in kim)' : 'A4'}</strong>
+                    {readyIds.size < orderIds.length ? (
+                        <span className="ml-2 text-amber-600">(Đang tải {readyIds.size}/{orderIds.length}...)</span>
+                    ) : (
+                        <span className="ml-2 text-emerald-600 font-medium">(Đã sẵn sàng)</span>
+                    )}
+                </div>
+                <button
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                >
+                    <Printer size={14} />
+                    In tất cả ({orderIds.length})
+                </button>
+            </div>
+
+            <PrintActionMenu
+                printSize={printSize}
+                onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
+                isDownloading={false}
+                downloadTimer={0}
+                onDownload={() => { }}
+                displayInternalCode={displayInternalCode}
+                onDisplayInternalCodeChange={() => setDisplayInternalCode(prev => !prev)}
+                onPrint={() => window.print()}
+                printType={currentPrintType}
+                onPrintTypeChange={setCurrentPrintType}
+            />
+
+            <div className="flex flex-col items-center print:block gap-6 print:gap-0">
+                {orderIds.map((id, idx) => (
+                    <InboundPrintContent
+                        key={id}
+                        orderIdOverride={id}
+                        isBatchItem
+                        isLastBatchItem={idx === orderIds.length - 1}
+                        batchPrintSize={printSize}
+                        batchPrintType={currentPrintType}
+                        batchDisplayInternalCode={displayInternalCode}
+                        onBatchReady={handleBatchReady}
+                    />
+                ))}
+            </div>
+
+            {!isBank && printSize === 'A5' ? (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A5 landscape !important;
+                            margin: 0 !important;
+                        }
+                        html, body {
+                            width: 210mm !important;
+                            height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+                        .print-sheet {
+                            width: 210mm !important;
+                            height: 147.5mm !important;
+                            max-height: 147.5mm !important;
+                            max-width: 210mm !important;
+                            min-width: 210mm !important;
+                            margin: 0 !important;
+                            padding: 2mm 20mm 5mm 5mm !important;
+                            box-sizing: border-box !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                            overflow: hidden !important;
+                            font-size: 10px !important;
+                            line-height: 1.1 !important;
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                        }
+                        .print-sheet-break {
+                            page-break-after: always !important;
+                            break-after: page !important;
+                        }
+                        .print-sheet-last {
+                            page-break-after: auto !important;
+                            break-after: auto !important;
+                        }
+                        .print-sheet #print-header-top * {
+                            line-height: 1.3 !important;
+                        }
+                        .print-sheet h1 {
+                            font-size: 14px !important;
+                            margin-top: 0px !important;
+                            margin-bottom: 4px !important;
+                            line-height: 1.4 !important;
+                        }
+                        .print-sheet h1 + div,
+                        .print-sheet h1 + div + div {
+                            font-size: 11px !important;
+                            line-height: 1.3 !important;
+                            margin-bottom: 2px !important;
+                        }
+                        .print-sheet #print-header-title {
+                            margin-right: 5mm !important;
+                        }
+                        .print-sheet div.space-y-2 {
+                            display: flex !important;
+                            flex-direction: column !important;
+                            gap: 2px !important;
+                            font-size: 11.5px !important;
+                        }
+                        .print-sheet .space-y-2 > * {
+                            margin-top: 0 !important;
+                        }
+                        .print-sheet table {
+                            width: 100% !important;
+                            table-layout: fixed !important;
+                        }
+                        .print-sheet table th:nth-child(1), .print-sheet table td:nth-child(1) { width: 8mm !important; }
+                        .print-sheet table th:nth-child(2), .print-sheet table td:nth-child(2) { width: 65mm !important; }
+                        .print-sheet table th:nth-child(3), .print-sheet table td:nth-child(3) { width: 25mm !important; }
+                        .print-sheet table th:nth-child(4), .print-sheet table td:nth-child(4) { width: 15mm !important; }
+                        .print-sheet table th:nth-child(5), .print-sheet table td:nth-child(5) { width: 35mm !important; }
+                        .print-sheet table th:nth-child(6), .print-sheet table td:nth-child(6) { width: 35mm !important; }
+                        .print-sheet table th {
+                            font-size: 11px !important;
+                            font-weight: bold !important;
+                            padding: 5px 3px !important;
+                        }
+                        .print-sheet table td {
+                            font-size: 10px !important;
+                            padding: 5px 3px !important;
+                        }
+                        .print-sheet table th,
+                        .print-sheet table td {
+                            width: auto !important;
+                            min-width: 0 !important;
+                            max-width: none !important;
+                            word-break: break-word !important;
+                            overflow-wrap: break-word !important;
+                        }
+                        .print-sheet .print-total-row td {
+                            padding-top: 8px !important;
+                            padding-bottom: 8px !important;
+                            font-weight: bold !important;
+                            font-size: 11px !important;
+                        }
+                        .print-sheet .signature-grid {
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                            gap: 0 !important;
+                            margin-top: 2px !important;
+                            padding-right: 0 !important;
+                            display: grid !important;
+                            grid-template-columns: repeat(3, 1fr) !important;
+                            width: 100% !important;
+                            justify-items: stretch !important;
+                        }
+                        .print-sheet .signature-grid > div {
+                            width: 100% !important;
+                        }
+                        .print-sheet .signature-grid .font-semibold {
+                            font-size: 10px !important;
+                        }
+                        .print-sheet .pb-6, .print-sheet .pb-10 {
+                            padding-bottom: 0px !important;
+                            display: none !important;
+                        }
+                        .print-sheet .signature-grid .print\\:pt-3 {
+                            padding-top: 15px !important;
+                            height: 85px !important;
+                        }
+                        .print-sheet .signature-grid .text-xs {
+                            display: none !important;
+                        }
+                        .print-sheet img:not([alt="Logo"]) {
+                            max-height: 15px !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                    .print-sheet * {
+                        color: black !important;
+                    }
+                `}</style>
+            ) : (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait !important;
+                            margin: 12mm 15mm 12mm 15mm !important;
+                        }
+                        html, body {
+                            width: 100% !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                            padding: 0 !important;
+                        }
+                        .print-sheet-break {
+                            page-break-after: always !important;
+                            break-after: page !important;
+                        }
+                        .print-sheet-last {
+                            page-break-after: auto !important;
+                            break-after: auto !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                    .print-sheet * {
+                        color: black !important;
+                    }
+                `}</style>
+            )}
+        </div>
+    )
+}
+
+function InboundPrintContent({
+    orderIdOverride,
+    isBatchItem = false,
+    isLastBatchItem = true,
+    batchPrintSize,
+    batchPrintType,
+    batchDisplayInternalCode,
+    onBatchReady
+}: InboundPrintContentProps = {}) {
+    const searchParams = useSearchParams()
+    const orderId = orderIdOverride ?? searchParams.get('id')
     const typeParam = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
     const [currentPrintType, setCurrentPrintType] = useState<'internal' | 'official' | 'bank'>(typeParam || 'official')
 
     useEffect(() => {
+        if (isBatchItem) return
         const t = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
         if (t) setCurrentPrintType(t)
-    }, [searchParams])
+    }, [searchParams, isBatchItem])
 
-    const printType = currentPrintType
+    const printType = isBatchItem && batchPrintType ? batchPrintType : currentPrintType
     const isSnapshot = searchParams.get('snapshot') === '1'
     const isInternal = printType === 'internal'
     const isBank = printType === 'bank'
@@ -90,11 +393,15 @@ function InboundPrintContent() {
     const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
-    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [localDisplayInternalCode, setLocalDisplayInternalCode] = useState(false)
+    const displayInternalCode = isBatchItem && batchDisplayInternalCode !== undefined
+        ? batchDisplayInternalCode
+        : localDisplayInternalCode
+    const setDisplayInternalCode = setLocalDisplayInternalCode
     const { convertUnit } = useUnitConversion()
 
     // Use shared hook for company info
-    const { companyInfo, logoSrc } = usePrintCompanyInfo({
+    const { companyInfo, logoSrc, loading: companyLoading } = usePrintCompanyInfo({
         token: searchParams.get('token'),
         initialCompanyInfo
     })
@@ -173,7 +480,20 @@ function InboundPrintContent() {
     const [editItemNotes, setEditItemNotes] = useState<Record<string, string>>({})
 
     // Print size state
-    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
+    const sizeParam = searchParams.get('size')?.toUpperCase() === 'A5' ? 'A5' : 'A4'
+    const autoPrintParam = searchParams.get('autoPrint') === '1' || searchParams.get('autoPrint') === 'true'
+    const [localPrintSize, setLocalPrintSize] = useState<'A4' | 'A5'>(sizeParam)
+    const printSize = isBatchItem && batchPrintSize ? batchPrintSize : localPrintSize
+    const setPrintSize = setLocalPrintSize
+    const hasAutoPrintedRef = useRef(false)
+
+    useEffect(() => {
+        if (isBatchItem) return
+        const s = searchParams.get('size')?.toUpperCase()
+        if (s === 'A5' || s === 'A4') {
+            setLocalPrintSize(s)
+        }
+    }, [searchParams, isBatchItem])
 
     // Inject @page size into document.head so Chrome print preview picks it up
 
@@ -247,7 +567,7 @@ function InboundPrintContent() {
                             `)
                             .eq('id', orderId)
                             .single()
-                        
+
                         if (data) {
                             orderData = data
                         } else {
@@ -371,7 +691,7 @@ function InboundPrintContent() {
                                 )
                             `)
                             .eq('order_id', orderId)
-                        
+
                         if (data && data.length > 0) {
                             itemsData = data
                         } else if (!isBankSource) {
@@ -429,6 +749,24 @@ function InboundPrintContent() {
         window.print()
     }
 
+    const conversionReady = !hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0
+
+    useEffect(() => {
+        if (loading || companyLoading || !order || !conversionReady) return
+
+        if (isBatchItem) {
+            if (orderId) onBatchReady?.(orderId)
+            return
+        }
+
+        if (!autoPrintParam || hasAutoPrintedRef.current) return
+        hasAutoPrintedRef.current = true
+        const timer = setTimeout(() => {
+            window.print()
+        }, 400)
+        return () => clearTimeout(timer)
+    }, [isBatchItem, orderId, onBatchReady, autoPrintParam, loading, companyLoading, order, conversionReady])
+
     const handleDownload = () => handleCapture(false)
 
     const handleExcelExport = async () => {
@@ -480,7 +818,7 @@ function InboundPrintContent() {
             { title: signTitle5, name: signPerson5 }
         ]
 
-        const theoDateStr = (editTheoDay && editTheoMonth && editTheoYear) 
+        const theoDateStr = (editTheoDay && editTheoMonth && editTheoYear)
             ? `Ngày ${editTheoDay} tháng ${editTheoMonth} năm ${editTheoYear}`
             : "";
 
@@ -540,8 +878,12 @@ function InboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' && !isBank ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
-            {isCapturing && (
+        <div
+            id={isBatchItem ? undefined : "print-ready"}
+            data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined}
+            className={`print-sheet ${isBatchItem ? (isLastBatchItem ? 'print-sheet-last' : 'print-sheet-break') : ''} pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' && !isBank ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''} ${isBatchItem ? 'shadow-sm border border-stone-200 print:shadow-none print:border-none' : ''}`}
+        >
+            {isCapturing && !isBatchItem && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
                     #print-ready {
@@ -559,7 +901,7 @@ function InboundPrintContent() {
                     }
                 `}} />
             )}
-            {(printSize === 'A4' || isBank) && !isCapturing && (
+            {(printSize === 'A4' || isBank) && !isCapturing && !isBatchItem && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
                     @media print {
@@ -571,19 +913,21 @@ function InboundPrintContent() {
                 `}} />
             )}
             {/* Consolidated Menu */}
-            <PrintActionMenu
-                printSize={printSize}
-                onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
-                isDownloading={isDownloadingState}
-                downloadTimer={downloadTimer}
-                onDownload={handleDownload}
-                displayInternalCode={displayInternalCode}
-                onDisplayInternalCodeChange={() => setDisplayInternalCode(!displayInternalCode)}
-                onPrint={handlePrint}
-                onExcelExport={handleExcelExport}
-                printType={currentPrintType}
-                onPrintTypeChange={setCurrentPrintType}
-            />
+            {!isBatchItem && (
+                <PrintActionMenu
+                    printSize={printSize}
+                    onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
+                    isDownloading={isDownloadingState}
+                    downloadTimer={downloadTimer}
+                    onDownload={handleDownload}
+                    displayInternalCode={displayInternalCode}
+                    onDisplayInternalCodeChange={() => setDisplayInternalCode(!displayInternalCode)}
+                    onPrint={handlePrint}
+                    onExcelExport={handleExcelExport}
+                    printType={currentPrintType}
+                    onPrintTypeChange={setCurrentPrintType}
+                />
+            )}
 
             {isBank ? (
                 <PrintBankInbound
@@ -596,344 +940,387 @@ function InboundPrintContent() {
                 />
             ) : (
                 <>
-            {/* Header with Shared Component */}
-            <PrintHeader
-                companyInfo={companyInfo}
-                logoSrc={logoSrc}
-                size={isInternal ? 'large' : 'compact'}
-                rightContent={!isInternal && <PrintLegalHeader formNumber="01" />}
-                isA5={printSize === 'A5'}
-            />
+                    {/* Header with Shared Component */}
+                    <PrintHeader
+                        companyInfo={companyInfo}
+                        logoSrc={logoSrc}
+                        size={isInternal ? 'large' : 'compact'}
+                        rightContent={!isInternal && <PrintLegalHeader formNumber="01" />}
+                        isA5={printSize === 'A5'}
+                    />
 
-            {/* Title */}
-            <div className={`relative text-center ${printSize === 'A5' ? 'mt-2 mb-1' : 'mt-4 mb-2'}`}>
-                <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
-                    PHIẾU NHẬP KHO
-                </h1>
+                    {/* Title */}
+                    <div className={`relative text-center ${printSize === 'A5' ? 'mt-2 mb-1' : 'mt-4 mb-2'}`}>
+                        <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide`} style={{ fontFamily: "'Times New Roman', Times, serif" }}>
+                            PHIẾU NHẬP KHO
+                        </h1>
 
-                {!isInternal && hasModule('inbound_financials') && (
-                    <div className="absolute top-4 right-36 text-left">
-                        <div className="text-sm font-medium text-gray-700">
+                        {!isInternal && hasModule('inbound_financials') && (
+                            <div className="absolute top-4 right-36 text-left">
+                                <div className="text-sm font-medium text-gray-700">
+                                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                                        Nợ:{' '}
+                                        <input
+                                            type="text"
+                                            value={debitAccount}
+                                            onChange={(e) => setDebitAccount(e.target.value)}
+                                            className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                        />
+                                    </span>
+                                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>Nợ: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{debitAccount}</span></span>
+                                </div>
+                                <div className="text-sm font-medium text-gray-700 mt-1">
+                                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                                        Có:{' '}
+                                        <input
+                                            type="text"
+                                            value={creditAccount}
+                                            onChange={(e) => setCreditAccount(e.target.value)}
+                                            className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                        />
+                                    </span>
+                                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>Có: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{creditAccount}</span></span>
+                                </div>
+                            </div>
+                        )}
+
+                        <div className={`text-sm italic text-gray-600 ${printSize === 'A5' ? 'mt-0' : 'mt-2'}`}>
                             <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                                Nợ:{' '}
+                                Ngày{' '}
                                 <input
                                     type="text"
-                                    value={debitAccount}
-                                    onChange={(e) => setDebitAccount(e.target.value)}
-                                    className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                    value={editDay}
+                                    onChange={(e) => setEditDay(e.target.value)}
+                                    className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
                                 />
-                            </span>
-                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>Nợ: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{debitAccount}</span></span>
-                        </div>
-                        <div className="text-sm font-medium text-gray-700 mt-1">
-                            <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                                Có:{' '}
+                                {' '}tháng{' '}
                                 <input
                                     type="text"
-                                    value={creditAccount}
-                                    onChange={(e) => setCreditAccount(e.target.value)}
-                                    className="w-16 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                    value={editMonth}
+                                    onChange={(e) => setEditMonth(e.target.value)}
+                                    className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
+                                />
+                                {' '}năm{' '}
+                                <input
+                                    type="text"
+                                    value={editYear}
+                                    onChange={(e) => setEditYear(e.target.value)}
+                                    className="w-14 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
                                 />
                             </span>
-                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>Có: <span className="inline-block min-w-[40px] border-b border-dashed border-gray-300">{creditAccount}</span></span>
+                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                                Ngày {editDay} tháng {editMonth} năm {editYear}
+                            </span>
+                        </div>
+
+                        <div className="text-sm font-medium mt-1 text-black">
+                            Số: <span className="font-bold text-black">{order.code}</span>
                         </div>
                     </div>
-                )}
 
-                <div className={`text-sm italic text-gray-600 ${printSize === 'A5' ? 'mt-0' : 'mt-2'}`}>
-                    <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                        Ngày{' '}
-                        <input
-                            type="text"
-                            value={editDay}
-                            onChange={(e) => setEditDay(e.target.value)}
-                            className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
-                        />
-                        {' '}tháng{' '}
-                        <input
-                            type="text"
-                            value={editMonth}
-                            onChange={(e) => setEditMonth(e.target.value)}
-                            className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
-                        />
-                        {' '}năm{' '}
-                        <input
-                            type="text"
-                            value={editYear}
-                            onChange={(e) => setEditYear(e.target.value)}
-                            className="w-14 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500"
-                        />
-                    </span>
-                    <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
-                        Ngày {editDay} tháng {editMonth} năm {editYear}
-                    </span>
-                </div>
-
-                <div className="text-sm font-medium mt-1 text-black">
-                    Số: <span className="font-bold text-black">{order.code}</span>
-                </div>
-            </div>
-
-            <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-1 pb-1'} space-y-2 text-sm`}>
-                <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-6 gap-y-1`}>
-                    <div className="flex items-center">
-                        <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
-                        <EditableText
-                            value={editSupplierName}
-                            onChange={setEditSupplierName}
-                            className="ml-2 font-bold"
-                            isSnapshot={isSnapshotMode}
-                        />
-                    </div>
-                    <div className="flex items-center flex-1">
-                        <span className="text-gray-600 shrink-0">Địa chỉ ( bộ phận ):</span>
-                        <EditableText
-                            value={editSupplierAddress}
-                            onChange={setEditSupplierAddress}
-                            className="ml-2 flex-1 font-bold"
-                            isSnapshot={isSnapshotMode}
-                        />
-                    </div>
-                </div>
-                {!isInternal && (
-                    <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                        <span className="text-gray-600 shrink-0">- Theo</span>
-                        <AutoResizeInput
-                            value={editTheoDoc}
-                            onChange={setEditTheoDoc}
-                            className="mx-1 font-bold"
-                            minWidth={60}
-                            emptyWidth={100}
-                            isSnapshot={isSnapshotMode}
-                        />
-
-                        <span className="text-gray-600">số</span>
-                        <AutoResizeInput
-                            value={editTheoSo}
-                            onChange={setEditTheoSo}
-                            className="mx-1 font-bold"
-                            minWidth={40}
-                            emptyWidth={85}
-                            isSnapshot={isSnapshotMode}
-                        />
-
-                        <span className="text-gray-600">ngày</span>
-                        <AutoResizeInput
-                            value={editTheoDay}
-                            onChange={setEditTheoDay}
-                            className="mx-1 font-bold"
-                            minWidth={25}
-                            emptyWidth={30}
-                            isSnapshot={isSnapshotMode}
-                        />
-
-                        <span className="text-gray-600">tháng</span>
-                        <AutoResizeInput
-                            value={editTheoMonth}
-                            onChange={setEditTheoMonth}
-                            className="mx-1 font-bold"
-                            minWidth={25}
-                            emptyWidth={30}
-                            isSnapshot={isSnapshotMode}
-                        />
-
-                        <span className="text-gray-600">năm</span>
-                        <AutoResizeInput
-                            value={editTheoYear}
-                            onChange={setEditTheoYear}
-                            className="mx-1 font-bold"
-                            minWidth={30}
-                            emptyWidth={40}
-                            isSnapshot={isSnapshotMode}
-                        />
-
-                        <span className="text-gray-600">của</span>
-                        <AutoResizeInput
-                            value={editTheoCua}
-                            onChange={setEditTheoCua}
-                            className="mx-1 font-bold"
-                            minWidth={100}
-                            emptyWidth={100}
-                            isSnapshot={isSnapshotMode}
-                        />
-                    </div>
-                )}
-                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
-                    <span className="text-gray-600 shrink-0 mt-0.5">- Nhập tại kho:</span>
-                    <EditableText
-                        value={editWarehouse}
-                        onChange={setEditWarehouse}
-                        className="ml-1 font-bold"
-                        isSnapshot={isSnapshotMode}
-                    />
-                </div>
-                <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
-                    <span className="text-gray-600 shrink-0 mt-0.5">- Địa điểm:</span>
-                    <input
-                        type="text"
-                        value={editLocation}
-                        onChange={(e) => setEditLocation(e.target.value)}
-                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                    />
-                    <span className={`hidden print:inline ml-1 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
-                </div>
-                {editDescription && (
-                    <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
-                        <span className="text-gray-600 shrink-0 mt-0.5">- Diễn giải:</span>
-                        <EditableText
-                            value={editDescription}
-                            onChange={setEditDescription}
-                            className="ml-2 flex-1 font-bold italic"
-                            isSnapshot={isSnapshotMode}
-                        />
-                    </div>
-                )}
-                <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
-                    <span className="text-gray-600 shrink-0">- Ghi chú:</span>
-                    <input
-                        type="text"
-                        value={editNote}
-                        onChange={(e) => setEditNote(e.target.value)}
-                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                    />
-                    <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
-                </div>
-            </div>
-
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0.5' : 'print:mt-1'} w-full`}>
-                <table className="w-full print:w-full border-collapse text-sm" style={{ width: '100%' }}>
-                    <thead>
-                        <tr className="bg-gray-100">
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-10`}>STT</th>
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 w-[27%] break-words' : 'px-2 py-2 w-60'} text-center`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
-                            <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
+                    <div className={`mt-1 ${printSize === 'A5' ? 'print:mt-0 pb-0.5' : 'print:mt-1 pb-1'} space-y-2 text-sm`}>
+                        <div className={`flex items-start flex-wrap ${printSize === 'A5' ? 'leading-tight' : ''} gap-x-6 gap-y-1`}>
+                            <div className="flex items-center">
+                                <span className="text-gray-600 shrink-0">- Họ tên người giao:</span>
                                 <EditableText
-                                    value={editQuyCachTitle}
-                                    onChange={setEditQuyCachTitle}
-                                    className="text-center font-bold min-w-0 w-full"
+                                    value={editSupplierName}
+                                    onChange={setEditSupplierName}
+                                    className="ml-2 font-bold"
                                     isSnapshot={isSnapshotMode}
                                 />
-                            </th>
-                            <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-14`}>Đơn vị tính</th>
-                            <th colSpan={hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? 3 : 2) : (hasModule('inbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
-                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
-                            {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
-                        </tr>
-                        <tr className="bg-gray-100">
-                            {hasModule('inbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Theo CT</th>}
-                            <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Thực nhập</th>
-                            {hasModule('inbound_conversion') && targetUnit && (
-                                <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
-                            )}
-                        </tr>
-                        <tr className="bg-gray-100 font-normal">
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">A</th>
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">B</th>
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">C</th>
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">D</th>
-                            {hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">1</th>}
-                            <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_financials') ? '2' : '1'}</th>
-                            {hasModule('inbound_conversion') && targetUnit && (
-                                <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_financials') ? '3' : '2'}</th>
-                            )}
-                            {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '4' : '3'}</th>}
-                            {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '5' : '4'}</th>}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {items.map((item, index) => {
-                            const unitPrice = item.price || 0
-                            const totalPrice = unitPrice * item.quantity
+                            </div>
+                            <div className="flex items-center flex-1">
+                                <span className="text-gray-600 shrink-0">Địa chỉ ( bộ phận ):</span>
+                                <EditableText
+                                    value={editSupplierAddress}
+                                    onChange={setEditSupplierAddress}
+                                    className="ml-2 flex-1 font-bold"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        </div>
+                        {!isInternal && (
+                            <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
+                                <span className="text-gray-600 shrink-0">- Theo</span>
+                                <AutoResizeInput
+                                    value={editTheoDoc}
+                                    onChange={setEditTheoDoc}
+                                    className="mx-1 font-bold"
+                                    minWidth={60}
+                                    emptyWidth={100}
+                                    isSnapshot={isSnapshotMode}
+                                />
 
-                            // Calculate converted qty
-                            let convertedQty: string | number = '-'
-                            let baseQty = 0
-                            if (hasModule('inbound_conversion') && targetUnit && item.products) {
-                                const product = item.products as any
+                                <span className="text-gray-600">số</span>
+                                <AutoResizeInput
+                                    value={editTheoSo}
+                                    onChange={setEditTheoSo}
+                                    className="mx-1 font-bold"
+                                    minWidth={40}
+                                    emptyWidth={85}
+                                    isSnapshot={isSnapshotMode}
+                                />
 
-                                const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
-                                const normItemUnit = normalize(item.unit)
-                                const normBaseUnit = normalize(product.unit)
-                                const normTarget = normalize(targetUnit)
+                                <span className="text-gray-600">ngày</span>
+                                <AutoResizeInput
+                                    value={editTheoDay}
+                                    onChange={setEditTheoDay}
+                                    className="mx-1 font-bold"
+                                    minWidth={25}
+                                    emptyWidth={30}
+                                    isSnapshot={isSnapshotMode}
+                                />
 
-                                if (normItemUnit === normBaseUnit) {
-                                    baseQty = item.quantity
-                                } else {
-                                    const uConfig = product.product_units?.find((pu: any) => {
-                                        if (!pu.unit_id) return false
-                                        const uName = unitsMap[pu.unit_id]
-                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                        const labelStr = isBase
-                                            ? uName
-                                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                        return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
-                                    })
-                                    if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
-                                }
+                                <span className="text-gray-600">tháng</span>
+                                <AutoResizeInput
+                                    value={editTheoMonth}
+                                    onChange={setEditTheoMonth}
+                                    className="mx-1 font-bold"
+                                    minWidth={25}
+                                    emptyWidth={30}
+                                    isSnapshot={isSnapshotMode}
+                                />
 
-                                if (normTarget === normBaseUnit) {
-                                    if (baseQty > 0) convertedQty = baseQty
-                                } else {
-                                    const targetConfig = product.product_units?.find((pu: any) => {
-                                        if (!pu.unit_id) return false
-                                        const uName = unitsMap[pu.unit_id]
-                                        const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
-                                        const labelStr = isBase
-                                            ? uName
-                                            : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
-                                        return normalize(labelStr) === normTarget || normalize(uName) === normTarget
-                                    })
-                                    if (targetConfig) convertedQty = baseQty / targetConfig.conversion_rate
-                                }
-                            }
-                            if (typeof convertedQty === 'number') {
-                                convertedQty = formatQuantityFull(convertedQty)
-                            }
-                            // Calculate names and skus based on toggle
-                            const productSource = item.products as any || {}
-                            // Fetch conversion rate for "quy cách"
-                            const spec = calculateItemSpecification(
-                                item.unit,
-                                item.quantity,
-                                productSource,
-                                unitsMap
-                            )
-                            const quyCach = spec.quyCach
+                                <span className="text-gray-600">năm</span>
+                                <AutoResizeInput
+                                    value={editTheoYear}
+                                    onChange={setEditTheoYear}
+                                    className="mx-1 font-bold"
+                                    minWidth={30}
+                                    emptyWidth={40}
+                                    isSnapshot={isSnapshotMode}
+                                />
 
-                            const displayName = displayInternalCode && (item.products as any)?.internal_name
-                                ? (item.products as any).internal_name
-                                : item.product_name || 'N/A'
+                                <span className="text-gray-600">của</span>
+                                <AutoResizeInput
+                                    value={editTheoCua}
+                                    onChange={setEditTheoCua}
+                                    className="mx-1 font-bold"
+                                    minWidth={100}
+                                    emptyWidth={100}
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        )}
+                        <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                            <span className="text-gray-600 shrink-0 mt-0.5">- Nhập tại kho:</span>
+                            <EditableText
+                                value={editWarehouse}
+                                onChange={setEditWarehouse}
+                                className="ml-1 font-bold"
+                                isSnapshot={isSnapshotMode}
+                            />
+                        </div>
+                        <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                            <span className="text-gray-600 shrink-0 mt-0.5">- Địa điểm:</span>
+                            <input
+                                type="text"
+                                value={editLocation}
+                                onChange={(e) => setEditLocation(e.target.value)}
+                                className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                            />
+                            <span className={`hidden print:inline ml-1 flex-1 font-bold break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                        </div>
+                        {editDescription && (
+                            <div className={`flex items-start ${printSize === 'A5' ? 'leading-tight' : ''}`}>
+                                <span className="text-gray-600 shrink-0 mt-0.5">- Diễn giải:</span>
+                                <EditableText
+                                    value={editDescription}
+                                    onChange={setEditDescription}
+                                    className="ml-2 flex-1 font-bold italic"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        )}
+                        <div className={`flex items-center ${printSize === 'A5' ? 'leading-none h-4' : ''}`}>
+                            <span className="text-gray-600 shrink-0">- Ghi chú:</span>
+                            <input
+                                type="text"
+                                value={editNote}
+                                onChange={(e) => setEditNote(e.target.value)}
+                                className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-2 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                            />
+                            <span className={`hidden print:inline ml-2 flex-1 font-bold ${isSnapshotMode ? 'inline' : ''}`}>{editNote || '\u00A0'}</span>
+                        </div>
+                    </div>
 
-                            return (
-                                <tr key={item.id} className="hover:bg-gray-50 font-bold">
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 text-[11px] leading-tight break-words whitespace-normal text-wrap print:max-w-[120px]' : 'px-2 py-1.5'}`}>{displayName}</td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                    <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-0.5' : 'print:mt-1'} w-full`}>
+                        <table className="w-full print:w-full border-collapse text-sm" style={{ width: '100%' }}>
+                            <thead>
+                                <tr className="bg-gray-100">
+                                    <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-10`}>STT</th>
+                                    <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 w-[27%] break-words' : 'px-2 py-2 w-60'} text-center`}>Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ sản phẩm, hàng hóa</th>
+                                    <th rowSpan={2} className="border border-gray-400 px-2 py-2 text-center w-24">
                                         <EditableText
-                                            value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
-                                            onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
-                                            className="text-center w-full min-w-0"
+                                            value={editQuyCachTitle}
+                                            onChange={setEditQuyCachTitle}
+                                            className="text-center font-bold min-w-0 w-full"
                                             isSnapshot={isSnapshotMode}
                                         />
-                                    </td>
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{(item.unit || '-').split('(')[0].trim()}</td>
-                                    {hasModule('inbound_financials') && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
-                                            <EditableText
-                                                value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
-                                                onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
-                                                className="text-center w-full min-w-0"
-                                                isSnapshot={isSnapshotMode}
-                                            />
-                                        </td>
-                                    )}
-                                    <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
-                                        {formatQuantityFull(item.quantity)}
-                                    </td>
+                                    </th>
+                                    <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-14`}>Đơn vị tính</th>
+                                    <th colSpan={hasModule('inbound_conversion') && targetUnit ? (hasModule('inbound_financials') ? 3 : 2) : (hasModule('inbound_financials') ? 2 : 1)} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center`}>Số lượng</th>
+                                    {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Đơn giá</th>}
+                                    {!isInternal && hasModule('inbound_financials') && <th rowSpan={2} className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-28`}>Thành tiền</th>}
+                                </tr>
+                                <tr className="bg-gray-100">
+                                    {hasModule('inbound_financials') && <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Theo CT</th>}
+                                    <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-20 align-top`}>Thực nhập</th>
                                     {hasModule('inbound_conversion') && targetUnit && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center font-medium text-orange-600`}>
-                                            {(() => {
-                                                if (!item.products) return '-'
+                                        <th className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-2'} text-center w-24`}>Quy đổi<br /><span className="font-normal text-[10px]">({targetUnit})</span></th>
+                                    )}
+                                </tr>
+                                <tr className="bg-gray-100 font-normal">
+                                    <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">A</th>
+                                    <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">B</th>
+                                    <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">C</th>
+                                    <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">D</th>
+                                    {hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">1</th>}
+                                    <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_financials') ? '2' : '1'}</th>
+                                    {hasModule('inbound_conversion') && targetUnit && (
+                                        <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_financials') ? '3' : '2'}</th>
+                                    )}
+                                    {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '4' : '3'}</th>}
+                                    {!isInternal && hasModule('inbound_financials') && <th className="border border-gray-400 px-2 py-1 text-center italic font-normal">{hasModule('inbound_conversion') && targetUnit ? '5' : '4'}</th>}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((item, index) => {
+                                    const unitPrice = item.price || 0
+                                    const totalPrice = unitPrice * item.quantity
+
+                                    // Calculate converted qty
+                                    let convertedQty: string | number = '-'
+                                    let baseQty = 0
+                                    if (hasModule('inbound_conversion') && targetUnit && item.products) {
+                                        const product = item.products as any
+
+                                        const normalize = (s: string | undefined | null) => s ? s.normalize('NFC').toLowerCase().trim() : ''
+                                        const normItemUnit = normalize(item.unit)
+                                        const normBaseUnit = normalize(product.unit)
+                                        const normTarget = normalize(targetUnit)
+
+                                        if (normItemUnit === normBaseUnit) {
+                                            baseQty = item.quantity
+                                        } else {
+                                            const uConfig = product.product_units?.find((pu: any) => {
+                                                if (!pu.unit_id) return false
+                                                const uName = unitsMap[pu.unit_id]
+                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                const labelStr = isBase
+                                                    ? uName
+                                                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                return normalize(labelStr) === normItemUnit || normalize(uName) === normItemUnit
+                                            })
+                                            if (uConfig) baseQty = item.quantity * uConfig.conversion_rate
+                                        }
+
+                                        if (normTarget === normBaseUnit) {
+                                            if (baseQty > 0) convertedQty = baseQty
+                                        } else {
+                                            const targetConfig = product.product_units?.find((pu: any) => {
+                                                if (!pu.unit_id) return false
+                                                const uName = unitsMap[pu.unit_id]
+                                                const isBase = pu.conversion_rate === 1 || !pu.conversion_rate
+                                                const labelStr = isBase
+                                                    ? uName
+                                                    : `${uName} (${pu.conversion_rate} ${product.unit || 'Cơ bản'})`
+                                                return normalize(labelStr) === normTarget || normalize(uName) === normTarget
+                                            })
+                                            if (targetConfig) convertedQty = baseQty / targetConfig.conversion_rate
+                                        }
+                                    }
+                                    if (typeof convertedQty === 'number') {
+                                        convertedQty = formatQuantityFull(convertedQty)
+                                    }
+                                    // Calculate names and skus based on toggle
+                                    const productSource = item.products as any || {}
+                                    // Fetch conversion rate for "quy cách"
+                                    const spec = calculateItemSpecification(
+                                        item.unit,
+                                        item.quantity,
+                                        productSource,
+                                        unitsMap
+                                    )
+                                    const quyCach = spec.quyCach
+
+                                    const displayName = displayInternalCode && (item.products as any)?.internal_name
+                                        ? (item.products as any).internal_name
+                                        : item.product_name || 'N/A'
+
+                                    return (
+                                        <tr key={item.id} className="hover:bg-gray-50 font-bold">
+                                            <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{index + 1}</td>
+                                            <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5 text-[11px] leading-tight break-words whitespace-normal text-wrap print:max-w-[120px]' : 'px-2 py-1.5'}`}>{displayName}</td>
+                                            <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                                                <EditableText
+                                                    value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
+                                                    onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
+                                                    className="text-center w-full min-w-0"
+                                                    isSnapshot={isSnapshotMode}
+                                                />
+                                            </td>
+                                            <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>{(item.unit || '-').split('(')[0].trim()}</td>
+                                            {hasModule('inbound_financials') && (
+                                                <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                                                    <EditableText
+                                                        value={docQuantities[item.id] !== undefined ? docQuantities[item.id] : (item.document_quantity || item.quantity).toString()}
+                                                        onChange={(val) => setDocQuantities(prev => ({ ...prev, [item.id]: val }))}
+                                                        className="text-center w-full min-w-0"
+                                                        isSnapshot={isSnapshotMode}
+                                                    />
+                                                </td>
+                                            )}
+                                            <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center`}>
+                                                {formatQuantityFull(item.quantity)}
+                                            </td>
+                                            {hasModule('inbound_conversion') && targetUnit && (
+                                                <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-0.5 py-0.5' : 'px-2 py-1.5'} text-center font-medium text-orange-600`}>
+                                                    {(() => {
+                                                        if (!item.products) return '-'
+                                                        const result = convertUnit(
+                                                            item.products?.id || (item as any).product_id || null,
+                                                            item.unit || '',
+                                                            targetUnit,
+                                                            item.quantity,
+                                                            item.products.unit || null
+                                                        )
+                                                        return result !== null ? formatQuantityFull(result) : '-'
+                                                    })()}
+                                                </td>
+                                            )}
+                                            {!isInternal && hasModule('inbound_financials') && (
+                                                <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right`}>
+                                                    {item.price > 0 ? item.price.toLocaleString('vi-VN') : '-'}
+                                                </td>
+                                            )}
+                                            {!isInternal && hasModule('inbound_financials') && (
+                                                <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right uppercase`}>
+                                                    {(item.price * item.quantity) > 0 ? (item.price * item.quantity).toLocaleString('vi-VN') : '-'}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    )
+                                })}
+                                {items.length === 0 && (
+                                    <tr>
+                                        <td colSpan={15} className="border border-gray-400 px-2 py-4 text-center text-gray-400">
+                                            Không có hàng hóa
+                                        </td>
+                                    </tr>
+                                )}
+                                {/* Total Row */}
+                                <tr className="font-bold print-total-row">
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center"></td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">Cộng</td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                                    {hasModule('inbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
+                                    <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
+                                    {hasModule('inbound_conversion') && targetUnit && (
+                                        <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
+                                            {formatQuantityFull(items.reduce((sum: number, item) => {
+                                                if (!item.products) return sum
                                                 const result = convertUnit(
                                                     item.products?.id || (item as any).product_id || null,
                                                     item.unit || '',
@@ -941,199 +1328,156 @@ function InboundPrintContent() {
                                                     item.quantity,
                                                     item.products.unit || null
                                                 )
-                                                return result !== null ? formatQuantityFull(result) : '-'
-                                            })()}
+                                                return sum + (result || 0)
+                                            }, 0))}
                                         </td>
                                     )}
+                                    {!isInternal && hasModule('inbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
                                     {!isInternal && hasModule('inbound_financials') && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right`}>
-                                            {item.price > 0 ? item.price.toLocaleString('vi-VN') : '-'}
-                                        </td>
-                                    )}
-                                    {!isInternal && hasModule('inbound_financials') && (
-                                        <td className={`border border-gray-400 ${printSize === 'A5' ? 'px-1 py-0.5' : 'px-2 py-1.5'} text-right uppercase`}>
-                                            {(item.price * item.quantity) > 0 ? (item.price * item.quantity).toLocaleString('vi-VN') : '-'}
+                                        <td className="border border-gray-400 px-2 py-1.5 text-right">
+                                            {items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0).toLocaleString('vi-VN')}
                                         </td>
                                     )}
                                 </tr>
-                            )
-                        })}
-                        {items.length === 0 && (
-                            <tr>
-                                <td colSpan={15} className="border border-gray-400 px-2 py-4 text-center text-gray-400">
-                                    Không có hàng hóa
-                                </td>
-                            </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div className={`mt-4 text-sm space-y-1 ${printSize === 'A5' ? 'mb-2' : ''}`}>
+                        {!isInternal && hasModule('inbound_financials') && (
+                            <div className="flex items-center">
+                                <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
+                                <EditableText
+                                    value={amountInWords}
+                                    onChange={setAmountInWords}
+                                    className="ml-2 flex-1 font-bold italic"
+                                    isSnapshot={isSnapshot}
+                                />
+                            </div>
                         )}
-                        {/* Total Row */}
-                        <tr className="font-bold print-total-row">
-                            <td className="border border-gray-400 px-2 py-1.5 text-center"></td>
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">Cộng</td>
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            {hasModule('inbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
-                            <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>
-                            {hasModule('inbound_conversion') && targetUnit && (
-                                <td className="border border-gray-400 px-2 py-1.5 text-center text-orange-600">
-                                    {formatQuantityFull(items.reduce((sum: number, item) => {
-                                        if (!item.products) return sum
-                                        const result = convertUnit(
-                                            item.products?.id || (item as any).product_id || null,
-                                            item.unit || '',
-                                            targetUnit,
-                                            item.quantity,
-                                            item.products.unit || null
-                                        )
-                                        return sum + (result || 0)
-                                    }, 0))}
-                                </td>
-                            )}
-                            {!isInternal && hasModule('inbound_financials') && <td className="border border-gray-400 px-2 py-1.5 text-center">x</td>}
-                            {!isInternal && hasModule('inbound_financials') && (
-                                <td className="border border-gray-400 px-2 py-1.5 text-right">
-                                    {items.reduce((sum, item) => sum + (item.price || 0) * item.quantity, 0).toLocaleString('vi-VN')}
-                                </td>
-                            )}
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
+                        {!isInternal && (
+                            <div className="flex items-center">
+                                <span className="shrink-0">- Số chứng từ gốc kèm theo:</span>
+                                <EditableText
+                                    value={attachedDocs}
+                                    onChange={setAttachedDocs}
+                                    className="ml-2 flex-1 font-bold"
+                                    isSnapshot={isSnapshot}
+                                />
+                            </div>
+                        )}
+                    </div>
 
-            <div className={`mt-4 text-sm space-y-1 ${printSize === 'A5' ? 'mb-2' : ''}`}>
-                {!isInternal && hasModule('inbound_financials') && (
-                    <div className="flex items-center">
-                        <span className="shrink-0">- Tổng số tiền (viết bằng chữ):</span>
-                        <EditableText
-                            value={amountInWords}
-                            onChange={setAmountInWords}
-                            className="ml-2 flex-1 font-bold italic"
-                            isSnapshot={isSnapshot}
-                        />
-                    </div>
-                )}
-                {!isInternal && (
-                    <div className="flex items-center">
-                        <span className="shrink-0">- Số chứng từ gốc kèm theo:</span>
-                        <EditableText
-                            value={attachedDocs}
-                            onChange={setAttachedDocs}
-                            className="ml-2 flex-1 font-bold"
-                            isSnapshot={isSnapshot}
-                        />
-                    </div>
-                )}
-            </div>
+                    <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-6 mb-4'} signature-grid grid grid-cols-3 gap-2 text-center text-[13px] items-start ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
+                        {/* Column 1: Người lập phiếu */}
+                        <div>
+                            <div className="text-[13px] italic mb-1">&nbsp;</div>
+                            <div className="font-semibold">
+                                <input
+                                    type="text"
+                                    value={signTitle1}
+                                    onChange={(e) => setSignTitle1(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                                />
+                                <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
+                            <div className="h-16 flex items-center justify-center print:h-12"></div>
+                            <div>
+                                <input
+                                    type="text"
+                                    value={signPerson1}
+                                    onChange={(e) => setSignPerson1(e.target.value)}
+                                    placeholder="Tên..."
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                                />
+                                <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
+                            </div>
+                        </div>
 
-            <div className={`mt-2 ${printSize === 'A5' ? 'print:mt-2 print:pb-0' : 'print:mt-6 mb-4'} signature-grid grid grid-cols-3 gap-2 text-center text-[13px] items-start ${printSize === 'A5' ? 'print:break-inside-avoid' : ''}`}>
-                {/* Column 1: Người lập phiếu */}
-                <div>
-                    <div className="text-[13px] italic mb-1">&nbsp;</div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle1}
-                            onChange={(e) => setSignTitle1(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle1}</span>
-                    </div>
-                    <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16 flex items-center justify-center print:h-12"></div>
-                    <div>
-                        <input
-                            type="text"
-                            value={signPerson1}
-                            onChange={(e) => setSignPerson1(e.target.value)}
-                            placeholder="Tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson1}</span>
-                    </div>
-                </div>
+                        {/* Column 2: Thủ kho */}
+                        <div>
+                            <div className="text-[13px] italic mb-1">&nbsp;</div>
+                            <div className="font-semibold">
+                                <input
+                                    type="text"
+                                    value={signTitle2}
+                                    onChange={(e) => setSignTitle2(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                                />
+                                <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
+                            <div className="h-16 flex items-center justify-center print:h-12"></div>
+                            <div>
+                                <input
+                                    type="text"
+                                    value={signPerson2}
+                                    onChange={(e) => setSignPerson2(e.target.value)}
+                                    placeholder="Tên..."
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                                />
+                                <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
+                            </div>
+                        </div>
 
-                {/* Column 2: Thủ kho */}
-                <div>
-                    <div className="text-[13px] italic mb-1">&nbsp;</div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle2}
-                            onChange={(e) => setSignTitle2(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle2}</span>
+                        {/* Column 3: Ngày/Tháng/Năm + GĐ Nhà Máy */}
+                        <div>
+                            <div className="text-[13px] italic mb-1">
+                                <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                                    Ngày{' '}
+                                    <input
+                                        type="text"
+                                        value={signDay}
+                                        onChange={(e) => setSignDay(e.target.value)}
+                                        className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                                    />
+                                    {' '}tháng{' '}
+                                    <input
+                                        type="text"
+                                        value={signMonth}
+                                        onChange={(e) => setSignMonth(e.target.value)}
+                                        className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                                    />
+                                    {' '}năm{' '}
+                                    <input
+                                        type="text"
+                                        value={signYear}
+                                        onChange={(e) => setSignYear(e.target.value)}
+                                        className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
+                                    />
+                                </span>
+                                <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                                    Ngày {signDay || '...'} tháng {signMonth || '...'} năm {signYear || '...'}
+                                </span>
+                            </div>
+                            <div className="font-semibold">
+                                <input
+                                    type="text"
+                                    value={signTitle5}
+                                    onChange={(e) => setSignTitle5(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
+                                />
+                                <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
+                            </div>
+                            <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
+                            <div className="h-16 flex items-center justify-center print:h-12"></div>
+                            <div>
+                                <input
+                                    type="text"
+                                    value={signPerson5}
+                                    onChange={(e) => setSignPerson5(e.target.value)}
+                                    placeholder="Tên..."
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
+                                />
+                                <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson5}</span>
+                            </div>
+                        </div>
                     </div>
-                    <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16 flex items-center justify-center print:h-12"></div>
-                    <div>
-                        <input
-                            type="text"
-                            value={signPerson2}
-                            onChange={(e) => setSignPerson2(e.target.value)}
-                            placeholder="Tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson2}</span>
-                    </div>
-                </div>
-
-                {/* Column 3: Ngày/Tháng/Năm + GĐ Nhà Máy */}
-                <div>
-                    <div className="text-[13px] italic mb-1">
-                        <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
-                            Ngày{' '}
-                            <input
-                                type="text"
-                                value={signDay}
-                                onChange={(e) => setSignDay(e.target.value)}
-                                className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
-                            />
-                            {' '}tháng{' '}
-                            <input
-                                type="text"
-                                value={signMonth}
-                                onChange={(e) => setSignMonth(e.target.value)}
-                                className="w-5 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
-                            />
-                            {' '}năm{' '}
-                            <input
-                                type="text"
-                                value={signYear}
-                                onChange={(e) => setSignYear(e.target.value)}
-                                className="w-8 text-center border-b border-dashed border-gray-300 bg-transparent focus:outline-none focus:border-blue-500 italic"
-                            />
-                        </span>
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
-                            Ngày {signDay || '...'} tháng {signMonth || '...'} năm {signYear || '...'}
-                        </span>
-                    </div>
-                    <div className="font-semibold">
-                        <input
-                            type="text"
-                            value={signTitle5}
-                            onChange={(e) => setSignTitle5(e.target.value)}
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-semibold`}
-                        />
-                        <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>{signTitle5}</span>
-                    </div>
-                    <div className="text-[11px] text-gray-500 italic">(Ký, họ tên)</div>
-                    <div className="h-16 flex items-center justify-center print:h-12"></div>
-                    <div>
-                        <input
-                            type="text"
-                            value={signPerson5}
-                            onChange={(e) => setSignPerson5(e.target.value)}
-                            placeholder="Tên..."
-                            className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold`}
-                        />
-                        <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{signPerson5}</span>
-                    </div>
-                </div>
-            </div>
-            </>
+                </>
             )}
 
-            {isBank ? (
+            {!isBatchItem && (isBank ? (
                 <style jsx global>{`
                     @media print {
                         @page {
@@ -1351,7 +1695,7 @@ function InboundPrintContent() {
                         color: black !important;
                     }
                 `}</style>
-            )}
+            ))}
 
             {isSnapshot && (
                 <style dangerouslySetInnerHTML={{
