@@ -356,7 +356,7 @@ export default function SoLieuPage() {
     const [allJobJournals, setAllJobJournals] = useState<DeliveryJournalRecord[]>([])
     const [loadingData, setLoadingData] = useState(false)
     const [activeTab, setActiveTab] = useState<'feed' | 'summary' | 'reconcile'>('feed')
-    const [reconcileMap, setReconcileMap] = useState<Record<string, { startStr: string; endStr: string; calcType: 'diff' | 'inclusive'; targetType: 'in' | 'out' | 'net'; note?: string }>>({})
+    const [reconcileMap, setReconcileMap] = useState<Record<string, { startStr: string; endStr: string; calcType: 'diff' | 'inclusive'; targetType: 'in' | 'out' | 'net'; isManualTarget?: boolean; note?: string }>>({})
     const [savingReconcile, setSavingReconcile] = useState(false)
     const [expandedReconcileKeys, setExpandedReconcileKeys] = useState<Record<string, boolean>>({})
 
@@ -7466,7 +7466,7 @@ export default function SoLieuPage() {
                                 ...productRows,
                             ]
 
-                            const updateEntry = (key: string, defaultTarget: 'in' | 'out' | 'net', patch: Partial<{ startStr: string; endStr: string; calcType: 'diff' | 'inclusive'; targetType: 'in' | 'out' | 'net'; note?: string }>) => {
+                            const updateEntry = (key: string, defaultTarget: 'in' | 'out' | 'net', patch: Partial<{ startStr: string; endStr: string; calcType: 'diff' | 'inclusive'; targetType: 'in' | 'out' | 'net'; isManualTarget?: boolean; note?: string }>) => {
                                 setReconcileMap(prev => {
                                     const cur = prev[key] || { startStr: '', endStr: '', calcType: 'diff' as const, targetType: defaultTarget, note: '' }
                                     return { ...prev, [key]: { ...cur, ...patch } }
@@ -7518,14 +7518,25 @@ export default function SoLieuPage() {
                                     <div className="space-y-2.5">
                                         {rows.map((row) => {
                                             const key = row.isTotal ? '__TOTAL__' : `${row.product_name}___${row.unit}`
-                                            const defaultTarget: 'in' | 'out' | 'net' = row.in_qty >= row.out_qty ? 'in' : 'out'
-                                            const entry = reconcileMap[key] || {
-                                                startStr: '',
-                                                endStr: '',
-                                                calcType: 'diff' as const,
-                                                targetType: defaultTarget,
-                                                note: '',
-                                            }
+                                            const defaultTarget: 'in' | 'out' | 'net' =
+                                                row.in_qty > 0 && row.out_qty > 0
+                                                    ? 'net'
+                                                    : row.out_qty > 0 && row.in_qty === 0
+                                                        ? 'out'
+                                                        : 'in'
+                                            const rawEntry = reconcileMap[key]
+                                            const entry = rawEntry
+                                                ? {
+                                                      ...rawEntry,
+                                                      targetType: rawEntry.isManualTarget ? rawEntry.targetType : defaultTarget,
+                                                  }
+                                                : {
+                                                      startStr: '',
+                                                      endStr: '',
+                                                      calcType: 'diff' as const,
+                                                      targetType: defaultTarget,
+                                                      note: '',
+                                                  }
                                             const s = parseFloat((entry.startStr || '').replace(',', '.'))
                                             const e = parseFloat((entry.endStr || '').replace(',', '.'))
                                             const hasNums = entry.startStr.trim() !== '' && entry.endStr.trim() !== '' && !Number.isNaN(s) && !Number.isNaN(e)
@@ -7624,12 +7635,12 @@ export default function SoLieuPage() {
                                                                     <label className="block text-[10px] font-bold text-stone-500 mb-1">So với</label>
                                                                     <select
                                                                         value={entry.targetType}
-                                                                        onChange={ev => updateEntry(key, defaultTarget, { targetType: ev.target.value as any })}
+                                                                        onChange={ev => updateEntry(key, defaultTarget, { targetType: ev.target.value as any, isManualTarget: true })}
                                                                         className="w-full h-9 px-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-stone-800 dark:text-stone-200"
                                                                     >
                                                                         <option value="in">Tổng Nhập (+{row.in_qty})</option>
                                                                         <option value="out">Tổng Xuất (-{row.out_qty})</option>
-                                                                        <option value="net">Chênh lệch ({Math.abs(row.in_qty - row.out_qty)})</option>
+                                                                        <option value="net">Cân đối ({Math.abs(row.in_qty - row.out_qty)})</option>
                                                                     </select>
                                                                 </div>
                                                                 <div className="sm:col-span-2">

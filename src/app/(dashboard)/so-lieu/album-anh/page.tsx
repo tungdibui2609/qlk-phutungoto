@@ -106,7 +106,9 @@ export default function SoLieuAlbumPage() {
     const [selectedJobDateKey, setSelectedJobDateKey] = useState<string | null>(null)
     const [expandedMonths, setExpandedMonths] = useState<Record<string, boolean>>({})
     const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
+    const [expandedTreeJobs, setExpandedTreeJobs] = useState<Record<string, boolean>>({})
     const [expandedJobNames, setExpandedJobNames] = useState<Record<string, boolean>>({})
+    const [expandedRefAlbums, setExpandedRefAlbums] = useState<Record<string, boolean>>({})
 
     const [images, setImages] = useState<OperationImageRecord[]>([])
     const [products, setProducts] = useState<{ sku: string; name: string; aliases?: string | null; internal_code?: string | null; internal_name?: string | null }[]>([])
@@ -239,8 +241,17 @@ export default function SoLieuAlbumPage() {
         }
     }
 
+    const parseRefPhase = (notes?: string | null): 'start' | 'end' | 'legacy' | null => {
+        const m = notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+        if (!m) return null
+        if (m[2] === 'start') return 'start'
+        if (m[2] === 'end') return 'end'
+        return 'legacy'
+    }
+
     const autoFolderTree = useMemo(() => {
-        type JobNode = { jobKey: string; shiftId: string; jobName: string; count: number }
+        type RefSubNode = { subKey: string; label: string; phase: 'start' | 'end' | 'legacy'; count: number }
+        type JobNode = { jobKey: string; shiftId: string; jobName: string; count: number; refSubs: Map<string, RefSubNode> }
         type DateNode = { dateKey: string; dateLabel: string; count: number; jobs: Map<string, JobNode> }
         type MonthNode = { monthKey: string; monthLabel: string; count: number; dates: Map<string, DateNode> }
 
@@ -248,16 +259,8 @@ export default function SoLieuAlbumPage() {
         for (const img of images) {
             const { monthKey, monthLabel, dateKey, dateLabel } = getImageDayInfo(img.captured_at)
             const baseJobName = img.job_name || 'Công việc không tên'
-            const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
-            const refTag = refMatch ? (refMatch[2] === 'end' ? 'REF_END' : refMatch[2] === 'start' ? 'REF_START' : 'REF') : null
-            const jobName = refTag === 'REF_START'
-                ? `${baseJobName} › 📌 Tham chiếu Đầu`
-                : refTag === 'REF_END'
-                    ? `${baseJobName} › 📌 Tham chiếu Cuối`
-                    : refTag === 'REF'
-                        ? `${baseJobName} › 📌 Tham chiếu`
-                        : baseJobName
-            const jobKey = refTag ? `${dateKey}::${img.shift_id}::${refTag}` : `${dateKey}::${img.shift_id}`
+            const jobKey = `${dateKey}::${img.shift_id}`
+            const refPhase = parseRefPhase(img.notes)
 
             let mNode = months.get(monthKey)
             if (!mNode) {
@@ -275,12 +278,30 @@ export default function SoLieuAlbumPage() {
 
             let jNode = dNode.jobs.get(jobKey)
             if (!jNode) {
-                jNode = { jobKey, shiftId: img.shift_id, jobName, count: 0 }
+                jNode = { jobKey, shiftId: img.shift_id, jobName: baseJobName, count: 0, refSubs: new Map() }
                 dNode.jobs.set(jobKey, jNode)
             }
             jNode.count++
+
+            if (refPhase) {
+                const refTag = refPhase === 'start' ? 'REF_START' : refPhase === 'end' ? 'REF_END' : 'REF'
+                const subKey = `${jobKey}::${refTag}`
+                const label =
+                    refPhase === 'start'
+                        ? '📌 Tham chiếu Đầu'
+                        : refPhase === 'end'
+                          ? '📌 Tham chiếu Cuối'
+                          : '📌 Tham chiếu'
+                let sNode = jNode.refSubs.get(subKey)
+                if (!sNode) {
+                    sNode = { subKey, label, phase: refPhase, count: 0 }
+                    jNode.refSubs.set(subKey, sNode)
+                }
+                sNode.count++
+            }
         }
 
+        const phaseOrder: Record<'start' | 'end' | 'legacy', number> = { start: 0, end: 1, legacy: 2 }
         return Array.from(months.values())
             .sort((a, b) => b.monthKey.localeCompare(a.monthKey))
             .map((m) => ({
@@ -289,7 +310,14 @@ export default function SoLieuAlbumPage() {
                     .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
                     .map((d) => ({
                         ...d,
-                        jobs: Array.from(d.jobs.values()).sort((a, b) => a.jobName.localeCompare(b.jobName)),
+                        jobs: Array.from(d.jobs.values())
+                            .sort((a, b) => a.jobName.localeCompare(b.jobName))
+                            .map((j) => ({
+                                ...j,
+                                refSubs: Array.from(j.refSubs.values()).sort(
+                                    (a, b) => phaseOrder[a.phase] - phaseOrder[b.phase]
+                                ),
+                            })),
                     })),
             }))
     }, [images])
@@ -378,11 +406,12 @@ export default function SoLieuAlbumPage() {
             list = list.filter((img) => {
                 const info = getImageDayInfo(img.captured_at)
                 if (info.dateKey !== dKey || img.shift_id !== sId) return false
+                if (!refTag) return true
                 const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
                 if (refTag === 'REF_START') return Boolean(refMatch && refMatch[2] === 'start')
                 if (refTag === 'REF_END') return Boolean(refMatch && refMatch[2] === 'end')
                 if (refTag === 'REF') return Boolean(refMatch && !refMatch[2])
-                return !refMatch
+                return true
             })
         } else if (selectedTreeDate) {
             list = list.filter((img) => getImageDayInfo(img.captured_at).dateKey === selectedTreeDate)
@@ -1375,31 +1404,92 @@ export default function SoLieuAlbumPage() {
                                                                 <div className="pl-4 space-y-0.5 border-l border-slate-200 dark:border-slate-800 ml-3">
                                                                     {dt.jobs.map((job) => {
                                                                         const activeJob = selectedTreeJob === job.jobKey
+                                                                        const hasRefs = job.refSubs.length > 0
+                                                                        const isJobExpanded = !!expandedTreeJobs[job.jobKey]
                                                                         return (
-                                                                            <button
-                                                                                key={job.jobKey}
-                                                                                type="button"
-                                                                                onClick={() => {
-                                                                                    setSelectedTreeMonth(month.monthKey)
-                                                                                    setSelectedTreeDate(dt.dateKey)
-                                                                                    setSelectedTreeJob(job.jobKey)
-                                                                                }}
-                                                                                className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-[11px] text-left transition-colors ${
-                                                                                    activeJob
-                                                                                        ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800'
-                                                                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                                                                }`}
-                                                                            >
-                                                                                <span className="flex items-center gap-1.5 truncate">
-                                                                                    <FolderOpen className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                                                    <span className="truncate">
-                                                                                        {job.jobName}
-                                                                                    </span>
-                                                                                </span>
-                                                                                <span className="text-[10px] text-slate-400 ml-1 shrink-0">
-                                                                                    {job.count}
-                                                                                </span>
-                                                                            </button>
+                                                                            <div key={job.jobKey} className="space-y-0.5">
+                                                                                <div
+                                                                                    className={`flex items-center gap-0.5 px-1 py-1 rounded-lg text-[11px] transition-colors ${
+                                                                                        activeJob
+                                                                                            ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800'
+                                                                                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                                                    }`}
+                                                                                >
+                                                                                    {hasRefs ? (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() =>
+                                                                                                setExpandedTreeJobs((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [job.jobKey]: !isJobExpanded,
+                                                                                                }))
+                                                                                            }
+                                                                                            className="p-0.5 text-slate-400 hover:text-slate-600 shrink-0"
+                                                                                        >
+                                                                                            {isJobExpanded ? (
+                                                                                                <ChevronDown className="w-3 h-3" />
+                                                                                            ) : (
+                                                                                                <ChevronRight className="w-3 h-3" />
+                                                                                            )}
+                                                                                        </button>
+                                                                                    ) : (
+                                                                                        <span className="w-4 shrink-0" />
+                                                                                    )}
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() => {
+                                                                                            setSelectedTreeMonth(month.monthKey)
+                                                                                            setSelectedTreeDate(dt.dateKey)
+                                                                                            setSelectedTreeJob(job.jobKey)
+                                                                                            if (hasRefs) {
+                                                                                                setExpandedTreeJobs((prev) => ({
+                                                                                                    ...prev,
+                                                                                                    [job.jobKey]: true,
+                                                                                                }))
+                                                                                            }
+                                                                                        }}
+                                                                                        className="flex-1 flex items-center justify-between text-left min-w-0 py-0.5 pr-1"
+                                                                                    >
+                                                                                        <span className="flex items-center gap-1.5 truncate">
+                                                                                            <FolderOpen className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                                                            <span className="truncate">
+                                                                                                {job.jobName}
+                                                                                            </span>
+                                                                                        </span>
+                                                                                        <span className="text-[10px] text-slate-400 ml-1 shrink-0">
+                                                                                            {job.count}
+                                                                                        </span>
+                                                                                    </button>
+                                                                                </div>
+                                                                                {hasRefs && isJobExpanded && (
+                                                                                    <div className="pl-4 space-y-0.5 border-l border-amber-200/70 dark:border-amber-800/50 ml-2.5">
+                                                                                        {job.refSubs.map((sub) => {
+                                                                                            const activeSub = selectedTreeJob === sub.subKey
+                                                                                            return (
+                                                                                                <button
+                                                                                                    key={sub.subKey}
+                                                                                                    type="button"
+                                                                                                    onClick={() => {
+                                                                                                        setSelectedTreeMonth(month.monthKey)
+                                                                                                        setSelectedTreeDate(dt.dateKey)
+                                                                                                        setSelectedTreeJob(sub.subKey)
+                                                                                                    }}
+                                                                                                    className={`w-full flex items-center justify-between px-2 py-1 rounded-lg text-[11px] text-left transition-colors ${
+                                                                                                        activeSub
+                                                                                                            ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800'
+                                                                                                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                                                                    }`}
+                                                                                                >
+                                                                                                    <span className="truncate">{sub.label}</span>
+                                                                                                    <span className="text-[10px] text-slate-400 ml-1 shrink-0">
+                                                                                                        {sub.count}
+                                                                                                    </span>
+                                                                                                </button>
+                                                                                            )
+                                                                                        })}
+                                                                                    </div>
+                                                                                )}
+                                                                            </div>
                                                                         )
                                                                     })}
                                                                 </div>
@@ -1475,34 +1565,131 @@ export default function SoLieuAlbumPage() {
                         </div>
                     ) : viewMode === 'album' ? (
                         <div className="space-y-4">
-                            {groupedAlbums.map((album) => (
-                                <div
-                                    key={album.key}
-                                    className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3"
-                                >
-                                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
-                                        <div>
-                                            <div className="flex items-center gap-2">
-                                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                                    {album.dateLabel}
-                                                </span>
-                                                <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
-                                                    {album.jobName}
-                                                </h2>
+                            {groupedAlbums.map((album) => {
+                                const isDirectRefView =
+                                    (treeMode === 'date' && Boolean(selectedTreeJob?.split('::')[2])) ||
+                                    (treeMode === 'job' && Boolean(selectedJobDateKey && selectedJobDateKey.includes('::__REF')))
+
+                                const regularItems: OperationImageRecord[] = []
+                                const refStartItems: OperationImageRecord[] = []
+                                const refEndItems: OperationImageRecord[] = []
+                                const refLegacyItems: OperationImageRecord[] = []
+                                for (const img of album.items) {
+                                    const p = parseRefPhase(img.notes)
+                                    if (p === 'start') refStartItems.push(img)
+                                    else if (p === 'end') refEndItems.push(img)
+                                    else if (p === 'legacy') refLegacyItems.push(img)
+                                    else regularItems.push(img)
+                                }
+
+                                const refAlbums = [
+                                    { id: `${album.key}::REF_START`, title: '📌 Album Tham chiếu Đầu', items: refStartItems },
+                                    { id: `${album.key}::REF_END`, title: '📌 Album Tham chiếu Cuối', items: refEndItems },
+                                    { id: `${album.key}::REF`, title: '📌 Album Tham chiếu', items: refLegacyItems },
+                                ].filter((g) => g.items.length > 0)
+
+                                return (
+                                    <div
+                                        key={album.key}
+                                        className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3"
+                                    >
+                                        <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5">
+                                            <div>
+                                                <div className="flex items-center gap-2">
+                                                    <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                                        {album.dateLabel}
+                                                    </span>
+                                                    <h2 className="text-sm sm:text-base font-bold text-slate-900 dark:text-white">
+                                                        {album.jobName}
+                                                    </h2>
+                                                </div>
+                                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                                                    {album.items.length} hình ảnh • Cập nhật:{' '}
+                                                    {new Date(album.latestAt).toLocaleString('vi-VN')}
+                                                </p>
                                             </div>
-                                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                                                {album.items.length} hình ảnh • Cập nhật:{' '}
-                                                {new Date(album.latestAt).toLocaleString('vi-VN')}
-                                            </p>
                                         </div>
+
+                                        {isDirectRefView ? (
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+                                                {album.items.map((img) => (
+                                                    <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-3">
+                                                {refAlbums.length > 0 && (
+                                                    <div className="space-y-2">
+                                                        {refAlbums.map((ra) => {
+                                                            const isOpen = !!expandedRefAlbums[ra.id]
+                                                            const cover = ra.items[0]
+                                                            return (
+                                                                <div
+                                                                    key={ra.id}
+                                                                    className="rounded-xl border border-amber-200/80 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/20 overflow-hidden"
+                                                                >
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() =>
+                                                                            setExpandedRefAlbums((prev) => ({
+                                                                                ...prev,
+                                                                                [ra.id]: !isOpen,
+                                                                            }))
+                                                                        }
+                                                                        className="w-full flex items-center justify-between gap-3 p-2.5 text-left hover:bg-amber-100/50 dark:hover:bg-amber-900/20 transition-colors"
+                                                                    >
+                                                                        <div className="flex items-center gap-2.5 min-w-0">
+                                                                            {cover?.public_url ? (
+                                                                                <img
+                                                                                    src={cover.public_url}
+                                                                                    alt={ra.title}
+                                                                                    className="w-10 h-10 rounded-lg object-cover border border-amber-200 dark:border-amber-800 shrink-0"
+                                                                                />
+                                                                            ) : (
+                                                                                <div className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center shrink-0">
+                                                                                    <FolderOpen className="w-5 h-5 text-amber-600" />
+                                                                                </div>
+                                                                            )}
+                                                                            <div className="min-w-0">
+                                                                                <div className="text-xs sm:text-sm font-bold text-amber-900 dark:text-amber-200 truncate">
+                                                                                    {ra.title}
+                                                                                </div>
+                                                                                <div className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                                                                                    {ra.items.length} ảnh • Bấm để {isOpen ? 'thu gọn' : 'xem ảnh'}
+                                                                                </div>
+                                                                            </div>
+                                                                        </div>
+                                                                        {isOpen ? (
+                                                                            <ChevronDown className="w-4 h-4 text-amber-600 shrink-0" />
+                                                                        ) : (
+                                                                            <ChevronRight className="w-4 h-4 text-amber-600 shrink-0" />
+                                                                        )}
+                                                                    </button>
+                                                                    {isOpen && (
+                                                                        <div className="p-2.5 pt-0 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 border-t border-amber-200/60 dark:border-amber-800/40 mt-1 pt-2.5">
+                                                                            {ra.items.map((img) => (
+                                                                                <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )
+                                                        })}
+                                                    </div>
+                                                )}
+
+                                                {regularItems.length > 0 && (
+                                                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
+                                                        {regularItems.map((img) => (
+                                                            <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
-                                        {album.items.map((img) => (
-                                            <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
+                                )
+                            })}
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">

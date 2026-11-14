@@ -78,125 +78,113 @@ function drawWatermarkOnCanvas(
     const dt = meta.capturedAt || new Date()
     const hh = String(dt.getHours()).padStart(2, '0')
     const mm = String(dt.getMinutes()).padStart(2, '0')
+    const dd = String(dt.getDate()).padStart(2, '0')
+    const mo = String(dt.getMonth() + 1).padStart(2, '0')
     const timeStr = `${hh}:${mm}`
-    const dateStr = `${dt.getDate()} Tháng ${dt.getMonth() + 1}, ${dt.getFullYear()}`
+    const dateStr = `${dd}/${mo}/${dt.getFullYear()}`
     const weekdayStr = WEEKDAYS_VI[dt.getDay()]
 
     // Scale theo cạnh ngắn hơn để ảnh dọc hay ngang đều cân đối
     const baseScale = Math.min(width, height) / 1080
-    const pad = Math.round(34 * baseScale)
+    const pad = Math.round(20 * baseScale)
 
-    // 1. Lớp nền gradient đen mờ ở đáy ảnh giúp chữ nổi bật
-    const gradHeight = Math.round(height * 0.34)
+    // 1. Lớp nền gradient đen mỏng ở đáy ảnh để giữ tối đa diện tích nhìn hàng hóa
+    const gradHeight = Math.round(height * 0.16)
     const grad = ctx.createLinearGradient(0, height - gradHeight, 0, height)
     grad.addColorStop(0, 'rgba(0,0,0,0)')
-    grad.addColorStop(0.45, 'rgba(0,0,0,0.42)')
-    grad.addColorStop(1, 'rgba(0,0,0,0.78)')
+    grad.addColorStop(0.35, 'rgba(0,0,0,0.42)')
+    grad.addColorStop(1, 'rgba(0,0,0,0.72)')
     ctx.fillStyle = grad
     ctx.fillRect(0, height - gradHeight, width, gradHeight)
 
     ctx.save()
-    ctx.shadowColor = 'rgba(0,0,0,0.75)'
-    ctx.shadowBlur = Math.max(2, Math.round(6 * baseScale))
+    ctx.shadowColor = 'rgba(0,0,0,0.8)'
+    ctx.shadowBlur = Math.max(2, Math.round(4 * baseScale))
     ctx.shadowOffsetX = 0
-    ctx.shadowOffsetY = Math.max(1, Math.round(2 * baseScale))
+    ctx.shadowOffsetY = Math.max(1, Math.round(1.5 * baseScale))
 
-    // Thu thập các dòng info ở dưới cùng (vẽ từ dưới lên)
-    const lines: { text: string; color: string; bold?: boolean; size: number }[] = []
+    // 2. Bên phải: 3 dòng căn phải (Giờ -> Ngày/Thứ -> Nhân viên), không gạch dọc vàng
+    const rightLines: { text: string; color: string; bold?: boolean; size: number }[] = []
 
     if (meta.capturedByName) {
-        lines.push({
-            text: `👤 NV: ${meta.capturedByName}`,
-            color: '#e2e8f0',
-            size: Math.round(26 * baseScale),
+        rightLines.push({
+            text: `👤 ${meta.capturedByName}`,
+            color: '#cbd5e1',
+            size: Math.round(15 * baseScale),
         })
     }
 
-    if (meta.itemName || meta.quantity != null) {
+    rightLines.push({
+        text: `${dateStr} • ${weekdayStr}`,
+        color: '#f1f5f9',
+        size: Math.round(15 * baseScale),
+    })
+
+    rightLines.push({
+        text: timeStr,
+        color: '#ffffff',
+        bold: true,
+        size: Math.round(24 * baseScale),
+    })
+
+    let rightCursorY = height - pad
+    let rightBlockLeft = width - pad
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    for (const ln of rightLines) {
+        ctx.font = `${ln.bold ? '800' : '600'} ${ln.size}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
+        ctx.fillStyle = ln.color
+        ctx.fillText(ln.text, width - pad, rightCursorY)
+        rightBlockLeft = Math.min(rightBlockLeft, width - pad - ctx.measureText(ln.text).width)
+        rightCursorY -= Math.round(ln.size * 1.32)
+    }
+
+    // 3. Bên trái: Công việc, Sản phẩm (1 dòng), Số lượng (1 dòng) — vẽ từ dưới lên
+    const leftLines: { text: string; color: string; bold?: boolean; size: number }[] = []
+
+    if (meta.quantity != null) {
         const dirLabel = meta.direction === 'in' ? 'NHẬP +' : meta.direction === 'out' ? 'XUẤT -' : ''
-        const qtyStr =
-            meta.quantity != null ? `${dirLabel}${meta.quantity}${meta.unit ? ` ${meta.unit}` : ''}` : ''
-        const itemText = [meta.itemName ? `📦 ${meta.itemName}` : '', qtyStr ? `SL: ${qtyStr}` : '']
-            .filter(Boolean)
-            .join('  |  ')
-        lines.push({
-            text: itemText,
+        const qtyStr = `${dirLabel}${meta.quantity}${meta.unit ? ` ${meta.unit}` : ''}`
+        leftLines.push({
+            text: `SL: ${qtyStr}`,
             color: meta.direction === 'out' ? '#fda4af' : '#fbbf24',
             bold: true,
-            size: Math.round(28 * baseScale),
+            size: Math.round(18 * baseScale),
+        })
+    }
+
+    if (meta.itemName) {
+        leftLines.push({
+            text: `📦 ${meta.itemName}`,
+            color: '#fde68a',
+            bold: true,
+            size: Math.round(18 * baseScale),
         })
     }
 
     if (meta.jobName) {
-        lines.push({
+        leftLines.push({
             text: `📍 ${meta.jobName}`,
             color: '#ffffff',
             bold: true,
-            size: Math.round(28 * baseScale),
+            size: Math.round(17 * baseScale),
         })
     }
 
-    // Vẽ các dòng từ dưới lên (dòng cuối nằm cách đáy `pad`)
-    let cursorY = height - pad
-    const maxTextWidth = width - pad * 2 - Math.round(140 * baseScale)
-    for (const ln of lines) {
+    let leftCursorY = height - pad
+    const maxLeftWidth = Math.max(width * 0.44, rightBlockLeft - pad * 2)
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'bottom'
+    for (const ln of leftLines) {
         ctx.font = `${ln.bold ? '700' : '500'} ${ln.size}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
         ctx.fillStyle = ln.color
         let txt = ln.text
-        while (ctx.measureText(txt).width > maxTextWidth && txt.length > 8) {
+        while (ctx.measureText(txt).width > maxLeftWidth && txt.length > 8) {
             txt = txt.slice(0, -2) + '…'
         }
-        ctx.textBaseline = 'bottom'
-        ctx.fillText(txt, pad, cursorY)
-        cursorY -= Math.round(ln.size * 1.38)
+        ctx.fillText(txt, pad, leftCursorY)
+        leftCursorY -= Math.round(ln.size * 1.32)
     }
-
-    // 2. Vẽ Giờ to + vạch vàng + Ngày/Thứ ngay phía trên các dòng info
-    const timeFontSize = Math.round(74 * baseScale)
-    ctx.font = `800 ${timeFontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textBaseline = 'bottom'
-    const timeY = cursorY - Math.round(8 * baseScale)
-    ctx.fillText(timeStr, pad, timeY)
-    const timeW = ctx.measureText(timeStr).width
-
-    // Vạch vàng dọc
-    const barX = pad + timeW + Math.round(16 * baseScale)
-    const barW = Math.max(3, Math.round(6 * baseScale))
-    const barH = Math.round(timeFontSize * 0.78)
-    ctx.fillStyle = '#f59e0b'
-    ctx.fillRect(barX, timeY - barH - Math.round(6 * baseScale), barW, barH)
-
-    // Ngày & Thứ bên phải vạch vàng
-    const dateX = barX + barW + Math.round(14 * baseScale)
-    const dateFontSize = Math.round(27 * baseScale)
-    ctx.font = `700 ${dateFontSize}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.fillText(dateStr, dateX, timeY - Math.round(dateFontSize * 1.15))
-    ctx.font = `600 ${Math.round(25 * baseScale)}px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-    ctx.fillStyle = '#f8fafc'
-    ctx.fillText(weekdayStr, dateX, timeY - Math.round(4 * baseScale))
-
-    // 3. Nhãn xác thực góc phải dưới + chữ dọc nhỏ
-    const badgeSize = Math.round(24 * baseScale)
-    ctx.textAlign = 'right'
-    ctx.font = `800 ${badgeSize}px system-ui, -apple-system, sans-serif`
-    ctx.fillStyle = '#fbbf24'
-    ctx.fillText('WMS Mark', width - pad, height - pad - Math.round(22 * baseScale))
-    ctx.font = `600 ${Math.round(18 * baseScale)}px system-ui, -apple-system, sans-serif`
-    ctx.fillStyle = '#e2e8f0'
-    ctx.fillText('100% Chân thực', width - pad, height - pad)
-
-    // Chữ dọc mờ bên cạnh phải
-    const verifyCode = meta.verifyCode || Math.random().toString(36).substring(2, 10).toUpperCase()
-    ctx.save()
-    ctx.translate(width - Math.round(18 * baseScale), height - pad - Math.round(64 * baseScale))
-    ctx.rotate(-Math.PI / 2)
-    ctx.textAlign = 'left'
-    ctx.font = `600 ${Math.round(16 * baseScale)}px monospace`
-    ctx.fillStyle = 'rgba(255,255,255,0.68)'
-    ctx.fillText(`© ${verifyCode}  WMS Verified`, 0, 0)
-    ctx.restore()
 
     ctx.restore()
 }
