@@ -159,6 +159,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                 .from('shift_tasks')
                 .select('*')
                 .eq('system_code', currentSystem.code)
+                .not('code', 'ilike', 'DC-%')
                 .order('created_at', { ascending: false })
 
             if (companyId) {
@@ -167,7 +168,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
 
             const { data, error } = await query
             if (error) throw error
-            setTasks(data || [])
+            setTasks((data || []).filter((t: any) => !String(t.code || '').toUpperCase().startsWith('DC-')))
         } catch (err) {
             console.error('Error loading shift tasks:', err)
         } finally {
@@ -253,6 +254,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                 async (payload) => {
                     if (payload.eventType === 'INSERT') {
                         const rawNew = payload.new as ShiftTask
+                        if (String(rawNew.code || '').toUpperCase().startsWith('DC-')) return
                         setTasks(prev => [rawNew, ...prev.filter(t => t.id !== rawNew.id)])
                         try {
                             const { data, error } = await (supabase as any)
@@ -268,6 +270,7 @@ export default function ShiftTasksView({ isSanxuat = false }: ShiftTasksViewProp
                         }
                     } else if (payload.eventType === 'UPDATE') {
                         const rawUpdated = payload.new as ShiftTask
+                        if (String(rawUpdated.code || '').toUpperCase().startsWith('DC-')) return
                         // Merge safely without erasing content or images
                         setTasks(prev => prev.map(t => {
                             if (t.id === rawUpdated.id) {
