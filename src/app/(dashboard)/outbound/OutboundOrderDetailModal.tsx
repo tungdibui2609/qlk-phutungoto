@@ -642,7 +642,12 @@ export default function OutboundOrderDetailModal({ order, onClose, onUpdate }: O
                                     <div className="absolute bottom-full left-0 mb-2 w-56 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-stone-200 dark:border-zinc-700 overflow-hidden z-20">
                                         <button
                                             onClick={() => {
-                                                window.open(`/print/outbound?id=${order.id}&type=internal`, '_blank')
+                                                window.open(
+                                                    hasModule('print_a5_batch')
+                                                        ? `/print/outbound?id=${order.id}&type=internal&size=A5&autoPrint=1&template=excel`
+                                                        : `/print/outbound?id=${order.id}&type=internal`,
+                                                    '_blank'
+                                                )
                                                 setShowPrintMenu(false)
                                             }}
                                             className="w-full px-4 py-3 text-left hover:bg-stone-100 dark:hover:bg-zinc-700 flex items-center gap-3 text-stone-700 dark:text-gray-200"

@@ -139,6 +139,7 @@ function BatchInboundPrint({ orderIds }: { orderIds: string[] }) {
                 displayInternalCode={displayInternalCode}
                 onDisplayInternalCodeChange={() => setDisplayInternalCode(prev => !prev)}
                 onPrint={() => window.print()}
+                onExcelExport={() => {}}
                 printType={currentPrintType}
                 onPrintTypeChange={setCurrentPrintType}
             />
@@ -252,6 +253,12 @@ function BatchInboundPrint({ orderIds }: { orderIds: string[] }) {
                             word-break: break-word !important;
                             overflow-wrap: break-word !important;
                         }
+                        .print-sheet table.excel-items-table col.col-stt { width: 9mm !important; }
+                        .print-sheet table.excel-items-table col.col-name { width: auto !important; }
+                        .print-sheet table.excel-items-table col.col-spec { width: 21mm !important; }
+                        .print-sheet table.excel-items-table col.col-unit { width: 17mm !important; }
+                        .print-sheet table.excel-items-table col.col-qty { width: 20mm !important; }
+                        .print-sheet table.excel-items-table col.col-conv { width: 22mm !important; }
                         .print-sheet .print-total-row td {
                             padding-top: 8px !important;
                             padding-bottom: 8px !important;
@@ -368,6 +375,8 @@ function InboundPrintContent({
     const isSnapshot = searchParams.get('snapshot') === '1'
     const isInternal = printType === 'internal'
     const isBank = printType === 'bank'
+    const isBankSource = searchParams.get('source') === 'bank'
+    const isExcelLayout = (isBankSource || searchParams.get('template') === 'excel') && isInternal
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -612,7 +621,8 @@ function InboundPrintContent({
                         setEditYear(searchParams.get('editYear') || d.getFullYear().toString())
                     }
 
-                    setEditSupplierName(searchParams.get('editSupplierName') || o.supplier?.name || '')
+                    const rawSupplierName = searchParams.get('editSupplierName') || o.supplier?.name || o.supplier_name || ''
+                    setEditSupplierName(rawSupplierName.trim() === 'Nhà cung cấp' ? '' : rawSupplierName)
                     setEditSupplierAddress(searchParams.get('editSupplierAddress') || o.supplier_address || '')
                     setEditWarehouse(searchParams.get('editWarehouse') || o.warehouse_name || 'Kho mặc định')
                     setEditDescription(searchParams.get('editDescription') || o.description || '')
@@ -881,6 +891,7 @@ function InboundPrintContent({
         <div
             id={isBatchItem ? undefined : "print-ready"}
             data-ready={!loading && order && items.length >= 0 && (!hasModule('inbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined}
+            style={isExcelLayout ? { fontFamily: "'Times New Roman', Times, serif" } : undefined}
             className={`print-sheet ${isBatchItem ? (isLastBatchItem ? 'print-sheet-last' : 'print-sheet-break') : ''} pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' && !isBank ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''} ${isBatchItem ? 'shadow-sm border border-stone-200 print:shadow-none print:border-none' : ''}`}
         >
             {isCapturing && !isBatchItem && (
@@ -938,6 +949,236 @@ function InboundPrintContent({
                     printSize={printSize}
                     displayInternalCode={displayInternalCode}
                 />
+            ) : isExcelLayout ? (
+                <>
+                    {/* Header */}
+                    <PrintHeader
+                        companyInfo={companyInfo}
+                        logoSrc={logoSrc}
+                        size="large"
+                        isA5={printSize === 'A5'}
+                    />
+
+                    {/* Title - Excel Style */}
+                    <div className={`relative text-center ${printSize === 'A5' ? 'mt-1.5 mb-1.5' : 'mt-3 mb-2'}`}>
+                        <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide text-black`}>
+                            PHIẾU NHẬP KHO
+                        </h1>
+                        <div className="text-sm font-bold text-black mt-0.5">
+                            <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                                Ngày{' '}
+                                <input
+                                    type="text"
+                                    value={editDay}
+                                    onChange={(e) => setEditDay(e.target.value)}
+                                    className="w-7 text-center border-b border-dashed border-gray-400 bg-transparent focus:outline-none font-bold"
+                                />
+                                {' '}tháng{' '}
+                                <input
+                                    type="text"
+                                    value={editMonth}
+                                    onChange={(e) => setEditMonth(e.target.value)}
+                                    className="w-7 text-center border-b border-dashed border-gray-400 bg-transparent focus:outline-none font-bold"
+                                />
+                                {' '}năm{' '}
+                                <input
+                                    type="text"
+                                    value={editYear}
+                                    onChange={(e) => setEditYear(e.target.value)}
+                                    className="w-12 text-center border-b border-dashed border-gray-400 bg-transparent focus:outline-none font-bold"
+                                />
+                            </span>
+                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                                Ngày {editDay} tháng {editMonth} năm {editYear}
+                            </span>
+                        </div>
+                        <div className="text-sm font-bold text-black mt-0.5">
+                            Số : {order.code}
+                        </div>
+                    </div>
+
+                    {/* Info rows - compact 3 lines matching Excel */}
+                    <div className="mt-1.5 space-y-1.5 text-[13px] print:text-[11.5px] leading-snug font-bold text-black">
+                        <div className="grid grid-cols-[185px_1fr] print:grid-cols-[48mm_1fr] gap-x-3 items-start">
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Họ tên người giao:</span>
+                                <EditableText
+                                    value={editSupplierName}
+                                    onChange={setEditSupplierName}
+                                    className="ml-1.5 flex-1 min-w-0"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Địa chỉ ( bộ phận ) :</span>
+                                <EditableText
+                                    value={editSupplierAddress}
+                                    onChange={setEditSupplierAddress}
+                                    className="ml-1.5 flex-1 min-w-0"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-[185px_1fr] print:grid-cols-[48mm_1fr] gap-x-3 items-baseline">
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Nhập tại kho:</span>
+                                <EditableText
+                                    value={editWarehouse}
+                                    onChange={setEditWarehouse}
+                                    className="ml-1 flex-1 min-w-0"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                            <div className="flex items-baseline min-w-0">
+                                <span className="shrink-0">- Địa điểm:</span>
+                                <input
+                                    type="text"
+                                    value={editLocation}
+                                    onChange={(e) => setEditLocation(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none min-w-0`}
+                                />
+                                <span className={`hidden print:inline ml-1 flex-1 break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                            </div>
+                        </div>
+
+                        {editDescription && (
+                            <div className="flex items-start leading-tight">
+                                <span className="shrink-0">- Diễn Giải :</span>
+                                <EditableText
+                                    value={editDescription}
+                                    onChange={setEditDescription}
+                                    className="ml-1.5 flex-1"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Items Table - Excel Style */}
+                    <div className="mt-2 w-full">
+                        <table className="excel-items-table w-full print:w-full border-collapse text-sm text-black" style={{ width: '100%' }}>
+                            <colgroup>
+                                <col className="col-stt w-10" />
+                                <col className="col-name" />
+                                <col className="col-spec w-20" />
+                                <col className="col-unit w-16" />
+                                <col className="col-qty w-20" />
+                                {hasModule('inbound_conversion') && targetUnit && <col className="col-conv w-22" />}
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th rowSpan={2} className="border border-black px-1.5 py-1 text-center font-bold">STT</th>
+                                    <th rowSpan={2} className="border border-black px-2 py-1 text-center font-bold">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ, sp, hàng hoá</th>
+                                    <th rowSpan={2} className="border border-black px-1 py-1 text-center font-bold">
+                                        <EditableText
+                                            value={editQuyCachTitle}
+                                            onChange={setEditQuyCachTitle}
+                                            className="text-center font-bold min-w-0 w-full"
+                                            isSnapshot={isSnapshotMode}
+                                        />
+                                    </th>
+                                    <th rowSpan={2} className="border border-black px-1.5 py-1 text-center font-bold">Đơn Vị<br />Tính</th>
+                                    <th colSpan={hasModule('inbound_conversion') && targetUnit ? 2 : 1} className="border border-black px-1.5 py-1 text-center font-bold">Số Lượng</th>
+                                </tr>
+                                <tr>
+                                    <th className="border border-black px-1.5 py-1 text-center font-bold">Thực Nhập</th>
+                                    {hasModule('inbound_conversion') && targetUnit && (
+                                        <th className="border border-black px-1.5 py-1 text-center font-bold">Quy Đổi<br />({targetUnit})</th>
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((item, index) => {
+                                    const productSource = item.products as any || {}
+                                    const spec = calculateItemSpecification(
+                                        item.unit,
+                                        item.quantity,
+                                        productSource,
+                                        unitsMap
+                                    )
+                                    const quyCach = spec.quyCach
+                                    const displayName = displayInternalCode && (item.products as any)?.internal_name
+                                        ? (item.products as any).internal_name
+                                        : item.product_name || 'N/A'
+
+                                    return (
+                                        <tr key={item.id} className="font-bold">
+                                            <td className="border border-black px-1.5 py-1 text-center">{index + 1}</td>
+                                            <td className="border border-black px-1.5 py-1 text-left leading-tight break-words whitespace-normal">{displayName}</td>
+                                            <td className="border border-black px-1.5 py-1 text-center">
+                                                <EditableText
+                                                    value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
+                                                    onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
+                                                    className="text-center w-full min-w-0"
+                                                    isSnapshot={isSnapshotMode}
+                                                />
+                                            </td>
+                                            <td className="border border-black px-1.5 py-1 text-center">{(item.unit || '-').split('(')[0].trim()}</td>
+                                            <td className="border border-black px-1.5 py-1 text-center">
+                                                {formatQuantityFull(item.quantity)}
+                                            </td>
+                                            {hasModule('inbound_conversion') && targetUnit && (
+                                                <td className="border border-black px-1.5 py-1 text-center">
+                                                    {(() => {
+                                                        if (!item.products) return '-'
+                                                        const result = convertUnit(
+                                                            item.products?.id || (item as any).product_id || null,
+                                                            item.unit || '',
+                                                            targetUnit,
+                                                            item.quantity,
+                                                            item.products.unit || null
+                                                        )
+                                                        return result !== null ? formatQuantityFull(result) : '-'
+                                                    })()}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    )
+                                })}
+                                {items.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="border border-black px-2 py-4 text-center text-gray-400">
+                                            Không có hàng hóa
+                                        </td>
+                                    </tr>
+                                )}
+                                {/* Total Row - Excel Style */}
+                                <tr className="font-bold print-total-row">
+                                    <td className="border border-black px-1.5 py-1 text-center"></td>
+                                    <td className="border border-black px-1.5 py-1 text-left">Cộng</td>
+                                    <td className="border border-black px-1.5 py-1 text-center">X</td>
+                                    <td className="border border-black px-1.5 py-1 text-center">X</td>
+                                    <td className="border border-black px-1.5 py-1 text-center">
+                                        {formatQuantityFull(items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0))}
+                                    </td>
+                                    {hasModule('inbound_conversion') && targetUnit && (
+                                        <td className="border border-black px-1.5 py-1 text-center">
+                                            {formatQuantityFull(items.reduce((sum: number, item) => {
+                                                if (!item.products) return sum
+                                                const result = convertUnit(
+                                                    item.products?.id || (item as any).product_id || null,
+                                                    item.unit || '',
+                                                    targetUnit,
+                                                    item.quantity,
+                                                    item.products.unit || null
+                                                )
+                                                return sum + (result || 0)
+                                            }, 0))}
+                                        </td>
+                                    )}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Signatures - Excel Style */}
+                    <div className="mt-4 print:mt-3 grid grid-cols-3 gap-2 text-[13px] print:text-[11px] font-bold text-black items-start print:break-inside-avoid">
+                        <div className="text-left pl-4">Người Nhận</div>
+                        <div className="text-center">Thủ kho</div>
+                        <div className="text-right pr-4">GĐ Nhà Máy</div>
+                    </div>
+                </>
             ) : (
                 <>
                     {/* Header with Shared Component */}
@@ -1614,6 +1855,12 @@ function InboundPrintContent({
                             word-break: break-word !important;
                             overflow-wrap: break-word !important;
                         }
+                        #print-ready table.excel-items-table col.col-stt { width: 9mm !important; }
+                        #print-ready table.excel-items-table col.col-name { width: auto !important; }
+                        #print-ready table.excel-items-table col.col-spec { width: 21mm !important; }
+                        #print-ready table.excel-items-table col.col-unit { width: 17mm !important; }
+                        #print-ready table.excel-items-table col.col-qty { width: 20mm !important; }
+                        #print-ready table.excel-items-table col.col-conv { width: 22mm !important; }
                         #print-ready .print-total-row td {
                             padding-top: 8px !important;
                             padding-bottom: 8px !important;

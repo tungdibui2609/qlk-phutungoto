@@ -36,5 +36,11 @@ export const PRINT_MODULES: PrintModule[] = [
         description: 'In bảng danh sách và biểu mẫu số thứ tự LOT theo ngày / lô sản xuất.',
         icon: Hash,
         is_basic: true
+    },
+    {
+        id: 'print_a5_batch',
+        name: 'In nhanh khổ A5 (Mẫu Excel & Hàng loạt)',
+        description: 'Ưu tiên in trực tiếp phiếu nội bộ khổ A5 mẫu Excel cho máy in kim và hỗ trợ tích chọn nhiều phiếu để in liên tiếp.',
+        icon: Printer
     }
 ]

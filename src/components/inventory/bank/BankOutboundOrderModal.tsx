@@ -268,7 +268,7 @@ export default function BankOutboundOrderModal({
         setSubmitting(true)
         try {
             const customerObj = customers.find(c => c.id === selectedCustomerId)
-            const resolvedCustomerName = customerName || customerObj?.name || 'Khách hàng'
+            const resolvedCustomerName = customerName || customerObj?.name || ''
 
             const orderPayload: any = {
                 code: code.trim(),

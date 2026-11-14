@@ -15,7 +15,8 @@ import { getOrderTypeBadgeColor } from '@/lib/orderTypeUtils'
 
 export default function OutboundPage() {
     const { showToast } = useToast()
-    const { systemType, currentSystem } = useSystem()
+    const { systemType, currentSystem, hasModule } = useSystem()
+    const useA5BatchPrint = hasModule('print_a5_batch')
     const [orders, setOrders] = useState<any[]>([])
     const [loading, setLoading] = useState(true)
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
@@ -634,10 +635,31 @@ export default function OutboundPage() {
                         </button>
                     </div>
 
-                    {/* Download selected orders (Only when orders selected) */}
+                    {/* Download / Print selected orders (Only when orders selected) */}
                     {selectedOrderIds.size > 0 && (
-                        <button
-                            onClick={handleBatchDownload}
+                        <>
+                            {useA5BatchPrint && (
+                                <button
+                                    onClick={() => {
+                                        const orderedIds = orders
+                                            .filter(o => selectedOrderIds.has(o.id))
+                                            .map(o => o.id)
+                                        const idsToPrint = orderedIds.length > 0 ? orderedIds : Array.from(selectedOrderIds)
+                                        if (idsToPrint.length === 1) {
+                                            window.open(`/print/outbound?id=${idsToPrint[0]}&type=internal&size=A5&autoPrint=1&template=excel`, '_blank')
+                                        } else {
+                                            window.open(`/print/outbound?ids=${idsToPrint.join(',')}&type=internal&size=A5&autoPrint=1&template=excel`, '_blank')
+                                        }
+                                    }}
+                                    className="flex items-center h-9 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+                                    title="In liên tiếp các phiếu đã chọn (khổ A5 máy in kim)"
+                                >
+                                    <Printer className="w-3.5 h-3.5 mr-1.5" />
+                                    <span>In {selectedOrderIds.size} phiếu (A5)</span>
+                                </button>
+                            )}
+                            <button
+                                onClick={handleBatchDownload}
                             disabled={isBatchDownloading}
                             className="flex items-center h-9 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold shadow-xs transition-all active:scale-95 cursor-pointer whitespace-nowrap"
                         >
@@ -653,6 +675,7 @@ export default function OutboundPage() {
                                 </>
                             )}
                         </button>
+                        </>
                     )}
 
                     {/* Primary Action Button */}
@@ -936,9 +959,14 @@ export default function OutboundPage() {
                                                         <div className="inline-flex items-center justify-end gap-1">
                                                             {/* Quick Print Button */}
                                                             <button 
-                                                                onClick={() => window.open(`/print/outbound?id=${order.id}`, '_blank')}
+                                                                onClick={() => window.open(
+                                                                    useA5BatchPrint
+                                                                        ? `/print/outbound?id=${order.id}&type=internal&size=A5&autoPrint=1&template=excel`
+                                                                        : `/print/outbound?id=${order.id}`,
+                                                                    '_blank'
+                                                                )}
                                                                 className="p-1.5 text-stone-500 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-950/30 rounded-lg transition-colors cursor-pointer"
-                                                                title="In phiếu xuất"
+                                                                title={useA5BatchPrint ? "In nhanh phiếu xuất nội bộ (A5)" : "In phiếu xuất"}
                                                             >
                                                                 <Printer className="w-4 h-4" />
                                                             </button>
@@ -1031,7 +1059,12 @@ export default function OutboundPage() {
                                             onClick={() => {
                                                 const id = actionMenu.id
                                                 setActionMenu(null)
-                                                window.open(`/print/outbound?id=${id}`, '_blank')
+                                                window.open(
+                                                    useA5BatchPrint
+                                                        ? `/print/outbound?id=${id}&type=internal&size=A5&autoPrint=1&template=excel`
+                                                        : `/print/outbound?id=${id}`,
+                                                    '_blank'
+                                                )
                                             }}
                                             className="w-full px-3 py-1.5 text-xs text-stone-700 dark:text-gray-200 hover:bg-blue-50 dark:hover:bg-zinc-700 flex items-center gap-2 transition-colors cursor-pointer"
                                         >

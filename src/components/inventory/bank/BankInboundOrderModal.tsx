@@ -268,7 +268,7 @@ export default function BankInboundOrderModal({
                 status: 'Completed',
                 warehouse_name: warehouseName,
                 supplier_id: supplierId || null,
-                supplier_name: supplierObj?.name || 'Nhà cung cấp',
+                supplier_name: supplierObj?.name || '',
                 supplier_address: supplierAddress,
                 supplier_phone: supplierPhone,
                 description: description,

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
 import { Printer, Loader2, Download, Hash, FileSpreadsheet } from 'lucide-react'
@@ -42,29 +42,294 @@ interface OutboundOrder {
     company_id?: string
 }
 
+interface OutboundPrintContentProps {
+    orderIdOverride?: string
+    isBatchItem?: boolean
+    isLastBatchItem?: boolean
+    batchPrintSize?: 'A4' | 'A5'
+    batchPrintType?: 'internal' | 'official' | 'bank'
+    batchDisplayInternalCode?: boolean
+    onBatchReady?: (id: string) => void
+}
+
 export default function OutboundPrintPage() {
     return (
         <React.Suspense fallback={<div className="p-8 text-center">Đang tải...</div>}>
-            <OutboundPrintContent />
+            <OutboundPrintRouter />
         </React.Suspense>
     )
 }
 
-function OutboundPrintContent() {
+function OutboundPrintRouter() {
     const searchParams = useSearchParams()
-    const orderId = searchParams.get('id')
+    const idsParam = searchParams.get('ids')
+    const orderIds = idsParam
+        ? idsParam.split(',').map(s => s.trim()).filter(Boolean)
+        : []
+
+    if (orderIds.length > 0) {
+        return <BatchOutboundPrint orderIds={orderIds} />
+    }
+
+    return <OutboundPrintContent />
+}
+
+function BatchOutboundPrint({ orderIds }: { orderIds: string[] }) {
+    const searchParams = useSearchParams()
+    const typeParam = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
+    const sizeParam = searchParams.get('size')?.toUpperCase() === 'A5' ? 'A5' : 'A4'
+    const autoPrintParam = searchParams.get('autoPrint') === '1' || searchParams.get('autoPrint') === 'true'
+
+    const [printSize, setPrintSize] = useState<'A4' | 'A5'>(sizeParam)
+    const [currentPrintType, setCurrentPrintType] = useState<'internal' | 'official' | 'bank'>(typeParam || 'internal')
+    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [readyIds, setReadyIds] = useState<Set<string>>(new Set())
+    const hasAutoPrintedRef = useRef(false)
+
+    const isBank = currentPrintType === 'bank'
+
+    const handleBatchReady = useCallback((id: string) => {
+        setReadyIds(prev => {
+            if (prev.has(id)) return prev
+            const next = new Set(prev)
+            next.add(id)
+            return next
+        })
+    }, [])
+
+    useEffect(() => {
+        if (!autoPrintParam || hasAutoPrintedRef.current) return
+        if (readyIds.size < orderIds.length) return
+
+        hasAutoPrintedRef.current = true
+        const timer = setTimeout(() => {
+            window.print()
+        }, 450)
+        return () => clearTimeout(timer)
+    }, [autoPrintParam, readyIds.size, orderIds.length])
+
+    return (
+        <div className="min-h-screen bg-stone-100 print:bg-white py-4 print:py-0">
+            <div className="max-w-4xl mx-auto mb-3 px-4 py-2.5 bg-white border border-stone-200 rounded-xl shadow-xs flex items-center justify-between gap-3 print:hidden">
+                <div className="text-xs text-stone-600">
+                    In hàng loạt: <strong className="text-stone-900">{orderIds.length}</strong> phiếu xuất
+                    {' • '}Khổ giấy: <strong className="text-emerald-700">{printSize === 'A5' ? 'A5 ngang (máy in kim)' : 'A4'}</strong>
+                    {readyIds.size < orderIds.length ? (
+                        <span className="ml-2 text-amber-600">(Đang tải {readyIds.size}/{orderIds.length}...)</span>
+                    ) : (
+                        <span className="ml-2 text-emerald-600 font-medium">(Đã sẵn sàng)</span>
+                    )}
+                </div>
+                <button
+                    onClick={() => window.print()}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold cursor-pointer transition-colors"
+                >
+                    <Printer size={14} />
+                    In tất cả ({orderIds.length})
+                </button>
+            </div>
+
+            <PrintActionMenu
+                printSize={printSize}
+                onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
+                isDownloading={false}
+                downloadTimer={0}
+                onDownload={() => {}}
+                displayInternalCode={displayInternalCode}
+                onDisplayInternalCodeChange={() => setDisplayInternalCode(prev => !prev)}
+                onPrint={() => window.print()}
+                onExcelExport={() => {}}
+                printType={currentPrintType}
+                onPrintTypeChange={setCurrentPrintType}
+            />
+
+            <div className="flex flex-col items-center print:block gap-6 print:gap-0">
+                {orderIds.map((id, idx) => (
+                    <OutboundPrintContent
+                        key={id}
+                        orderIdOverride={id}
+                        isBatchItem
+                        isLastBatchItem={idx === orderIds.length - 1}
+                        batchPrintSize={printSize}
+                        batchPrintType={currentPrintType}
+                        batchDisplayInternalCode={displayInternalCode}
+                        onBatchReady={handleBatchReady}
+                    />
+                ))}
+            </div>
+
+            {!isBank && printSize === 'A5' ? (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A5 landscape !important;
+                            margin: 0 !important;
+                        }
+                        html, body {
+                            width: 210mm !important;
+                            height: auto !important;
+                            margin: 0 !important;
+                            padding: 0 !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+                        .print-sheet {
+                            width: 210mm !important;
+                            height: 147.5mm !important;
+                            max-height: 147.5mm !important;
+                            max-width: 210mm !important;
+                            min-width: 210mm !important;
+                            margin: 0 !important;
+                            padding: 2mm 20mm 5mm 5mm !important;
+                            box-sizing: border-box !important;
+                            box-shadow: none !important;
+                            border: none !important;
+                            overflow: hidden !important;
+                            font-size: 10px !important;
+                            line-height: 1.1 !important;
+                            page-break-inside: avoid !important;
+                            break-inside: avoid !important;
+                        }
+                        .print-sheet-break {
+                            page-break-after: always !important;
+                            break-after: page !important;
+                        }
+                        .print-sheet-last {
+                            page-break-after: auto !important;
+                            break-after: auto !important;
+                        }
+                        .print-sheet #print-header-top * {
+                            line-height: 1.3 !important;
+                        }
+                        .print-sheet h1 {
+                            font-size: 14px !important;
+                            margin-top: 0px !important;
+                            margin-bottom: 4px !important;
+                            line-height: 1.4 !important;
+                        }
+                        .print-sheet h1 + div,
+                        .print-sheet h1 + div + div {
+                            font-size: 11px !important;
+                            line-height: 1.3 !important;
+                            margin-bottom: 2px !important;
+                        }
+                        .print-sheet #print-header-title {
+                            margin-right: 5mm !important;
+                        }
+                        .print-sheet table {
+                            width: 100% !important;
+                            table-layout: fixed !important;
+                        }
+                        .print-sheet table th {
+                            font-size: 11px !important;
+                            font-weight: bold !important;
+                            padding: 5px 3px !important;
+                        }
+                        .print-sheet table td {
+                            font-size: 10px !important;
+                            padding: 5px 3px !important;
+                        }
+                        .print-sheet table th,
+                        .print-sheet table td {
+                            width: auto !important;
+                            min-width: 0 !important;
+                            max-width: none !important;
+                            word-break: break-word !important;
+                            overflow-wrap: break-word !important;
+                        }
+                        .print-sheet table.excel-items-table col.col-stt { width: 9mm !important; }
+                        .print-sheet table.excel-items-table col.col-name { width: auto !important; }
+                        .print-sheet table.excel-items-table col.col-spec { width: 21mm !important; }
+                        .print-sheet table.excel-items-table col.col-unit { width: 17mm !important; }
+                        .print-sheet table.excel-items-table col.col-qty { width: 20mm !important; }
+                        .print-sheet table.excel-items-table col.col-conv { width: 22mm !important; }
+                        .print-sheet .print-total-row td {
+                            padding-top: 8px !important;
+                            padding-bottom: 8px !important;
+                            font-weight: bold !important;
+                            font-size: 11px !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                    .print-sheet * {
+                        color: black !important;
+                    }
+                `}</style>
+            ) : (
+                <style jsx global>{`
+                    @media print {
+                        @page {
+                            size: A4 portrait !important;
+                            margin: 12mm 15mm 12mm 15mm !important;
+                        }
+                        html, body {
+                            width: 100% !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                            background: white !important;
+                        }
+                        .print-sheet {
+                            width: 100% !important;
+                            max-width: 100% !important;
+                            height: auto !important;
+                            overflow: visible !important;
+                            padding: 0 !important;
+                        }
+                        .print-sheet-break {
+                            page-break-after: always !important;
+                            break-after: page !important;
+                        }
+                        .print-sheet-last {
+                            page-break-after: auto !important;
+                            break-after: auto !important;
+                        }
+                        thead {
+                            display: table-header-group !important;
+                        }
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                    .print-sheet * {
+                        color: black !important;
+                    }
+                `}</style>
+            )}
+        </div>
+    )
+}
+
+function OutboundPrintContent({
+    orderIdOverride,
+    isBatchItem = false,
+    isLastBatchItem = true,
+    batchPrintSize,
+    batchPrintType,
+    batchDisplayInternalCode,
+    onBatchReady
+}: OutboundPrintContentProps = {}) {
+    const searchParams = useSearchParams()
+    const orderId = orderIdOverride ?? searchParams.get('id')
     const typeParam = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
     const [currentPrintType, setCurrentPrintType] = useState<'internal' | 'official' | 'bank'>(typeParam || 'official')
 
     useEffect(() => {
+        if (isBatchItem) return
         const t = searchParams.get('type') as 'internal' | 'official' | 'bank' | null
         if (t) setCurrentPrintType(t)
-    }, [searchParams])
+    }, [searchParams, isBatchItem])
 
-    const printType = currentPrintType
+    const printType = isBatchItem && batchPrintType ? batchPrintType : currentPrintType
     const isSnapshot = searchParams.get('snapshot') === '1'
     const isInternal = printType === 'internal'
     const isBank = printType === 'bank'
+    const isBankSource = searchParams.get('source') === 'bank'
+    const isExcelLayout = (isBankSource || searchParams.get('template') === 'excel') && isInternal
 
     // Check for company info in params (from screenshot service)
     const cmpName = searchParams.get('cmp_name')
@@ -90,11 +355,15 @@ function OutboundPrintContent() {
     const [docQuantities, setDocQuantities] = useState<Record<string, string>>({})
     const [systemConfig, setSystemConfig] = useState<any>(null)
     const [unitsMap, setUnitsMap] = useState<Record<string, string>>({})
-    const [displayInternalCode, setDisplayInternalCode] = useState(false)
+    const [localDisplayInternalCode, setLocalDisplayInternalCode] = useState(false)
+    const displayInternalCode = isBatchItem && batchDisplayInternalCode !== undefined
+        ? batchDisplayInternalCode
+        : localDisplayInternalCode
+    const setDisplayInternalCode = setLocalDisplayInternalCode
     const { convertUnit } = useUnitConversion()
 
     // Use shared hook for company info
-    const { companyInfo, logoSrc } = usePrintCompanyInfo({
+    const { companyInfo, logoSrc, loading: companyLoading } = usePrintCompanyInfo({
         token: searchParams.get('token'),
         initialCompanyInfo
     })
@@ -175,7 +444,20 @@ function OutboundPrintContent() {
     const [signPerson5, setSignPerson5] = useState('')
 
     // Print size state
-    const [printSize, setPrintSize] = useState<'A4' | 'A5'>('A4')
+    const sizeParam = searchParams.get('size')?.toUpperCase() === 'A5' ? 'A5' : 'A4'
+    const autoPrintParam = searchParams.get('autoPrint') === '1' || searchParams.get('autoPrint') === 'true'
+    const [localPrintSize, setLocalPrintSize] = useState<'A4' | 'A5'>(sizeParam)
+    const printSize = isBatchItem && batchPrintSize ? batchPrintSize : localPrintSize
+    const setPrintSize = setLocalPrintSize
+    const hasAutoPrintedRef = useRef(false)
+
+    useEffect(() => {
+        if (isBatchItem) return
+        const s = searchParams.get('size')?.toUpperCase()
+        if (s === 'A5' || s === 'A4') {
+            setLocalPrintSize(s)
+        }
+    }, [searchParams, isBatchItem])
 
     // Inject @page size into document.head so Chrome print preview picks it up
 
@@ -275,7 +557,8 @@ function OutboundPrintContent() {
                         setEditMonth(searchParams.get('editMonth') || (d.getMonth() + 1).toString())
                         setEditYear(searchParams.get('editYear') || d.getFullYear().toString())
                     }
-                    setEditCustomerName(searchParams.get('editCustomerName') || o.customer_name || '')
+                    const rawCustomerName = searchParams.get('editCustomerName') || o.customer_name || ''
+                    setEditCustomerName(rawCustomerName.trim() === 'Khách hàng' ? '' : rawCustomerName)
                     setEditCustomerAddress(searchParams.get('editCustomerAddress') || o.customer_address || '')
                     setEditWarehouse(searchParams.get('editWarehouse') || o.warehouse_name || 'Kho mặc định')
                     setEditDescription(searchParams.get('editDescription') || o.description || '')
@@ -409,6 +692,24 @@ function OutboundPrintContent() {
         window.print()
     }
 
+    const conversionReady = !hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0
+
+    useEffect(() => {
+        if (loading || companyLoading || !order || !conversionReady) return
+
+        if (isBatchItem) {
+            if (orderId) onBatchReady?.(orderId)
+            return
+        }
+
+        if (!autoPrintParam || hasAutoPrintedRef.current) return
+        hasAutoPrintedRef.current = true
+        const timer = setTimeout(() => {
+            window.print()
+        }, 400)
+        return () => clearTimeout(timer)
+    }, [isBatchItem, orderId, onBatchReady, autoPrintParam, loading, companyLoading, order, conversionReady])
+
     const handleDownload = () => handleCapture(false)
 
     const handleExcelExport = async () => {
@@ -516,8 +817,13 @@ function OutboundPrintContent() {
     }
 
     return (
-        <div id="print-ready" data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined} className={`pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' && !isBank ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''}`}>
-            {isCapturing && (
+        <div
+            id={isBatchItem ? undefined : "print-ready"}
+            data-ready={!loading && order && items.length >= 0 && (!hasModule('outbound_conversion') || !targetUnit || Object.keys(unitsMap).length > 0) ? "true" : undefined}
+            style={isExcelLayout ? { fontFamily: "'Times New Roman', Times, serif" } : undefined}
+            className={`print-sheet ${isBatchItem ? (isLastBatchItem ? 'print-sheet-last' : 'print-sheet-break') : ''} pt-0 px-6 pb-6 print:p-0 print:pt-0 print:px-0 w-full max-w-4xl print:max-w-none print:w-full print:mx-0 mx-auto bg-white text-black text-[13px] ${printSize === 'A5' && !isBank ? 'print:text-[12px] print-page-a5' : 'print:text-[13px] print-page-a4'} leading-relaxed ${isCapturing ? 'shadow-none !max-w-none !w-[1150px]' : ''} ${isBatchItem ? 'shadow-sm border border-stone-200 print:shadow-none print:border-none' : ''}`}
+        >
+            {isCapturing && !isBatchItem && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
                     #print-ready {
@@ -535,7 +841,7 @@ function OutboundPrintContent() {
                     }
                 `}} />
             )}
-            {(printSize === 'A4' || isBank) && !isCapturing && (
+            {(printSize === 'A4' || isBank) && !isCapturing && !isBatchItem && (
                 <style dangerouslySetInnerHTML={{
                     __html: `
                     @media print {
@@ -547,19 +853,21 @@ function OutboundPrintContent() {
                 `}} />
             )}
             {/* Consolidated Menu */}
-            <PrintActionMenu
-                printSize={printSize}
-                onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
-                isDownloading={isDownloadingState}
-                downloadTimer={downloadTimer}
-                onDownload={handleDownload}
-                displayInternalCode={displayInternalCode}
-                onDisplayInternalCodeChange={() => setDisplayInternalCode(!displayInternalCode)}
-                onPrint={handlePrint}
-                onExcelExport={handleExcelExport}
-                printType={currentPrintType}
-                onPrintTypeChange={setCurrentPrintType}
-            />
+            {!isBatchItem && (
+                <PrintActionMenu
+                    printSize={printSize}
+                    onPrintSizeChange={() => setPrintSize(prev => prev === 'A4' ? 'A5' : 'A4')}
+                    isDownloading={isDownloadingState}
+                    downloadTimer={downloadTimer}
+                    onDownload={handleDownload}
+                    displayInternalCode={displayInternalCode}
+                    onDisplayInternalCodeChange={() => setDisplayInternalCode(!displayInternalCode)}
+                    onPrint={handlePrint}
+                    onExcelExport={handleExcelExport}
+                    printType={currentPrintType}
+                    onPrintTypeChange={setCurrentPrintType}
+                />
+            )}
 
             {isBank ? (
                 <PrintBankOutbound
@@ -570,6 +878,271 @@ function OutboundPrintContent() {
                     printSize={printSize}
                     displayInternalCode={displayInternalCode}
                 />
+            ) : isExcelLayout ? (
+                <>
+                    {/* Header */}
+                    <PrintHeader
+                        companyInfo={companyInfo}
+                        logoSrc={logoSrc}
+                        size="large"
+                        isA5={printSize === 'A5'}
+                    />
+
+                    {/* Title - Excel Style */}
+                    <div className={`relative text-center ${printSize === 'A5' ? 'mt-1.5 mb-1.5' : 'mt-3 mb-2'}`}>
+                        <h1 className={`${printSize === 'A5' ? 'text-base' : 'text-xl'} font-bold tracking-wide text-black`}>
+                            PHIẾU XUẤT KHO
+                        </h1>
+                        <div className="text-sm font-bold text-black mt-0.5">
+                            <span className={`print:hidden ${isSnapshotMode ? 'hidden' : ''}`}>
+                                Ngày{' '}
+                                <input
+                                    type="text"
+                                    value={editDay}
+                                    onChange={(e) => setEditDay(e.target.value)}
+                                    className="w-7 text-center border-b border-dashed border-gray-400 bg-transparent focus:outline-none font-bold"
+                                />
+                                {' '}tháng{' '}
+                                <input
+                                    type="text"
+                                    value={editMonth}
+                                    onChange={(e) => setEditMonth(e.target.value)}
+                                    className="w-7 text-center border-b border-dashed border-gray-400 bg-transparent focus:outline-none font-bold"
+                                />
+                                {' '}năm{' '}
+                                <input
+                                    type="text"
+                                    value={editYear}
+                                    onChange={(e) => setEditYear(e.target.value)}
+                                    className="w-12 text-center border-b border-dashed border-gray-400 bg-transparent focus:outline-none font-bold"
+                                />
+                            </span>
+                            <span className={`hidden print:inline ${isSnapshotMode ? 'inline' : ''}`}>
+                                Ngày {editDay} tháng {editMonth} năm {editYear}
+                            </span>
+                        </div>
+                        <div className="text-sm font-bold text-black mt-0.5">
+                            Số : {order.code}
+                        </div>
+                    </div>
+
+                    {/* Info rows - compact 4 lines matching Excel */}
+                    <div className="mt-1.5 space-y-1.5 text-[13px] print:text-[11.5px] leading-snug font-bold text-black">
+                        <div className="grid grid-cols-[185px_1fr] print:grid-cols-[48mm_1fr] gap-x-3 items-start">
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Khách Hàng:</span>
+                                <EditableText
+                                    value={editCustomerName}
+                                    onChange={setEditCustomerName}
+                                    className="ml-1.5 flex-1 min-w-0"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Địa chỉ ( bộ phận ) :</span>
+                                <EditableText
+                                    value={editCustomerAddress}
+                                    onChange={setEditCustomerAddress}
+                                    className="ml-1.5 flex-1 min-w-0"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        </div>
+
+                        {editReason && (
+                            <div className="flex items-start">
+                                <span className="shrink-0">- Lý Do Xuất Kho :</span>
+                                <EditableText
+                                    value={editReason}
+                                    onChange={setEditReason}
+                                    className="ml-1.5 flex-1"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                        )}
+
+                        <div className="grid grid-cols-[185px_1fr] print:grid-cols-[48mm_1fr] gap-x-3 items-baseline">
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Xuất tại kho:</span>
+                                <EditableText
+                                    value={editWarehouse}
+                                    onChange={setEditWarehouse}
+                                    className="ml-1 flex-1 min-w-0"
+                                    isSnapshot={isSnapshotMode}
+                                />
+                            </div>
+                            <div className="flex items-baseline min-w-0">
+                                <span className="shrink-0">- Địa điểm:</span>
+                                <input
+                                    type="text"
+                                    value={editLocation}
+                                    onChange={(e) => setEditLocation(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} flex-1 ml-1 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none min-w-0`}
+                                />
+                                <span className={`hidden print:inline ml-1 flex-1 break-words whitespace-normal ${isSnapshotMode ? 'inline' : ''}`}>{editLocation || '\u00A0'}</span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-[185px_210px_1fr] print:grid-cols-[48mm_58mm_1fr] gap-x-3 items-center">
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- BS Xe :</span>
+                                <input
+                                    type="text"
+                                    value={editVehicleNumber}
+                                    onChange={(e) => setEditVehicleNumber(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} ml-1.5 flex-1 min-w-0 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                                />
+                                <span className={`hidden print:inline ml-1.5 min-w-0 ${isSnapshotMode ? 'inline' : ''}`}>{editVehicleNumber || '\u00A0'}</span>
+                            </div>
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Số Cont :</span>
+                                <input
+                                    type="text"
+                                    value={editContainerNumber}
+                                    onChange={(e) => setEditContainerNumber(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} ml-1.5 flex-1 min-w-0 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                                />
+                                <span className={`hidden print:inline ml-1.5 min-w-0 ${isSnapshotMode ? 'inline' : ''}`}>{editContainerNumber || '\u00A0'}</span>
+                            </div>
+                            <div className="flex items-center min-w-0">
+                                <span className="shrink-0">- Số Seal :</span>
+                                <input
+                                    type="text"
+                                    value={editSealNumber}
+                                    onChange={(e) => setEditSealNumber(e.target.value)}
+                                    className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} ml-1.5 flex-1 min-w-0 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none`}
+                                />
+                                <span className={`hidden print:inline ml-1.5 min-w-0 ${isSnapshotMode ? 'inline' : ''}`}>{editSealNumber || '\u00A0'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Items Table - Excel Style */}
+                    <div className="mt-2 w-full">
+                        <table className="excel-items-table w-full print:w-full border-collapse text-sm text-black" style={{ width: '100%' }}>
+                            <colgroup>
+                                <col className="col-stt w-10" />
+                                <col className="col-name" />
+                                <col className="col-spec w-20" />
+                                <col className="col-unit w-16" />
+                                <col className="col-qty w-20" />
+                                {hasModule('outbound_conversion') && targetUnit && <col className="col-conv w-22" />}
+                            </colgroup>
+                            <thead>
+                                <tr>
+                                    <th rowSpan={2} className="border border-black px-1.5 py-1 text-center font-bold">STT</th>
+                                    <th rowSpan={2} className="border border-black px-2 py-1 text-center font-bold">Tên, nhãn hiệu quy cách, phẩm chất vật tư, dụng cụ, sp, hàng hoá</th>
+                                    <th rowSpan={2} className="border border-black px-1 py-1 text-center font-bold">
+                                        <EditableText
+                                            value={editQuyCachTitle}
+                                            onChange={setEditQuyCachTitle}
+                                            className="text-center font-bold min-w-0 w-full"
+                                            isSnapshot={isSnapshotMode}
+                                        />
+                                    </th>
+                                    <th rowSpan={2} className="border border-black px-1.5 py-1 text-center font-bold">Đơn Vị<br />Tính</th>
+                                    <th colSpan={hasModule('outbound_conversion') && targetUnit ? 2 : 1} className="border border-black px-1.5 py-1 text-center font-bold">Số Lượng</th>
+                                </tr>
+                                <tr>
+                                    <th className="border border-black px-1.5 py-1 text-center font-bold">Thực Xuất</th>
+                                    {hasModule('outbound_conversion') && targetUnit && (
+                                        <th className="border border-black px-1.5 py-1 text-center font-bold">Quy Đổi<br />({targetUnit})</th>
+                                    )}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {items.map((item, index) => {
+                                    const productSource = item.products as any || {}
+                                    const spec = calculateItemSpecification(
+                                        item.unit,
+                                        item.quantity,
+                                        productSource,
+                                        unitsMap
+                                    )
+                                    const quyCach = spec.quyCach
+                                    const displayName = displayInternalCode && (item.products as any)?.internal_name
+                                        ? (item.products as any).internal_name
+                                        : item.product_name || 'N/A'
+
+                                    return (
+                                        <tr key={item.id} className="font-bold">
+                                            <td className="border border-black px-1.5 py-1 text-center">{index + 1}</td>
+                                            <td className="border border-black px-1.5 py-1 text-left leading-tight break-words whitespace-normal">{displayName}</td>
+                                            <td className="border border-black px-1.5 py-1 text-center">
+                                                <EditableText
+                                                    value={editQuyCach[item.id] !== undefined ? editQuyCach[item.id] : quyCach}
+                                                    onChange={(val: string) => setEditQuyCach(prev => ({ ...prev, [item.id]: val }))}
+                                                    className="text-center w-full min-w-0"
+                                                    isSnapshot={isSnapshotMode}
+                                                />
+                                            </td>
+                                            <td className="border border-black px-1.5 py-1 text-center">{(item.unit || '-').split('(')[0].trim()}</td>
+                                            <td className="border border-black px-1.5 py-1 text-center">
+                                                {formatQuantityFull(item.quantity)}
+                                            </td>
+                                            {hasModule('outbound_conversion') && targetUnit && (
+                                                <td className="border border-black px-1.5 py-1 text-center">
+                                                    {(() => {
+                                                        if (!item.products) return '-'
+                                                        const result = convertUnit(
+                                                            item.products?.id || (item as any).product_id || null,
+                                                            item.unit || '',
+                                                            targetUnit,
+                                                            item.quantity,
+                                                            item.products.unit || null
+                                                        )
+                                                        return result !== null ? formatQuantityFull(result) : '-'
+                                                    })()}
+                                                </td>
+                                            )}
+                                        </tr>
+                                    )
+                                })}
+                                {items.length === 0 && (
+                                    <tr>
+                                        <td colSpan={6} className="border border-black px-2 py-4 text-center text-gray-400">
+                                            Không có hàng hóa
+                                        </td>
+                                    </tr>
+                                )}
+                                {/* Total Row - Excel Style */}
+                                <tr className="font-bold print-total-row">
+                                    <td className="border border-black px-1.5 py-1 text-center"></td>
+                                    <td className="border border-black px-1.5 py-1 text-left">Cộng</td>
+                                    <td className="border border-black px-1.5 py-1 text-center">X</td>
+                                    <td className="border border-black px-1.5 py-1 text-center">X</td>
+                                    <td className="border border-black px-1.5 py-1 text-center">
+                                        {formatQuantityFull(items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0))}
+                                    </td>
+                                    {hasModule('outbound_conversion') && targetUnit && (
+                                        <td className="border border-black px-1.5 py-1 text-center">
+                                            {formatQuantityFull(items.reduce((sum: number, item) => {
+                                                if (!item.products) return sum
+                                                const result = convertUnit(
+                                                    item.products?.id || (item as any).product_id || null,
+                                                    item.unit || '',
+                                                    targetUnit,
+                                                    item.quantity,
+                                                    item.products.unit || null
+                                                )
+                                                return sum + (result || 0)
+                                            }, 0))}
+                                        </td>
+                                    )}
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Signatures - Excel Style (5 columns) */}
+                    <div className="mt-4 print:mt-3 grid grid-cols-5 gap-1 text-[13px] print:text-[11px] font-bold text-black items-start print:break-inside-avoid">
+                        <div className="text-left pl-2">Người Nhận</div>
+                        <div className="text-center">Tài Xế</div>
+                        <div className="text-center">TP.QLCL</div>
+                        <div className="text-center">Thủ kho</div>
+                        <div className="text-right pr-2">GĐ Nhà Máy</div>
+                    </div>
+                </>
             ) : (
                 <>
             {/* Header with Shared Component */}
@@ -1051,7 +1624,7 @@ function OutboundPrintContent() {
             )}
 
 
-            {isBank ? (
+            {!isBatchItem && (isBank ? (
                 <style jsx global>{`
                     @media print {
                         @page {
@@ -1188,6 +1761,12 @@ function OutboundPrintContent() {
                             word-break: break-word !important;
                             overflow-wrap: break-word !important;
                         }
+                        #print-ready table.excel-items-table col.col-stt { width: 9mm !important; }
+                        #print-ready table.excel-items-table col.col-name { width: auto !important; }
+                        #print-ready table.excel-items-table col.col-spec { width: 21mm !important; }
+                        #print-ready table.excel-items-table col.col-unit { width: 17mm !important; }
+                        #print-ready table.excel-items-table col.col-qty { width: 20mm !important; }
+                        #print-ready table.excel-items-table col.col-conv { width: 22mm !important; }
                         #print-ready .print-total-row td {
                             padding-top: 8px !important;
                             padding-bottom: 8px !important;
@@ -1265,7 +1844,7 @@ function OutboundPrintContent() {
                         color: black !important;
                     }
                 `}</style>
-            )}
+            ))}
 
             {
                 isSnapshot && (
