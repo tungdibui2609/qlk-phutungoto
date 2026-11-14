@@ -28,6 +28,20 @@ export async function logActivity({
     systemCode
 }: LogActivityParams) {
     try {
+        // DB Triggers (trg_audit_lots_changes, trg_audit_lot_items_changes, trg_audit_positions_changes)
+        // đã tự động ghi nhật ký 100% cho các thao tác này ở tầng PostgreSQL.
+        // Bỏ qua ghi tay ở frontend để tránh sinh 2 dòng trùng lặp trong audit_logs.
+        if (tableName === 'lots' && (action === 'CREATE' || action === 'UPDATE')) {
+            return
+        }
+        if (
+            tableName === 'positions' &&
+            action === 'UPDATE' &&
+            ((oldData && 'lot_id' in oldData) || (newData && 'lot_id' in newData))
+        ) {
+            return
+        }
+
         // If userId is not provided, try to get it from the session
         let changedBy = userId
         if (!changedBy) {

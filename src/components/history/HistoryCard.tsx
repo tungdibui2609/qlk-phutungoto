@@ -25,6 +25,8 @@ export default function HistoryCard({ log }: HistoryCardProps) {
         if (!data) return log.record_id.slice(0, 8) + '...'
 
         if (data.code) return data.code
+        if (data._lot_code) return data._lot_code
+        if (data._position_code) return data._position_code
         if (data.name) return data.name
         if (data.title) return data.title // For tasks?
 
@@ -37,6 +39,22 @@ export default function HistoryCard({ log }: HistoryCardProps) {
         switch (log.table_name) {
             case 'lots':
                 return `LOT: ${name}`
+            case 'lot_items': {
+                const oldQty = log.old_data?.quantity
+                const newQty = log.new_data?.quantity
+                const unit = log.new_data?.unit || log.old_data?.unit || ''
+                if (log.action === 'UPDATE' && oldQty !== undefined && newQty !== undefined && oldQty !== newQty) {
+                    const diff = Number((newQty - oldQty).toFixed(3))
+                    return `Chi tiết LOT ${name}: ${oldQty} → ${newQty} ${unit} (${diff > 0 ? '+' : ''}${diff})`
+                }
+                if (log.action === 'CREATE' && newQty !== undefined) {
+                    return `Thêm hàng vào LOT ${name}: +${newQty} ${unit}`
+                }
+                if (log.action === 'DELETE' && oldQty !== undefined) {
+                    return `Xóa hàng khỏi LOT ${name}: -${oldQty} ${unit}`
+                }
+                return `Chi tiết LOT: ${name}`
+            }
             case 'inbound_orders':
                 return `Nhập kho: ${name}`
             case 'outbound_orders':

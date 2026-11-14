@@ -191,16 +191,16 @@ export async function fetchDailyFluctuation(params: {
     const fromMs = new Date(fromIso).getTime()
     const toMs = new Date(toIso).getTime()
 
-    // 1. Fetch audit_logs for lots & positions in the date range
+    // 1. Fetch audit_logs for lots, lot_items & positions in the date range
     const { data: rawLogs, error: logsError } = await supabase
         .from('audit_logs')
         .select('*')
         .eq('system_code', systemCode)
-        .in('table_name', ['lots', 'positions'])
+        .in('table_name', ['lots', 'lot_items', 'positions'])
         .gte('created_at', fromIso)
         .lte('created_at', toIso)
         .order('created_at', { ascending: false })
-        .limit(2000)
+        .limit(3000)
 
     if (logsError) throw logsError
     const logs = rawLogs || []
@@ -276,6 +276,26 @@ export async function fetchDailyFluctuation(params: {
             }
             if (newLotId && UUID_REGEX.test(newLotId) && !lotMap.has(newLotId)) {
                 missingLotIds.add(newLotId)
+            }
+        }
+        if (log.table_name === 'lot_items') {
+            for (const snap of [log.old_data, log.new_data]) {
+                if (!snap) continue
+                if (snap.product_id && !productMap.has(snap.product_id)) {
+                    missingProductIds.add(snap.product_id)
+                }
+                if (snap.lot_id && UUID_REGEX.test(snap.lot_id) && !lotMap.has(snap.lot_id)) {
+                    if (snap._lot_code) {
+                        lotMap.set(snap.lot_id, {
+                            id: snap.lot_id,
+                            code: snap._lot_code,
+                            daily_seq: snap._daily_seq ?? null,
+                            positions: []
+                        })
+                    } else {
+                        missingLotIds.add(snap.lot_id)
+                    }
+                }
             }
         }
         if (log.table_name === 'lots') {
@@ -435,26 +455,93 @@ export async function fetchDailyFluctuation(params: {
         })
     }
 
-    // 4. Process audit_logs events
+    // 4. Pre-index frontend detailed logs & position logs for deduplication (avoid X2 with DB Triggers)
+    const frontendLotDetailTimes = new Map<string, number[]>()
+    const frontendLotDeleteTimes = new Map<string, number[]>()
+    const lotItemsTriggerTimes = new Map<string, number[]>()
+    const seenPositionKeys = new Map<string, number[]>()
+
+    const isTriggerLog = (log: any) =>
+        log?.old_data?._source === 'db_trigger' || log?.new_data?._source === 'db_trigger'
+
     for (const log of logs) {
         const logTime = new Date(log.created_at).getTime()
+        if (log.table_name === 'lots') {
+            const fromTrigger = isTriggerLog(log)
+            if (!fromTrigger) {
+                const hasItems = Boolean(log.old_data?.lot_items || log.new_data?.lot_items)
+                if (log.action === 'DELETE') {
+                    if (!frontendLotDeleteTimes.has(log.record_id)) frontendLotDeleteTimes.set(log.record_id, [])
+                    frontendLotDeleteTimes.get(log.record_id)!.push(logTime)
+                } else if (hasItems) {
+                    if (!frontendLotDetailTimes.has(log.record_id)) frontendLotDetailTimes.set(log.record_id, [])
+                    frontendLotDetailTimes.get(log.record_id)!.push(logTime)
+                }
+            }
+        } else if (log.table_name === 'lot_items') {
+            const lid = log.new_data?.lot_id || log.old_data?.lot_id
+            if (lid) {
+                if (!lotItemsTriggerTimes.has(lid)) lotItemsTriggerTimes.set(lid, [])
+                lotItemsTriggerTimes.get(lid)!.push(logTime)
+            }
+        }
+    }
+
+    // 5. Process audit_logs events
+    // Gom nhóm các bản ghi lot_items theo (lotId, timeBucket 3s, performer) để hiển thị gọn đẹp
+    type PendingItemGroup = {
+        lotId: string
+        lotCode: string
+        dailySeq: number | null
+        positions: string[]
+        timestamp: string
+        sortTime: number
+        performer: FluctuationPerformer | null
+        hasCreate: boolean
+        hasDelete: boolean
+        deltaMap: Map<string, ProductDelta>
+    }
+    const pendingItemGroups = new Map<string, PendingItemGroup>()
+
+    // Sắp xếp xử lý log không phải db_trigger trước cho positions để ưu tiên giữ log frontend
+    const sortedLogsForProcess = [...logs].sort((a, b) => {
+        const aTrig = isTriggerLog(a) ? 1 : 0
+        const bTrig = isTriggerLog(b) ? 1 : 0
+        return aTrig - bTrig
+    })
+
+    for (const log of sortedLogsForProcess) {
+        const logTime = new Date(log.created_at).getTime()
         const performer = log.changed_by ? userMap.get(log.changed_by) || null : null
+        const fromTrigger = isTriggerLog(log)
 
         if (log.table_name === 'positions' && log.action === 'UPDATE') {
             const oldLotId = log.old_data?.lot_id || null
             const newLotId = log.new_data?.lot_id || null
             if (oldLotId === newLotId) continue
 
-            const posCode = posCodeMap.get(log.record_id) || 'Vị trí'
+            const posDedupeKey = `${log.record_id}_${oldLotId || 'null'}_${newLotId || 'null'}`
+            const prevTimes = seenPositionKeys.get(posDedupeKey) || []
+            if (prevTimes.some(t => Math.abs(t - logTime) <= 10_000)) {
+                continue
+            }
+            prevTimes.push(logTime)
+            seenPositionKeys.set(posDedupeKey, prevTimes)
+
+            const posCode =
+                posCodeMap.get(log.record_id) ||
+                log.new_data?._position_code ||
+                log.old_data?._position_code ||
+                'Vị trí'
             const oldLot = oldLotId ? lotMap.get(oldLotId) : null
             const newLot = newLotId ? lotMap.get(newLotId) : null
 
             let category: FluctuationCategory = 'position_assign'
             let title = 'Gán vị trí'
             let description = ''
-            let primaryLotId = newLotId || oldLotId || ''
-            let primaryLotCode = newLot?.code || oldLot?.code || (primaryLotId ? `LOT-${primaryLotId.slice(0, 6)}` : '')
-            let primaryDailySeq = newLot?.daily_seq ?? oldLot?.daily_seq ?? null
+            const primaryLotId = newLotId || oldLotId || ''
+            const primaryLotCode = newLot?.code || oldLot?.code || (primaryLotId ? `LOT-${primaryLotId.slice(0, 6)}` : '')
+            const primaryDailySeq = newLot?.daily_seq ?? oldLot?.daily_seq ?? null
 
             if (!oldLotId && newLotId) {
                 category = 'position_assign'
@@ -496,6 +583,86 @@ export async function fetchDailyFluctuation(params: {
             continue
         }
 
+        if (log.table_name === 'lot_items') {
+            const snap = log.new_data || log.old_data || {}
+            const lotId = snap.lot_id
+            const productId = snap.product_id || log.old_data?.product_id
+            if (!lotId || !productId) continue
+
+            // Nếu đã có log chi tiết từ LotForm hoặc DELETE LOT từ frontend trong vòng 15s -> bỏ qua để tránh X2
+            const feDetail = frontendLotDetailTimes.get(lotId) || []
+            const feDelete = frontendLotDeleteTimes.get(lotId) || []
+            if (
+                feDetail.some(t => Math.abs(t - logTime) <= 15_000) ||
+                feDelete.some(t => Math.abs(t - logTime) <= 15_000)
+            ) {
+                continue
+            }
+
+            const oldQty = log.action === 'CREATE' ? 0 : Number(log.old_data?.quantity ?? 0)
+            const newQty = log.action === 'DELETE' ? 0 : Number(log.new_data?.quantity ?? 0)
+            const deltaQty = Number((newQty - oldQty).toFixed(6))
+            if (Math.abs(deltaQty) <= 0.000001) continue
+
+            // Nếu là giảm số lượng trùng với sự kiện xuất bán đã trích từ system_history.exports -> bỏ qua để tránh X2
+            if (deltaQty < 0) {
+                const expTimes = exportTimestampsByLot.get(lotId) || []
+                if (expTimes.some(t => Math.abs(t - logTime) <= 90_000)) {
+                    continue
+                }
+            }
+
+            const lotMeta = lotMap.get(lotId)
+            const lotCode = snap._lot_code || lotMeta?.code || `LOT-${String(lotId).slice(0, 6)}`
+            const dailySeq = snap._daily_seq ?? lotMeta?.daily_seq ?? null
+            const posList = (lotMeta?.positions || []).map((p: any) => p.code).filter(Boolean)
+
+            const pMeta = productMap.get(productId)
+            const unit = snap.unit || log.old_data?.unit || pMeta?.unit || 'Đơn vị'
+            const sku = pMeta?.sku || '-'
+            const name = pMeta?.name || 'Sản phẩm'
+
+            const bucket = Math.floor(logTime / 3000)
+            const groupKey = `${lotId}_${bucket}_${performer?.id || 'sys'}`
+            let group = pendingItemGroups.get(groupKey)
+            if (!group) {
+                group = {
+                    lotId,
+                    lotCode,
+                    dailySeq,
+                    positions: posList,
+                    timestamp: log.created_at,
+                    sortTime: logTime,
+                    performer,
+                    hasCreate: false,
+                    hasDelete: false,
+                    deltaMap: new Map()
+                }
+                pendingItemGroups.set(groupKey, group)
+            }
+            if (log.action === 'CREATE') group.hasCreate = true
+            if (log.action === 'DELETE') group.hasDelete = true
+
+            const prodKey = `${productId}_${canonicalizeUnit(unit)}`
+            const existingDelta = group.deltaMap.get(prodKey)
+            if (existingDelta) {
+                existingDelta.oldQty = Number((existingDelta.oldQty + oldQty).toFixed(6))
+                existingDelta.newQty = Number((existingDelta.newQty + newQty).toFixed(6))
+                existingDelta.deltaQty = Number((existingDelta.deltaQty + deltaQty).toFixed(6))
+            } else {
+                group.deltaMap.set(prodKey, {
+                    productId,
+                    sku,
+                    name,
+                    unit,
+                    oldQty,
+                    newQty,
+                    deltaQty
+                })
+            }
+            continue
+        }
+
         if (log.table_name === 'lots') {
             const lotId = log.record_id
             const lotMeta = lotMap.get(lotId)
@@ -506,36 +673,15 @@ export async function fetchDailyFluctuation(params: {
                 .map((p: any) => p.code)
                 .filter(Boolean)
 
-            if (log.action === 'CREATE') {
-                const newMap = extractItemsMap(log.new_data, productMap)
-                const deltas: ProductDelta[] = Array.from(newMap.values()).map(v => ({
-                    productId: v.productId,
-                    sku: v.sku,
-                    name: v.name,
-                    unit: v.unit,
-                    oldQty: 0,
-                    newQty: v.qty,
-                    deltaQty: v.qty
-                }))
-
-                events.push({
-                    id: `audit_${log.id}`,
-                    timestamp: log.created_at,
-                    sortTime: logTime,
-                    category: 'create',
-                    lotId,
-                    lotCode,
-                    dailySeq,
-                    positions: posList,
-                    performedBy: performer,
-                    title: 'Tạo LOT mới',
-                    description: `Nhập/tạo mới LOT ${lotCode}`,
-                    deltas
-                })
-                continue
-            }
-
             if (log.action === 'DELETE') {
+                // Nếu đã có DELETE snapshot từ frontend trong vòng 15s -> bỏ qua bản từ db_trigger (vì frontend có đủ lot_items + positions)
+                if (fromTrigger) {
+                    const feDelete = frontendLotDeleteTimes.get(lotId) || []
+                    if (feDelete.some(t => Math.abs(t - logTime) <= 15_000)) {
+                        continue
+                    }
+                }
+
                 const oldMap = extractItemsMap(log.old_data, productMap)
                 const deltas: ProductDelta[] = Array.from(oldMap.values()).map(v => ({
                     productId: v.productId,
@@ -561,6 +707,50 @@ export async function fetchDailyFluctuation(params: {
                     description: posList.length > 0
                         ? `Xóa LOT ${lotCode} tại vị trí ${posList.join(', ')}`
                         : `Xóa LOT ${lotCode}`,
+                    deltas
+                })
+                continue
+            }
+
+            // Với CREATE / UPDATE từ db_trigger trên bảng lots:
+            // Chi tiết sản phẩm đã được bắt chính xác từ lot_items trigger hoặc từ frontend LotForm -> bỏ qua nếu đã có lot_items/frontend/export
+            if (fromTrigger) {
+                const feDetail = frontendLotDetailTimes.get(lotId) || []
+                const itemTrig = lotItemsTriggerTimes.get(lotId) || []
+                const expTimes = exportTimestampsByLot.get(lotId) || []
+                if (
+                    feDetail.some(t => Math.abs(t - logTime) <= 15_000) ||
+                    itemTrig.some(t => Math.abs(t - logTime) <= 15_000) ||
+                    expTimes.some(t => Math.abs(t - logTime) <= 90_000)
+                ) {
+                    continue
+                }
+            }
+
+            if (log.action === 'CREATE') {
+                const newMap = extractItemsMap(log.new_data, productMap)
+                const deltas: ProductDelta[] = Array.from(newMap.values()).map(v => ({
+                    productId: v.productId,
+                    sku: v.sku,
+                    name: v.name,
+                    unit: v.unit,
+                    oldQty: 0,
+                    newQty: v.qty,
+                    deltaQty: v.qty
+                }))
+
+                events.push({
+                    id: `audit_${log.id}`,
+                    timestamp: log.created_at,
+                    sortTime: logTime,
+                    category: 'create',
+                    lotId,
+                    lotCode,
+                    dailySeq,
+                    positions: posList,
+                    performedBy: performer,
+                    title: 'Tạo LOT mới',
+                    description: `Nhập/tạo mới LOT ${lotCode}`,
                     deltas
                 })
                 continue
@@ -638,6 +828,51 @@ export async function fetchDailyFluctuation(params: {
                 }
             }
         }
+    }
+
+    // Chuyển các nhóm lot_items thành FluctuationEvent
+    for (const [gKey, grp] of Array.from(pendingItemGroups.entries())) {
+        const deltas = Array.from(grp.deltaMap.values()).filter(d => Math.abs(d.deltaQty) > 0.000001)
+        if (deltas.length === 0) continue
+
+        const hasUp = deltas.some(d => d.deltaQty > 0)
+        const hasDown = deltas.some(d => d.deltaQty < 0)
+        let category: FluctuationCategory = hasUp && hasDown
+            ? 'adjust_mixed'
+            : hasUp
+            ? 'adjust_up'
+            : 'adjust_down'
+
+        if (grp.hasCreate && !hasDown && deltas.every(d => d.oldQty === 0)) {
+            category = 'create'
+        }
+
+        const title = category === 'create'
+            ? 'Tạo / Thêm hàng vào LOT'
+            : category === 'adjust_up'
+            ? 'Bỏ thêm / Tăng SL'
+            : category === 'adjust_down'
+            ? 'Bớt ra / Giảm SL'
+            : 'Điều chỉnh tăng/giảm'
+
+        const summaryText = deltas
+            .map(d => `${d.name}: ${d.deltaQty > 0 ? '+' : ''}${d.deltaQty} ${d.unit}`)
+            .join('; ')
+
+        events.push({
+            id: `items_${gKey}`,
+            timestamp: grp.timestamp,
+            sortTime: grp.sortTime,
+            category,
+            lotId: grp.lotId,
+            lotCode: grp.lotCode,
+            dailySeq: grp.dailySeq,
+            positions: grp.positions,
+            performedBy: grp.performer,
+            title,
+            description: summaryText,
+            deltas
+        })
     }
 
     // Sort newest first
