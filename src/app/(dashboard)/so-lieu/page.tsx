@@ -37,12 +37,24 @@ import {
     Eye,
     Zap,
     CheckSquare,
-    Square
+    Square,
+    Camera,
+    Images
 } from 'lucide-react'
 
 import Link from 'next/link'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
+import OperationImageUploader from '@/components/so-lieu/OperationImageUploader'
+import OperationImagesModal, { WebJournalImageTarget } from '@/components/so-lieu/OperationImagesModal'
+import {
+    PendingWebImage,
+    OperationImageRecord,
+    generateUuidV4,
+    uploadOperationImages,
+    listOperationImages,
+    getOperationImageDisplayUrl,
+} from '@/lib/operationImages'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
 import { supabase } from '@/lib/supabaseClient'
@@ -174,6 +186,44 @@ export default function SoLieuPage() {
     // Chốt tạm cho công việc hiện tại
     const [subShifts, setSubShifts] = useState<any[]>([])
     const [interimCloseModal, setInterimCloseModal] = useState(false)
+    const [padImages, setPadImages] = useState<PendingWebImage[]>([])
+    const [interimImages, setInterimImages] = useState<PendingWebImage[]>([])
+    const [closeImages, setCloseImages] = useState<PendingWebImage[]>([])
+    const [imagesModalOpen, setImagesModalOpen] = useState(false)
+    const [imageJournalTarget, setImageJournalTarget] = useState<WebJournalImageTarget | null>(null)
+    const [shiftImageCount, setShiftImageCount] = useState(0)
+    const [journalImageCounts, setJournalImageCounts] = useState<Record<string, number>>({})
+
+    const refreshShiftImageCounts = useCallback(async (targetShiftId?: string | null) => {
+        const sId = targetShiftId || activeShift?.id
+        if (!sId || !currentSystem?.code || String(sId).startsWith('offline_')) {
+            setShiftImageCount(0)
+            setJournalImageCounts({})
+            return
+        }
+        try {
+            const list = await listOperationImages({
+                systemCode: currentSystem.code,
+                companyId: currentSystem?.company_id || profile?.company_id || null,
+                shiftId: sId,
+                limit: 300,
+            })
+            setShiftImageCount(list.length)
+            const map: Record<string, number> = {}
+            for (const img of list) {
+                if (img.journal_id) {
+                    map[img.journal_id] = (map[img.journal_id] || 0) + 1
+                }
+            }
+            setJournalImageCounts(map)
+        } catch {
+            // ignore
+        }
+    }, [activeShift?.id, currentSystem?.code, currentSystem?.company_id, profile?.company_id])
+
+    useEffect(() => {
+        refreshShiftImageCounts(activeShift?.id)
+    }, [refreshShiftImageCounts, activeShift?.id])
     const [interimNotes, setInterimNotes] = useState('')
     const [interimSummary, setInterimSummary] = useState<any>(null)
     const [showSubShiftsPanel, setShowSubShiftsPanel] = useState(false)
@@ -293,7 +343,54 @@ export default function SoLieuPage() {
     const [journalList, setJournalList] = useState<DeliveryJournalRecord[]>([])
     const [allJobJournals, setAllJobJournals] = useState<DeliveryJournalRecord[]>([])
     const [loadingData, setLoadingData] = useState(false)
-    const [activeTab, setActiveTab] = useState<'feed' | 'summary'>('feed')
+    const [activeTab, setActiveTab] = useState<'feed' | 'summary' | 'reconcile'>('feed')
+    const [reconcileMap, setReconcileMap] = useState<Record<string, { startStr: string; endStr: string; calcType: 'diff' | 'inclusive'; targetType: 'in' | 'out' | 'net'; note?: string }>>({})
+    const [savingReconcile, setSavingReconcile] = useState(false)
+    const [expandedReconcileKeys, setExpandedReconcileKeys] = useState<Record<string, boolean>>({})
+
+    useEffect(() => {
+        if (!activeShift?.id) {
+            setReconcileMap({})
+            return
+        }
+        const fromShift = activeShift?.summary_data?.reconciliations
+        if (fromShift && typeof fromShift === 'object') {
+            setReconcileMap(fromShift)
+            return
+        }
+        try {
+            const cached = localStorage.getItem(`op_reconcile_${activeShift.id}`)
+            setReconcileMap(cached ? JSON.parse(cached) : {})
+        } catch {
+            setReconcileMap({})
+        }
+    }, [activeShift?.id])
+
+    const handleSaveReconcile = async () => {
+        if (!activeShift?.id) return
+        setSavingReconcile(true)
+        try {
+            try {
+                localStorage.setItem(`op_reconcile_${activeShift.id}`, JSON.stringify(reconcileMap))
+            } catch {
+                // ignore storage quota
+            }
+            const nextSummary = { ...(activeShift.summary_data || {}), reconciliations: reconcileMap }
+            if (!String(activeShift.id).startsWith('offline_')) {
+                const { error } = await (supabase as any)
+                    .from('delivery_shifts')
+                    .update({ summary_data: nextSummary })
+                    .eq('id', activeShift.id)
+                if (error) throw error
+                setOpenShifts((prev: any[]) => prev.map(s => (s.id === activeShift.id ? { ...s, summary_data: nextSummary } : s)))
+            }
+            showToast('Đã lưu dữ liệu đối chiếu cuối ca!', 'in')
+        } catch (err: any) {
+            alert('Lỗi lưu đối chiếu: ' + (err?.message || err))
+        } finally {
+            setSavingReconcile(false)
+        }
+    }
     const [journalTypeFilter, setJournalTypeFilter] = useState<'all' | 'in' | 'out'>('all')
 
     // Modal chỉnh sửa từng dòng nhật ký
@@ -307,6 +404,10 @@ export default function SoLieuPage() {
     // Modal xem lịch sử nhập xuất của riêng từng sản phẩm
     const [historyModalProduct, setHistoryModalProduct] = useState<ProductItem | null>(null)
     const [historyProductFilter, setHistoryProductFilter] = useState<'all' | 'in' | 'out'>('all')
+    const [historyModalTab, setHistoryModalTab] = useState<'history' | 'images'>('history')
+    const [historyProductImages, setHistoryProductImages] = useState<OperationImageRecord[]>([])
+    const [historyImagesLoading, setHistoryImagesLoading] = useState(false)
+    const [previewHistoryImage, setPreviewHistoryImage] = useState<OperationImageRecord | null>(null)
 
     // MOBILE: Bàn phím số nhập nhanh (bottom sheet), chọn CV, menu thao tác, thông báo
     const [padProduct, setPadProduct] = useState<ProductItem | null>(null)
@@ -1950,6 +2051,42 @@ export default function SoLieuPage() {
         return null
     }, [pastShifts, doneSelectedId])
 
+    useEffect(() => {
+        if (!historyModalProduct) {
+            setHistoryProductImages([])
+            setPreviewHistoryImage(null)
+            return
+        }
+        setHistoryModalTab('history')
+        setPreviewHistoryImage(null)
+        const targetShiftId = pageView === 'done' ? doneSelectedShift?.id : activeShift?.id
+        if (!targetShiftId || !currentSystem?.code || String(targetShiftId).startsWith('offline_')) {
+            setHistoryProductImages([])
+            return
+        }
+        setHistoryImagesLoading(true)
+        listOperationImages({
+            systemCode: currentSystem.code,
+            companyId: currentSystem?.company_id || profile?.company_id || null,
+            shiftId: targetShiftId,
+            limit: 200,
+        })
+            .then((list) => {
+                const pSku = (historyModalProduct.sku || '').trim().toLowerCase()
+                const pName = (historyModalProduct.name || '').trim().toLowerCase()
+                const matched = list.filter((img) => {
+                    const iSku = (img.item_sku || '').trim().toLowerCase()
+                    const iName = (img.item_name || '').trim().toLowerCase()
+                    if (pSku && iSku && pSku === iSku) return true
+                    if (pName && iName && pName === iName) return true
+                    return false
+                })
+                setHistoryProductImages(matched)
+            })
+            .catch(() => setHistoryProductImages([]))
+            .finally(() => setHistoryImagesLoading(false))
+    }, [historyModalProduct, pageView, doneSelectedShift?.id, activeShift?.id, currentSystem?.code, currentSystem?.company_id, profile?.company_id])
+
     // Lọc danh sách công việc theo trạng thái & từ khóa tìm kiếm
     const filteredPastShifts = useMemo(() => {
         const q = doneSearch.trim().toLowerCase()
@@ -2304,7 +2441,8 @@ export default function SoLieuPage() {
         product: ProductItem,
         type: 'in' | 'out',
         qtyOverride?: number,
-        unitOverride?: string
+        unitOverride?: string,
+        extraNote?: string
     ): Promise<boolean> => {
         if (!shiftSystemCode) return false
         if (!activeShift) {
@@ -2337,8 +2475,10 @@ export default function SoLieuPage() {
         }, 350)
 
         const currentUnit = unitOverride || selectedUnitMap[product.id] || product.unit || 'Kg'
+        const clientJournalId = generateUuidV4()
 
         const payload = {
+            id: clientJournalId,
             system_code: shiftSystemCode,
             company_id: companyId,
             delivery_code: batchCode,
@@ -2348,7 +2488,7 @@ export default function SoLieuPage() {
             from_department: isImport ? 'Sản xuất' : 'Kho',
             to_department: isImport ? 'Kho' : 'Sản xuất',
             status: isImport ? 'received_by_warehouse' : 'received_by_production',
-            notes: `[CV_ID: ${activeShift.id}] [PID: ${product.id}] [SKU: ${product.sku || ''}] [CV: ${currentJobName}] [${batchCode}] ${isImport ? 'Nhập kho' : 'Xuất kho'}`,
+            notes: `[CV_ID: ${activeShift.id}] [PID: ${product.id}] [SKU: ${product.sku || ''}] [CV: ${currentJobName}] [${batchCode}] ${isImport ? 'Nhập kho' : 'Xuất kho'}${extraNote ? ` | ${extraNote}` : ''}`,
 
             sent_by: profile?.id || null,
             sent_by_name: profile?.full_name || 'Nhân viên',
@@ -2381,6 +2521,31 @@ export default function SoLieuPage() {
                 .insert([payload])
 
             if (error) throw error
+
+            if (padImages.length > 0 && currentSystem?.code) {
+                const filesToUpload = padImages.map(p => p.file)
+                setPadImages([])
+                uploadOperationImages({
+                    files: filesToUpload,
+                    systemCode: currentSystem.code,
+                    companyId,
+                    shiftId: activeShift.id,
+                    journalId: clientJournalId,
+                    scope: 'journal',
+                    direction: type,
+                    jobName: currentJobName,
+                    itemName: product.name,
+                    itemSku: product?.sku || null,
+                    quantity: qty,
+                    unit: currentUnit,
+                    capturedBy: profile?.id || null,
+                    capturedByName: profile?.full_name || 'Nhân viên',
+                })
+                    .then((uploaded) => {
+                        if (uploaded.length > 0) setShiftImageCount(c => c + uploaded.length)
+                    })
+                    .catch(e => console.warn('Upload journal images error:', e))
+            }
 
             setDraftQtyMap(prev => ({ ...prev, [product.id]: 0 }))
             loadJournalData()
@@ -2751,6 +2916,7 @@ export default function SoLieuPage() {
                     localStorage.setItem(`so_lieu_selected_shift_${shiftSystemCode}`, data.id)
                 } catch (e) {}
                 setPinnedProducts(initialPinned)
+                setReconcileMap({})
                 setAllJobJournals([])
                 setJournalList([])
                 setSubShifts([])
@@ -2790,6 +2956,7 @@ export default function SoLieuPage() {
             setOpenShifts(prev => [offlineShift as any, ...prev])
             setSelectedShiftId(tempShiftId)
             setPinnedProducts(initialPinned)
+            setReconcileMap({})
             setAllJobJournals([])
             setJournalList([])
             setSubShifts([])
@@ -2899,10 +3066,29 @@ export default function SoLieuPage() {
                 },
                 notes: interimNotes ? `[CV: ${currentJobName}] ${interimNotes}` : `[CV: ${currentJobName}] Chốt đợt ${subShifts.length + 1}`,
             }
-            const { error } = await (supabase as any)
+            const { data: insertedSub, error } = await (supabase as any)
                 .from('delivery_sub_shifts')
                 .insert([payload])
+                .select('id')
+                .single()
             if (error) throw error
+            if (interimImages.length > 0 && currentSystem?.code) {
+                const filesToUpload = interimImages.map(p => p.file)
+                setInterimImages([])
+                await uploadOperationImages({
+                    files: filesToUpload,
+                    systemCode: currentSystem.code,
+                    companyId: currentSystem?.company_id || profile?.company_id || null,
+                    shiftId: activeShift.id,
+                    subShiftId: insertedSub?.id || null,
+                    scope: 'sub_shift',
+                    jobName: currentJobName,
+                    capturedBy: profile?.id || null,
+                    capturedByName: profile?.full_name || 'Nhân viên kho',
+                    notes: interimNotes || `Chốt tạm đợt ${subShifts.length + 1}`,
+                }).catch(e => console.warn('Upload interim images error:', e))
+                setShiftImageCount(c => c + filesToUpload.length)
+            }
             setInterimCloseModal(false)
             setInterimNotes('')
             setInterimSummary(null)
@@ -3073,6 +3259,22 @@ export default function SoLieuPage() {
                 .select()
                 .single()
             if (error) throw error
+
+            if (closeImages.length > 0 && currentSystem?.code) {
+                const filesToUpload = closeImages.map(p => p.file)
+                setCloseImages([])
+                await uploadOperationImages({
+                    files: filesToUpload,
+                    systemCode: currentSystem.code,
+                    companyId: currentSystem?.company_id || profile?.company_id || null,
+                    shiftId: closedJobId,
+                    scope: 'shift',
+                    jobName: currentJobName,
+                    capturedBy: profile?.id || null,
+                    capturedByName: profile?.full_name || 'Nhân viên kho',
+                    notes: closeNotes || 'Ảnh hoàn thành công việc',
+                }).catch(e => console.warn('Upload close images error:', e))
+            }
 
             setCloseShiftModal(false)
             setCloseNotes('')
@@ -3869,6 +4071,15 @@ export default function SoLieuPage() {
                                     )}
                                     <button
                                         type="button"
+                                        onClick={() => setImagesModalOpen(true)}
+                                        className="h-8 px-2.5 rounded-lg text-xs font-semibold border border-sky-300 text-sky-700 bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:border-sky-800 dark:text-sky-300 flex items-center gap-1 transition"
+                                        title="Xem & chụp ảnh chứng minh của công việc"
+                                    >
+                                        <Camera className="w-3.5 h-3.5" />
+                                        <span>Ảnh{shiftImageCount > 0 ? ` (${shiftImageCount})` : ''}</span>
+                                    </button>
+                                    <button
+                                        type="button"
                                         onClick={async () => { await calculateInterimSummary(); setInterimCloseModal(true) }}
                                         className="h-8 px-2.5 rounded-lg text-xs font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 flex items-center gap-1 transition"
                                     >
@@ -3892,8 +4103,16 @@ export default function SoLieuPage() {
                                 </div>
                             )}
 
-                            {/* Cụm công cụ: Mẫu CV + Reload */}
+                            {/* Cụm công cụ: Album ảnh + Mẫu CV + Reload */}
                             <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-stone-200 dark:border-zinc-700">
+                                <Link
+                                    href="/so-lieu/album-anh"
+                                    className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
+                                    title="Quản lý Album hình ảnh nhập xuất"
+                                >
+                                    <Images className="w-3.5 h-3.5 text-sky-500" />
+                                    <span>Album ảnh</span>
+                                </Link>
                                 <Link
                                     href="/so-lieu/mau-cong-viec"
                                     className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
@@ -4677,6 +4896,13 @@ export default function SoLieuPage() {
                                                     </div>
 
                                                     <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap shrink-0">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setImagesModalOpen(true)}
+                                                            className="h-8 sm:h-9 px-3 sm:px-3.5 rounded-xl text-[11px] sm:text-xs font-bold border border-sky-200 dark:border-sky-800 bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 flex items-center gap-1.5 whitespace-nowrap"
+                                                        >
+                                                            <Camera className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> Ảnh / Chụp thêm
+                                                        </button>
                                                         <button
                                                             type="button"
                                                             onClick={() => handleExportDoneShift(doneSelectedShift, doneLines)}
@@ -6408,7 +6634,7 @@ export default function SoLieuPage() {
                 {pageView === 'active' && activeShift && (
                     <div className="bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-2xl shadow-sm overflow-hidden sm:col-start-1">
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-200 dark:border-zinc-800 px-2.5 sm:px-4 py-2 sm:py-2.5 bg-stone-50/50 dark:bg-zinc-950/50">
-                            <div className="grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-4 w-full sm:w-auto">
+                            <div className="grid grid-cols-3 sm:flex sm:items-center gap-1 sm:gap-4 w-full sm:w-auto">
                                 <button
                                     onClick={() => setActiveTab('feed')}
                                     className={`text-[11px] sm:text-sm font-bold flex items-center justify-center sm:justify-start gap-1.5 py-1 sm:py-0 sm:pb-1 rounded-lg sm:rounded-none sm:border-b-2 transition ${
@@ -6429,8 +6655,19 @@ export default function SoLieuPage() {
                                     }`}
                                 >
                                     <BarChart3 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
-                                    <span className="sm:hidden">Báo cáo tổng hợp</span>
+                                    <span className="sm:hidden">Báo cáo</span>
                                     <span className="hidden sm:inline">Báo cáo: {currentJobName}</span>
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab('reconcile')}
+                                    className={`text-[11px] sm:text-sm font-bold flex items-center justify-center sm:justify-start gap-1.5 py-1 sm:py-0 sm:pb-1 rounded-lg sm:rounded-none sm:border-b-2 transition ${
+                                        activeTab === 'reconcile'
+                                            ? 'bg-amber-50/80 dark:bg-amber-950/50 sm:bg-transparent sm:border-amber-500 text-amber-600 dark:text-amber-400'
+                                            : 'border-transparent text-stone-500 hover:text-stone-800 dark:hover:text-stone-200'
+                                    }`}
+                                >
+                                    <CheckCircle2 className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                                    <span>Đối chiếu</span>
                                 </button>
                             </div>
 
@@ -6527,6 +6764,38 @@ export default function SoLieuPage() {
                                                     >
                                                         {isImport ? `+${record.quantity_sent}` : `-${record.quantity_sent}`} {record.unit}
                                                     </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            const matchedProduct = allProducts.find(p => p.name === record.item_name)
+                                                            setImageJournalTarget({
+                                                                journalId: record.id,
+                                                                itemName: record.item_name,
+                                                                itemSku: matchedProduct?.sku || null,
+                                                                direction: isImport ? 'in' : 'out',
+                                                                quantity: record.quantity_sent,
+                                                                unit: record.unit,
+                                                            })
+                                                            setImagesModalOpen(true)
+                                                        }}
+                                                        title={
+                                                            (journalImageCounts[record.id] || 0) > 0
+                                                                ? `Xem / bổ sung ảnh (${journalImageCounts[record.id]} ảnh)`
+                                                                : 'Bổ sung ảnh cho đợt này'
+                                                        }
+                                                        className={`h-6 sm:h-8 px-1.5 sm:px-2 rounded-lg sm:rounded-xl flex items-center justify-center gap-1 active:scale-90 transition shrink-0 text-[10px] sm:text-xs font-bold ${
+                                                            (journalImageCounts[record.id] || 0) > 0
+                                                                ? 'bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800'
+                                                                : 'bg-stone-100 hover:bg-sky-50 dark:bg-zinc-800 dark:hover:bg-sky-950/50 text-stone-500 hover:text-sky-600 dark:text-stone-400 dark:hover:text-sky-300'
+                                                        }`}
+                                                    >
+                                                        <Camera className="w-3 h-3 sm:w-3.5 sm:h-3.5" />
+                                                        <span>
+                                                            {(journalImageCounts[record.id] || 0) > 0
+                                                                ? journalImageCounts[record.id]
+                                                                : '+'}
+                                                        </span>
+                                                    </button>
                                                     <button
                                                         onClick={() => handleStartEdit(record)}
                                                         title="Chỉnh sửa dòng này"
@@ -7104,6 +7373,249 @@ export default function SoLieuPage() {
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
+                                </div>
+                            )
+                        })()}
+
+                        {/* Tab 3: Dữ liệu Đối Chiếu (Số đầu - Số đuôi) */}
+                        {activeTab === 'reconcile' && (() => {
+                            const sortedAllLines = [...(allJobJournals.length > 0 ? allJobJournals : journalList)].sort((a, b) => a.sent_at.localeCompare(b.sent_at))
+                            const summarizedRows = summarizeLines(sortedAllLines)
+                            const existingKeys = new Set(summarizedRows.map(r => `${r.product_name}___${r.unit}`))
+                            const existingNames = new Set(summarizedRows.map(r => r.product_name.trim().toLowerCase()))
+
+                            // Tự động đưa các SP đang ghim trên bàn làm việc (từ đầu ca hoặc mới thêm giữa ca) vào danh sách đối chiếu
+                            const pinnedRows = pinnedProducts
+                                .filter(p => p.name && !existingNames.has(p.name.trim().toLowerCase()))
+                                .map(p => {
+                                    const unit = getProductUnits(p)[0] || p.unit || 'ĐVT'
+                                    return { product_name: p.name, unit, in_qty: 0, out_qty: 0, count: 0 }
+                                })
+                                .filter(r => {
+                                    const k = `${r.product_name}___${r.unit}`
+                                    if (existingKeys.has(k)) return false
+                                    existingKeys.add(k)
+                                    existingNames.add(r.product_name.trim().toLowerCase())
+                                    return true
+                                })
+
+                            const preDeclaredRows = Object.keys(reconcileMap)
+                                .filter(k => k !== '__TOTAL__' && !existingKeys.has(k) && k.includes('___'))
+                                .map(k => {
+                                    const [product_name, unit] = k.split('___')
+                                    return { product_name, unit, in_qty: 0, out_qty: 0, count: 0 }
+                                })
+                            const productRows = [...summarizedRows, ...pinnedRows, ...preDeclaredRows]
+                            const totalIn = Math.round(summarizedRows.reduce((s, r) => s + r.in_qty, 0) * 1000) / 1000
+                            const totalOut = Math.round(summarizedRows.reduce((s, r) => s + r.out_qty, 0) * 1000) / 1000
+                            const totalCount = summarizedRows.reduce((s, r) => s + r.count, 0)
+                            const rows: Array<{ product_name: string; unit: string; in_qty: number; out_qty: number; count: number; isTotal?: boolean }> = [
+                                {
+                                    product_name: 'Tổng tất cả sản phẩm (Đối chiếu tổng)',
+                                    unit: 'Tổng cả việc',
+                                    in_qty: totalIn,
+                                    out_qty: totalOut,
+                                    count: totalCount,
+                                    isTotal: true,
+                                },
+                                ...productRows,
+                            ]
+
+                            const updateEntry = (key: string, defaultTarget: 'in' | 'out' | 'net', patch: Partial<{ startStr: string; endStr: string; calcType: 'diff' | 'inclusive'; targetType: 'in' | 'out' | 'net'; note?: string }>) => {
+                                setReconcileMap(prev => {
+                                    const cur = prev[key] || { startStr: '', endStr: '', calcType: 'diff' as const, targetType: defaultTarget, note: '' }
+                                    return { ...prev, [key]: { ...cur, ...patch } }
+                                })
+                            }
+
+                            return (
+                                <div className="p-3 sm:p-5 space-y-4">
+                                    <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-200 dark:border-zinc-800">
+                                        <div>
+                                            <h4 className="text-sm font-black text-stone-900 dark:text-white flex items-center gap-1.5">
+                                                <CheckCircle2 className="w-4 h-4 text-amber-500" />
+                                                Đối chiếu Số đầu – Số đuôi
+                                            </h4>
+                                            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                                                Dữ liệu đối chiếu độc lập (theo tổng cả việc hoặc từng sản phẩm), không cộng vào số lượng nhập/xuất hệ thống.
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    const allExpanded = rows.every(r => !!expandedReconcileKeys[r.isTotal ? '__TOTAL__' : `${r.product_name}___${r.unit}`])
+                                                    if (allExpanded) {
+                                                        setExpandedReconcileKeys({})
+                                                    } else {
+                                                        const next: Record<string, boolean> = {}
+                                                        rows.forEach(r => {
+                                                            next[r.isTotal ? '__TOTAL__' : `${r.product_name}___${r.unit}`] = true
+                                                        })
+                                                        setExpandedReconcileKeys(next)
+                                                    }
+                                                }}
+                                                className="px-2.5 py-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 hover:bg-stone-50 dark:hover:bg-zinc-800 text-stone-600 dark:text-stone-300 text-xs font-semibold transition"
+                                            >
+                                                {rows.every(r => !!expandedReconcileKeys[r.isTotal ? '__TOTAL__' : `${r.product_name}___${r.unit}`]) ? 'Thu gọn' : 'Mở tất cả'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                disabled={savingReconcile}
+                                                onClick={handleSaveReconcile}
+                                                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold shadow-xs transition disabled:opacity-50"
+                                            >
+                                                {savingReconcile ? 'Đang lưu...' : 'Lưu đối chiếu'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2.5">
+                                        {rows.map((row) => {
+                                            const key = row.isTotal ? '__TOTAL__' : `${row.product_name}___${row.unit}`
+                                            const defaultTarget: 'in' | 'out' | 'net' = row.in_qty >= row.out_qty ? 'in' : 'out'
+                                            const entry = reconcileMap[key] || {
+                                                startStr: '',
+                                                endStr: '',
+                                                calcType: 'diff' as const,
+                                                targetType: defaultTarget,
+                                                note: '',
+                                            }
+                                            const s = parseFloat((entry.startStr || '').replace(',', '.'))
+                                            const e = parseFloat((entry.endStr || '').replace(',', '.'))
+                                            const hasNums = entry.startStr.trim() !== '' && entry.endStr.trim() !== '' && !Number.isNaN(s) && !Number.isNaN(e)
+                                            const rawDiff = hasNums ? Math.abs(e - s) : 0
+                                            const calcQty = hasNums ? Math.round((entry.calcType === 'inclusive' ? rawDiff + 1 : rawDiff) * 1000) / 1000 : 0
+                                            const sysQty = entry.targetType === 'in' ? row.in_qty : entry.targetType === 'out' ? row.out_qty : Math.abs(row.in_qty - row.out_qty)
+                                            const delta = hasNums ? Math.round((calcQty - sysQty) * 1000) / 1000 : 0
+                                            const isMatched = hasNums && delta === 0
+                                            const isExpanded = !!expandedReconcileKeys[key]
+
+                                            return (
+                                                <div
+                                                    key={key}
+                                                    className={`rounded-2xl border overflow-hidden transition ${
+                                                        row.isTotal
+                                                            ? 'border-indigo-300 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-950/25'
+                                                            : 'border-stone-200 dark:border-zinc-800 bg-stone-50/70 dark:bg-zinc-950/60'
+                                                    }`}
+                                                >
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setExpandedReconcileKeys(prev => ({ ...prev, [key]: !prev[key] }))}
+                                                        className="w-full p-3 text-left flex flex-wrap items-center justify-between gap-2 hover:bg-black/2 dark:hover:bg-white/2 transition"
+                                                    >
+                                                        <div className="min-w-0 flex-1">
+                                                            <p className="text-xs sm:text-sm font-bold text-stone-900 dark:text-white flex items-center gap-1.5 flex-wrap">
+                                                                {row.isTotal && <span className="px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-extrabold shrink-0">TỔNG</span>}
+                                                                <span className="truncate">{row.product_name}</span>
+                                                                {!row.isTotal && <span className="text-stone-400 font-semibold shrink-0">({row.unit})</span>}
+                                                            </p>
+                                                            <div className="text-[11px] text-stone-500 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                                                                <span>Hệ thống Nhập: <strong className="text-emerald-600">+{row.in_qty}</strong></span>
+                                                                <span>•</span>
+                                                                <span>Xuất: <strong className="text-rose-600">-{row.out_qty}</strong></span>
+                                                                {(entry.startStr.trim() !== '' || entry.endStr.trim() !== '') && (
+                                                                    <>
+                                                                        <span>•</span>
+                                                                        <span className="text-amber-700 dark:text-amber-300 font-semibold">
+                                                                            Đầu: {entry.startStr || '—'} / Đuôi: {entry.endStr || '—'}
+                                                                        </span>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 shrink-0">
+                                                            {hasNums && (
+                                                                <span className={`px-2.5 py-1 rounded-full text-xs font-black ${
+                                                                    isMatched
+                                                                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                                                                        : 'bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300'
+                                                                }`}>
+                                                                    {isMatched ? `✓ Khớp (${calcQty})` : `⚠ Lệch ${delta > 0 ? `+${delta}` : delta} (Đếm: ${calcQty})`}
+                                                                </span>
+                                                            )}
+                                                            {isExpanded
+                                                                ? <ChevronDown className="w-4 h-4 text-stone-400" />
+                                                                : <ChevronRight className="w-4 h-4 text-stone-400" />}
+                                                        </div>
+                                                    </button>
+
+                                                    {isExpanded && (
+                                                        <div className="px-3 pb-3 pt-2 border-t border-stone-200/70 dark:border-zinc-800/70 space-y-2.5">
+                                                            {row.isTotal && (
+                                                                <p className="text-[11px] text-indigo-700/80 dark:text-indigo-300/80">
+                                                                    VD: Đầu ca có 3 pallet không ngoài sảnh, cuối ca đếm được 10 pallet không → phát sinh 7 để so với tổng các SP của công việc.
+                                                                </p>
+                                                            )}
+                                                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+                                                                <div className="sm:col-span-3">
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">So với</label>
+                                                                    <select
+                                                                        value={entry.targetType}
+                                                                        onChange={ev => updateEntry(key, defaultTarget, { targetType: ev.target.value as any })}
+                                                                        className="w-full h-9 px-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-stone-800 dark:text-stone-200"
+                                                                    >
+                                                                        <option value="in">Tổng Nhập (+{row.in_qty})</option>
+                                                                        <option value="out">Tổng Xuất (-{row.out_qty})</option>
+                                                                        <option value="net">Chênh lệch ({Math.abs(row.in_qty - row.out_qty)})</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="sm:col-span-2">
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Số đầu</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        value={entry.startStr}
+                                                                        onChange={ev => updateEntry(key, defaultTarget, { startStr: ev.target.value })}
+                                                                        placeholder="VD: 6"
+                                                                        className="w-full h-9 px-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-black text-stone-900 dark:text-white"
+                                                                    />
+                                                                </div>
+                                                                <div className="sm:col-span-2">
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Số đuôi</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        inputMode="decimal"
+                                                                        value={entry.endStr}
+                                                                        onChange={ev => updateEntry(key, defaultTarget, { endStr: ev.target.value })}
+                                                                        placeholder="VD: 12"
+                                                                        className="w-full h-9 px-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-sm font-black text-stone-900 dark:text-white"
+                                                                    />
+                                                                </div>
+                                                                <div className="sm:col-span-3">
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Kiểu đếm</label>
+                                                                    <select
+                                                                        value={entry.calcType}
+                                                                        onChange={ev => updateEntry(key, defaultTarget, { calcType: ev.target.value as any })}
+                                                                        className="w-full h-9 px-2 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs font-bold text-amber-700 dark:text-amber-300"
+                                                                    >
+                                                                        <option value="diff">Đếm Tồn (Đuôi - Đầu)</option>
+                                                                        <option value="inclusive">Đếm STT (Đuôi - Đầu + 1)</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div className="sm:col-span-2">
+                                                                    <label className="block text-[10px] font-bold text-stone-500 mb-1">Ghi chú</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        value={entry.note || ''}
+                                                                        onChange={ev => updateEntry(key, defaultTarget, { note: ev.target.value })}
+                                                                        placeholder="Ghi chú..."
+                                                                        className="w-full h-9 px-2.5 rounded-xl border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 text-xs text-stone-700 dark:text-stone-200"
+                                                                    />
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-[10px] text-stone-500 dark:text-stone-400">
+                                                                {entry.calcType === 'diff'
+                                                                    ? '💡 Đếm Tồn: Đầu ca có 6, cuối ca đếm được 12 → Phát sinh 6.'
+                                                                    : '💡 Đếm STT: Làm từ số 6 đến số 12 (tính cả 2 đầu) → Tổng 7.'}
+                                                            </p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )
+                                        })}
                                     </div>
                                 </div>
                             )
@@ -8469,6 +8981,32 @@ export default function SoLieuPage() {
                                 </div>
                             </div>
 
+                            {/* Chuyển tab Lịch sử đợt / Hình ảnh */}
+                            <div className="flex items-center gap-1 p-1 bg-stone-100 dark:bg-zinc-800/80 rounded-xl mb-2 shrink-0">
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryModalTab('history')}
+                                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${
+                                        historyModalTab === 'history'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                                    }`}
+                                >
+                                    Lịch sử ({productLines.length})
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setHistoryModalTab('images')}
+                                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1 ${
+                                        historyModalTab === 'images'
+                                            ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-2xs'
+                                            : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
+                                    }`}
+                                >
+                                    <Images className="w-3.5 h-3.5" /> Hình ảnh ({historyProductImages.length})
+                                </button>
+                            </div>
+
                             {/* Bộ lọc Tất cả / Nhập / Xuất */}
                             <div className="flex items-center gap-1 p-1 bg-stone-100 dark:bg-zinc-800/80 rounded-xl mb-2.5 shrink-0">
                                 <button
@@ -8480,7 +9018,7 @@ export default function SoLieuPage() {
                                             : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                                     }`}
                                 >
-                                    Tất cả ({productLines.length})
+                                    Tất cả ({historyModalTab === 'images' ? historyProductImages.length : productLines.length})
                                 </button>
                                 <button
                                     type="button"
@@ -8491,7 +9029,7 @@ export default function SoLieuPage() {
                                             : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                                     }`}
                                 >
-                                    <ArrowDownLeft className="w-3.5 h-3.5" /> Nhập ({inLines.length})
+                                    <ArrowDownLeft className="w-3.5 h-3.5" /> Nhập ({historyModalTab === 'images' ? historyProductImages.filter(i => i.direction === 'in').length : inLines.length})
                                 </button>
                                 <button
                                     type="button"
@@ -8502,11 +9040,41 @@ export default function SoLieuPage() {
                                             : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
                                     }`}
                                 >
-                                    <ArrowUpRight className="w-3.5 h-3.5" /> Xuất ({outLines.length})
+                                    <ArrowUpRight className="w-3.5 h-3.5" /> Xuất ({historyModalTab === 'images' ? historyProductImages.filter(i => i.direction === 'out').length : outLines.length})
                                 </button>
                             </div>
 
-                            {/* Danh sách các đợt phát sinh */}
+                            {/* Nội dung tab Lịch sử hoặc Hình ảnh */}
+                            {historyModalTab === 'images' ? (() => {
+                                const filteredImgs = historyProductFilter === 'all'
+                                    ? historyProductImages
+                                    : historyProductImages.filter(img => img.direction === historyProductFilter)
+                                return (
+                                    <div className="flex-1 overflow-y-auto -mx-4 sm:-mx-6 px-4 sm:px-6">
+                                        {historyImagesLoading ? (
+                                            <div className="py-10 text-center text-xs text-stone-400">Đang tải hình ảnh...</div>
+                                        ) : filteredImgs.length === 0 ? (
+                                            <div className="py-10 text-center text-xs text-stone-400">Chưa có hình ảnh nào phù hợp.</div>
+                                        ) : (
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pb-2">
+                                                {filteredImgs.map(img => (
+                                                    <button
+                                                        key={img.id}
+                                                        type="button"
+                                                        onClick={() => setPreviewHistoryImage(img)}
+                                                        className="group relative aspect-square rounded-xl overflow-hidden border border-stone-200 dark:border-zinc-800 bg-stone-100 dark:bg-zinc-800 text-left"
+                                                    >
+                                                        <img src={img.public_url} alt={img.item_name || ''} className="w-full h-full object-cover group-hover:scale-105 transition" />
+                                                        <span className={`absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md text-[10px] font-black text-white ${img.direction === 'in' ? 'bg-emerald-600/90' : 'bg-rose-600/90'}`}>
+                                                            {img.direction === 'in' ? 'NHẬP' : 'XUẤT'}
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                )
+                            })() : (
                             <div className="flex-1 overflow-y-auto divide-y divide-stone-100 dark:divide-zinc-800 -mx-4 sm:-mx-6 px-4 sm:px-6">
                                 {filtered.length === 0 ? (
                                     <div className="py-10 text-center text-xs text-stone-400">
@@ -8573,6 +9141,7 @@ export default function SoLieuPage() {
                                     })
                                 )}
                             </div>
+                            )}
 
                             {/* Nút đóng ở dưới */}
                             <div className="pt-3 border-t border-stone-200 dark:border-zinc-800 mt-2 shrink-0">
@@ -8588,6 +9157,31 @@ export default function SoLieuPage() {
                     </div>
                 )
             })()}
+
+            {previewHistoryImage && (
+                <div
+                    className="fixed inset-0 z-[70] bg-black/85 flex items-center justify-center p-4"
+                    onClick={() => setPreviewHistoryImage(null)}
+                >
+                    <img
+                        src={previewHistoryImage.public_url}
+                        alt={previewHistoryImage.item_name || ''}
+                        className="max-w-full max-h-[85vh] rounded-2xl object-contain"
+                    />
+                </div>
+            )}
+
+            <OperationImagesModal
+                isOpen={Boolean(imageJournalTarget)}
+                onClose={() => setImageJournalTarget(null)}
+                systemCode={currentSystem?.code || ''}
+                companyId={currentSystem?.company_id || profile?.company_id || null}
+                shiftId={(pageView === 'done' ? doneSelectedShift?.id : activeShift?.id) || ''}
+                jobName={(pageView === 'done' ? (doneSelectedShift?.summary_data?.job_name || doneSelectedShift?.notes) : (activeShift?.summary_data?.job_name || activeShift?.notes)) || ''}
+                userId={profile?.id || null}
+                userName={profile?.full_name || null}
+                journalTarget={imageJournalTarget}
+            />
         </div>
     )
 }

@@ -5,6 +5,9 @@
 		},
 		{
 			"path": "../../../../../pallet-box-scanner"
+		},
+		{
+			"path": "../../../../../../photo-date-stamper"
 		}
 	],
 	"settings": {}

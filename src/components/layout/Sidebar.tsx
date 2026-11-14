@@ -3,7 +3,7 @@ import { useState, useRef, useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import Image from 'next/image'
-import { LayoutDashboard, Package, Truck, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard, Briefcase } from 'lucide-react'
+import { LayoutDashboard, Package, Truck, Settings, LogOut, Warehouse, ChevronRight, ChevronDown, Building2, Car, List, FolderTree, Map, MapPin, ArrowDownToLine, ArrowUpFromLine, Boxes, ClipboardCheck, Users, BookUser, Shield, BarChart3, History, FileText, TrendingUp, AlertTriangle, PackageSearch, DollarSign, PieChart, Globe, Key, ShieldCheck, Tag, Tags, Layers, ArrowRightLeft, Activity, Star, StickyNote, HardHat, ShieldAlert, QrCode, Printer, Smartphone, Factory, Leaf, ClipboardList, CheckSquare, Hash, Stamp, LayoutGrid, Clock, CalendarClock, FileCheck, Zap, Link2, Scale, Handshake, Sprout, UserCheck, Keyboard, Briefcase, Images } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { useRouter } from 'next/navigation'
 import { useSidebar } from './SidebarContext'
@@ -136,6 +136,7 @@ const menuItems: MenuItem[] = [
             { id: 'delivery_journal_kho', name: 'Nhật ký giao nhận kho', href: '/delivery-journal', icon: ClipboardList },
             { id: 'delivery_journal_single', name: 'Giao nhận trực tiếp (1 bên)', href: '/delivery-journal-single', icon: ArrowRightLeft },
             { id: 'so_lieu', name: 'Số liệu', href: '/so-lieu', icon: ArrowRightLeft },
+            { id: 'so_lieu_album', name: 'Album hình ảnh', href: '/so-lieu/album-anh', icon: Images },
             { id: 'job_templates', name: 'Công việc mẫu', href: '/so-lieu/mau-cong-viec', icon: Briefcase, requiredModule: 'delivery_journal' },
             { id: 'delivery_shifts_kho', name: 'Ca làm & Thống kê', href: '/delivery-shifts', icon: History },
         ]
