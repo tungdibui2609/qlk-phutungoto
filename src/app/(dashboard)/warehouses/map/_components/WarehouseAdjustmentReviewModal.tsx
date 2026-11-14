@@ -17,7 +17,8 @@ import {
     Calendar,
     User,
     Layers,
-    Filter
+    Filter,
+    Search
 } from 'lucide-react'
 import {
     WarehouseProposal,
@@ -38,6 +39,7 @@ interface WarehouseAdjustmentReviewModalProps {
     currentUserId?: string
     onFocusPosition?: (positionId: string, positionCode?: string) => void
     onProposalApproved?: () => void
+    onStartVisualReview?: (proposal: WarehouseProposal, startIndex?: number) => void
 }
 
 export function WarehouseAdjustmentReviewModal({
@@ -48,11 +50,13 @@ export function WarehouseAdjustmentReviewModal({
     currentUserName,
     currentUserId,
     onFocusPosition,
-    onProposalApproved
+    onProposalApproved,
+    onStartVisualReview
 }: WarehouseAdjustmentReviewModalProps) {
     const [proposals, setProposals] = useState<WarehouseProposal[]>([])
     const [loading, setLoading] = useState(false)
     const [statusFilter, setStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('PENDING')
+    const [positionQuery, setPositionQuery] = useState('')
     const [selectedProposalId, setSelectedProposalId] = useState<string | null>(null)
     const [isApproving, setIsApproving] = useState(false)
     const [isRejecting, setIsRejecting] = useState(false)
@@ -87,6 +91,33 @@ export function WarehouseAdjustmentReviewModal({
     const pendingCount = useMemo(() => {
         return proposals.filter(p => p.status === 'PENDING').length
     }, [proposals])
+
+    const normalizedPosQuery = positionQuery.trim().toUpperCase()
+
+    const filteredProposals = useMemo(() => {
+        if (!normalizedPosQuery) return proposals
+        return proposals.filter(prop =>
+            prop.items.some(it =>
+                (it.position_code || '').toUpperCase().includes(normalizedPosQuery) ||
+                (it.target_position_code || '').toUpperCase().includes(normalizedPosQuery)
+            )
+        )
+    }, [proposals, normalizedPosQuery])
+
+    const positionHistoryEntries = useMemo(() => {
+        if (!normalizedPosQuery) return []
+        const entries: Array<{ proposal: WarehouseProposal; item: ProposalItem; itemIndex: number }> = []
+        for (const prop of filteredProposals) {
+            prop.items.forEach((it, idx) => {
+                const matchSrc = (it.position_code || '').toUpperCase().includes(normalizedPosQuery)
+                const matchDst = (it.target_position_code || '').toUpperCase().includes(normalizedPosQuery)
+                if (matchSrc || matchDst) {
+                    entries.push({ proposal: prop, item: it, itemIndex: idx })
+                }
+            })
+        }
+        return entries
+    }, [filteredProposals, normalizedPosQuery])
 
     const handleApprove = async () => {
         if (!selectedProposal || isApproving) return
@@ -142,11 +173,273 @@ export function WarehouseAdjustmentReviewModal({
         }
     }
 
+    const renderItemCard = (
+        proposal: WarehouseProposal,
+        it: ProposalItem,
+        idx: number,
+        displayIndex: number,
+        showProposalMeta: boolean = false
+    ) => {
+        const isItemApproved = it.status === 'APPROVED' || proposal.status === 'APPROVED'
+        return (
+            <div
+                key={`${proposal.id}-${it.id || idx}`}
+                className="rounded-xl border border-slate-800 bg-slate-950/50 hover:bg-slate-800/40 p-4 transition space-y-3"
+            >
+                {showProposalMeta && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800/80 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center gap-1 font-semibold text-amber-300 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40">
+                                <Clock className="w-3 h-3" />
+                                {proposal.created_at ? format(new Date(proposal.created_at), 'dd/MM/yyyy HH:mm:ss') : '---'}
+                            </span>
+                            {proposal.code && (
+                                <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 font-mono text-[11px]">
+                                    {proposal.code}
+                                </span>
+                            )}
+                            <span className="inline-flex items-center gap-1 text-slate-400">
+                                <User className="w-3 h-3 text-blue-400" />
+                                {proposal.created_by_name || 'Nhân viên'}
+                            </span>
+                        </div>
+                        <div>
+                            {proposal.status === 'PENDING' && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                    Chờ duyệt
+                                </span>
+                            )}
+                            {proposal.status === 'APPROVED' && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                    Đã duyệt
+                                </span>
+                            )}
+                            {proposal.status === 'REJECTED' && (
+                                <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                                    Từ chối
+                                </span>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* Hàng 1: STT, Mã vị trí, Thao tác, Trước -> Sau, Nút soi */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                        <span className="w-6 h-6 rounded-md bg-slate-800 text-slate-400 font-mono text-xs font-bold flex items-center justify-center">
+                            {displayIndex + 1}
+                        </span>
+
+                        <div>
+                            <span className="font-bold text-slate-100 text-sm font-mono bg-slate-800/90 px-2.5 py-1 rounded-lg border border-slate-700">
+                                {it.position_code}
+                            </span>
+                            {it.warehouse_name && (
+                                <span className="ml-2 text-xs text-slate-500">
+                                    {it.warehouse_name}
+                                </span>
+                            )}
+                        </div>
+
+                        {it.action_type === 'CLEAR' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30 whitespace-nowrap">
+                                🔴 Xuất rỗng ô
+                            </span>
+                        )}
+                        {it.action_type === 'SET_QTY' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 whitespace-nowrap">
+                                🟡 Sửa số lượng
+                            </span>
+                        )}
+                        {it.action_type === 'MOVE' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 whitespace-nowrap">
+                                🔵 Chuyển vị trí
+                            </span>
+                        )}
+                        {it.action_type === 'ASSIGN_LOT' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-purple-500/15 text-purple-300 border border-purple-500/30 whitespace-nowrap">
+                                🏷️ Gắn STT Lot
+                            </span>
+                        )}
+                        {it.action_type === 'NOTE' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 whitespace-nowrap">
+                                📝 Chỉ ghi chú
+                            </span>
+                        )}
+
+                        {isItemApproved && (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 whitespace-nowrap">
+                                ✓ Đã duyệt
+                            </span>
+                        )}
+                    </div>
+
+                    <div className="flex items-center gap-3 ml-auto">
+                        {it.action_type === 'CLEAR' && (
+                            <div className="flex items-center gap-2 text-xs">
+                                <span className="text-slate-400 line-through">
+                                    {it.current_quantity ?? 'Có hàng'} {it.unit || 'thùng'}
+                                </span>
+                                <ArrowRight className="w-3.5 h-3.5 text-rose-400" />
+                                <span className="font-bold text-rose-400 bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/40">
+                                    Trống ô (0)
+                                </span>
+                            </div>
+                        )}
+                        {it.action_type === 'SET_QTY' && !(it.sub_items && it.sub_items.length > 1) && (
+                            <div className="flex items-center gap-2 text-xs">
+                                <span className="text-slate-400">
+                                    {it.current_quantity ?? '--'}
+                                </span>
+                                <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
+                                <span className="font-bold text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">
+                                    {it.new_quantity} {it.unit || 'thùng'}
+                                </span>
+                            </div>
+                        )}
+                        {it.action_type === 'MOVE' && (
+                            <div className="flex items-center gap-2 text-xs">
+                                <span className="text-slate-400 font-mono">
+                                    {it.position_code}
+                                </span>
+                                <ArrowRight className="w-3.5 h-3.5 text-cyan-400" />
+                                <span className="font-bold text-cyan-300 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40 font-mono">
+                                    {it.target_position_code || 'Vị trí mới'}
+                                </span>
+                            </div>
+                        )}
+                        {it.action_type === 'ASSIGN_LOT' && (
+                            <div className="flex items-center gap-2 text-xs">
+                                <span className="text-slate-400">Gắn STT:</span>
+                                <span className="font-bold text-purple-300 bg-purple-950/40 px-2 py-0.5 rounded border border-purple-700/40 font-mono">
+                                    {it.lot_stt || it.lot_code || '---'}
+                                </span>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => {
+                                if (onStartVisualReview && proposal.status === 'PENDING') {
+                                    onStartVisualReview(proposal, idx)
+                                    onClose()
+                                } else if (onFocusPosition) {
+                                    onFocusPosition(it.position_id, it.position_code)
+                                    onClose()
+                                }
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-amber-500 hover:text-slate-950 text-slate-200 transition text-xs font-semibold border border-slate-700 hover:border-amber-400 whitespace-nowrap"
+                            title="Xem ô này trên sơ đồ kho"
+                        >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Soi trên bản đồ</span>
+                        </button>
+                    </div>
+                </div>
+
+                {/* Hàng 2: Thông tin Mặt hàng & Lô (nếu có) */}
+                {it.sub_items && it.sub_items.length > 1 ? (
+                    <div className="space-y-1.5 pt-1 border-t border-slate-800/70">
+                        <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                Pallet hỗn hợp ({it.sub_items.length} SP)
+                            </span>
+                            {it.lot_stt && (
+                                <span className="text-purple-300 font-bold font-mono bg-purple-950/50 px-2 py-0.5 rounded border border-purple-700/50 text-[11px]">
+                                    STT: {it.lot_stt}
+                                </span>
+                            )}
+                            {it.lot_code && (
+                                <span className="text-xs text-blue-400 font-mono">
+                                    Lot: {it.lot_code}
+                                </span>
+                            )}
+                            {it.action_type === 'SET_QTY' && (
+                                <span className="text-xs text-amber-400 font-semibold ml-auto">
+                                    Tổng sau sửa: {it.new_quantity} {it.unit || 'thùng'}
+                                </span>
+                            )}
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                            {it.sub_items.map((sub, sIdx) => (
+                                <div key={sIdx} className="bg-slate-900/80 rounded-lg px-3 py-1.5 border border-slate-800 flex items-center justify-between gap-2 text-xs">
+                                    <div className="min-w-0">
+                                        <div className="font-medium text-slate-200 truncate">
+                                            {sub.product_name}
+                                        </div>
+                                        {sub.sku && (
+                                            <div className="text-[10px] text-slate-500 font-mono">
+                                                SKU: {sub.sku}
+                                            </div>
+                                        )}
+                                    </div>
+                                    {it.action_type === 'SET_QTY' && (
+                                        <div className="flex items-center gap-1.5 shrink-0 text-[11px]">
+                                            <span className="text-slate-400">{sub.current_quantity}</span>
+                                            <ArrowRight className="w-3 h-3 text-amber-400" />
+                                            <span className={`font-bold px-1.5 py-0.5 rounded border ${sub.new_quantity === 0 ? 'text-rose-400 bg-rose-950/40 border-rose-800/40' : 'text-emerald-400 bg-emerald-950/40 border-emerald-800/40'}`}>
+                                                {sub.new_quantity} {sub.unit || 'th'}
+                                            </span>
+                                        </div>
+                                    )}
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                ) : it.action_type === 'ASSIGN_LOT' && it.lot_found === false ? (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-rose-300 bg-rose-950/30 border border-rose-800/40 rounded-lg px-3 py-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                        <span>
+                            Không tìm thấy Lot nào khớp STT <strong className="font-mono">{it.lot_stt || '---'}</strong> trong phân hệ kho hiện tại.
+                        </span>
+                    </div>
+                ) : (it.product_name || it.lot_code || it.action_type !== 'NOTE') ? (
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-300 pt-1 border-t border-slate-800/70">
+                        <span className="font-medium text-slate-200">
+                            {it.product_name || (it.action_type === 'NOTE' ? 'Ô trống' : 'Hàng đông lạnh')}
+                        </span>
+                        {it.lot_stt && (
+                            <span className="text-purple-300 font-bold font-mono bg-purple-950/50 px-2 py-0.5 rounded border border-purple-700/50 text-[11px]">
+                                STT: {it.lot_stt}
+                            </span>
+                        )}
+                        {it.lot_code && (
+                            <span className="text-blue-400 font-mono bg-blue-950/40 px-2 py-0.5 rounded border border-blue-800/40 text-[11px]">
+                                Lot: {it.lot_code}
+                            </span>
+                        )}
+                        {it.action_type === 'ASSIGN_LOT' && it.new_quantity != null && (
+                            <span className="text-emerald-300 font-semibold bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40 text-[11px]">
+                                SL: {it.new_quantity} {it.unit || 'Thùng'}
+                            </span>
+                        )}
+                        {it.action_type === 'ASSIGN_LOT' && it.target_position_code && it.target_position_code !== it.position_code && (
+                            <span className="text-amber-300 bg-amber-950/40 px-2 py-0.5 rounded border border-amber-800/40 text-[11px]">
+                                Đang ở ô {it.target_position_code} ➔ chuyển sang {it.position_code}
+                            </span>
+                        )}
+                    </div>
+                ) : null}
+
+                {/* Hàng 3: Ghi chú thực tế */}
+                {it.note && (
+                    <div className={`rounded-lg px-3 py-2 border text-xs leading-relaxed ${
+                        it.action_type === 'NOTE'
+                            ? 'bg-emerald-950/40 border-emerald-700/40 text-emerald-200'
+                            : 'bg-slate-900 border-slate-700/80 text-amber-200'
+                    }`}>
+                        <span className="font-bold mr-1.5">💬 Ghi chú:</span>
+                        <span className="whitespace-pre-wrap break-words">{it.note}</span>
+                    </div>
+                )}
+            </div>
+        )
+    }
+
     if (!isOpen) return null
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className="relative w-full max-w-5xl h-[88vh] bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/65 backdrop-blur-sm p-2 sm:p-4">
+            <div className="relative w-[96vw] max-w-[1440px] h-[92vh] bg-slate-900 border border-slate-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-slate-100">
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/90">
                     <div className="flex items-center gap-3">
@@ -189,54 +482,89 @@ export function WarehouseAdjustmentReviewModal({
                 </div>
 
                 {/* Filter bar */}
-                <div className="flex items-center justify-between px-6 py-2.5 bg-slate-950/60 border-b border-slate-800 text-xs">
-                    <div className="flex items-center gap-1.5">
-                        <span className="text-slate-400 mr-1 flex items-center gap-1">
-                            <Filter className="w-3.5 h-3.5" /> Lọc:
-                        </span>
-                        {(['PENDING', 'APPROVED', 'REJECTED', 'ALL'] as const).map(st => (
-                            <button
-                                key={st}
-                                onClick={() => setStatusFilter(st)}
-                                className={`px-2.5 py-1 rounded-md font-medium transition ${
-                                    statusFilter === st
-                                        ? 'bg-blue-600 text-white shadow-sm'
-                                        : 'bg-slate-800/80 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                                }`}
-                            >
-                                {st === 'PENDING' && 'Chờ duyệt'}
-                                {st === 'APPROVED' && 'Đã duyệt'}
-                                {st === 'REJECTED' && 'Đã từ chối'}
-                                {st === 'ALL' && 'Tất cả'}
-                            </button>
-                        ))}
+                <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-2.5 bg-slate-950/60 border-b border-slate-800 text-xs">
+                    <div className="flex flex-wrap items-center gap-2">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-slate-400 mr-1 flex items-center gap-1">
+                                <Filter className="w-3.5 h-3.5" /> Lọc:
+                            </span>
+                            {(['PENDING', 'APPROVED', 'REJECTED', 'ALL'] as const).map(st => (
+                                <button
+                                    key={st}
+                                    onClick={() => setStatusFilter(st)}
+                                    className={`px-2.5 py-1 rounded-md font-medium transition ${
+                                        statusFilter === st
+                                            ? 'bg-blue-600 text-white shadow-sm'
+                                            : 'bg-slate-800/80 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                                    }`}
+                                >
+                                    {st === 'PENDING' && 'Chờ duyệt'}
+                                    {st === 'APPROVED' && 'Đã duyệt'}
+                                    {st === 'REJECTED' && 'Đã từ chối'}
+                                    {st === 'ALL' && 'Tất cả'}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Ô tìm kiếm theo vị trí */}
+                        <div className="relative flex items-center ml-1">
+                            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+                            <input
+                                type="text"
+                                value={positionQuery}
+                                onChange={e => setPositionQuery(e.target.value)}
+                                placeholder="Tìm theo mã vị trí (VD: K1D1A02T102)..."
+                                className="w-64 sm:w-72 pl-8 pr-7 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:border-blue-500 font-mono text-xs"
+                            />
+                            {positionQuery ? (
+                                <button
+                                    onClick={() => setPositionQuery('')}
+                                    className="absolute right-2 text-slate-400 hover:text-white"
+                                    title="Xóa tìm kiếm"
+                                >
+                                    <X className="w-3.5 h-3.5" />
+                                </button>
+                            ) : null}
+                        </div>
                     </div>
 
                     <div className="text-slate-400">
-                        Tổng số: <strong className="text-slate-200">{proposals.length}</strong> phiếu
+                        {normalizedPosQuery ? (
+                            <span>
+                                Tìm thấy <strong className="text-amber-300">{positionHistoryEntries.length}</strong> lần nháp trong <strong className="text-slate-200">{filteredProposals.length}</strong> phiếu
+                            </span>
+                        ) : (
+                            <span>
+                                Tổng số: <strong className="text-slate-200">{filteredProposals.length}</strong> phiếu
+                            </span>
+                        )}
                     </div>
                 </div>
 
                 {/* Body: Split 2 columns */}
                 <div className="flex-1 flex overflow-hidden">
                     {/* Left: Proposal List */}
-                    <div className="w-80 border-r border-slate-800 bg-slate-900/50 flex flex-col">
+                    <div className="w-72 shrink-0 border-r border-slate-800 bg-slate-900/50 flex flex-col">
                         <div className="flex-1 overflow-y-auto p-3 space-y-2">
                             {loading && proposals.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-40 text-slate-400 gap-2">
                                     <Loader2 className="w-6 h-6 animate-spin text-blue-400" />
                                     <span>Đang tải danh sách...</span>
                                 </div>
-                            ) : proposals.length === 0 ? (
+                            ) : filteredProposals.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-48 text-center p-4 text-slate-400">
                                     <FileText className="w-10 h-10 text-slate-600 mb-2" />
-                                    <p className="font-semibold text-slate-300">Không có phiếu đề xuất nào</p>
+                                    <p className="font-semibold text-slate-300">
+                                        {normalizedPosQuery ? `Không tìm thấy vị trí "${positionQuery.trim()}"` : 'Không có phiếu đề xuất nào'}
+                                    </p>
                                     <p className="text-xs text-slate-500 mt-1">
-                                        Khi nhân viên ghi nháp trên App và bấm gửi, các phiếu sẽ hiển thị tại đây.
+                                        {normalizedPosQuery
+                                            ? 'Thử chọn tab "Tất cả" hoặc kiểm tra lại mã vị trí.'
+                                            : 'Khi nhân viên ghi nháp trên App và bấm gửi, các phiếu sẽ hiển thị tại đây.'}
                                     </p>
                                 </div>
                             ) : (
-                                proposals.map(prop => {
+                                filteredProposals.map(prop => {
                                     const isSelected = prop.id === selectedProposalId
                                     return (
                                         <div
@@ -299,7 +627,43 @@ export function WarehouseAdjustmentReviewModal({
 
                     {/* Right: Proposal Details */}
                     <div className="flex-1 flex flex-col bg-slate-900/30 overflow-hidden">
-                        {selectedProposal ? (
+                        {normalizedPosQuery ? (
+                            <>
+                                <div className="px-6 py-3.5 border-b border-slate-800 bg-slate-900/70 flex items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2.5">
+                                        <Search className="w-4 h-4 text-amber-400" />
+                                        <h3 className="text-sm font-bold text-white">
+                                            Lịch sử nháp vị trí{' '}
+                                            <span className="font-mono text-amber-300 bg-amber-950/50 px-2 py-0.5 rounded border border-amber-800/40">
+                                                {positionQuery.trim().toUpperCase()}
+                                            </span>
+                                        </h3>
+                                        <span className="text-xs text-slate-400">
+                                            ({positionHistoryEntries.length} lần nháp)
+                                        </span>
+                                    </div>
+                                    <button
+                                        onClick={() => setPositionQuery('')}
+                                        className="text-xs text-slate-400 hover:text-white px-2.5 py-1 rounded-lg bg-slate-800 border border-slate-700"
+                                    >
+                                        Xóa lọc vị trí
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                                    {positionHistoryEntries.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-48 text-slate-500 text-sm">
+                                            <Search className="w-8 h-8 mb-2 opacity-40" />
+                                            <span>Không có lần nháp nào khớp vị trí &quot;{positionQuery.trim()}&quot; trong mục đang lọc.</span>
+                                        </div>
+                                    ) : (
+                                        positionHistoryEntries.map((entry, listIdx) =>
+                                            renderItemCard(entry.proposal, entry.item, entry.itemIndex, listIdx, true)
+                                        )
+                                    )}
+                                </div>
+                            </>
+                        ) : selectedProposal ? (
                             <>
                                 {/* Proposal meta bar */}
                                 <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/60">
@@ -346,185 +710,44 @@ export function WarehouseAdjustmentReviewModal({
                                             )}
                                         </div>
 
-                                        <div className="text-right">
-                                            <span className="text-xs text-slate-400 block mb-1">Tổng điều chỉnh</span>
-                                            <span className="px-3 py-1.5 rounded-xl bg-blue-600/20 text-blue-300 font-bold text-sm border border-blue-500/30">
-                                                {selectedProposal.items.length} vị trí
-                                            </span>
+                                        <div className="text-right flex flex-col items-end gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xs text-slate-400">Tổng điều chỉnh:</span>
+                                                <span className="px-2.5 py-1 rounded-lg bg-blue-600/20 text-blue-300 font-bold text-xs border border-blue-500/30">
+                                                    {selectedProposal.items.length} vị trí
+                                                </span>
+                                            </div>
+
+                                            {/* Nút Kích Hoạt Chế Độ Duyệt Trực Quan Trên Bản Đồ */}
+                                            {selectedProposal.status === 'PENDING' && onStartVisualReview && (
+                                                <button
+                                                    onClick={() => {
+                                                        onStartVisualReview(selectedProposal, 0)
+                                                        onClose()
+                                                    }}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs shadow-md shadow-amber-950 transition hover:scale-105 active:scale-95 border border-amber-400"
+                                                    title="Mở sơ đồ kho, làm nổi bật các ô và duyệt trực tiếp trên bản đồ"
+                                                >
+                                                    <span>🗺️ Soi & Duyệt trên Bản Đồ</span>
+                                                    <ArrowRight className="w-3.5 h-3.5" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Table of items */}
-                                <div className="flex-1 overflow-y-auto p-6">
-                                    <table className="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr className="border-b border-slate-800 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                                                <th className="py-2.5 px-3">STT</th>
-                                                <th className="py-2.5 px-3">Vị Trí</th>
-                                                <th className="py-2.5 px-3">Thao Tác</th>
-                                                <th className="py-2.5 px-3">Mặt Hàng & Lô</th>
-                                                <th className="py-2.5 px-3 text-center">Trước $\rightarrow$ Sau</th>
-                                                <th className="py-2.5 px-3">Ghi Chú Thực Tế</th>
-                                                <th className="py-2.5 px-3 text-right">Xem Sơ Đồ</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-slate-800/60 text-xs">
-                                            {selectedProposal.items.map((it, idx) => {
-                                                return (
-                                                    <tr key={it.id || idx} className="hover:bg-slate-800/40 transition">
-                                                        <td className="py-3 px-3 text-slate-500 font-mono">
-                                                            {idx + 1}
-                                                        </td>
-                                                        <td className="py-3 px-3">
-                                                            <div className="font-bold text-slate-200 text-sm font-mono">
-                                                                {it.position_code}
-                                                            </div>
-                                                            {it.warehouse_name && (
-                                                                <div className="text-[11px] text-slate-500">
-                                                                    {it.warehouse_name}
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 px-3">
-                                                            {it.action_type === 'CLEAR' && (
-                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-rose-500/15 text-rose-400 border border-rose-500/30">
-                                                                    🔴 Xuất rỗng ô
-                                                                </span>
-                                                            )}
-                                                            {it.action_type === 'SET_QTY' && (
-                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                                                                    🟡 Sửa số lượng
-                                                                </span>
-                                                            )}
-                                                            {it.action_type === 'MOVE' && (
-                                                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                                                                    🔵 Chuyển vị trí
-                                                                </span>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 px-3 max-w-[240px]">
-                                                            {it.sub_items && it.sub_items.length > 1 ? (
-                                                                <div className="space-y-1.5">
-                                                                    <div className="flex items-center gap-1.5">
-                                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                                                            Pallet hỗn hợp ({it.sub_items.length} SP)
-                                                                        </span>
-                                                                        {it.lot_code && (
-                                                                            <span className="text-[11px] text-blue-400 font-mono">
-                                                                                {it.lot_code}
-                                                                            </span>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="space-y-1 mt-1">
-                                                                        {it.sub_items.map((sub, sIdx) => (
-                                                                            <div key={sIdx} className="bg-slate-950/60 rounded px-2 py-1 border border-slate-800 text-[11px]">
-                                                                                <div className="font-semibold text-slate-200 truncate">
-                                                                                    {sub.product_name}
-                                                                                </div>
-                                                                                {sub.sku && (
-                                                                                    <div className="text-[10px] text-slate-500 font-mono">
-                                                                                        SKU: {sub.sku}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-                                                                        ))}
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <>
-                                                                    <div className="font-medium text-slate-200 truncate" title={it.product_name || ''}>
-                                                                        {it.product_name || 'Hàng đông lạnh'}
-                                                                    </div>
-                                                                    {it.lot_code && (
-                                                                        <div className="text-[11px] text-blue-400 font-mono mt-0.5">
-                                                                            Lot: {it.lot_code}
-                                                                        </div>
-                                                                    )}
-                                                                </>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 px-3 text-center">
-                                                            {it.action_type === 'CLEAR' && (
-                                                                <div className="flex items-center justify-center gap-2">
-                                                                    <span className="text-slate-400 line-through">
-                                                                        {it.current_quantity ?? 'Có hàng'} {it.unit || 'thùng'}
-                                                                    </span>
-                                                                    <ArrowRight className="w-3.5 h-3.5 text-rose-400" />
-                                                                    <span className="font-bold text-rose-400 bg-rose-950/40 px-2 py-0.5 rounded border border-rose-800/40">
-                                                                        Trống ô (0)
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                            {it.action_type === 'SET_QTY' && (
-                                                                it.sub_items && it.sub_items.length > 1 ? (
-                                                                    <div className="space-y-1">
-                                                                        {it.sub_items.map((sub, sIdx) => (
-                                                                            <div key={sIdx} className="flex items-center justify-center gap-1.5 text-[11px]">
-                                                                                <span className="text-slate-400">{sub.current_quantity}</span>
-                                                                                <ArrowRight className="w-3 h-3 text-amber-400" />
-                                                                                <span className={`font-bold px-1.5 py-0.5 rounded border ${sub.new_quantity === 0 ? 'text-rose-400 bg-rose-950/40 border-rose-800/40' : 'text-emerald-400 bg-emerald-950/40 border-emerald-800/40'}`}>
-                                                                                    {sub.new_quantity} {sub.unit || 'th'}
-                                                                                </span>
-                                                                            </div>
-                                                                        ))}
-                                                                        <div className="text-[10px] text-amber-400 font-semibold border-t border-slate-800 pt-1">
-                                                                            Tổng: {it.new_quantity} {it.unit || 'thùng'}
-                                                                        </div>
-                                                                    </div>
-                                                                ) : (
-                                                                    <div className="flex items-center justify-center gap-2">
-                                                                        <span className="text-slate-400">
-                                                                            {it.current_quantity ?? '--'}
-                                                                        </span>
-                                                                        <ArrowRight className="w-3.5 h-3.5 text-amber-400" />
-                                                                        <span className="font-bold text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-800/40">
-                                                                            {it.new_quantity} {it.unit || 'thùng'}
-                                                                        </span>
-                                                                    </div>
-                                                                )
-                                                            )}
-                                                            {it.action_type === 'MOVE' && (
-                                                                <div className="flex items-center justify-center gap-2">
-                                                                    <span className="text-slate-400 font-mono">
-                                                                        {it.position_code}
-                                                                    </span>
-                                                                    <ArrowRight className="w-3.5 h-3.5 text-cyan-400" />
-                                                                    <span className="font-bold text-cyan-300 bg-cyan-950/40 px-2 py-0.5 rounded border border-cyan-800/40 font-mono">
-                                                                        {it.target_position_code || 'Vị trí mới'}
-                                                                    </span>
-                                                                </div>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 px-3">
-                                                            {it.note ? (
-                                                                <span className="inline-block bg-slate-800 text-amber-300 font-medium px-2 py-0.5 rounded text-[11px] border border-slate-700">
-                                                                    💬 {it.note}
-                                                                </span>
-                                                            ) : (
-                                                                <span className="text-slate-600">---</span>
-                                                            )}
-                                                        </td>
-                                                        <td className="py-3 px-3 text-right">
-                                                            <button
-                                                                onClick={() => {
-                                                                    if (onFocusPosition) {
-                                                                        onFocusPosition(it.position_id, it.position_code)
-                                                                        onClose()
-                                                                    }
-                                                                }}
-                                                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition text-[11px]"
-                                                                title="Xem ô này trên sơ đồ kho"
-                                                            >
-                                                                <Eye className="w-3.5 h-3.5 text-blue-400" />
-                                                                <span>Soi vị trí</span>
-                                                            </button>
-                                                        </td>
-                                                    </tr>
-                                                )
-                                            })}
-                                        </tbody>
-                                    </table>
+                                {/* List of items */}
+                                <div className="flex-1 overflow-y-auto p-5 space-y-3">
+                                    {selectedProposal.items.length === 0 ? (
+                                        <div className="flex flex-col items-center justify-center h-44 text-slate-500 text-sm">
+                                            <FileText className="w-8 h-8 mb-2 opacity-50" />
+                                            <span>Phiếu này không có dữ liệu vị trí chi tiết.</span>
+                                        </div>
+                                    ) : (
+                                        selectedProposal.items.map((it, idx) =>
+                                            renderItemCard(selectedProposal, it, idx, idx, false)
+                                        )
+                                    )}
                                 </div>
 
                                 {/* Footer actions */}

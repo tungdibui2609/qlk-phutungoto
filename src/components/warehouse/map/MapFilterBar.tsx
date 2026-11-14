@@ -61,6 +61,7 @@ interface MapFilterBarProps {
     onResetDeepScan?: () => void
     deepScanStats?: { totalPositions: number; matchingBoxes: number }
     onBulkMarkFilteredPositions?: () => void
+    zoneHighlightCounts?: Map<string, number>
 }
 
 export function MapFilterBar({
@@ -114,7 +115,8 @@ export function MapFilterBar({
     onDeepPackageSpecChange,
     onResetDeepScan,
     deepScanStats,
-    onBulkMarkFilteredPositions
+    onBulkMarkFilteredPositions,
+    zoneHighlightCounts
 }: MapFilterBarProps) {
     // Local state for debounce
     const [localSearchTerm, setLocalSearchTerm] = useState(searchTerm)
@@ -958,6 +960,7 @@ export function MapFilterBar({
                     variant="subtle"
                     zones={zones}
                     grouped={grouped}
+                    zoneHighlightCounts={zoneHighlightCounts}
                 />
             </div>
 

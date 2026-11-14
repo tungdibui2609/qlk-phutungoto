@@ -6,6 +6,7 @@ import { TagDisplay } from '@/components/lots/TagDisplay'
 import { advancedMatchSearch } from '@/lib/searchUtils'
 import { decodeSTT } from '@/lib/numberUtils'
 import { LoosePositionConfig } from '@/app/api/warehouses/positions/loose/route'
+import { ProposalItem } from '@/lib/warehouseAdjustmentService'
 
 type Position = Database['public']['Tables']['positions']['Row']
 
@@ -37,11 +38,16 @@ const PositionCell = React.memo<{
     isPrintPage?: boolean,
     isSanh?: boolean,
     isEmptyMode?: boolean,
-    searchTerm?: string
+    searchTerm?: string,
+    visualReviewItem?: ProposalItem | null,
+    visualReviewTargetItem?: ProposalItem | null,
+    isCurrentActiveReview?: boolean,
+    onSelectVisualReviewItem?: (posId: string) => void
 }>(({
     pos, cellHeight, cellWidth, isMobile, isOccupied, isSelected,
     isTargetLot, isMarked, markNote, isLocked, looseConfig, lotDetail, isAssignmentMode, isHighlightBlinking, displayInternalCode, isGrouped,
-    onPositionSelect, onViewDetails, onPositionMenu, onEditMarkNote, isPrintPage, isSanh, isEmptyMode, searchTerm = ''
+    onPositionSelect, onViewDetails, onPositionMenu, onEditMarkNote, isPrintPage, isSanh, isEmptyMode, searchTerm = '',
+    visualReviewItem, visualReviewTargetItem, isCurrentActiveReview, onSelectVisualReviewItem
 }) => {
     const ids = (pos as any).realIds || [pos.id]
     const lotStt = lotDetail?.daily_seq ? decodeSTT(lotDetail.daily_seq) : ''
@@ -186,8 +192,44 @@ const PositionCell = React.memo<{
         }
     }
 
+    // ── CHẾ ĐỘ DUYỆT TRỰC QUAN TRÊN BẢN ĐỒ (Visual Map Review Mode) ──
+    if (visualReviewItem) {
+        if (visualReviewItem.action_type === 'CLEAR') {
+            borderClass = 'border-rose-500 dark:border-rose-500'
+            ringClass = 'ring-3 ring-rose-500/80 shadow-[0_0_12px_rgba(244,63,94,0.45)]'
+            bgClass = 'bg-rose-50 dark:bg-rose-950/60'
+        } else if (visualReviewItem.action_type === 'SET_QTY') {
+            borderClass = 'border-amber-500 dark:border-amber-400'
+            ringClass = 'ring-3 ring-amber-400/80 shadow-[0_0_12px_rgba(251,191,36,0.45)]'
+            bgClass = 'bg-amber-50 dark:bg-amber-950/60'
+        } else if (visualReviewItem.action_type === 'MOVE') {
+            borderClass = 'border-cyan-500 dark:border-cyan-400'
+            ringClass = 'ring-3 ring-cyan-400/80 shadow-[0_0_12px_rgba(6,182,212,0.45)]'
+            bgClass = 'bg-cyan-50 dark:bg-cyan-950/60'
+        } else if (visualReviewItem.action_type === 'ASSIGN_LOT') {
+            borderClass = 'border-purple-500 dark:border-purple-400'
+            ringClass = 'ring-3 ring-purple-400/80 shadow-[0_0_12px_rgba(168,85,247,0.45)]'
+            bgClass = 'bg-purple-50 dark:bg-purple-950/60'
+        } else if (visualReviewItem.action_type === 'NOTE') {
+            borderClass = 'border-emerald-500 dark:border-emerald-400'
+            ringClass = 'ring-3 ring-emerald-400/80 shadow-[0_0_12px_rgba(16,185,129,0.45)]'
+            bgClass = 'bg-emerald-50 dark:bg-emerald-950/60'
+        }
+
+        if (isCurrentActiveReview) {
+            ringClass = 'ring-4 ring-amber-500 ring-offset-2 ring-offset-white dark:ring-offset-slate-900 shadow-[0_0_20px_rgba(245,158,11,0.75)] z-20 scale-[1.03]'
+        }
+    } else if (visualReviewTargetItem) {
+        borderClass = 'border-dashed border-sky-500 dark:border-sky-400'
+        ringClass = 'ring-2 ring-sky-400/70 shadow-[0_0_10px_rgba(56,189,248,0.4)]'
+        bgClass = 'bg-sky-50/90 dark:bg-sky-950/50'
+    }
+
     return (
         <div
+            id={`pos-${pos.id}`}
+            data-position-id={pos.id}
+            data-position-code={pos.code}
             style={{
                 height: isEmptyMode 
                     ? 'auto'
@@ -222,13 +264,58 @@ const PositionCell = React.memo<{
                 ${isEmptyMode ? 'items-start justify-start !p-0.5 rounded-md border-[1.5px] print:rounded-none print:border-stone-300' : ''}
             `}
             onClick={() => {
+                if (visualReviewItem && onSelectVisualReviewItem) {
+                    onSelectVisualReviewItem(pos.id)
+                    return
+                }
+                if (visualReviewTargetItem && onSelectVisualReviewItem) {
+                    onSelectVisualReviewItem(visualReviewTargetItem.position_id)
+                    return
+                }
                 if (isAssignmentMode) {
                     if (isLocked) return
                     onPositionSelect?.(ids)
                 }
             }}
-            title={isLocked ? "Vị trí đã bị khóa (không thể gán hàng, không xuất Excel, không tính thống kê)" : undefined}
+            title={isLocked ? "Vị trí đã bị khóa (không thể gán hàng, không xuất Excel, không tính thống kê)" : (visualReviewItem ? `Đang đề xuất: ${visualReviewItem.action_type === 'CLEAR' ? 'Xuất rỗng' : (visualReviewItem.action_type === 'SET_QTY' ? `Sửa SL: ${visualReviewItem.current_quantity ?? '?'} ➔ ${visualReviewItem.new_quantity}` : (visualReviewItem.action_type === 'ASSIGN_LOT' ? `Gắn STT ${visualReviewItem.lot_stt || visualReviewItem.lot_code}` : (visualReviewItem.action_type === 'NOTE' ? `Ghi chú: ${visualReviewItem.note || ''}` : `Chuyển sang ${visualReviewItem.target_position_code}`)))}` : (visualReviewTargetItem ? `Đích nhận hàng chuyển từ ${visualReviewTargetItem.position_code}` : undefined))}
         >
+            {/* Huy hiệu Chế Độ Duyệt Trực Quan (Visual Review Badge) */}
+            {visualReviewItem && (
+                <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-1 py-0.5 pointer-events-none text-[8.5px] font-black uppercase tracking-wider shadow-sm backdrop-blur-xs">
+                    {visualReviewItem.action_type === 'CLEAR' && (
+                        <span className="w-full text-center bg-rose-600 text-white py-0.5 rounded text-[8px] font-black shadow-xs">
+                            🔴 XUẤT RỖNG (X)
+                        </span>
+                    )}
+                    {visualReviewItem.action_type === 'SET_QTY' && (
+                        <span className="w-full text-center bg-amber-500 text-slate-950 py-0.5 rounded text-[8px] font-black shadow-xs truncate px-0.5">
+                            {visualReviewItem.current_quantity ?? '?'} ➔ {visualReviewItem.new_quantity} {visualReviewItem.unit || 'th'}
+                        </span>
+                    )}
+                    {visualReviewItem.action_type === 'MOVE' && (
+                        <span className="w-full text-center bg-cyan-600 text-white py-0.5 rounded text-[8px] font-black shadow-xs truncate px-0.5">
+                            ➔ {visualReviewItem.target_position_code || '---'}
+                        </span>
+                    )}
+                    {visualReviewItem.action_type === 'ASSIGN_LOT' && (
+                        <span className="w-full text-center bg-purple-600 text-white py-0.5 rounded text-[8px] font-black shadow-xs truncate px-0.5">
+                            🏷️ GẮN {visualReviewItem.lot_stt || visualReviewItem.lot_code || 'LOT'}
+                        </span>
+                    )}
+                    {visualReviewItem.action_type === 'NOTE' && (
+                        <span className="w-full text-center bg-emerald-600 text-white py-0.5 rounded text-[8px] font-black shadow-xs truncate px-0.5">
+                            📝 GHI CHÚ
+                        </span>
+                    )}
+                </div>
+            )}
+            {!visualReviewItem && visualReviewTargetItem && (
+                <div className="absolute top-0 inset-x-0 z-20 flex items-center justify-between px-1 py-0.5 pointer-events-none text-[8px] font-black uppercase tracking-wider shadow-sm backdrop-blur-xs">
+                    <span className="w-full text-center bg-sky-600 text-white py-0.5 rounded text-[8px] font-black shadow-xs truncate px-0.5">
+                        📥 TỪ {visualReviewTargetItem.position_code}
+                    </span>
+                </div>
+            )}
             {/* Đường gạch chéo & Huy hiệu ĐÃ KHÓA */}
             {isLocked && (
                 <>

@@ -14,6 +14,7 @@ type ZoneLayout = Database['public']['Tables']['zone_layouts']['Row']
 import PositionCell from './PositionCell'
 import MergedBigCell from './MergedBigCell'
 import { EditableText } from '@/components/print/PrintHelpers'
+import { ProposalItem } from '@/lib/warehouseAdjustmentService'
 
 interface PositionWithZone extends Position {
     zone_id?: string | null
@@ -64,6 +65,11 @@ interface FlexibleZoneGridProps {
     lockedPositionIds?: Set<string>
     loosePositions?: Record<string, any>
     onEditMarkNote?: (pos: any) => void
+    visualReviewItemsMap?: Map<string, ProposalItem>
+    visualReviewTargetMap?: Map<string, ProposalItem>
+    zoneProposalCounts?: Map<string, number>
+    currentVisualPositionId?: string | null
+    onSelectVisualReviewItem?: (posId: string) => void
 }
 
 export default function FlexibleZoneGrid({
@@ -103,7 +109,12 @@ export default function FlexibleZoneGrid({
     markedNotes = {},
     lockedPositionIds = new Set(),
     loosePositions = {},
-    onEditMarkNote
+    onEditMarkNote,
+    visualReviewItemsMap,
+    visualReviewTargetMap,
+    zoneProposalCounts,
+    currentVisualPositionId,
+    onSelectVisualReviewItem
 }: FlexibleZoneGridProps) {
     const [isMobile, setIsMobile] = React.useState(false)
     const [localNotes, setLocalNotes] = React.useState<Record<string, string>>({})
@@ -529,6 +540,9 @@ export default function FlexibleZoneGrid({
         }
 
         const looseConfig = loosePositions ? (loosePositions[pos.id] || (realIds && realIds.map((id: string) => loosePositions[id]).find(Boolean))) : null
+        const vReviewItem = visualReviewItemsMap ? (visualReviewItemsMap.get(pos.id) || (realIds && realIds.map((id: string) => visualReviewItemsMap.get(id)).find(Boolean)) || null) : null
+        const vReviewTargetItem = visualReviewTargetMap ? (visualReviewTargetMap.get(pos.id) || (realIds && realIds.map((id: string) => visualReviewTargetMap.get(id)).find(Boolean)) || null) : null
+        const isCurrentActive = Boolean(currentVisualPositionId && (pos.id === currentVisualPositionId || (realIds && realIds.includes(currentVisualPositionId))))
 
         return (
             <PositionCell
@@ -557,6 +571,10 @@ export default function FlexibleZoneGrid({
                 isSanh={isSanh}
                 isEmptyMode={isEmptyMode}
                 searchTerm={searchTerm}
+                visualReviewItem={vReviewItem}
+                visualReviewTargetItem={vReviewTargetItem}
+                isCurrentActiveReview={isCurrentActive}
+                onSelectVisualReviewItem={onSelectVisualReviewItem}
             />
         )
     }
@@ -835,6 +853,29 @@ export default function FlexibleZoneGrid({
             accentColor = '#10b981';
         }
 
+        const proposalCount = zoneProposalCounts?.get(zone.id) || 0
+        if (proposalCount > 0) {
+            if (depth === 0) {
+                headerBgStyle = {
+                    background: 'linear-gradient(135deg, #78350f 0%, #b45309 50%, #d97706 100%)',
+                    borderColor: '#f59e0b'
+                }
+                effectiveHeaderTextColor = '#ffffff'
+                isDarkHeader = true
+                statHighlightColor = 'text-amber-200 font-black'
+                accentColor = '#fbbf24'
+            } else {
+                headerBgStyle = {
+                    background: 'linear-gradient(to right, #fef3c7, #fffbeb)',
+                    borderColor: '#f59e0b'
+                }
+                effectiveHeaderTextColor = '#92400e'
+                isDarkHeader = false
+                statHighlightColor = 'text-amber-700 font-bold'
+                accentColor = '#d97706'
+            }
+        }
+
         let effectiveChildCols = childColumns > 0 ? childColumns : 3
         if (isEmptyMode && depth <= 1) {
             effectiveChildCols = 4
@@ -952,12 +993,29 @@ export default function FlexibleZoneGrid({
             ? (hasPositions && !hasChildren ? 'grid' : 'header')
             : displayType
 
+        const proposalContainerBorder = proposalCount > 0
+            ? 'border-amber-400 dark:border-amber-500 ring-2 ring-amber-400/35'
+            : 'border-gray-200 dark:border-gray-700'
+
+        const proposalBadge = proposalCount > 0 ? (
+            <span
+                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider shrink-0 shadow-xs ${
+                    isDarkHeader
+                        ? 'bg-white text-amber-800'
+                        : 'bg-amber-500 text-white'
+                }`}
+                title={`Khu vực này có ${proposalCount} vị trí đề xuất điều chỉnh`}
+            >
+                {proposalCount} ĐỀ XUẤT
+            </span>
+        ) : null
+
         switch (effectiveDisplayType) {
             case 'grid':
                 return (
                     <div
                         key={zone.id}
-                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 print:rounded-none print:border-stone-300 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border ${proposalContainerBorder} print:rounded-none print:border-stone-300 overflow-hidden print:overflow-visible bg-white dark:bg-gray-800 print:break-inside-avoid ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                     >
                         {pageBreakIds.has(zone.id) && (
                             <div className="hidden print:block text-center border-b border-dashed border-gray-300 mb-4 pb-2 text-[10px] text-gray-400 italic">
@@ -1015,6 +1073,7 @@ export default function FlexibleZoneGrid({
                                                 : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' - '))
                                             }
                                         </h2>
+                                        {proposalBadge}
                                         {isPrintPage && (
                                             <div className="ml-2 flex items-center shrink-0">
                                                 <EditableText
@@ -1190,7 +1249,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`flex flex-col print:block rounded-xl border border-gray-200 dark:border-gray-700 print:border-none overflow-hidden print:overflow-visible bg-white dark:bg-gray-800  print:break-inside-auto ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
+                        className={`flex flex-col print:block rounded-xl border ${proposalContainerBorder} print:border-none overflow-hidden print:overflow-visible bg-white dark:bg-gray-800  print:break-inside-auto ${pageBreakIds.has(zone.id) ? 'print-break-before-page pt-4 print:pt-0' : ''}`}
                         style={overrideBgStyle}
                     >
                         {pageBreakIds.has(zone.id) && (
@@ -1249,6 +1308,7 @@ export default function FlexibleZoneGrid({
                                                 : (isMobile || isGrouped ? currentBreadcrumb.slice(-1) : currentBreadcrumb.join(' - '))
                                             }
                                         </h2>
+                                        {proposalBadge}
                                         {isPrintPage && (
                                             <div className="ml-2 flex items-center shrink-0">
                                                 <EditableText
@@ -1454,7 +1514,7 @@ export default function FlexibleZoneGrid({
                 return (
                     <div
                         key={zone.id}
-                        className={`group flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border border-gray-200 dark:border-gray-700 print:border-none overflow-hidden print:overflow-visible ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
+                        className={`group flex flex-col ${mergedZones.has(zone.id) ? 'h-full flex-1 min-h-0' : 'h-auto'} rounded-xl border ${proposalContainerBorder} print:border-none overflow-hidden print:overflow-visible ${depth === 0 ? 'bg-white dark:bg-gray-800' : 'bg-gray-50 dark:bg-gray-800/50'}`}
                         style={overrideBgStyle}
                     >
                         <div
@@ -1506,6 +1566,7 @@ export default function FlexibleZoneGrid({
                                         : (isMobile || isGrouped ? zone.name : currentBreadcrumb.join(' - '))
                                     }
                                 </span>
+                                {proposalBadge}
                                 {isPrintPage && (
                                     <div className="ml-2 flex items-center shrink-0">
                                         <EditableText

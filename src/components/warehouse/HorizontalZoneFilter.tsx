@@ -18,6 +18,7 @@ interface HorizontalZoneFilterProps {
     variant?: 'default' | 'subtle'
     zones?: Zone[]
     grouped?: boolean
+    zoneHighlightCounts?: Map<string, number>
 }
 
 export default function HorizontalZoneFilter({
@@ -29,7 +30,8 @@ export default function HorizontalZoneFilter({
     compact = false,
     variant = 'default',
     zones: externalZones,
-    grouped = false
+    grouped = false,
+    zoneHighlightCounts
 }: HorizontalZoneFilterProps) {
     const { systemType } = useSystem()
     const [internalZones, setInternalZones] = useState<Zone[]>([])
@@ -237,19 +239,31 @@ export default function HorizontalZoneFilter({
                 </button>
                 {level0Zones.map(zone => {
                     const isActive = activeLevel0?.id === zone.id
+                    const highlightCount = zoneHighlightCounts?.get(zone.id) || 0
                     return (
                         <button
                             key={zone.id}
                             onClick={() => handleLevel0Select(zone)}
                             className={`
-                                ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-lg text-sm font-bold uppercase transition-all
+                                ${compact ? 'px-3 py-1.5' : 'px-4 py-2'} rounded-lg text-sm font-bold uppercase transition-all inline-flex items-center gap-1.5
                                 ${isActive
-                                    ? 'bg-emerald-600 text-white shadow-md'
-                                    : 'bg-white dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    ? (highlightCount > 0
+                                        ? 'bg-amber-600 text-white shadow-md ring-2 ring-amber-300'
+                                        : 'bg-emerald-600 text-white shadow-md')
+                                    : (highlightCount > 0
+                                        ? 'bg-amber-50 text-amber-900 border-2 border-amber-400 hover:bg-amber-100 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-500 shadow-xs'
+                                        : 'bg-white dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700')
                                 }
                             `}
                         >
-                            {zone.name}
+                            <span>{zone.name}</span>
+                            {highlightCount > 0 && (
+                                <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full leading-none ${
+                                    isActive ? 'bg-white text-amber-700' : 'bg-amber-500 text-white'
+                                }`}>
+                                    {highlightCount}
+                                </span>
+                            )}
                         </button>
                     )
                 })}
@@ -278,19 +292,31 @@ export default function HorizontalZoneFilter({
 
                             {level1Zones.map(zone => {
                                 const isActive = activeLevel1?.id === zone.id
+                                const highlightCount = zoneHighlightCounts?.get(zone.id) || 0
                                 return (
                                     <button
                                         key={zone.id}
                                         onClick={() => handleLevel1Select(zone)}
                                         className={`
-                                            whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors
+                                            whitespace-nowrap px-4 py-1.5 rounded-full text-sm font-medium transition-colors inline-flex items-center gap-1.5
                                             ${isActive
-                                                ? 'bg-white shadow-sm text-emerald-800 font-bold ring-1 ring-emerald-300 dark:bg-gray-800 dark:text-emerald-300 dark:ring-emerald-800'
-                                                : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800'
+                                                ? (highlightCount > 0
+                                                    ? 'bg-amber-500 text-white font-bold shadow-sm ring-1 ring-amber-400'
+                                                    : 'bg-white shadow-sm text-emerald-800 font-bold ring-1 ring-emerald-300 dark:bg-gray-800 dark:text-emerald-300 dark:ring-emerald-800')
+                                                : (highlightCount > 0
+                                                    ? 'bg-amber-100/90 text-amber-900 border border-amber-400 font-semibold hover:bg-amber-200 dark:bg-amber-950/50 dark:text-amber-200 dark:border-amber-600'
+                                                    : 'text-gray-600 hover:bg-gray-200 dark:text-gray-400 dark:hover:bg-gray-800')
                                             }
                                         `}
                                     >
-                                        {zone.name}
+                                        <span>{zone.name}</span>
+                                        {highlightCount > 0 && (
+                                            <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full leading-none ${
+                                                isActive ? 'bg-white text-amber-700' : 'bg-amber-500 text-white'
+                                            }`}>
+                                                {highlightCount}
+                                            </span>
+                                        )}
                                     </button>
                                 )
                             })}
