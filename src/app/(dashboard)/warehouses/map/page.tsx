@@ -16,6 +16,7 @@ import { LotTagModal } from '@/components/lots/LotTagModal'
 import { LotDetailsModal } from '@/components/warehouse/lots/LotDetailsModal'
 import { QrCodeModal } from '@/app/(dashboard)/warehouses/lots/_components/QrCodeModal'
 import { QuickBulkExportModal } from '@/components/warehouse/map/QuickBulkExportModal'
+import { CreateExportTaskModal } from '@/components/export/CreateExportTaskModal'
 import { usePositionActionManager } from '@/components/warehouse/map/PositionActionManager'
 import { MarkPositionModal } from '@/components/warehouse/map/MarkPositionModal'
 import { MarkedPositionsListModal } from '@/components/warehouse/map/MarkedPositionsListModal'
@@ -114,6 +115,13 @@ function WarehouseMapContent() {
 
     const [isMarkedListModalOpen, setIsMarkedListModalOpen] = useState(false)
     const [bulkMarkTargetIds, setBulkMarkTargetIds] = useState<string[] | null>(null)
+    const [isExportOrderModalOpen, setIsExportOrderModalOpen] = useState(false)
+    const [isPreparingExportOrder, setIsPreparingExportOrder] = useState(false)
+    const [exportOrderModalData, setExportOrderModalData] = useState<{
+        positionIds: string[]
+        lotIds: string[]
+        items: any[]
+    }>({ positionIds: [], lotIds: [], items: [] })
 
     // 2.5. Locked Positions Hook
     const {
@@ -899,11 +907,86 @@ function WarehouseMapContent() {
         })
     }
 
-    function handleExportOrder(positionIds: string[], lotIds: string[]) {
-        const params = new URLSearchParams()
-        if (positionIds.length > 0) params.set('posIds', positionIds.join(','))
-        if (lotIds.length > 0) params.set('lotIds', lotIds.join(','))
-        router.push(`/work/export-order?${params.toString()}`)
+    async function handleExportOrder(positionIds: string[], lotIds: string[]) {
+        if (isPreparingExportOrder) return
+        if (positionIds.length === 0 && lotIds.length === 0) return
+
+        try {
+            setIsPreparingExportOrder(true)
+
+            const finalLotIds = new Set(lotIds)
+            const lotToPositionMap: Record<string, string> = {}
+
+            if (positionIds.length > 0) {
+                const { data: posData, error: posError } = await supabase
+                    .from('positions')
+                    .select('id, lot_id')
+                    .in('id', positionIds)
+
+                if (posError) throw posError
+
+                posData?.forEach((p: any) => {
+                    if (p.lot_id) {
+                        finalLotIds.add(p.lot_id)
+                        lotToPositionMap[p.lot_id] = p.id
+                    }
+                })
+            }
+
+            const uniqueLotIds = Array.from(finalLotIds)
+            if (uniqueLotIds.length === 0) {
+                showToast('Không tìm thấy LOT nào trong các vị trí đã chọn', 'error')
+                return
+            }
+
+            const { data: lotsData, error } = await supabase
+                .from('lots')
+                .select(`
+                    id, code,
+                    lot_items (
+                        id, product_id, quantity, unit,
+                        products ( name, sku )
+                    ),
+                    positions!positions_lot_id_fkey (id, code)
+                `)
+                .in('id', uniqueLotIds)
+
+            if (error) throw error
+
+            const items: any[] = []
+            lotsData?.forEach((lot: any) => {
+                let defaultPositionId = lotToPositionMap[lot.id]
+                if (!defaultPositionId && lot.positions && lot.positions.length > 0) {
+                    defaultPositionId = lot.positions[0].id
+                }
+
+                if (lot.lot_items) {
+                    lot.lot_items.forEach((li: any) => {
+                        items.push({
+                            lot_id: lot.id,
+                            product_id: li.product_id,
+                            quantity: li.quantity,
+                            unit: li.unit,
+                            product_name: li.products?.name,
+                            sku: li.products?.sku,
+                            position_id: defaultPositionId || null
+                        })
+                    })
+                }
+            })
+
+            setExportOrderModalData({
+                positionIds,
+                lotIds: uniqueLotIds,
+                items
+            })
+            setIsExportOrderModalOpen(true)
+        } catch (error: any) {
+            console.error(error)
+            showToast('Lỗi tải thông tin hàng hóa: ' + error.message, 'error')
+        } finally {
+            setIsPreparingExportOrder(false)
+        }
     }
 
     function handleBulkSelect(ids: string[], shouldSelect: boolean) {
@@ -2493,6 +2576,17 @@ function WarehouseMapContent() {
                     lotInfo={lotInfo}
                 />
             )}
+
+            <CreateExportTaskModal
+                isOpen={isExportOrderModalOpen}
+                initialData={exportOrderModalData}
+                onClose={() => setIsExportOrderModalOpen(false)}
+                onSuccess={() => {
+                    setIsExportOrderModalOpen(false)
+                    fetchData()
+                    setSelectedPositionIds(new Set())
+                }}
+            />
 
             {configuringZone && (
                 <div className="fixed bottom-6 right-6 z-100 animate-in slide-in-from-right-8">

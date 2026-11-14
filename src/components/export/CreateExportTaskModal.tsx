@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import {
     Dialog,
     DialogContent,
@@ -42,6 +42,16 @@ export function CreateExportTaskModal({
         return new Date(now.getTime() - offset).toISOString().slice(0, 16)
     })
 
+    useEffect(() => {
+        if (isOpen) {
+            setCode(`EXT-${new Date().getTime().toString().slice(-6)}`)
+            const now = new Date()
+            const offset = now.getTimezoneOffset() * 60000
+            setCreatedAt(new Date(now.getTime() - offset).toISOString().slice(0, 16))
+            setNotes('')
+        }
+    }, [isOpen])
+
     // Group items by Product + Unit for easier review
     const groupedItems = useMemo(() => {
         const groups: Record<string, any> = {}
@@ -72,8 +82,8 @@ export function CreateExportTaskModal({
             if (!user) throw new Error("Vui lòng đăng nhập")
 
             // 1. Create Task
-            const { data: task, error: taskError } = await supabase
-                .from('export_tasks')
+            const { data: task, error: taskError } = await (supabase
+                .from('export_tasks' as any) as any)
                 .insert({
                     code: code,
                     status: 'Pending',
@@ -98,13 +108,13 @@ export function CreateExportTaskModal({
                 status: 'Pending'
             }))
 
-            const { error: itemsError } = await supabase
-                .from('export_task_items')
+            const { error: itemsError } = await (supabase
+                .from('export_task_items' as any) as any)
                 .insert(taskItems)
 
             if (itemsError) {
                 // Rollback (simple delete task)
-                await supabase.from('export_tasks').delete().eq('id', task.id)
+                await (supabase.from('export_tasks' as any) as any).delete().eq('id', task.id)
                 throw itemsError
             }
 

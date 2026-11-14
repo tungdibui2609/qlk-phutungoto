@@ -7,6 +7,7 @@ import { MoreHorizontal, Plus, Edit, Tag as TagIcon, ArrowRightLeft, FileOutput,
 import { useToast } from '@/components/ui/ToastProvider'
 import { Database } from '@/lib/database.types'
 import { logActivity } from '@/lib/audit'
+import { logLotsDeletion } from '@/lib/lotDeleteLogger'
 import { LoosePositionConfig } from '@/app/api/warehouses/positions/loose/route'
 
 import { LotForm } from '@/app/(dashboard)/warehouses/lots/_components/LotForm'
@@ -180,6 +181,9 @@ export function usePositionActionManager({
             if (!await showConfirm('Bạn có chắc chắn muốn xóa LOT này?')) return
 
             try {
+                // 0. Lưu snapshot vào audit_logs trước khi gỡ vị trí và xóa LOT
+                await logLotsDeletion(supabase, [lotId])
+
                 const realIds = (pos as any).realIds || [pos.id]
                 // 1. Clear lot_id in positions (Reference)
                 const { error: posError } = await (supabase

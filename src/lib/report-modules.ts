@@ -81,5 +81,12 @@ export const REPORT_MODULES: ReportModule[] = [
         description: 'So 2 file Excel cùng loại (sơ đồ kho dạng Bảng / dạng Lưới, hoặc tồn kho theo LOT) xuất trước và sau khi kiểm kê để chỉ ra chỗ lệch số lượng, xuất báo cáo Excel tô đỏ dòng lệch',
         icon: Scale,
         is_basic: true
+    },
+    {
+        id: 'report_lot_daily_fluctuation',
+        name: 'Tóm tắt biến động LOT theo ngày',
+        description: 'Tổng hợp dao động tăng/giảm số lượng, thêm/xóa vị trí, xuất bán và dòng thời gian thao tác theo ngày trên Nhật ký xuất nhập LOT',
+        icon: Activity,
+        is_basic: true
     }
 ]

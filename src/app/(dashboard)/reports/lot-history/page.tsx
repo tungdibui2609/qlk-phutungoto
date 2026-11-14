@@ -8,7 +8,7 @@ import {
     Combine, Split, Package, Building2, Tag as TagIcon, Filter, 
     Layers, ChevronDown, ArrowUpRight, MapPin, RefreshCw,
     ChevronLeft, ChevronRight, Loader2, RotateCcw, Trash2,
-    CheckCircle2, AlertCircle, Eye, Globe
+    CheckCircle2, AlertCircle, Eye, Globe, Activity
 } from 'lucide-react'
 import { TagDisplay } from '@/components/lots/TagDisplay'
 import { useSystem } from '@/contexts/SystemContext'
@@ -17,6 +17,7 @@ import { format, subDays, parseISO, startOfDay, endOfDay, startOfMonth } from 'd
 import { exportLotHistoryToExcel } from '@/lib/lotHistoryExcelExport'
 import { canonicalizeUnit } from '@/lib/unitConversion'
 import { RecreateLotModal } from '@/components/lots/RecreateLotModal'
+import { LotDailyFluctuationView } from '@/components/reports/LotDailyFluctuationView'
 
 type LotActionData = {
     type: 'create' | 'merge_target' | 'merge_source' | 'split_result' | 'split_origin' | 'export' | 'edit' | 'delete'
@@ -65,8 +66,10 @@ type DatePreset = '7days' | 'today' | '30days' | 'month' | 'custom' | 'all'
 type StatusFilterType = 'all' | 'active' | 'exported' | 'deleted'
 
 export default function LotHistoryPage() {
-    const { systemType, currentSystem } = useSystem()
+    const { systemType, currentSystem, hasModule } = useSystem()
     const { showToast } = useToast()
+    const hasDailyFluctuation = hasModule('report_lot_daily_fluctuation')
+    const [activeViewTab, setActiveViewTab] = useState<'lots' | 'fluctuation'>('lots')
 
     const [lots, setLots] = useState<LotWithDetails[]>([])
     const [loading, setLoading] = useState(true)
@@ -532,6 +535,7 @@ export default function LotHistoryPage() {
                     </p>
                 </div>
 
+                {(!hasDailyFluctuation || activeViewTab === 'lots') && (
                 <div className="flex items-center gap-3 flex-wrap">
                     <button
                         onClick={() => fetchLotHistory(isGlobalSearching)}
@@ -561,8 +565,42 @@ export default function LotHistoryPage() {
                         )}
                     </button>
                 </div>
+                )}
             </div>
 
+            {hasDailyFluctuation && (
+                <div className="flex items-center gap-2 bg-stone-100/80 dark:bg-slate-800/60 p-1.5 rounded-2xl w-fit border border-stone-200 dark:border-slate-700/60">
+                    <button
+                        type="button"
+                        onClick={() => setActiveViewTab('lots')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                            activeViewTab === 'lots'
+                                ? 'bg-white dark:bg-slate-900 text-stone-900 dark:text-stone-100 shadow-sm'
+                                : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200'
+                        }`}
+                    >
+                        <History size={15} />
+                        <span>Nhật ký & Tra cứu LOT</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveViewTab('fluctuation')}
+                        className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                            activeViewTab === 'fluctuation'
+                                ? 'bg-orange-500 text-white shadow-sm shadow-orange-500/30'
+                                : 'text-stone-500 dark:text-stone-400 hover:text-stone-800 dark:hover:text-stone-200'
+                        }`}
+                    >
+                        <Activity size={15} />
+                        <span>Tóm tắt biến động theo ngày</span>
+                    </button>
+                </div>
+            )}
+
+            {hasDailyFluctuation && activeViewTab === 'fluctuation' ? (
+                <LotDailyFluctuationView />
+            ) : (
+                <>
             {/* Status Tabs Bar: Tất cả | Còn tồn kho | Đã xuất bán | Đã xóa */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-stone-200 dark:border-slate-800">
                 <button
@@ -1160,6 +1198,9 @@ export default function LotHistoryPage() {
                         fetchLotHistory(isGlobalSearching)
                     }}
                 />
+            )}
+
+                </>
             )}
 
             {/* Footer space */}
