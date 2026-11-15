@@ -1520,6 +1520,7 @@ function ProductionLotPrintContent() {
                 printConfig={printConfig}
                 sheetLabels={sheetLabels}
                 companyInfo={companyInfo}
+                logoSrc={logoSrc}
             />
         </div>
     )

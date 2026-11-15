@@ -105,3 +105,24 @@ Hệ thống sẽ mở rộng thêm một bậc phân tầng nữa là **Khách 
      - Viết mã nguồn, sửa code, refactor.
      - Kiểm tra lỗi cú pháp và kiểu dữ liệu bằng npx tsc --noEmit.
      - Báo cáo rõ ràng các thay đổi đã thực hiện và chờ lệnh từ người dùng.
+
+# 🛡️ QUY CHUẨN BẮT BUỘC: SQL & SUPABASE (RLS, POLICY, VIEW, FUNCTION)
+
+Mọi migration hoặc câu lệnh SQL mới trên Supabase (`supabase_db_anywarehouse` — dự án chạy hoàn toàn trên **Supabase Local** qua Cloudflare Tunnel, không chạy nhầm `--linked` Cloud) BẮT BUỘC tuân thủ các nguyên tắc sau để giữ **Supabase Security & Performance Advisors luôn sạch 100%**:
+
+1. **Bật RLS ngay khi tạo bảng mới + luôn có `PERMISSIVE` policy:**
+   - Mọi bảng mới trong `public` PHẢI chạy `ALTER TABLE ... ENABLE ROW LEVEL SECURITY;`.
+   - Tuyệt đối KHÔNG để bảng bật RLS mà có **0 policy** hoặc **chỉ có `AS RESTRICTIVE` policy** (sẽ khóa trắng 100% dữ liệu). Luôn tạo ít nhất 1 `PERMISSIVE` policy `TO authenticated` (chặn `anon` mặc định, trừ bảng thực sự cần public).
+2. **Tự động điền `company_id` khi insert:**
+   - Các bảng nghiệp vụ có `company_id` và `Strict Tenant Boundary` nên đặt `company_id uuid DEFAULT public.get_user_company_id()` để tránh lỗi `42501` khi code frontend/mobile `.insert(...)` không truyền `company_id`.
+3. **Cấm dùng `user_metadata` trong RLS Policy:**
+   - Tuyệt đối KHÔNG viết `auth.jwt() -> 'user_metadata'` trong bất kỳ policy nào (gây lỗi `RLS references user metadata`). Luôn lấy từ `public.user_profiles` hoặc hàm `SECURITY DEFINER` (`public.get_user_company_id()`).
+4. **Tối ưu hiệu năng `Auth RLS Initialization Plan`:**
+   - Mọi chỗ gọi `auth.uid()`, `auth.role()`, `auth.jwt()` bên trong policy BẮT BUỘC phải bọc dạng `(SELECT auth.uid())`, `(SELECT auth.role())`, `(SELECT auth.jwt())`.
+5. **Không tạo `Multiple Permissive Policies` chồng chéo:**
+   - Trên cùng 1 bảng và cùng 1 role (`authenticated` / `public`), mỗi hành động (`SELECT`, `INSERT`, `UPDATE`, `DELETE`) chỉ được có **1 `PERMISSIVE` policy** (nếu `SELECT` cần mở rộng hơn `INSERT/UPDATE/DELETE`, hãy tách riêng 4 policy theo từng lệnh thay vì dùng `FOR ALL` đè lên `FOR SELECT`).
+6. **Chuẩn View, Function & Index:**
+   - Mọi `VIEW` mới PHẢI đặt `WITH (security_invoker = true)` (tránh lỗi `Security Definer View`).
+   - Mọi `FUNCTION` mới trong `public` PHẢI khai báo `SET search_path = public, extensions, pg_temp` (tránh lỗi `Function Search Path Mutable`).
+   - Kiểm tra các index hiện có (`CREATE INDEX IF NOT EXISTS ...`) trước khi tạo mới để tránh `Duplicate Index`.
+   - Luôn backup DB local (`pg_dump`) trước khi áp dụng thay đổi cấu trúc/RLS lên database đang chạy.

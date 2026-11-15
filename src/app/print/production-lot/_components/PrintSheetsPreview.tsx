@@ -9,6 +9,7 @@ interface PrintSheetsPreviewProps {
     printConfig: PrintConfigState
     sheetLabels: any[]
     companyInfo: any
+    logoSrc: string | null
 }
 
 export function PrintSheetsPreview({
@@ -16,6 +17,7 @@ export function PrintSheetsPreview({
     printConfig,
     sheetLabels,
     companyInfo,
+    logoSrc,
 }: PrintSheetsPreviewProps) {
     return (
         <>

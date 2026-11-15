@@ -569,7 +569,6 @@ export function LotPageManager() {
                     onSelectAll={handleSelectAll}
                     onClearSelection={handleClearSelection}
                     managePermission="warehouse_lot.manage"
-                affixTagSet={affixTagSet}
                     onEdit={handleEdit}
                     onDelete={handleDelete}
                     onView={setViewingLot}
