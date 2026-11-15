@@ -445,7 +445,8 @@ export function OpenJobModal({
   const handleSelectTemplate = (tpl: DeliveryJobTemplate) => {
     setSelectedTemplateId(tpl.id)
     setJobName(tpl.name)
-    if (tpl.description && !notes) setNotes(tpl.description)
+    const tplNote = tpl.notes || tpl.description
+    if (tplNote && !notes) setNotes(tplNote)
   }
 
   const handleSubmit = async () => {
@@ -1573,6 +1574,60 @@ export function PastShiftDetailModal({
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'summary' | 'history'>('summary')
   const [processing, setProcessing] = useState(false)
+  const [expandedSubShifts, setExpandedSubShifts] = useState<Set<string>>(new Set())
+
+  const toggleSubShiftExpand = (id: string) => {
+    setExpandedSubShifts(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const effectiveSubShifts = useMemo(() => {
+    if (!shift || !subShifts || subShifts.length === 0) return []
+    const sortedSubs = [...subShifts].sort((a, b) => a.sub_shift_number - b.sub_shift_number)
+    const sortedJournals = [...journals].sort((a, b) => (a.sent_at || '').localeCompare(b.sent_at || ''))
+    const result: Array<SubShiftRecord & { _subLines: JournalRecord[]; is_auto_final?: boolean }> = sortedSubs.map((ss, idx) => {
+      const prevToTime = idx > 0 ? sortedSubs[idx - 1].to_time : ss.from_time
+      const subLines = sortedJournals.filter(l => {
+        const sentAt = l.sent_at || ''
+        return idx === 0
+          ? sentAt >= ss.from_time && sentAt <= ss.to_time
+          : sentAt > prevToTime && sentAt <= ss.to_time
+      })
+      return { ...ss, _subLines: subLines, is_auto_final: false }
+    })
+
+    const lastSS = sortedSubs[sortedSubs.length - 1]
+    const remainingLines = sortedJournals.filter(l => (l.sent_at || '') > lastSS.to_time)
+    if (remainingLines.length > 0) {
+      const lastLine = remainingLines[remainingLines.length - 1]
+      const fallbackTime = lastLine.sent_at || shift.closed_at || lastSS.to_time
+      result.push({
+        id: `auto_final_${shift.id}`,
+        company_id: shift.company_id || '',
+        system_code: shift.system_code,
+        shift_id: shift.id,
+        sub_shift_number: sortedSubs.length + 1,
+        from_time: lastSS.to_time,
+        to_time: shift.closed_at || fallbackTime,
+        closed_by_name: shift.closed_by_name || lastLine.sent_by_name || 'Nhân viên',
+        notes:
+          shift.status === 'closed'
+            ? 'Đợt cuối ca (tự động tính khi bấm Hoàn thành CV)'
+            : 'Đợt đang nhập (chưa bấm Chốt tạm)',
+        summary_data: {
+          total_records: remainingLines.length,
+        },
+        created_at: fallbackTime,
+        _subLines: remainingLines,
+        is_auto_final: true,
+      })
+    }
+    return result
+  }, [shift, subShifts, journals])
 
   useEffect(() => {
     if (!visible || !shift) return
@@ -1618,6 +1673,30 @@ export function PastShiftDetailModal({
       },
     ] as const)
   }, [journals, shift])
+
+  const getSubShiftProductImages = (
+    productName: string,
+    subLines: JournalRecord[],
+    fromTime: string,
+    toTime: string
+  ) => {
+    const target = (productName || '').trim().toLowerCase()
+    if (!target) return []
+    const matchingSubIds = new Set(
+      (subLines || [])
+        .filter(l => (l.item_name || '').trim().toLowerCase() === target)
+        .map(l => l.id)
+    )
+    return shiftImages.filter(img => {
+      if (img.journal_id && subLines.length > 0) {
+        return matchingSubIds.has(img.journal_id)
+      }
+      const imgItem = (img.item_name || '').trim().toLowerCase()
+      if (imgItem !== target) return false
+      const cap = img.captured_at || ''
+      return (!fromTime || cap >= fromTime) && (!toTime || cap <= toTime)
+    })
+  }
 
   if (!visible || !shift) return null
 
@@ -1793,26 +1872,143 @@ export function PastShiftDetailModal({
               ))}
             </div>
 
-            {subShifts.length > 0 && (
+            {effectiveSubShifts.length > 0 && (
               <div className="bg-[#1e293b] border border-slate-700 rounded-xl p-3 space-y-2">
                 <div className="text-xs font-extrabold text-amber-400">
-                  3. Các lần chốt ca tạm ({subShifts.length})
+                  3. Các lần chốt ca tạm ({effectiveSubShifts.length})
                 </div>
-                {subShifts.map(sub => (
-                  <div
-                    key={sub.id}
-                    className="p-2 rounded-lg bg-[#0f172a] border border-slate-700 text-xs"
-                  >
-                    <div className="font-bold text-amber-300">
-                      Lần chốt tạm #{sub.sub_shift_number} ({formatDateTime(sub.from_time)} →{' '}
-                      {formatDateTime(sub.to_time)})
+                {effectiveSubShifts.map(sub => {
+                  const isExpanded = expandedSubShifts.has(sub.id)
+                  const subProds =
+                    sub._subLines.length > 0 && shift
+                      ? aggregateShiftsProducts([shift], sub._subLines)
+                      : Object.values(sub.summary_data?.products_summary || {}).map((p: any) => ({
+                          product_name: p.product_name,
+                          unit: p.unit,
+                          in_qty: p.in_qty ?? p.received ?? 0,
+                          out_qty: p.out_qty ?? p.sent ?? 0,
+                          count: p.count ?? (p.in_count || 0) + (p.out_count || 0),
+                        }))
+                  const totalIn = subProds.reduce((s, p) => s + (Number(p.in_qty) || 0), 0)
+                  const totalOut = subProds.reduce((s, p) => s + (Number(p.out_qty) || 0), 0)
+                  const totalCount =
+                    sub._subLines.length > 0
+                      ? sub._subLines.length
+                      : sub.summary_data?.total_records ?? subProds.reduce((s, p) => s + (p.count || 0), 0)
+
+                  return (
+                    <div
+                      key={sub.id}
+                      className="rounded-lg bg-[#0f172a] border border-slate-700 text-xs overflow-hidden"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => toggleSubShiftExpand(sub.id)}
+                        className="w-full p-2.5 text-left hover:bg-slate-800/40 transition flex items-start justify-between gap-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="font-bold text-amber-300 flex items-center gap-1.5 flex-wrap">
+                            <span>Lần chốt tạm #{sub.sub_shift_number}</span>
+                            {sub.is_auto_final && (
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 text-[10px] font-bold">
+                                {shift?.status === 'closed' ? 'Đợt cuối ca' : 'Đợt đang nhập'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 mt-0.5">
+                            {formatDateTime(sub.from_time)} → {formatDateTime(sub.to_time)}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="px-2 py-1 rounded bg-slate-800 border border-slate-700 text-[11px] font-bold whitespace-nowrap">
+                            <span className="text-emerald-400">+{totalIn}</span>
+                            <span className="mx-1 text-slate-600">|</span>
+                            <span className="text-rose-400">-{totalOut}</span>
+                            <span className="mx-1 text-slate-600">|</span>
+                            <span className="text-slate-300">{totalCount} đợt</span>
+                          </div>
+                          {isExpanded ? (
+                            <ChevronDown className="w-4 h-4 text-slate-400" />
+                          ) : (
+                            <ChevronRight className="w-4 h-4 text-slate-400" />
+                          )}
+                        </div>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="px-2.5 pb-2.5 pt-1 border-t border-slate-800 space-y-2">
+                          <div className="text-[10px] font-extrabold uppercase text-slate-400">
+                            Hàng hóa giao nhận trong đợt #{sub.sub_shift_number}
+                          </div>
+                          {subProds.length === 0 ? (
+                            <div className="text-[11px] text-slate-500 italic">
+                              Không có phát sinh sản phẩm trong đợt này.
+                            </div>
+                          ) : (
+                            <div className="divide-y divide-slate-800/80 bg-[#1e293b]/50 rounded-lg px-2">
+                              {subProds.map((p, pIdx) => {
+                                const subProdImages = getSubShiftProductImages(
+                                  p.product_name,
+                                  sub._subLines,
+                                  sub.from_time,
+                                  sub.to_time
+                                )
+                                return (
+                                <div
+                                  key={`${p.product_name}_${p.unit}_${pIdx}`}
+                                  className="py-1.5 flex items-center justify-between gap-2 text-[11px]"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="font-bold text-white truncate">{p.product_name}</div>
+                                    <div className="flex items-center gap-2 mt-0.5">
+                                      <span className="text-[10px] text-indigo-300">{p.unit}</span>
+                                      {subProdImages.length > 0 && (
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            setPreviewContext({
+                                              images: subProdImages,
+                                              index: 0,
+                                              title: `${p.product_name} (Đợt #${sub.sub_shift_number})`,
+                                              showDirectionFilter: true,
+                                              directionFilter: 'all',
+                                            })
+                                          }
+                                          className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold flex items-center gap-1"
+                                        >
+                                          <Camera className="w-2.5 h-2.5" />
+                                          <span>{subProdImages.length} ảnh</span>
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="w-12 text-right font-extrabold text-emerald-400">
+                                    +{p.in_qty}
+                                  </div>
+                                  <div className="w-12 text-right font-extrabold text-rose-400">
+                                    -{p.out_qty}
+                                  </div>
+                                  <div className="w-10 text-right text-slate-400 text-[10px]">
+                                    {p.count} đợt
+                                  </div>
+                                </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
+                            <span>Người bàn giao: <strong className="text-slate-200">{sub.closed_by_name || 'NV'}</strong></span>
+                            {sub.notes && (
+                              <span className="italic text-slate-400 truncate max-w-[55%]">
+                                &ldquo;{sub.notes}&rdquo;
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[11px] text-slate-400">
-                      Chốt bởi: {sub.closed_by_name || 'NV'} •{' '}
-                      {sub.summary_data?.total_records || 0} đợt
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </>

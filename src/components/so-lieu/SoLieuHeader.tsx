@@ -68,6 +68,8 @@ interface SoLieuHeaderProps {
     onPinProduct: (p: ProductItem) => void
     onUnpinProduct: (id: string) => void
     onAddCustomProduct: () => void
+    onPinAllProducts?: () => void
+    allProductsCount?: number
     onClearAllPins: () => void
     onOpenCreateShiftModal: () => void
     onSelectActiveShift: (shiftId: string) => void
@@ -122,6 +124,8 @@ export default function SoLieuHeader({
     onPinProduct,
     onUnpinProduct,
     onAddCustomProduct,
+    onPinAllProducts,
+    allProductsCount,
     onClearAllPins,
     onOpenCreateShiftModal,
     onSelectActiveShift,
@@ -905,14 +909,25 @@ export default function SoLieuHeader({
 
                             <div className="ml-auto flex items-center gap-2 text-xs text-stone-500 shrink-0">
                                 <span>Đã ghim: <strong className="text-stone-800 dark:text-white">{pinnedProducts.length} SP</strong></span>
+                                {onPinAllProducts && typeof allProductsCount === 'number' && allProductsCount > 0 && pinnedProducts.length < allProductsCount && (
+                                    <button
+                                        type="button"
+                                        onClick={onPinAllProducts}
+                                        title={`Ghim toàn bộ ${allProductsCount} sản phẩm trong kho`}
+                                        className="h-7 px-2 rounded-lg text-[11px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800 transition"
+                                    >
+                                        Ghim tất cả
+                                    </button>
+                                )}
                                 {pinnedProducts.length > 0 && (
                                     <button
                                         type="button"
                                         onClick={onClearAllPins}
-                                        title="Xóa toàn bộ danh sách sản phẩm đã ghim"
-                                        className="w-7 h-7 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center transition"
+                                        title="Bỏ ghim toàn bộ danh sách sản phẩm"
+                                        className="h-7 px-2 rounded-lg text-[11px] font-bold text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40 border border-rose-200/80 dark:border-rose-900/50 flex items-center gap-1 transition"
                                     >
-                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <Trash2 className="w-3 h-3" />
+                                        <span className="hidden lg:inline">Bỏ ghim tất cả</span>
                                     </button>
                                 )}
                             </div>

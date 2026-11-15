@@ -76,6 +76,11 @@ export default function SoLieuPage() {
         return currentSystem?.code ? `${currentSystem.code}__solieu` : null
     }, [currentSystem?.code])
 
+    const journalSystemCodes = useMemo(() => {
+        if (!currentSystem?.code || !shiftSystemCode) return []
+        return [shiftSystemCode, currentSystem.code]
+    }, [currentSystem?.code, shiftSystemCode])
+
     // 1. Quản lý danh sách các công việc đang mở (Multi-Job Shifts)
     const [openShifts, setOpenShifts] = useState<any[]>([])
     const [selectedShiftId, setSelectedShiftId] = useState<string | null>(null)
@@ -865,7 +870,7 @@ export default function SoLieuPage() {
                 .from('delivery_sub_shifts')
                 .select('*')
                 .eq('shift_id', shiftId)
-                .eq('system_code', shiftSystemCode)
+                .in('system_code', journalSystemCodes)
                 .order('sub_shift_number', { ascending: true })
             if (!error && data) {
                 const autoFinal = data.filter((ss: any) =>
@@ -877,7 +882,7 @@ export default function SoLieuPage() {
                         .from('delivery_sub_shifts')
                         .delete()
                         .in('id', ids)
-                        .eq('system_code', shiftSystemCode)
+                        .in('system_code', journalSystemCodes)
                     setSubShifts(data.filter((ss: any) => !ids.includes(ss.id)))
                 } else {
                     setSubShifts(data)
@@ -886,7 +891,7 @@ export default function SoLieuPage() {
         } catch (err) {
             console.error('Error loading sub-shifts:', err)
         }
-    }, [shiftSystemCode])
+    }, [shiftSystemCode, journalSystemCodes])
 
     // Tải nhật ký ghi nhận (Delivery Journal) của công việc đang chọn
     const loadJournalData = useCallback(async () => {
@@ -905,7 +910,7 @@ export default function SoLieuPage() {
                 .from('delivery_journal')
                 .select('*')
                 .eq('company_id', companyId)
-                .eq('system_code', shiftSystemCode)
+                .in('system_code', journalSystemCodes)
                 .ilike('notes', `%[CV_ID: ${activeShift.id}]%`)
                 .order('sent_at', { ascending: false })
 
@@ -915,7 +920,7 @@ export default function SoLieuPage() {
                     .from('delivery_journal')
                     .select('*')
                     .eq('company_id', companyId)
-                    .eq('system_code', shiftSystemCode)
+                    .in('system_code', journalSystemCodes)
                     .gte('sent_at', activeShift.opened_at)
                     .ilike('notes', `%[CV: ${currentJobName}]%`)
                     .not('notes', 'ilike', '%[CV_ID:%')
@@ -1022,14 +1027,14 @@ export default function SoLieuPage() {
                     .from('delivery_journal')
                     .select('*')
                     .eq('company_id', companyId)
-                    .eq('system_code', shiftSystemCode)
+                    .in('system_code', journalSystemCodes)
                     .ilike('notes', `%[CV_ID: ${shift.id}]%`)
                     .order('sent_at', { ascending: true }),
                 (supabase as any)
                     .from('delivery_sub_shifts')
                     .select('*')
                     .eq('shift_id', shift.id)
-                    .eq('system_code', shiftSystemCode)
+                    .in('system_code', journalSystemCodes)
                     .order('sub_shift_number', { ascending: true })
             ])
 
@@ -1040,7 +1045,7 @@ export default function SoLieuPage() {
                     .from('delivery_journal')
                     .select('*')
                     .eq('company_id', companyId)
-                    .eq('system_code', shiftSystemCode)
+                    .in('system_code', journalSystemCodes)
                     .gte('sent_at', shift.opened_at)
                     .ilike('notes', `%[CV: ${jobName}]%`)
                     .not('notes', 'ilike', '%[CV_ID:%')
@@ -1287,7 +1292,7 @@ export default function SoLieuPage() {
                         .from('delivery_journal')
                         .select('*')
                         .eq('company_id', companyId)
-                        .eq('system_code', shiftSystemCode)
+                        .in('system_code', journalSystemCodes)
                         .ilike('notes', `%[CV_ID: ${s.id}]%`)
                         .order('sent_at', { ascending: true })
 
@@ -1299,7 +1304,7 @@ export default function SoLieuPage() {
                             .from('delivery_journal')
                             .select('*')
                             .eq('company_id', companyId)
-                            .eq('system_code', shiftSystemCode)
+                            .in('system_code', journalSystemCodes)
                             .gte('sent_at', s.opened_at)
                             .ilike('notes', `%[CV: ${jobName}]%`)
                             .not('notes', 'ilike', '%[CV_ID:%')
@@ -2300,7 +2305,7 @@ export default function SoLieuPage() {
                 .from('delivery_journal')
                 .update(payload)
                 .eq('id', editingRecord.id)
-                .eq('system_code', shiftSystemCode)
+                .in('system_code', journalSystemCodes)
 
             if (error) throw error
 
@@ -2324,7 +2329,7 @@ export default function SoLieuPage() {
                 .from('delivery_journal')
                 .delete()
                 .eq('id', id)
-                .eq('system_code', shiftSystemCode)
+                .in('system_code', journalSystemCodes)
 
             if (error) throw error
             loadJournalData()
@@ -2528,7 +2533,7 @@ export default function SoLieuPage() {
                 .from('delivery_journal')
                 .select('*')
                 .eq('company_id', companyId)
-                .eq('system_code', shiftSystemCode)
+                .in('system_code', journalSystemCodes)
                 .ilike('notes', `%[CV_ID: ${activeShift.id}]%`)
                 .gte('sent_at', fromTime)
 
@@ -2643,7 +2648,7 @@ export default function SoLieuPage() {
                 .from('delivery_journal')
                 .select('*')
                 .eq('company_id', companyId)
-                .eq('system_code', shiftSystemCode)
+                .in('system_code', journalSystemCodes)
                 .ilike('notes', `%[CV_ID: ${activeShift.id}]%`)
                 .gte('sent_at', openedAtStr)
 
@@ -2712,7 +2717,7 @@ export default function SoLieuPage() {
                     .from('delivery_journal')
                     .select('*')
                     .eq('company_id', companyId)
-                    .eq('system_code', shiftSystemCode)
+                    .in('system_code', journalSystemCodes)
                     .ilike('notes', `%[CV_ID: ${closedJobId}]%`)
                     .gt('sent_at', lastSubShift.to_time)
 
@@ -2772,7 +2777,7 @@ export default function SoLieuPage() {
                 summary_data: {
                     ...(activeShift?.summary_data || {}),
                     job_name: currentJobName,
-                    pinned_products: pinnedProducts,
+                    pinned_products: pinnedProducts.length > 0 ? pinnedProducts : (activeShift?.summary_data?.pinned_products || []),
                     ...(shiftSummary || {}),
                     order_type_id: closeOrderTypeId || activeShift?.summary_data?.order_type_id || null,
                     order_type_name: chosenCloseType?.name || activeShift?.summary_data?.order_type_name || null,
@@ -2834,7 +2839,7 @@ export default function SoLieuPage() {
                 summary_data: {
                     ...(activeShift?.summary_data || {}),
                     job_name: currentJobName,
-                    pinned_products: pinnedProducts,
+                    pinned_products: pinnedProducts.length > 0 ? pinnedProducts : (activeShift?.summary_data?.pinned_products || []),
                     ...(shiftSummary || {}),
                 },
                 notes: closeNotes ? `[CV: ${currentJobName}] ${closeNotes}` : `[CV: ${currentJobName}] Hoàn thành công việc (Ngoại tuyến)`,
@@ -2945,9 +2950,23 @@ export default function SoLieuPage() {
                 onPinProduct={handlePinProduct}
                 onUnpinProduct={handleUnpinProduct}
                 onAddCustomProduct={handleAddCustomProduct}
+                allProductsCount={allProducts.length}
+                onPinAllProducts={() => {
+                    if (!activeShift) return
+                    const existingIds = new Set(pinnedProducts.map(p => p.id))
+                    const toAdd = allProducts
+                        .filter(p => !existingIds.has(p.id))
+                        .map(item => {
+                            const units = getProductUnits(item)
+                            const prefUnit = getPreferredUnit(units, item.unit)
+                            return { ...item, unit: prefUnit, available_units: units }
+                        })
+                    if (toAdd.length === 0) return
+                    updatePinnedProducts([...pinnedProducts, ...toAdd])
+                }}
                 onClearAllPins={() => {
-                    if (confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa toàn bộ danh sách ${pinnedProducts.length} sản phẩm đã ghim của công việc "${currentJobName}" không?\n\n(Thao tác này sẽ dọn sạch danh sách sản phẩm trên bàn làm việc!)`)) {
-                        updatePinnedProducts([])
+                    if (confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn bỏ ghim toàn bộ ${pinnedProducts.length} sản phẩm của công việc "${currentJobName}" không?\n\n(Thao tác này sẽ dọn sạch danh sách sản phẩm trên bàn làm việc!)`)) {
+                        updatePinnedProducts([], true)
                     }
                 }}
                 onOpenCreateShiftModal={handleOpenCreateShiftModal}

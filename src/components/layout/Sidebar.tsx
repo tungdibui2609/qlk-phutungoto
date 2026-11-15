@@ -138,6 +138,7 @@ const menuItems: MenuItem[] = [
             { id: 'so_lieu', name: 'Số liệu', href: '/so-lieu', icon: ArrowRightLeft },
             { id: 'so_lieu_album', name: 'Album hình ảnh', href: '/so-lieu/album-anh', icon: Images },
             { id: 'job_templates', name: 'Công việc mẫu', href: '/so-lieu/mau-cong-viec', icon: Briefcase, requiredModule: 'delivery_journal' },
+            { id: 'so_lieu_approvals', name: 'Duyệt thao tác', href: '/so-lieu/duyet-thao-tac', icon: ShieldCheck },
             { id: 'delivery_shifts_kho', name: 'Ca làm & Thống kê', href: '/delivery-shifts', icon: History },
         ]
     },

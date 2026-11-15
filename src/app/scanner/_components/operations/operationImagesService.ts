@@ -1,5 +1,10 @@
 import { supabase } from '@/lib/supabaseClient'
 import {
+  addHiddenId,
+  reconcileHiddenIds,
+  submitScannerApprovalRequest,
+} from './approvalService'
+import {
   applyOperationWatermark,
   getWatermarkEnabled,
   setWatermarkEnabled,
@@ -476,9 +481,13 @@ export async function getShiftOperationImages(shiftId: string): Promise<Operatio
       .eq('shift_id', shiftId)
       .order('captured_at', { ascending: false })
     if (error) throw error
-    return [...localForShift, ...((data || []) as OperationImageRecord[])]
+    const hidden = await reconcileHiddenIds('images', 'operation_images')
+    return [...localForShift, ...((data || []) as OperationImageRecord[])].filter(
+      img => !hidden.has(img.id)
+    )
   } catch {
-    return localForShift
+    const hidden = await reconcileHiddenIds('images', 'operation_images')
+    return localForShift.filter(img => !hidden.has(img.id))
   }
 }
 
@@ -515,9 +524,13 @@ export async function listSystemOperationImages(params: {
 
     const { data, error } = await query
     if (error) throw error
-    return [...localForSys, ...((data || []) as OperationImageRecord[])]
+    const hidden = await reconcileHiddenIds('images', 'operation_images')
+    return [...localForSys, ...((data || []) as OperationImageRecord[])].filter(
+      img => !hidden.has(img.id)
+    )
   } catch {
-    return localForSys
+    const hidden = await reconcileHiddenIds('images', 'operation_images')
+    return localForSys.filter(img => !hidden.has(img.id))
   }
 }
 
@@ -536,11 +549,32 @@ export async function deleteOperationImage(img: OperationImageRecord): Promise<v
     return
   }
 
-  if (img.storage_path) {
-    await supabase.storage.from(STORAGE_BUCKET).remove([img.storage_path]).catch(() => {})
-  }
-  const { error } = await (supabase.from('operation_images') as any).delete().eq('id', img.id)
-  if (error) throw error
+  await submitScannerApprovalRequest({
+    systemCode: img.system_code,
+    companyId: img.company_id || null,
+    actionType: 'delete_image',
+    targetTable: 'operation_images',
+    targetId: img.id,
+    shiftId: img.shift_id || null,
+    shiftName: img.job_name || null,
+    targetLabel: img.item_name
+      ? `Ảnh SP: ${img.item_name}`
+      : img.job_name
+      ? `Ảnh công việc: ${img.job_name}`
+      : 'Hình ảnh kho',
+    beforeData: {
+      id: img.id,
+      image_url: img.public_url,
+      storage_path: img.storage_path,
+      item_name: img.item_name,
+      shift_name: img.job_name,
+      scope: img.scope,
+    },
+    requestedBy: (img as any).captured_by || null,
+    requestedByName: img.captured_by_name || 'Nhân viên Scanner',
+    sourceDevice: 'scanner',
+  })
+  addHiddenId('images', img.id)
 }
 
 export async function cleanupExpiredLocalOriginals(

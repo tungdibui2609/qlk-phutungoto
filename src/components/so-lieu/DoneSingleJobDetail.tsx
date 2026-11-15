@@ -116,6 +116,15 @@ export default function DoneSingleJobDetail({
         img?.public_url ||
         (img?.drive_file_id ? `https://lh3.googleusercontent.com/d/${img.drive_file_id}=w1600` : '')
 
+    const resolveImgDirection = (img: any): 'in' | 'out' | null => {
+        if (img?.direction === 'in' || img?.direction === 'out') return img.direction
+        if (img?.journal_id) {
+            const matched = doneLines.find(l => l.id === img.journal_id)
+            if (matched) return matched.to_department === 'Kho' ? 'in' : 'out'
+        }
+        return null
+    }
+
     const getProductImages = (productName: string) => {
         const target = (productName || '').trim().toLowerCase()
         if (!target) return []
@@ -130,6 +139,30 @@ export default function DoneSingleJobDetail({
         })
     }
 
+    const getSubShiftProductImages = (
+        productName: string,
+        subLines: DeliveryJournalRecord[],
+        fromTime: string,
+        toTime: string
+    ) => {
+        const target = (productName || '').trim().toLowerCase()
+        if (!target) return []
+        const matchingSubIds = new Set(
+            (subLines || [])
+                .filter(l => (l.item_name || '').trim().toLowerCase() === target)
+                .map(l => l.id)
+        )
+        return shiftImages.filter(img => {
+            if (img.journal_id && subLines.length > 0) {
+                return matchingSubIds.has(img.journal_id)
+            }
+            const imgItem = (img.item_name || '').trim().toLowerCase()
+            if (imgItem !== target) return false
+            const cap = img.captured_at || ''
+            return (!fromTime || cap >= fromTime) && (!toTime || cap <= toTime)
+        })
+    }
+
     useEffect(() => {
         const shiftId = doneSelectedShift?.id
         if (!shiftId) {
@@ -138,7 +171,7 @@ export default function DoneSingleJobDetail({
         }
         let cancelled = false
         ;(supabase.from('operation_images') as any)
-            .select('id, journal_id, public_url, drive_file_id, item_name, captured_at')
+            .select('id, journal_id, direction, public_url, drive_file_id, item_name, captured_at')
             .eq('shift_id', shiftId)
             .order('captured_at', { ascending: false })
             .then(({ data }: any) => {
@@ -616,7 +649,7 @@ export default function DoneSingleJobDetail({
                                                                 const prodItems = getProductImages(row.product_name)
                                                                     .map(img => ({
                                                                         url: resolveImgUrl(img),
-                                                                        direction: (img?.direction === 'in' || img?.direction === 'out' ? img.direction : null) as 'in' | 'out' | null,
+                                                                        direction: resolveImgDirection(img),
                                                                     }))
                                                                     .filter(x => Boolean(x.url))
                                                                 return (
@@ -679,7 +712,7 @@ export default function DoneSingleJobDetail({
                                                                     const prodItems = getProductImages(row.product_name)
                                                                         .map(img => ({
                                                                             url: resolveImgUrl(img),
-                                                                            direction: (img?.direction === 'in' || img?.direction === 'out' ? img.direction : null) as 'in' | 'out' | null,
+                                                                            direction: resolveImgDirection(img),
                                                                         }))
                                                                         .filter(x => Boolean(x.url))
                                                                     return (
@@ -965,10 +998,35 @@ export default function DoneSingleJobDetail({
                                                                 </div>
 
                                                                 <div className="sm:hidden divide-y divide-stone-100 dark:divide-zinc-800/60">
-                                                                    {subProds.map((p: any, pIdx: number) => (
+                                                                    {subProds.map((p: any, pIdx: number) => {
+                                                                        const subProdItems = getSubShiftProductImages(p.product_name, subLines, ss.from_time, ss.to_time)
+                                                                            .map(img => ({ url: resolveImgUrl(img), direction: resolveImgDirection(img) }))
+                                                                            .filter(x => Boolean(x.url))
+                                                                        return (
                                                                         <div key={pIdx} className="py-1.5 first:pt-0 last:pb-0 space-y-0.5">
-                                                                            <div className="text-[11px] font-bold text-stone-800 dark:text-stone-200 leading-snug">
-                                                                                {p.product_name}
+                                                                            <div className="flex items-start justify-between gap-2">
+                                                                                <div className="text-[11px] font-bold text-stone-800 dark:text-stone-200 leading-snug">
+                                                                                    {p.product_name}
+                                                                                </div>
+                                                                                {subProdItems.length > 0 && (
+                                                                                    <button
+                                                                                        type="button"
+                                                                                        onClick={() =>
+                                                                                            setPreviewContext({
+                                                                                                urls: subProdItems.map(x => x.url),
+                                                                                                items: subProdItems,
+                                                                                                index: 0,
+                                                                                                title: `${p.product_name} (Đợt #${ss.sub_shift_number})`,
+                                                                                                showDirectionFilter: true,
+                                                                                                directionFilter: 'all',
+                                                                                            })
+                                                                                        }
+                                                                                        className="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-[10px] font-bold flex items-center gap-1 shrink-0"
+                                                                                    >
+                                                                                        <Camera className="w-3 h-3" />
+                                                                                        <span>{subProdItems.length} ảnh</span>
+                                                                                    </button>
+                                                                                )}
                                                                             </div>
                                                                             <div className="flex items-center justify-between text-[10px]">
                                                                                 <span className="text-stone-500">
@@ -981,7 +1039,8 @@ export default function DoneSingleJobDetail({
                                                                                 </div>
                                                                             </div>
                                                                         </div>
-                                                                    ))}
+                                                                        )
+                                                                    })}
                                                                 </div>
 
                                                                 <table className="hidden sm:table w-full text-left text-xs">
@@ -992,18 +1051,47 @@ export default function DoneSingleJobDetail({
                                                                             <th className="pb-1.5 font-semibold text-right text-emerald-600">Nhập (+)</th>
                                                                             <th className="pb-1.5 font-semibold text-right text-rose-600">Xuất (-)</th>
                                                                             <th className="pb-1.5 font-semibold text-right">Số đợt</th>
+                                                                            <th className="pb-1.5 font-semibold text-right">Ảnh SP</th>
                                                                         </tr>
                                                                     </thead>
                                                                     <tbody className="divide-y divide-stone-100 dark:divide-zinc-800/60">
-                                                                        {subProds.map((p: any, pIdx: number) => (
+                                                                        {subProds.map((p: any, pIdx: number) => {
+                                                                            const subProdItems = getSubShiftProductImages(p.product_name, subLines, ss.from_time, ss.to_time)
+                                                                                .map(img => ({ url: resolveImgUrl(img), direction: resolveImgDirection(img) }))
+                                                                                .filter(x => Boolean(x.url))
+                                                                            return (
                                                                             <tr key={pIdx}>
                                                                                 <td className="py-2 font-bold text-stone-800 dark:text-stone-200 pr-2">{p.product_name}</td>
                                                                                 <td className="py-2 text-stone-500 whitespace-nowrap">{p.unit}</td>
                                                                                 <td className="py-2 text-right font-bold text-emerald-600">+{p.in_qty}</td>
                                                                                 <td className="py-2 text-right font-bold text-rose-600">-{p.out_qty}</td>
                                                                                 <td className="py-2 text-right text-stone-400">{p.count || 0} đợt</td>
+                                                                                <td className="py-2 text-right whitespace-nowrap">
+                                                                                    {subProdItems.length > 0 ? (
+                                                                                        <button
+                                                                                            type="button"
+                                                                                            onClick={() =>
+                                                                                                setPreviewContext({
+                                                                                                    urls: subProdItems.map(x => x.url),
+                                                                                                    items: subProdItems,
+                                                                                                    index: 0,
+                                                                                                    title: `${p.product_name} (Đợt #${ss.sub_shift_number})`,
+                                                                                                    showDirectionFilter: true,
+                                                                                                    directionFilter: 'all',
+                                                                                                })
+                                                                                            }
+                                                                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-[11px] font-bold transition"
+                                                                                        >
+                                                                                            <Camera className="w-3 h-3" />
+                                                                                            <span>{subProdItems.length} ảnh</span>
+                                                                                        </button>
+                                                                                    ) : (
+                                                                                        <span className="text-stone-300 dark:text-zinc-600">-</span>
+                                                                                    )}
+                                                                                </td>
                                                                             </tr>
-                                                                        ))}
+                                                                            )
+                                                                        })}
                                                                     </tbody>
                                                                 </table>
                                                             </div>

@@ -1,4 +1,9 @@
 import { supabase } from '@/lib/supabaseClient'
+import {
+  addHiddenId,
+  reconcileHiddenIds,
+  submitScannerApprovalRequest,
+} from './approvalService'
 
 export interface DeliveryShift {
   id: string
@@ -44,6 +49,8 @@ export interface DeliveryJobTemplate {
   system_code: string
   name: string
   description?: string | null
+  notes?: string | null
+  pinned_product_ids?: string[] | null
   default_products?: ShiftProductItem[] | null
   is_active?: boolean
 }
@@ -320,6 +327,101 @@ export async function getOfflineQueueCount(): Promise<number> {
   return getOfflineQueue().length
 }
 
+function mergePinnedProducts(serverPinned: any, localPinned: any): any[] | undefined {
+  const sArr = Array.isArray(serverPinned) ? serverPinned : []
+  const lArr = Array.isArray(localPinned) ? localPinned : []
+  if (!Array.isArray(serverPinned) && !Array.isArray(localPinned)) return undefined
+
+  const seen = new Set<string>()
+  const merged: any[] = []
+  const getKey = (item: any) =>
+    item?.id ? `id:${item.id}` : `sku:${item?.sku || ''}::name:${item?.name || ''}`
+
+  for (const item of [...sArr, ...lArr]) {
+    if (!item) continue
+    const key = getKey(item)
+    if (seen.has(key)) continue
+    seen.add(key)
+    merged.push(item)
+  }
+  return merged
+}
+
+function mergeReconcileSessions(serverRecs: any, localRecs: any): any {
+  if (!serverRecs && !localRecs) return undefined
+  if (Array.isArray(serverRecs) || Array.isArray(localRecs)) {
+    const sArr = Array.isArray(serverRecs) ? serverRecs : []
+    const lArr = Array.isArray(localRecs) ? localRecs : []
+    const map = new Map<string, any>()
+    for (const item of [...sArr, ...lArr]) {
+      if (!item) continue
+      const key = String(item.key || item.id || Math.random())
+      const prev = map.get(key)
+      if (!prev) {
+        map.set(key, item)
+      } else {
+        const prevTs = new Date(prev.updated_at || 0).getTime()
+        const curTs = new Date(item.updated_at || 0).getTime()
+        map.set(key, curTs >= prevTs ? item : prev)
+      }
+    }
+    return Array.from(map.values())
+  }
+  if (typeof serverRecs === 'object' || typeof localRecs === 'object') {
+    return { ...(serverRecs || {}), ...(localRecs || {}) }
+  }
+  return localRecs ?? serverRecs
+}
+
+async function fetchAndMergeShiftSummary(
+  realShiftId: string,
+  localSummary: any,
+  recomputeTotals: boolean
+): Promise<{ mergedSummary: Record<string, any>; serverStatus?: string }> {
+  const { data: serverShift } = await (supabase.from('delivery_shifts') as any)
+    .select('id, status, system_code, summary_data')
+    .eq('id', realShiftId)
+    .maybeSingle()
+
+  const serverSummary = serverShift?.summary_data || {}
+  const mergedPinned = mergePinnedProducts(serverSummary.pinned_products, localSummary?.pinned_products)
+  const mergedRecs = mergeReconcileSessions(serverSummary.reconciliations, localSummary?.reconciliations)
+
+  const mergedSummary: Record<string, any> = {
+    ...serverSummary,
+    ...(localSummary || {}),
+  }
+  if (mergedPinned !== undefined) mergedSummary.pinned_products = mergedPinned
+  if (mergedRecs !== undefined) mergedSummary.reconciliations = mergedRecs
+
+  if (recomputeTotals) {
+    const shiftSys = serverShift?.system_code
+    const baseSys = shiftSys?.endsWith('__solieu') ? shiftSys.slice(0, -8) : shiftSys
+    let q = (supabase.from('delivery_journal') as any)
+      .select('id, item_name, unit, quantity_sent, to_department')
+      .ilike('notes', `%[CV_ID: ${realShiftId}]%`)
+    if (shiftSys) {
+      q =
+        baseSys && baseSys !== shiftSys
+          ? q.in('system_code', [shiftSys, baseSys])
+          : q.eq('system_code', shiftSys)
+    }
+    const { data: journalRows, error: jErr } = await q
+    if (!jErr && Array.isArray(journalRows)) {
+      const mapped = journalRows.map((r: any) => ({
+        ...r,
+        direction: r.to_department === 'Kho' ? 'in' : 'out',
+      })) as JournalRecord[]
+      const { productsSummary, unitsSummary } = computeSummariesFromJournals(mapped)
+      mergedSummary.products_summary = productsSummary
+      mergedSummary.units_summary = unitsSummary
+      mergedSummary.total_records = mapped.length
+    }
+  }
+
+  return { mergedSummary, serverStatus: serverShift?.status }
+}
+
 export async function syncOperationsOfflineQueue(): Promise<{
   syncedCount: number
   remainingCount: number
@@ -330,6 +432,8 @@ export async function syncOperationsOfflineQueue(): Promise<{
   const shiftIdMap: Record<string, string> = {}
   const remaining: OfflineAction[] = []
   let syncedCount = 0
+  const touchedShiftIds = new Set<string>()
+  const closedInSync = new Set<string>()
 
   for (const action of queue) {
     try {
@@ -360,47 +464,69 @@ export async function syncOperationsOfflineQueue(): Promise<{
           { ...insertRow, notes: updatedNotes },
         ])
         if (error) throw error
+        if (realShiftId) touchedShiftIds.add(String(realShiftId))
         syncedCount++
       } else if (action.type === 'UPDATE_JOURNAL') {
-        const { journalId, updateFields } = p
+        const { journalId, updateFields, shiftId } = p
         if (!String(journalId).startsWith('local_')) {
           const { error } = await (supabase.from('delivery_journal') as any)
             .update(updateFields)
             .eq('id', journalId)
           if (error) throw error
         }
+        const realShiftId = shiftId ? shiftIdMap[shiftId] || shiftId : null
+        if (realShiftId) touchedShiftIds.add(String(realShiftId))
         syncedCount++
       } else if (action.type === 'DELETE_JOURNAL') {
-        const { journalId } = p
+        const { journalId, shiftId } = p
         if (!String(journalId).startsWith('local_')) {
           const { error } = await (supabase.from('delivery_journal') as any)
             .delete()
             .eq('id', journalId)
           if (error) throw error
         }
+        const realShiftId = shiftId ? shiftIdMap[shiftId] || shiftId : null
+        if (realShiftId) touchedShiftIds.add(String(realShiftId))
         syncedCount++
       } else if (action.type === 'CREATE_SUB_SHIFT') {
         const { insertData } = p
         const realShiftId = shiftIdMap[insertData.shift_id] || insertData.shift_id
+        let nextSubNum = Number(insertData.sub_shift_number) || 1
+        const { data: latestSub } = await (supabase.from('delivery_sub_shifts') as any)
+          .select('sub_shift_number')
+          .eq('shift_id', realShiftId)
+          .order('sub_shift_number', { ascending: false })
+          .limit(1)
+        const maxExisting = Number(latestSub?.[0]?.sub_shift_number) || 0
+        if (maxExisting >= nextSubNum) {
+          nextSubNum = maxExisting + 1
+        }
         const { error } = await (supabase.from('delivery_sub_shifts') as any).insert([
-          { ...insertData, shift_id: realShiftId },
+          { ...insertData, shift_id: realShiftId, sub_shift_number: nextSubNum },
         ])
         if (error) throw error
         syncedCount++
       } else if (action.type === 'CLOSE_SHIFT') {
         const { shiftId, updateData } = p
         const realShiftId = shiftIdMap[shiftId] || shiftId
+        const { mergedSummary } = await fetchAndMergeShiftSummary(
+          realShiftId,
+          updateData?.summary_data,
+          true
+        )
         const { error } = await (supabase.from('delivery_shifts') as any)
-          .update(updateData)
+          .update({ ...updateData, summary_data: mergedSummary })
           .eq('id', realShiftId)
         if (error) throw error
+        closedInSync.add(String(realShiftId))
         syncedCount++
       } else if (action.type === 'UPDATE_PINNED_PRODUCTS' || action.type === 'SAVE_RECONCILE') {
         const { shiftId, summaryData } = p
         const realShiftId = shiftIdMap[shiftId] || shiftId
         if (!String(realShiftId).startsWith('local_')) {
+          const { mergedSummary } = await fetchAndMergeShiftSummary(realShiftId, summaryData, false)
           const { error } = await (supabase.from('delivery_shifts') as any)
-            .update({ summary_data: summaryData })
+            .update({ summary_data: mergedSummary })
             .eq('id', realShiftId)
           if (error) throw error
         }
@@ -409,6 +535,20 @@ export async function syncOperationsOfflineQueue(): Promise<{
     } catch (e) {
       console.warn('Sync offline action failed, keeping in queue:', action.type, e)
       remaining.push(action)
+    }
+  }
+
+  for (const sId of Array.from(touchedShiftIds)) {
+    if (closedInSync.has(sId) || sId.startsWith('local_')) continue
+    try {
+      const { mergedSummary, serverStatus } = await fetchAndMergeShiftSummary(sId, null, true)
+      if (serverStatus === 'closed') {
+        await (supabase.from('delivery_shifts') as any)
+          .update({ summary_data: mergedSummary })
+          .eq('id', sId)
+      }
+    } catch (e) {
+      console.warn('Refresh closed shift summary after offline sync failed:', sId, e)
     }
   }
 
@@ -427,17 +567,22 @@ export async function getOpenShifts(systemCode?: string): Promise<DeliveryShift[
       .order('opened_at', { ascending: false })
 
     if (error) throw error
-    const remoteList = (data || []) as DeliveryShift[]
+    const hidden = await reconcileHiddenIds('shifts', 'delivery_shifts')
+    const remoteList = ((data || []) as DeliveryShift[]).filter(s => !hidden.has(s.id))
 
     const cached = getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, [])
     const localOnly = cached.filter(
-      s => (s.id.startsWith('local_') || s.summary_data?.is_offline) && !remoteList.some(r => r.id === s.id)
+      s =>
+        !hidden.has(s.id) &&
+        (s.id.startsWith('local_') || s.summary_data?.is_offline) &&
+        !remoteList.some(r => r.id === s.id)
     )
     const merged = [...localOnly, ...remoteList]
     setStorageJson(CACHE_KEYS.OPEN_SHIFTS, merged)
     return merged
   } catch {
-    return getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, [])
+    const hidden = await reconcileHiddenIds('shifts', 'delivery_shifts')
+    return getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, []).filter(s => !hidden.has(s.id))
   }
 }
 
@@ -452,11 +597,13 @@ export async function getPastShifts(limit = 50, systemCode?: string): Promise<De
       .limit(limit)
 
     if (error) throw error
-    const list = (data || []) as DeliveryShift[]
+    const hidden = await reconcileHiddenIds('shifts', 'delivery_shifts')
+    const list = ((data || []) as DeliveryShift[]).filter(s => !hidden.has(s.id))
     setStorageJson(CACHE_KEYS.PAST_SHIFTS, list)
     return list
   } catch {
-    return getStorageJson<DeliveryShift[]>(CACHE_KEYS.PAST_SHIFTS, [])
+    const hidden = await reconcileHiddenIds('shifts', 'delivery_shifts')
+    return getStorageJson<DeliveryShift[]>(CACHE_KEYS.PAST_SHIFTS, []).filter(s => !hidden.has(s.id))
   }
 }
 
@@ -788,15 +935,58 @@ export async function reopenDeliveryShift(shift: DeliveryShift): Promise<void> {
   setStorageJson(CACHE_KEYS.OPEN_SHIFTS, [{ ...shift, ...updateData }, ...openCached])
 }
 
-export async function deleteDeliveryShift(shiftId: string): Promise<void> {
-  // Delete journals linked to shiftId
-  await (supabase.from('delivery_journal') as any)
-    .delete()
-    .ilike('notes', `%[CV_ID: ${shiftId}]%`)
-  await (supabase.from('delivery_sub_shifts') as any).delete().eq('shift_id', shiftId)
-  const { error } = await (supabase.from('delivery_shifts') as any).delete().eq('id', shiftId)
-  if (error) throw error
+export async function deleteDeliveryShift(
+  shiftId: string,
+  meta?: {
+    shiftName?: string
+    systemCode?: string
+    companyId?: string | null
+    user?: any
+  }
+): Promise<void> {
+  if (!String(shiftId).startsWith('local_')) {
+    const { data: serverShift } = await (supabase.from('delivery_shifts') as any)
+      .select('id, system_code, company_id, notes, summary_data, status, opened_at')
+      .eq('id', shiftId)
+      .maybeSingle()
 
+    const sysCode = meta?.systemCode || serverShift?.system_code || getShiftSystemCode()
+    const shiftName =
+      meta?.shiftName || serverShift?.summary_data?.job_name || serverShift?.notes || 'Công việc'
+
+    await submitScannerApprovalRequest({
+      systemCode: sysCode,
+      companyId: meta?.companyId ?? serverShift?.company_id ?? null,
+      actionType: 'delete_shift',
+      targetTable: 'delivery_shifts',
+      targetId: shiftId,
+      shiftId,
+      shiftName,
+      targetLabel: shiftName,
+      beforeData: serverShift || { id: shiftId, job_name: shiftName },
+      requestedBy: meta?.user?.id || null,
+      requestedByName: meta?.user?.full_name || meta?.user?.email || 'Nhân viên Scanner',
+      sourceDevice: 'scanner',
+    })
+    addHiddenId('shifts', shiftId)
+  } else {
+    const queue = getOfflineQueue()
+    const cleaned = queue.filter(q => {
+      const p = q.payload || {}
+      return (
+        p.tempId !== shiftId &&
+        p.shiftId !== shiftId &&
+        p.insertData?.shift_id !== shiftId
+      )
+    })
+    saveOfflineQueue(cleaned)
+  }
+
+  const openCached = getStorageJson<DeliveryShift[]>(CACHE_KEYS.OPEN_SHIFTS, [])
+  setStorageJson(
+    CACHE_KEYS.OPEN_SHIFTS,
+    openCached.filter(s => s.id !== shiftId)
+  )
   const pastCached = getStorageJson<DeliveryShift[]>(CACHE_KEYS.PAST_SHIFTS, [])
   setStorageJson(
     CACHE_KEYS.PAST_SHIFTS,
@@ -933,20 +1123,24 @@ export async function getShiftJournals(
         })
       }
     }
-    const remoteRows: JournalRecord[] = (data || []).map((r: any) => ({
-      ...r,
-      direction: parseDirectionFromRow(r),
-    }))
+    const hidden = await reconcileHiddenIds('journals', 'delivery_journal')
+    const remoteRows: JournalRecord[] = (data || [])
+      .filter((r: any) => !hidden.has(r.id))
+      .map((r: any) => ({
+        ...r,
+        direction: parseDirectionFromRow(r),
+      }))
 
     const cached = getStorageJson<JournalRecord[]>(cacheKey, [])
     const localOnly = cached.filter(
-      j => (j.id.startsWith('local_') || j.is_offline) && !remoteRows.some(r => r.id === j.id)
+      j => !hidden.has(j.id) && (j.id.startsWith('local_') || j.is_offline) && !remoteRows.some(r => r.id === j.id)
     )
     const merged = [...localOnly, ...remoteRows]
     setStorageJson(cacheKey, merged)
     return merged
   } catch {
-    return getStorageJson<JournalRecord[]>(cacheKey, [])
+    const hidden = await reconcileHiddenIds('journals', 'delivery_journal')
+    return getStorageJson<JournalRecord[]>(cacheKey, []).filter(j => !hidden.has(j.id))
   }
 }
 
@@ -981,8 +1175,10 @@ export async function getMultiShiftsJournals(
     const { data, error } = await query
     if (error) throw error
 
+    const hidden = await reconcileHiddenIds('journals', 'delivery_journal')
     const matched: JournalRecord[] = []
     for (const r of data || []) {
+      if (hidden.has(r.id)) continue
       const m = String(r.notes || '').match(/\[CV_ID:\s*([^\]]+)\]/i)
       const cvId = m ? m[1].trim() : null
       if (cvId && shiftIds.has(cvId)) {
@@ -1087,6 +1283,12 @@ export async function updateShiftJournalEntry(params: {
   direction: 'in' | 'out'
   userNote?: string
   existingNotes?: string | null
+  shiftId?: string | null
+  shiftName?: string | null
+  systemCode?: string
+  companyId?: string | null
+  beforeData?: any
+  user?: any
 }): Promise<void> {
   const { journalId, quantity, unit, direction, userNote, existingNotes } = params
   // Preserve tags [CV_ID:...] [PID:...] [SKU:...] [CV:...]
@@ -1115,29 +1317,56 @@ export async function updateShiftJournalEntry(params: {
     return
   }
 
-  try {
-    const { error } = await (supabase.from('delivery_journal') as any)
-      .update(updateFields)
-      .eq('id', journalId)
-    if (error) throw error
-  } catch {
-    enqueueOfflineAction('UPDATE_JOURNAL', { journalId, updateFields })
-  }
+  const sysCode = params.systemCode || getActiveSystemCode()
+  await submitScannerApprovalRequest({
+    systemCode: sysCode,
+    companyId: params.companyId ?? null,
+    actionType: 'update_journal',
+    targetTable: 'delivery_journal',
+    targetId: journalId,
+    shiftId: params.shiftId || null,
+    shiftName: params.shiftName || null,
+    targetLabel: params.beforeData?.item_name || 'Dòng số liệu',
+    beforeData: params.beforeData || null,
+    afterData: updateFields,
+    requestedBy: params.user?.id || null,
+    requestedByName: params.user?.full_name || params.user?.email || 'Nhân viên Scanner',
+    sourceDevice: 'scanner',
+  })
 }
 
-export async function deleteShiftJournalEntry(journalId: string): Promise<void> {
+export async function deleteShiftJournalEntry(
+  journalId: string,
+  meta?: {
+    shiftId?: string | null
+    shiftName?: string | null
+    systemCode?: string
+    companyId?: string | null
+    beforeData?: any
+    user?: any
+  }
+): Promise<void> {
   if (journalId.startsWith('local_')) {
     enqueueOfflineAction('DELETE_JOURNAL', { journalId })
     return
   }
-  try {
-    const { error } = await (supabase.from('delivery_journal') as any)
-      .delete()
-      .eq('id', journalId)
-    if (error) throw error
-  } catch {
-    enqueueOfflineAction('DELETE_JOURNAL', { journalId })
-  }
+
+  const sysCode = meta?.systemCode || getActiveSystemCode()
+  await submitScannerApprovalRequest({
+    systemCode: sysCode,
+    companyId: meta?.companyId ?? null,
+    actionType: 'delete_journal',
+    targetTable: 'delivery_journal',
+    targetId: journalId,
+    shiftId: meta?.shiftId || null,
+    shiftName: meta?.shiftName || null,
+    targetLabel: meta?.beforeData?.item_name || 'Dòng số liệu',
+    beforeData: meta?.beforeData || null,
+    requestedBy: meta?.user?.id || null,
+    requestedByName: meta?.user?.full_name || meta?.user?.email || 'Nhân viên Scanner',
+    sourceDevice: 'scanner',
+  })
+  addHiddenId('journals', journalId)
 }
 
 // ── RECONCILIATIONS (THAM CHIẾU SỐ ĐẦU - SỐ ĐUÔI / ĐẾM TỒN) ──

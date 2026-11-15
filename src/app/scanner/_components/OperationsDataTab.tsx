@@ -45,6 +45,7 @@ import {
   openDeliveryShift,
   updateShiftPinnedProducts,
   closeDeliveryShift,
+  deleteDeliveryShift,
   getSubShifts,
   createSubShift,
   getShiftJournals,
@@ -403,8 +404,44 @@ export function OperationsDataTab({
   // ── DANH SÁCH SẢN PHẨM GHIM & TÌM KIẾM ĐA TỪ KHÓA + AUTOCOMPLETE ──
   const pinnedProducts: ShiftProductItem[] = useMemo(() => {
     const raw = selectedShift?.summary_data?.pinned_products
-    return Array.isArray(raw) ? raw : []
-  }, [selectedShift])
+    if (Array.isArray(raw) && raw.length > 0) return raw
+
+    const recoveredMap = new Map<string, ShiftProductItem>()
+    const addProduct = (p: ShiftProductItem) => {
+      if (!p?.id) return
+      if (!recoveredMap.has(p.id)) recoveredMap.set(p.id, p)
+    }
+
+    // 1. Khôi phục từ Công việc mẫu nếu khớp template_id hoặc tên công việc
+    const tplId = selectedShift?.summary_data?.template_id
+    const jobNameNorm = (selectedShift?.summary_data?.job_name || selectedShift?.notes || '').trim().toLowerCase()
+    const matchedTpl = jobTemplates.find(
+      t => (tplId && t.id === tplId) || (jobNameNorm && t.name.trim().toLowerCase() === jobNameNorm)
+    )
+    if (matchedTpl?.default_products?.length) {
+      matchedTpl.default_products.forEach(addProduct)
+    }
+
+    // 2. Khôi phục từ các mặt hàng đã phát sinh trong nhật ký hoặc summary_data của ca
+    const prodByName = new Map<string, ShiftProductItem>()
+    allProducts.forEach(p => prodByName.set((p.name || '').trim().toLowerCase(), p))
+
+    ;(allJournals || []).forEach(j => {
+      const nameKey = (j.item_name || '').trim().toLowerCase()
+      if (!nameKey) return
+      const matched = prodByName.get(nameKey)
+      if (matched) addProduct(matched)
+    })
+
+    Object.values(selectedShift?.summary_data?.products_summary || {}).forEach((ps: any) => {
+      const nameKey = (ps?.product_name || '').trim().toLowerCase()
+      if (!nameKey) return
+      const matched = prodByName.get(nameKey)
+      if (matched) addProduct(matched)
+    })
+
+    return Array.from(recoveredMap.values())
+  }, [selectedShift, jobTemplates, allProducts, allJournals])
 
   const pinnedIdsSet = useMemo(() => new Set(pinnedProducts.map(p => p.id)), [pinnedProducts])
 
@@ -455,9 +492,7 @@ export function OperationsDataTab({
     const baseList =
       searchMode === 'pin'
         ? allProducts
-        : pinnedProducts.length > 0
-          ? pinnedProducts
-          : allProducts
+        : pinnedProducts
 
     if (!searchQuery.trim()) return baseList
 
@@ -496,6 +531,52 @@ export function OperationsDataTab({
     await refreshPendingQueueCount()
   }
 
+  const handlePinAllProducts = async () => {
+    if (!selectedShift) return
+    const targetList = searchQuery.trim() ? displayedProducts : allProducts
+    if (targetList.length === 0) return
+
+    const existingIds = new Set(pinnedProducts.map(p => p.id))
+    const toAdd = targetList.filter(p => !existingIds.has(p.id))
+    if (toAdd.length === 0) return
+
+    const nextPinned = [...pinnedProducts, ...toAdd]
+    setOpenShifts(prev =>
+      prev.map(s =>
+        s.id === selectedShift.id
+          ? { ...s, summary_data: { ...(s.summary_data || {}), pinned_products: nextPinned } }
+          : s
+      )
+    )
+    await updateShiftPinnedProducts(selectedShift.id, nextPinned, selectedShift.summary_data)
+    await refreshPendingQueueCount()
+    showToast(`Đã ghim thêm ${toAdd.length} sản phẩm`)
+  }
+
+  const handleUnpinAllProducts = async () => {
+    if (!selectedShift || pinnedProducts.length === 0) return
+    const hasFilter = Boolean(searchQuery.trim())
+    const targetIds = new Set((hasFilter ? displayedProducts : pinnedProducts).map(p => p.id))
+    const countToRemove = pinnedProducts.filter(p => targetIds.has(p.id)).length
+    if (countToRemove === 0) return
+
+    if (!hasFilter && !window.confirm(`Bỏ ghim toàn bộ ${countToRemove} sản phẩm khỏi công việc này?`)) {
+      return
+    }
+
+    const nextPinned = hasFilter ? pinnedProducts.filter(p => !targetIds.has(p.id)) : []
+    setOpenShifts(prev =>
+      prev.map(s =>
+        s.id === selectedShift.id
+          ? { ...s, summary_data: { ...(s.summary_data || {}), pinned_products: nextPinned } }
+          : s
+      )
+    )
+    await updateShiftPinnedProducts(selectedShift.id, nextPinned, selectedShift.summary_data)
+    await refreshPendingQueueCount()
+    showToast(hasFilter ? `Đã bỏ ghim ${countToRemove} sản phẩm đang lọc` : 'Đã bỏ ghim toàn bộ sản phẩm')
+  }
+
   const handleOpenNewJob = async (data: {
     jobName: string
     notes: string
@@ -505,12 +586,27 @@ export function OperationsDataTab({
     orderTypeName?: string | null
     orderTypeCode?: string | null
   }) => {
+    const matchedTemplate =
+      jobTemplates.find(t => t.id === data.templateId) ||
+      jobTemplates.find(t => t.name.trim().toLowerCase() === data.jobName.trim().toLowerCase())
+
+    let initialProducts = data.defaultProducts
+    if (
+      initialProducts.length === 0 &&
+      matchedTemplate?.pinned_product_ids &&
+      matchedTemplate.pinned_product_ids.length > 0
+    ) {
+      initialProducts = matchedTemplate.pinned_product_ids
+        .map(pid => allProducts.find(p => p.id === pid))
+        .filter(Boolean) as ShiftProductItem[]
+    }
+
     const created = await openDeliveryShift({
       user: userObj,
       jobName: data.jobName,
       notes: data.notes,
-      templateId: data.templateId,
-      initialProducts: data.defaultProducts,
+      templateId: matchedTemplate?.id || data.templateId,
+      initialProducts,
       orderTypeId: data.orderTypeId,
       orderTypeName: data.orderTypeName,
       orderTypeCode: data.orderTypeCode,
@@ -520,6 +616,39 @@ export function OperationsDataTab({
     setSelectedShiftId(created.id)
     await refreshPendingQueueCount()
     showToast(`Đã tạo công việc "${data.jobName}"`)
+  }
+
+  const handleDeleteOpenShift = async (shift: DeliveryShift) => {
+    const jobTitle = shift.summary_data?.job_name || shift.notes || 'Công việc'
+    if (
+      !window.confirm(
+        `⚠️ Xác nhận XÓA công việc "${jobTitle}"?\n\nToàn bộ số liệu nhập/xuất và các đợt chốt tạm thuộc công việc này sẽ bị xóa vĩnh viễn!`
+      )
+    ) {
+      return
+    }
+    try {
+      await deleteDeliveryShift(shift.id, {
+        shiftName: jobTitle,
+        systemCode: shift.system_code,
+        companyId: shift.company_id || userObj?.company_id || null,
+        user: userObj,
+      })
+      const nextOpen = openShifts.filter(s => s.id !== shift.id)
+      setOpenShifts(nextOpen)
+      if (selectedShiftId === shift.id) {
+        setSelectedShiftId(nextOpen[0]?.id || null)
+      }
+      setShowJobDropdown(false)
+      await refreshPendingQueueCount()
+      showToast(
+        shift.id.startsWith('local_')
+          ? `Đã xóa công việc "${jobTitle}"`
+          : `Đã tạm ẩn "${jobTitle}" & gửi yêu cầu xóa chờ Web Số liệu duyệt`
+      )
+    } catch (e: any) {
+      alert('Lỗi khi xóa công việc: ' + (e?.message || e))
+    }
   }
 
   const handleConfirmNumberPad = async (data: {
@@ -641,21 +770,42 @@ export function OperationsDataTab({
     await updateShiftJournalEntry({
       ...data,
       existingNotes: target?.notes,
+      shiftId: selectedShift?.id || null,
+      shiftName: selectedShift?.summary_data?.job_name || selectedShift?.notes || null,
+      systemCode: selectedShift?.system_code || activeSysCode,
+      companyId: selectedShift?.company_id || userObj?.company_id || null,
+      beforeData: target || null,
+      user: userObj,
     })
     if (selectedShift) {
       await loadSelectedShiftDetails(selectedShift)
     }
     await refreshPendingQueueCount()
-    showToast('Đã cập nhật dòng lịch sử!')
+    showToast(
+      data.journalId.startsWith('local_')
+        ? 'Đã cập nhật dòng lịch sử!'
+        : 'Đã gửi yêu cầu sửa số liệu, chờ Web Số liệu duyệt!'
+    )
   }
 
   const handleDeleteJournal = async (j: JournalRecord) => {
-    if (!window.confirm(`Xóa đợt ${j.direction === 'in' ? 'Nhập' : 'Xuất'} ${j.quantity_sent} ${j.unit} - ${j.item_name}?`))
+    if (!window.confirm(`Tạm ẩn & gửi yêu cầu xóa đợt ${j.direction === 'in' ? 'Nhập' : 'Xuất'} ${j.quantity_sent} ${j.unit} - ${j.item_name}?`))
       return
-    await deleteShiftJournalEntry(j.id)
+    await deleteShiftJournalEntry(j.id, {
+      shiftId: selectedShift?.id || null,
+      shiftName: selectedShift?.summary_data?.job_name || selectedShift?.notes || null,
+      systemCode: selectedShift?.system_code || activeSysCode,
+      companyId: selectedShift?.company_id || userObj?.company_id || null,
+      beforeData: j,
+      user: userObj,
+    })
     setAllJournals(prev => prev.filter(x => x.id !== j.id))
     await refreshPendingQueueCount()
-    showToast('Đã xóa đợt nhập/xuất.')
+    showToast(
+      j.id.startsWith('local_')
+        ? 'Đã xóa đợt nhập/xuất.'
+        : 'Đã tạm ẩn & gửi yêu cầu xóa chờ Web Số liệu duyệt!'
+    )
   }
 
   // ── DỮ LIỆU TAB ĐÃ HOÀN THÀNH (4 SUB-MODES) ──
@@ -899,31 +1049,46 @@ export function OperationsDataTab({
                       {openShifts.map(s => {
                         const active = s.id === selectedShiftId
                         return (
-                          <button
+                          <div
                             key={s.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedShiftId(s.id)
-                              setShowJobDropdown(false)
-                            }}
-                            className={`w-full px-3 py-2.5 text-left border-b border-slate-700/60 last:border-0 flex items-center justify-between ${
+                            className={`w-full px-3 py-2 border-b border-slate-700/60 last:border-0 flex items-center justify-between gap-2 ${
                               active ? 'bg-indigo-600/25 text-white' : 'text-slate-300 hover:bg-slate-800'
                             }`}
                           >
-                            <div className="min-w-0 flex-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedShiftId(s.id)
+                                setShowJobDropdown(false)
+                              }}
+                              className="min-w-0 flex-1 text-left py-0.5"
+                            >
                               <div className="text-xs font-bold truncate">
                                 {s.summary_data?.job_name || s.notes || 'Công việc'}
                               </div>
                               <div className="text-[10px] text-slate-400">
                                 Mở: {formatDateTime(s.opened_at)}
                               </div>
+                            </button>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {active && (
+                                <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-[9px] font-extrabold text-white">
+                                  Đang chọn
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                title="Xóa công việc này"
+                                onClick={e => {
+                                  e.stopPropagation()
+                                  void handleDeleteOpenShift(s)
+                                }}
+                                className="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 flex items-center justify-center transition"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             </div>
-                            {active && (
-                              <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-[9px] font-extrabold text-white">
-                                Đang chọn
-                              </span>
-                            )}
-                          </button>
+                          </div>
                         )
                       })}
                     </div>
@@ -999,7 +1164,7 @@ export function OperationsDataTab({
                           : 'text-slate-400'
                       }`}
                     >
-                      Nhập ({pinnedProducts.length || allProducts.length})
+                      Nhập ({pinnedProducts.length})
                     </button>
                     <button
                       type="button"
@@ -1043,6 +1208,38 @@ export function OperationsDataTab({
                     )}
                   </div>
                 </div>
+
+                {searchMode === 'pin' && (
+                  <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-[#1e293b]/90 border border-slate-700/80">
+                    <span className="text-[11px] text-slate-300 font-semibold">
+                      Đã ghim: <b className="text-amber-300">{pinnedProducts.length}</b>/{allProducts.length} SP
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => void handlePinAllProducts()}
+                        disabled={
+                          (searchQuery.trim() ? displayedProducts : allProducts).every(p =>
+                            pinnedIdsSet.has(p.id)
+                          )
+                        }
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-extrabold bg-amber-500 text-slate-950 disabled:opacity-40 transition"
+                      >
+                        {searchQuery.trim()
+                          ? `Ghim lọc (${displayedProducts.length})`
+                          : 'Ghim tất cả'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleUnpinAllProducts()}
+                        disabled={pinnedProducts.length === 0}
+                        className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 disabled:opacity-40 transition"
+                      >
+                        {searchQuery.trim() ? 'Bỏ ghim lọc' : 'Bỏ ghim tất cả'}
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* AUTOCOMPLETE DROPDOWN GỢI Ý SẢN PHẨM */}
                 {showSearchSuggestions &&
