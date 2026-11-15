@@ -180,7 +180,7 @@ function BatchOutboundPrint({ orderIds }: { orderIds: string[] }) {
                             max-width: 210mm !important;
                             min-width: 210mm !important;
                             margin: 0 !important;
-                            padding: 2mm 20mm 5mm 5mm !important;
+                            padding: 9mm 18mm 5mm 8mm !important;
                             box-sizing: border-box !important;
                             box-shadow: none !important;
                             border: none !important;
@@ -573,10 +573,13 @@ function OutboundPrintContent({
                     setSignTitle3(searchParams.get('signTitle3') || 'Kế toán trưởng')
                     setSignTitle4(searchParams.get('signTitle4') || 'TP.QLCL')
 
-                    setSignPerson1(searchParams.get('signPerson1') || '')
-                    setSignPerson2(searchParams.get('signPerson2') || '')
-                    setSignPerson3(searchParams.get('signPerson3') || '')
-                    setSignPerson4(searchParams.get('signPerson4') || '')
+                    const getSavedSign = (key: string) =>
+                        isExcelLayout && typeof window !== 'undefined' ? (localStorage.getItem(key) || '') : ''
+
+                    setSignPerson1(searchParams.get('signPerson1') || getSavedSign('print_excel_outbound_sign_1'))
+                    setSignPerson2(searchParams.get('signPerson2') || getSavedSign('print_excel_sign_thu_kho'))
+                    setSignPerson3(searchParams.get('signPerson3') || getSavedSign('print_excel_sign_gd_nha_may'))
+                    setSignPerson4(searchParams.get('signPerson4') || getSavedSign('print_excel_sign_tp_qlcl'))
 
                     setSignDay(searchParams.get('signDay') || '')
                     setSignMonth(searchParams.get('signMonth') || '')
@@ -589,7 +592,7 @@ function OutboundPrintContent({
                     setEditContainerNumber(searchParams.get('editContainerNumber') || o.metadata?.containerNumber || '')
                     setEditSealNumber(searchParams.get('editSealNumber') || o.metadata?.sealNumber || '')
                     setSignTitle5(searchParams.get('signTitle5') || 'Tài xế')
-                    setSignPerson5(searchParams.get('signPerson5') || o.metadata?.driverName || '')
+                    setSignPerson5(searchParams.get('signPerson5') || o.metadata?.driverName || getSavedSign('print_excel_outbound_sign_driver'))
 
                     // Fetch units for conversion map
                     let unitsData: { id: string, name: string }[] | null = null
@@ -1135,12 +1138,35 @@ function OutboundPrintContent({
                     </div>
 
                     {/* Signatures - Excel Style (5 columns) */}
-                    <div className="mt-4 print:mt-3 grid grid-cols-5 gap-1 text-[13px] print:text-[11px] font-bold text-black items-start print:break-inside-avoid">
-                        <div className="text-left pl-2">Người Nhận</div>
-                        <div className="text-center">Tài Xế</div>
-                        <div className="text-center">TP.QLCL</div>
-                        <div className="text-center">Thủ kho</div>
-                        <div className="text-right pr-2">GĐ Nhà Máy</div>
+                    <div className="mt-3 print:mt-2 grid grid-cols-5 gap-2 text-[13px] print:text-[11px] font-bold text-black text-center items-start print:break-inside-avoid">
+                        {[
+                            { title: 'Người Nhận', value: signPerson1, setter: setSignPerson1, storageKey: 'print_excel_outbound_sign_1' },
+                            { title: 'Tài Xế', value: signPerson5, setter: setSignPerson5, storageKey: 'print_excel_outbound_sign_driver' },
+                            { title: 'TP.QLCL', value: signPerson4, setter: setSignPerson4, storageKey: 'print_excel_sign_tp_qlcl' },
+                            { title: 'Thủ kho', value: signPerson2, setter: setSignPerson2, storageKey: 'print_excel_sign_thu_kho' },
+                            { title: 'GĐ Nhà Máy', value: signPerson3, setter: setSignPerson3, storageKey: 'print_excel_sign_gd_nha_may' },
+                        ].map((sig) => (
+                            <div key={sig.storageKey}>
+                                <div>{sig.title}</div>
+                                <div className="h-11 print:h-11" />
+                                <div>
+                                    <input
+                                        type="text"
+                                        value={sig.value}
+                                        onChange={(e) => {
+                                            const val = e.target.value
+                                            sig.setter(val)
+                                            if (typeof window !== 'undefined') {
+                                                localStorage.setItem(sig.storageKey, val)
+                                            }
+                                        }}
+                                        placeholder="Tên..."
+                                        className={`print:hidden ${isSnapshotMode ? 'hidden' : ''} text-center w-full bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 focus:outline-none font-bold text-[12px]`}
+                                    />
+                                    <span className={`hidden print:inline font-bold ${isSnapshotMode ? 'inline' : ''}`}>{sig.value}</span>
+                                </div>
+                            </div>
+                        ))}
                     </div>
                 </>
             ) : (
@@ -1694,7 +1720,7 @@ function OutboundPrintContent({
                             max-width: 210mm !important;
                             min-width: 210mm !important;
                             margin: 0 !important;
-                            padding: 2mm 20mm 5mm 5mm !important;
+                            padding: 9mm 18mm 5mm 8mm !important;
                             box-sizing: border-box !important;
                             box-shadow: none !important;
                             border: none !important;

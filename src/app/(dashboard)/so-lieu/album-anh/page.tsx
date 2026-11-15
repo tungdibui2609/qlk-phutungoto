@@ -1220,7 +1220,7 @@ export default function SoLieuAlbumPage() {
                                     return (
                                         <div key={jobNode.jobName} className="space-y-0.5">
                                             <div
-                                                className={`flex items-center gap-1 px-1.5 py-1.5 rounded-xl text-xs transition-colors ${
+                                                className={`flex items-start gap-1 px-1.5 py-1.5 rounded-xl text-xs transition-colors ${
                                                     isJobSelected
                                                         ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-bold'
                                                         : 'text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 font-semibold'
@@ -1234,7 +1234,7 @@ export default function SoLieuAlbumPage() {
                                                             [jobNode.jobName]: !isJobOpen,
                                                         }))
                                                     }
-                                                    className="p-0.5 text-slate-400 hover:text-slate-600"
+                                                    className="p-0.5 mt-0.5 text-slate-400 hover:text-slate-600 shrink-0"
                                                 >
                                                     {isJobOpen ? (
                                                         <ChevronDown className="w-3.5 h-3.5" />
@@ -1249,13 +1249,14 @@ export default function SoLieuAlbumPage() {
                                                         setSelectedJobDateKey(null)
                                                         setExpandedJobNames((prev) => ({ ...prev, [jobNode.jobName]: true }))
                                                     }}
-                                                    className="flex-1 flex items-center justify-between text-left min-w-0"
+                                                    className="flex-1 flex items-start justify-between gap-1.5 text-left min-w-0"
+                                                    title={jobNode.jobName}
                                                 >
-                                                    <span className="flex items-center gap-1.5 truncate">
-                                                        <FolderOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                                        <span className="truncate">{jobNode.jobName}</span>
+                                                    <span className="flex items-start gap-1.5 min-w-0">
+                                                        <FolderOpen className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                                                        <span className="break-words whitespace-normal leading-snug">{jobNode.jobName}</span>
                                                     </span>
-                                                    <span className="text-[11px] text-slate-400 ml-1 shrink-0">{jobNode.count}</span>
+                                                    <span className="text-[11px] text-slate-400 ml-1 shrink-0 mt-0.5">{jobNode.count}</span>
                                                 </button>
                                             </div>
 
@@ -1409,7 +1410,7 @@ export default function SoLieuAlbumPage() {
                                                                         return (
                                                                             <div key={job.jobKey} className="space-y-0.5">
                                                                                 <div
-                                                                                    className={`flex items-center gap-0.5 px-1 py-1 rounded-lg text-[11px] transition-colors ${
+                                                                                    className={`flex items-start gap-0.5 px-1 py-1 rounded-lg text-[11px] transition-colors ${
                                                                                         activeJob
                                                                                             ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 font-bold border border-emerald-200 dark:border-emerald-800'
                                                                                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
@@ -1424,7 +1425,7 @@ export default function SoLieuAlbumPage() {
                                                                                                     [job.jobKey]: !isJobExpanded,
                                                                                                 }))
                                                                                             }
-                                                                                            className="p-0.5 text-slate-400 hover:text-slate-600 shrink-0"
+                                                                                            className="p-0.5 mt-0.5 text-slate-400 hover:text-slate-600 shrink-0"
                                                                                         >
                                                                                             {isJobExpanded ? (
                                                                                                 <ChevronDown className="w-3 h-3" />
@@ -1448,15 +1449,16 @@ export default function SoLieuAlbumPage() {
                                                                                                 }))
                                                                                             }
                                                                                         }}
-                                                                                        className="flex-1 flex items-center justify-between text-left min-w-0 py-0.5 pr-1"
+                                                                                        className="flex-1 flex items-start justify-between gap-1 text-left min-w-0 py-0.5 pr-1"
+                                                                                        title={job.jobName}
                                                                                     >
-                                                                                        <span className="flex items-center gap-1.5 truncate">
-                                                                                            <FolderOpen className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                                                            <span className="truncate">
+                                                                                        <span className="flex items-start gap-1.5 min-w-0">
+                                                                                            <FolderOpen className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                                                                                            <span className="break-words whitespace-normal leading-snug">
                                                                                                 {job.jobName}
                                                                                             </span>
                                                                                         </span>
-                                                                                        <span className="text-[10px] text-slate-400 ml-1 shrink-0">
+                                                                                        <span className="text-[10px] text-slate-400 ml-1 shrink-0 mt-0.5">
                                                                                             {job.count}
                                                                                         </span>
                                                                                     </button>
@@ -1474,14 +1476,14 @@ export default function SoLieuAlbumPage() {
                                                                                                         setSelectedTreeDate(dt.dateKey)
                                                                                                         setSelectedTreeJob(sub.subKey)
                                                                                                     }}
-                                                                                                    className={`w-full flex items-center justify-between px-2 py-1 rounded-lg text-[11px] text-left transition-colors ${
+                                                                                                    className={`w-full flex items-start justify-between gap-1 px-2 py-1 rounded-lg text-[11px] text-left transition-colors ${
                                                                                                         activeSub
                                                                                                             ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800'
                                                                                                             : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
                                                                                                     }`}
                                                                                                 >
-                                                                                                    <span className="truncate">{sub.label}</span>
-                                                                                                    <span className="text-[10px] text-slate-400 ml-1 shrink-0">
+                                                                                                    <span className="break-words whitespace-normal leading-snug">{sub.label}</span>
+                                                                                                    <span className="text-[10px] text-slate-400 ml-1 shrink-0 mt-0.5">
                                                                                                         {sub.count}
                                                                                                     </span>
                                                                                                 </button>
