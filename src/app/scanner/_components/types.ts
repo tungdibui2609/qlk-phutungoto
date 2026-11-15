@@ -21,6 +21,8 @@ export interface BoxItem {
   is_special_12?: boolean
   special_12_code?: string
   special_12_name?: string
+  raw_text?: string
+  sync_status?: 'pending' | 'synced'
   created_at: string
 }
 
@@ -32,6 +34,7 @@ export interface PalletItem {
   boxes_count: number
   total_weight: number
   is_linked: boolean
+  status?: string | null
   product_name: string | null
   sku: string | null
   product_aliases?: string | null
@@ -53,9 +56,38 @@ export interface ProductSuggestion {
   name: string
   sku?: string
   aliases?: string | null
+  internal_code?: string | null
+  internal_name?: string | null
 }
 
-export type ScannerTab = 'label' | 'stamp' | 'warehouse_map' | 'pallets' | 'settings'
+export interface ProductSuggestionItem {
+  product: ProductSuggestion
+  score: number
+  fillValue: string
+  displayTitle: string
+  displaySubtitle?: string
+  badgeType?: 'alias' | 'sku' | 'stt'
+  badgeText?: string
+}
+
+export interface CloudFilterCriteria {
+  productName?: string
+  productionPlace?: string
+  materialZone?: string
+  packagingDate?: string
+  productionDate?: string
+  locationCode?: string
+  statusFilter?: 'all' | 'linked' | 'unlinked' | 'exported'
+}
+
+export type ScannerTab =
+  | 'label'
+  | 'stamp'
+  | 'operations'
+  | 'inventory'
+  | 'warehouse_map'
+  | 'pallets'
+  | 'settings'
 
 export interface PendingStampData {
   stamp_line1: string
@@ -77,9 +109,13 @@ export interface ManualLabelFormState {
 }
 
 export interface ScannerUserProfile {
+  id?: string
   fullName: string
   email: string
+  companyId?: string | null
   companyCode: string
   companyName: string
   roleName: string
+  employeeCode?: string | null
+  department?: string | null
 }

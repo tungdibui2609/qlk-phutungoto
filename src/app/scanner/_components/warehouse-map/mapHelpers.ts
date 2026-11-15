@@ -1,4 +1,4 @@
-import type { ZoneItem, PositionItem } from './types'
+import type { ZoneItem, PositionItem, PositionProductSubItem, ProposalSubItem } from './types'
 
 export const isHallZone = (z: ZoneItem | null | undefined): boolean => {
   if (!z) return false
@@ -119,9 +119,6 @@ export function sortPositionsByDepthAndCol<T extends { code?: string | null }>(l
   })
 }
 
-
-
-
 export const getPositionTag = (pos: PositionItem): string | null => {
   if (pos.tags && pos.tags.length > 0) {
     const validTags = pos.tags.filter(t => t && !t.startsWith('MERGED_FROM:') && !t.startsWith('MERGED_DATA:'))
@@ -130,4 +127,49 @@ export const getPositionTag = (pos: PositionItem): string | null => {
   return null
 }
 
-// ── ISOLATED MEMOIZED SEARCH BAR (0ms Latency: typing updates only this component) ──
+/**
+ * Trích xuất danh sách từng dòng sản phẩm của một vị trí.
+ * - Nếu pallet hỗn hợp (nhiều mặt hàng trong `pos.items`), trả về từng dòng riêng biệt (tên, mã, số lượng, đơn vị).
+ * - Nếu pallet 1 mặt hàng hoặc không có `items`, trả về 1 phần tử từ `pos.product_name`.
+ */
+export const getPositionProductItems = (pos: PositionItem): PositionProductSubItem[] => {
+  if (pos.items && Array.isArray(pos.items) && pos.items.length > 0) {
+    const valid = pos.items
+      .filter(it => it && (it.product_name || it.sku))
+      .map(it => ({
+        name: (it.product_name || it.sku || '').trim(),
+        sku: it.sku || null,
+        aliases: pos.aliases || null,
+        quantity: typeof it.quantity === 'number' && !isNaN(it.quantity) ? it.quantity : 0,
+        unit: getCleanUnitCategory(it.unit || pos.unit),
+      }))
+    if (valid.length > 0) return valid
+  }
+
+  if (!pos.product_name) return []
+  return [
+    {
+      name: pos.product_name.trim(),
+      sku: pos.sku || null,
+      aliases: pos.aliases || null,
+      quantity: typeof pos.quantity === 'number' && !isNaN(pos.quantity) ? pos.quantity : 0,
+      unit: getCleanUnitCategory(pos.unit),
+    },
+  ]
+}
+
+export const extractSubItemsFromPosition = (pos: PositionItem): ProposalSubItem[] => {
+  if (pos.items && Array.isArray(pos.items) && pos.items.length > 0) {
+    return pos.items
+      .filter(it => it && (it.product_name || it.sku))
+      .map(it => ({
+        product_id: it.product_id || null,
+        sku: it.sku || null,
+        product_name: it.product_name || it.sku || 'Sản phẩm',
+        old_qty: typeof it.quantity === 'number' ? it.quantity : 0,
+        new_qty: typeof it.quantity === 'number' ? it.quantity : 0,
+        unit: it.unit || pos.unit || 'Thùng',
+      }))
+  }
+  return []
+}

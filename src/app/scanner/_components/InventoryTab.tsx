@@ -1,0 +1,2012 @@
+'use client'
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
+import {
+  RefreshCw,
+  Plus,
+  CloudUpload,
+  CheckCircle2,
+  AlertTriangle,
+  ArrowLeft,
+  Layers,
+  Check,
+  X,
+  Search,
+  Loader2,
+  Building2,
+  Grid,
+  List,
+  ChevronDown,
+  ChevronUp,
+  CheckSquare,
+  Square,
+} from 'lucide-react'
+import { supabase } from '@/lib/supabaseClient'
+import HallLotInputModal, {
+  HallOption,
+  syncOfflineHallLotUpdatesWeb,
+} from './inventory/HallLotInputModal'
+import {
+  ShiftProductItem,
+  getWarehouseProducts,
+  normalizeViText,
+} from './operations/operationsService'
+
+export interface InventoryTabProps {
+  isActive?: boolean
+  systemCode?: string
+  userProfile?: {
+    id?: string
+    fullName?: string
+    email?: string
+    companyId?: string | null
+    companyCode?: string
+    companyName?: string
+    roleName?: string
+  } | null
+}
+
+interface ZoneItem {
+  id: string
+  name: string
+  code?: string
+  parent_id: string | null
+  system_type?: string
+  display_order?: number | null
+  is_hall?: boolean | null
+}
+
+interface PositionItem {
+  id: string
+  code: string
+  lot_id: string | null
+  zone_ids: string[]
+  stt?: string | null
+  lot_code?: string | null
+  product_name?: string | null
+  sku?: string | null
+  aliases?: string | null
+  internal_code?: string | null
+  internal_name?: string | null
+  unit?: string | null
+  tags?: string[]
+  packaging_date?: string | null
+  peeling_date?: string | null
+  quantity?: number | null
+  items?: {
+    product_id?: string | null
+    sku?: string | null
+    product_name?: string | null
+    quantity?: number | null
+    unit?: string | null
+  }[]
+}
+
+const INVENTORY_KEYS = {
+  SESSIONS: 'offline_inventory_sessions_v1',
+  RESULTS: 'offline_inventory_results_v1',
+  USERS_MAP: 'offline_inventory_users_map_v1',
+  MEMBERS_MAP: 'offline_inventory_members_map_v1',
+  MAP_CACHE: 'warehouse_map_offline_cache_v7',
+}
+
+const isUUID = (str: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(str || ''))
+
+export const PRODUCT_DOT_PALETTE = [
+  '#f59e0b',
+  '#06b6d4',
+  '#d946ef',
+  '#a855f7',
+  '#84cc16',
+  '#f97316',
+  '#38bdf8',
+  '#ec4899',
+]
+
+export function getProductKey(slot: any): string {
+  if (!slot || !slot.lot_id) return ''
+  const sku = (slot.sku || '').trim()
+  if (sku) return sku
+  const name = (slot.product_name || '').trim()
+  if (name) return name
+  return 'PRODUCT_DEFAULT'
+}
+
+export function sortPositionsByDepthAndCol<T extends { code?: string | null }>(list: T[]): T[] {
+  return [...list].sort((pa, pb) => {
+    const codeA = (pa.code || '').trim().toUpperCase()
+    const codeB = (pb.code || '').trim().toUpperCase()
+
+    const matchA = codeA.match(/(\d{2})$/)
+    const matchB = codeB.match(/(\d{2})$/)
+    const depthA = matchA ? parseInt(matchA[1], 10) : 0
+    const depthB = matchB ? parseInt(matchB[1], 10) : 0
+
+    if (depthA !== depthB) {
+      return depthB - depthA
+    }
+
+    const colMatchA =
+      codeA.match(/D\d+([A-Z])/i) ||
+      codeA.match(/([A-Z])\d{2}T/i) ||
+      codeA.match(/([A-Z])\d+/i)
+    const colMatchB =
+      codeB.match(/D\d+([A-Z])/i) ||
+      codeB.match(/([A-Z])\d{2}T/i) ||
+      codeB.match(/([A-Z])\d+/i)
+    const colA = colMatchA ? colMatchA[1].toUpperCase() : ''
+    const colB = colMatchB ? colMatchB[1].toUpperCase() : ''
+
+    if (colA && colB && colA !== colB) {
+      return colA.localeCompare(colB)
+    }
+
+    return codeA.localeCompare(codeB, undefined, { numeric: true })
+  })
+}
+
+function groupInventoryWarehouseData(
+  zones: ZoneItem[],
+  positions: PositionItem[]
+): {
+  zones: ZoneItem[]
+  positions: (PositionItem & {
+    zone_id: string | null
+    real_zone_id: string | null
+    real_bin_id: string | null
+  })[]
+} {
+  const parentToChildren = new Map<string, ZoneItem[]>()
+  const zoneParentMap = new Map<string, string>()
+
+  zones.forEach(z => {
+    if (z.parent_id) {
+      zoneParentMap.set(z.id, z.parent_id)
+      const list = parentToChildren.get(z.parent_id) || []
+      list.push(z)
+      parentToChildren.set(z.parent_id, list)
+    }
+  })
+
+  const finalZones: ZoneItem[] = []
+  const zoneIdMap = new Map<string, string>()
+  const processedOldZoneIds = new Set<string>()
+
+  const getChildren = (parentId: string): ZoneItem[] => parentToChildren.get(parentId) || []
+
+  const processZoneRecursively = (zone: ZoneItem) => {
+    if (processedOldZoneIds.has(zone.id)) return
+
+    finalZones.push(zone)
+    processedOldZoneIds.add(zone.id)
+
+    const children = getChildren(zone.id)
+    if (children.length === 0) return
+
+    const isGroupingContainer = /DÃY|SẢNH|KỆ|KHU|SÀNH/i.test(zone.name || '')
+
+    if (isGroupingContainer) {
+      const binGroups: Record<string, ZoneItem[]> = {}
+      children.forEach(c => {
+        const match = (c.name || '').match(/\d+$/)
+        const suffix = match ? match[0] : c.name
+        binGroups[suffix] = binGroups[suffix] || []
+        binGroups[suffix].push(c)
+      })
+
+      Object.entries(binGroups).forEach(([suffix, members]) => {
+        if (members.length > 1) {
+          const vBinId = `v-bin-${zone.id}-${suffix}`
+          finalZones.push({
+            ...members[0],
+            id: vBinId,
+            parent_id: zone.id,
+            name: `Ô ${suffix}`,
+          })
+
+          const levelGroups: Record<string, ZoneItem[]> = {}
+          members.forEach(m => {
+            const mChildren = getChildren(m.id)
+            mChildren.forEach(lvl => {
+              const key = (lvl.name || '').trim().toUpperCase()
+              levelGroups[key] = levelGroups[key] || []
+              levelGroups[key].push(lvl)
+            })
+            processedOldZoneIds.add(m.id)
+            zoneIdMap.set(m.id, vBinId)
+          })
+
+          Object.entries(levelGroups).forEach(([lvlName, lMembers]) => {
+            const vLvlId = `v-lvl-${vBinId}-${lvlName}`
+            finalZones.push({
+              ...lMembers[0],
+              id: vLvlId,
+              parent_id: vBinId,
+              name: lMembers[0].name,
+            })
+
+            lMembers.forEach(lm => {
+              zoneIdMap.set(lm.id, vLvlId)
+              processedOldZoneIds.add(lm.id)
+            })
+          })
+        } else {
+          processZoneRecursively(members[0])
+        }
+      })
+    } else {
+      children.forEach(c => processZoneRecursively(c))
+    }
+  }
+
+  const roots = zones.filter(z => !z.parent_id)
+  roots.forEach(processZoneRecursively)
+
+  zones.forEach(z => {
+    if (!processedOldZoneIds.has(z.id)) finalZones.push(z)
+  })
+
+  const finalPositions = positions.map(p => {
+    const rawZoneId = p.zone_ids && p.zone_ids.length > 0 ? p.zone_ids[0] : null
+    const targetZoneId = (rawZoneId && zoneIdMap.get(rawZoneId)) || rawZoneId
+    const realBinId = rawZoneId ? zoneParentMap.get(rawZoneId) || null : null
+    return {
+      ...p,
+      real_zone_id: rawZoneId,
+      real_bin_id: realBinId,
+      zone_id: targetZoneId,
+    }
+  })
+
+  return { zones: finalZones, positions: finalPositions }
+}
+
+// ── MODAL KIỂM KÊ CHI TIẾT TỪNG TẦNG ──────────────────────────
+function LevelInventoryModal({
+  level,
+  visible,
+  onClose,
+  inventoryResults,
+  togglePositionChecked,
+  updatePositionNote,
+  bulkCheckPositions,
+}: {
+  level: any
+  visible: boolean
+  onClose: () => void
+  inventoryResults: Record<string, { checked?: boolean; note?: string }>
+  togglePositionChecked: (posId: string) => void
+  updatePositionNote: (posId: string, note: string) => void
+  bulkCheckPositions: (posIds: string[], checked: boolean) => void
+}) {
+  const [fetchedLotItemsMap, setFetchedLotItemsMap] = useState<Record<string, any[]>>({})
+  const fetchedLotItemsRef = useRef<Record<string, any[]>>({})
+
+  useEffect(() => {
+    if (!visible || !level?.slots || level.slots.length === 0) return
+
+    const neededLotIds: string[] = []
+    ;(level.slots || []).forEach((s: any) => {
+      if (!s.lot_id || s.lot_id === 'pending') return
+      const hasValidItems =
+        Array.isArray(s.items) &&
+        s.items.length > 0 &&
+        s.items.some((it: any) => it.quantity !== null && it.quantity !== undefined)
+      if (
+        !hasValidItems &&
+        !fetchedLotItemsRef.current[s.lot_id] &&
+        !neededLotIds.includes(s.lot_id)
+      ) {
+        neededLotIds.push(s.lot_id)
+      }
+    })
+
+    if (neededLotIds.length === 0) return
+    ;(supabase.from('lot_items') as any)
+      .select('lot_id, product_id, quantity, unit, products ( name, sku, unit )')
+      .in('lot_id', neededLotIds)
+      .then(({ data, error }: any) => {
+        if (error || !data || data.length === 0) return
+        const newMap: Record<string, any[]> = {}
+        data.forEach((it: any) => {
+          if (!newMap[it.lot_id]) newMap[it.lot_id] = []
+          newMap[it.lot_id].push({
+            product_id: it.product_id,
+            sku: it.products?.sku || '',
+            product_name: it.products?.name || 'Hàng đông lạnh',
+            quantity: it.quantity ?? 0,
+            unit: it.unit || it.products?.unit || 'Thùng',
+          })
+        })
+        fetchedLotItemsRef.current = { ...fetchedLotItemsRef.current, ...newMap }
+        setFetchedLotItemsMap(prev => ({ ...prev, ...newMap }))
+      })
+      .catch(() => {})
+  }, [visible, level?.slots])
+
+  if (!visible || !level) return null
+
+  const sortedSlots = sortPositionsByDepthAndCol(level.slots || [])
+  const allSlotIds: string[] = sortedSlots.map((s: any) => s.id)
+  const allChecked = allSlotIds.length > 0 && allSlotIds.every(id => inventoryResults[id]?.checked)
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-3">
+      <div className="w-full max-w-lg bg-[#0f172a] border border-slate-700 rounded-2xl overflow-hidden flex flex-col max-h-[90vh]">
+        {/* Header */}
+        <div className="px-4 py-3 bg-[#1e293b] border-b border-slate-700 flex items-center justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-black text-white truncate">
+              {level.binName ? `${level.binName} · ${level.name}` : level.name}
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Tổng: {sortedSlots.length} vị trí • Có hàng:{' '}
+              {sortedSlots.filter((s: any) => !!s.lot_id).length}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => bulkCheckPositions(allSlotIds, !allChecked)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold flex items-center gap-1 border ${
+              allChecked
+                ? 'bg-slate-800 border-slate-600 text-slate-300'
+                : 'bg-emerald-600 border-emerald-400 text-white'
+            }`}
+          >
+            <Check className="w-3.5 h-3.5" />
+            <span>{allChecked ? 'Bỏ tích tất cả' : 'Tích tất cả'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        {/* Slots List */}
+        <div className="p-3 overflow-y-auto overscroll-contain space-y-2.5 flex-1">
+          {sortedSlots.map((slot: any) => {
+            const res = inventoryResults[slot.id] || {}
+            const isChecked = !!res.checked
+            const hasNote = !!(res.note && res.note.trim())
+            const hasLot = !!slot.lot_id
+            const detailedItems =
+              (Array.isArray(slot.items) && slot.items.length > 0
+                ? slot.items
+                : slot.lot_id
+                  ? fetchedLotItemsMap[slot.lot_id]
+                  : null) || []
+
+            return (
+              <div
+                key={slot.id}
+                className={`p-3 rounded-2xl border transition space-y-2 ${
+                  hasNote
+                    ? 'bg-rose-950/25 border-rose-500/60'
+                    : isChecked
+                      ? 'bg-emerald-950/25 border-emerald-500/60'
+                      : hasLot
+                        ? 'bg-[#1e293b] border-amber-500/40'
+                        : 'bg-[#1e293b]/60 border-slate-800'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-xs font-black text-sky-300 font-mono">
+                        {slot.code}
+                      </span>
+                      {slot.stt && (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-xs font-black text-amber-300">
+                          STT: {slot.stt}
+                        </span>
+                      )}
+                      {slot.packaging_date && (
+                        <span className="text-[11px] font-bold text-slate-400">
+                          📅 {slot.packaging_date}
+                        </span>
+                      )}
+                    </div>
+
+                    {hasLot ? (
+                      <div className="mt-1.5 space-y-1">
+                        {detailedItems.length > 1 ? (
+                          detailedItems.map((it: any, idx: number) => (
+                            <div
+                              key={idx}
+                              className="text-xs font-bold text-white flex items-center justify-between bg-[#0f172a]/70 px-2 py-1 rounded-lg"
+                            >
+                              <span className="truncate pr-2">{it.product_name}</span>
+                              <span className="text-emerald-400 font-extrabold shrink-0">
+                                {it.quantity} {it.unit || 'Thùng'}
+                              </span>
+                            </div>
+                          ))
+                        ) : (
+                          <div className="text-xs font-bold text-white">
+                            {slot.product_name || 'Hàng đông lạnh'}{' '}
+                            {slot.quantity ? (
+                              <span className="text-emerald-400 font-black">
+                                ({slot.quantity} {slot.unit || 'Thùng'})
+                              </span>
+                            ) : null}
+                          </div>
+                        )}
+                        {slot.sku && (
+                          <div className="text-[10px] text-slate-400">
+                            SKU: <b className="text-indigo-300">{slot.sku}</b>
+                            {slot.aliases ? ` • Tên tắt: ${slot.aliases}` : ''}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-1 text-xs text-slate-500 italic">Vị trí trống</div>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => togglePositionChecked(slot.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center gap-1.5 shrink-0 border transition ${
+                      isChecked
+                        ? 'bg-emerald-600 border-emerald-400 text-white'
+                        : 'bg-[#0f172a] border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    {isChecked ? (
+                      <CheckSquare className="w-4 h-4" />
+                    ) : (
+                      <Square className="w-4 h-4" />
+                    )}
+                    <span>{isChecked ? 'Đã kiểm' : 'Kiểm'}</span>
+                  </button>
+                </div>
+
+                {/* Ô ghi chú sai lệch */}
+                <input
+                  type="text"
+                  value={res.note || ''}
+                  onChange={e => updatePositionNote(slot.id, e.target.value)}
+                  placeholder="Ghi chú sai lệch thực tế (nếu có)..."
+                  className={`w-full px-3 py-1.5 rounded-xl text-xs border focus:outline-none ${
+                    hasNote
+                      ? 'bg-rose-950/40 border-rose-500/60 text-rose-200 placeholder-rose-400/60'
+                      : 'bg-[#0f172a] border-slate-700 text-white placeholder-slate-500'
+                  }`}
+                />
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── COMPONENT CHÍNH: INVENTORY TAB ────────────────────────────
+export function InventoryTab({
+  isActive = true,
+  systemCode = 'KHO_DONG_LANH',
+  userProfile,
+}: InventoryTabProps) {
+  const [zones, setZones] = useState<ZoneItem[]>([])
+  const [positions, setPositions] = useState<PositionItem[]>([])
+  const [warehouseProducts, setWarehouseProducts] = useState<ShiftProductItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [syncing, setSyncing] = useState(false)
+  const [toastMsg, setToastMsg] = useState<string | null>(null)
+
+  // Sessions & Results
+  const [sessions, setSessions] = useState<any[]>([])
+  const [allSessionResults, setAllSessionResults] = useState<
+    Record<string, Record<string, { checked?: boolean; note?: string }>>
+  >({})
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<'list' | 'detail'>('list')
+
+  // Detail state
+  const [isGrouped, setIsGrouped] = useState(true)
+  const [selectedWarehouseId, setSelectedWarehouseId] = useState<string | null>(null)
+  const [selectedDetailZoneId, setSelectedDetailZoneId] = useState<string | null>(null)
+  const [selectedKhuId, setSelectedKhuId] = useState<string>('ALL')
+  const [showHallSummary, setShowHallSummary] = useState(false)
+  const [expandedLegendRowIds, setExpandedLegendRowIds] = useState<Record<string, boolean>>({})
+
+  // Tìm kiếm Sản Phẩm theo tên viết tắt + Autocomplete trong Kiểm kê
+  const [invSearchQuery, setInvSearchQuery] = useState('')
+  const [showInvSuggestions, setShowInvSuggestions] = useState(false)
+
+  // Modals
+  const [newSessionModalOpen, setNewSessionModalOpen] = useState(false)
+  const [newSessionName, setNewSessionName] = useState('')
+  const [newSessionZoneId, setNewSessionZoneId] = useState<string>('ALL')
+  const [selectedLevelModalData, setSelectedLevelModalData] = useState<any | null>(null)
+  const [hallModalOpen, setHallModalOpen] = useState(false)
+  const [hallModalDefaultId, setHallModalDefaultId] = useState<string | null>(null)
+
+  const showToast = useCallback((msg: string) => {
+    setToastMsg(msg)
+    setTimeout(() => setToastMsg(null), 3500)
+  }, [])
+
+  // ── LOAD SƠ ĐỒ KHO & PHIÊN KIỂM KÊ ──
+  const loadLocalCache = useCallback(() => {
+    try {
+      const sRaw = localStorage.getItem(INVENTORY_KEYS.SESSIONS)
+      if (sRaw) setSessions(JSON.parse(sRaw))
+      const rRaw = localStorage.getItem(INVENTORY_KEYS.RESULTS)
+      if (rRaw) setAllSessionResults(JSON.parse(rRaw))
+      const mRaw = localStorage.getItem(INVENTORY_KEYS.MAP_CACHE)
+      if (mRaw) {
+        const parsed = JSON.parse(mRaw)
+        if (parsed?.zones) setZones(parsed.zones)
+        if (parsed?.positions) setPositions(parsed.positions)
+      }
+    } catch {}
+  }, [])
+
+  const fetchOnlineData = useCallback(
+    async (forceRefreshMap = false) => {
+      setLoading(true)
+      try {
+        await syncOfflineHallLotUpdatesWeb().catch(() => {})
+        const prods = await getWarehouseProducts(systemCode).catch(() => [])
+        setWarehouseProducts(prods)
+
+        // 1. Tải danh sách phiên kiểm kê từ Supabase
+        const { data: remoteSessions } = await (
+          supabase.from('internal_inventory_sessions') as any
+        )
+          .select('*')
+          .eq('status', 'active')
+          .order('created_at', { ascending: false })
+
+        let mergedSessions: any[] = []
+        const localSessions: any[] = (() => {
+          try {
+            return JSON.parse(localStorage.getItem(INVENTORY_KEYS.SESSIONS) || '[]')
+          } catch {
+            return []
+          }
+        })()
+
+        if (remoteSessions) {
+          const localOnly = localSessions.filter(
+            ls => !isUUID(ls.id) && !remoteSessions.some((rs: any) => rs.id === ls.id)
+          )
+          mergedSessions = [...localOnly, ...remoteSessions]
+          setSessions(mergedSessions)
+          localStorage.setItem(INVENTORY_KEYS.SESSIONS, JSON.stringify(mergedSessions))
+
+          // Tải items của các phiên UUID
+          const uuidIds = remoteSessions.map((s: any) => s.id).filter(isUUID)
+          if (uuidIds.length > 0) {
+            const { data: itemsData } = await (
+              supabase.from('internal_inventory_items') as any
+            )
+              .select('session_id, position_id, is_checked, note')
+              .in('session_id', uuidIds)
+
+            if (itemsData) {
+              setAllSessionResults(prev => {
+                const next = { ...prev }
+                itemsData.forEach((it: any) => {
+                  if (!next[it.session_id]) next[it.session_id] = {}
+                  next[it.session_id][it.position_id] = {
+                    checked: !!it.is_checked,
+                    note: it.note || '',
+                  }
+                })
+                localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
+                return next
+              })
+            }
+          }
+        }
+
+        // 2. Nếu chưa có sơ đồ kho trong cache hoặc yêu cầu tải mới -> tải từ Supabase
+        const hasMap = zones.length > 0 && positions.length > 0
+        if (!hasMap || forceRefreshMap) {
+          const [zRes, pRes, zpRes, pendRes] = await Promise.all([
+            (supabase.from('zones') as any)
+              .select('id, name, parent_id, system_type, display_order, is_hall')
+              .eq('system_type', 'KHO_DONG_LANH'),
+            (supabase.from('positions') as any)
+              .select('id, code, lot_id, system_type')
+              .eq('system_type', 'KHO_DONG_LANH'),
+            (supabase.from('zone_positions') as any).select('position_id, zone_id'),
+            (supabase.from('pending_assignments') as any)
+              .select('position_id, lot_stt, production_date')
+              .eq('system_code', 'KHO_DONG_LANH')
+              .eq('status', 'pending'),
+          ])
+
+          const rawZones: ZoneItem[] = zRes.data || []
+          const rawPositions: any[] = pRes.data || []
+          const zpList: any[] = zpRes.data || []
+          const zpMap = new Map<string, string[]>()
+          zpList.forEach(item => {
+            const arr = zpMap.get(item.position_id) || []
+            arr.push(item.zone_id)
+            zpMap.set(item.position_id, arr)
+          })
+
+          const occupiedLotIds = Array.from(
+            new Set(rawPositions.map(p => p.lot_id).filter(Boolean))
+          )
+          const lotMap = new Map<string, any>()
+          if (occupiedLotIds.length > 0) {
+            const CHUNK = 80
+            for (let i = 0; i < occupiedLotIds.length; i += CHUNK) {
+              const chunk = occupiedLotIds.slice(i, i + CHUNK)
+              const { data: lotsData } = await (supabase.from('lots') as any)
+                .select(
+                  `
+                  id, code, daily_seq, packaging_date, peeling_date, quantity, metadata,
+                  products ( name, sku, unit, aliases, internal_code, internal_name ),
+                  lot_items ( product_id, quantity, unit, products ( name, sku, unit, aliases ) ),
+                  lot_tags ( tag )
+                `
+                )
+                .in('id', chunk)
+
+              ;(lotsData || []).forEach((l: any) => {
+                const allItems = l.lot_items || []
+                const prodName =
+                  l.products?.name ||
+                  allItems[0]?.products?.name ||
+                  l.metadata?.product_name ||
+                  'Hàng đông lạnh'
+                const sku = l.products?.sku || allItems[0]?.products?.sku || null
+                const aliases = l.products?.aliases || allItems[0]?.products?.aliases || null
+                const unit = allItems[0]?.unit || l.products?.unit || 'Thùng'
+                const itemsList = allItems.map((it: any) => ({
+                  product_id: it.product_id,
+                  sku: it.products?.sku || '',
+                  product_name: it.products?.name || 'Hàng đông lạnh',
+                  quantity: it.quantity ?? 0,
+                  unit: it.unit || unit,
+                }))
+                lotMap.set(l.id, {
+                  code: l.code,
+                  stt: l.daily_seq ? String(l.daily_seq) : null,
+                  product_name: prodName,
+                  sku,
+                  aliases,
+                  internal_code: l.products?.internal_code || null,
+                  internal_name: l.products?.internal_name || null,
+                  unit,
+                  packaging_date: l.packaging_date ? String(l.packaging_date).split('T')[0] : null,
+                  quantity: l.quantity ?? null,
+                  items: itemsList,
+                })
+              })
+            }
+          }
+
+          const pendMap = new Map<string, any>()
+          ;(pendRes.data || []).forEach((p: any) => {
+            if (p.position_id) {
+              pendMap.set(p.position_id, {
+                stt: String(p.lot_stt || ''),
+                packaging_date: p.production_date,
+              })
+            }
+          })
+
+          const formattedPos: PositionItem[] = rawPositions.map(p => {
+            const lInfo = p.lot_id ? lotMap.get(p.lot_id) : null
+            const pInfo = pendMap.get(p.id)
+            return {
+              id: p.id,
+              code: p.code,
+              lot_id: p.lot_id || (pInfo ? 'pending' : null),
+              zone_ids: zpMap.get(p.id) || [],
+              stt: lInfo?.stt || pInfo?.stt || null,
+              lot_code: lInfo?.code || (pInfo ? 'Chờ duyệt LOT' : null),
+              product_name: lInfo?.product_name || (pInfo ? 'Đang chờ gán LOT' : null),
+              sku: lInfo?.sku || null,
+              aliases: lInfo?.aliases || null,
+              internal_code: lInfo?.internal_code || null,
+              internal_name: lInfo?.internal_name || null,
+              unit: lInfo?.unit || 'Thùng',
+              packaging_date: lInfo?.packaging_date || pInfo?.packaging_date || null,
+              quantity: lInfo?.quantity || null,
+              items: lInfo?.items || [],
+            }
+          })
+
+          setZones(rawZones)
+          setPositions(formattedPos)
+          try {
+            localStorage.setItem(
+              INVENTORY_KEYS.MAP_CACHE,
+              JSON.stringify({
+                zones: rawZones,
+                positions: formattedPos,
+                cachedAt: new Date().toISOString(),
+              })
+            )
+          } catch {}
+        }
+      } finally {
+        setLoading(false)
+      }
+    },
+    [systemCode, zones.length, positions.length]
+  )
+
+  useEffect(() => {
+    loadLocalCache()
+    void fetchOnlineData(false)
+  }, [])
+
+  // ── DANH SÁCH KHO GỐC & SẢNH ──
+  const rootWarehouses = useMemo(
+    () =>
+      zones
+        .filter(z => !z.parent_id)
+        .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })),
+    [zones]
+  )
+
+  useEffect(() => {
+    if (!selectedWarehouseId && rootWarehouses.length > 0) {
+      setSelectedWarehouseId(rootWarehouses[0].id)
+    }
+  }, [rootWarehouses, selectedWarehouseId])
+
+  const allHalls: HallOption[] = useMemo(() => {
+    const zMap = new Map(zones.map(z => [z.id, z]))
+    const findRoot = (z: ZoneItem): ZoneItem | null => {
+      let cur: ZoneItem | undefined = z
+      while (cur && cur.parent_id) {
+        cur = zMap.get(cur.parent_id)
+      }
+      return cur || null
+    }
+    return zones
+      .filter(z => z.is_hall || /s[ảàa]nh/i.test(z.name || ''))
+      .map(z => {
+        const root = findRoot(z)
+        return {
+          id: z.id,
+          name: z.name,
+          warehouseId: root?.id || null,
+          warehouseName: root?.name || null,
+        }
+      })
+  }, [zones])
+
+  // ── GROUPED VS UNGROUPED DATA ──
+  const { activeZones, activePositions } = useMemo(() => {
+    if (isGrouped) {
+      const grouped = groupInventoryWarehouseData(zones, positions)
+      return { activeZones: grouped.zones, activePositions: grouped.positions }
+    }
+    const rawMapped = positions.map(p => ({
+      ...p,
+      real_zone_id: p.zone_ids?.[0] || null,
+      real_bin_id: null,
+      zone_id: p.zone_ids?.[0] || null,
+    }))
+    return { activeZones: zones, activePositions: rawMapped }
+  }, [isGrouped, zones, positions])
+
+  // Helper lấy toàn bộ zone con của 1 zone
+  const getDescendantIds = useCallback(
+    (rootId: string, zList: ZoneItem[]): Set<string> => {
+      const childrenMap = new Map<string, string[]>()
+      zList.forEach(z => {
+        if (z.parent_id) {
+          const arr = childrenMap.get(z.parent_id) || []
+          arr.push(z.id)
+          childrenMap.set(z.parent_id, arr)
+        }
+      })
+      const result = new Set<string>([rootId])
+      const stack = [rootId]
+      while (stack.length > 0) {
+        const curr = stack.pop()!
+        const kids = childrenMap.get(curr) || []
+        for (const k of kids) {
+          if (!result.has(k)) {
+            result.add(k)
+            stack.push(k)
+          }
+        }
+      }
+      return result
+    },
+    []
+  )
+
+  const currentSession = useMemo(
+    () => sessions.find(s => s.id === currentSessionId) || null,
+    [sessions, currentSessionId]
+  )
+
+  const currentResults = useMemo(
+    () => (currentSessionId ? allSessionResults[currentSessionId] || {} : {}),
+    [allSessionResults, currentSessionId]
+  )
+
+  // ── THAO TÁC TÍCH KIỂM & GHI CHÚ ──
+  const saveResultsToStorage = (
+    sessionId: string,
+    nextSessionRes: Record<string, { checked?: boolean; note?: string }>
+  ) => {
+    setAllSessionResults(prev => {
+      const next = { ...prev, [sessionId]: nextSessionRes }
+      try {
+        localStorage.setItem(INVENTORY_KEYS.RESULTS, JSON.stringify(next))
+      } catch {}
+      return next
+    })
+  }
+
+  const togglePositionChecked = (posId: string) => {
+    if (!currentSessionId) return
+    const cur = currentResults[posId] || {}
+    const nextRes = {
+      ...currentResults,
+      [posId]: { ...cur, checked: !cur.checked },
+    }
+    saveResultsToStorage(currentSessionId, nextRes)
+  }
+
+  const updatePositionNote = (posId: string, note: string) => {
+    if (!currentSessionId) return
+    const cur = currentResults[posId] || {}
+    const nextRes = {
+      ...currentResults,
+      [posId]: { ...cur, note, checked: note.trim() ? true : cur.checked },
+    }
+    saveResultsToStorage(currentSessionId, nextRes)
+  }
+
+  const bulkCheckPositions = (posIds: string[], checked: boolean) => {
+    if (!currentSessionId) return
+    const nextRes = { ...currentResults }
+    posIds.forEach(id => {
+      nextRes[id] = { ...(nextRes[id] || {}), checked }
+    })
+    saveResultsToStorage(currentSessionId, nextRes)
+  }
+
+  // ── TẠO PHIẾU KIỂM KÊ MỚI ──
+  const handleCreateNewSession = async () => {
+    if (!newSessionName.trim()) return
+    const payload = {
+      name: newSessionName.trim(),
+      zone_id: newSessionZoneId === 'ALL' ? null : newSessionZoneId,
+      status: 'active',
+      created_by: userProfile?.id || null,
+    }
+
+    try {
+      const { data, error } = await (supabase.from('internal_inventory_sessions') as any)
+        .insert([payload])
+        .select('*')
+        .single()
+      if (error) throw error
+      const updated = [data, ...sessions]
+      setSessions(updated)
+      localStorage.setItem(INVENTORY_KEYS.SESSIONS, JSON.stringify(updated))
+      setCurrentSessionId(data.id)
+      setNewSessionModalOpen(false)
+      setNewSessionName('')
+      setViewMode('detail')
+      showToast('Đã tạo phiếu kiểm kê mới!')
+    } catch {
+      const localSess = {
+        id: `local_inv_${Date.now()}`,
+        ...payload,
+        created_at: new Date().toISOString(),
+      }
+      const updated = [localSess, ...sessions]
+      setSessions(updated)
+      localStorage.setItem(INVENTORY_KEYS.SESSIONS, JSON.stringify(updated))
+      setCurrentSessionId(localSess.id)
+      setNewSessionModalOpen(false)
+      setNewSessionName('')
+      setViewMode('detail')
+      showToast('Đã tạo phiếu kiểm kê ngoại tuyến!')
+    }
+  }
+
+  // ── ĐỒNG BỘ LÊN WEB ──
+  const handleSyncSessionToCloud = async (sessionObj: any) => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      let realSessionId = sessionObj.id
+      if (!isUUID(realSessionId)) {
+        const { data: created, error } = await (
+          supabase.from('internal_inventory_sessions') as any
+        )
+          .insert([
+            {
+              name: sessionObj.name,
+              zone_id: sessionObj.zone_id || null,
+              status: 'active',
+              created_by: userProfile?.id || null,
+            },
+          ])
+          .select('*')
+          .single()
+        if (error) throw error
+        realSessionId = created.id
+      }
+
+      const resMap = allSessionResults[sessionObj.id] || {}
+      const rows = Object.entries(resMap)
+        .filter(([_, v]) => v.checked || (v.note && v.note.trim()))
+        .map(([posId, v]) => ({
+          session_id: realSessionId,
+          position_id: posId,
+          is_checked: !!v.checked,
+          note: v.note?.trim() || null,
+          checked_by: userProfile?.id || null,
+          checked_at: new Date().toISOString(),
+        }))
+
+      if (rows.length > 0) {
+        const CHUNK = 200
+        for (let i = 0; i < rows.length; i += CHUNK) {
+          const chunk = rows.slice(i, i + CHUNK)
+          const { error } = await (supabase.from('internal_inventory_items') as any).upsert(
+            chunk,
+            { onConflict: 'session_id,position_id' }
+          )
+          if (error) throw error
+        }
+      }
+
+      await fetchOnlineData(false)
+      showToast(`Đã đồng bộ ${rows.length} vị trí kiểm kê lên Web thành công!`)
+    } catch (e: any) {
+      alert('Lỗi đồng bộ kiểm kê: ' + (e?.message || e))
+    } finally {
+      setSyncing(false)
+    }
+  }
+
+  // ── TÌM KIẾM SẢN PHẨM & AUTOCOMPLETE TRONG KIỂM KÊ ──
+  const inventoryProductSuggestions = useMemo(() => {
+    const qNorm = normalizeViText(invSearchQuery)
+    if (!qNorm) return []
+    const tokens = qNorm.split(' ').filter(Boolean)
+    if (tokens.length === 0) return []
+
+    // Kết hợp từ danh mục sản phẩm và các vị trí đang có hàng trong kho
+    const map = new Map<
+      string,
+      { name: string; sku: string; aliases: string; count: number; score: number }
+    >()
+
+    for (const p of warehouseProducts) {
+      const aliasNorm = normalizeViText(p.aliases || '')
+      const skuNorm = normalizeViText(p.sku || '')
+      const intNorm = normalizeViText(`${p.internal_code || ''} ${p.internal_name || ''}`)
+      const nameNorm = normalizeViText(p.name || '')
+      const full = `${aliasNorm} ${skuNorm} ${intNorm} ${nameNorm}`
+      if (!tokens.every(t => full.includes(t))) continue
+      let score = 10
+      if (aliasNorm && tokens.every(t => aliasNorm.includes(t))) score += 60
+      if (skuNorm && tokens.every(t => skuNorm.includes(t))) score += 30
+      map.set(p.name, {
+        name: p.name,
+        sku: p.sku || '',
+        aliases: p.aliases || '',
+        count: 0,
+        score,
+      })
+    }
+
+    for (const pos of positions) {
+      if (!pos.lot_id || !pos.product_name) continue
+      const aliasNorm = normalizeViText(pos.aliases || '')
+      const skuNorm = normalizeViText(pos.sku || '')
+      const nameNorm = normalizeViText(pos.product_name || '')
+      const sttNorm = normalizeViText(pos.stt || '')
+      const full = `${aliasNorm} ${skuNorm} ${nameNorm} ${sttNorm}`
+      if (!tokens.every(t => full.includes(t))) continue
+
+      const existing = map.get(pos.product_name)
+      if (existing) {
+        existing.count += 1
+        existing.score += 5
+      } else {
+        map.set(pos.product_name, {
+          name: pos.product_name,
+          sku: pos.sku || '',
+          aliases: pos.aliases || '',
+          count: 1,
+          score: 25,
+        })
+      }
+    }
+
+    return Array.from(map.values())
+      .sort((a, b) => b.score - a.score || b.count - a.count)
+      .slice(0, 8)
+  }, [invSearchQuery, warehouseProducts, positions])
+
+  const matchSlotBySearch = useCallback(
+    (slot: any): boolean => {
+      if (!invSearchQuery.trim()) return true
+      const qNorm = normalizeViText(invSearchQuery)
+      const tokens = qNorm.split(' ').filter(Boolean)
+      if (tokens.length === 0) return true
+      const hay = normalizeViText(
+        [
+          slot.code,
+          slot.stt,
+          slot.lot_code,
+          slot.product_name,
+          slot.sku,
+          slot.aliases,
+          slot.internal_code,
+          slot.internal_name,
+        ]
+          .filter(Boolean)
+          .join(' ')
+      )
+      return tokens.every(t => hay.includes(t))
+    },
+    [invSearchQuery]
+  )
+
+  // ── SUMMARY CARDS CHO CÁC DÃY / SẢNH TRONG KHO ĐANG CHỌN ──
+  const summaryCards = useMemo(() => {
+    if (!selectedWarehouseId) return []
+    const childZones = activeZones
+      .filter(z => z.parent_id === selectedWarehouseId)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+
+    return childZones.map(cz => {
+      const descIds = getDescendantIds(cz.id, activeZones)
+      const zonePos = activePositions.filter(
+        p => p.zone_id && descIds.has(p.zone_id) && matchSlotBySearch(p)
+      )
+      const total = zonePos.length
+      const occupied = zonePos.filter(p => !!p.lot_id).length
+      let checked = 0
+      let discrepancy = 0
+      zonePos.forEach(p => {
+        const r = currentResults[p.id]
+        if (r?.checked) checked++
+        if (r?.note && r.note.trim()) discrepancy++
+      })
+      const pct = total > 0 ? Math.round((checked / total) * 100) : 0
+      return {
+        zone: cz,
+        total,
+        occupied,
+        checked,
+        discrepancy,
+        pct,
+      }
+    })
+  }, [
+    selectedWarehouseId,
+    activeZones,
+    activePositions,
+    getDescendantIds,
+    currentResults,
+    matchSlotBySearch,
+  ])
+
+  // ── DỮ LIỆU CHI TIẾT DÃY / SẢNH ĐANG MỞ (`selectedDetailZoneId`) ──
+  const selectedDetailZone = useMemo(
+    () => activeZones.find(z => z.id === selectedDetailZoneId) || null,
+    [activeZones, selectedDetailZoneId]
+  )
+
+  const isSelectedDetailHall = useMemo(() => {
+    if (!selectedDetailZone) return false
+    return !!(
+      selectedDetailZone.is_hall || /s[ảàa]nh/i.test(selectedDetailZone.name || '')
+    )
+  }, [selectedDetailZone])
+
+  const detailStructure = useMemo(() => {
+    if (!selectedDetailZoneId) return { khuOptions: [], sections: [], hallPositions: [] }
+
+    const directChildren = activeZones
+      .filter(z => z.parent_id === selectedDetailZoneId)
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+
+    // Kiểm tra xem có cấp KHU trung gian hay trực tiếp là Ô kệ
+    const hasSubKhu = directChildren.some(c => /khu|dãy|kệ/i.test(c.name || ''))
+    const khuOptions = hasSubKhu ? directChildren : []
+
+    const targetContainers = hasSubKhu
+      ? selectedKhuId === 'ALL'
+        ? directChildren
+        : directChildren.filter(c => c.id === selectedKhuId)
+      : [selectedDetailZone!]
+
+    const sections = targetContainers.map(container => {
+      const bins = (
+        hasSubKhu
+          ? activeZones.filter(z => z.parent_id === container.id)
+          : directChildren
+      ).sort((a, b) => (a.name || '').localeCompare(b.name || '', undefined, { numeric: true }))
+
+      const rows = bins
+        .map(bin => {
+          const levels = activeZones
+            .filter(z => z.parent_id === bin.id)
+            .sort((a, b) =>
+              (a.name || '').localeCompare(b.name || '', undefined, { numeric: true })
+            )
+
+          const levelCells = (levels.length > 0 ? levels : [bin]).map(lvl => {
+            const slots = activePositions.filter(
+              p => p.zone_id === lvl.id && matchSlotBySearch(p)
+            )
+            return {
+              id: lvl.id,
+              name: lvl.name,
+              binName: bin.name,
+              slots,
+            }
+          })
+
+          const allRowSlots = levelCells.flatMap(l => l.slots)
+          return {
+            bin,
+            levels: levelCells,
+            allRowSlots,
+          }
+        })
+        .filter(r => r.allRowSlots.length > 0)
+
+      return {
+        container,
+        rows,
+      }
+    })
+
+    const allDesc = getDescendantIds(selectedDetailZoneId, activeZones)
+    const hallPositions = activePositions.filter(
+      p => p.zone_id && allDesc.has(p.zone_id) && matchSlotBySearch(p)
+    )
+
+    return { khuOptions, sections, hallPositions }
+  }, [
+    selectedDetailZoneId,
+    selectedDetailZone,
+    activeZones,
+    activePositions,
+    selectedKhuId,
+    getDescendantIds,
+    matchSlotBySearch,
+  ])
+
+  return (
+    <div className="flex flex-col h-full bg-[#0b1120] text-slate-100 select-none overflow-hidden">
+      {toastMsg && (
+        <div className="fixed top-14 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold shadow-xl border border-emerald-400">
+          {toastMsg}
+        </div>
+      )}
+
+      {viewMode === 'list' ? (
+        /* =========================================================
+         * MODE 1: DANH SÁCH PHIÊN KIỂM KÊ
+         * ========================================================= */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="px-4 py-3 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-2">
+            <div>
+              <div className="text-xs font-black text-white tracking-wide">
+                KIỂM KÊ KHO - THEO TẦNG &amp; PHIÊN
+              </div>
+              <div className="text-[11px] text-slate-400">
+                {positions.length.toLocaleString('vi-VN')} vị trí • {rootWarehouses.length} kho
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setHallModalDefaultId(null)
+                  setHallModalOpen(true)
+                }}
+                className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-xs font-extrabold flex items-center gap-1"
+              >
+                <Layers className="w-3.5 h-3.5" />
+                <span>LOT Sảnh</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => fetchOnlineData(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-[#1e293b] border border-slate-700 text-slate-300 text-xs font-bold flex items-center gap-1"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-sky-400' : ''}`} />
+                <span>Tải mới</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setNewSessionModalOpen(true)}
+                className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white text-xs font-extrabold flex items-center gap-1"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Tạo phiếu</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2.5 pb-20">
+            {loading && sessions.length === 0 ? (
+              <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
+                <Loader2 className="w-7 h-7 animate-spin text-emerald-400" />
+                <span className="text-xs">Đang tải danh sách phiên kiểm kê...</span>
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="py-16 text-center space-y-3">
+                <div className="text-xs text-slate-400">Chưa có phiên kiểm kê nào đang mở.</div>
+                <button
+                  type="button"
+                  onClick={() => setNewSessionModalOpen(true)}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 text-white text-xs font-extrabold inline-flex items-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>+ Tạo Phiếu Kiểm Kê Đầu Tiên</span>
+                </button>
+              </div>
+            ) : (
+              sessions.map(sess => {
+                const resMap = allSessionResults[sess.id] || {}
+                const scopePos = sess.zone_id
+                  ? (() => {
+                      const dIds = getDescendantIds(sess.zone_id, zones)
+                      return positions.filter(p => p.zone_ids?.some(zid => dIds.has(zid)))
+                    })()
+                  : positions
+                const sTotal = scopePos.length
+                let sChecked = 0
+                let sDiscrepancy = 0
+                scopePos.forEach(p => {
+                  const r = resMap[p.id]
+                  if (r?.checked) sChecked++
+                  if (r?.note && r.note.trim()) sDiscrepancy++
+                })
+                const pct = sTotal > 0 ? Math.round((sChecked / sTotal) * 100) : 0
+                const scopeZoneName = sess.zone_id
+                  ? zones.find(z => z.id === sess.zone_id)?.name || 'Theo khu vực'
+                  : 'Toàn bộ kho'
+
+                return (
+                  <div
+                    key={sess.id}
+                    className="p-3.5 rounded-2xl bg-[#1e293b] border border-slate-700 space-y-2.5"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentSessionId(sess.id)
+                          if (sess.zone_id && rootWarehouses.some(w => w.id === sess.zone_id)) {
+                            setSelectedWarehouseId(sess.zone_id)
+                          }
+                          setViewMode('detail')
+                        }}
+                        className="text-left flex-1 min-w-0"
+                      >
+                        <div className="text-sm font-black text-white truncate">{sess.name}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          📍 {scopeZoneName} •{' '}
+                          {sess.created_at
+                            ? new Date(sess.created_at).toLocaleDateString('vi-VN')
+                            : ''}
+                        </div>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={syncing}
+                        onClick={() => handleSyncSessionToCloud(sess)}
+                        className="px-2.5 py-1.5 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
+                      >
+                        {syncing ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CloudUpload className="w-3.5 h-3.5" />
+                        )}
+                        <span>Đồng bộ lên Web</span>
+                      </button>
+                    </div>
+
+                    {/* Progress bar */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCurrentSessionId(sess.id)
+                        setViewMode('detail')
+                      }}
+                      className="w-full text-left space-y-1.5"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-emerald-400">
+                          Đã kiểm: {sChecked} / {sTotal} vị trí ({pct}%)
+                        </span>
+                        {sDiscrepancy > 0 && (
+                          <span className="px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 text-[10px] font-black">
+                            ⚠️ {sDiscrepancy} SAI LỆCH
+                          </span>
+                        )}
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-[#0f172a] overflow-hidden">
+                        <div
+                          className="h-full bg-emerald-500 transition-all"
+                          style={{ width: `${Math.min(100, pct)}%` }}
+                        />
+                      </div>
+                    </button>
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </div>
+      ) : (
+        /* =========================================================
+         * MODE 2: CHI TIẾT PHIÊN KIỂM KÊ THEO KHO / DÃY / SẢNH
+         * ========================================================= */
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Header Phiên */}
+          <div className="px-3 py-2.5 bg-[#0f172a] border-b border-slate-800 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDetailZoneId(null)
+                  setViewMode('list')
+                }}
+                className="flex items-center gap-1.5 text-xs font-extrabold text-slate-300"
+              >
+                <ArrowLeft className="w-4 h-4 text-sky-400" />
+                <span className="truncate max-w-[160px]">
+                  {currentSession?.name || 'Danh sách phiên'}
+                </span>
+              </button>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHallModalDefaultId(null)
+                    setHallModalOpen(true)
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-sky-500/15 border border-sky-500/40 text-sky-300 text-[11px] font-extrabold"
+                >
+                  LOT Sảnh
+                </button>
+
+                {currentSession && (
+                  <button
+                    type="button"
+                    disabled={syncing}
+                    onClick={() => handleSyncSessionToCloud(currentSession)}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-600 text-white text-[11px] font-extrabold flex items-center gap-1"
+                  >
+                    <CloudUpload className="w-3.5 h-3.5" />
+                    <span>Đồng bộ</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setIsGrouped(v => !v)}
+                  className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${
+                    isGrouped
+                      ? 'bg-indigo-600 border-indigo-400 text-white'
+                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                  }`}
+                >
+                  {isGrouped ? 'Đang Gộp Ô' : 'Tách Kệ'}
+                </button>
+              </div>
+            </div>
+
+            {/* Ô tìm kiếm sản phẩm theo tên viết tắt + Autocomplete */}
+            <div className="relative">
+              <div className="flex items-center gap-2 px-3 h-9 rounded-xl bg-[#1e293b] border border-slate-700">
+                <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                <input
+                  type="text"
+                  value={invSearchQuery}
+                  onChange={e => {
+                    setInvSearchQuery(e.target.value)
+                    setShowInvSuggestions(true)
+                  }}
+                  onFocus={() => setShowInvSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowInvSuggestions(false), 180)}
+                  placeholder="Lọc vị trí theo tên viết tắt (alias), SKU, STT, tên SP..."
+                  className="flex-1 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+                />
+                {invSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInvSearchQuery('')
+                      setShowInvSuggestions(false)
+                    }}
+                    className="text-slate-400"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {showInvSuggestions &&
+                invSearchQuery.trim() &&
+                inventoryProductSuggestions.length > 0 && (
+                  <div className="mt-1 rounded-xl bg-[#1e293b] border border-sky-500/70 shadow-2xl overflow-hidden z-40 max-h-52 overflow-y-auto">
+                    <div className="px-3 py-1 bg-[#0f172a] text-[10px] font-extrabold text-slate-400 border-b border-slate-700">
+                      GỢI Ý SẢN PHẨM TRONG KHO ({inventoryProductSuggestions.length})
+                    </div>
+                    {inventoryProductSuggestions.map(sug => (
+                      <button
+                        key={`${sug.sku}_${sug.name}`}
+                        type="button"
+                        onMouseDown={() => {
+                          setInvSearchQuery(sug.name)
+                          setShowInvSuggestions(false)
+                        }}
+                        onClick={() => {
+                          setInvSearchQuery(sug.name)
+                          setShowInvSuggestions(false)
+                        }}
+                        className="w-full px-3 py-2 text-left border-b border-slate-700/60 last:border-0 hover:bg-slate-800 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {sug.aliases && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-extrabold">
+                                {sug.aliases}
+                              </span>
+                            )}
+                            <span className="text-xs font-bold text-white truncate">
+                              {sug.name}
+                            </span>
+                          </div>
+                          {sug.sku && (
+                            <div className="text-[10px] text-slate-400">SKU: {sug.sku}</div>
+                          )}
+                        </div>
+                        {sug.count > 0 && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold shrink-0">
+                            {sug.count} vị trí
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+            </div>
+
+            {/* Chọn Kho (Kho 1, Kho 2...) */}
+            <div className="flex gap-1.5 overflow-x-auto no-scrollbar">
+              {rootWarehouses.map(wh => {
+                const active = wh.id === selectedWarehouseId
+                return (
+                  <button
+                    key={wh.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedWarehouseId(wh.id)
+                      setSelectedDetailZoneId(null)
+                    }}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap border transition flex items-center gap-1.5 ${
+                      active
+                        ? 'bg-sky-600 border-sky-400 text-white'
+                        : 'bg-[#1e293b] border-slate-700 text-slate-400'
+                    }`}
+                  >
+                    <Building2 className="w-3.5 h-3.5" />
+                    <span>{wh.name}</span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Danh sách thẻ Dãy / Sảnh */}
+          <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-2.5 pb-20">
+            {summaryCards.map(card => (
+              <button
+                key={card.zone.id}
+                type="button"
+                onClick={() => {
+                  setSelectedDetailZoneId(card.zone.id)
+                  setSelectedKhuId('ALL')
+                  setShowHallSummary(false)
+                }}
+                className="w-full p-3.5 rounded-2xl bg-[#1e293b] border border-slate-700 hover:border-sky-500/50 text-left space-y-2.5 transition"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-sm font-black text-white">{card.zone.name}</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-xs font-extrabold">
+                    {card.pct}% Đã kiểm
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  <div className="p-2 rounded-xl bg-[#0f172a]">
+                    <div className="text-[10px] font-bold text-slate-400">TỔNG</div>
+                    <div className="text-sm font-black text-white">{card.total}</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-[#0f172a]">
+                    <div className="text-[10px] font-bold text-amber-400">CÓ HÀNG</div>
+                    <div className="text-sm font-black text-amber-300">{card.occupied}</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-[#0f172a]">
+                    <div className="text-[10px] font-bold text-emerald-400">ĐÃ KIỂM</div>
+                    <div className="text-sm font-black text-emerald-400">{card.checked}</div>
+                  </div>
+                  <div className="p-2 rounded-xl bg-[#0f172a]">
+                    <div className="text-[10px] font-bold text-rose-400">SAI LỆCH</div>
+                    <div className="text-sm font-black text-rose-400">{card.discrepancy}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+       * MODAL CHI TIẾT DÃY / SẢNH (SƠ ĐỒ Ô KỆ & TẦNG T1, T2...)
+       * ========================================================= */}
+      {selectedDetailZone && (
+        <div className="fixed inset-0 z-40 flex flex-col bg-[#0b1120]">
+          {/* Header Dãy / Sảnh */}
+          <div className="px-3 py-2.5 bg-[#0f172a] border-b border-slate-800 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedDetailZoneId(null)}
+              className="flex items-center gap-1.5 text-xs font-black text-white"
+            >
+              <ArrowLeft className="w-4 h-4 text-sky-400" />
+              <span>{selectedDetailZone.name}</span>
+            </button>
+
+            <div className="flex items-center gap-1.5">
+              {isSelectedDetailHall && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHallModalDefaultId(selectedDetailZone.id)
+                      setHallModalOpen(true)
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-sky-600 text-white text-[11px] font-extrabold"
+                  >
+                    Cập nhật LOT
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowHallSummary(v => !v)}
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${
+                      showHallSummary
+                        ? 'bg-amber-500 border-amber-400 text-slate-950'
+                        : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    Gom nhóm
+                  </button>
+                </>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setIsGrouped(v => !v)}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-extrabold border ${
+                  isGrouped
+                    ? 'bg-indigo-600 border-indigo-400 text-white'
+                    : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                }`}
+              >
+                {isGrouped ? 'Gộp Ô' : 'Tách Kệ'}
+              </button>
+            </div>
+          </div>
+
+          {/* Khu filter pills */}
+          {detailStructure.khuOptions.length > 0 && (
+            <div className="px-3 py-2 bg-[#0f172a] border-b border-slate-800 flex gap-1.5 overflow-x-auto no-scrollbar">
+              <button
+                type="button"
+                onClick={() => setSelectedKhuId('ALL')}
+                className={`px-3 py-1 rounded-lg text-xs font-bold ${
+                  selectedKhuId === 'ALL' ? 'bg-sky-600 text-white' : 'bg-[#1e293b] text-slate-400'
+                }`}
+              >
+                Tất cả Khu
+              </button>
+              {detailStructure.khuOptions.map(k => (
+                <button
+                  key={k.id}
+                  type="button"
+                  onClick={() => setSelectedKhuId(k.id)}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap ${
+                    selectedKhuId === k.id ? 'bg-sky-600 text-white' : 'bg-[#1e293b] text-slate-400'
+                  }`}
+                >
+                  {k.name}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Nội dung Sảnh gom nhóm hoặc Lưới Ô Kệ & Tầng */}
+          <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-3 pb-20">
+            {isSelectedDetailHall && showHallSummary ? (
+              /* Chế độ Gom Nhóm Sảnh theo Sản phẩm */
+              <div className="space-y-2">
+                {(() => {
+                  const groups = new Map<
+                    string,
+                    { product_name: string; sku: string; slots: any[] }
+                  >()
+                  detailStructure.hallPositions
+                    .filter(p => !!p.lot_id)
+                    .forEach(p => {
+                      const k = `${p.sku || ''}___${p.product_name || 'Hàng sảnh'}`
+                      const g = groups.get(k) || {
+                        product_name: p.product_name || 'Hàng sảnh',
+                        sku: p.sku || '',
+                        slots: [],
+                      }
+                      g.slots.push(p)
+                      groups.set(k, g)
+                    })
+                  const list = Array.from(groups.values())
+                  if (list.length === 0) {
+                    return (
+                      <div className="py-12 text-center text-xs text-slate-500">
+                        Chưa có hàng hóa tại sảnh này.
+                      </div>
+                    )
+                  }
+                  return list.map(g => {
+                    const ids = g.slots.map(s => s.id)
+                    const allChecked = ids.every(id => currentResults[id]?.checked)
+                    return (
+                      <div
+                        key={`${g.sku}_${g.product_name}`}
+                        className="p-3 rounded-2xl bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="text-xs font-extrabold text-white truncate">
+                            {g.product_name}
+                          </div>
+                          <div className="text-[11px] text-amber-300 font-bold">
+                            {g.slots.length} vị trí/pallet • SKU: {g.sku || '---'}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => bulkCheckPositions(ids, !allChecked)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-extrabold ${
+                            allChecked
+                              ? 'bg-emerald-600 text-white'
+                              : 'bg-slate-800 text-slate-300'
+                          }`}
+                        >
+                          {allChecked ? 'Đã kiểm nhóm' : 'Kiểm cả nhóm'}
+                        </button>
+                      </div>
+                    )
+                  })
+                })()}
+              </div>
+            ) : (
+              /* Chế độ Lưới Ô kệ -> Các Tầng (T1, T2, T3...) */
+              detailStructure.sections.map(sec => (
+                <div key={sec.container.id} className="space-y-2.5">
+                  {detailStructure.sections.length > 1 && (
+                    <div className="text-xs font-black text-sky-400 uppercase px-1">
+                      {sec.container.name}
+                    </div>
+                  )}
+
+                  {sec.rows.map(row => {
+                    // Tính danh sách các sản phẩm khác nhau trong Ô kệ này để tô màu chấm tròn
+                    const uniqueProdKeys: string[] = []
+                    const prodInfoMap = new Map<
+                      string,
+                      { name: string; sku: string; color: string; count: number }
+                    >()
+                    row.allRowSlots.forEach(s => {
+                      const pk = getProductKey(s)
+                      if (!pk) return
+                      if (!uniqueProdKeys.includes(pk)) uniqueProdKeys.push(pk)
+                    })
+                    const isMultiProdRow = uniqueProdKeys.length >= 2
+                    uniqueProdKeys.forEach((pk, idx) => {
+                      const color = PRODUCT_DOT_PALETTE[idx % PRODUCT_DOT_PALETTE.length]
+                      const sample = row.allRowSlots.find(s => getProductKey(s) === pk)
+                      const cnt = row.allRowSlots.filter(s => getProductKey(s) === pk).length
+                      prodInfoMap.set(pk, {
+                        name: sample?.product_name || pk,
+                        sku: sample?.sku || '',
+                        color,
+                        count: cnt,
+                      })
+                    })
+
+                    const isLegendOpen = !!expandedLegendRowIds[row.bin.id]
+
+                    return (
+                      <div
+                        key={row.bin.id}
+                        className="p-2.5 rounded-2xl bg-[#1e293b] border border-slate-700 space-y-2"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-black text-white">{row.bin.name}</span>
+                            {isMultiProdRow && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setExpandedLegendRowIds(p => ({
+                                    ...p,
+                                    [row.bin.id]: !isLegendOpen,
+                                  }))
+                                }
+                                className="px-2 py-0.5 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-[10px] font-extrabold text-indigo-300 flex items-center gap-1"
+                              >
+                                <span>🎨 {uniqueProdKeys.length} loại SP</span>
+                                {isLegendOpen ? (
+                                  <ChevronUp className="w-3 h-3" />
+                                ) : (
+                                  <ChevronDown className="w-3 h-3" />
+                                )}
+                              </button>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            {row.allRowSlots.filter(s => !!s.lot_id).length}/{row.allRowSlots.length}{' '}
+                            có hàng
+                          </span>
+                        </div>
+
+                        {isMultiProdRow && isLegendOpen && (
+                          <div className="p-2 rounded-xl bg-[#0f172a] border border-slate-800 space-y-1">
+                            {Array.from(prodInfoMap.values()).map((info, i) => (
+                              <div key={i} className="flex items-center gap-2 text-[11px]">
+                                <span
+                                  className="w-2.5 h-2.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: info.color }}
+                                />
+                                <span className="text-white font-bold truncate flex-1">
+                                  {info.name}
+                                </span>
+                                <span className="text-slate-400 font-semibold shrink-0">
+                                  {info.count} VT
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Lưới các Tầng trong Ô */}
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                          {row.levels.map(lvl => {
+                            const total = lvl.slots.length
+                            const checked = lvl.slots.filter(
+                              (s: any) => currentResults[s.id]?.checked
+                            ).length
+                            const hasDiscrepancy = lvl.slots.some(
+                              (s: any) =>
+                                currentResults[s.id]?.note && currentResults[s.id]?.note?.trim()
+                            )
+                            const allDone = total > 0 && checked === total
+
+                            return (
+                              <div
+                                key={lvl.id}
+                                className={`p-2 rounded-xl border flex flex-col justify-between gap-1.5 transition ${
+                                  hasDiscrepancy
+                                    ? 'bg-rose-950/30 border-rose-500/60'
+                                    : allDone
+                                      ? 'bg-emerald-950/30 border-emerald-500/60'
+                                      : 'bg-[#0f172a] border-slate-700'
+                                }`}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedLevelModalData(lvl)}
+                                  className="text-left space-y-1.5"
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-xs font-black text-white">
+                                      {lvl.name.replace(/Tầng\s*/i, 'T')}
+                                    </span>
+                                    <span
+                                      className={`text-[10px] font-extrabold ${
+                                        allDone ? 'text-emerald-400' : 'text-slate-400'
+                                      }`}
+                                    >
+                                      {checked}/{total}
+                                    </span>
+                                  </div>
+
+                                  {/* Chấm màu các vị trí trong tầng */}
+                                  <div className="flex flex-wrap gap-1">
+                                    {sortPositionsByDepthAndCol(lvl.slots).map((s: any) => {
+                                      const pk = getProductKey(s)
+                                      const pColor =
+                                        isMultiProdRow && pk
+                                          ? prodInfoMap.get(pk)?.color
+                                          : s.lot_id
+                                            ? '#f59e0b'
+                                            : '#334155'
+                                      const isSlotChecked = !!currentResults[s.id]?.checked
+                                      return (
+                                        <span
+                                          key={s.id}
+                                          className={`w-2.5 h-2.5 rounded-full ${
+                                            isSlotChecked ? 'ring-2 ring-emerald-400' : ''
+                                          }`}
+                                          style={{ backgroundColor: pColor }}
+                                        />
+                                      )
+                                    })}
+                                  </div>
+                                </button>
+
+                                {/* Nút tích nhanh cả tầng */}
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    bulkCheckPositions(
+                                      lvl.slots.map((s: any) => s.id),
+                                      !allDone
+                                    )
+                                  }
+                                  className={`w-full py-1 rounded-lg text-[10px] font-extrabold border ${
+                                    allDone
+                                      ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-300'
+                                      : 'bg-[#1e293b] border-slate-700 text-slate-400'
+                                  }`}
+                                >
+                                  {allDone ? '✓ Đã kiểm tầng' : 'Tích cả tầng'}
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Modal tạo phiếu kiểm kê mới */}
+      {newSessionModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
+          <div className="w-full max-w-md bg-[#0f172a] border border-slate-700 rounded-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-black text-white">Tạo Phiếu Kiểm Kê Mới</span>
+              <button
+                type="button"
+                onClick={() => setNewSessionModalOpen(false)}
+                className="text-slate-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1">
+                Tên phiếu kiểm kê *
+              </label>
+              <input
+                type="text"
+                value={newSessionName}
+                onChange={e => setNewSessionName(e.target.value)}
+                placeholder="VD: Kiểm kê định kỳ Kho 1..."
+                className="w-full px-3 py-2.5 rounded-xl bg-[#1e293b] border border-slate-700 text-xs text-white"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-400 uppercase mb-1.5">
+                Phạm vi kho kiểm kê:
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setNewSessionZoneId('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                    newSessionZoneId === 'ALL'
+                      ? 'bg-emerald-600 border-emerald-400 text-white'
+                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                  }`}
+                >
+                  🌐 Toàn bộ kho
+                </button>
+                {rootWarehouses.map(wh => (
+                  <button
+                    key={wh.id}
+                    type="button"
+                    onClick={() => setNewSessionZoneId(wh.id)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold border ${
+                      newSessionZoneId === wh.id
+                        ? 'bg-emerald-600 border-emerald-400 text-white'
+                        : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                    }`}
+                  >
+                    🏢 {wh.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setNewSessionModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
+              >
+                Hủy
+              </button>
+              <button
+                type="button"
+                disabled={!newSessionName.trim()}
+                onClick={handleCreateNewSession}
+                className="flex-2 py-2.5 px-4 rounded-xl bg-emerald-600 disabled:bg-slate-700 text-white text-xs font-extrabold"
+              >
+                Tạo Phiếu
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal kiểm kê từng tầng */}
+      <LevelInventoryModal
+        level={selectedLevelModalData}
+        visible={!!selectedLevelModalData}
+        onClose={() => setSelectedLevelModalData(null)}
+        inventoryResults={currentResults}
+        togglePositionChecked={togglePositionChecked}
+        updatePositionNote={updatePositionNote}
+        bulkCheckPositions={bulkCheckPositions}
+      />
+
+      {/* Modal Kê khai LOT Sảnh */}
+      <HallLotInputModal
+        visible={hallModalOpen}
+        onClose={() => setHallModalOpen(false)}
+        halls={allHalls}
+        defaultHallId={hallModalDefaultId}
+        systemCode={systemCode}
+        userProfile={userProfile}
+        products={warehouseProducts}
+        onSubmitted={msg => showToast(msg)}
+      />
+    </div>
+  )
+}
+
+export default InventoryTab

@@ -49,7 +49,11 @@ import {
   Clock,
   ShieldCheck,
   ArrowRight,
-  Info
+  Info,
+  Menu,
+  Calculator,
+  Map as MapIcon,
+  ArrowLeft,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeStampBox, DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
@@ -71,6 +75,16 @@ import {
 } from '@/lib/scanner-db'
 import { matchPalletSearch, calculateSearchScore, normalizeSearchString } from '@/lib/searchUtils'
 import WarehouseMapTab from './_components/WarehouseMapTab'
+import OperationsDataTab from './_components/OperationsDataTab'
+import InventoryTab from './_components/InventoryTab'
+import FullMenuModal from './_components/FullMenuModal'
+import OperationWatermarkOverlay from './_components/OperationWatermarkOverlay'
+import ScannerLoginView, {
+  getStoredScannerUser,
+  fetchScannerUserProfile,
+  clearStoredScannerUser,
+  StoredScannerAccount,
+} from './_components/ScannerLoginView'
 
 import type {
   BoxItem,
@@ -88,18 +102,45 @@ import { LabelModals } from './_components/LabelModals'
 import { PalletDetailModal } from './_components/PalletDetailModal'
 import { PalletSwitchModal } from './_components/PalletSwitchModal'
 
+type AppTab =
+  | 'label'
+  | 'stamp'
+  | 'operations'
+  | 'inventory'
+  | 'warehouse_map'
+  | 'pallets'
+  | 'settings'
+
+const normalizeAppTab = (tab: string): AppTab => {
+  if (tab === 'stamp_scanner') return 'stamp'
+  if (tab === 'scanner') return 'label'
+  return tab as AppTab
+}
 
 export default function WebScannerPage() {
   // ── Navigation & Active Tab ────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<'label' | 'stamp' | 'warehouse_map' | 'pallets' | 'settings'>('label')
-  const [visitedWarehouseMapTab, setVisitedWarehouseMapTab] = useState<boolean>(false)
+  const [activeTab, setActiveTabState] = useState<AppTab>('stamp')
+  const [isFullMenuOpen, setIsFullMenuOpen] = useState<boolean>(false)
+  const [visitedTabs, setVisitedTabs] = useState<Record<string, boolean>>({
+    label: false,
+    stamp: true,
+    operations: false,
+    inventory: false,
+    warehouse_map: false,
+    pallets: false,
+  })
   const [palletListSubTab, setPalletListSubTab] = useState<'pending' | 'cloud'>('pending')
 
+  const setActiveTab = useCallback((next: React.SetStateAction<any>) => {
+    setActiveTabState((prev) => {
+      const resolved = typeof next === 'function' ? next(prev) : next
+      return normalizeAppTab(String(resolved))
+    })
+  }, [])
+
   useEffect(() => {
-    if (activeTab === 'warehouse_map' && !visitedWarehouseMapTab) {
-      setVisitedWarehouseMapTab(true)
-    }
-  }, [activeTab, visitedWarehouseMapTab])
+    setVisitedTabs((prev) => (prev[activeTab] ? prev : { ...prev, [activeTab]: true }))
+  }, [activeTab])
 
   // ── Current Pallet Session State (Empty by default like Mobile App) ──
   const [activePalletStt, setActivePalletStt] = useState<string>('')
@@ -180,13 +221,38 @@ export default function WebScannerPage() {
   const [palletDisplayLimit, setPalletDisplayLimit] = useState<number>(30)
 
   // User Profile & System State (Top Header & Settings)
+  const [authLoading, setAuthLoading] = useState<boolean>(true)
   const [userProfile, setUserProfile] = useState<{
+    id?: string
+    companyId?: string | null
     fullName: string
     email: string
     companyCode: string
     companyName: string
     roleName: string
   } | null>(null)
+
+  const applyStoredAccount = useCallback((acc: StoredScannerAccount) => {
+    setUserProfile({
+      id: acc.id,
+      companyId: acc.company_id || acc.company?.id || null,
+      fullName: acc.full_name || 'Nhân viên kho',
+      email: acc.email || acc.username || '',
+      companyCode: acc.company?.code || 'CTG',
+      companyName:
+        acc.company?.name || 'Công Ty Cổ Phần Tập Đoàn XNK Trái Cây Chánh Thu',
+      roleName: acc.role_name || acc.department || 'Vận hành kho',
+    })
+  }, [])
+
+  const handleLogout = useCallback(async () => {
+    try {
+      await supabase.auth.signOut()
+    } catch {}
+    clearStoredScannerUser()
+    setUserProfile(null)
+    setActiveTab('stamp')
+  }, [setActiveTab])
 
   // Settings
   const [soundEnabled, setSoundEnabled] = useState<boolean>(true)
@@ -223,46 +289,47 @@ export default function WebScannerPage() {
   const versionTapCountRef = useRef<number>(0)
   const lastTapTimeRef = useRef<number>(0)
 
-  // ── Fetch User & Company Info on Mount ─────────────────────────
+  // ── Fetch User & Company Info on Mount (Match Android AuthContext) ──
   useEffect(() => {
     const fetchUser = async () => {
+      setAuthLoading(true)
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        if (user) {
-          const { data: profile } = await (supabase
-            .from('user_profiles') as any)
-            .select('full_name, email, company_name, roles(name, code)')
-            .eq('id', user.id)
-            .single()
+        // 1. Nạp ngay tài khoản đã lưu trong máy để vào thẳng app không cần mạng
+        const stored = getStoredScannerUser()
+        if (stored) {
+          applyStoredAccount(stored)
+        }
 
-          setUserProfile({
-            fullName: profile?.full_name || user.email?.split('@')[0] || 'Nhân viên kho',
-            email: user.email || '',
-            companyCode: 'CTG',
-            companyName: profile?.company_name || 'Công ty TNHH XNK Chánh Thu',
-            roleName: profile?.roles?.name || 'Vận hành kho'
-          })
-        } else {
-          setUserProfile({
-            fullName: 'Nguyễn Đình Tùng',
-            email: 'tungnguyen@chanhthu.click',
-            companyCode: 'CTG',
-            companyName: 'Công ty Cổ Phần Tập Đoàn XNK Trái Cây Chánh Thu',
-            roleName: 'KHO_DONG_LANH'
-          })
+        // 2. Kiểm tra cập nhật ngầm nếu có kết nối mạng
+        const { data: { session } } = await supabase.auth.getSession()
+        if (session?.user) {
+          const fresh = await fetchScannerUserProfile(session.user.id, session.user.email)
+          if (fresh) {
+            applyStoredAccount(fresh)
+          } else if (!stored) {
+            setUserProfile({
+              id: session.user.id,
+              companyId: 'b503014d-19b6-464e-91f3-f34eba4b4b05',
+              fullName:
+                session.user.user_metadata?.full_name ||
+                session.user.email?.split('@')[0] ||
+                'Nhân viên kho',
+              email: session.user.email || '',
+              companyCode: 'CTG',
+              companyName: 'Công Ty Cổ Phần Tập Đoàn XNK Trái Cây Chánh Thu',
+              roleName: 'Vận hành kho',
+            })
+          }
         }
       } catch {
-        setUserProfile({
-          fullName: 'Nguyễn Đình Tùng',
-          email: 'tungnguyen@chanhthu.click',
-          companyCode: 'CTG',
-          companyName: 'Công ty Cổ Phần Tập Đoàn XNK Trái Cây Chánh Thu',
-          roleName: 'KHO_DONG_LANH'
-        })
+        const stored = getStoredScannerUser()
+        if (stored) applyStoredAccount(stored)
+      } finally {
+        setAuthLoading(false)
       }
     }
     fetchUser()
-  }, [])
+  }, [applyStoredAccount])
 
   // ── Network Status & Offline DB Initialization ─────────────────
   useEffect(() => {
@@ -682,13 +749,13 @@ export default function WebScannerPage() {
   }
 
   useEffect(() => {
-    if (activeTab === 'label' || activeTab === 'stamp') {
+    if (userProfile && (activeTab === 'label' || activeTab === 'stamp')) {
       startCamera()
     } else {
       stopCamera()
     }
     return () => stopCamera()
-  }, [activeTab])
+  }, [activeTab, userProfile])
 
   // ── Flashlight Toggle ──────────────────────────────────────────
   const handleToggleTorch = async () => {
@@ -1667,22 +1734,107 @@ export default function WebScannerPage() {
 
   const currentTotalWeight = currentBoxes.reduce((acc, b) => acc + (b.quantity || 20), 0)
 
+  // ── 1. Màn hình đang tải phiên làm việc (Khớp App.tsx Android) ──
+  if (authLoading) {
+    return (
+      <div className="fixed inset-0 flex flex-col items-center justify-center max-w-md mx-auto w-full bg-[#0f172a] text-slate-100 p-6 select-none z-10">
+        <div className="w-[90px] h-[90px] rounded-full bg-[#1e293b] border-2 border-[#38bdf8] flex items-center justify-center mb-4">
+          <Boxes size={48} color="#38bdf8" />
+        </div>
+        <div className="text-[20px] font-black text-white tracking-[1px] text-center">
+          CHÁNH THU WAREHOUSE
+        </div>
+        <div className="text-[13px] text-[#94a3b8] mt-1 text-center">
+          Hệ thống Quản lý Tem &amp; Pallet Kho
+        </div>
+        <Loader2 size={32} className="animate-spin text-[#38bdf8] mt-6" />
+        <div className="text-[12px] text-[#64748b] mt-3.5">
+          Đang kết nối phiên làm việc...
+        </div>
+      </div>
+    )
+  }
+
+  // ── 2. Nếu chưa đăng nhập: Hiển thị màn hình Login (hoặc Cài đặt máy chủ) ──
+  if (!userProfile) {
+    return (
+      <div className="fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0f172a] text-slate-100 select-none overflow-hidden z-10">
+        {activeTab === 'settings' ? (
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            <div className="shrink-0 flex items-center justify-between px-3 py-2.5 bg-[#0c1322] border-b border-[#1e293b]">
+              <button
+                type="button"
+                onClick={() => setActiveTab('stamp')}
+                className="flex items-center gap-1.5 text-xs font-bold text-sky-400 hover:text-sky-300"
+              >
+                <ArrowLeft size={16} />
+                <span>Quay lại Đăng nhập</span>
+              </button>
+              <span className="text-xs font-extrabold text-slate-300">Cài Đặt &amp; Máy Chủ</span>
+            </div>
+            <ScannerSettingsTab
+              activeTab={'settings' as any}
+              userProfile={null}
+              soundEnabled={soundEnabled}
+              setSoundEnabled={setSoundEnabled}
+              systemCode={systemCode}
+              setSystemCode={setSystemCode}
+              targetQty={targetQty}
+              setTargetQty={setTargetQty}
+              stampRulesCount={stampRulesCount}
+              syncingStamp={syncingStamp}
+              handleSyncStampRules={handleSyncStampRules}
+              offlineLotsCount={offlineLotsCount}
+              isSyncingLots={isSyncingLots}
+              handleSyncLotsOffline={handleSyncLotsOffline}
+              showTechnicianConfig={showTechnicianConfig}
+              technicianUrl={technicianUrl}
+              setTechnicianUrl={setTechnicianUrl}
+              testingConnection={testingConnection}
+              testResult={testResult}
+              handleTestConnection={handleTestConnection}
+              handleVersionTap={handleVersionTap}
+            />
+          </div>
+        ) : (
+          <ScannerLoginView
+            onLoginSuccess={(acc, isOff) => {
+              applyStoredAccount(acc)
+              if (isOff) {
+                triggerToast('⚡ Đã mở phiên làm việc ngoại tuyến!')
+              } else {
+                triggerToast(`👋 Xin chào ${acc.full_name}!`)
+              }
+            }}
+            onOpenSettings={() => setActiveTab('settings')}
+          />
+        )}
+        <OperationWatermarkOverlay />
+      </div>
+    )
+  }
+
   return (
-    <div className="fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0b0f19] text-slate-100 select-none overflow-hidden z-10">
+    <div className="fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0b1120] text-slate-100 select-none overflow-hidden z-10">
       
-      {/* ── TOP USER & COMPANY HEADER (Match Mobile App) ───────── */}
-      <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-[#080d1a] border-b border-slate-800/90 text-xs gap-2">
-        <div className="flex items-center gap-1.5 truncate text-emerald-400 font-bold">
-          <Building2 size={13} className="shrink-0 text-emerald-400" />
-          <span className="truncate">{userProfile?.companyCode || 'CTG'} · {userProfile?.companyName || 'Chánh Thu'}</span>
+      {/* ── TOP USER & COMPANY HEADER (Match Mobile App App.tsx) ───────── */}
+      <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-[#0c1322] border-b border-[#1e293b] text-xs gap-2">
+        <div
+          className="flex items-center gap-1.5 px-2 py-0.5 rounded-[6px] truncate text-[#10b981] text-[11px] font-extrabold min-w-0"
+          style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)' }}
+        >
+          <Building2 size={13} className="shrink-0 text-[#10b981]" />
+          <span className="truncate">
+            {userProfile?.companyCode || 'CTG'} · {userProfile?.companyName || 'Chánh Thu'}
+          </span>
         </div>
         <button
           onClick={() => setActiveTab('settings')}
-          className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-slate-800/90 border border-slate-700/80 text-sky-300 font-medium hover:bg-slate-700 transition shrink-0 active:scale-95"
+          className="flex items-center gap-1 px-2 py-0.5 rounded-[6px] bg-[#1e293b] text-[#e2e8f0] text-[11px] font-bold hover:bg-slate-700 transition shrink-0 max-w-[160px] active:scale-95"
           title="Mở Cài Đặt & Tài Khoản"
         >
-          <User size={13} className="text-sky-400" />
-          <span className="truncate max-w-[120px]">{userProfile?.fullName || 'Nhân viên kho'}</span>
+          <User size={14} className="text-[#38bdf8] shrink-0" />
+          <span className="truncate">{userProfile?.fullName || 'Nhân viên kho'}</span>
         </button>
       </div>
 
@@ -2326,15 +2478,41 @@ export default function WebScannerPage() {
         {/* ═══════════════════════════════════════════════════════════
             TAB: SƠ ĐỒ VỊ TRÍ KHO (Keep-Alive: 0ms load sau lần mở đầu)
            ═══════════════════════════════════════════════════════════ */}
-        {visitedWarehouseMapTab && (
-          <div className={activeTab === 'warehouse_map' ? 'flex-1 flex flex-col min-h-0' : 'hidden'}>
+        {visitedTabs.warehouse_map && (
+          <div className={activeTab === 'warehouse_map' ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'hidden'}>
             <WarehouseMapTab />
           </div>
         )}
 
+        {/* ═══════════════════════════════════════════════════════════
+            TAB: SỐ LIỆU & CA LÀM (Keep-Alive: 0ms load sau lần mở đầu)
+           ═══════════════════════════════════════════════════════════ */}
+        {visitedTabs.operations && (
+          <div className={activeTab === 'operations' ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'hidden'}>
+            <OperationsDataTab
+              isActive={activeTab === 'operations'}
+              systemCode={systemCode}
+              userProfile={userProfile}
+            />
+          </div>
+        )}
+
+        {/* ═══════════════════════════════════════════════════════════
+            TAB: KIỂM KÊ KHO (Keep-Alive: 0ms load sau lần mở đầu)
+           ═══════════════════════════════════════════════════════════ */}
+        {visitedTabs.inventory && (
+          <div className={activeTab === 'inventory' ? 'flex-1 flex flex-col min-h-0 overflow-hidden' : 'hidden'}>
+            <InventoryTab
+              isActive={activeTab === 'inventory'}
+              systemCode={systemCode}
+              userProfile={userProfile}
+            />
+          </div>
+        )}
+
         <ScannerPalletsTab
-          activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          activeTab={activeTab as any}
+          setActiveTab={setActiveTab as any}
           palletListSubTab={palletListSubTab}
           setPalletListSubTab={setPalletListSubTab}
           isOnline={isOnline}
@@ -2363,7 +2541,7 @@ export default function WebScannerPage() {
         />
 
         <ScannerSettingsTab
-          activeTab={activeTab}
+          activeTab={activeTab as any}
           userProfile={userProfile}
           soundEnabled={soundEnabled}
           setSoundEnabled={setSoundEnabled}
@@ -2388,48 +2566,139 @@ export default function WebScannerPage() {
 
       </main>
 
-      {/* ── BOTTOM NAVIGATION BAR (Matching Mobile App) ─────────── */}
-      <nav className="shrink-0 bg-[#0f172a] border-t border-slate-800/80 px-2 py-1.5 flex items-center justify-around z-20 shadow-lg">
-        <button
-          onClick={() => setActiveTab('label')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${activeTab === 'label' ? 'text-emerald-400 bg-emerald-500/10 font-bold' : 'text-slate-400'}`}
-        >
-          <Scan size={18} />
-          <span className="text-[10px]">Quét Tem</span>
-        </button>
+      {/* ── BOTTOM NAVIGATION BAR (TINH GỌN 5 NÚT: MENU + 4 CHỨC NĂNG CHÍNH NHƯ APP.TSX ANDROID) ─────────── */}
+      <nav
+        className="shrink-0 bg-[#1e293b] border-t border-[#334155] pt-2 flex items-center justify-around z-20 shadow-lg"
+        style={{ paddingBottom: 'max(env(safe-area-inset-bottom, 10px), 10px)' }}
+      >
+        {/* Nút 1: Menu Hamburger (Mở toàn bộ danh mục 7 chức năng) */}
+        {(() => {
+          const isDrawerActive = !['stamp', 'operations', 'pallets', 'warehouse_map'].includes(activeTab)
+          return (
+            <button
+              type="button"
+              onClick={() => setIsFullMenuOpen(true)}
+              className="flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition"
+            >
+              <div className="relative flex items-center justify-center">
+                <Menu
+                  size={22}
+                  color={isDrawerActive ? '#38bdf8' : '#cbd5e1'}
+                />
+                {isDrawerActive && (
+                  <span className="absolute -top-0.5 -right-1 w-[7px] h-[7px] rounded-full bg-[#38bdf8] border-[1.5px] border-[#1e293b]" />
+                )}
+              </div>
+              <span
+                className="text-[10px] font-bold"
+                style={{
+                  color: isDrawerActive ? '#38bdf8' : '#94a3b8',
+                  fontWeight: isDrawerActive ? 800 : 700,
+                }}
+              >
+                Menu
+              </span>
+            </button>
+          )
+        })()}
 
+        {/* Nút 2: Dấu Đóng Thùng */}
         <button
+          type="button"
           onClick={() => setActiveTab('stamp')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition ${activeTab === 'stamp' ? 'text-amber-400 bg-amber-500/10 font-bold' : 'text-slate-400'}`}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition"
         >
-          <Fingerprint size={18} />
-          <span className="text-[10px]">Dấu Đóng</span>
+          <Fingerprint
+            size={21}
+            color={activeTab === 'stamp' ? '#fbbf24' : '#94a3b8'}
+          />
+          <span
+            className="text-[10px] font-bold"
+            style={{
+              color: activeTab === 'stamp' ? '#fbbf24' : '#94a3b8',
+              fontWeight: activeTab === 'stamp' ? 800 : 700,
+            }}
+          >
+            Dấu Đóng
+          </span>
         </button>
 
+        {/* Nút 3: Số Liệu Báo Cáo & Ca Làm */}
         <button
+          type="button"
+          onClick={() => setActiveTab('operations')}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition"
+        >
+          <Calculator
+            size={21}
+            color={activeTab === 'operations' ? '#818cf8' : '#94a3b8'}
+          />
+          <span
+            className="text-[10px] font-bold"
+            style={{
+              color: activeTab === 'operations' ? '#818cf8' : '#94a3b8',
+              fontWeight: activeTab === 'operations' ? 800 : 700,
+            }}
+          >
+            Số Liệu
+          </span>
+        </button>
+
+        {/* Nút 4: Pallet Kho */}
+        <button
+          type="button"
           onClick={() => setActiveTab('pallets')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'pallets' ? 'text-sky-400 bg-sky-500/10 font-bold' : 'text-slate-400'}`}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition"
         >
-          <Boxes size={18} />
-          <span className="text-[10px]">Pallet Kho</span>
+          <Boxes
+            size={21}
+            color={activeTab === 'pallets' ? '#38bdf8' : '#94a3b8'}
+          />
+          <span
+            className="text-[10px] font-bold"
+            style={{
+              color: activeTab === 'pallets' ? '#38bdf8' : '#94a3b8',
+              fontWeight: activeTab === 'pallets' ? 800 : 700,
+            }}
+          >
+            Pallet Kho
+          </span>
         </button>
 
+        {/* Nút 5: Sơ Đồ Kho */}
         <button
+          type="button"
           onClick={() => setActiveTab('warehouse_map')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'warehouse_map' ? 'text-cyan-400 bg-cyan-500/10 font-bold' : 'text-slate-400'}`}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 active:scale-95 transition"
         >
-          <MapPin size={18} />
-          <span className="text-[10px]">Sơ Đồ Kho</span>
-        </button>
-
-        <button
-          onClick={() => setActiveTab('settings')}
-          className={`flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-xl transition ${activeTab === 'settings' ? 'text-purple-400 bg-purple-500/10 font-bold' : 'text-slate-400'}`}
-        >
-          <Settings size={18} />
-          <span className="text-[10px]">Cài Đặt</span>
+          <MapIcon
+            size={21}
+            color={activeTab === 'warehouse_map' ? '#06b6d4' : '#94a3b8'}
+          />
+          <span
+            className="text-[10px] font-bold"
+            style={{
+              color: activeTab === 'warehouse_map' ? '#06b6d4' : '#94a3b8',
+              fontWeight: activeTab === 'warehouse_map' ? 800 : 700,
+            }}
+          >
+            Sơ Đồ Kho
+          </span>
         </button>
       </nav>
+
+      {/* ── MODAL FULL MENU (HIỂN THỊ TOÀN BỘ 7 CHỨC NĂNG) ─────────── */}
+      <FullMenuModal
+        visible={isFullMenuOpen}
+        onClose={() => setIsFullMenuOpen(false)}
+        currentTab={activeTab}
+        onSelectTab={(t) => setActiveTab(t)}
+        userProfile={userProfile}
+        onLogout={handleLogout}
+      />
+
+      {/* ── WATERMARK OVERLAY (ĐÓNG DẤU ẢNH TÁC NGHIỆP) ─────────── */}
+      <OperationWatermarkOverlay />
 
       {/* ═══════════════════════════════════════════════════════════
           MODAL: IN-PROGRESS PALLET STARTUP PROMPT (Match Mobile App)
@@ -2621,6 +2890,8 @@ export default function WebScannerPage() {
         setManualStampLine1={setManualStampLine1}
         manualStampLine2={manualStampLine2}
         setManualStampLine2={setManualStampLine2}
+        targetQty={targetQty}
+        currentBoxesCount={currentBoxes.length}
       />
 
       <LabelModals
@@ -2636,6 +2907,8 @@ export default function WebScannerPage() {
         setIsManualLabelModal={setIsManualLabelModal}
         manualLabelForm={manualLabelForm}
         setManualLabelForm={setManualLabelForm}
+        targetQty={targetQty}
+        currentBoxesCount={currentBoxes.length}
       />
 
       <PalletDetailModal
@@ -2643,6 +2916,7 @@ export default function WebScannerPage() {
         setSelectedPallet={setSelectedPallet}
         selectedPalletBoxes={selectedPalletBoxes}
         loadingDetail={loadingDetail}
+        onRefreshPallets={loadAllPallets}
       />
 
       <PalletSwitchModal
