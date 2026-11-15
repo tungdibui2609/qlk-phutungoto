@@ -6,6 +6,8 @@ import {
   CloudDownload,
   CloudUpload,
   CheckCircle2,
+  Check,
+  StopCircle,
   Clock,
   Plus,
   Search,
@@ -16,6 +18,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Briefcase,
   Package,
   Layers,
@@ -68,11 +72,20 @@ import {
 } from './operations/operationsService'
 import {
   OperationImageRecord,
+  PickedOperationPhoto,
   uploadOperationImages,
   getShiftOperationImages,
   syncOfflineOperationImages,
   getOperationImageDisplayUrl,
 } from './operations/operationImagesService'
+import {
+  QuickSnapItem,
+  getAllQuickSnaps,
+  addQuickSnap,
+  updateQuickSnapShift,
+  removeQuickSnap,
+} from './operations/quickSnapStore'
+import QuickSnapCameraModal from './operations/QuickSnapCameraModal'
 import {
   OperationNumberPadModal,
   OpenJobModal,
@@ -84,6 +97,7 @@ import {
   AggregatedReportModal,
   PastShiftDetailModal,
   ReconcileTabView,
+  QuickSnapQueueModal,
   isOvernightShift,
 } from './operations/OperationsModals'
 import {
@@ -205,6 +219,11 @@ export function OperationsDataTab({
   const [imagesModalShift, setImagesModalShift] = useState<DeliveryShift | null>(null)
   const [imagesJournalTarget, setImagesJournalTarget] = useState<JournalImageTarget | null>(null)
   const [warehouseAlbumVisible, setWarehouseAlbumVisible] = useState(false)
+  const [bgUploadingCount, setBgUploadingCount] = useState(0)
+  const [quickSnaps, setQuickSnaps] = useState<QuickSnapItem[]>([])
+  const [quickSnapModalVisible, setQuickSnapModalVisible] = useState(false)
+  const [quickCameraVisible, setQuickCameraVisible] = useState(false)
+  const [quickSnapBarCollapsed, setQuickSnapBarCollapsed] = useState(false)
 
   // ── STATE TAB ĐÃ HOÀN THÀNH (4 CHẾ ĐỘ: single | daily | product | custom) ──
   const [doneMode, setDoneMode] = useState<'single' | 'daily' | 'product' | 'custom'>('single')
@@ -403,8 +422,31 @@ export function OperationsDataTab({
 
   // ── DANH SÁCH SẢN PHẨM GHIM & TÌM KIẾM ĐA TỪ KHÓA + AUTOCOMPLETE ──
   const pinnedProducts: ShiftProductItem[] = useMemo(() => {
+    const byId = new Map<string, ShiftProductItem>()
+    const byName = new Map<string, ShiftProductItem>()
+    allProducts.forEach(p => {
+      if (p.id) byId.set(p.id, p)
+      if (p.name) byName.set(p.name.trim().toLowerCase(), p)
+    })
+
+    const enrichFromCatalog = (p: ShiftProductItem): ShiftProductItem => {
+      const fresh =
+        (p.id && byId.get(p.id)) ||
+        (p.name ? byName.get(p.name.trim().toLowerCase()) : undefined)
+      if (!fresh) return p
+      return {
+        ...p,
+        units: fresh.units,
+        defaultUnit: fresh.defaultUnit,
+        unit: fresh.unit || p.unit,
+        aliases: fresh.aliases ?? p.aliases,
+        internal_code: fresh.internal_code ?? p.internal_code,
+        internal_name: fresh.internal_name ?? p.internal_name,
+      }
+    }
+
     const raw = selectedShift?.summary_data?.pinned_products
-    if (Array.isArray(raw) && raw.length > 0) return raw
+    if (Array.isArray(raw) && raw.length > 0) return raw.map(enrichFromCatalog)
 
     const recoveredMap = new Map<string, ShiftProductItem>()
     const addProduct = (p: ShiftProductItem) => {
@@ -487,6 +529,30 @@ export function OperationsDataTab({
       .map(s => s.item)
   }, [searchQuery, searchMode, pinnedProducts.length, allProducts, matchProductMultiKeyword])
 
+  // Danh sách SP vừa thao tác gần nhất trong ca (đẩy lên đầu danh sách & dùng cho Quick Snap)
+  const recentProductOrder = useMemo(() => {
+    const order = new Map<string, number>()
+    allJournals.forEach((j, idx) => {
+      const key = (j.item_name || '').trim().toLowerCase()
+      if (key && !order.has(key)) {
+        order.set(key, idx)
+      }
+    })
+    return order
+  }, [allJournals])
+
+  const recentProducts = useMemo(() => {
+    if (recentProductOrder.size === 0) return []
+    return [...allProducts]
+      .filter(p => recentProductOrder.has(p.name.trim().toLowerCase()))
+      .sort(
+        (a, b) =>
+          (recentProductOrder.get(a.name.trim().toLowerCase()) ?? 9999) -
+          (recentProductOrder.get(b.name.trim().toLowerCase()) ?? 9999)
+      )
+      .slice(0, 8)
+  }, [allProducts, recentProductOrder])
+
   // Danh sách sản phẩm hiển thị chính
   const displayedProducts = useMemo(() => {
     const baseList =
@@ -494,7 +560,19 @@ export function OperationsDataTab({
         ? allProducts
         : pinnedProducts
 
-    if (!searchQuery.trim()) return baseList
+    if (!searchQuery.trim()) {
+      if (searchMode === 'filter' && recentProductOrder.size > 0) {
+        return [...baseList].sort((a, b) => {
+          const ia = recentProductOrder.get(a.name.trim().toLowerCase())
+          const ib = recentProductOrder.get(b.name.trim().toLowerCase())
+          if (ia !== undefined && ib !== undefined) return ia - ib
+          if (ia !== undefined) return -1
+          if (ib !== undefined) return 1
+          return 0
+        })
+      }
+      return baseList
+    }
 
     // Khi người dùng gõ tìm kiếm ở chế độ filter nhưng sản phẩm chưa ghim, tự động tìm trên toàn bộ kho nếu danh sách ghim không khớp
     const matchedInBase = baseList
@@ -510,7 +588,11 @@ export function OperationsDataTab({
       .filter(x => x.score > 0)
       .sort((a, b) => b.score - a.score)
       .map(x => x.item)
-  }, [searchMode, allProducts, pinnedProducts, searchQuery, matchProductMultiKeyword])
+  }, [searchMode, allProducts, pinnedProducts, searchQuery, matchProductMultiKeyword, recentProductOrder])
+
+  useEffect(() => {
+    void getAllQuickSnaps().then(setQuickSnaps)
+  }, [])
 
   // ── HANDLERS THAO TÁC SẢN PHẨM & CÔNG VIỆC ──
   const handleTogglePinProduct = async (prod: ShiftProductItem) => {
@@ -651,6 +733,120 @@ export function OperationsDataTab({
     }
   }
 
+  const submitEntryZeroLag = (
+    prod: ShiftProductItem,
+    data: {
+      direction: 'in' | 'out'
+      quantity: number
+      unit: string
+      notes: string
+      photos?: PickedOperationPhoto[]
+    },
+    overrideShift?: DeliveryShift
+  ) => {
+    const targetShift = overrideShift || selectedShift
+    if (!targetShift) return
+    const isCurrentShift = targetShift.id === selectedShift?.id
+
+    // 1. Tự động ghim sản phẩm vào ca nếu chưa ghim (Optimistic)
+    const targetPinned = Array.isArray(targetShift.summary_data?.pinned_products)
+      ? targetShift.summary_data.pinned_products
+      : []
+    if (!targetPinned.some(p => p.id === prod.id)) {
+      const nextPinned = [...targetPinned, prod]
+      setOpenShifts(prev =>
+        prev.map(s =>
+          s.id === targetShift.id
+            ? { ...s, summary_data: { ...(s.summary_data || {}), pinned_products: nextPinned } }
+            : s
+        )
+      )
+      void updateShiftPinnedProducts(targetShift.id, nextPinned, targetShift.summary_data)
+    }
+
+    // 2. Cập nhật giao diện tức thì 0ms (Optimistic UI)
+    const tempId = `opt_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+    if (isCurrentShift) {
+      const tempJournal: JournalRecord = {
+        id: tempId,
+        delivery_code: `SO-LIEU-${Date.now().toString().slice(-6)}`,
+        item_name: prod.name,
+        quantity_sent: data.quantity,
+        unit: data.unit,
+        direction: data.direction,
+        from_department: data.direction === 'in' ? 'Sản xuất' : 'Kho',
+        to_department: data.direction === 'in' ? 'Kho' : 'Sản xuất',
+        status: data.direction === 'in' ? 'received_by_warehouse' : 'received_by_production',
+        notes: `[CV_ID: ${targetShift.id}] [PID: ${prod.id}] [SKU: ${prod.sku || ''}] ${
+          data.direction === 'in' ? 'Nhập kho' : 'Xuất kho'
+        }${data.notes ? ` - ${data.notes}` : ''}`,
+        sent_by_name: userObj?.full_name || 'Nhân viên kho',
+        sent_at: new Date().toISOString(),
+        system_code: activeSysCode,
+      }
+      setAllJournals(prev => [tempJournal, ...prev])
+    }
+
+    showToast(
+      `Đã ghi ${data.direction === 'in' ? 'NHẬP +' : 'XUẤT -'}${data.quantity} ${data.unit} (${prod.name})`
+    )
+
+    // 3. Đẩy dữ liệu & upload ảnh hoàn toàn ở nền (không chặn thao tác kế tiếp)
+    const photoCount = data.photos?.length || 0
+    if (photoCount > 0) setBgUploadingCount(c => c + photoCount)
+
+    void (async () => {
+      try {
+        const createdJournal = await createShiftJournalEntry({
+          shift: targetShift,
+          user: userObj,
+          productId: prod.id,
+          productSku: prod.sku,
+          itemName: prod.name,
+          quantity: data.quantity,
+          unit: data.unit,
+          direction: data.direction,
+          notes: data.notes,
+          systemCode: activeSysCode,
+        })
+
+        if (isCurrentShift) {
+          setAllJournals(prev => prev.map(j => (j.id === tempId ? createdJournal : j)))
+        }
+
+        if (data.photos && data.photos.length > 0) {
+          const uploaded = await uploadOperationImages({
+            images: data.photos,
+            systemCode: targetShift.system_code,
+            companyId: targetShift.company_id || userObj.company_id,
+            shiftId: targetShift.id,
+            journalId: createdJournal.id,
+            scope: 'journal',
+            direction: data.direction,
+            jobName: targetShift.summary_data?.job_name || targetShift.notes || 'Công việc',
+            itemName: prod.name,
+            itemSku: prod.sku,
+            quantity: data.quantity,
+            unit: data.unit,
+            notes: data.notes,
+            user: userObj,
+          })
+          if (isCurrentShift) {
+            setShiftImages(prev => [...uploaded, ...prev])
+            setShiftImageCount(c => c + uploaded.length)
+          }
+        }
+        await refreshPendingQueueCount()
+      } catch (err) {
+        console.warn('Lỗi đồng bộ ngầm lượt ghi nhận:', err)
+      } finally {
+        if (photoCount > 0) {
+          setBgUploadingCount(c => Math.max(0, c - photoCount))
+        }
+      }
+    })()
+  }
+
   const handleConfirmNumberPad = async (data: {
     direction: 'in' | 'out'
     quantity: number
@@ -660,60 +856,95 @@ export function OperationsDataTab({
   }) => {
     if (!selectedShift || !numPadTarget) return
     const prod = numPadTarget.product
+    submitEntryZeroLag(prod, data)
+  }
 
-    // Tự động ghim sản phẩm vào ca nếu chưa ghim
-    if (!pinnedProducts.some(p => p.id === prod.id)) {
-      const nextPinned = [...pinnedProducts, prod]
-      setOpenShifts(prev =>
-        prev.map(s =>
-          s.id === selectedShift.id
-            ? { ...s, summary_data: { ...(s.summary_data || {}), pinned_products: nextPinned } }
-            : s
-        )
-      )
-      void updateShiftPinnedProducts(selectedShift.id, nextPinned, selectedShift.summary_data)
+  const handleQuickSnapCaptured = ({
+    shift,
+    photo,
+  }: {
+    shift: DeliveryShift
+    photo: PickedOperationPhoto
+  }) => {
+    const snap: QuickSnapItem = {
+      id: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+      shiftId: shift.id,
+      jobName: shift.summary_data?.job_name || shift.notes || 'Công việc',
+      systemCode: shift.system_code || activeSysCode,
+      capturedAt: new Date().toISOString(),
+      photo,
     }
+    setQuickSnaps(prev => [...prev, snap])
+    void addQuickSnap(snap)
+  }
 
-    const createdJournal = await createShiftJournalEntry({
-      shift: selectedShift,
-      user: userObj,
-      productId: prod.id,
-      productSku: prod.sku,
-      itemName: prod.name,
-      quantity: data.quantity,
-      unit: data.unit,
-      direction: data.direction,
-      notes: data.notes,
-      systemCode: activeSysCode,
-    })
+  const handleDeleteQuickSnap = async (id: string) => {
+    await removeQuickSnap(id)
+    setQuickSnaps(prev => prev.filter(s => s.id !== id))
+  }
 
-    setAllJournals(prev => [createdJournal, ...prev])
-
-    if (data.photos && data.photos.length > 0) {
-      const uploaded = await uploadOperationImages({
-        images: data.photos,
-        systemCode: selectedShift.system_code,
-        companyId: selectedShift.company_id || userObj.company_id,
-        shiftId: selectedShift.id,
-        journalId: createdJournal.id,
-        scope: 'journal',
-        direction: data.direction,
-        jobName: selectedShift.summary_data?.job_name || selectedShift.notes || 'Công việc',
-        itemName: prod.name,
-        itemSku: prod.sku,
-        quantity: data.quantity,
-        unit: data.unit,
-        notes: data.notes,
-        user: userObj,
-      })
-      setShiftImages(prev => [...uploaded, ...prev])
-      setShiftImageCount(c => c + uploaded.length)
-    }
-
-    await refreshPendingQueueCount()
-    showToast(
-      `Đã ghi ${data.direction === 'in' ? 'NHẬP +' : 'XUẤT -'}${data.quantity} ${data.unit} (${prod.name})`
+  const handleChangeQuickSnapShift = async (snapId: string, shift: DeliveryShift) => {
+    const jobName = shift.summary_data?.job_name || shift.notes || 'Công việc'
+    setQuickSnaps(prev =>
+      prev.map(s => (s.id === snapId ? { ...s, shiftId: shift.id, jobName } : s))
     )
+    await updateQuickSnapShift(snapId, shift.id, jobName)
+  }
+
+  const handleSaveQuickSnapToAlbum = (snap: QuickSnapItem) => {
+    const targetShift = openShifts.find(s => s.id === snap.shiftId) || selectedShift
+    if (!targetShift) return
+
+    setBgUploadingCount(c => c + 1)
+    void uploadOperationImages({
+      images: [snap.photo],
+      systemCode: targetShift.system_code,
+      companyId: targetShift.company_id || userObj.company_id,
+      shiftId: targetShift.id,
+      scope: 'shift',
+      jobName: targetShift.summary_data?.job_name || targetShift.notes || snap.jobName || 'Công việc',
+      user: userObj,
+    })
+      .then(uploaded => {
+        if (targetShift.id === selectedShift?.id) {
+          setShiftImages(prev => [...uploaded, ...prev])
+          setShiftImageCount(c => c + uploaded.length)
+        }
+      })
+      .catch(e => console.warn('Save quick snap to album error:', e))
+      .finally(() => {
+        setBgUploadingCount(c => Math.max(0, c - 1))
+      })
+
+    void removeQuickSnap(snap.id)
+    setQuickSnaps(prev => prev.filter(s => s.id !== snap.id))
+    showToast(`📸 Đã lưu thẳng ảnh vào Album (${snap.jobName})`)
+  }
+
+  const handleAssignQuickSnap = (
+    snap: QuickSnapItem,
+    payload: {
+      product: ShiftProductItem
+      direction: 'in' | 'out'
+      quantity: number
+      unit: string
+      notes: string
+    }
+  ) => {
+    const targetShift = openShifts.find(s => s.id === snap.shiftId) || selectedShift || undefined
+    submitEntryZeroLag(
+      payload.product,
+      {
+        direction: payload.direction,
+        quantity: payload.quantity,
+        unit: payload.unit,
+        notes: payload.notes,
+        photos: [snap.photo],
+      },
+      targetShift
+    )
+    void removeQuickSnap(snap.id)
+    setQuickSnaps(prev => prev.filter(s => s.id !== snap.id))
   }
 
   const handleInterimClose = async (notes: string) => {
@@ -948,6 +1179,16 @@ export function OperationsDataTab({
         </div>
       )}
 
+      {/* Background Image Upload Indicator */}
+      {bgUploadingCount > 0 && (
+        <div className="px-3 py-1 bg-sky-500/15 border-b border-sky-500/30 flex items-center justify-center gap-1.5">
+          <Loader2 className="w-3 h-3 animate-spin text-sky-400" />
+          <span className="text-[11px] font-bold text-sky-300">
+            Đang đẩy ngầm {bgUploadingCount} ảnh lên hệ thống (bạn vẫn thao tác bình thường)...
+          </span>
+        </div>
+      )}
+
       {/* ── TOP TAB BAR ── */}
       <div className="px-3 pt-2.5 pb-2 bg-[#0f172a] border-b border-slate-800 flex items-center gap-1.5">
         <button
@@ -1011,140 +1252,149 @@ export function OperationsDataTab({
          * TAB 1: ĐANG LÀM (ACTIVE SHIFTS)
          * ========================================================= */
         <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-3 pb-24">
-          {/* Thanh chọn Công Việc đang mở + Nút thao tác */}
-          <div className="bg-[#1e293b] border border-slate-700 rounded-2xl p-2.5 space-y-2">
-            {openShifts.length === 0 ? (
-              <button
-                type="button"
-                onClick={() => setOpenJobModalVisible(true)}
-                className="w-full py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold flex items-center justify-center gap-2 shadow-lg shadow-indigo-950/50"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Tạo Công Việc Mới Để Bắt Đầu Nhập / Xuất</span>
-              </button>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <div className="relative flex-1 min-w-0">
+          {/* ── SELECTOR CÔNG VIỆC ĐANG LÀM (Chuẩn App Android) ── */}
+          <div className="-mx-3 -mt-3">
+            <div className="flex items-center px-3 py-2 bg-[#1e293b] border-b border-slate-700">
+              {openShifts.length === 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setOpenJobModalVisible(true)}
+                  className="flex-1 h-[42px] rounded-[10px] bg-[#6366f1] hover:bg-indigo-500 text-white text-sm font-extrabold flex items-center justify-center gap-2 transition"
+                >
+                  <Plus className="w-5 h-5" />
+                  <span>Tạo Công Việc Mới</span>
+                </button>
+              ) : (
+                <>
                   <button
                     type="button"
                     onClick={() => setShowJobDropdown(v => !v)}
-                    className="w-full px-3 py-2 rounded-xl bg-[#0f172a] border border-slate-700 flex items-center justify-between gap-2 text-left"
+                    className="flex-1 min-w-0 h-[42px] bg-[#0f172a] border border-slate-700 rounded-[10px] px-3 flex items-center justify-between gap-2 text-left"
                   >
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-extrabold text-white truncate">
+                      <div className="text-[9px] font-bold uppercase text-slate-500 leading-tight">
+                        Công việc {openShifts.length > 1 ? `(${openShifts.length} đang mở)` : ''}
+                      </div>
+                      <div className="text-[13px] font-extrabold text-[#f8fafc] truncate leading-tight">
                         {selectedShift?.summary_data?.job_name ||
                           selectedShift?.notes ||
                           'Công việc'}
                       </div>
-                      <div className="text-[10px] text-slate-400 truncate">
-                        Mở lúc {formatDateTime(selectedShift?.opened_at)} •{' '}
-                        {allJournals.length} đợt
-                      </div>
                     </div>
-                    <ChevronDown className="w-4 h-4 text-slate-400 shrink-0" />
+                    {showJobDropdown ? (
+                      <ChevronUp className="w-[18px] h-[18px] text-slate-400 shrink-0" />
+                    ) : (
+                      <ChevronDown className="w-[18px] h-[18px] text-slate-400 shrink-0" />
+                    )}
                   </button>
 
-                  {showJobDropdown && (
-                    <div className="absolute left-0 right-0 top-full mt-1 z-40 rounded-xl bg-[#1e293b] border border-indigo-500/50 shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
-                      {openShifts.map(s => {
-                        const active = s.id === selectedShiftId
-                        return (
-                          <div
-                            key={s.id}
-                            className={`w-full px-3 py-2 border-b border-slate-700/60 last:border-0 flex items-center justify-between gap-2 ${
-                              active ? 'bg-indigo-600/25 text-white' : 'text-slate-300 hover:bg-slate-800'
-                            }`}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedShiftId(s.id)
-                                setShowJobDropdown(false)
-                              }}
-                              className="min-w-0 flex-1 text-left py-0.5"
-                            >
-                              <div className="text-xs font-bold truncate">
-                                {s.summary_data?.job_name || s.notes || 'Công việc'}
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                Mở: {formatDateTime(s.opened_at)}
-                              </div>
-                            </button>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              {active && (
-                                <span className="px-1.5 py-0.5 rounded bg-indigo-600 text-[9px] font-extrabold text-white">
-                                  Đang chọn
-                                </span>
-                              )}
-                              <button
-                                type="button"
-                                title="Xóa công việc này"
-                                onClick={e => {
-                                  e.stopPropagation()
-                                  void handleDeleteOpenShift(s)
-                                }}
-                                className="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 flex items-center justify-center transition"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        )
-                      })}
+                  {selectedShift && (
+                    <div className="flex items-center gap-1.5 ml-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImagesJournalTarget(null)
+                          setImagesModalShift(selectedShift)
+                        }}
+                        title="Album ảnh chứng minh"
+                        className="w-[42px] h-[42px] rounded-[10px] bg-sky-400/15 hover:bg-sky-400/25 border border-sky-400/40 text-sky-400 flex items-center justify-center gap-0.5 transition"
+                      >
+                        <Camera className="w-4 h-4" />
+                        {shiftImageCount > 0 && (
+                          <span className="text-[11px] font-extrabold text-sky-400">
+                            {shiftImageCount}
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setInterimModalVisible(true)}
+                        title="Chốt ca tạm"
+                        className="w-[42px] h-[42px] rounded-[10px] bg-[#d97706] hover:bg-amber-500 text-white flex items-center justify-center transition"
+                      >
+                        <Clock className="w-[18px] h-[18px]" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setCloseJobModalVisible(true)}
+                        title="Hoàn thành công việc"
+                        className="w-[42px] h-[42px] rounded-[10px] bg-[#e11d48] hover:bg-rose-500 text-white flex items-center justify-center transition"
+                      >
+                        <StopCircle className="w-[18px] h-[18px]" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setOpenJobModalVisible(true)}
+                        title="Thêm công việc khác"
+                        className="w-[42px] h-[42px] rounded-[10px] bg-[#6366f1] hover:bg-indigo-500 text-white flex items-center justify-center transition"
+                      >
+                        <Plus className="w-5 h-5" />
+                      </button>
                     </div>
                   )}
+                </>
+              )}
+            </div>
+
+            {/* Sổ danh sách các công việc đang mở */}
+            {showJobDropdown && openShifts.length > 0 && (
+              <div className="bg-[#1e293b] px-3 py-2 border-b border-slate-700 max-h-64 overflow-y-auto">
+                <div className="text-[11px] font-bold text-slate-500 mb-1.5">
+                  Chọn công việc để ghi nhận:
                 </div>
-
-                {/* Các nút hành động nhanh trên ca đang chọn */}
-                {selectedShift && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setImagesJournalTarget(null)
-                        setImagesModalShift(selectedShift)
-                      }}
-                      title="Chụp ảnh / Album công việc"
-                      className="relative w-9 h-10 rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-300 flex items-center justify-center shrink-0"
+                {openShifts.map(s => {
+                  const isCur = s.id === selectedShiftId
+                  const name = s.summary_data?.job_name || s.notes || 'Công việc'
+                  return (
+                    <div
+                      key={s.id}
+                      className={`flex items-center gap-2 px-2.5 py-2 rounded-lg mb-1 last:mb-0 ${
+                        isCur
+                          ? 'bg-[#1e1b4b] border border-[#6366f1]'
+                          : 'bg-[#0f172a] hover:bg-slate-900'
+                      }`}
                     >
-                      <Camera className="w-4 h-4" />
-                      {shiftImageCount > 0 && (
-                        <span className="absolute -top-1 -right-1 px-1 min-w-[16px] h-4 rounded-full bg-sky-500 text-[9px] font-black text-white flex items-center justify-center">
-                          {shiftImageCount}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedShiftId(s.id)
+                          setShowJobDropdown(false)
+                        }}
+                        className="flex-1 min-w-0 flex items-center gap-2 text-left"
+                      >
+                        <span
+                          className={`w-2 h-2 rounded-full shrink-0 ${
+                            isCur ? 'bg-[#6366f1]' : 'bg-[#22c55e]'
+                          }`}
+                        />
+                        <span
+                          className={`flex-1 text-[13px] truncate ${
+                            isCur
+                              ? 'text-[#6366f1] font-extrabold'
+                              : 'text-[#f8fafc] font-semibold'
+                          }`}
+                        >
+                          {name}
                         </span>
-                      )}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setInterimModalVisible(true)}
-                      title="Chốt ca tạm"
-                      className="px-2.5 h-10 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
-                    >
-                      <Clock className="w-3.5 h-3.5" />
-                      <span className="hidden xs:inline">Chốt tạm</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setCloseJobModalVisible(true)}
-                      title="Hoàn thành công việc"
-                      className="px-2.5 h-10 rounded-xl bg-rose-600 text-white text-[11px] font-extrabold flex items-center gap-1 shrink-0"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Đóng ca</span>
-                    </button>
-                  </>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setOpenJobModalVisible(true)}
-                  title="Thêm công việc mới"
-                  className="w-9 h-10 rounded-xl bg-indigo-600 text-white flex items-center justify-center shrink-0"
-                >
-                  <Plus className="w-4 h-4" />
-                </button>
+                        {isCur && <Check className="w-4 h-4 text-[#6366f1] shrink-0" />}
+                      </button>
+                      <button
+                        type="button"
+                        title="Xóa công việc này"
+                        onClick={e => {
+                          e.stopPropagation()
+                          void handleDeleteOpenShift(s)
+                        }}
+                        className="w-7 h-7 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-400 flex items-center justify-center shrink-0 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -1319,21 +1569,24 @@ export function OperationsDataTab({
                   const defUnit =
                     item.defaultUnit ||
                     pickDefaultProductUnit(item.units || [], item.unit) ||
-                    'Thùng (20kg)'
+                    item.defaultUnit ||
+                    item.unit ||
+                    ''
 
                   // Hiển thị các ĐVT đã có phát sinh hoặc ĐVT mặc định
                   const activeUnitsForProd = productStatsList
                     .filter(ps => ps.name.toLowerCase() === item.name.toLowerCase())
                     .map(ps => ps.unit)
-                  const displayUnits = Array.from(new Set([defUnit, ...activeUnitsForProd]))
+                  const displayUnits = Array.from(new Set([defUnit, ...activeUnitsForProd].filter(Boolean)))
 
                   return (
                     <div
                       key={item.id}
-                      className={`rounded-2xl p-2.5 border transition ${
+                      onClick={() => setNumPadTarget({ product: item, unit: defUnit })}
+                      className={`rounded-2xl p-2.5 border transition cursor-pointer active:scale-[0.995] ${
                         isEven
-                          ? 'bg-[#1e293b]/90 border-indigo-500/25'
-                          : 'bg-[#1e293b]/60 border-amber-500/20'
+                          ? 'bg-[#1e293b]/90 border-indigo-500/25 hover:border-indigo-400/50'
+                          : 'bg-[#1e293b]/60 border-amber-500/20 hover:border-amber-400/50'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-2">
@@ -1369,7 +1622,10 @@ export function OperationsDataTab({
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             type="button"
-                            onClick={() => setHistoryProductTarget(item)}
+                            onClick={e => {
+                              e.stopPropagation()
+                              setHistoryProductTarget(item)
+                            }}
                             title="Xem lịch sử sản phẩm này"
                             className="w-7 h-7 rounded-lg bg-[#0f172a] border border-slate-700 flex items-center justify-center text-slate-300"
                           >
@@ -1379,7 +1635,10 @@ export function OperationsDataTab({
                           {searchMode === 'pin' && (
                             <button
                               type="button"
-                              onClick={() => handleTogglePinProduct(item)}
+                              onClick={e => {
+                                e.stopPropagation()
+                                handleTogglePinProduct(item)
+                              }}
                               className={`px-2 h-7 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border ${
                                 isPinned
                                   ? 'bg-amber-500 border-amber-400 text-slate-950'
@@ -1403,7 +1662,10 @@ export function OperationsDataTab({
                             <button
                               key={u}
                               type="button"
-                              onClick={() => setNumPadTarget({ product: item, unit: u })}
+                              onClick={e => {
+                                e.stopPropagation()
+                                setNumPadTarget({ product: item, unit: u })
+                              }}
                               className="flex-1 min-w-[130px] px-2.5 py-1.5 rounded-xl bg-[#0f172a] border border-slate-700 hover:border-indigo-500/60 flex items-center justify-between gap-2 text-left active:scale-[0.99] transition"
                             >
                               <span className="text-[11px] font-extrabold text-indigo-300 truncate">
@@ -2321,7 +2583,91 @@ export function OperationsDataTab({
         </div>
       )}
 
+      {/* ── FLOATING QUICK SNAP BAR (CHỤP NHANH 1 CHẠM KHI DỒN DẬP) ── */}
+      {mainTab === 'active' && selectedShift && (
+        quickSnapBarCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setQuickSnapBarCollapsed(false)}
+            title="Mở rộng Chụp nhanh / Chờ gán"
+            className={`fixed bottom-20 right-0 z-30 h-10 pl-2.5 pr-2 rounded-l-full bg-slate-900/95 hover:bg-slate-800 border border-r-0 ${
+              quickSnaps.length > 0 ? 'border-amber-500' : 'border-sky-400'
+            } shadow-xl flex items-center gap-1.5 active:scale-95 transition`}
+          >
+            <ChevronLeft className="w-4 h-4 text-slate-400" />
+            <Camera className="w-4 h-4 text-sky-400" />
+            {quickSnaps.length > 0 && (
+              <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black flex items-center justify-center">
+                {quickSnaps.length}
+              </span>
+            )}
+          </button>
+        ) : (
+          <div className="fixed bottom-20 right-2.5 z-30 flex items-center gap-1.5">
+            {quickSnaps.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setQuickSnapModalVisible(true)}
+                className="h-11 px-3.5 rounded-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs shadow-xl shadow-amber-950/50 border border-amber-300 flex items-center gap-1.5 active:scale-95 transition"
+              >
+                <span>Chờ gán</span>
+                <span className="px-1.5 py-0.5 rounded-full bg-slate-950 text-amber-300 text-[11px] font-black">
+                  {quickSnaps.length}
+                </span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setQuickCameraVisible(true)}
+              title="Chụp nhanh 1 chạm (chụp bụp ăn luôn)"
+              className="h-11 px-3.5 rounded-full bg-sky-600 hover:bg-sky-500 text-white font-extrabold text-xs shadow-xl shadow-sky-950/60 border border-sky-400 flex items-center gap-1.5 active:scale-95 transition"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Chụp nhanh</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setQuickSnapBarCollapsed(true)}
+              title="Thu gọn thanh chụp nhanh"
+              className="w-8 h-11 rounded-full bg-slate-900/90 hover:bg-slate-800 text-slate-300 border border-slate-600 shadow-xl flex items-center justify-center active:scale-95 transition"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )
+      )}
+
       {/* ── MODALS ── */}
+      <QuickSnapCameraModal
+        visible={quickCameraVisible}
+        openShifts={openShifts}
+        initialShiftId={selectedShift?.id || null}
+        totalQueueCount={quickSnaps.length}
+        lastThumbUrl={quickSnaps[quickSnaps.length - 1]?.photo?.dataUrl || null}
+        systemCode={selectedShift?.system_code || activeSysCode}
+        userName={userProfile?.fullName || userObj?.full_name || userObj?.email || null}
+        onClose={() => setQuickCameraVisible(false)}
+        onOpenQueue={() => setQuickSnapModalVisible(true)}
+        onCaptured={handleQuickSnapCaptured}
+      />
+
+      <QuickSnapQueueModal
+        visible={quickSnapModalVisible}
+        snaps={quickSnaps}
+        openShifts={openShifts}
+        allProducts={allProducts}
+        recentProducts={recentProducts}
+        onClose={() => setQuickSnapModalVisible(false)}
+        onCaptureMore={() => {
+          setQuickSnapModalVisible(false)
+          setQuickCameraVisible(true)
+        }}
+        onDeleteSnap={handleDeleteQuickSnap}
+        onChangeSnapShift={handleChangeQuickSnapShift}
+        onSaveToShiftAlbum={handleSaveQuickSnapToAlbum}
+        onAssignSnap={handleAssignQuickSnap}
+      />
+
       <OperationNumberPadModal
         visible={!!numPadTarget}
         product={numPadTarget?.product || null}

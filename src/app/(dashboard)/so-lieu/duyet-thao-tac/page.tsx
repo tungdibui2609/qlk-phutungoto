@@ -157,6 +157,19 @@ export default function DuyetThaoTacPage() {
   const { profile } = useUser()
 
   const [requests, setRequests] = useState<ApprovalRequest[]>([])
+  const [shiftStatsMap, setShiftStatsMap] = useState<
+    Record<
+      string,
+      {
+        status?: string
+        journalCount: number
+        inQty: number
+        outQty: number
+        subShiftCount: number
+        imageCount: number
+      }
+    >
+  >({})
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [bulkProcessing, setBulkProcessing] = useState(false)
@@ -181,7 +194,71 @@ export default function DuyetThaoTacPage() {
         .limit(300)
 
       if (error) throw error
-      setRequests((data || []) as ApprovalRequest[])
+      const list = (data || []) as ApprovalRequest[]
+      setRequests(list)
+
+      // Tải thống kê dữ liệu thực tế cho các yêu cầu Xóa công việc
+      const shiftReqIds = Array.from(
+        new Set(
+          list
+            .filter(r => r.action_type === 'delete_shift' && r.status !== 'approved' && r.target_id)
+            .map(r => r.target_id)
+        )
+      )
+      if (shiftReqIds.length > 0) {
+        const statsEntries = await Promise.all(
+          shiftReqIds.map(async sId => {
+            try {
+              const [shiftRes, journalRes, subRes, imgRes] = await Promise.all([
+                (supabase.from('delivery_shifts') as any)
+                  .select('id, status')
+                  .eq('id', sId)
+                  .maybeSingle(),
+                (supabase.from('delivery_journal') as any)
+                  .select('id, quantity_sent, to_department')
+                  .in('system_code', systemCodes)
+                  .ilike('notes', `%[CV_ID: ${sId}]%`),
+                (supabase.from('delivery_sub_shifts') as any)
+                  .select('id', { count: 'exact', head: true })
+                  .eq('shift_id', sId),
+                (supabase.from('operation_images') as any)
+                  .select('id', { count: 'exact', head: true })
+                  .eq('shift_id', sId),
+              ])
+
+              const jRows = Array.isArray(journalRes.data) ? journalRes.data : []
+              let inQty = 0
+              let outQty = 0
+              for (const j of jRows) {
+                const q = Number(j.quantity_sent) || 0
+                if (j.to_department === 'Kho') inQty += q
+                else outQty += q
+              }
+
+              return [
+                sId,
+                {
+                  status: shiftRes.data?.status,
+                  journalCount: jRows.length,
+                  inQty: Number(inQty.toFixed(2)),
+                  outQty: Number(outQty.toFixed(2)),
+                  subShiftCount: subRes.count || 0,
+                  imageCount: imgRes.count || 0,
+                },
+              ] as const
+            } catch {
+              return null
+            }
+          })
+        )
+        const nextMap: Record<string, any> = {}
+        for (const entry of statsEntries) {
+          if (entry) nextMap[entry[0]] = entry[1]
+        }
+        setShiftStatsMap(nextMap)
+      } else {
+        setShiftStatsMap({})
+      }
     } catch (e: any) {
       console.error('Lỗi tải danh sách duyệt thao tác:', e)
     } finally {
@@ -516,6 +593,58 @@ export default function DuyetThaoTacPage() {
                         Công việc: <b className="text-stone-700 dark:text-stone-200">{req.shift_name}</b>
                       </div>
                     )}
+
+                    {/* Hiển thị tình trạng dữ liệu của công việc khi yêu cầu Xóa công việc */}
+                    {req.action_type === 'delete_shift' && (() => {
+                      const stats = shiftStatsMap[req.target_id]
+                      if (!stats) {
+                        if (req.status === 'approved') {
+                          return (
+                            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-stone-100 dark:bg-zinc-800 text-[11px] font-semibold text-stone-600 dark:text-stone-300">
+                              <span>Công việc đã được xóa khỏi hệ thống</span>
+                            </div>
+                          )
+                        }
+                        return null
+                      }
+                      const hasData =
+                        stats.journalCount > 0 || stats.subShiftCount > 0 || stats.imageCount > 0
+                      return (
+                        <div
+                          className={`text-xs rounded-xl px-3 py-2 border flex flex-wrap items-center gap-x-2.5 gap-y-1 ${
+                            hasData
+                              ? 'bg-rose-50 dark:bg-rose-950/35 border-rose-200 dark:border-rose-800/70 text-rose-800 dark:text-rose-200'
+                              : 'bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800/70 text-emerald-800 dark:text-emerald-200'
+                          }`}
+                        >
+                          <span className="font-extrabold">
+                            {hasData ? '⚠️ Đã có dữ liệu:' : '✓ Chưa có dữ liệu'}
+                          </span>
+                          <span>
+                            <b>{stats.journalCount}</b> đợt N/X
+                            {stats.journalCount > 0 && (
+                              <>
+                                {' '}
+                                (<span className="text-emerald-700 dark:text-emerald-300 font-bold">+{stats.inQty}</span>
+                                {' / '}
+                                <span className="text-rose-700 dark:text-rose-300 font-bold">-{stats.outQty}</span>)
+                              </>
+                            )}
+                          </span>
+                          {stats.subShiftCount > 0 && (
+                            <span>• <b>{stats.subShiftCount}</b> lần chốt tạm</span>
+                          )}
+                          {stats.imageCount > 0 && (
+                            <span>• <b>{stats.imageCount}</b> ảnh</span>
+                          )}
+                          {stats.status && (
+                            <span className="px-1.5 py-0.5 rounded bg-white/70 dark:bg-zinc-900/70 text-[10px] font-bold">
+                              {stats.status === 'closed' ? 'Đã hoàn thành' : 'Đang mở'}
+                            </span>
+                          )}
+                        </div>
+                      )
+                    })()}
 
                     {/* Hiển thị chi tiết trước -> sau cho sửa/xóa số liệu */}
                     {(req.action_type === 'update_journal' || req.action_type === 'delete_journal') &&

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 import {
   X,
   Check,
@@ -25,6 +25,10 @@ import {
   Moon,
   Clock,
   Edit2,
+  MessageSquare,
+  ArrowDownCircle,
+  ArrowUpCircle,
+  Search,
 } from 'lucide-react'
 import {
   DeliveryShift,
@@ -42,7 +46,9 @@ import {
   getSubShifts,
   reopenDeliveryShift,
   deleteDeliveryShift,
+  normalizeViText,
 } from './operationsService'
+import type { QuickSnapItem } from './quickSnapStore'
 import {
   PickedOperationPhoto,
   OperationImageRecord,
@@ -104,72 +110,83 @@ export function OperationNumberPadModal({
     photos?: PickedOperationPhoto[]
   }) => Promise<void>
 }) {
-  const [direction, setDirection] = useState<'in' | 'out'>('in')
-  const [expr, setExpr] = useState<string>('')
-  const [selectedUnit, setSelectedUnit] = useState<string>(unit || 'Thùng (20kg)')
+  const [valueStr, setValueStr] = useState<string>('')
+  const [selectedUnit, setSelectedUnit] = useState<string>(unit || '')
   const [notes, setNotes] = useState<string>('')
+  const [showNotes, setShowNotes] = useState(false)
   const [photos, setPhotos] = useState<PickedOperationPhoto[]>([])
-  const [submitting, setSubmitting] = useState(false)
+  const [submittingDir, setSubmittingDir] = useState<'in' | 'out' | null>(null)
+
+  const unitsList = useMemo(() => {
+    const raw =
+      availableUnits.length > 0
+        ? availableUnits
+        : product?.units && product.units.length > 0
+          ? product.units
+          : [unit, product?.defaultUnit, product?.unit].filter((u): u is string => Boolean(u && u.trim()))
+    const unique = Array.from(new Set(raw.map(u => u.trim()).filter(Boolean)))
+    return unique.sort((a, b) => {
+      const aBox = a.toLowerCase().includes('thùng') ? 0 : 1
+      const bBox = b.toLowerCase().includes('thùng') ? 0 : 1
+      return aBox - bBox
+    })
+  }, [availableUnits, product, unit])
 
   useEffect(() => {
     if (!visible) return
-    setDirection('in')
-    setExpr('')
-    setSelectedUnit(unit || product?.defaultUnit || product?.unit || 'Thùng (20kg)')
+    setValueStr('')
+    setSelectedUnit(unit || unitsList[0] || product?.defaultUnit || product?.unit || '')
     setNotes('')
+    setShowNotes(false)
     setPhotos([])
-    setSubmitting(false)
-  }, [visible, product, unit])
+    setSubmittingDir(null)
+  }, [visible, product, unit, unitsList])
 
-  const evaluateExpr = (raw: string): number => {
-    if (!raw.trim()) return 0
-    try {
-      const sanitized = raw.replace(/[^0-9+\-.]/g, '')
-      if (!sanitized) return 0
-      const tokens = sanitized.match(/[+-]?\d+(?:\.\d+)?/g)
-      if (!tokens) return 0
-      const sum = tokens.reduce((acc, t) => acc + (parseFloat(t) || 0), 0)
-      return Math.max(0, Number(sum.toFixed(2)))
-    } catch {
-      return 0
-    }
-  }
-
-  const evaluatedQty = useMemo(() => evaluateExpr(expr), [expr])
+  const parsedQty = useMemo(() => {
+    const n = parseFloat(valueStr)
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : 0
+  }, [valueStr])
 
   if (!visible || !product) return null
 
-  const unitsList = Array.from(
-    new Set([selectedUnit, ...(availableUnits || []), ...(product.units || []), 'Thùng (20kg)', 'Kg'].filter(Boolean))
-  )
-
   const handleKey = (key: string) => {
-    if (key === 'C') {
-      setExpr('')
-      return
-    }
     if (key === 'BS') {
-      setExpr(prev => prev.slice(0, -1))
+      setValueStr(prev => prev.slice(0, -1))
       return
     }
-    if (key === '+' || key === '-') {
-      setExpr(prev => {
-        if (!prev) return ''
-        if (/[+-]$/.test(prev)) return prev.slice(0, -1) + key
-        return prev + key
+    if (key === '.') {
+      setValueStr(prev => {
+        if (prev.includes('.')) return prev
+        return prev ? prev + '.' : '0.'
       })
       return
     }
-    setExpr(prev => prev + key)
+    setValueStr(prev => {
+      if (prev === '0') return key
+      if (prev.includes('.')) {
+        const dec = prev.split('.')[1] || ''
+        if (dec.length >= 2) return prev
+      }
+      if (prev.length >= 9) return prev
+      return prev + key
+    })
+  }
+
+  const handleQuickAdd = (delta: number) => {
+    setValueStr(prev => {
+      const cur = parseFloat(prev || '0') || 0
+      const next = Math.round((cur + delta) * 100) / 100
+      return String(next)
+    })
   }
 
   const wmMeta = {
     systemCode,
     jobName,
     itemName: product.name,
-    quantity: evaluatedQty > 0 ? evaluatedQty : null,
+    quantity: parsedQty > 0 ? parsedQty : null,
     unit: selectedUnit,
-    direction,
+    direction: 'in' as const,
     userName,
   }
 
@@ -183,38 +200,40 @@ export function OperationNumberPadModal({
     if (picked.length > 0) setPhotos(prev => [...prev, ...picked])
   }
 
-  const handleSubmit = async () => {
-    if (evaluatedQty <= 0 || submitting) return
-    setSubmitting(true)
+  const handleSubmit = async (dir: 'in' | 'out') => {
+    if (parsedQty <= 0 || submittingDir !== null) return
+    setSubmittingDir(dir)
     try {
       await onConfirm({
-        direction,
-        quantity: evaluatedQty,
+        direction: dir,
+        quantity: parsedQty,
         unit: selectedUnit,
         notes: notes.trim(),
         photos: photos.length > 0 ? photos : undefined,
       })
       onClose()
     } finally {
-      setSubmitting(false)
+      setSubmittingDir(null)
     }
   }
 
-  const keys = [
-    ['7', '8', '9', 'BS'],
-    ['4', '5', '6', '+'],
-    ['1', '2', '3', '-'],
-    ['0', '00', '.', 'C'],
+  const keypadRows = [
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+    ['.', '0', 'BS'],
   ]
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/75 p-0 sm:p-4">
       <div className="w-full max-w-md bg-[#0f172a] border-t sm:border border-slate-700 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[92vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700">
-          <div className="min-w-0 flex-1 pr-2">
-            <div className="text-sm font-extrabold text-white truncate">{product.name}</div>
-            <div className="flex items-center gap-2 mt-0.5">
+        <div className="flex items-start justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700 gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-extrabold text-white line-clamp-2 leading-snug">
+              {product.name}
+            </div>
+            <div className="flex items-center flex-wrap gap-1.5 mt-1">
               {product.sku && (
                 <span className="text-[11px] font-bold text-indigo-400">SKU: {product.sku}</span>
               )}
@@ -226,123 +245,100 @@ export function OperationNumberPadModal({
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300"
+            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-3 overflow-y-auto overscroll-contain space-y-3">
-          {/* Chiều Nhập / Xuất */}
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => setDirection('in')}
-              className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition ${
-                direction === 'in'
-                  ? 'bg-emerald-600 border-emerald-400 text-white shadow-lg shadow-emerald-950/50'
-                  : 'bg-[#1e293b] border-slate-700 text-slate-400'
-              }`}
-            >
-              <span>↓ NHẬP KHO (+)</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDirection('out')}
-              className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 border transition ${
-                direction === 'out'
-                  ? 'bg-rose-600 border-rose-400 text-white shadow-lg shadow-rose-950/50'
-                  : 'bg-[#1e293b] border-slate-700 text-slate-400'
-              }`}
-            >
-              <span>↑ XUẤT KHO (-)</span>
-            </button>
-          </div>
-
-          {/* Chọn ĐVT */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-            {unitsList.map(u => {
-              const active = selectedUnit === u
-              return (
-                <button
-                  key={u}
-                  type="button"
-                  onClick={() => setSelectedUnit(u)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border transition ${
-                    active
-                      ? 'bg-indigo-600 border-indigo-400 text-white'
-                      : 'bg-[#1e293b] border-slate-700 text-slate-300'
-                  }`}
-                >
-                  {u}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Màn hình hiển thị phép tính & kết quả */}
-          <div
-            className={`rounded-xl p-3 border flex items-center justify-between ${
-              direction === 'in'
-                ? 'bg-emerald-950/30 border-emerald-500/40'
-                : 'bg-rose-950/30 border-rose-500/40'
-            }`}
-          >
-            <div className="text-xs font-semibold text-slate-400 truncate max-w-[55%]">
-              {expr ? `Phép tính: ${expr}` : 'Nhập số lượng bên dưới'}
+        <div className="p-3 overflow-y-auto overscroll-contain space-y-2.5">
+          {/* Chọn ĐVT (Đơn vị tính thực tế của sản phẩm) */}
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-extrabold text-slate-400 shrink-0">ĐVT:</span>
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar flex-1">
+              {unitsList.map(u => {
+                const active = selectedUnit === u
+                return (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => setSelectedUnit(u)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap border transition ${
+                      active
+                        ? 'bg-indigo-600 border-indigo-400 text-white shadow-sm'
+                        : 'bg-[#1e293b] border-slate-700 text-slate-300 hover:border-slate-500'
+                    }`}
+                  >
+                    {u}
+                  </button>
+                )
+              })}
             </div>
-            <div className="text-right">
-              <span
-                className={`text-2xl font-black ${
-                  direction === 'in' ? 'text-emerald-400' : 'text-rose-400'
-                }`}
-              >
-                {direction === 'in' ? '+' : '-'}
-                {evaluatedQty}
+          </div>
+
+          {/* Màn hình hiển thị số lượng */}
+          <div className="rounded-xl px-3.5 py-2.5 bg-[#1e293b] border border-slate-700 flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-slate-400 shrink-0">Số lượng:</span>
+            <div className="flex items-baseline gap-1.5 min-w-0 justify-end">
+              <span className="text-3xl font-black tracking-tight text-white truncate">
+                {valueStr || '0'}
               </span>
-              <span className="ml-1.5 text-xs font-bold text-slate-300">{selectedUnit}</span>
+              {selectedUnit && (
+                <span className="text-xs font-bold text-indigo-300 shrink-0">{selectedUnit}</span>
+              )}
             </div>
           </div>
 
-          {/* Bàn phím số máy tính */}
-          <div className="grid grid-cols-4 gap-2">
-            {keys.flat().map(k => {
-              const isOp = k === '+' || k === '-' || k === 'BS' || k === 'C'
-              return (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => handleKey(k)}
-                  className={`h-12 rounded-xl font-extrabold text-base flex items-center justify-center active:scale-95 transition ${
-                    k === 'C'
-                      ? 'bg-rose-900/40 text-rose-300 border border-rose-700/40'
-                      : isOp
-                        ? 'bg-indigo-950/70 text-indigo-300 border border-indigo-700/40'
-                        : 'bg-[#1e293b] text-white border border-slate-700'
-                  }`}
-                >
-                  {k === 'BS' ? '⌫' : k}
-                </button>
-              )
-            })}
+          {/* Hàng cộng nhanh + nút ghi chú */}
+          <div className="flex items-center gap-1.5">
+            {[1, 5, 10, 20, 50].map(delta => (
+              <button
+                key={delta}
+                type="button"
+                onClick={() => handleQuickAdd(delta)}
+                className="flex-1 py-2 rounded-lg bg-[#1e293b] hover:bg-slate-800 active:scale-95 border border-slate-700 text-indigo-300 font-extrabold text-xs transition"
+              >
+                +{delta}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setShowNotes(prev => !prev)}
+              title="Ghi chú"
+              className={`px-3 py-2 rounded-lg border flex items-center justify-center transition relative ${
+                showNotes || notes.trim()
+                  ? 'bg-indigo-600/20 border-indigo-400 text-indigo-300'
+                  : 'bg-[#1e293b] border-slate-700 text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              {notes.trim() && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-400" />
+              )}
+            </button>
           </div>
 
-          {/* Ghi chú & Đính kèm ảnh */}
-          <div className="space-y-2">
+          {/* Ô ghi chú thu gọn */}
+          {showNotes && (
             <input
               type="text"
               value={notes}
               onChange={e => setNotes(e.target.value)}
-              placeholder="Ghi chú đợt nhập/xuất (tùy chọn)..."
-              className="w-full px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              placeholder="Nhập ghi chú đợt nhập/xuất..."
+              autoFocus
+              className="w-full px-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/50 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
             />
+          )}
 
+          {/* Chụp ảnh / Thư viện */}
+          <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleCamera}
-                className="flex-1 py-2 px-3 rounded-xl bg-sky-900/30 border border-sky-500/40 text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                className="flex-1 py-2 px-3 rounded-xl bg-sky-900/30 hover:bg-sky-900/40 border border-sky-500/40 text-sky-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
               >
                 <Camera className="w-3.5 h-3.5" />
                 <span>Chụp ảnh</span>
@@ -350,7 +346,7 @@ export function OperationNumberPadModal({
               <button
                 type="button"
                 onClick={handleLibrary}
-                className="flex-1 py-2 px-3 rounded-xl bg-indigo-900/30 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center justify-center gap-1.5"
+                className="flex-1 py-2 px-3 rounded-xl bg-indigo-900/30 hover:bg-indigo-900/40 border border-indigo-500/40 text-indigo-300 text-xs font-bold flex items-center justify-center gap-1.5 transition"
               >
                 <ImageIcon className="w-3.5 h-3.5" />
                 <span>Thư viện ({photos.length})</span>
@@ -360,7 +356,7 @@ export function OperationNumberPadModal({
             {photos.length > 0 && (
               <div className="flex items-center gap-2 overflow-x-auto py-1">
                 {photos.map((p, idx) => (
-                  <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-600 shrink-0">
+                  <div key={idx} className="relative w-12 h-12 rounded-lg overflow-hidden border border-slate-600 shrink-0">
                     <img src={p.dataUrl} alt="proof" className="w-full h-full object-cover" />
                     <button
                       type="button"
@@ -375,28 +371,62 @@ export function OperationNumberPadModal({
             )}
           </div>
 
-          {/* Nút xác nhận */}
-          <button
-            type="button"
-            disabled={evaluatedQty <= 0 || submitting}
-            onClick={handleSubmit}
-            className={`w-full py-3 rounded-xl font-extrabold text-sm text-white flex items-center justify-center gap-2 transition ${
-              evaluatedQty <= 0 || submitting
-                ? 'bg-slate-700 text-slate-400 cursor-not-allowed'
-                : direction === 'in'
-                  ? 'bg-emerald-600 hover:bg-emerald-500'
-                  : 'bg-rose-600 hover:bg-rose-500'
-            }`}
-          >
-            {submitting ? (
-              <Loader2 className="w-4 h-4 animate-spin" />
-            ) : (
-              <Check className="w-4 h-4" />
-            )}
-            <span>
-              XÁC NHẬN {direction === 'in' ? 'NHẬP' : 'XUẤT'} {evaluatedQty > 0 ? `${evaluatedQty} ${selectedUnit}` : ''}
-            </span>
-          </button>
+          {/* Bàn phím số 3x4 */}
+          <div className="grid grid-cols-3 gap-2">
+            {keypadRows.flat().map(k => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => handleKey(k)}
+                className={`h-12 rounded-xl font-extrabold text-lg flex items-center justify-center active:scale-95 transition ${
+                  k === 'BS'
+                    ? 'bg-indigo-950/70 text-indigo-300 border border-indigo-700/40 hover:bg-indigo-950'
+                    : 'bg-[#1e293b] text-white border border-slate-700 hover:bg-slate-800'
+                }`}
+              >
+                {k === 'BS' ? '⌫' : k}
+              </button>
+            ))}
+          </div>
+
+          {/* 2 nút hành động lớn ở đáy: NHẬP KHO (+) / XUẤT KHO (-) */}
+          <div className="grid grid-cols-2 gap-2 pt-0.5">
+            <button
+              type="button"
+              disabled={parsedQty <= 0 || submittingDir !== null}
+              onClick={() => handleSubmit('in')}
+              className={`py-3 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition ${
+                parsedQty <= 0 || submittingDir !== null
+                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-emerald-600 hover:bg-emerald-500 active:scale-[0.98] text-white shadow-lg shadow-emerald-950/50'
+              }`}
+            >
+              {submittingDir === 'in' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowDownCircle className="w-4 h-4" />
+              )}
+              <span>NHẬP KHO (+)</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={parsedQty <= 0 || submittingDir !== null}
+              onClick={() => handleSubmit('out')}
+              className={`py-3 rounded-xl font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition ${
+                parsedQty <= 0 || submittingDir !== null
+                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                  : 'bg-rose-600 hover:bg-rose-500 active:scale-[0.98] text-white shadow-lg shadow-rose-950/50'
+              }`}
+            >
+              {submittingDir === 'out' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ArrowUpCircle className="w-4 h-4" />
+              )}
+              <span>XUẤT KHO (-)</span>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -869,7 +899,7 @@ export function EditJournalModal({
   if (!visible || !journal) return null
 
   const unitsList = Array.from(
-    new Set([unit, ...(availableUnits || []), 'Thùng (20kg)', 'Kg', 'Sọt'].filter(Boolean))
+    new Set([unit, ...(availableUnits || [])].filter(Boolean))
   )
 
   const handleSubmit = async () => {
@@ -2673,6 +2703,575 @@ export function ReconcileTabView({
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+// ── 10. QUICK SNAP QUEUE MODAL (HÀNG CHỜ ẢNH CHỤP NHANH) ─────────────────────────
+export function QuickSnapQueueModal({
+  visible,
+  snaps,
+  openShifts,
+  allProducts,
+  recentProducts,
+  onClose,
+  onCaptureMore,
+  onDeleteSnap,
+  onChangeSnapShift,
+  onSaveToShiftAlbum,
+  onAssignSnap,
+}: {
+  visible: boolean
+  snaps: QuickSnapItem[]
+  openShifts: DeliveryShift[]
+  allProducts: ShiftProductItem[]
+  recentProducts: ShiftProductItem[]
+  onClose: () => void
+  onCaptureMore: () => void
+  onDeleteSnap: (id: string) => Promise<void>
+  onChangeSnapShift: (snapId: string, shift: DeliveryShift) => Promise<void>
+  onSaveToShiftAlbum: (snap: QuickSnapItem) => void
+  onAssignSnap: (
+    snap: QuickSnapItem,
+    payload: {
+      product: ShiftProductItem
+      direction: 'in' | 'out'
+      quantity: number
+      unit: string
+      notes: string
+    }
+  ) => void
+}) {
+  const [selectedId, setSelectedId] = useState<string>('')
+  const [query, setQuery] = useState<string>('')
+  const [selectedProduct, setSelectedProduct] = useState<ShiftProductItem | null>(null)
+  const [selectedUnit, setSelectedUnit] = useState<string>('')
+  const [qtyStr, setQtyStr] = useState<string>('')
+  const [notes, setNotes] = useState<string>('')
+  const [recentlyAssignedIds, setRecentlyAssignedIds] = useState<string[]>([])
+  const [isSearchFocused, setIsSearchFocused] = useState(false)
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null)
+  const searchInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!visible || typeof window === 'undefined') return
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => setViewportHeight(vv.height)
+    update()
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    return () => {
+      vv.removeEventListener('resize', update)
+      vv.removeEventListener('scroll', update)
+    }
+  }, [visible])
+
+  useEffect(() => {
+    if (!visible) return
+    if (snaps.length > 0 && !snaps.some(s => s.id === selectedId)) {
+      setSelectedId(snaps[0].id)
+    }
+  }, [visible, snaps, selectedId])
+
+  useEffect(() => {
+    if (!visible) {
+      setQuery('')
+      setSelectedProduct(null)
+      setSelectedUnit('')
+      setQtyStr('')
+      setNotes('')
+      setIsSearchFocused(false)
+    }
+  }, [visible])
+
+  const activeSnap = useMemo(
+    () => snaps.find(s => s.id === selectedId) || snaps[0] || null,
+    [snaps, selectedId]
+  )
+
+  const unitOptions = useMemo(() => {
+    if (!selectedProduct) return []
+    const raw =
+      selectedProduct.units && selectedProduct.units.length > 0
+        ? selectedProduct.units
+        : [selectedProduct.defaultUnit, selectedProduct.unit].filter((u): u is string =>
+            Boolean(u && u.trim())
+          )
+    return Array.from(new Set(raw.map(u => u.trim()).filter(Boolean))).sort((a, b) => {
+      const aBox = a.toLowerCase().includes('thùng') ? 0 : 1
+      const bBox = b.toLowerCase().includes('thùng') ? 0 : 1
+      return aBox - bBox
+    })
+  }, [selectedProduct])
+
+  useEffect(() => {
+    if (!selectedProduct) {
+      setSelectedUnit('')
+      return
+    }
+    setSelectedUnit(unitOptions[0] || selectedProduct.defaultUnit || selectedProduct.unit || '')
+  }, [selectedProduct, unitOptions])
+
+  const activeShift = useMemo(
+    () => (activeSnap ? openShifts.find(s => s.id === activeSnap.shiftId) || null : null),
+    [openShifts, activeSnap]
+  )
+
+  const shiftPinnedProducts = useMemo(() => {
+    const rawPinned: ShiftProductItem[] = Array.isArray(activeShift?.summary_data?.pinned_products)
+      ? activeShift!.summary_data!.pinned_products!
+      : []
+    if (rawPinned.length === 0) return []
+    const byId = new Map(allProducts.map(p => [p.id, p]))
+    const bySku = new Map(
+      allProducts.filter(p => p.sku).map(p => [String(p.sku).trim().toLowerCase(), p])
+    )
+    return rawPinned.map(p => {
+      const fresh =
+        byId.get(p.id) || (p.sku ? bySku.get(String(p.sku).trim().toLowerCase()) : undefined)
+      return fresh ? { ...p, ...fresh } : p
+    })
+  }, [activeShift, allProducts])
+
+  const quickPickProducts = useMemo(() => {
+    const base = shiftPinnedProducts.length > 0 ? shiftPinnedProducts : recentProducts
+    const byId = new Map<string, ShiftProductItem>()
+    allProducts.forEach(p => byId.set(p.id, p))
+    base.forEach(p => byId.set(p.id, p))
+
+    const recentInOrder: ShiftProductItem[] = []
+    const seen = new Set<string>()
+    for (const id of recentlyAssignedIds) {
+      const p = byId.get(id)
+      if (p && !seen.has(p.id)) {
+        seen.add(p.id)
+        recentInOrder.push(p)
+      }
+    }
+    for (const p of base) {
+      if (!seen.has(p.id)) {
+        seen.add(p.id)
+        recentInOrder.push(p)
+      }
+    }
+    return recentInOrder.slice(0, 12)
+  }, [shiftPinnedProducts, recentProducts, allProducts, recentlyAssignedIds])
+
+  useEffect(() => {
+    setSelectedProduct(null)
+    setQuery('')
+  }, [activeSnap?.id, activeSnap?.shiftId])
+
+  const suggestions = useMemo(() => {
+    const q = normalizeViText(query.trim())
+    if (!q) return []
+    const tokens = q.split(/\s+/).filter(Boolean)
+    const rankList = (list: ShiftProductItem[]) =>
+      list
+        .map(p => {
+          const aliasNorm = normalizeViText(p.aliases)
+          const skuNorm = normalizeViText(p.sku)
+          const nameNorm = normalizeViText(p.name)
+          const combined = `${aliasNorm} ${skuNorm} ${nameNorm}`
+          if (!tokens.every(t => combined.includes(t))) return { p, score: 0 }
+          let score = 10
+          if (aliasNorm === q) score += 100
+          else if (aliasNorm.includes(q)) score += 60
+          if (skuNorm === q) score += 90
+          else if (skuNorm.includes(q)) score += 50
+          if (nameNorm.includes(q)) score += 30
+          return { p, score }
+        })
+        .filter(x => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map(x => x.p)
+
+    if (shiftPinnedProducts.length > 0) {
+      const inShift = rankList(shiftPinnedProducts)
+      if (inShift.length > 0) return inShift
+    }
+    return rankList(allProducts)
+  }, [query, shiftPinnedProducts, allProducts])
+
+  if (!visible) return null
+
+  const parsedQty = parseFloat(qtyStr)
+  const validQty = Number.isFinite(parsedQty) && parsedQty > 0 ? Math.round(parsedQty * 100) / 100 : 0
+
+  const handleAssign = (direction: 'in' | 'out') => {
+    if (!activeSnap || !selectedProduct || validQty <= 0) return
+    const assignedId = selectedProduct.id
+    onAssignSnap(activeSnap, {
+      product: selectedProduct,
+      direction,
+      quantity: validQty,
+      unit: selectedUnit,
+      notes: notes.trim(),
+    })
+    setRecentlyAssignedIds(prev => [assignedId, ...prev.filter(id => id !== assignedId)])
+    setSelectedProduct(null)
+    setQtyStr('')
+    setNotes('')
+    setQuery('')
+  }
+
+  const isTypingSearch = isSearchFocused || query.trim().length > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/80 p-0 sm:p-4">
+      <div
+        className="w-full max-w-md bg-[#0f172a] border-t sm:border border-slate-700 rounded-t-2xl sm:rounded-2xl overflow-hidden flex flex-col max-h-[92dvh]"
+        style={viewportHeight ? { maxHeight: `${Math.round(viewportHeight * 0.94)}px` } : undefined}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 bg-[#1e293b] border-b border-slate-700">
+          <div>
+            <div className="text-sm font-extrabold text-white flex items-center gap-2">
+              <span>Ảnh Chụp Nhanh Chờ Gán</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-xs font-black">
+                {snaps.length}
+              </span>
+            </div>
+            <div className="text-[11px] text-slate-400">
+              Chụp trước lúc bận — gán SP &amp; số lượng khi giãn nhịp
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void onCaptureMore()}
+              className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 border border-sky-400/40 text-sky-300 text-xs font-extrabold flex items-center gap-1"
+            >
+              <Camera className="w-3.5 h-3.5" />
+              <span>Chụp thêm</span>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {snaps.length === 0 ? (
+          <div className="p-8 text-center space-y-3">
+            <div className="text-xs font-semibold text-slate-400">
+              Không còn ảnh nào trong hàng chờ.
+            </div>
+            <button
+              type="button"
+              onClick={() => void onCaptureMore()}
+              className="px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-extrabold inline-flex items-center gap-1.5"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Chụp Nhanh Ngay</span>
+            </button>
+          </div>
+        ) : (
+          <>
+          <div className="p-3 overflow-y-auto overscroll-contain space-y-3 flex-1">
+            {/* Dải thumbnail các ảnh chờ (ẩn khi đang gõ tìm kiếm để không bị bàn phím che) */}
+            {!isTypingSearch && (
+              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+                {snaps.map((s, idx) => {
+                  const isSel = activeSnap?.id === s.id
+                  const t = new Date(s.capturedAt).toLocaleTimeString('vi-VN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    second: '2-digit',
+                    hour12: false,
+                  })
+                  return (
+                    <div
+                      key={s.id}
+                      onClick={() => setSelectedId(s.id)}
+                      className={`relative shrink-0 w-20 rounded-xl overflow-hidden border-2 cursor-pointer transition ${
+                        isSel ? 'border-amber-400 ring-2 ring-amber-400/30' : 'border-slate-700 opacity-75'
+                      }`}
+                    >
+                      <img
+                        src={s.photo.dataUrl}
+                        alt={`snap-${idx}`}
+                        className="w-20 h-16 object-cover"
+                      />
+                      <div className="bg-[#1e293b] text-[10px] font-bold text-slate-300 text-center py-0.5">
+                        {t}
+                      </div>
+                      <div className="bg-[#0f172a] text-[9px] font-extrabold text-indigo-300 text-center px-1 pb-0.5 truncate">
+                        {s.jobName || 'Công việc'}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={e => {
+                          e.stopPropagation()
+                          void onDeleteSnap(s.id)
+                        }}
+                        title="Xóa ảnh này"
+                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/75 text-rose-300 flex items-center justify-center"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* Công việc của ảnh đang chọn + Đổi CV + Lưu thẳng Album */}
+            {!isTypingSearch && activeSnap && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#1e293b] border border-indigo-500/40">
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[10px] font-bold text-slate-400">THUỘC CÔNG VIỆC:</div>
+                    <div className="text-xs font-extrabold text-indigo-200 truncate">
+                      {activeSnap.jobName || 'Công việc'}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onSaveToShiftAlbum(activeSnap)}
+                    className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-300 text-[11px] font-extrabold flex items-center gap-1 shrink-0"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Lưu thẳng Album</span>
+                  </button>
+                </div>
+
+                {openShifts.length > 1 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                    <span className="text-[10px] font-bold text-slate-500 shrink-0">Đổi CV:</span>
+                    {openShifts.map(sh => {
+                      const isCur = sh.id === activeSnap.shiftId
+                      const shName = sh.summary_data?.job_name || sh.notes || 'Công việc'
+                      return (
+                        <button
+                          key={sh.id}
+                          type="button"
+                          onClick={() => void onChangeSnapShift(activeSnap.id, sh)}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap border transition ${
+                            isCur
+                              ? 'bg-indigo-600 border-indigo-400 text-white'
+                              : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                          }`}
+                        >
+                          {shName}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Xem lớn ảnh đang chọn (ẩn khi đang gõ tìm kiếm, thu gọn khi đã chọn SP) */}
+            {!isTypingSearch && activeSnap && (
+              <div
+                className={`rounded-xl overflow-hidden border border-slate-700 bg-black/50 flex items-center justify-center transition-all ${
+                  selectedProduct ? 'max-h-28' : 'max-h-44'
+                }`}
+              >
+                <img
+                  src={activeSnap.photo.dataUrl}
+                  alt="preview"
+                  className={`${selectedProduct ? 'max-h-28' : 'max-h-44'} w-auto object-contain`}
+                />
+              </div>
+            )}
+
+            {/* Chọn nhanh SP theo Công việc của ảnh */}
+            {!isTypingSearch && quickPickProducts.length > 0 && (
+              <div className="space-y-1">
+                <div className="text-[11px] font-bold text-slate-400">
+                  {shiftPinnedProducts.length > 0
+                    ? `Sản phẩm của công việc (${shiftPinnedProducts.length}):`
+                    : 'Chọn nhanh sản phẩm vừa làm:'}
+                </div>
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                  {quickPickProducts.map(rp => {
+                    const active = selectedProduct?.id === rp.id
+                    return (
+                      <button
+                        key={rp.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedProduct(rp)
+                          setIsSearchFocused(false)
+                          searchInputRef.current?.blur()
+                        }}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold whitespace-nowrap border transition ${
+                          active
+                            ? 'bg-indigo-600 border-indigo-400 text-white'
+                            : 'bg-[#1e293b] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        {rp.aliases ? `${rp.aliases} • ` : ''}
+                        {rp.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Tìm SP với Autocomplete (hiển thị gợi ý ngay phía trên ô gõ để không bị bàn phím che) */}
+            <div className="relative space-y-1">
+              {suggestions.length > 0 && (
+                <div className="rounded-xl bg-[#1e293b] border border-indigo-500/40 max-h-56 overflow-y-auto divide-y divide-slate-700/60">
+                  {suggestions.map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onMouseDown={e => e.preventDefault()}
+                      onClick={() => {
+                        setSelectedProduct(p)
+                        setQuery('')
+                        setIsSearchFocused(false)
+                        searchInputRef.current?.blur()
+                      }}
+                      className="w-full px-3 py-2 text-left hover:bg-slate-800 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold text-white break-words leading-snug">{p.name}</div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          {p.aliases && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[10px] font-extrabold">
+                              {p.aliases}
+                            </span>
+                          )}
+                          {p.sku && (
+                            <span className="text-[10px] font-bold text-indigo-400">{p.sku}</span>
+                          )}
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-bold text-slate-400 shrink-0">Chọn</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#1e293b] border border-slate-700 focus-within:border-indigo-500">
+                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={query}
+                  onFocus={() => setIsSearchFocused(true)}
+                  onBlur={() => setTimeout(() => setIsSearchFocused(false), 120)}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Gõ tên viết tắt (alias), SKU, tên SP..."
+                  className="w-full bg-transparent text-xs text-white placeholder-slate-500 focus:outline-none"
+                />
+                {query && (
+                  <button
+                    type="button"
+                    onMouseDown={e => e.preventDefault()}
+                    onClick={() => setQuery('')}
+                    className="text-slate-400 hover:text-white"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* SP đang chọn + ĐVT + Số lượng */}
+            {selectedProduct && (
+              <div className="rounded-xl p-3 bg-[#1e293b] border border-indigo-500/40 space-y-2.5">
+                <div className="text-xs font-extrabold text-white">{selectedProduct.name}</div>
+
+                {unitOptions.length > 0 && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                    <span className="text-[11px] font-bold text-slate-400 shrink-0">ĐVT:</span>
+                    {unitOptions.map(u => (
+                      <button
+                        key={u}
+                        type="button"
+                        onClick={() => setSelectedUnit(u)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap border ${
+                          selectedUnit === u
+                            ? 'bg-indigo-600 border-indigo-400 text-white'
+                            : 'bg-[#0f172a] border-slate-700 text-slate-300'
+                        }`}
+                      >
+                        {u}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={qtyStr}
+                    onChange={e => setQtyStr(e.target.value)}
+                    placeholder="Nhập số lượng..."
+                    className="flex-1 px-3 py-2 rounded-xl bg-[#0f172a] border border-slate-700 text-sm font-black text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                  />
+                  {[1, 5, 10, 20].map(d => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() =>
+                        setQtyStr(prev => {
+                          const c = parseFloat(prev || '0') || 0
+                          return String(Math.round((c + d) * 100) / 100)
+                        })
+                      }
+                      className="px-2.5 py-2 rounded-lg bg-[#0f172a] border border-slate-700 text-indigo-300 text-xs font-extrabold"
+                    >
+                      +{d}
+                    </button>
+                  ))}
+                </div>
+
+                <input
+                  type="text"
+                  value={notes}
+                  onChange={e => setNotes(e.target.value)}
+                  placeholder="Ghi chú (tùy chọn)..."
+                  className="w-full px-3 py-1.5 rounded-xl bg-[#0f172a] border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none"
+                />
+              </div>
+            )}
+          </div>
+          {selectedProduct && (
+            <div className="grid grid-cols-2 gap-2 px-3 py-2.5 bg-[#0f172a] border-t border-slate-800 shrink-0">
+              <button
+                type="button"
+                disabled={validQty <= 0}
+                onClick={() => handleAssign('in')}
+                className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 ${
+                  validQty <= 0
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 text-white'
+                }`}
+              >
+                <ArrowDownCircle className="w-4 h-4" />
+                <span>NHẬP KHO (+)</span>
+              </button>
+              <button
+                type="button"
+                disabled={validQty <= 0}
+                onClick={() => handleAssign('out')}
+                className={`py-2.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-1.5 ${
+                  validQty <= 0
+                    ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
+                    : 'bg-rose-600 hover:bg-rose-500 text-white'
+                }`}
+              >
+                <ArrowUpCircle className="w-4 h-4" />
+                <span>XUẤT KHO (-)</span>
+              </button>
+            </div>
+          )}
+        </>
+        )}
+      </div>
     </div>
   )
 }

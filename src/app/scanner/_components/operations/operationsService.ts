@@ -658,8 +658,8 @@ export async function getWarehouseProducts(systemCode?: string): Promise<ShiftPr
         .select('id, name, sku, unit, weight_kg, aliases, internal_code, internal_name, system_type, system_code')
         .or(`system_type.eq.${cleanSys},system_code.eq.${cleanSys}`)
         .order('name', { ascending: true }),
-      (supabase.from('units') as any).select('id, name, weight_kg'),
-      (supabase.from('product_units') as any).select('product_id, unit_id, conversion_rate, weight_kg'),
+      (supabase.from('units') as any).select('id, name').limit(1000),
+      (supabase.from('product_units') as any).select('product_id, unit_id, conversion_rate').limit(5000),
     ])
 
     let rawProducts = prodRes.data || []
@@ -671,48 +671,53 @@ export async function getWarehouseProducts(systemCode?: string): Promise<ShiftPr
       rawProducts = fallbackProd.data || []
     }
 
-    const unitsMap = new Map<string, { name: string; weight_kg?: number | null }>()
+    const unitsMap = new Map<string, { name: string }>()
     ;(unitsRes.data || []).forEach((u: any) => {
-      unitsMap.set(u.id, { name: u.name, weight_kg: u.weight_kg })
+      unitsMap.set(u.id, { name: u.name })
     })
 
-    const prodUnitsMap = new Map<string, string[]>()
-    ;(puRes.data || []).forEach((pu: any) => {
-      const uInfo = unitsMap.get(pu.unit_id)
-      if (!uInfo) return
-      const weight = pu.weight_kg || uInfo.weight_kg || pu.conversion_rate
-      const formatted = formatUnitWeight(uInfo.name, weight)
-      const arr = prodUnitsMap.get(pu.product_id) || []
-      if (!arr.includes(formatted)) arr.push(formatted)
-      prodUnitsMap.set(pu.product_id, arr)
-    })
+    const prodUnitsList = puRes.data || []
 
     const list: ShiftProductItem[] = rawProducts.map((p: any) => {
-      const baseUnit = formatUnitWeight(p.unit || 'Thùng', p.weight_kg || 20)
-      const extraUnits = prodUnitsMap.get(p.id) || []
-      const combined = Array.from(
-        new Set([
-          baseUnit,
-          ...extraUnits,
-          'Thùng (20kg)',
-          'Thùng (18kg)',
-          'Thùng (10kg)',
-          'Kg',
-          'Sọt',
-          'Túi',
-          'Khay',
-        ].filter(Boolean))
-      )
-      const defUnit = pickDefaultProductUnit(combined, baseUnit)
-      // Đưa defaultUnit lên đầu danh sách units
-      const sortedUnits = [defUnit, ...combined.filter(u => u !== defUnit)]
+      const baseUnit = (p.unit || '').trim()
+      let baseWeight = Number(p.weight_kg) || 0
+      const normBase = baseUnit.toLowerCase()
+      if (baseWeight <= 0 && ['kg', 'kilogram'].includes(normBase)) {
+        baseWeight = 1
+      }
+
+      const availableUnitsSet = new Set<string>()
+      const formattedBaseUnit = baseUnit ? formatUnitWeight(baseUnit, baseWeight) : 'Kg'
+      if (baseUnit) availableUnitsSet.add(formattedBaseUnit)
+
+      const pUnitsOfProduct = prodUnitsList.filter((pu: any) => pu.product_id === p.id)
+      pUnitsOfProduct.forEach((pu: any) => {
+        const uInfo = unitsMap.get(pu.unit_id)
+        if (!uInfo) return
+        const normU = uInfo.name.trim().toLowerCase()
+        if (normU === normBase) return
+        const weight = (Number(pu.conversion_rate) || 1) * (baseWeight || 1)
+        availableUnitsSet.add(formatUnitWeight(uInfo.name, weight))
+      })
+
+      const rawList = Array.from(availableUnitsSet)
+      const sortedUnits = rawList.sort((a, b) => {
+        const aIs = a.toLowerCase().includes('thùng') || a.toLowerCase().startsWith('thung')
+        const bIs = b.toLowerCase().includes('thùng') || b.toLowerCase().startsWith('thung')
+        if (aIs && !bIs) return -1
+        if (!aIs && bIs) return 1
+        return 0
+      })
+
+      const defUnit = sortedUnits.length > 0 ? pickDefaultProductUnit(sortedUnits, formattedBaseUnit) : formattedBaseUnit
+      const finalUnits = sortedUnits.length > 0 ? [defUnit, ...sortedUnits.filter(u => u !== defUnit)] : [defUnit]
 
       return {
         id: p.id,
         name: p.name || 'Sản phẩm',
         sku: p.sku || '',
         unit: defUnit,
-        units: sortedUnits,
+        units: finalUnits,
         defaultUnit: defUnit,
         aliases: p.aliases || null,
         internal_code: p.internal_code || null,
