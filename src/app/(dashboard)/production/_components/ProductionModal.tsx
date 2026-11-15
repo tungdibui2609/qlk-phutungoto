@@ -10,29 +10,11 @@ import { extractWeightFromName, MAIN_PACKAGE_UNITS, normalizeUnit, convertUnit }
 import { formatQuantityFull } from '@/lib/numberUtils'
 import { productionLoanService } from '@/services/production-inventory/productionLoanService'
 
-interface ProductionLot {
-    id?: string
-    lot_code: string
-    product_id: string | null
-    weight_per_unit: number
-    planned_quantity?: number | null
-    actual_quantity?: number // Added for display
-    inventory_quantity?: number // Added for display
-    unit?: string // Added for display (Product base unit)
-    product_name?: string // UI helper
-    conversion_rules?: { factor: number; unit_name: string; ref_unit_name: string }[] // Linked rules
-    quantity_by_unit?: { qty: number; current_qty?: number; unit: string }[] // Linked units stats
-    is_locked?: boolean // Locked status
-    production_date?: string | null // Production date
-}
+import type { ProductionLot, ProductionModalProps } from './production-modal/types'
+import { ProductionGeneralInfoSection } from './production-modal/ProductionGeneralInfoSection'
+import { ProductionAnalysisTab } from './production-modal/ProductionAnalysisTab'
+import { EditChildLotModal } from './production-modal/EditChildLotModal'
 
-interface ProductionModalProps {
-    isOpen: boolean
-    onClose: () => void
-    onSuccess: () => void
-    editItem?: any | null
-    readOnly?: boolean
-}
 
 export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, readOnly = false }: ProductionModalProps) {
     const { showToast, showConfirm } = useToast()
@@ -1362,291 +1344,47 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                         {!isLocked && (
                             <>
                                 {/* Section 1: General Info */}
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div className="lg:col-span-2 space-y-6">
-                                <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
-                                    <div className="flex items-center justify-between text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                        <div className="flex items-center gap-2">
-                                            <Info size={14} className="text-orange-500" /> Thông tin cơ bản
-                                        </div>
-                                        {!isLocked && (
-                                            <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-xl">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setProductionType('NEW')}
-                                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all ${productionType === 'NEW' ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                                                >
-                                                    Sản xuất mới
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setProductionType('RE_SORT')}
-                                                    className={`px-4 py-1.5 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 ${productionType === 'RE_SORT' ? 'bg-orange-500 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                                                >
-                                                    Phân loại / Lựa lại
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                    
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        {!isLocked && (
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold text-stone-500 flex items-center justify-between">
-                                                    <span>Mã sản xuất</span>
-                                                    <button type="button" onClick={generateAutoCode} className="text-orange-600 hover:underline flex items-center gap-1 text-[10px]">
-                                                        <Wand2 size={12} /> Tự tạo
-                                                    </button>
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={code}
-                                                    onChange={e => setCode(e.target.value.toUpperCase())}
-                                                    className="w-full px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
-                                                    required
-                                                />
-                                            </div>
-                                        )}
-                                        <div className={isLocked ? 'md:col-span-1 space-y-2' : 'space-y-2'}>
-                                            <label className="text-xs font-bold text-stone-500">Đối tác / Khách hàng</label>
-                                            {isLocked ? (
-                                                <div className="px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 font-bold text-sm text-stone-800 dark:text-white border border-stone-100 dark:border-zinc-700">
-                                                    {customers.find(c => c.id === customerId)?.name || 'Chưa xác định'}
-                                                </div>
-                                            ) : (
-                                                <select
-                                                    value={customerId}
-                                                    onChange={e => setCustomerId(e.target.value)}
-                                                    className="w-full px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all appearance-none"
-                                                >
-                                                    <option value="">-- Chọn khách hàng --</option>
-                                                    {customers.map(c => (
-                                                        <option key={c.id} value={c.id}>{c.name}</option>
-                                                    ))}
-                                                </select>
-                                            )}
-                                        </div>
-                                        <div className="md:col-span-2 space-y-2">
-                                            <label className="text-xs font-bold text-stone-500">Nội dung sản xuất</label>
-                                            {isLocked ? (
-                                                <div className="px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 font-black text-lg text-stone-900 dark:text-white border border-stone-100 dark:border-zinc-700">
-                                                    {name}
-                                                </div>
-                                            ) : (
-                                                <input
-                                                    type="text"
-                                                    value={name}
-                                                    onChange={e => setName(e.target.value)}
-                                                    placeholder="VD: Sản xuất đơn hàng tháng 3..."
-                                                    className="w-full px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-orange-100 outline-none transition-all"
-                                                    required
-                                                />
-                                            )}
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Raw Material Selection - NEW SECTION */}
-                                {!isLocked && (
-                                    <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6">
-                                        <div className="flex items-center justify-between">
-                                            <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                                <Scale size={14} className="text-emerald-500" /> Định mức nguyên liệu đầu vào
-                                            </div>
-                                            
-                                            <div className="flex bg-stone-100 dark:bg-zinc-800 p-1 rounded-xl">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setInputSource('MANUAL')}
-                                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${inputSource === 'MANUAL' ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                                                >
-                                                    Tự do
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setInputSource('FRESH_MATERIAL')}
-                                                    className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${inputSource === 'FRESH_MATERIAL' ? 'bg-emerald-500 text-white shadow-sm' : 'text-stone-400 hover:text-stone-600'}`}
-                                                >
-                                                    <Leaf size={12} /> Từ lô NLT
-                                                </button>
-                                            </div>
-                                        </div>
-                                        
-                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                            {inputSource === 'FRESH_MATERIAL' && (
-                                                <>
-                                                    <div className="space-y-2 relative md:col-span-1 lg:col-span-1">
-                                                        <label className="text-xs font-bold text-stone-500">Chỉ định Lô NLT</label>
-                                                        <select
-                                                            value={fmBatchId || ''}
-                                                            onChange={e => { setFmBatchId(e.target.value || null); setFmStageId(null); }}
-                                                            className="w-full px-4 py-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all appearance-none text-emerald-800 dark:text-emerald-400"
-                                                        >
-                                                            <option value="">
-                                                                {fmBatches.length > 0 ? '-- Chọn lô --' : '-- Không có lô nào đang mở --'}
-                                                            </option>
-                                                            {fmBatches.map(b => (
-                                                                <option key={b.id} value={b.id}>{b.batch_code} ({b.products?.name})</option>
-                                                            ))}
-                                                        </select>
-                                                    </div>
-                                                    
-                                                    <div className="space-y-2 relative md:col-span-1 lg:col-span-1">
-                                                        <label className="text-xs font-bold text-stone-500 flex items-center justify-between">
-                                                            <span>Chọn Giai đoạn lấy kết quả</span>
-                                                            {fmStageId && (
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={refreshStageData}
-                                                                    disabled={isRefreshingFm}
-                                                                    className="text-emerald-600 hover:text-emerald-700 p-1 rounded-lg hover:bg-emerald-50 transition-all flex items-center gap-1 group"
-                                                                    title="Làm mới số lượng từ NLT"
-                                                                >
-                                                                    <RotateCw size={12} className={`${isRefreshingFm ? 'animate-spin' : 'group-active:rotate-180 transition-transform duration-500'}`} />
-                                                                    <span className="text-[10px] font-bold">Làm mới</span>
-                                                                </button>
-                                                            )}
-                                                        </label>
-                                                        <div className="relative">
-                                                            <select
-                                                                value={fmStageId || ''}
-                                                                onChange={e => handleStageSelect(e.target.value)}
-                                                                disabled={!fmBatchId || isRefreshingFm}
-                                                                className="w-full px-4 py-3 rounded-2xl bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-800/30 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all appearance-none text-emerald-800 dark:text-emerald-400 disabled:opacity-50"
-                                                            >
-                                                                <option value="">-- Chọn giai đoạn --</option>
-                                                                {fmStages.map(s => (
-                                                                    <option key={s.id} value={s.id}>{s.stage_name}</option>
-                                                                ))}
-                                                            </select>
-                                                            {isRefreshingFm && (
-                                                                <div className="absolute right-10 top-1/2 -translate-y-1/2">
-                                                                    <Loader2 size={16} className="animate-spin text-emerald-500" />
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            )}
-                                            
-                                            <div className={`${inputSource === 'FRESH_MATERIAL' ? 'md:col-span-2 lg:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-stone-100 dark:border-zinc-800' : 'md:col-span-3 grid grid-cols-1 md:grid-cols-3 gap-6'} relative`}>
-                                                <div className="md:col-span-2 space-y-2 relative">
-                                                    <label className="text-xs font-bold text-stone-500">Loại nguyên liệu tiêu hao</label>
-                                                <div className="relative">
-                                                    <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-stone-400" />
-                                                    <input
-                                                        type="text"
-                                                        value={inputSearchTerm}
-                                                        onChange={(e) => {
-                                                            setInputSearchTerm(e.target.value)
-                                                            setIsInputSearchOpen(true)
-                                                        }}
-                                                        onFocus={() => setIsInputSearchOpen(true)}
-                                                        placeholder="Tìm sản phẩm nguyên liệu..."
-                                                        className="w-full pl-12 pr-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-bold focus:ring-4 focus:ring-emerald-100 outline-none transition-all"
-                                                    />
-                                                </div>
-                                                
-                                                {isInputSearchOpen && inputSearchTerm && (
-                                                    <div className="absolute left-0 right-0 top-full mt-2 bg-white dark:bg-zinc-800 rounded-2xl shadow-xl border border-stone-100 dark:border-zinc-700 z-[110] max-h-60 overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
-                                                        {products
-                                                            .filter(p => p.name.toLowerCase().includes(inputSearchTerm.toLowerCase()) || p.sku?.toLowerCase().includes(inputSearchTerm.toLowerCase()))
-                                                            .map(p => (
-                                                                <button
-                                                                    key={p.id}
-                                                                    type="button"
-                                                                    onClick={() => {
-                                                                        setInputProductId(p.id)
-                                                                        setInputProductName(p.name)
-                                                                        setInputSearchTerm(p.name)
-                                                                        setInputUnit(p.unit || 'Kg')
-                                                                        setIsInputSearchOpen(false)
-                                                                    }}
-                                                                    className="w-full text-left px-5 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 flex flex-col"
-                                                                >
-                                                                    <span className="font-bold text-sm text-stone-800 dark:text-white">{p.name}</span>
-                                                                    <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">{p.sku} • {p.unit}</span>
-                                                                </button>
-                                                            ))}
-                                                        {products.length === 0 && (
-                                                            <div className="px-5 py-4 text-center text-xs text-stone-400 font-medium italic">
-                                                                Không tìm thấy sản phẩm nào. Vui lòng chọn kho đích trước.
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            <div className="space-y-2">
-                                                <label className="text-xs font-bold text-stone-500">Số lượng ({inputUnit || '---'})</label>
-                                                <input
-                                                    type="number"
-                                                    value={inputQuantity || ''}
-                                                    onChange={e => setInputQuantity(parseFloat(e.target.value) || 0)}
-                                                    className="w-full px-4 py-3 rounded-2xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 font-black text-lg focus:ring-4 focus:ring-emerald-100 outline-none transition-all"
-                                                    placeholder="VD: 10000"
-                                                />
-                                            </div>
-                                        </div>
-                                    </div>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="space-y-6">
-                                <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[28px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-6 h-full">
-                                    <div className="flex items-center gap-2 text-stone-400 font-black text-[10px] uppercase tracking-widest">
-                                        <Activity size={14} className="text-orange-500" /> Trạng thái & Thời gian
-                                    </div>
-                                    <div className="space-y-4">
-                                        {isLocked ? (
-                                            <div className={`px-6 py-4 rounded-2xl font-black text-center uppercase tracking-widest text-sm border-2 ${status === 'DONE' ? 'bg-emerald-500/10 border-emerald-500 text-emerald-600' : 'bg-orange-500/10 border-orange-500 text-orange-600'}`}>
-                                                {status === 'DONE' ? 'Đã hoàn thành' : 'Đang triển khai'}
-                                            </div>
-                                        ) : (
-                                            <div className="flex p-1 bg-stone-100 dark:bg-zinc-800 rounded-2xl">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setStatus('IN_PROGRESS')}
-                                                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${status === 'IN_PROGRESS' ? 'bg-white dark:bg-zinc-700 text-orange-600 shadow-sm' : 'text-stone-400'}`}
-                                                >
-                                                    Đang làm
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setStatus('DONE')}
-                                                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${status === 'DONE' ? 'bg-white dark:bg-zinc-700 text-emerald-600 shadow-sm' : 'text-stone-400'}`}
-                                                >
-                                                    Hoàn thành
-                                                </button>
-                                            </div>
-                                        )}
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-stone-400 uppercase">Bắt đầu</label>
-                                                {isLocked ? (
-                                                    <div className="text-xs font-black text-stone-800 dark:text-white px-1">
-                                                        {startDate ? new Date(startDate).toLocaleDateString('vi-VN') : '---'}
-                                                    </div>
-                                                ) : (
-                                                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 text-xs font-bold" />
-                                                )}
-                                            </div>
-                                            <div className="space-y-1">
-                                                <label className="text-[10px] font-bold text-stone-400 uppercase">Kết thúc</label>
-                                                {isLocked ? (
-                                                    <div className="text-xs font-black text-stone-800 dark:text-white px-1">
-                                                        {endDate ? new Date(endDate).toLocaleDateString('vi-VN') : '---'}
-                                                    </div>
-                                                ) : (
-                                                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full px-3 py-2 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-100 dark:border-zinc-700 text-xs font-bold" />
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+                                <ProductionGeneralInfoSection
+                                    isLocked={isLocked}
+                                    code={code}
+                                    setCode={setCode}
+                                    generateAutoCode={generateAutoCode}
+                                    name={name}
+                                    setName={setName}
+                                    productionType={productionType}
+                                    setProductionType={setProductionType}
+                                    status={status}
+                                    setStatus={setStatus}
+                                    customerId={customerId}
+                                    setCustomerId={setCustomerId}
+                                    customers={customers}
+                                    startDate={startDate}
+                                    setStartDate={setStartDate}
+                                    endDate={endDate}
+                                    setEndDate={setEndDate}
+                                    inputSource={inputSource}
+                                    setInputSource={setInputSource}
+                                    inputSearchTerm={inputSearchTerm}
+                                    setInputSearchTerm={setInputSearchTerm}
+                                    isInputSearchOpen={isInputSearchOpen}
+                                    setIsInputSearchOpen={setIsInputSearchOpen}
+                                    products={products}
+                                    setInputProductId={setInputProductId}
+                                    setInputProductName={setInputProductName}
+                                    inputQuantity={inputQuantity}
+                                    setInputQuantity={setInputQuantity}
+                                    inputUnit={inputUnit}
+                                    setInputUnit={setInputUnit}
+                                    fmStages={fmStages}
+                                    fmStageId={fmStageId}
+                                    setFmStageId={setFmStageId}
+                                    fmBatches={fmBatches}
+                                    fmBatchId={fmBatchId}
+                                    setFmBatchId={setFmBatchId}
+                                    isRefreshingFm={isRefreshingFm}
+                                    refreshStageData={refreshStageData}
+                                    handleStageSelect={handleStageSelect}
+                                />
 
                         {/* Section 2: Warehouse Filter (Global for items) */}
                         {!isLocked && (
@@ -1728,249 +1466,15 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
                             )}
 
                             {isLocked && mainTab === 'STATS' && activeTab === 'analysis' && analysisSummary ? (
-                                <div className="space-y-6 animate-in slide-in-from-bottom-2 duration-300">
-                                    {/* Progress Grid */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-2 bg-emerald-500/10 rounded-lg">
-                                                        <PieChart size={18} className="text-emerald-600" />
-                                                    </div>
-                                                    <span className="text-xs font-black uppercase tracking-widest text-stone-500">Tiến độ sản xuất</span>
-                                                </div>
-                                                <span className="text-lg font-black text-emerald-600">{summary.rate.toFixed(1)}%</span>
-                                            </div>
-                                            <div className="w-full bg-stone-100 dark:bg-zinc-700 h-3 rounded-full overflow-hidden">
-                                                <div className="h-full bg-emerald-500 transition-all duration-1000" style={{ width: `${Math.min(100, summary.rate)}%` }} />
-                                            </div>
-                                            <div className="flex justify-between text-[10px] font-bold text-stone-400">
-                                                <span>THỰC TẾ: {summary.actual.toLocaleString('vi-VN')} KG</span>
-                                                <span>KẾ HOẠCH: {summary.planned.toLocaleString('vi-VN')} KG</span>
-                                            </div>
-                                        </div>
-
-                                        <div className="p-6 bg-white dark:bg-zinc-800/40 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-sm space-y-4">
-                                            <div className="flex items-center justify-between">
-                                                <div className="flex items-center gap-2">
-                                                    <div className="p-2 bg-blue-500/10 rounded-lg">
-                                                        <Calendar size={18} className="text-blue-600" />
-                                                    </div>
-                                                    <span className="text-xs font-black uppercase tracking-widest text-stone-500">Tiến độ thời gian</span>
-                                                </div>
-                                                <span className="text-lg font-black text-blue-600">{analysisSummary.timeProgress.toFixed(1)}%</span>
-                                            </div>
-                                            <div className="w-full bg-stone-100 dark:bg-zinc-700 h-3 rounded-full overflow-hidden">
-                                                <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${analysisSummary.timeProgress}%` }} />
-                                            </div>
-                                            <div className="flex justify-between text-[10px] font-bold text-stone-400">
-                                                <span>BẮT ĐẦU: {startDate ? new Date(startDate).toLocaleDateString('vi-VN') : '---'}</span>
-                                                <span>KẾ THÚC: {endDate ? new Date(endDate).toLocaleDateString('vi-VN') : '---'}</span>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    {/* Material Analysis (Production Loans) */}
-                                    <div className="p-8 bg-black/5 dark:bg-white/5 rounded-[32px] border border-stone-200 dark:border-zinc-800">
-                                        <div className="flex items-center gap-3 mb-6">
-                                            <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-emerald-600">
-                                                <TrendingUp size={24} />
-                                            </div>
-                                            <div>
-                                                <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Phân tích tỉ lệ tiêu hao Vật tư</h3>
-                                                <p className="text-xs text-stone-500 font-bold italic">Dựa trên {analysisSummary?.actualTons.toFixed(2)} tấn thành phẩm thực tế</p>
-                                            </div>
-                                        </div>
-
-                                        {!analysisSummary || analysisSummary.materials.length === 0 ? (
-                                            <div className="p-12 text-center text-stone-400 font-bold bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-stone-300 dark:border-zinc-700">
-                                                Chưa có dữ liệu cấp phát vật tư để phân tích.
-                                            </div>
-                                        ) : (
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {analysisSummary.materials.map((m, idx) => (
-                                                    <div key={idx} className="bg-white dark:bg-zinc-800 p-6 rounded-2xl border border-stone-100 dark:border-zinc-700 shadow-sm flex flex-col gap-3 relative overflow-hidden group">
-                                                        <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
-                                                            <Package size={48} />
-                                                        </div>
-                                                        <div className="flex flex-col">
-                                                            <span className="text-[10px] font-black text-stone-400 uppercase tracking-tighter truncate">{m.name}</span>
-                                                            <span className="text-[9px] font-mono text-stone-300">{m.sku}</span>
-                                                        </div>
-                                                        
-                                                        <div className="flex items-center gap-4 mt-2">
-                                                            <div className="flex-1 flex flex-col items-center">
-                                                                <span className="text-[10px] font-bold text-stone-400 uppercase">TIÊU THỤ</span>
-                                                                <span className="text-sm font-black text-stone-700 dark:text-stone-200">{formatQuantityFull(m.total)} <span className="text-[10px]">{m.unit}</span></span>
-                                                            </div>
-                                                            <ArrowRight size={16} className="text-stone-200" />
-                                                            <div className="flex-1 flex flex-col items-center">
-                                                                <span className="text-[10px] font-black text-emerald-600 uppercase">TỈ LỆ / TẤN</span>
-                                                                <span className="text-lg font-black text-emerald-600">
-                                                                    {m.perTon.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
-                                                                    <span className="text-[10px] ml-1 font-bold">{m.unit}</span>
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Daily Productivity Analysis */}
-                                    <div className="p-8 bg-emerald-500/5 dark:bg-emerald-500/10 rounded-[32px] border border-emerald-100 dark:border-emerald-900/20">
-                                        <div className="flex items-center justify-between mb-8">
-                                            <div className="flex items-center gap-3">
-                                                <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-emerald-600">
-                                                    <Activity size={24} />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Năng suất sản xuất hàng ngày</h3>
-                                                    <p className="text-xs text-stone-500 font-bold italic">Thống kê sản lượng thực tế theo ngày nhập kho</p>
-                                                </div>
-                                            </div>
-                                            
-                                            <div className="flex items-center gap-4">
-                                                <div className="text-right">
-                                                    <div className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Trung bình/Ngày</div>
-                                                    <div className="text-sm font-black text-emerald-600">
-                                                        {analysisSummary.avgOutput.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} Kg
-                                                    </div>
-                                                </div>
-                                                <div className="w-px h-8 bg-stone-200 dark:bg-zinc-800" />
-                                                <div className="text-right">
-                                                    <div className="text-[10px] font-black text-stone-400 uppercase tracking-widest">Ngày cao điểm</div>
-                                                    <div className="text-sm font-black text-orange-600">
-                                                        {analysisSummary.peakDay ? formatQuantityFull(analysisSummary.peakDay.quantity) : 0} Kg
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {dailyStats.length === 0 ? (
-                                            <div className="p-12 text-center text-stone-400 font-bold bg-white/50 dark:bg-zinc-900/50 rounded-2xl border border-dashed border-stone-300 dark:border-zinc-700">
-                                                Chưa có dữ liệu sản lượng hàng ngày.
-                                            </div>
-                                        ) : (
-                                            <div className="flex flex-col lg:flex-row gap-8">
-                                                {/* Daily Bar Chart with Grid */}
-                                                <div className="flex-1 bg-white dark:bg-zinc-900 p-8 rounded-[32px] border border-stone-100 dark:border-zinc-800 shadow-sm relative overflow-hidden">
-                                                    {/* Background Grid Lines */}
-                                                    <div className="absolute inset-x-8 inset-y-8 flex flex-col justify-between pointer-events-none">
-                                                        {[0, 1, 2, 3, 4].map((i) => (
-                                                            <div key={i} className="w-full h-px bg-stone-50 dark:bg-zinc-800/50" />
-                                                        ))}
-                                                    </div>
-
-                                                    <div className="h-64 w-full flex items-end gap-3 px-2 relative z-10">
-                                                        {dailyStats.map((s, idx) => {
-                                                            const height = analysisSummary.peakDay ? (s.quantity / analysisSummary.peakDay.quantity) * 100 : 0;
-                                                            return (
-                                                                <div key={idx} className="flex-1 flex flex-col items-center group relative h-full justify-end">
-                                                                    {/* Tooltip */}
-                                                                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 bg-zinc-900 text-white text-[10px] font-black px-2 py-1 rounded-lg opacity-0 group-hover:opacity-100 transition-all duration-300 pointer-events-none whitespace-nowrap z-20 shadow-xl scale-90 group-hover:scale-100">
-                                                                        {formatQuantityFull(s.quantity)} Kg
-                                                                        <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-zinc-900 rotate-45" />
-                                                                    </div>
-
-                                                                    {/* Bar with gradient and shadow */}
-                                                                    <div 
-                                                                        className="w-full max-w-[40px] bg-gradient-to-t from-emerald-500 to-emerald-400 hover:from-emerald-400 hover:to-emerald-300 rounded-t-xl transition-all duration-700 cursor-help shadow-[0_-4px_12px_rgba(16,185,129,0.2)]"
-                                                                        style={{ height: `${Math.max(8, height)}%` }}
-                                                                    />
-                                                                    
-                                                                    {/* Date Label */}
-                                                                    <div className="absolute -bottom-10 flex flex-col items-center">
-                                                                        <div className="text-[9px] font-black text-stone-400 uppercase tracking-tighter">
-                                                                            {new Date(s.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
-                                                                        </div>
-                                                                    </div>
-                                                                </div>
-                                                            )
-                                                        })}
-                                                    </div>
-                                                    {/* Legend spacing */}
-                                                    <div className="h-8" /> 
-                                                </div>
-
-                                                {/* Daily List */}
-                                                <div className="w-full lg:w-72 flex flex-col gap-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                                                    {dailyStats.map((s, idx) => (
-                                                        <div key={idx} className="bg-white/50 dark:bg-zinc-800/40 p-3 rounded-xl border border-stone-100 dark:border-zinc-800 flex items-center justify-between">
-                                                            <div className="flex flex-col">
-                                                                <span className="text-[10px] font-black text-stone-500 uppercase tracking-tight">
-                                                                    {new Date(s.date).toLocaleDateString('vi-VN', { weekday: 'short', day: '2-digit', month: '2-digit' })}
-                                                                </span>
-                                                                <span className="text-[9px] text-stone-400 font-bold">{s.date}</span>
-                                                            </div>
-                                                            <div className="text-right">
-                                                                <div className="text-xs font-black text-stone-800 dark:text-gray-200">{formatQuantityFull(s.quantity)} <span className="text-[9px] text-stone-400">Kg</span></div>
-                                                                {analysisSummary.peakDay?.date === s.date && (
-                                                                    <div className="text-[8px] text-orange-500 font-bold uppercase tracking-tighter">Cao điểm 🏆</div>
-                                                                )}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Raw Material Input Analysis (Only for RE_SORT) */}
-                                    {productionType === 'RE_SORT' && analysisSummary && (
-                                        <div className="p-8 bg-orange-500/5 dark:bg-orange-500/10 rounded-[32px] border border-orange-200 dark:border-orange-900/20">
-                                            <div className="flex items-center gap-3 mb-6">
-                                                <div className="p-3 bg-white dark:bg-zinc-800 rounded-2xl shadow-sm text-orange-600">
-                                                    <Warehouse size={24} />
-                                                </div>
-                                                <div>
-                                                    <h3 className="font-black text-stone-900 dark:text-white uppercase tracking-widest text-sm">Phân tích nguyên liệu đầu vào (Từ Kho)</h3>
-                                                    <p className="text-xs text-stone-500 font-bold italic">Tổng cộng {formatQuantityFull(summary.totalInputWeight)} Kg nguyên liệu</p>
-                                                </div>
-                                            </div>
-
-                                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                                {(analysisSummary.inputStats || []).map((s: any, idx: number) => (
-                                                    <div key={idx} className="bg-white dark:bg-zinc-800 p-6 rounded-2xl border border-stone-100 dark:border-zinc-700 shadow-sm flex flex-col gap-3 relative overflow-hidden group">
-                                                        <div className="flex flex-col">
-                                                            <span className="text-[10px] font-black text-stone-400 uppercase tracking-tighter truncate">{s.name}</span>
-                                                            <div className="flex items-center justify-between mt-1">
-                                                                <span className="text-[14px] font-black text-stone-800 dark:text-gray-100">
-                                                                    {formatQuantityFull(s.totalWeight)} Kg
-                                                                </span>
-                                                                <span className="text-[10px] bg-orange-100/50 dark:bg-orange-950/30 text-orange-600 px-2 py-0.5 rounded-lg font-bold">
-                                                                    {s.lotCount} LOT
-                                                                </span>
-                                                            </div>
-                                                        </div>
-                                                        
-                                                        <div className="h-px bg-stone-50 dark:bg-zinc-800 w-full" />
-                                                        
-                                                        <div className="flex items-center justify-between">
-                                                            <span className="text-[10px] font-black text-stone-400 uppercase">Tỉ lệ so với thành phẩm</span>
-                                                            <span className="text-sm font-black text-stone-800 dark:text-white">
-                                                                {summary.actual > 0 ? ((s.totalWeight / summary.actual) * 100).toFixed(1) : 0}%
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                ))}
-
-                                                {/* Summary Card for RE_SORT */}
-                                                <div className="bg-gradient-to-br from-orange-600 to-orange-700 p-6 rounded-2xl shadow-lg text-white flex flex-col justify-between relative overflow-hidden">
-                                                    <div className="absolute -right-4 -bottom-4 opacity-10">
-                                                        <Scale size={86} />
-                                                    </div>
-                                                    <span className="text-[10px] font-black uppercase tracking-widest opacity-80">Hao hụt sản xuất</span>
-                                                    <div className="mt-2">
-                                                        <div className="text-2xl font-black">{formatQuantityFull(summary.lossWeight)} Kg</div>
-                                                        <div className="text-xs font-bold opacity-80">Tương đương {summary.lossRate.toFixed(1)}%</div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
+                                <ProductionAnalysisTab
+                                    analysisSummary={analysisSummary}
+                                    summary={summary}
+                                    dailyStats={dailyStats}
+                                    productionType={productionType}
+                                    name={name}
+                                    startDate={startDate}
+                                    endDate={endDate}
+                                />
                             ) : isLocked && mainTab === 'STATS' && activeTab === 'allocations' ? (
                                 <div className="space-y-4 animate-in slide-in-from-bottom-2 duration-300">
                                     {loadingAllocations ? (
@@ -2786,121 +2290,24 @@ export default function ProductionModal({ isOpen, onClose, onSuccess, editItem, 
             </div>
 
             {/* Modal chỉnh sửa Lot con */}
-            {editingLot && (
-                <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[150] flex items-center justify-center p-4">
-                    <div className="bg-white dark:bg-zinc-900 rounded-[32px] border border-stone-200 dark:border-zinc-800 shadow-2xl w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-200">
-                        {/* Header */}
-                        <div className="px-6 py-5 border-b border-stone-100 dark:border-zinc-800/80 flex items-center justify-between bg-stone-50/50 dark:bg-zinc-900/50">
-                            <div className="flex items-center gap-2">
-                                <Edit size={16} className="text-orange-500" />
-                                <span className="text-xs font-black uppercase tracking-widest text-stone-700 dark:text-zinc-300">Chỉnh sửa thông tin Lot</span>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setEditingLot(null)}
-                                className="text-stone-400 hover:text-stone-600 p-1.5 rounded-xl hover:bg-stone-100 dark:hover:bg-zinc-800"
-                            >
-                                <X size={18} />
-                            </button>
-                        </div>
-
-                        {/* Body */}
-                        <div className="p-6 space-y-5">
-                            {/* 1. Chọn sản phẩm */}
-                            <div className="relative">
-                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Sản phẩm sản xuất</label>
-                                <input
-                                    type="text"
-                                    placeholder="Tìm sản phẩm..."
-                                    value={editLotSearchTerm}
-                                    onChange={(e) => {
-                                        setEditLotSearchTerm(e.target.value)
-                                        setEditLotShowSuggestions(true)
-                                    }}
-                                    onFocus={() => setEditLotShowSuggestions(true)}
-                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500 focus:ring-2 focus:ring-orange-100"
-                                />
-                                
-                                {editLotShowSuggestions && editLotSearchTerm.trim() !== '' && (
-                                    <div className="absolute left-0 right-0 mt-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-lg max-h-48 overflow-y-auto z-[160]">
-                                        {products
-                                            .filter(p => p.name.toLowerCase().includes(editLotSearchTerm.toLowerCase()) || p.sku.toLowerCase().includes(editLotSearchTerm.toLowerCase()))
-                                            .map(p => (
-                                                <button
-                                                    key={p.id}
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setEditLotProductId(p.id)
-                                                        setEditLotSearchTerm(p.name)
-                                                        setEditLotShowSuggestions(false)
-                                                        setEditLotWeightPerUnit(p.weight_kg || 0)
-                                                    }}
-                                                    className="w-full text-left px-3 py-2 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-zinc-700 text-stone-800 dark:text-stone-200 border-b border-stone-100 dark:border-zinc-700 last:border-0"
-                                                >
-                                                    <div className="font-bold">{p.name}</div>
-                                                    <div className="text-[9px] text-stone-400">SKU: {p.sku} | Trọng lượng: {p.weight_kg}kg</div>
-                                                </button>
-                                            ))}
-                                    </div>
-                                )}
-                            </div>
-
-                            {/* 2. Mã Lot */}
-                            <div>
-                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Mã Lot sản xuất</label>
-                                <input
-                                    type="text"
-                                    placeholder="Nhập mã Lot..."
-                                    value={editLotLotCode}
-                                    onChange={(e) => setEditLotLotCode(e.target.value)}
-                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold uppercase text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
-                                />
-                            </div>
-
-                            {/* Ngày sản xuất (edit) */}
-                            <div>
-                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Ngày sản xuất</label>
-                                <input
-                                    type="date"
-                                    value={editLotProductionDate}
-                                    onChange={(e) => setEditLotProductionDate(e.target.value)}
-                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
-                                />
-                            </div>
-
-                            {/* 3. Sản lượng kế hoạch */}
-                            <div>
-                                <label className="text-[10px] font-black text-stone-400 dark:text-zinc-500 uppercase mb-1 block tracking-wider">Sản lượng kế hoạch (Thùng / Bao)</label>
-                                <input
-                                    type="number"
-                                    placeholder="Kế hoạch..."
-                                    value={editLotPlannedQty || ''}
-                                    onChange={(e) => setEditLotPlannedQty(parseFloat(e.target.value) || 0)}
-                                    className="w-full px-3 py-2.5 rounded-xl bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs font-bold text-stone-800 dark:text-stone-100 focus:outline-none focus:border-orange-500"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Footer */}
-                        <div className="px-6 py-4 bg-stone-50 dark:bg-zinc-900/50 border-t border-stone-100 dark:border-zinc-800/80 flex items-center justify-end gap-3">
-                            <button
-                                type="button"
-                                onClick={() => setEditingLot(null)}
-                                className="px-4 py-2 border border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 rounded-xl text-xs font-bold hover:bg-stone-100 dark:hover:bg-zinc-800 active:scale-95 transition-all"
-                            >
-                                Hủy bỏ
-                            </button>
-                            <button
-                                type="button"
-                                onClick={handleSaveEditedLot}
-                                className="px-5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl text-xs font-black uppercase tracking-widest active:scale-95 transition-all shadow-md"
-                            >
-                                Lưu thay đổi
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <EditChildLotModal
+                editingLot={editingLot}
+                setEditingLot={setEditingLot}
+                products={products}
+                editLotSearchTerm={editLotSearchTerm}
+                setEditLotSearchTerm={setEditLotSearchTerm}
+                editLotShowSuggestions={editLotShowSuggestions}
+                setEditLotShowSuggestions={setEditLotShowSuggestions}
+                setEditLotProductId={setEditLotProductId}
+                setEditLotWeightPerUnit={setEditLotWeightPerUnit}
+                editLotLotCode={editLotLotCode}
+                setEditLotLotCode={setEditLotLotCode}
+                editLotProductionDate={editLotProductionDate}
+                setEditLotProductionDate={setEditLotProductionDate}
+                editLotPlannedQty={editLotPlannedQty}
+                setEditLotPlannedQty={setEditLotPlannedQty}
+                handleSaveEditedLot={handleSaveEditedLot}
+            />
         </div>
     )
 }
