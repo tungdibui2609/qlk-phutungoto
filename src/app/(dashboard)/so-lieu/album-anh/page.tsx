@@ -108,6 +108,7 @@ export default function SoLieuAlbumPage() {
     const [expandedDates, setExpandedDates] = useState<Record<string, boolean>>({})
     const [expandedTreeJobs, setExpandedTreeJobs] = useState<Record<string, boolean>>({})
     const [expandedJobNames, setExpandedJobNames] = useState<Record<string, boolean>>({})
+    const [expandedJobDates, setExpandedJobDates] = useState<Record<string, boolean>>({})
     const [expandedRefAlbums, setExpandedRefAlbums] = useState<Record<string, boolean>>({})
 
     const [images, setImages] = useState<OperationImageRecord[]>([])
@@ -323,20 +324,15 @@ export default function SoLieuAlbumPage() {
     }, [images])
 
     const autoJobTree = useMemo(() => {
-        type JobDateNode = { dateKey: string; dateLabel: string; count: number }
+        type RefSubNode = { subKey: string; label: string; phase: 'start' | 'end' | 'legacy'; count: number }
+        type JobDateNode = { dateKey: string; dateLabel: string; count: number; refSubs: Map<string, RefSubNode> }
         type JobRootNode = { jobName: string; count: number; latestDateKey: string; dates: Map<string, JobDateNode> }
 
         const jobs = new Map<string, JobRootNode>()
         for (const img of images) {
             const { dateKey, dateLabel } = getImageDayInfo(img.captured_at)
             const jobName = img.job_name || 'Công việc không tên'
-            const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
-            const childKey = refMatch
-                ? (refMatch[2] === 'end' ? '__REF_END__' : refMatch[2] === 'start' ? '__REF_START__' : '__REF__')
-                : dateKey
-            const childLabel = refMatch
-                ? (refMatch[2] === 'end' ? '📌 Tham chiếu Cuối' : refMatch[2] === 'start' ? '📌 Tham chiếu Đầu' : '📌 Tham chiếu')
-                : dateLabel
+            const refPhase = parseRefPhase(img.notes)
 
             let jNode = jobs.get(jobName)
             if (!jNode) {
@@ -346,27 +342,44 @@ export default function SoLieuAlbumPage() {
             jNode.count++
             if (dateKey > jNode.latestDateKey) jNode.latestDateKey = dateKey
 
-            let dNode = jNode.dates.get(childKey)
+            let dNode = jNode.dates.get(dateKey)
             if (!dNode) {
-                dNode = { dateKey: childKey, dateLabel: childLabel, count: 0 }
-                jNode.dates.set(childKey, dNode)
+                dNode = { dateKey, dateLabel, count: 0, refSubs: new Map() }
+                jNode.dates.set(dateKey, dNode)
             }
             dNode.count++
+
+            if (refPhase) {
+                const refTag = refPhase === 'start' ? 'REF_START' : refPhase === 'end' ? 'REF_END' : 'REF'
+                const subKey = `${jobName}::${dateKey}::${refTag}`
+                const label =
+                    refPhase === 'start'
+                        ? '📌 Tham chiếu Đầu'
+                        : refPhase === 'end'
+                          ? '📌 Tham chiếu Cuối'
+                          : '📌 Tham chiếu'
+                let sNode = dNode.refSubs.get(subKey)
+                if (!sNode) {
+                    sNode = { subKey, label, phase: refPhase, count: 0 }
+                    dNode.refSubs.set(subKey, sNode)
+                }
+                sNode.count++
+            }
         }
 
-        const refOrder: Record<string, number> = { __REF_START__: 0, __REF_END__: 1, __REF__: 2 }
+        const phaseOrder: Record<'start' | 'end' | 'legacy', number> = { start: 0, end: 1, legacy: 2 }
         return Array.from(jobs.values())
             .sort((a, b) => b.latestDateKey.localeCompare(a.latestDateKey) || a.jobName.localeCompare(b.jobName))
             .map((j) => ({
                 ...j,
-                dates: Array.from(j.dates.values()).sort((a, b) => {
-                    const ra = refOrder[a.dateKey]
-                    const rb = refOrder[b.dateKey]
-                    if (ra !== undefined && rb !== undefined) return ra - rb
-                    if (ra !== undefined) return -1
-                    if (rb !== undefined) return 1
-                    return b.dateKey.localeCompare(a.dateKey)
-                }),
+                dates: Array.from(j.dates.values())
+                    .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
+                    .map((d) => ({
+                        ...d,
+                        refSubs: Array.from(d.refSubs.values()).sort(
+                            (a, b) => phaseOrder[a.phase] - phaseOrder[b.phase]
+                        ),
+                    })),
             }))
     }, [images])
 
@@ -385,18 +398,22 @@ export default function SoLieuAlbumPage() {
         let list = images
         if (treeMode === 'job') {
             if (selectedJobDateKey) {
-                const sepIdx = selectedJobDateKey.lastIndexOf('::')
-                const jName = selectedJobDateKey.slice(0, sepIdx)
-                const dKey = selectedJobDateKey.slice(sepIdx + 2)
+                const parts = selectedJobDateKey.split('::')
+                const lastPart = parts[parts.length - 1]
+                const hasRefTag = lastPart === 'REF_START' || lastPart === 'REF_END' || lastPart === 'REF'
+                const refTag = hasRefTag ? lastPart : null
+                const dKey = hasRefTag ? parts[parts.length - 2] : lastPart
+                const jName = hasRefTag ? parts.slice(0, -2).join('::') : parts.slice(0, -1).join('::')
                 list = list.filter((img) => {
                     if ((img.job_name || 'Công việc không tên') !== jName) return false
-                    const refMatch = img.notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
-                    if (dKey === '__REF_START__') return Boolean(refMatch && refMatch[2] === 'start')
-                    if (dKey === '__REF_END__') return Boolean(refMatch && refMatch[2] === 'end')
-                    if (dKey === '__REF__') return Boolean(refMatch && !refMatch[2])
-                    if (refMatch) return false
                     const info = getImageDayInfo(img.captured_at)
-                    return info.dateKey === dKey
+                    if (info.dateKey !== dKey) return false
+                    if (!refTag) return true
+                    const refPhase = parseRefPhase(img.notes)
+                    if (refTag === 'REF_START') return refPhase === 'start'
+                    if (refTag === 'REF_END') return refPhase === 'end'
+                    if (refTag === 'REF') return refPhase === 'legacy'
+                    return true
                 })
             } else if (selectedJobName) {
                 list = list.filter((img) => (img.job_name || 'Công việc không tên') === selectedJobName)
@@ -1265,26 +1282,81 @@ export default function SoLieuAlbumPage() {
                                                     {jobNode.dates.map((dt) => {
                                                         const key = `${jobNode.jobName}::${dt.dateKey}`
                                                         const activeDate = selectedJobDateKey === key
+                                                        const hasRefs = dt.refSubs.length > 0
+                                                        const isDateExpanded = expandedJobDates[key] ?? true
                                                         return (
-                                                            <button
-                                                                key={key}
-                                                                type="button"
-                                                                onClick={() => {
-                                                                    setSelectedJobName(jobNode.jobName)
-                                                                    setSelectedJobDateKey(key)
-                                                                }}
-                                                                className={`w-full flex items-center justify-between px-2 py-1.5 rounded-lg text-[11px] text-left transition-colors ${
-                                                                    activeDate
-                                                                        ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-800'
-                                                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
-                                                                }`}
-                                                            >
-                                                                <span className="flex items-center gap-1.5 truncate">
-                                                                    <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
-                                                                    <span className="truncate">{dt.dateLabel}</span>
-                                                                </span>
-                                                                <span className="text-[10px] text-slate-400 ml-1 shrink-0">{dt.count}</span>
-                                                            </button>
+                                                            <div key={key} className="space-y-0.5">
+                                                                <div
+                                                                    className={`flex items-center gap-0.5 px-1 py-1 rounded-lg text-[11px] transition-colors ${
+                                                                        activeDate
+                                                                            ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-bold border border-sky-200 dark:border-sky-800'
+                                                                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                                    }`}
+                                                                >
+                                                                    {hasRefs ? (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() =>
+                                                                                setExpandedJobDates((prev) => ({
+                                                                                    ...prev,
+                                                                                    [key]: !isDateExpanded,
+                                                                                }))
+                                                                            }
+                                                                            className="p-0.5 text-slate-400 hover:text-slate-600 shrink-0"
+                                                                        >
+                                                                            {isDateExpanded ? (
+                                                                                <ChevronDown className="w-3 h-3" />
+                                                                            ) : (
+                                                                                <ChevronRight className="w-3 h-3" />
+                                                                            )}
+                                                                        </button>
+                                                                    ) : (
+                                                                        <span className="w-4 shrink-0" />
+                                                                    )}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setSelectedJobName(jobNode.jobName)
+                                                                            setSelectedJobDateKey(key)
+                                                                            if (hasRefs) {
+                                                                                setExpandedJobDates((prev) => ({ ...prev, [key]: true }))
+                                                                            }
+                                                                        }}
+                                                                        className="flex-1 flex items-center justify-between text-left min-w-0 py-0.5 pr-1"
+                                                                    >
+                                                                        <span className="flex items-center gap-1.5 truncate">
+                                                                            <Calendar className="w-3 h-3 text-indigo-500 shrink-0" />
+                                                                            <span className="truncate">{dt.dateLabel}</span>
+                                                                        </span>
+                                                                        <span className="text-[10px] text-slate-400 ml-1 shrink-0">{dt.count}</span>
+                                                                    </button>
+                                                                </div>
+                                                                {hasRefs && isDateExpanded && (
+                                                                    <div className="pl-4 space-y-0.5 border-l border-amber-200/70 dark:border-amber-800/50 ml-2.5">
+                                                                        {dt.refSubs.map((sub) => {
+                                                                            const activeSub = selectedJobDateKey === sub.subKey
+                                                                            return (
+                                                                                <button
+                                                                                    key={sub.subKey}
+                                                                                    type="button"
+                                                                                    onClick={() => {
+                                                                                        setSelectedJobName(jobNode.jobName)
+                                                                                        setSelectedJobDateKey(sub.subKey)
+                                                                                    }}
+                                                                                    className={`w-full flex items-start justify-between gap-1 px-2 py-1 rounded-lg text-[11px] text-left transition-colors ${
+                                                                                        activeSub
+                                                                                            ? 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 font-bold border border-amber-200 dark:border-amber-800'
+                                                                                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                                                    }`}
+                                                                                >
+                                                                                    <span className="break-words whitespace-normal leading-snug">{sub.label}</span>
+                                                                                    <span className="text-[10px] text-slate-400 ml-1 shrink-0 mt-0.5">{sub.count}</span>
+                                                                                </button>
+                                                                            )
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
                                                         )
                                                     })}
                                                 </div>
@@ -1515,7 +1587,24 @@ export default function SoLieuAlbumPage() {
                         <div className="flex flex-wrap items-center gap-1.5">
                             <span className="font-semibold text-slate-700 dark:text-slate-200">
                                 {treeMode === 'job' && selectedJobDateKey
-                                    ? `${selectedJobName || 'Công việc'} › ${selectedJobDateKey.slice(selectedJobDateKey.lastIndexOf('::') + 2).split('-').reverse().join('/')}`
+                                    ? (() => {
+                                          const parts = selectedJobDateKey.split('::')
+                                          const lastPart = parts[parts.length - 1]
+                                          const hasRefTag = lastPart === 'REF_START' || lastPart === 'REF_END' || lastPart === 'REF'
+                                          const dKey = hasRefTag ? parts[parts.length - 2] : lastPart
+                                          const dLabel = dKey.split('-').reverse().join('/')
+                                          const refLabel =
+                                              lastPart === 'REF_START'
+                                                  ? '📌 Tham chiếu Đầu'
+                                                  : lastPart === 'REF_END'
+                                                    ? '📌 Tham chiếu Cuối'
+                                                    : lastPart === 'REF'
+                                                      ? '📌 Tham chiếu'
+                                                      : ''
+                                          return refLabel
+                                              ? `${selectedJobName || 'Công việc'} › ${dLabel} › ${refLabel}`
+                                              : `${selectedJobName || 'Công việc'} › ${dLabel}`
+                                      })()
                                     : treeMode === 'job' && selectedJobName
                                     ? `Công việc: ${selectedJobName}`
                                     : selectedTreeJob
@@ -1570,7 +1659,7 @@ export default function SoLieuAlbumPage() {
                             {groupedAlbums.map((album) => {
                                 const isDirectRefView =
                                     (treeMode === 'date' && Boolean(selectedTreeJob?.split('::')[2])) ||
-                                    (treeMode === 'job' && Boolean(selectedJobDateKey && selectedJobDateKey.includes('::__REF')))
+                                    (treeMode === 'job' && Boolean(selectedJobDateKey && /::REF(_START|_END)?$/.test(selectedJobDateKey)))
 
                                 const regularItems: OperationImageRecord[] = []
                                 const refStartItems: OperationImageRecord[] = []
