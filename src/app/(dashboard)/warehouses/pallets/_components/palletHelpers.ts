@@ -3,7 +3,8 @@ import { normalizeSearchString } from '@/lib/searchUtils'
 import { normalizeUnit, formatUnitWeight } from '@/lib/unitConversion'
 import { parseDateToISO } from '@/lib/dateUtils'
 import { DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
-import type { BoxLabelItem, WarehouseProduct, ApproveLotProductLine } from './types'
+import { decodeSTT } from '@/lib/numberUtils'
+import type { BoxLabelItem, PalletLot, WarehouseProduct, ApproveLotProductLine } from './types'
 
 /**
  * Tự động giải mã lại toàn bộ thông tin con dấu:
@@ -675,4 +676,96 @@ export function getBoxIndex(box: BoxLabelItem): string {
     const last = parts[parts.length - 1]
     return !isNaN(Number(last)) ? last : box.code
 }
+
+/**
+ * Tự động ghi mã phụ (tag) vào bảng lot_tags cho toàn bộ lot_items của LOT (hoặc cấp lot nếu chưa có lot_items).
+ * Bảng lot_tags không có cột company_id nên tuyệt đối không truyền company_id.
+ */
+export async function syncPalletTagToLot(
+    lotId: string,
+    rawTag?: string | null,
+    preloadedItems?: { id: string | null }[]
+): Promise<void> {
+    if (!rawTag || !rawTag.trim()) return
+    const cleanTag = rawTag.trim().toUpperCase()
+    try {
+        let itemsToTag = preloadedItems && preloadedItems.length > 0 ? preloadedItems : []
+        if (itemsToTag.length === 0) {
+            const { data: existingItems } = await supabase
+                .from('lot_items')
+                .select('id')
+                .eq('lot_id', lotId)
+            itemsToTag = existingItems || []
+        }
+
+        const itemsList = itemsToTag.length > 0 ? itemsToTag : [{ id: null }]
+
+        for (const item of itemsList) {
+            let query = supabase
+                .from('lot_tags')
+                .select('id')
+                .eq('lot_id', lotId)
+                .eq('tag', cleanTag)
+            if (item.id) {
+                query = query.eq('lot_item_id', item.id)
+            } else {
+                query = query.is('lot_item_id', null)
+            }
+            const { data: existTag } = await query.maybeSingle()
+
+            if (!existTag) {
+                await (supabase.from('lot_tags') as any).insert({
+                    lot_id: lotId,
+                    lot_item_id: item.id || null,
+                    tag: cleanTag,
+                    added_at: new Date().toISOString()
+                })
+            }
+        }
+    } catch (tErr) {
+        console.warn('Lỗi ghi lot_tags:', tErr)
+    }
+}
+
+export async function exportPalletToExcel(pallet: PalletLot): Promise<void> {
+    const ExcelJS = (await import('exceljs')).default
+    const { saveAs } = (await import('file-saver')).default
+
+    const workbook = new ExcelJS.Workbook()
+    const sttStr = pallet.daily_seq ? decodeSTT(pallet.daily_seq) : pallet.code
+    const worksheet = workbook.addWorksheet(`Pallet_${sttStr}`)
+
+    worksheet.columns = [
+        { header: 'STT Thùng', key: 'stt', width: 12 },
+        { header: 'Mã Thùng Barcode', key: 'code', width: 34 },
+        { header: 'Mã LOT Thành Phẩm', key: 'lot_code', width: 22 },
+        { header: 'Mã Sản Phẩm (SKU)', key: 'sku', width: 20 },
+        { header: 'Tên Sản Phẩm', key: 'product_name', width: 32 },
+        { header: 'Quy Cách', key: 'spec', width: 16 },
+        { header: 'Tổ / Ca Đóng Gói', key: 'shift', width: 18 },
+        { header: 'Vùng Nguyên Liệu', key: 'region', width: 18 },
+        { header: 'Ngày Đóng Gói', key: 'packaging_date', width: 16 },
+        { header: 'Khối Lượng (Kg)', key: 'weight', width: 16 },
+    ]
+
+    pallet.box_labels.forEach(box => {
+        worksheet.addRow({
+            stt: getBoxIndex(box),
+            code: box.code,
+            lot_code: box.finished_lot_code || box.semi_finished_lot_code || '---',
+            sku: box.metadata?.sku || box.products?.sku || '---',
+            product_name: box.metadata?.product_name || box.products?.name || '---',
+            spec: box.metadata?.spec || '---',
+            shift: box.metadata?.shift_group || '---',
+            region: box.metadata?.region || '---',
+            packaging_date: box.metadata?.packaging_date || '---',
+            weight: Number(box.quantity) || 20,
+        })
+    })
+
+    const buffer = await workbook.xlsx.writeBuffer()
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    saveAs(blob, `Pallet_${sttStr}_ChiTiet_${new Date().toISOString().slice(0, 10)}.xlsx`)
+}
+
 

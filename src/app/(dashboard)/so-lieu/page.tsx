@@ -2,47 +2,15 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
-    Plus,
-    Minus,
-    Pin,
-    PinOff,
-    Search,
-    Trash2,
-    Pencil,
-    RefreshCw,
-    Clock,
     CheckCircle2,
     BarChart3,
     History,
-    X,
-    Check,
     Briefcase,
-    Tag,
     ArrowDownLeft,
     ArrowUpRight,
     Play,
-    StopCircle,
-    Calendar,
-    Layers,
-    Download,
-    RotateCcw,
-    ChevronLeft,
-    ChevronDown,
-    ChevronRight,
-    User,
-    FileText,
-    ExternalLink,
-    Settings2,
-    AlertTriangle,
-    Eye,
-    Zap,
-    CheckSquare,
-    Square,
-    Camera,
-    Images
 } from 'lucide-react'
 
-import Link from 'next/link'
 import EditJournalModal from '@/components/so-lieu/EditJournalModal'
 import ProductHistoryModal from '@/components/so-lieu/ProductHistoryModal'
 import FeedTab from '@/components/so-lieu/FeedTab'
@@ -51,7 +19,6 @@ import ShiftModals from '@/components/so-lieu/ShiftModals'
 import ReconcileTab, { type ReconcileEntry } from '@/components/so-lieu/ReconcileTab'
 import InboundOrderModal from '@/components/inventory/inbound/InboundOrderModal'
 import OutboundOrderModal from '@/components/inventory/outbound/OutboundOrderModal'
-import OperationImageUploader from '@/components/so-lieu/OperationImageUploader'
 import OperationImagesModal, { WebJournalImageTarget } from '@/components/so-lieu/OperationImagesModal'
 import DesktopNumpad from '@/components/so-lieu/DesktopNumpad'
 import MobileNumpadSheet from '@/components/so-lieu/MobileNumpadSheet'
@@ -61,6 +28,12 @@ import { MobileJobSheet, MobileMenuSheet } from '@/components/so-lieu/MobileShee
 import AggregatedReportView from '@/components/so-lieu/AggregatedReportView'
 import PinnedProductsPanel from '@/components/so-lieu/PinnedProductsPanel'
 import DoneJobsView from '@/components/so-lieu/DoneJobsView'
+import SoLieuHeader from '@/components/so-lieu/SoLieuHeader'
+import {
+    getWebOfflineQueue,
+    saveWebOfflineQueue,
+    flushWebOfflineQueue,
+} from '@/components/so-lieu/offlineQueue'
 import { exportDoneShiftToExcel, exportMultiShiftsToExcel } from '@/components/so-lieu/excelExport'
 import {
     ProductItem,
@@ -75,6 +48,10 @@ import {
     formatDateTime,
     formatTimeOnly,
     formatCompactRange,
+    getShiftLocalDateString,
+    getPreferredUnit,
+    buildEffectiveSubShifts,
+    buildSettlementDataForShift,
 } from '@/components/so-lieu/utils'
 import {
     PendingWebImage,
@@ -82,7 +59,6 @@ import {
     generateUuidV4,
     uploadOperationImages,
     listOperationImages,
-    getOperationImageDisplayUrl,
 } from '@/lib/operationImages'
 import { useSystem } from '@/contexts/SystemContext'
 import { useUser } from '@/contexts/UserContext'
@@ -453,38 +429,11 @@ export default function SoLieuPage() {
     const [offlineQueueCount, setOfflineQueueCount] = useState<number>(0)
     const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false)
 
-    interface WebOfflineAction {
-        id: string
-        type: 'CREATE_SHIFT' | 'SUBMIT_JOURNAL' | 'UPDATE_JOURNAL' | 'DELETE_JOURNAL' | 'CLOSE_SHIFT'
-        payload: any
-        shiftId?: string
-        timestamp: number
-    }
-
-    const getWebOfflineQueue = useCallback((sysCode: string): WebOfflineAction[] => {
-        if (typeof window === 'undefined') return []
-        try {
-            const raw = localStorage.getItem(`solieu_web_queue_${sysCode}`)
-            return raw ? JSON.parse(raw) : []
-        } catch {
-            return []
-        }
-    }, [])
-
-    const saveWebOfflineQueue = useCallback((sysCode: string, queue: WebOfflineAction[]) => {
-        if (typeof window === 'undefined') return
-        try {
-            localStorage.setItem(`solieu_web_queue_${sysCode}`, JSON.stringify(queue))
-        } catch (e) {
-            console.warn('Lỗi lưu offline queue web:', e)
-        }
-    }, [])
-
     const refreshOfflineCount = useCallback(() => {
         if (!shiftSystemCode) return
         const q = getWebOfflineQueue(shiftSystemCode)
         setOfflineQueueCount(q.length)
-    }, [shiftSystemCode, getWebOfflineQueue])
+    }, [shiftSystemCode])
 
     // Đồng bộ toàn bộ dữ liệu ghi nhận ngoại tuyến lên máy chủ Supabase
     const syncOfflineWebData = useCallback(async () => {
@@ -493,75 +442,8 @@ export default function SoLieuPage() {
         if (queue.length === 0) return
 
         setIsSyncingOffline(true)
-        const tempShiftIdMap: Record<string, string> = {}
-        const remainingQueue: WebOfflineAction[] = []
-        let syncedCount = 0
-
-        for (const action of queue) {
-            try {
-                if (action.type === 'CREATE_SHIFT') {
-                    const { insertPayload, tempShiftId } = action.payload
-                    const { data: realShift, error } = await (supabase as any)
-                        .from('delivery_shifts')
-                        .insert([insertPayload])
-                        .select()
-                        .single()
-                    if (error) throw error
-                    if (realShift) {
-                        tempShiftIdMap[tempShiftId] = realShift.id
-                        syncedCount++
-                    }
-                } else if (action.type === 'SUBMIT_JOURNAL') {
-                    const origPayload = action.payload
-                    const shiftId = action.shiftId || ''
-                    const realShiftId = tempShiftIdMap[shiftId] || shiftId
-                    let finalNotes = origPayload.notes || ''
-                    if (shiftId && finalNotes.includes(shiftId)) {
-                        finalNotes = finalNotes.replace(`[CV_ID: ${shiftId}]`, `[CV_ID: ${realShiftId}]`)
-                    }
-                    const payload = {
-                        ...origPayload,
-                        notes: finalNotes,
-                    }
-                    const { error } = await (supabase as any)
-                        .from('delivery_journal')
-                        .insert([payload])
-                    if (error) throw error
-                    syncedCount++
-                } else if (action.type === 'UPDATE_JOURNAL') {
-                    const { id, payload } = action.payload
-                    const { error } = await (supabase as any)
-                        .from('delivery_journal')
-                        .update(payload)
-                        .eq('id', id)
-                    if (error) throw error
-                    syncedCount++
-                } else if (action.type === 'DELETE_JOURNAL') {
-                    const { id } = action.payload
-                    const { error } = await (supabase as any)
-                        .from('delivery_journal')
-                        .delete()
-                        .eq('id', id)
-                    if (error) throw error
-                    syncedCount++
-                } else if (action.type === 'CLOSE_SHIFT') {
-                    const { payload, shiftId } = action.payload
-                    const realShiftId = tempShiftIdMap[shiftId] || shiftId
-                    const { error } = await (supabase as any)
-                        .from('delivery_shifts')
-                        .update(payload)
-                        .eq('id', realShiftId)
-                    if (error) throw error
-                    syncedCount++
-                }
-            } catch (err: any) {
-                console.warn('Lỗi sync action web:', action.type, err?.message)
-                remainingQueue.push(action)
-            }
-        }
-
-        saveWebOfflineQueue(shiftSystemCode, remainingQueue)
-        setOfflineQueueCount(remainingQueue.length)
+        const { syncedCount, remainingCount } = await flushWebOfflineQueue(shiftSystemCode)
+        setOfflineQueueCount(remainingCount)
         setIsSyncingOffline(false)
 
         if (syncedCount > 0) {
@@ -569,7 +451,7 @@ export default function SoLieuPage() {
             loadOpenShifts()
             loadJournalData()
         }
-    }, [shiftSystemCode, isSyncingOffline, getWebOfflineQueue, saveWebOfflineQueue])
+    }, [shiftSystemCode, isSyncingOffline])
 
     useEffect(() => {
         if (typeof window === 'undefined') return
@@ -591,16 +473,6 @@ export default function SoLieuPage() {
             window.removeEventListener('offline', handleOffline)
         }
     }, [shiftSystemCode, refreshOfflineCount, syncOfflineWebData])
-
-    // Helper lấy đơn vị ưu tiên (ưu tiên đơn vị Thùng trước)
-    const getPreferredUnit = (units: string[], fallbackUnit?: string | null): string => {
-        const cleanFallback = cleanUnitLabel(fallbackUnit)
-        if (!units || units.length === 0) return cleanFallback || 'Kg'
-        const thungUnit = units.find(u => isBoxUnit(u))
-        if (thungUnit) return thungUnit
-        if (cleanFallback && units.includes(cleanFallback)) return cleanFallback
-        return units[0] || cleanFallback || 'Kg'
-    }
 
     // Lấy danh sách đơn vị của sản phẩm (sắp xếp ưu tiên đơn vị Thùng lên trước)
     const getProductUnits = (product: ProductItem): string[] => {
@@ -1386,60 +1258,6 @@ export default function SoLieuPage() {
         }
     }
 
-    // Ghép danh sách các lần chốt ca tạm (tự động gom thêm đợt cuối nếu sau lần chốt tạm cuối cùng vẫn còn nhập liệu rồi bấm Hoàn thành CV luôn)
-    const buildEffectiveSubShifts = (subShiftList: any[], lines: DeliveryJournalRecord[], shift: any) => {
-        if (!subShiftList || subShiftList.length === 0) return []
-        const result = subShiftList.map((ss, idx) => {
-            const prevToTime = idx > 0 ? subShiftList[idx - 1].to_time : ss.from_time
-            const subLines = lines.filter(l =>
-                idx === 0
-                    ? (l.sent_at >= ss.from_time && l.sent_at <= ss.to_time)
-                    : (l.sent_at > prevToTime && l.sent_at <= ss.to_time)
-            )
-            return {
-                ...ss,
-                _subLines: subLines,
-                is_auto_final: false,
-            }
-        })
-
-        const lastSS = subShiftList[subShiftList.length - 1]
-        const remainingLines = lines.filter(l => l.sent_at > lastSS.to_time)
-        if (remainingLines.length > 0) {
-            const lastLine = remainingLines[remainingLines.length - 1]
-            const prodsMap: Record<string, { product_name: string; unit: string; in_qty: number; out_qty: number }> = {}
-            remainingLines.forEach(l => {
-                const u = l.unit || 'Thùng'
-                const pName = l.item_name || 'Hàng hóa'
-                const isImp = l.to_department === 'Kho'
-                const q = Number(l.quantity_sent) || 0
-                const key = `${pName}_${u}`
-                if (!prodsMap[key]) prodsMap[key] = { product_name: pName, unit: u, in_qty: 0, out_qty: 0 }
-                if (isImp) prodsMap[key].in_qty += q
-                else prodsMap[key].out_qty += q
-            })
-            result.push({
-                id: `auto_final_${shift?.id || 'shift'}`,
-                shift_id: shift?.id,
-                sub_shift_number: subShiftList.length + 1,
-                from_time: lastSS.to_time,
-                to_time: shift?.closed_at || lastLine.sent_at,
-                closed_by_name: shift?.closed_by_name || lastLine.sent_by_name || 'Nhân viên',
-                notes: shift?.status === 'closed'
-                    ? 'Đợt cuối ca (tự động tính khi bấm Hoàn thành CV)'
-                    : 'Đợt đang nhập (chưa bấm Chốt tạm)',
-                summary_data: {
-                    job_name: shift?.summary_data?.job_name || '',
-                    total_records: remainingLines.length,
-                    products_summary: prodsMap,
-                },
-                _subLines: remainingLines,
-                is_auto_final: true,
-            })
-        }
-        return result
-    }
-
     // Xuất Excel báo cáo 1 công việc đã hoàn thành
     const handleExportDoneShift = async (shift: any, lines: DeliveryJournalRecord[]) => {
         await exportDoneShiftToExcel({
@@ -1450,17 +1268,6 @@ export default function SoLieuPage() {
             buildEffectiveSubShifts,
             summarizeLines,
         })
-    }
-
-    // Helper lấy chuỗi YYYY-MM-DD theo giờ địa phương
-    const getShiftLocalDateString = (isoString?: string) => {
-        if (!isoString) return ''
-        const d = new Date(isoString)
-        if (isNaN(d.getTime())) return ''
-        const y = d.getFullYear()
-        const m = String(d.getMonth() + 1).padStart(2, '0')
-        const day = String(d.getDate()).padStart(2, '0')
-        return `${y}-${m}-${day}`
     }
 
     // Tải các dòng số liệu cho danh sách nhiều công việc (báo cáo ngày hoặc tùy chọn)
@@ -1640,75 +1447,8 @@ export default function SoLieuPage() {
     }
 
     // Chuẩn bị dữ liệu phiếu kết toán Nhập / Xuất từ công việc đã chọn (Dựa trực tiếp vào MÃ SẢN PHẨM / ID đã ghim)
-    const buildSettlementData = (shift: any, rows: any[], type: 'in' | 'out') => {
-        const jobTitle = shift.summary_data?.job_name || shift.notes || 'Công việc'
-        const isImport = type === 'in'
-        const relevantRows = rows.filter(r => (Number(isImport ? r.in_qty : r.out_qty) || 0) > 0)
-        const pinnedList: ProductItem[] = shift?.summary_data?.pinned_products || []
-
-        const items = relevantRows.map((r, idx) => {
-            const qty = Number(isImport ? r.in_qty : r.out_qty) || 0
-            const rName = (r.product_name || '').trim().toLowerCase()
-            const cleanUnit = cleanUnitLabel(r.unit) || r.unit
-
-            // 1. ƯU TIÊN SỐ 1: Match trực tiếp theo product_id từ danh sách sản phẩm ĐÃ GHIM của công việc này
-            let foundProd: any = r.product_id
-                ? (pinnedList.find(p => p.id === r.product_id) || allProducts.find(p => p.id === r.product_id))
-                : undefined
-
-            // 2. ƯU TIÊN SỐ 2: Match theo mã SKU đã ghim trong công việc
-            if (!foundProd && r.sku) {
-                foundProd = pinnedList.find(p => p.sku === r.sku) || allProducts.find(p => p.sku === r.sku)
-            }
-
-            // 3. ƯU TIÊN SỐ 3: Tìm chính xác trong danh sách sản phẩm ĐÃ GHIM (pinned_products) của ca này
-            if (!foundProd) {
-                foundProd = pinnedList.find(p => (p.name || '').trim().toLowerCase() === rName)
-            }
-
-            // 4. ƯU TIÊN SỐ 4: Match chính xác 100% trong toàn bộ danh mục sản phẩm (theo ID, SKU, hoặc Tên)
-            if (!foundProd) {
-                foundProd = allProducts.find(p => (p.name || '').trim().toLowerCase() === rName) ||
-                            allProducts.find(p => p.sku && p.sku.trim().toLowerCase() === rName)
-            }
-
-            // 5. Fallback cuối cùng: Match tương đối nhưng chọn candidate có tên dài nhất
-            if (!foundProd) {
-                const candidates = allProducts.filter(p => {
-                    const pName = (p.name || '').trim().toLowerCase()
-                    return pName.length > 3 && (rName.includes(pName) || pName.includes(rName))
-                })
-                if (candidates.length > 0) {
-                    candidates.sort((a, b) => (b.name?.length || 0) - (a.name?.length || 0))
-                    foundProd = candidates[0]
-                }
-            }
-
-            return {
-                id: `settle_${type}_${Date.now()}_${idx}`,
-                productId: foundProd?.id || r.product_id || '',
-                productName: foundProd?.name || r.product_name,
-                unit: cleanUnit || foundProd?.unit || 'Kg',
-                quantity: qty,
-                document_quantity: qty,
-                price: 0,
-                note: '',
-                categoryId: (foundProd as any)?.category_id || undefined,
-            }
-        })
-
-        return {
-            items,
-            description: jobTitle,
-            orderTypeName: shift?.summary_data?.order_type_name || 'Sản Xuất',
-            orderTypeId: shift?.summary_data?.order_type_id || undefined,
-            orderTypeCode: shift?.summary_data?.order_type_code || undefined,
-            shiftId: shift.id,
-            jobName: jobTitle,
-            settlementType: type,
-            targetUnit: 'Kg',
-        }
-    }
+    const buildSettlementData = (shift: any, rows: any[], type: 'in' | 'out') =>
+        buildSettlementDataForShift(shift, rows, type, allProducts)
 
     // Mở Modal làm phiếu kết toán trực tiếp ngay tại trang Số Liệu
     const handleOpenInboundModal = (shift: any, rows: any[]) => {
@@ -3162,821 +2902,80 @@ export default function SoLieuPage() {
 
     return (
         <div className="min-h-[calc(100vh-4rem)] flex flex-col bg-stone-50 dark:bg-zinc-950 text-stone-800 dark:text-stone-100">
-            {/* ===== BANNER CẢNH BÁO CHẾ ĐỘ NGOẠI TUYẾN / KHO ĐÔNG LẠNH ===== */}
-            {(!isOnline || offlineQueueCount > 0) && (
-                <div className="bg-amber-500/15 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3 text-amber-900 dark:text-amber-200">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-                            <AlertTriangle className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0">
-                            <div className="text-xs font-bold truncate">
-                                {!isOnline
-                                    ? '⚠️ Đang làm việc Ngoại Tuyến (Offline trong Kho Đông Lạnh)'
-                                    : '📡 Có số liệu ngoại tuyến sẵn sàng đồng bộ'}
-                            </div>
-                            <div className="text-[11px] text-amber-700/80 dark:text-amber-300/80 truncate">
-                                {offlineQueueCount > 0
-                                    ? `Đang lưu an toàn ${offlineQueueCount} thao tác trong máy • Bấm Đồng bộ khi có sóng mạng.`
-                                    : 'Mất sóng Internet. Bạn vẫn có thể nhập/xuất và mở/đóng ca bình thường không gián đoạn.'}
-                            </div>
-                        </div>
-                    </div>
-
-                    {offlineQueueCount > 0 && (
-                        <button
-                            type="button"
-                            onClick={syncOfflineWebData}
-                            disabled={isSyncingOffline}
-                            className="shrink-0 h-8 px-3 rounded-lg bg-amber-600 hover:bg-amber-700 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition disabled:opacity-50"
-                        >
-                            <RefreshCw className={`w-3.5 h-3.5 ${isSyncingOffline ? 'animate-spin' : ''}`} />
-                            <span>{isSyncingOffline ? 'Đang gửi...' : 'Đồng bộ ngay'}</span>
-                        </button>
-                    )}
-                </div>
-            )}
-            {/* ===== MOBILE HEADER GỌN: Chuyển chế độ Đang làm / Đã hoàn thành + chọn CV + tìm kiếm ===== */}
-            <header className="sm:hidden sticky top-0 z-30 bg-white dark:bg-zinc-900 border-b border-stone-200 dark:border-zinc-800 px-3 pt-2 pb-2 space-y-1.5">
-                {/* Chuyển nhanh: Đang làm | Đã hoàn thành */}
-                <div className="grid grid-cols-2 gap-1 p-1 bg-stone-100 dark:bg-zinc-800 rounded-xl">
-                    <button
-                        type="button"
-                        onClick={() => setPageView('active')}
-                        className={`h-7 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-                            pageView === 'active'
-                                ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                : 'text-stone-500 dark:text-stone-400'
-                        }`}
-                    >
-                        <span className={`w-1.5 h-1.5 rounded-full ${openShifts.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-stone-300'}`} />
-                        Đang làm ({openShifts.length})
-                    </button>
-                    <button
-                        type="button"
-                        onClick={openDoneView}
-                        className={`h-7 rounded-lg text-[11px] font-bold flex items-center justify-center gap-1.5 transition ${
-                            pageView === 'done'
-                                ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                : 'text-stone-500 dark:text-stone-400'
-                        }`}
-                    >
-                        <CheckCircle2 className="w-3 h-3" />
-                        Đã hoàn thành ({pastShifts.length})
-                    </button>
-                </div>
-
-                {pageView === 'active' && (
-                    <>
-                        <div className="flex items-center gap-1.5">
-                            {activeShift ? (
-                                <button
-                                    type="button"
-                                    onClick={() => setMobileJobSheet(true)}
-                                    className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-indigo-600 text-white flex items-center gap-2 active:scale-[0.98] transition"
-                                >
-                                    <Briefcase className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                                    <span className="flex-1 min-w-0 text-left">
-                                        <span className="block text-[9px] leading-none opacity-75">
-                                            Công việc {openShifts.length > 1 ? `(${openShifts.length} đang mở)` : ''}
-                                        </span>
-                                        <span className="block text-xs font-bold truncate leading-tight mt-0.5">{currentJobName}</span>
-                                    </span>
-                                    <span className="text-[11px] opacity-80 shrink-0">▼</span>
-                                </button>
-                            ) : (
-                                <button
-                                    type="button"
-                                    onClick={() => handleOpenCreateShiftModal()}
-                                    className="flex-1 h-10 px-3 rounded-xl bg-indigo-600 text-white text-xs font-bold flex items-center justify-center gap-1.5"
-                                >
-                                    <Plus className="w-3.5 h-3.5" /> Tạo công việc
-                                </button>
-                            )}
-                            <button
-                                type="button"
-                                onClick={() => setMobileMenu(true)}
-                                className="w-10 h-10 shrink-0 rounded-xl border border-stone-200 dark:border-zinc-700 flex items-center justify-center text-stone-600 dark:text-stone-300 text-lg font-bold leading-none"
-                                aria-label="Thao tác"
-                            >
-                                ⋯
-                            </button>
-                        </div>
-
-                        {activeShift && (
-                            <div className="relative">
-                                {/* Bấm vào kính lúp để đổi chế độ trên Mobile */}
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSearchMode(prev => prev === 'filter' ? 'pin' : 'filter')
-                                        setSearchQuery('')
-                                    }}
-                                    title="Bấm chuyển đổi chế độ tìm kiếm"
-                                    className={`absolute left-1.5 top-1/2 -translate-y-1/2 h-7 px-2 rounded-lg flex items-center gap-1 transition-all z-10 cursor-pointer shadow-2xs ${
-                                        searchMode === 'filter'
-                                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
-                                            : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                    }`}
-                                >
-                                    <Search className="w-3.5 h-3.5 shrink-0" />
-                                    <span className="text-[10px] font-black tracking-tight select-none">
-                                        {searchMode === 'filter' ? 'Nhập' : 'Ghim'}
-                                    </span>
-                                </button>
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            if (searchMode === 'filter') {
-                                                const target = searchResults[0] || displayedPinnedProducts[0]
-                                                if (target) {
-                                                    openPad(target)
-                                                    setSearchQuery('')
-                                                }
-                                            }
-                                        }
-                                    }}
-                                    placeholder={
-                                        searchMode === 'filter'
-                                            ? 'Tìm SP đã ghim (Bấm 🔍 đổi chế độ)'
-                                            : 'Tìm SP từ kho (Bấm 🔍 đổi chế độ)'
-                                    }
-                                    className={`w-full h-9 pl-[76px] pr-8 text-xs placeholder:text-[10.5px] placeholder:text-stone-400 dark:placeholder:text-zinc-500 bg-stone-100 dark:bg-zinc-800 border rounded-xl focus:outline-none transition ${
-                                        searchMode === 'filter'
-                                            ? 'border-indigo-300 dark:border-indigo-700/60 focus:border-indigo-500'
-                                            : 'border-amber-300 dark:border-amber-700/60 focus:border-amber-500'
-                                    }`}
-
-                                />
-
-
-
-                                    {searchQuery && (
-                                        <button
-                                            onClick={() => setSearchQuery('')}
-                                            className="absolute right-1 top-1/2 -translate-y-1/2 w-7 h-7 flex items-center justify-center text-stone-400"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
-                                    )}
-                                    {isSearching && searchMode === 'pin' && (
-                                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
-                                            {searchResults.length > 0 ? (
-                                                searchResults.map(p => {
-                                                    const isPinned = pinnedProducts.some(pinned => pinned.id === p.id)
-                                                    return (
-                                                        <button
-                                                            key={p.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                if (isPinned) handleUnpinProduct(p.id)
-                                                                else handlePinProduct(p)
-                                                            }}
-                                                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-stone-100 dark:active:bg-zinc-700"
-                                                        >
-                                                            <span className="flex-1 min-w-0">
-                                                                <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
-                                                                <span className="block text-[10px] text-stone-400 mt-0.5">{p.sku || 'Chưa có mã'}</span>
-                                                            </span>
-                                                            <span className={`shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 ${
-                                                                isPinned ? 'bg-stone-200 dark:bg-zinc-700 text-stone-600 dark:text-stone-300' : 'bg-indigo-600 text-white'
-                                                            }`}>
-                                                                {isPinned ? <><Check className="w-3 h-3" /> Đã ghim</> : <><Pin className="w-3 h-3" /> Ghim</>}
-                                                            </span>
-                                                        </button>
-                                                    )
-                                                })
-                                            ) : (
-                                                <div className="p-3.5 text-center">
-                                                    <p className="text-[11px] text-stone-500 mb-2">Không tìm thấy sản phẩm.</p>
-                                                    <button
-                                                        onClick={handleAddCustomProduct}
-                                                        className="h-8 px-3 text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
-                                                    >
-                                                        + Ghim hàng tự do: "{searchQuery}"
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                    {isSearching && searchMode === 'filter' && (
-                                        <div className="absolute left-0 right-0 top-full mt-1.5 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
-                                            <div className="px-3 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center justify-between">
-                                                <span>Tìm thấy {searchResults.length} sản phẩm đã ghim</span>
-                                            </div>
-                                            {searchResults.length > 0 ? (
-                                                searchResults.map((p, sIdx) => {
-                                                    const origIdx = pinnedProducts.findIndex(x => x.id === p.id)
-                                                    const productUnits = getProductUnits(p)
-                                                    const currentUnit = selectedUnitMap[p.id] || p.unit || productUnits[0] || 'Kg'
-                                                    const counts = getProductCount(p.name, currentUnit)
-                                                    return (
-                                                        <button
-                                                            key={p.id}
-                                                            type="button"
-                                                            onClick={() => {
-                                                                openPad(p)
-                                                                setSearchQuery('')
-                                                            }}
-                                                            className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left active:bg-indigo-50 dark:active:bg-zinc-700"
-                                                        >
-                                                            <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold flex items-center justify-center shrink-0">
-                                                                {origIdx >= 0 ? origIdx + 1 : sIdx + 1}
-                                                            </span>
-                                                            <span className="flex-1 min-w-0">
-                                                                <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
-                                                                <span className="block text-[10px] text-stone-400 mt-0.5">
-                                                                    {p.sku || 'Chưa có mã'} • ĐVT: {currentUnit}
-                                                                    {(counts.inQty > 0 || counts.outQty > 0) && (
-                                                                        <span className="ml-1.5 font-bold">
-                                                                            {counts.inQty > 0 && <span className="text-emerald-600 mr-1">+{counts.inQty}</span>}
-                                                                            {counts.outQty > 0 && <span className="text-rose-600">-{counts.outQty}</span>}
-                                                                        </span>
-                                                                    )}
-                                                                </span>
-                                                            </span>
-                                                            <span className="shrink-0 h-7 px-2.5 rounded-lg text-[11px] font-bold bg-indigo-600 text-white flex items-center gap-1 shadow-xs">
-                                                                <Zap className="w-3 h-3 fill-white" /> Nhập
-                                                            </span>
-                                                        </button>
-                                                    )
-                                                })
-                                            ) : (
-                                                <div className="p-3.5 text-center">
-                                                    <p className="text-[11px] text-stone-500 mb-2">Không tìm thấy sản phẩm đã ghim nào khớp với "{searchQuery}".</p>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setSearchMode('pin')}
-                                                        className="h-8 px-3 text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
-                                                    >
-                                                        Tìm trong kho để ghim
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                        )}
-
-                    </>
-                )}
-            </header>
-
-            {/* ===== DESKTOP HEADER GỌN: Hàng 1 = Logo + Chuyển chế độ + Tab CV dạng 1 hàng + Thao tác ===== */}
-            <header className="hidden sm:block bg-white dark:bg-zinc-900 border-b border-stone-200 dark:border-zinc-800 sticky top-0 z-30 shadow-xs">
-                {/* Hàng 1: Điều hướng & Quản lý công việc (Siêu mỏng ~42px) */}
-                <div className="max-w-7xl mx-auto px-6 py-1.5 flex items-center gap-3">
-                    <div className="flex items-center gap-2 shrink-0">
-                        <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
-                            <BarChart3 className="w-4 h-4" />
-                        </div>
-                        <h1 className="text-sm font-bold text-stone-900 dark:text-white whitespace-nowrap">Bàn Số Liệu</h1>
-                    </div>
-
-                    {/* Bộ chuyển chế độ: Đang làm | Đã hoàn thành */}
-                    <div className="inline-flex p-0.5 bg-stone-100 dark:bg-zinc-800 rounded-lg shrink-0">
-                        <button
-                            type="button"
-                            onClick={() => setPageView('active')}
-                            className={`h-7 px-2.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
-                                pageView === 'active'
-                                    ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
-                            }`}
-                        >
-                            <span className={`w-2 h-2 rounded-full ${openShifts.length > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-stone-300'}`} />
-                            Đang làm ({openShifts.length})
-                        </button>
-                        <button
-                            type="button"
-                            onClick={openDoneView}
-                            className={`h-7 px-2.5 rounded-md text-xs font-bold flex items-center gap-1.5 transition ${
-                                pageView === 'done'
-                                    ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                                    : 'text-stone-600 dark:text-stone-400 hover:text-stone-900'
-                            }`}
-                        >
-                            <CheckCircle2 className="w-3.5 h-3.5" />
-                            Đã hoàn thành ({pastShifts.length})
-                        </button>
-                    </div>
-
-                    <div className="w-px h-6 bg-stone-200 dark:bg-zinc-700 shrink-0" />
-
-                    {pageView === 'active' ? (
-                        <>
-                            {/* Khoảng trống co giãn giữa bên trái và cụm thao tác bên phải */}
-                            <div className="flex-1 min-w-0" />
-
-                            {/* Cụm thao tác của CV đang chọn */}
-                            {activeShift && (
-                                <div className="shrink-0 flex items-center gap-1.5">
-                                    {subShifts.length > 0 && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setShowSubShiftsPanel(true)}
-                                            className="h-8 px-2.5 rounded-lg text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center gap-1"
-                                            title="Xem các lần chốt tạm"
-                                        >
-                                            <Layers className="w-3.5 h-3.5" /> {subShifts.length} lần chốt
-                                        </button>
-                                    )}
-                                    <button
-                                        type="button"
-                                        onClick={() => setImagesModalOpen(true)}
-                                        className="h-8 px-2.5 rounded-lg text-xs font-semibold border border-sky-300 text-sky-700 bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/40 dark:border-sky-800 dark:text-sky-300 flex items-center gap-1 transition"
-                                        title="Xem & chụp ảnh chứng minh của công việc"
-                                    >
-                                        <Camera className="w-3.5 h-3.5" />
-                                        <span>Ảnh{shiftImageCount > 0 ? ` (${shiftImageCount})` : ''}</span>
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={async () => { await calculateInterimSummary(); setInterimCloseModal(true) }}
-                                        className="h-8 px-2.5 rounded-lg text-xs font-semibold border border-amber-300 text-amber-700 bg-amber-50 hover:bg-amber-100 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300 flex items-center gap-1 transition"
-                                    >
-                                        <CheckCircle2 className="w-3.5 h-3.5" /> Chốt tạm
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={async () => { setCloseOrderTypeId(activeShift?.summary_data?.order_type_id || ''); await calculateShiftSummary(activeShift.opened_at); setCloseShiftModal(true) }}
-                                        className="h-8 px-3 rounded-lg text-xs font-bold bg-rose-600 hover:bg-rose-700 text-white flex items-center gap-1 transition shadow-xs"
-                                    >
-                                        <StopCircle className="w-3.5 h-3.5" /> Hoàn thành CV
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => handleDeleteOpenShift(activeShift.id, currentJobName)}
-                                        title={`Xóa nhanh công việc "${currentJobName}"`}
-                                        className="h-8 w-8 rounded-lg border border-rose-200 dark:border-rose-900/50 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/40 text-rose-600 flex items-center justify-center shrink-0 transition"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                            )}
-
-                            {/* Cụm công cụ: Album ảnh + Mẫu CV + Reload */}
-                            <div className="flex items-center gap-1.5 shrink-0 pl-2 border-l border-stone-200 dark:border-zinc-700">
-                                <Link
-                                    href="/so-lieu/album-anh"
-                                    className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
-                                    title="Quản lý Album hình ảnh nhập xuất"
-                                >
-                                    <Images className="w-3.5 h-3.5 text-sky-500" />
-                                    <span>Album ảnh</span>
-                                </Link>
-                                <Link
-                                    href="/so-lieu/mau-cong-viec"
-                                    className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
-                                    title="Quản lý và tạo mới các công việc mẫu"
-                                >
-                                    <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
-                                    <span>Mẫu CV</span>
-                                </Link>
-                                <button
-                                    type="button"
-                                    onClick={() => loadJournalData()}
-                                    disabled={loadingData}
-                                    title="Tải lại số liệu"
-                                    className="w-8 h-8 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
-                                >
-                                    <RefreshCw className={`w-3.5 h-3.5 ${loadingData ? 'animate-spin' : ''}`} />
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            {/* Bộ lọc khi ở chế độ Đã hoàn thành */}
-                            <div className="flex-1 flex items-center gap-2">
-                                <div className="inline-flex rounded-lg border border-stone-200 dark:border-zinc-700 overflow-hidden text-xs font-semibold">
-                                    {([
-                                        { id: 'today', label: 'Hôm nay' },
-                                        { id: '7d', label: '7 ngày' },
-                                        { id: '30d', label: '30 ngày' },
-                                        { id: 'all', label: 'Tất cả' },
-                                    ] as const).map((r, i) => (
-                                        <button
-                                            key={r.id}
-                                            type="button"
-                                            onClick={() => { setDoneRange(r.id); loadPastShifts(r.id) }}
-                                            className={`h-7 px-2.5 transition ${i > 0 ? 'border-l border-stone-200 dark:border-zinc-700' : ''} ${
-                                                doneRange === r.id
-                                                    ? 'bg-indigo-600 text-white'
-                                                    : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300 hover:bg-stone-50'
-                                            }`}
-                                        >
-                                            {r.label}
-                                        </button>
-                                    ))}
-                                </div>
-                                <div className="relative flex-1 max-w-xs">
-                                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-stone-400" />
-                                    <input
-                                        type="text"
-                                        value={doneSearch}
-                                        onChange={e => setDoneSearch(e.target.value)}
-                                        placeholder="Tìm công việc hoặc sản phẩm..."
-                                        className="w-full h-7 pl-8 pr-7 text-xs bg-stone-50 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                                    />
-                                    {doneSearch && (
-                                        <button
-                                            type="button"
-                                            onClick={() => setDoneSearch('')}
-                                            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600"
-                                        >
-                                            <X className="w-3.5 h-3.5" />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <Link
-                                    href="/so-lieu/mau-cong-viec"
-                                    className="h-8 px-2.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-xs font-semibold text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center gap-1.5 transition"
-                                    title="Quản lý và tạo mới các công việc mẫu"
-                                >
-                                    <Briefcase className="w-3.5 h-3.5 text-indigo-500" />
-                                    <span>Mẫu CV</span>
-                                </Link>
-                                <button
-                                    type="button"
-                                    onClick={() => handleOpenCreateShiftModal()}
-                                    className="h-8 px-3 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5"
-                                >
-                                    <Plus className="w-3.5 h-3.5" /> Tạo công việc mới
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => loadPastShifts(doneRange)}
-                                    disabled={doneListLoading}
-                                    title="Tải lại danh sách"
-                                    className="w-8 h-8 rounded-lg border border-stone-200 dark:border-zinc-700 text-stone-500 hover:bg-stone-100 dark:hover:bg-zinc-800 flex items-center justify-center"
-                                >
-                                    <RefreshCw className={`w-3.5 h-3.5 ${doneListLoading ? 'animate-spin' : ''}`} />
-                                </button>
-                            </div>
-                        </>
-                    )}
-                </div>
-
-                {/* Hàng 2: Danh sách công việc (Dropdown) + Tìm kiếm & Ghim sản phẩm (Chỉ hiện khi Đang làm - Siêu mỏng ~34px) */}
-                {pageView === 'active' && activeShift && (
-                    <div className="border-t border-stone-100 dark:border-zinc-800 bg-stone-50/60 dark:bg-zinc-950/40">
-                        <div className="max-w-7xl mx-auto px-6 py-1 flex items-center gap-2.5">
-                            {/* Cụm chọn công việc dạng SỔ XUỐNG (Dropdown): Kéo dài rộng rãi để đọc trọn vẹn tên CV */}
-                            <div className="relative shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => setDesktopJobDropdown(prev => !prev)}
-                                    className="h-8 px-3 rounded-lg border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-zinc-800 hover:bg-indigo-50/50 dark:hover:bg-zinc-700/60 text-stone-900 dark:text-white flex items-center justify-between gap-2.5 transition min-w-[260px] sm:min-w-[320px] lg:min-w-[380px] max-w-lg group shadow-2xs"
-                                    title="Bấm để chọn hoặc chuyển sang công việc khác"
-                                >
-                                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                                        <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse shrink-0" />
-                                        <span className="text-xs font-bold text-stone-900 dark:text-white truncate max-w-[200px] sm:max-w-[250px] lg:max-w-[300px]">
-                                            {currentJobName}
-                                        </span>
-                                        <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold shrink-0">
-                                            ({allJobJournals.length} đợt)
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 shrink-0 pl-1">
-                                        {openShifts.length > 1 && (
-                                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300">
-                                                {openShifts.length} việc
-                                            </span>
-                                        )}
-                                        <ChevronDown className={`w-3.5 h-3.5 text-stone-400 group-hover:text-indigo-600 transition-transform duration-200 ${desktopJobDropdown ? 'rotate-180' : ''}`} />
-                                    </div>
-                                </button>
-
-                                {/* Dropdown Menu Sổ Xuống */}
-                                {desktopJobDropdown && (
-                                    <>
-                                        {/* Backdrop trong suốt bắt click outside */}
-                                        <div 
-                                            className="fixed inset-0 z-40" 
-                                            onClick={() => setDesktopJobDropdown(false)} 
-                                        />
-                                        <div className="absolute top-full left-0 mt-1.5 w-88 sm:w-[420px] bg-white dark:bg-zinc-900 border border-stone-200 dark:border-zinc-800 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-800 animate-in fade-in zoom-in-95 duration-100">
-                                            {/* Header dropdown */}
-                                            <div className="px-3.5 py-2 bg-stone-50 dark:bg-zinc-850 flex items-center justify-between text-xs font-semibold text-stone-500">
-                                                <span>Danh sách công việc ({openShifts.length} đang mở)</span>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => { setDesktopJobDropdown(false); handleOpenCreateShiftModal(); }}
-                                                    className="text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-bold"
-                                                >
-                                                    <Plus className="w-3.5 h-3.5" /> Tạo mới
-                                                </button>
-                                            </div>
-
-                                            {/* Danh sách các công việc */}
-                                            <div className="max-h-72 overflow-y-auto divide-y divide-stone-100 dark:divide-zinc-800/60">
-                                                {openShifts.map((shift, idx) => {
-                                                    const isSelected = activeShift?.id === shift.id
-                                                    const jobTitle = shift.summary_data?.job_name || shift.notes || `Công việc ${idx + 1}`
-                                                    return (
-                                                        <div
-                                                            key={shift.id}
-                                                            onClick={() => {
-                                                                if (activeShift?.id !== shift.id) {
-                                                                    setPinnedProducts([])
-                                                                    setAllJobJournals([])
-                                                                    setJournalList([])
-                                                                    setSubShifts([])
-                                                                    setPadProduct(null)
-                                                                    setDraftQtyMap({})
-                                                                }
-                                                                setSelectedShiftId(shift.id)
-                                                                setDesktopJobDropdown(false)
-                                                            }}
-                                                            className={`p-3 flex items-center justify-between gap-3 cursor-pointer transition ${
-                                                                isSelected
-                                                                    ? 'bg-indigo-50/70 dark:bg-indigo-950/40'
-                                                                    : 'hover:bg-stone-50 dark:hover:bg-zinc-800/60'
-                                                            }`}
-                                                        >
-                                                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                                                                <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${isSelected ? 'bg-indigo-600 ring-2 ring-indigo-300' : 'bg-emerald-500'}`} />
-                                                                <div className="min-w-0 flex-1">
-                                                                    <div className={`text-xs font-bold leading-snug break-words ${isSelected ? 'text-indigo-700 dark:text-indigo-300' : 'text-stone-800 dark:text-stone-100'}`}>
-                                                                        {jobTitle}
-                                                                    </div>
-                                                                    <div className="text-[11px] text-stone-400 flex items-center gap-1 mt-0.5">
-                                                                        <Clock className="w-3 h-3 shrink-0" />
-                                                                        <span>Mở {formatTimeOnly(shift.opened_at)}</span>
-                                                                        <span>•</span>
-                                                                        <span>{isSelected ? `${allJobJournals.length} đợt` : 'Đang mở'}</span>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                                {isSelected && (
-                                                                    <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-300">
-                                                                        Đang làm
-                                                                    </span>
-                                                                )}
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation()
-                                                                        handleDeleteOpenShift(shift.id, jobTitle)
-                                                                    }}
-                                                                    title={`Xóa công việc "${jobTitle}"`}
-                                                                    className="w-7 h-7 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/60 flex items-center justify-center transition"
-                                                                >
-                                                                    <Trash2 className="w-3.5 h-3.5" />
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    )
-                                                })}
-                                            </div>
-
-                                            {/* Footer dropdown */}
-                                            <div className="p-2 bg-stone-50/50 dark:bg-zinc-800/30">
-                                                <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                        setDesktopJobDropdown(false)
-                                                        handleOpenCreateShiftModal()
-                                                    }}
-                                                    className="w-full h-8 px-3 rounded-lg border border-dashed border-indigo-300 dark:border-indigo-700 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 flex items-center justify-center gap-1.5 transition"
-                                                >
-                                                    <Plus className="w-3.5 h-3.5" />
-                                                    <span>Thêm công việc khác</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </>
-                                )}
-                            </div>
-
-                            {/* Nút [+] tạo công việc mới nhanh */}
-                            <button
-                                type="button"
-                                onClick={() => handleOpenCreateShiftModal()}
-                                title="Thêm công việc mới"
-                                className="h-8 w-8 rounded-lg border-2 border-dashed border-indigo-300 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 flex items-center justify-center shrink-0 transition"
-                            >
-                                <Plus className="w-4 h-4" />
-                            </button>
-
-                            <div className="w-px h-5 bg-stone-200 dark:bg-zinc-700 shrink-0" />
-
-                            {/* Ô tìm kiếm sản phẩm: Bấm vào kính lúp ở đầu ô để đổi chế độ */}
-                            <div className="relative flex-1 min-w-0">
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        setSearchMode(prev => prev === 'filter' ? 'pin' : 'filter')
-                                        setSearchQuery('')
-                                    }}
-                                    title="Bấm chuyển đổi chế độ tìm kiếm"
-                                    className={`absolute left-1.5 top-1/2 -translate-y-1/2 h-6 px-1.5 rounded-md flex items-center gap-1 transition-all z-10 cursor-pointer shadow-2xs ${
-                                        searchMode === 'filter'
-                                            ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-950/80 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800'
-                                            : 'bg-amber-50 hover:bg-amber-100 text-amber-700 dark:bg-amber-950/80 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                                    }`}
-                                >
-                                    <Search className="w-3.5 h-3.5 shrink-0" />
-                                    <span className="text-[10px] font-black tracking-tight select-none">
-                                        {searchMode === 'filter' ? 'Nhập' : 'Ghim'}
-                                    </span>
-                                </button>
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    onKeyDown={e => {
-                                        if (e.key === 'Enter') {
-                                            e.preventDefault()
-                                            if (searchMode === 'filter') {
-                                                const target = searchResults[0] || displayedPinnedProducts[0]
-                                                if (target) {
-                                                    openPad(target)
-                                                    setSearchQuery('')
-                                                }
-                                            }
-                                        }
-                                    }}
-                                    placeholder={
-                                        searchMode === 'filter'
-                                            ? 'Tìm SP đã ghim để nhập số (Bấm 🔍 đổi chế độ)'
-                                            : 'Tìm SP trong kho để ghim (Bấm 🔍 đổi chế độ)'
-                                    }
-                                    className={`w-full h-8 pl-[78px] pr-8 text-xs placeholder:text-[10.5px] placeholder:text-stone-400 dark:placeholder:text-zinc-500 bg-white dark:bg-zinc-800 border rounded-lg focus:ring-2 focus:border-transparent focus:outline-none transition ${
-                                        searchMode === 'filter'
-                                            ? 'border-indigo-200 dark:border-indigo-800/80 focus:ring-indigo-500'
-                                            : 'border-amber-200 dark:border-amber-800/80 focus:ring-amber-500'
-                                    }`}
-
-                                />
-
-
-
-                                {searchQuery && (
-                                    <button
-                                        onClick={() => setSearchQuery('')}
-                                        className="absolute right-1 top-1/2 -translate-y-1/2 w-6 h-6 flex items-center justify-center text-stone-400 hover:text-stone-600"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                                {isSearching && searchMode === 'pin' && (
-                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
-                                        {searchResults.length > 0 ? (
-                                            searchResults.map(p => {
-                                                const isPinned = pinnedProducts.some(pinned => pinned.id === p.id)
-                                                return (
-                                                    <button
-                                                        key={p.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            if (isPinned) handleUnpinProduct(p.id)
-                                                            else handlePinProduct(p)
-                                                        }}
-                                                        className="w-full flex items-center gap-3 px-3.5 py-2 text-left hover:bg-stone-50 dark:hover:bg-zinc-700/50"
-                                                    >
-                                                        <span className="flex-1 min-w-0">
-                                                            <span className="block text-xs font-semibold text-stone-900 dark:text-white">{p.name}</span>
-                                                            <span className="block text-[11px] text-stone-400 mt-0.5">
-                                                                {p.sku || 'Chưa có mã'}
-                                                                {p.available_units && p.available_units.length > 0 && ` • ${p.available_units.join(', ')}`}
-                                                                {p.aliases && ` • Gõ tắt: ${p.aliases}`}
-                                                            </span>
-                                                        </span>
-                                                        <span className={`shrink-0 h-7 px-2.5 rounded-md text-xs font-bold flex items-center gap-1 ${
-                                                            isPinned ? 'bg-stone-200 dark:bg-zinc-700 text-stone-600 dark:text-stone-300' : 'bg-indigo-600 text-white'
-                                                        }`}>
-                                                            {isPinned ? <><Check className="w-3 h-3" /> Đã ghim</> : <><Pin className="w-3 h-3" /> Ghim</>}
-                                                        </span>
-                                                    </button>
-                                                )
-                                            })
-                                        ) : (
-                                            <div className="p-3 text-center">
-                                                <p className="text-xs text-stone-500 mb-1.5">Không tìm thấy sản phẩm trong danh mục.</p>
-                                                <button
-                                                    onClick={handleAddCustomProduct}
-                                                    className="h-7 px-3 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
-                                                >
-                                                    + Ghim hàng tự do: "{searchQuery}"
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                                {isSearching && searchMode === 'filter' && (
-                                    <div className="absolute left-0 right-0 top-full mt-1 bg-white dark:bg-zinc-800 border border-indigo-200 dark:border-indigo-800 rounded-xl shadow-xl z-40 overflow-hidden divide-y divide-stone-100 dark:divide-zinc-700/50 max-h-[60vh] overflow-y-auto">
-                                        <div className="px-3 py-1.5 bg-indigo-50/70 dark:bg-indigo-950/40 text-[11px] font-bold text-indigo-700 dark:text-indigo-300 flex items-center justify-between">
-                                            <span>Tìm thấy {searchResults.length} sản phẩm đã ghim (Bấm hoặc nhấn Enter để nhập số)</span>
-                                            <span className="text-[10px] text-stone-400">Esc để đóng</span>
-                                        </div>
-                                        {searchResults.length > 0 ? (
-                                            searchResults.map((p, sIdx) => {
-                                                const origIdx = pinnedProducts.findIndex(x => x.id === p.id)
-                                                const productUnits = getProductUnits(p)
-                                                const currentUnit = selectedUnitMap[p.id] || p.unit || productUnits[0] || 'Kg'
-                                                const counts = getProductCount(p.name, currentUnit)
-                                                return (
-                                                    <button
-                                                        key={p.id}
-                                                        type="button"
-                                                        onClick={() => {
-                                                            openPad(p)
-                                                            setSearchQuery('')
-                                                        }}
-                                                        className={`w-full flex items-center gap-3 px-3.5 py-2 text-left hover:bg-indigo-50/50 dark:hover:bg-zinc-700/50 transition ${
-                                                            sIdx === 0 ? 'bg-indigo-50/30 dark:bg-indigo-950/20' : ''
-                                                        }`}
-                                                    >
-                                                        <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-[10px] font-bold flex items-center justify-center shrink-0">
-                                                            {origIdx >= 0 ? origIdx + 1 : sIdx + 1}
-                                                        </span>
-                                                        <span className="flex-1 min-w-0">
-                                                            <span className="block text-xs font-semibold text-stone-900 dark:text-white leading-snug">{p.name}</span>
-                                                            <span className="block text-[11px] text-stone-400 mt-0.5">
-                                                                {p.sku || 'Chưa có mã'} • ĐVT: <span className="font-semibold text-stone-600 dark:text-stone-300">{currentUnit}</span>
-                                                                {(counts.inQty > 0 || counts.outQty > 0) && (
-                                                                    <span className="ml-2 font-bold">
-                                                                        {counts.inQty > 0 && <span className="text-emerald-600 mr-1.5">+{counts.inQty}</span>}
-                                                                        {counts.outQty > 0 && <span className="text-rose-600">-{counts.outQty}</span>}
-                                                                    </span>
-                                                                )}
-                                                            </span>
-                                                        </span>
-                                                        <span className="shrink-0 h-7 px-3 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1 shadow-xs">
-                                                            <Zap className="w-3 h-3 fill-white" /> Nhập số
-                                                        </span>
-                                                    </button>
-                                                )
-                                            })
-                                        ) : (
-                                            <div className="p-4 text-center">
-                                                <p className="text-xs text-stone-500 mb-2">Không tìm thấy sản phẩm đã ghim nào khớp với "{searchQuery}".</p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setSearchMode('pin')}
-                                                    className="h-7 px-3 text-xs font-semibold bg-indigo-50 dark:bg-indigo-950 text-indigo-600 dark:text-indigo-400 rounded-lg border border-indigo-200 dark:border-indigo-800"
-                                                >
-                                                    Chuyển sang tìm trong kho để ghim SP này
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-
-                            {subShifts.length > 0 && (
-                                <div className="inline-flex rounded-lg border border-stone-200 dark:border-zinc-700 overflow-hidden text-xs font-semibold shrink-0">
-                                    <button
-                                        type="button"
-                                        onClick={() => setViewMode('sub-shift')}
-                                        className={`h-7 px-2.5 ${viewMode === 'sub-shift' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300'}`}
-                                    >
-                                        Đợt hiện tại
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => setViewMode('shift')}
-                                        className={`h-7 px-2.5 border-l border-stone-200 dark:border-zinc-700 ${viewMode === 'shift' ? 'bg-indigo-600 text-white' : 'bg-white dark:bg-zinc-800 text-stone-600 dark:text-stone-300'}`}
-                                    >
-                                        Toàn CV
-                                    </button>
-                                </div>
-                            )}
-
-                            <div className="ml-auto flex items-center gap-2 text-xs text-stone-500 shrink-0">
-                                <span>Đã ghim: <strong className="text-stone-800 dark:text-white">{pinnedProducts.length} SP</strong></span>
-                                {pinnedProducts.length > 0 && (
-                                    <button
-                                        type="button"
-                                        onClick={() => {
-                                            if (confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa toàn bộ danh sách ${pinnedProducts.length} sản phẩm đã ghim của công việc "${currentJobName}" không?\n\n(Thao tác này sẽ dọn sạch danh sách sản phẩm trên bàn làm việc!)`)) {
-                                                updatePinnedProducts([])
-                                            }
-                                        }}
-                                        title="Xóa toàn bộ danh sách sản phẩm đã ghim"
-                                        className="w-7 h-7 rounded-lg text-stone-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center justify-center transition"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                )}
-                            </div>
-
-                        </div>
-                    </div>
-                )}
-            </header>
+            <SoLieuHeader
+                isOnline={isOnline}
+                offlineQueueCount={offlineQueueCount}
+                isSyncingOffline={isSyncingOffline}
+                onSyncOffline={syncOfflineWebData}
+                pageView={pageView}
+                setPageView={setPageView}
+                openDoneView={openDoneView}
+                openShifts={openShifts}
+                pastShiftsCount={pastShifts.length}
+                activeShift={activeShift}
+                currentJobName={currentJobName}
+                allJobJournalsCount={allJobJournals.length}
+                subShiftsCount={subShifts.length}
+                shiftImageCount={shiftImageCount}
+                loadingData={loadingData}
+                doneRange={doneRange}
+                setDoneRange={setDoneRange}
+                loadPastShifts={loadPastShifts}
+                doneSearch={doneSearch}
+                setDoneSearch={setDoneSearch}
+                doneListLoading={doneListLoading}
+                searchMode={searchMode}
+                setSearchMode={setSearchMode}
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                isSearching={isSearching}
+                searchResults={searchResults}
+                pinnedProducts={pinnedProducts}
+                displayedPinnedProducts={displayedPinnedProducts}
+                selectedUnitMap={selectedUnitMap}
+                viewMode={viewMode}
+                setViewMode={setViewMode}
+                desktopJobDropdown={desktopJobDropdown}
+                setDesktopJobDropdown={setDesktopJobDropdown}
+                setMobileJobSheet={setMobileJobSheet}
+                setMobileMenu={setMobileMenu}
+                getProductUnits={getProductUnits}
+                getProductCount={getProductCount}
+                onOpenPad={openPad}
+                onPinProduct={handlePinProduct}
+                onUnpinProduct={handleUnpinProduct}
+                onAddCustomProduct={handleAddCustomProduct}
+                onClearAllPins={() => {
+                    if (confirm(`⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa toàn bộ danh sách ${pinnedProducts.length} sản phẩm đã ghim của công việc "${currentJobName}" không?\n\n(Thao tác này sẽ dọn sạch danh sách sản phẩm trên bàn làm việc!)`)) {
+                        updatePinnedProducts([])
+                    }
+                }}
+                onOpenCreateShiftModal={handleOpenCreateShiftModal}
+                onSelectActiveShift={(shiftId) => {
+                    if (activeShift?.id !== shiftId) {
+                        setPinnedProducts([])
+                        setAllJobJournals([])
+                        setJournalList([])
+                        setSubShifts([])
+                        setPadProduct(null)
+                        setDraftQtyMap({})
+                    }
+                    setSelectedShiftId(shiftId)
+                }}
+                onDeleteOpenShift={handleDeleteOpenShift}
+                onShowSubShiftsPanel={() => setShowSubShiftsPanel(true)}
+                onOpenImagesModal={() => setImagesModalOpen(true)}
+                onOpenInterimCloseModal={async () => {
+                    await calculateInterimSummary()
+                    setInterimCloseModal(true)
+                }}
+                onOpenCloseShiftModal={async () => {
+                    setCloseOrderTypeId(activeShift?.summary_data?.order_type_id || '')
+                    await calculateShiftSummary(activeShift.opened_at)
+                    setCloseShiftModal(true)
+                }}
+                onReloadJournalData={() => loadJournalData()}
+            />
 
             {/* 4. BÀN LÀM VIỆC CHÍNH & BÁO CÁO ĐÃ HOÀN THÀNH TÍCH HỢP */}
             <main className={`flex-1 p-3 sm:px-6 sm:pt-1 sm:pb-6 max-w-7xl mx-auto w-full pb-20 sm:pb-8 ${pageView === 'active' && activeShift && pinnedProducts.length > 0 ? 'sm:grid sm:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_360px] sm:gap-5 sm:items-start' : ''}`}>

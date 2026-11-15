@@ -29,6 +29,8 @@ import { EditSingleBoxModal } from './EditSingleBoxModal'
 import { BulkEditBoxesModal } from './BulkEditBoxesModal'
 import { EditPalletInfoModal } from './EditPalletInfoModal'
 import { ApproveOrEditLotModal } from './ApproveOrEditLotModal'
+import { LinkedPalletsTab } from './LinkedPalletsTab'
+import { UnlinkedPalletsTab } from './UnlinkedPalletsTab'
 
 import type {
     BoxLabelItem,
@@ -50,6 +52,8 @@ import {
     findBestMatchingProduct,
     detectPalletProductLines,
     getBoxIndex,
+    syncPalletTagToLot,
+    exportPalletToExcel,
 } from './palletHelpers'
 
 export type { ApproveLotProductLine }
@@ -749,42 +753,7 @@ export default function PalletsPageContent() {
 
             // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
             const tagFromGroup = group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean)
-            if (tagFromGroup && tagFromGroup.trim()) {
-                const cleanTag = tagFromGroup.trim().toUpperCase()
-                try {
-                    const { data: existingItems } = await supabase
-                        .from('lot_items')
-                        .select('id')
-                        .eq('lot_id', targetLot.id)
-
-                    const itemsList = existingItems && existingItems.length > 0 ? existingItems : [{ id: null }]
-
-                    for (const item of itemsList) {
-                        let query = supabase
-                            .from('lot_tags')
-                            .select('id')
-                            .eq('lot_id', targetLot.id)
-                            .eq('tag', cleanTag)
-                        if (item.id) {
-                            query = query.eq('lot_item_id', item.id)
-                        } else {
-                            query = query.is('lot_item_id', null)
-                        }
-                        const { data: existTag } = await query.maybeSingle()
-
-                        if (!existTag) {
-                            await (supabase.from('lot_tags') as any).insert({
-                                lot_id: targetLot.id,
-                                lot_item_id: item.id || null,
-                                tag: cleanTag,
-                                added_at: new Date().toISOString()
-                            })
-                        }
-                    }
-                } catch (tErr) {
-                    console.warn('Lỗi ghi lot_tags:', tErr)
-                }
-            }
+            await syncPalletTagToLot(targetLot.id, tagFromGroup)
 
             showToast(`✅ Đã kết nối ${group.boxes.length} thùng (STT: ${group.pallet_stt}) vào LOT "${targetLot.code}"!`, 'success')
             setGroupToLink(null)
@@ -854,42 +823,7 @@ export default function PalletsPageContent() {
 
             // 6. Cập nhật tag nếu có
             const tagFromGroup = group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean)
-            if (tagFromGroup && tagFromGroup.trim()) {
-                const cleanTag = tagFromGroup.trim().toUpperCase()
-                try {
-                    const { data: existingItems } = await supabase
-                        .from('lot_items')
-                        .select('id')
-                        .eq('lot_id', targetLot.id)
-
-                    const itemsList = existingItems && existingItems.length > 0 ? existingItems : [{ id: null }]
-
-                    for (const item of itemsList) {
-                        let query = supabase
-                            .from('lot_tags')
-                            .select('id')
-                            .eq('lot_id', targetLot.id)
-                            .eq('tag', cleanTag)
-                        if (item.id) {
-                            query = query.eq('lot_item_id', item.id)
-                        } else {
-                            query = query.is('lot_item_id', null)
-                        }
-                        const { data: existTag } = await query.maybeSingle()
-
-                        if (!existTag) {
-                            await (supabase.from('lot_tags') as any).insert({
-                                lot_id: targetLot.id,
-                                lot_item_id: item.id || null,
-                                tag: cleanTag,
-                                added_at: new Date().toISOString()
-                            })
-                        }
-                    }
-                } catch (tErr) {
-                    console.warn('Lỗi ghi lot_tags:', tErr)
-                }
-            }
+            await syncPalletTagToLot(targetLot.id, tagFromGroup)
 
             showToast(`✅ Đã cập nhật thành công ${group.boxes.length} thùng mới vào LOT "${targetLot.code}"!`, 'success')
             fetchData()
@@ -934,42 +868,7 @@ export default function PalletsPageContent() {
 
                     // Tự động ghi mã phụ (tag) vào bảng lot_tags nếu có
                     const tagFromGroup = group.pallet_tag || group.boxes.map(b => b.metadata?.pallet_tag || b.metadata?.tag).find(Boolean)
-                    if (tagFromGroup && tagFromGroup.trim()) {
-                        const cleanTag = tagFromGroup.trim().toUpperCase()
-                        try {
-                            const { data: existingItems } = await supabase
-                                .from('lot_items')
-                                .select('id')
-                                .eq('lot_id', targetLot.id)
-
-                            const itemsList = existingItems && existingItems.length > 0 ? existingItems : [{ id: null }]
-
-                            for (const item of itemsList) {
-                                let query = supabase
-                                    .from('lot_tags')
-                                    .select('id')
-                                    .eq('lot_id', targetLot.id)
-                                    .eq('tag', cleanTag)
-                                if (item.id) {
-                                    query = query.eq('lot_item_id', item.id)
-                                } else {
-                                    query = query.is('lot_item_id', null)
-                                }
-                                const { data: existTag } = await query.maybeSingle()
-
-                                if (!existTag) {
-                                    await (supabase.from('lot_tags') as any).insert({
-                                        lot_id: targetLot.id,
-                                        lot_item_id: item.id || null,
-                                        tag: cleanTag,
-                                        added_at: new Date().toISOString()
-                                    })
-                                }
-                            }
-                        } catch (tErr) {
-                            console.warn('Lỗi ghi lot_tags tự động:', tErr)
-                        }
-                    }
+                    await syncPalletTagToLot(targetLot.id, tagFromGroup)
 
                     successCount++
                 }
@@ -1745,35 +1644,7 @@ export default function PalletsPageContent() {
             }
 
             // 3. Cập nhật lot_tags nếu có
-            if (customLotTag && customLotTag.trim()) {
-                const cleanTag = customLotTag.trim().toUpperCase()
-                try {
-                    let itemsToTag = insertedLotItems
-                    if (!itemsToTag || itemsToTag.length === 0) {
-                        const { data: refetched } = await supabase.from('lot_items').select('id').eq('lot_id', editingLinkedPallet.id)
-                        itemsToTag = refetched || []
-                    }
-
-                    const itemsList = itemsToTag.length > 0 ? itemsToTag : [{ id: null }]
-                    for (const item of itemsList) {
-                        let query = supabase.from('lot_tags').select('id').eq('lot_id', editingLinkedPallet.id).eq('tag', cleanTag)
-                        if (item.id) query = query.eq('lot_item_id', item.id)
-                        else query = query.is('lot_item_id', null)
-                        const { data: existingTag } = await query.maybeSingle()
-
-                        if (!existingTag) {
-                            await (supabase.from('lot_tags') as any).insert({
-                                lot_id: editingLinkedPallet.id,
-                                lot_item_id: item.id || null,
-                                tag: cleanTag,
-                                added_at: new Date().toISOString()
-                            })
-                        }
-                    }
-                } catch (tagErr) {
-                    console.warn('Cảnh báo ghi lot_tags:', tagErr)
-                }
-            }
+            await syncPalletTagToLot(editingLinkedPallet.id, customLotTag, insertedLotItems)
 
             // 4. Đồng bộ lại toàn bộ thùng hàng thuộc LOT này trong box_labels
             if (editingLinkedPallet.box_labels.length > 0) {
@@ -2169,44 +2040,7 @@ export default function PalletsPageContent() {
     const handleExportExcel = async (pallet: PalletLot) => {
         setIsExporting(true)
         try {
-            const ExcelJS = (await import('exceljs')).default
-            const { saveAs } = (await import('file-saver')).default
-
-            const workbook = new ExcelJS.Workbook()
-            const sttStr = pallet.daily_seq ? decodeSTT(pallet.daily_seq) : pallet.code
-            const worksheet = workbook.addWorksheet(`Pallet_${sttStr}`)
-
-            worksheet.columns = [
-                { header: 'STT Thùng', key: 'stt', width: 12 },
-                { header: 'Mã Thùng Barcode', key: 'code', width: 34 },
-                { header: 'Mã LOT Thành Phẩm', key: 'lot_code', width: 22 },
-                { header: 'Mã Sản Phẩm (SKU)', key: 'sku', width: 20 },
-                { header: 'Tên Sản Phẩm', key: 'product_name', width: 32 },
-                { header: 'Quy Cách', key: 'spec', width: 16 },
-                { header: 'Tổ / Ca Đóng Gói', key: 'shift', width: 18 },
-                { header: 'Vùng Nguyên Liệu', key: 'region', width: 18 },
-                { header: 'Ngày Đóng Gói', key: 'packaging_date', width: 16 },
-                { header: 'Khối Lượng (Kg)', key: 'weight', width: 16 },
-            ]
-
-            pallet.box_labels.forEach(box => {
-                worksheet.addRow({
-                    stt: getBoxIndex(box),
-                    code: box.code,
-                    lot_code: box.finished_lot_code || box.semi_finished_lot_code || '---',
-                    sku: box.metadata?.sku || box.products?.sku || '---',
-                    product_name: box.metadata?.product_name || box.products?.name || '---',
-                    spec: box.metadata?.spec || '---',
-                    shift: box.metadata?.shift_group || '---',
-                    region: box.metadata?.region || '---',
-                    packaging_date: box.metadata?.packaging_date || '---',
-                    weight: Number(box.quantity) || 20,
-                })
-            })
-
-            const buffer = await workbook.xlsx.writeBuffer()
-            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-            saveAs(blob, `Pallet_${sttStr}_ChiTiet_${new Date().toISOString().slice(0, 10)}.xlsx`)
+            await exportPalletToExcel(pallet)
             showToast('Xuất báo cáo Excel Pallet thành công!', 'success')
         } catch (err: any) {
             console.error('Export Excel Error:', err)
@@ -2373,765 +2207,60 @@ export default function PalletsPageContent() {
 
             {/* ── MAIN CONTENT (2 PANELS) ────────────────────────── */}
             {activeTab === 'linked' ? (
-                /* TAB 1: ĐÃ KẾT NỐI */
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 flex-1 min-h-0 overflow-hidden">
-                    {/* PANEL TRÁI: DANH SÁCH LOT / PALLET ĐÃ KẾT NỐI (4 Cols) */}
-                    <div className={`lg:col-span-4 flex flex-col bg-white dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 shadow-xs overflow-hidden ${showMobileDetail ? 'hidden lg:flex' : 'flex'}`}>
-                        {/* Search Bar */}
-                        <div className="p-3 border-b border-stone-100 dark:border-zinc-800">
-                            <div className="relative">
-                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={15} />
-                                <input
-                                    type="text"
-                                    placeholder="Tìm theo STT (C544, F3219...), mã LOT..."
-                                    value={searchQuery}
-                                    onChange={e => setSearchQuery(e.target.value)}
-                                    className="w-full pl-9 pr-3 py-1.5 bg-stone-50 dark:bg-zinc-800/60 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs text-stone-800 dark:text-zinc-200 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Pallet List */}
-                        <div className="flex-1 overflow-y-auto divide-y divide-stone-100 dark:divide-zinc-800/60 p-2 space-y-1.5">
-                            {isLoading ? (
-                                <div className="flex flex-col items-center justify-center py-16 text-stone-400">
-                                    <Loader2 className="animate-spin mb-2" size={24} />
-                                    <span className="text-xs">Đang tải danh sách Pallet...</span>
-                                </div>
-                            ) : filteredLinkedPallets.length === 0 ? (
-                                <div className="text-center py-16 px-4">
-                                    <Layers className="mx-auto text-stone-300 dark:text-zinc-600 mb-2" size={36} />
-                                    <p className="text-xs font-bold text-stone-600 dark:text-zinc-400">
-                                        Không tìm thấy Pallet nào đã kết nối
-                                    </p>
-                                    <p className="text-[11px] text-stone-400 dark:text-zinc-500 mt-1">
-                                        Hãy quét tem và đồng bộ từ App di động, hoặc kiểm tra tab "Chưa kết nối".
-                                    </p>
-                                </div>
-                            ) : (
-                                filteredLinkedPallets.map(pallet => {
-                                    const isSelected = selectedPallet?.id === pallet.id
-                                    const count = pallet.box_labels.length
-                                    const isFull = count >= 30
-                                    const totalWeight = pallet.box_labels.reduce((s, b) => s + (Number(b.quantity) || 0), 0)
-                                    const sttDisplay = pallet.daily_seq ? decodeSTT(pallet.daily_seq) : pallet.code
-
-                                    return (
-                                        <div
-                                            key={pallet.id}
-                                            onClick={() => {
-                                                setSelectedPallet(pallet)
-                                                setShowMobileDetail(true)
-                                            }}
-                                            className={`p-3 rounded-xl cursor-pointer transition-all border ${
-                                                isSelected
-                                                    ? 'bg-emerald-50/70 dark:bg-emerald-950/30 border-emerald-500/40 shadow-xs'
-                                                    : 'bg-white dark:bg-zinc-900 border-stone-100 dark:border-zinc-800 hover:border-emerald-300 dark:hover:border-zinc-700'
-                                            }`}
-                                        >
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="font-mono font-black text-sm text-emerald-600 dark:text-emerald-400 bg-emerald-100/70 dark:bg-emerald-950/60 px-2 py-0.5 rounded-lg border border-emerald-200/50 dark:border-emerald-800/40">
-                                                        STT: {sttDisplay}
-                                                    </span>
-                                                    <span className="font-mono text-xs text-stone-500 dark:text-zinc-400">
-                                                        ({pallet.code})
-                                                    </span>
-                                                </div>
-                                                <div className="flex items-center gap-1.5">
-                                                    <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                            e.stopPropagation()
-                                                            setSelectedPallet(pallet)
-                                                            handleOpenEditLinkedLot(pallet)
-                                                        }}
-                                                        className="p-1 text-stone-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded-md transition-colors"
-                                                        title="Sửa toàn bộ thông tin LOT này"
-                                                    >
-                                                        <Edit3 size={13} />
-                                                    </button>
-                                                    {pallet.status === 'exported' && (
-                                                        <span className="text-[10px] font-black px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                                                            Đã xuất kho
-                                                        </span>
-                                                    )}
-                                                    <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
-                                                        isFull
-                                                            ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
-                                                            : 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300'
-                                                    }`}>
-                                                        {count}/30 thùng
-                                                    </span>
-                                                </div>
-                                            </div>
-
-                                            <p className="text-xs font-bold text-stone-800 dark:text-zinc-200 truncate mb-2">
-                                                {pallet.products?.name || 'Sản phẩm chưa định danh'}
-                                            </p>
-
-                                            {/* Progress Bar 30 boxes */}
-                                            <div className="w-full bg-stone-100 dark:bg-zinc-800 h-1.5 rounded-full overflow-hidden mb-2">
-                                                <div
-                                                    className={`h-full transition-all duration-300 ${isFull ? 'bg-emerald-500' : 'bg-amber-500'}`}
-                                                    style={{ width: `${Math.min(100, (count / 30) * 100)}%` }}
-                                                />
-                                            </div>
-
-                                            <div className="flex items-center justify-between text-[11px] text-stone-500 dark:text-zinc-400 pt-1 border-t border-stone-100 dark:border-zinc-800/60">
-                                                <span>KL: <strong className="text-stone-800 dark:text-zinc-200">{totalWeight.toFixed(1)} Kg</strong></span>
-                                                <span>{new Date(pallet.created_at).toLocaleDateString('vi-VN')}</span>
-                                            </div>
-                                        </div>
-                                    )
-                                })
-                            )}
-                        </div>
-                    </div>
-
-                    {/* PANEL PHẢI: CHI TIẾT 30 THÙNG CỦA PALLET ĐANG CHỌN (8 Cols) */}
-                    <div className={`lg:col-span-8 flex flex-col bg-white dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 shadow-xs overflow-hidden ${showMobileDetail ? 'flex' : 'hidden lg:flex'}`}>
-                        {!selectedPallet ? (
-                            <div className="flex-1 flex flex-col items-center justify-center text-stone-400 py-20">
-                                <Layers size={40} className="text-stone-300 dark:text-zinc-600 mb-2" />
-                                <p className="text-xs font-bold text-stone-600 dark:text-zinc-400">
-                                    Chọn một Pallet ở cột bên trái để xem chi tiết 30 thùng
-                                </p>
-                            </div>
-                        ) : (
-                            <>
-                                {/* Header Panel Phải */}
-                                <div className="p-4 border-b border-stone-100 dark:border-zinc-800 bg-stone-50/50 dark:bg-zinc-900/50">
-                                    <div className="flex flex-wrap items-center justify-between gap-3">
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => setShowMobileDetail(false)}
-                                                className="lg:hidden p-1.5 text-stone-500 hover:text-stone-800 rounded-lg hover:bg-stone-100"
-                                            >
-                                                <ArrowLeft size={18} />
-                                            </button>
-                                            <div>
-                                                <div className="flex items-center gap-2">
-                                                    <h2 className="text-lg font-black text-stone-900 dark:text-zinc-100">
-                                                        Pallet STT: {selectedPallet.daily_seq ? decodeSTT(selectedPallet.daily_seq) : selectedPallet.code}
-                                                    </h2>
-                                                    <span className="font-mono text-xs text-stone-500 dark:text-zinc-400">
-                                                        [LOT: {selectedPallet.code}]
-                                                    </span>
-                                                    {selectedPallet.status === 'exported' && (
-                                                        <span className="text-[11px] font-black px-2 py-0.5 rounded-lg bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                                                            🚢 Đã xuất kho / Đã bán
-                                                        </span>
-                                                    )}
-                                                </div>
-                                                <p className="text-xs text-stone-600 dark:text-zinc-400 font-medium">
-                                                    {selectedPallet.products?.name || 'Chưa gán tên sản phẩm'} · Tiến độ: {selectedPallet.box_labels.length}/30 thùng · Tổng: {selectedPallet.box_labels.reduce((s, b) => s + (Number(b.quantity) || 0), 0).toFixed(1)} Kg
-                                                </p>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex items-center gap-2">
-                                            <button
-                                                onClick={() => handleOpenEditLinkedLot(selectedPallet)}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer active:scale-95"
-                                                title="Chỉnh sửa toàn bộ thông tin LOT (Sản phẩm, ngày tháng, xuất xứ...)"
-                                            >
-                                                <Edit3 size={14} />
-                                                <span>Sửa thông tin LOT</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => handleExportExcel(selectedPallet)}
-                                                disabled={isExporting}
-                                                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer disabled:opacity-50"
-                                            >
-                                                {isExporting ? <Loader2 size={14} className="animate-spin" /> : <FileSpreadsheet size={14} />}
-                                                <span>Xuất Excel Pallet</span>
-                                            </button>
-
-                                            <button
-                                                onClick={() => handleUnlinkEntirePallet(selectedPallet)}
-                                                title="Hủy liên kết Pallet (Chuyển về Chưa kết nối)"
-                                                className="flex items-center gap-1.5 px-3 py-1.5 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 rounded-xl text-xs font-bold border border-amber-200 dark:border-amber-800 transition-colors cursor-pointer"
-                                            >
-                                                <Unlink size={14} />
-                                                <span>Hủy liên kết LOT</span>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Search thùng */}
-                                    <div className="mt-3 relative">
-                                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" size={14} />
-                                        <input
-                                            type="text"
-                                            placeholder="Tìm nhanh trong 30 thùng: STT, mã thùng, quy cách, tổ..."
-                                            value={boxSearchQuery}
-                                            onChange={e => setBoxSearchQuery(e.target.value)}
-                                            className="w-full pl-9 pr-3 py-1.5 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-xl text-xs text-stone-800 dark:text-zinc-200 placeholder-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                                        />
-                                    </div>
-                                </div>
-
-                                {/* Danh sách 30 thẻ thùng */}
-                                <div className="flex-1 overflow-y-auto p-4">
-                                    {filteredBoxes.length === 0 ? (
-                                        <div className="text-center py-12 text-stone-400 text-xs">
-                                            Không có thùng nào khớp với từ khóa tìm kiếm.
-                                        </div>
-                                    ) : (
-                                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                                            {filteredBoxes.map(box => {
-                                                const idx = getBoxIndex(box)
-                                                const meta = box.metadata || {}
-
-                                                return (
-                                                    <div
-                                                        key={box.id}
-                                                        className="p-3 bg-stone-50/70 dark:bg-zinc-800/40 rounded-xl border border-stone-200/80 dark:border-zinc-800 hover:border-emerald-400 transition-all group"
-                                                    >
-                                                        <div className="flex items-start justify-between gap-2 mb-2">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <span className="w-7 h-7 flex items-center justify-center font-black text-xs bg-emerald-600 text-white rounded-lg">
-                                                                    #{idx}
-                                                                </span>
-                                                                <div>
-                                                                    <p className="font-mono font-bold text-xs text-stone-800 dark:text-zinc-200 truncate max-w-[130px]" title={box.code}>
-                                                                        {box.code}
-                                                                    </p>
-                                                                    <p className="text-[10px] text-stone-500">
-                                                                        LOT: <strong className="text-stone-700 dark:text-zinc-300">{box.finished_lot_code || box.semi_finished_lot_code || '---'}</strong>
-                                                                    </p>
-                                                                </div>
-                                                            </div>
-
-                                                            <div className="flex items-center gap-1">
-                                                                <button
-                                                                    onClick={() => handleOpenEditBox(box)}
-                                                                    title="Sửa thông tin thùng"
-                                                                    className="p-1 text-stone-400 hover:text-emerald-600 rounded-md hover:bg-white dark:hover:bg-zinc-700"
-                                                                >
-                                                                    <Edit3 size={13} />
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => handleUnlinkBox(box)}
-                                                                    disabled={isUnlinkingId === box.id}
-                                                                    title="Gỡ thùng này ra khỏi Pallet"
-                                                                    className="p-1 text-stone-400 hover:text-rose-600 rounded-md hover:bg-white dark:hover:bg-zinc-700 disabled:opacity-50"
-                                                                >
-                                                                    {isUnlinkingId === box.id ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-
-                                                        {/* Metadata Details (Hỗ trợ cả Tem In OCR lẫn Dấu Đóng Mực) */}
-                                                        {meta.scan_type === 'stamp' ? (
-                                                            <div className="bg-amber-50/80 dark:bg-amber-950/40 p-2 rounded-lg border border-amber-200/80 dark:border-amber-800/60 text-[10px] space-y-1 mb-2">
-                                                                <div className="flex items-center justify-between">
-                                                                    <span className="font-extrabold text-[10px] text-amber-700 dark:text-amber-400">📦 ĐÓNG DẤU MỰC</span>
-                                                                    <span className="font-mono text-stone-500">#{idx}</span>
-                                                                </div>
-                                                                <p className="truncate"><strong className="text-stone-500">Dòng 1:</strong> <span className="font-mono font-bold text-stone-800 dark:text-zinc-200">{meta.stamp_line1 || '---'}</span></p>
-                                                                <p className="truncate"><strong className="text-stone-500">Dòng 2:</strong> <span className="font-mono font-bold text-stone-800 dark:text-zinc-200">{meta.stamp_line2 || '---'}</span></p>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="grid grid-cols-2 gap-1 text-[10px] bg-white dark:bg-zinc-800/80 p-2 rounded-lg border border-stone-100 dark:border-zinc-700/60 mb-2">
-                                                                <div>
-                                                                    <span className="text-stone-400 block">Quy cách:</span>
-                                                                    <span className="font-bold text-stone-700 dark:text-zinc-300 truncate block">{meta.spec || '---'}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <span className="text-stone-400 block">Tổ / Ca:</span>
-                                                                    <span className="font-bold text-stone-700 dark:text-zinc-300 truncate block">{meta.shift_group || '---'}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <span className="text-stone-400 block">Ngày SX:</span>
-                                                                    <span className="font-bold text-amber-600 dark:text-amber-400 truncate block">{meta.production_date || '---'}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <span className="text-stone-400 block">Ngày ĐG:</span>
-                                                                    <span className="font-bold text-stone-700 dark:text-zinc-300 truncate block">{meta.packaging_date || '---'}</span>
-                                                                </div>
-                                                            </div>
-                                                        )}
-
-                                                        <div className="flex items-center justify-between text-[11px] pt-1">
-                                                            <span className="text-stone-400 text-[10px]">Trọng lượng:</span>
-                                                            <span className="font-black text-xs text-emerald-600 dark:text-emerald-400">
-                                                                {Number(box.quantity || 20).toFixed(1)} {box.unit}
-                                                            </span>
-                                                        </div>
-                                                    </div>
-                                                )
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-                            </>
-                        )}
-                    </div>
-                </div>
+                <LinkedPalletsTab
+                    isLoading={isLoading}
+                    filteredLinkedPallets={filteredLinkedPallets}
+                    selectedPallet={selectedPallet}
+                    setSelectedPallet={setSelectedPallet}
+                    showMobileDetail={showMobileDetail}
+                    setShowMobileDetail={setShowMobileDetail}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    boxSearchQuery={boxSearchQuery}
+                    setBoxSearchQuery={setBoxSearchQuery}
+                    filteredBoxes={filteredBoxes}
+                    isExporting={isExporting}
+                    isUnlinkingId={isUnlinkingId}
+                    handleOpenEditLinkedLot={handleOpenEditLinkedLot}
+                    handleExportExcel={handleExportExcel}
+                    handleUnlinkEntirePallet={handleUnlinkEntirePallet}
+                    handleOpenEditBox={handleOpenEditBox}
+                    handleUnlinkBox={handleUnlinkBox}
+                />
             ) : (
-                /* TAB 2: CHƯA KẾT NỐI (Chờ kết nối LOT) */
-                <div className="flex flex-col flex-1 min-h-0 bg-white dark:bg-zinc-900 rounded-2xl border border-stone-200 dark:border-zinc-800 shadow-xs overflow-hidden">
-                    {/* Toolbar tab Chưa kết nối - Thiết kế siêu gọn gàng trên 1 hàng duy nhất */}
-                    <div className="px-3 py-1.5 border-b border-stone-100 dark:border-zinc-800 bg-amber-50/40 dark:bg-amber-950/20 flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                            <span className="inline-flex items-center gap-1 text-xs font-black text-amber-800 dark:text-amber-300">
-                                <AlertTriangle size={14} className="text-amber-500 shrink-0" />
-                                <span>Chờ kết nối ({filteredUnlinkedGroups.length})</span>
-                            </span>
-
-                            <button
-                                onClick={handleAutoLinkAll}
-                                disabled={isAutoLinking || unlinkedGroups.filter(g => !!g.matchedLot).length === 0}
-                                className="flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-all shadow-2xs cursor-pointer disabled:opacity-40"
-                                title="Tự động kết nối tất cả các nhóm đã khớp STT"
-                            >
-                                {isAutoLinking ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
-                                <span>Tự động kết nối ({unlinkedGroups.filter(g => !!g.matchedLot).length})</span>
-                            </button>
-                        </div>
-
-                        {/* Date Filter & Search & Chuyển đổi Dạng Lưới / Dạng Danh Sách */}
-                        <div className="flex flex-wrap items-center gap-1.5 flex-1 justify-end">
-                            {/* Date Filter Pill Group */}
-                            <div className="flex items-center gap-0.5 bg-stone-100 dark:bg-zinc-800 p-0.5 rounded-lg border border-stone-200 dark:border-zinc-700 text-[11px] shrink-0">
-                                <button
-                                    type="button"
-                                    onClick={() => { setUnlinkedDateFilter('all'); setUnlinkedPage(1); }}
-                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                                        unlinkedDateFilter === 'all'
-                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
-                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
-                                    }`}
-                                >
-                                    Tất cả
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { setUnlinkedDateFilter('today'); setUnlinkedPage(1); }}
-                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                                        unlinkedDateFilter === 'today'
-                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
-                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
-                                    }`}
-                                >
-                                    Hôm nay
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { setUnlinkedDateFilter('3days'); setUnlinkedPage(1); }}
-                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                                        unlinkedDateFilter === '3days'
-                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
-                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
-                                    }`}
-                                >
-                                    3 ngày
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => { setUnlinkedDateFilter('7days'); setUnlinkedPage(1); }}
-                                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
-                                        unlinkedDateFilter === '7days'
-                                            ? 'bg-white dark:bg-zinc-700 text-stone-900 dark:text-zinc-100 shadow-2xs'
-                                            : 'text-stone-500 hover:text-stone-800 dark:text-zinc-400'
-                                    }`}
-                                >
-                                    7 ngày
-                                </button>
-                            </div>
-
-                            <div className="relative flex-1 min-w-[130px] max-w-[190px]">
-                                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-stone-400" size={13} />
-                                <input
-                                    type="text"
-                                    placeholder="Tìm STT (G56...)..."
-                                    value={searchQuery}
-                                    onChange={e => { setSearchQuery(e.target.value); setUnlinkedPage(1); }}
-                                    className="w-full pl-8 pr-2.5 py-1 bg-white dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 rounded-lg text-xs text-stone-800 dark:text-zinc-200 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
-                                />
-                            </div>
-                            
-                            <div className="flex items-center gap-0.5 bg-white dark:bg-zinc-800 p-0.5 rounded-lg border border-stone-200 dark:border-zinc-700 shrink-0 shadow-2xs">
-                                <button
-                                    type="button"
-                                    onClick={() => setUnlinkedViewMode('grid')}
-                                    className={`flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded transition-all cursor-pointer ${
-                                        unlinkedViewMode === 'grid'
-                                            ? 'bg-amber-500 text-white shadow-2xs'
-                                            : 'text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-700'
-                                    }`}
-                                    title="Xem dạng thẻ (3 cột - hiển thị nhiều hàng)"
-                                >
-                                    <LayoutGrid size={12} />
-                                    <span>Thẻ</span>
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => setUnlinkedViewMode('table')}
-                                    className={`flex items-center gap-1 px-2 py-0.5 text-xs font-bold rounded transition-all cursor-pointer ${
-                                        unlinkedViewMode === 'table'
-                                            ? 'bg-amber-500 text-white shadow-2xs'
-                                            : 'text-stone-600 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-700'
-                                    }`}
-                                    title="Xem dạng danh sách hàng ngang (nhiều hàng nhất)"
-                                >
-                                    <List size={12} />
-                                    <span>Bảng</span>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Danh sách Pallet chưa kết nối */}
-                    <div className="flex-1 overflow-y-auto p-2 md:p-2.5">
-                        {isLoading ? (
-                            <div className="flex flex-col items-center justify-center py-16 text-stone-400">
-                                <Loader2 className="animate-spin mb-2" size={24} />
-                                <span className="text-xs">Đang tải danh sách chờ kết nối...</span>
-                            </div>
-                        ) : filteredUnlinkedGroups.length === 0 ? (
-                            <div className="text-center py-16 px-4">
-                                <CheckCircle2 className="mx-auto text-emerald-500 mb-2" size={36} />
-                                <p className="text-sm font-bold text-stone-800 dark:text-zinc-200">
-                                    Tuyệt vời! Không có Pallet nào đang chờ kết nối
-                                </p>
-                                <p className="text-xs text-stone-400 dark:text-zinc-500 mt-1 max-w-md mx-auto">
-                                    Mọi đợt quét từ điện thoại đều đã được ghép đúng vào các LOT hàng trên Web mẹ.
-                                </p>
-                            </div>
-                        ) : unlinkedViewMode === 'table' ? (
-                            /* DẠNG BẢNG DANH SÁCH HÀNG NGANG: Hiển thị 12-15 hàng rõ ràng */
-                            <div className="border border-stone-200 dark:border-zinc-800 rounded-xl overflow-hidden bg-white dark:bg-zinc-900 shadow-2xs">
-                                <table className="w-full text-left text-xs border-collapse">
-                                    <thead className="bg-stone-50 dark:bg-zinc-800/70 border-b border-stone-200 dark:border-zinc-700 text-stone-600 dark:text-zinc-300 text-[11px] uppercase font-bold">
-                                        <tr>
-                                            <th className="py-2 px-3">STT</th>
-                                            <th className="py-2 px-3">Số lượng & Khối lượng</th>
-                                            <th className="py-2 px-3">Ghi chú / Thẻ</th>
-                                            <th className="py-2 px-3">Trạng thái</th>
-                                            <th className="py-2 px-3 text-right">Thao tác</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                                        {paginatedUnlinkedGroups.map((group) => {
-                                            const hasMatch = !!group.matchedLot
-                                            return (
-                                                <tr key={group.pallet_stt} className="hover:bg-amber-50/30 dark:hover:bg-zinc-800/40 transition-colors">
-                                                    <td className="py-1.5 px-3 font-mono font-black text-stone-900 dark:text-zinc-100">
-                                                        <span className="px-1.5 py-0.5 rounded bg-stone-100 dark:bg-zinc-800 border border-stone-200 dark:border-zinc-700 text-xs shadow-2xs">
-                                                            {group.pallet_stt}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-1.5 px-3">
-                                                        <span className="font-bold text-stone-700 dark:text-zinc-300">{group.boxes.length} thùng</span>
-                                                        <span className="mx-1.5 text-stone-300 dark:text-zinc-600">·</span>
-                                                        <span className="font-black text-emerald-600 dark:text-emerald-400">{group.total_weight.toFixed(1)} Kg</span>
-                                                    </td>
-                                                    <td className="py-1.5 px-3">
-                                                        {group.pallet_tag && (
-                                                            <span className="inline-flex items-center gap-1 text-[10px] font-bold text-orange-700 dark:text-orange-400 bg-orange-100/70 dark:bg-orange-950/40 px-1.5 py-0.2 rounded border border-orange-200 dark:border-orange-800 mr-1.5">
-                                                                <Tag size={10} /> {group.pallet_tag}
-                                                            </span>
-                                                        )}
-                                                        {group.pallet_notes ? (
-                                                            <span className="text-[11px] text-stone-600 dark:text-zinc-400 font-medium">
-                                                                📝 {group.pallet_notes}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="text-stone-300 dark:text-zinc-600 text-[11px]">---</span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-1.5 px-3">
-                                                        {group.isConflict ? (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-                                                                <AlertTriangle size={11} /> Trùng STT: {group.matchedLot!.code}
-                                                            </span>
-                                                        ) : hasMatch ? (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-                                                                <Check size={11} /> Khớp LOT: {group.matchedLot!.code}
-                                                            </span>
-                                                        ) : (
-                                                            <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
-                                                                <Clock size={11} /> Chờ duyệt LOT
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                    <td className="py-1.5 px-3 text-right">
-                                                        <div className="inline-flex items-center gap-1">
-                                                            {group.isConflict ? (
-                                                                <>
-                                                                    <button
-                                                                        onClick={() => handleUpdateConflictLot(group, group.matchedLot!.id)}
-                                                                        disabled={isLinking}
-                                                                        className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold transition-all cursor-pointer"
-                                                                    >
-                                                                        Gộp
-                                                                    </button>
-                                                                    <button
-                                                                        onClick={() => handleOpenApproveModal(group)}
-                                                                        className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[11px] font-bold transition-all cursor-pointer"
-                                                                    >
-                                                                        Tách
-                                                                    </button>
-                                                                </>
-                                                            ) : hasMatch ? (
-                                                                <button
-                                                                    onClick={() => handleLinkGroupToLot(group, group.matchedLot!.id)}
-                                                                    disabled={isLinking}
-                                                                    className="px-2.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer"
-                                                                >
-                                                                    <Check size={11} />
-                                                                    <span>Ghép {group.matchedLot!.code}</span>
-                                                                </button>
-                                                            ) : (
-                                                                <button
-                                                                    onClick={() => handleOpenApproveModal(group)}
-                                                                    className="px-2.5 py-0.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-lg text-xs font-bold flex items-center gap-1 shadow-2xs transition-all cursor-pointer"
-                                                                >
-                                                                    <Sparkles size={11} />
-                                                                    <span>⚡ Duyệt Tạo LOT</span>
-                                                                </button>
-                                                            )}
-
-                                                            <button
-                                                                onClick={() => {
-                                                                    setSelectedBoxIds(new Set())
-                                                                    setPreviewGroup(group)
-                                                                }}
-                                                                className="p-1 text-stone-500 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded cursor-pointer"
-                                                                title="Xem chi tiết các thùng"
-                                                            >
-                                                                <Eye size={12} />
-                            								</button>
-
-                                                            <button
-                                                                onClick={() => {
-                                                                    setGroupToLink(group)
-                                                                    setLinkLotSearch('')
-                                                                    setSelectedLotForLink(group.matchedLot?.id || null)
-                                                                }}
-                                                                className="p-1 text-stone-500 dark:text-zinc-400 hover:bg-stone-100 dark:hover:bg-zinc-800 rounded cursor-pointer"
-                                                                title="Ghép thủ công vào LOT khác"
-                                                            >
-                                                                <Link2 size={12} />
-                                                            </button>
-
-                                                            <button
-                                                                onClick={() => handleDeleteUnlinkedGroup(group)}
-                                                                className="p-1 text-stone-400 hover:text-rose-600 rounded cursor-pointer"
-                                                                title="Xóa đợt này"
-                                                            >
-                                                                <Trash2 size={12} />
-                                                            </button>
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                            )
-                                        })}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ) : (
-                            /* DẠNG THẺ SIÊU GỌN: 3 cột, mỗi thẻ chỉ cao ~70px -> Hiển thị trọn vẹn 3-5 hàng (9-15 LOT) cùng lúc mà không cần cuộn chuột */
-                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                                {paginatedUnlinkedGroups.map(group => {
-                                    const hasMatch = !!group.matchedLot
-                                    return (
-                                        <div
-                                            key={group.pallet_stt}
-                                            className={`p-2 rounded-xl border transition-all flex flex-col justify-between shadow-2xs hover:shadow-xs ${
-                                                group.isConflict
-                                                    ? 'bg-amber-50/50 dark:bg-amber-950/30 border-amber-400 dark:border-amber-700'
-                                                    : hasMatch
-                                                        ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-300 dark:border-emerald-800'
-                                                        : 'bg-white dark:bg-zinc-800/70 border-stone-200 dark:border-zinc-700'
-                                            }`}
-                                        >
-                                            {/* Dòng 1: STT, Số thùng, Khối lượng, Ghi chú + Cụm nút thao tác */}
-                                            <div className="flex items-center justify-between gap-1 mb-1.5">
-                                                <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
-                                                    <span className="font-mono font-black text-xs text-stone-900 dark:text-zinc-100 bg-stone-100 dark:bg-zinc-700 px-1.5 py-0.5 rounded border border-stone-200 dark:border-zinc-600 shadow-2xs shrink-0">
-                                                        STT: {group.pallet_stt}
-                                                    </span>
-                                                    <span className="text-[11px] font-bold text-stone-600 dark:text-zinc-300 shrink-0">
-                                                        {group.boxes.length} th
-                                                    </span>
-                                                    <span className="text-[11px] font-black text-emerald-600 dark:text-emerald-400 shrink-0">
-                                                        {group.total_weight.toFixed(1)} Kg
-                                                    </span>
-                                                    {group.pallet_tag && (
-                                                        <span className="text-[9px] font-bold text-orange-700 dark:text-orange-400 bg-orange-100/90 dark:bg-orange-950/60 px-1 py-0.2 rounded border border-orange-200 dark:border-orange-800 shrink-0">
-                                                            {group.pallet_tag}
-                                                        </span>
-                                                    )}
-                                                    {group.pallet_notes && (
-                                                        <span className="text-[9px] font-bold text-blue-700 dark:text-blue-400 bg-blue-100/90 dark:bg-blue-950/60 px-1 py-0.2 rounded border border-blue-200 dark:border-blue-800 max-w-[80px] truncate shrink-0" title={group.pallet_notes}>
-                                                            📝 {group.pallet_notes}
-                                                        </span>
-                                                    )}
-                                                </div>
-
-                                                {/* Cụm icon phụ: xem thùng, ghép LOT, xóa */}
-                                                <div className="flex items-center gap-0.5 shrink-0">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setSelectedBoxIds(new Set())
-                                                            setPreviewGroup(group)
-                                                        }}
-                                                        className="p-1 text-stone-500 hover:text-stone-800 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded transition-colors cursor-pointer"
-                                                        title={`Xem chi tiết ${group.boxes.length} thùng`}
-                                                    >
-                                                        <Eye size={12} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => {
-                                                            setGroupToLink(group)
-                                                            setLinkLotSearch('')
-                                                            setSelectedLotForLink(group.matchedLot?.id || null)
-                                                        }}
-                                                        className="p-1 text-stone-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 hover:bg-stone-100 dark:hover:bg-zinc-700 rounded transition-colors cursor-pointer"
-                                                        title="Ghép thủ công vào LOT khác"
-                                                    >
-                                                        <Link2 size={12} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => handleDeleteUnlinkedGroup(group)}
-                                                        className="p-1 text-stone-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded transition-colors cursor-pointer"
-                                                        title="Xóa đợt quét này"
-                                                    >
-                                                        <Trash2 size={12} />
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Dòng 2: Nút hành động chính */}
-                                            {group.isConflict ? (
-                                                <div className="flex items-center justify-between gap-1 p-1 bg-amber-500/10 dark:bg-amber-950/40 rounded border border-amber-500/30 text-[10px]">
-                                                    <span className="font-bold text-amber-800 dark:text-amber-300 truncate max-w-[120px]" title={`Trùng STT: ${group.matchedLot!.code}`}>
-                                                        ⚠️ Trùng: {group.matchedLot!.code}
-                                                    </span>
-                                                    <div className="flex items-center gap-1">
-                                                        <button
-                                                            onClick={() => handleUpdateConflictLot(group, group.matchedLot!.id)}
-                                                            disabled={isLinking}
-                                                            className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white rounded font-bold cursor-pointer"
-                                                            title="Gộp / Cập nhật vào LOT"
-                                                        >
-                                                            Gộp
-                                                        </button>
-                                                        <button
-                                                            onClick={() => handleOpenApproveModal(group)}
-                                                            className="px-2 py-0.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold cursor-pointer"
-                                                            title="Tách LOT mới riêng"
-                                                        >
-                                                            Tách
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ) : hasMatch ? (
-                                                <button
-                                                    onClick={() => handleLinkGroupToLot(group, group.matchedLot!.id)}
-                                                    disabled={isLinking}
-                                                    className="w-full flex items-center justify-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold text-xs shadow-2xs transition-all cursor-pointer active:scale-98"
-                                                >
-                                                    <Check size={12} />
-                                                    <span className="truncate">Ghép vào LOT {group.matchedLot!.code}</span>
-                                                </button>
-                                            ) : (
-                                                <button
-                                                    onClick={() => handleOpenApproveModal(group)}
-                                                    className="w-full flex items-center justify-center gap-1 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white rounded-lg font-bold text-xs shadow-2xs hover:shadow-xs transition-all cursor-pointer active:scale-98"
-                                                >
-                                                    <Sparkles size={12} />
-                                                    <span>⚡ Duyệt Tạo LOT Ngay</span>
-                                                </button>
-                                            )}
-                                        </div>
-                                    )
-                                })}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Thanh Phân Trang Cố Định (Pagination Bar) */}
-                    {filteredUnlinkedGroups.length > 0 && (
-                        <div className="px-3 py-1.5 border-t border-stone-200 dark:border-zinc-800 bg-stone-50/90 dark:bg-zinc-900/90 flex flex-wrap items-center justify-between gap-2 text-xs">
-                            <div className="flex items-center gap-2 text-stone-500 dark:text-zinc-400">
-                                <span>
-                                    Hiển thị <strong>{(unlinkedPage - 1) * unlinkedPageSize + 1} - {Math.min(unlinkedPage * unlinkedPageSize, filteredUnlinkedGroups.length)}</strong> trong <strong>{filteredUnlinkedGroups.length}</strong> Pallet
-                                </span>
-                                
-                                <select
-                                    value={unlinkedPageSize}
-                                    onChange={e => {
-                                        setUnlinkedPageSize(Number(e.target.value))
-                                        setUnlinkedPage(1)
-                                    }}
-                                    className="px-1.5 py-0.5 rounded border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-[11px] font-bold text-stone-700 dark:text-zinc-300"
-                                >
-                                    <option value={18}>18 Pallet / trang (6 hàng)</option>
-                                    <option value={30}>30 Pallet / trang (10 hàng)</option>
-                                    <option value={60}>60 Pallet / trang</option>
-                                    <option value={9999}>Xem tất cả</option>
-                                </select>
-                            </div>
-
-                            {totalUnlinkedPages > 1 && (
-                                <div className="flex items-center gap-1">
-                                    <button
-                                        type="button"
-                                        onClick={() => setUnlinkedPage(p => Math.max(1, p - 1))}
-                                        disabled={unlinkedPage <= 1}
-                                        className="px-2 py-0.5 rounded border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-stone-700 dark:text-zinc-300 hover:bg-stone-100 disabled:opacity-40 cursor-pointer transition-colors"
-                                    >
-                                        ← Trước
-                                    </button>
-
-                                    <div className="flex items-center gap-0.5">
-                                        {Array.from({ length: totalUnlinkedPages }, (_, i) => i + 1)
-                                            .filter(page => page === 1 || page === totalUnlinkedPages || Math.abs(page - unlinkedPage) <= 1)
-                                            .map((page, idx, arr) => {
-                                                const prevPage = arr[idx - 1]
-                                                return (
-                                                    <span key={page} className="flex items-center">
-                                                        {prevPage && page - prevPage > 1 && (
-                                                            <span className="px-1 text-stone-400">...</span>
-                                                        )}
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => setUnlinkedPage(page)}
-                                                            className={`w-6 h-6 rounded flex items-center justify-center font-bold text-xs cursor-pointer transition-all ${
-                                                                unlinkedPage === page
-                                                                    ? 'bg-amber-500 text-white shadow-2xs'
-                                                                    : 'text-stone-600 dark:text-zinc-400 hover:bg-stone-200 dark:hover:bg-zinc-800'
-                                                            }`}
-                                                        >
-                                                            {page}
-                                                        </button>
-                                                    </span>
-                                                )
-                                            })}
-                                    </div>
-
-                                    <button
-                                        type="button"
-                                        onClick={() => setUnlinkedPage(p => Math.min(totalUnlinkedPages, p + 1))}
-                                        disabled={unlinkedPage >= totalUnlinkedPages}
-                                        className="px-2 py-0.5 rounded border border-stone-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 font-bold text-stone-700 dark:text-zinc-300 hover:bg-stone-100 disabled:opacity-40 cursor-pointer transition-colors"
-                                    >
-                                        Sau →
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
+                <UnlinkedPalletsTab
+                    isLoading={isLoading}
+                    unlinkedGroups={unlinkedGroups}
+                    filteredUnlinkedGroups={filteredUnlinkedGroups}
+                    paginatedUnlinkedGroups={paginatedUnlinkedGroups}
+                    isAutoLinking={isAutoLinking}
+                    isLinking={isLinking}
+                    unlinkedDateFilter={unlinkedDateFilter}
+                    setUnlinkedDateFilter={setUnlinkedDateFilter}
+                    unlinkedPage={unlinkedPage}
+                    setUnlinkedPage={setUnlinkedPage}
+                    unlinkedPageSize={unlinkedPageSize}
+                    setUnlinkedPageSize={setUnlinkedPageSize}
+                    totalUnlinkedPages={totalUnlinkedPages}
+                    searchQuery={searchQuery}
+                    setSearchQuery={setSearchQuery}
+                    unlinkedViewMode={unlinkedViewMode}
+                    setUnlinkedViewMode={setUnlinkedViewMode}
+                    handleAutoLinkAll={handleAutoLinkAll}
+                    handleUpdateConflictLot={handleUpdateConflictLot}
+                    handleOpenApproveModal={handleOpenApproveModal}
+                    handleLinkGroupToLot={handleLinkGroupToLot}
+                    handleDeleteUnlinkedGroup={handleDeleteUnlinkedGroup}
+                    onPreviewGroup={(group) => {
+                        setSelectedBoxIds(new Set())
+                        setPreviewGroup(group)
+                    }}
+                    onOpenManualLink={(group) => {
+                        setGroupToLink(group)
+                        setLinkLotSearch('')
+                        setSelectedLotForLink(group.matchedLot?.id || null)
+                    }}
+                />
             )}
 
             <ManualLinkLotModal
