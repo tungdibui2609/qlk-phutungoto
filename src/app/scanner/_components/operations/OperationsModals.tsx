@@ -82,6 +82,9 @@ export function OperationNumberPadModal({
   product,
   unit,
   availableUnits = [],
+  systemCode,
+  jobName,
+  userName,
   onClose,
   onConfirm,
 }: {
@@ -89,6 +92,9 @@ export function OperationNumberPadModal({
   product: ShiftProductItem | null
   unit: string
   availableUnits?: string[]
+  systemCode?: string
+  jobName?: string | null
+  userName?: string | null
   onClose: () => void
   onConfirm: (data: {
     direction: 'in' | 'out'
@@ -157,13 +163,23 @@ export function OperationNumberPadModal({
     setExpr(prev => prev + key)
   }
 
+  const wmMeta = {
+    systemCode,
+    jobName,
+    itemName: product.name,
+    quantity: evaluatedQty > 0 ? evaluatedQty : null,
+    unit: selectedUnit,
+    direction,
+    userName,
+  }
+
   const handleCamera = async () => {
-    const p = await capturePhotoWithCamera()
+    const p = await capturePhotoWithCamera(wmMeta)
     if (p) setPhotos(prev => [...prev, p])
   }
 
   const handleLibrary = async () => {
-    const picked = await pickPhotosFromLibrary(6)
+    const picked = await pickPhotosFromLibrary(6, wmMeta)
     if (picked.length > 0) setPhotos(prev => [...prev, ...picked])
   }
 
@@ -1546,6 +1562,14 @@ export function PastShiftDetailModal({
 }) {
   const [journals, setJournals] = useState<JournalRecord[]>([])
   const [subShifts, setSubShifts] = useState<SubShiftRecord[]>([])
+  const [shiftImages, setShiftImages] = useState<OperationImageRecord[]>([])
+  const [previewContext, setPreviewContext] = useState<{
+    images: OperationImageRecord[]
+    index: number
+    title?: string
+    showDirectionFilter?: boolean
+    directionFilter?: 'all' | 'in' | 'out'
+  } | null>(null)
   const [loading, setLoading] = useState(false)
   const [activeTab, setActiveTab] = useState<'summary' | 'history'>('summary')
   const [processing, setProcessing] = useState(false)
@@ -1553,18 +1577,49 @@ export function PastShiftDetailModal({
   useEffect(() => {
     if (!visible || !shift) return
     setLoading(true)
-    Promise.all([getShiftJournals(shift), getSubShifts(shift.id)])
-      .then(([jList, sList]) => {
+    Promise.all([
+      getShiftJournals(shift),
+      getSubShifts(shift.id),
+      getShiftOperationImages(shift.id).catch(() => [] as OperationImageRecord[]),
+    ])
+      .then(([jList, sList, imgList]) => {
         setJournals(jList)
         setSubShifts(sList)
+        setShiftImages(imgList)
       })
       .finally(() => setLoading(false))
   }, [visible, shift])
 
-  if (!visible || !shift) return null
+  const prodSummary = useMemo(() => {
+    if (shift && journals.length > 0) {
+      return aggregateShiftsProducts([shift], journals)
+    }
+    return Object.values(shift?.summary_data?.products_summary || {}).map((p: any) => ({
+      product_name: p.product_name,
+      unit: p.unit,
+      in_qty: p.in_qty ?? p.received ?? 0,
+      out_qty: p.out_qty ?? p.sent ?? 0,
+      count: p.count ?? 0,
+    }))
+  }, [journals, shift])
 
-  const prodSummary = Object.values(shift.summary_data?.products_summary || {})
-  const unitSummary = Object.entries(shift.summary_data?.units_summary || {})
+  const unitSummary = useMemo(() => {
+    if (shift && journals.length > 0) {
+      const rows = aggregateShiftsProducts([shift], journals)
+      return aggregateShiftsUnits(rows).map(u => [u.unit, u] as const)
+    }
+    return Object.entries(shift?.summary_data?.units_summary || {}).map(([uName, uVal]: [string, any]) => [
+      uName,
+      {
+        unit: uName,
+        in_qty: uVal?.in_qty ?? uVal?.received ?? 0,
+        out_qty: uVal?.out_qty ?? uVal?.sent ?? 0,
+        count: uVal?.count ?? 0,
+      },
+    ] as const)
+  }, [journals, shift])
+
+  if (!visible || !shift) return null
 
   const handleReopen = async () => {
     if (!window.confirm('Bạn muốn mở lại công việc này để tiếp tục nhập/xuất?')) return
@@ -1665,24 +1720,56 @@ export function PastShiftDetailModal({
                 <div className="text-xs text-slate-500 italic">Không có dữ liệu mặt hàng.</div>
               ) : (
                 <div className="divide-y divide-slate-700/60">
-                  {prodSummary.map((p, idx) => (
+                  {prodSummary.map((p, idx) => {
+                    const targetName = (p.product_name || '').trim().toLowerCase()
+                    const matchingJournalIds = new Set(
+                      journals
+                        .filter(j => (j.item_name || '').trim().toLowerCase() === targetName)
+                        .map(j => j.id)
+                    )
+                    const prodImages = shiftImages.filter(img => {
+                      const imgItem = (img.item_name || '').trim().toLowerCase()
+                      return imgItem === targetName || (img.journal_id && matchingJournalIds.has(img.journal_id))
+                    })
+                    return (
                     <div
                       key={`${p.product_name}_${p.unit}_${idx}`}
-                      className="py-2 flex items-center justify-between text-xs"
+                      className="py-2 flex items-center justify-between text-xs gap-1.5"
                     >
-                      <div className="flex-1 min-w-0 pr-2">
+                      <div className="flex-1 min-w-0 pr-1">
                         <div className="font-bold text-white">{p.product_name}</div>
-                        <div className="text-[10px] text-indigo-300">{p.unit}</div>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[10px] text-indigo-300">{p.unit}</span>
+                          {prodImages.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setPreviewContext({
+                                  images: prodImages,
+                                  index: 0,
+                                  title: p.product_name,
+                                  showDirectionFilter: true,
+                                  directionFilter: 'all',
+                                })
+                              }
+                              className="px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-500/40 text-sky-300 text-[10px] font-bold flex items-center gap-1"
+                            >
+                              <Camera className="w-2.5 h-2.5" />
+                              <span>{prodImages.length} ảnh</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
-                      <div className="w-16 text-right font-extrabold text-emerald-400">
+                      <div className="w-14 text-right font-extrabold text-emerald-400">
                         +{p.in_qty}
                       </div>
-                      <div className="w-16 text-right font-extrabold text-rose-400">
+                      <div className="w-14 text-right font-extrabold text-rose-400">
                         -{p.out_qty}
                       </div>
                       <div className="w-10 text-right text-slate-400 text-[11px]">{p.count} đợt</div>
                     </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -1734,30 +1821,58 @@ export function PastShiftDetailModal({
             {journals.map(j => {
               const isIn = j.direction === 'in'
               const cleanNote = extractCleanUserNote(j.notes)
+              const rowImages = shiftImages.filter(img => img.journal_id === j.id)
               return (
                 <div
                   key={j.id}
-                  className="p-2.5 rounded-xl bg-[#1e293b] border border-slate-700 flex items-center justify-between"
+                  className="p-2.5 rounded-xl bg-[#1e293b] border border-slate-700 space-y-2"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-bold text-white">{j.item_name}</div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      {formatDateTime(j.sent_at)} • {j.sent_by_name || 'NV'}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-bold text-white">{j.item_name}</div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {formatDateTime(j.sent_at)} • {j.sent_by_name || 'NV'}
+                      </div>
+                      {cleanNote && (
+                        <div className="text-[11px] text-amber-300 mt-0.5 italic">📝 {cleanNote}</div>
+                      )}
                     </div>
-                    {cleanNote && (
-                      <div className="text-[11px] text-amber-300 mt-0.5 italic">📝 {cleanNote}</div>
-                    )}
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-xs font-extrabold shrink-0 ${
+                        isIn
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-rose-500/20 text-rose-400'
+                      }`}
+                    >
+                      {isIn ? '+' : '-'}
+                      {j.quantity_sent} {j.unit}
+                    </span>
                   </div>
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-xs font-extrabold ${
-                      isIn
-                        ? 'bg-emerald-500/20 text-emerald-400'
-                        : 'bg-rose-500/20 text-rose-400'
-                    }`}
-                  >
-                    {isIn ? '+' : '-'}
-                    {j.quantity_sent} {j.unit}
-                  </span>
+                  {rowImages.length > 0 && (
+                    <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-0.5">
+                      {rowImages.map((img, imgIdx) => (
+                        <button
+                          key={img.id}
+                          type="button"
+                          onClick={() =>
+                            setPreviewContext({
+                              images: rowImages,
+                              index: imgIdx,
+                              title: j.item_name,
+                            })
+                          }
+                          className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-600 shrink-0 bg-slate-900"
+                        >
+                          <img
+                            src={getOperationImageDisplayUrl(img)}
+                            alt={img.item_name || 'Ảnh đợt'}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -1785,6 +1900,138 @@ export function PastShiftDetailModal({
           <Trash2 className="w-4 h-4" />
         </button>
       </div>
+
+      {previewContext && (() => {
+        const { images: rawList, index: rawIdx, title, showDirectionFilter, directionFilter = 'all' } = previewContext
+        const inCount = rawList.filter(x => x.direction === 'in').length
+        const outCount = rawList.filter(x => x.direction === 'out').length
+        const navList =
+          directionFilter === 'in'
+            ? rawList.filter(x => x.direction === 'in')
+            : directionFilter === 'out'
+              ? rawList.filter(x => x.direction === 'out')
+              : rawList
+        const curIdx = Math.min(rawIdx, Math.max(0, navList.length - 1))
+        const curImg = navList[curIdx]
+        const hasPrev = curIdx > 0
+        const hasNext = curIdx < navList.length - 1
+        return (
+        <div
+          className="fixed inset-0 z-[70] bg-black/95 flex flex-col items-center justify-center p-4"
+          onClick={() => setPreviewContext(null)}
+        >
+          <div className="absolute top-4 left-4 flex items-center gap-2 flex-wrap pr-14" onClick={e => e.stopPropagation()}>
+            <span className="px-3 py-1 rounded-full bg-white/15 text-white text-xs font-extrabold">
+              {navList.length > 0 ? `${curIdx + 1} / ${navList.length}` : '0 / 0'}
+            </span>
+            {curImg?.direction === 'in' && (
+              <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[10px] font-extrabold">
+                NHẬP
+              </span>
+            )}
+            {curImg?.direction === 'out' && (
+              <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white text-[10px] font-extrabold">
+                XUẤT
+              </span>
+            )}
+            {title && (
+              <span className="px-2.5 py-1 rounded-full bg-white/10 text-slate-200 text-[11px] font-bold truncate max-w-[200px]">
+                {title}
+              </span>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={() => setPreviewContext(null)}
+            className="absolute top-4 right-4 w-10 h-10 rounded-full bg-slate-800 text-white flex items-center justify-center"
+          >
+            <X className="w-5 h-5" />
+          </button>
+          {showDirectionFilter && (
+            <div
+              className="mb-3 mt-10 flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-full border border-slate-700"
+              onClick={e => e.stopPropagation()}
+            >
+              {[
+                { key: 'all', label: `Tất cả (${rawList.length})` },
+                { key: 'in', label: `Nhập (${inCount})` },
+                { key: 'out', label: `Xuất (${outCount})` },
+              ].map(tab => {
+                const active = directionFilter === tab.key
+                return (
+                  <button
+                    key={tab.key}
+                    type="button"
+                    onClick={() =>
+                      setPreviewContext(prev =>
+                        prev ? { ...prev, directionFilter: tab.key as any, index: 0 } : null
+                      )
+                    }
+                    className={`px-3 py-1 rounded-full text-xs font-extrabold transition ${
+                      active
+                        ? tab.key === 'in'
+                          ? 'bg-emerald-600 text-white'
+                          : tab.key === 'out'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-sky-600 text-white'
+                        : 'text-slate-300 hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+          {hasPrev && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                setPreviewContext(prev => (prev ? { ...prev, index: Math.max(0, curIdx - 1) } : null))
+              }}
+              className="absolute left-2 sm:left-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/65 border border-white/25 text-white flex items-center justify-center active:scale-95"
+              title="Ảnh trước"
+            >
+              <ChevronLeft className="w-6 h-6" />
+            </button>
+          )}
+          {curImg ? (
+            <img
+              src={getOperationImageDisplayUrl(curImg)}
+              alt={curImg.item_name || 'Ảnh chi tiết'}
+              className="max-w-full max-h-[78vh] rounded-xl object-contain"
+              onClick={e => e.stopPropagation()}
+            />
+          ) : (
+            <div
+              className="px-6 py-10 rounded-xl bg-slate-900/90 border border-slate-700 text-slate-300 text-xs font-bold"
+              onClick={e => e.stopPropagation()}
+            >
+              Không có ảnh {directionFilter === 'in' ? 'Nhập' : 'Xuất'} nào cho sản phẩm này.
+            </div>
+          )}
+          {hasNext && (
+            <button
+              type="button"
+              onClick={e => {
+                e.stopPropagation()
+                setPreviewContext(prev => (prev ? { ...prev, index: curIdx + 1 } : null))
+              }}
+              className="absolute right-2 sm:right-5 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-black/65 border border-white/25 text-white flex items-center justify-center active:scale-95"
+              title="Ảnh tiếp theo"
+            >
+              <ChevronRight className="w-6 h-6" />
+            </button>
+          )}
+          {curImg && (
+            <div className="mt-3 text-center text-xs text-slate-300">
+              {curImg.item_name} • {curImg.captured_by_name || 'Nhân viên'}
+            </div>
+          )}
+        </div>
+        )
+      })()}
     </div>
   )
 }
@@ -1939,9 +2186,16 @@ export function ReconcileTabView({
     if (!shift) return
     setUploadingPhase(phase)
     try {
+      const refWmMeta = {
+        systemCode: shift.system_code,
+        jobName: shift.summary_data?.job_name || shift.notes || 'Công việc',
+        itemName: `${currentTarget?.product_name || 'Tham chiếu'} (${phase === 'start' ? 'ĐẦU' : 'CUỐI'})`,
+        unit: currentTarget?.unit || null,
+        userName: user?.full_name || user?.email || null,
+      }
       const picked = fromCamera
-        ? await capturePhotoWithCamera().then(p => (p ? [p] : []))
-        : await pickPhotosFromLibrary(4)
+        ? await capturePhotoWithCamera(refWmMeta).then(p => (p ? [p] : []))
+        : await pickPhotosFromLibrary(4, refWmMeta)
       if (picked.length === 0) return
       await uploadOperationImages({
         images: picked,

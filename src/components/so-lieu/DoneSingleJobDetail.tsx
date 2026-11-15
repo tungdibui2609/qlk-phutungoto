@@ -1,6 +1,7 @@
 'use client'
 
-import React from 'react'
+import React, { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabaseClient'
 import {
     ArrowDownLeft,
     ArrowUpRight,
@@ -101,6 +102,56 @@ export default function DoneSingleJobDetail({
     onDeleteJournal,
     onUpdateShiftOpenedAt,
 }: DoneSingleJobDetailProps) {
+    const [shiftImages, setShiftImages] = useState<any[]>([])
+    const [previewContext, setPreviewContext] = useState<{
+        urls: string[]
+        items?: { url: string; direction?: 'in' | 'out' | null }[]
+        index: number
+        title?: string
+        showDirectionFilter?: boolean
+        directionFilter?: 'all' | 'in' | 'out'
+    } | null>(null)
+
+    const resolveImgUrl = (img: any) =>
+        img?.public_url ||
+        (img?.drive_file_id ? `https://lh3.googleusercontent.com/d/${img.drive_file_id}=w1600` : '')
+
+    const getProductImages = (productName: string) => {
+        const target = (productName || '').trim().toLowerCase()
+        if (!target) return []
+        const matchingJournalIds = new Set(
+            doneLines
+                .filter(l => (l.item_name || '').trim().toLowerCase() === target)
+                .map(l => l.id)
+        )
+        return shiftImages.filter(img => {
+            const imgItem = (img.item_name || '').trim().toLowerCase()
+            return imgItem === target || (img.journal_id && matchingJournalIds.has(img.journal_id))
+        })
+    }
+
+    useEffect(() => {
+        const shiftId = doneSelectedShift?.id
+        if (!shiftId) {
+            setShiftImages([])
+            return
+        }
+        let cancelled = false
+        ;(supabase.from('operation_images') as any)
+            .select('id, journal_id, public_url, drive_file_id, item_name, captured_at')
+            .eq('shift_id', shiftId)
+            .order('captured_at', { ascending: false })
+            .then(({ data }: any) => {
+                if (!cancelled) setShiftImages(data || [])
+            })
+            .catch(() => {
+                if (!cancelled) setShiftImages([])
+            })
+        return () => {
+            cancelled = true
+        }
+    }, [doneSelectedShift?.id])
+
     if (!doneSelectedShift) {
         return (
             <div className="bg-white dark:bg-zinc-900 border border-dashed border-stone-300 dark:border-zinc-800 rounded-2xl p-12 text-center text-sm text-stone-400">
@@ -561,10 +612,38 @@ export default function DoneSingleJobDetail({
                                                 ) : (
                                                     <>
                                                         <div className="sm:hidden divide-y divide-stone-200/70 dark:divide-zinc-800">
-                                                            {summaryRows.map((row, idx) => (
+                                                            {summaryRows.map((row, idx) => {
+                                                                const prodItems = getProductImages(row.product_name)
+                                                                    .map(img => ({
+                                                                        url: resolveImgUrl(img),
+                                                                        direction: (img?.direction === 'in' || img?.direction === 'out' ? img.direction : null) as 'in' | 'out' | null,
+                                                                    }))
+                                                                    .filter(x => Boolean(x.url))
+                                                                return (
                                                                 <div key={idx} className="py-2 first:pt-0 last:pb-0 space-y-1">
-                                                                    <div className="text-[11px] font-bold text-stone-900 dark:text-white leading-snug">
-                                                                        {row.product_name}
+                                                                    <div className="flex items-start justify-between gap-2">
+                                                                        <div className="text-[11px] font-bold text-stone-900 dark:text-white leading-snug">
+                                                                            {row.product_name}
+                                                                        </div>
+                                                                        {prodItems.length > 0 && (
+                                                                            <button
+                                                                                type="button"
+                                                                                onClick={() =>
+                                                                                    setPreviewContext({
+                                                                                        urls: prodItems.map(x => x.url),
+                                                                                        items: prodItems,
+                                                                                        index: 0,
+                                                                                        title: row.product_name,
+                                                                                        showDirectionFilter: true,
+                                                                                        directionFilter: 'all',
+                                                                                    })
+                                                                                }
+                                                                                className="px-2 py-0.5 rounded-md bg-sky-50 dark:bg-sky-950/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-[10px] font-bold flex items-center gap-1 shrink-0"
+                                                                            >
+                                                                                <Camera className="w-3 h-3" />
+                                                                                <span>{prodItems.length} ảnh</span>
+                                                                            </button>
+                                                                        )}
                                                                     </div>
                                                                     <div className="flex items-center justify-between text-[10px]">
                                                                         <span className="text-stone-500">
@@ -580,7 +659,8 @@ export default function DoneSingleJobDetail({
                                                                         </div>
                                                                     </div>
                                                                 </div>
-                                                            ))}
+                                                                )
+                                                            })}
                                                         </div>
 
                                                         <table className="hidden sm:table w-full text-left text-xs sm:text-sm">
@@ -591,10 +671,18 @@ export default function DoneSingleJobDetail({
                                                                     <th className="pb-2.5 text-right text-emerald-600">Tổng Nhập (+)</th>
                                                                     <th className="pb-2.5 text-right text-rose-600">Tổng Xuất (-)</th>
                                                                     <th className="pb-2.5 text-right">Số đợt</th>
+                                                                    <th className="pb-2.5 text-right">Ảnh SP</th>
                                                                 </tr>
                                                             </thead>
                                                             <tbody className="divide-y divide-stone-100 dark:divide-zinc-800">
-                                                                {summaryRows.map((row, idx) => (
+                                                                {summaryRows.map((row, idx) => {
+                                                                    const prodItems = getProductImages(row.product_name)
+                                                                        .map(img => ({
+                                                                            url: resolveImgUrl(img),
+                                                                            direction: (img?.direction === 'in' || img?.direction === 'out' ? img.direction : null) as 'in' | 'out' | null,
+                                                                        }))
+                                                                        .filter(x => Boolean(x.url))
+                                                                    return (
                                                                     <tr key={idx} className="hover:bg-stone-50 dark:hover:bg-zinc-800/40">
                                                                         <td className="py-3 font-bold text-stone-900 dark:text-white pr-3">
                                                                             {row.product_name}
@@ -609,8 +697,32 @@ export default function DoneSingleJobDetail({
                                                                         <td className="py-3 text-right text-xs text-stone-400 whitespace-nowrap">
                                                                             {row.count ? `${row.count} đợt` : '-'}
                                                                         </td>
+                                                                        <td className="py-3 text-right whitespace-nowrap">
+                                                                            {prodItems.length > 0 ? (
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={() =>
+                                                                                        setPreviewContext({
+                                                                                            urls: prodItems.map(x => x.url),
+                                                                                            items: prodItems,
+                                                                                            index: 0,
+                                                                                            title: row.product_name,
+                                                                                            showDirectionFilter: true,
+                                                                                            directionFilter: 'all',
+                                                                                        })
+                                                                                    }
+                                                                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-sky-50 hover:bg-sky-100 dark:bg-sky-950/60 dark:hover:bg-sky-900/60 border border-sky-200 dark:border-sky-800 text-sky-700 dark:text-sky-300 text-xs font-bold transition"
+                                                                                >
+                                                                                    <Camera className="w-3.5 h-3.5" />
+                                                                                    <span>{prodItems.length} ảnh</span>
+                                                                                </button>
+                                                                            ) : (
+                                                                                <span className="text-xs text-stone-300 dark:text-zinc-600">-</span>
+                                                                            )}
+                                                                        </td>
                                                                     </tr>
-                                                                ))}
+                                                                    )
+                                                                })}
                                                             </tbody>
                                                         </table>
                                                     </>
@@ -697,6 +809,40 @@ export default function DoneSingleJobDetail({
                                                                             <span>{record.sent_by_name || 'Nhân viên'}</span>
                                                                             {userNote && <span>• 💬 {userNote}</span>}
                                                                         </div>
+
+                                                                        {(() => {
+                                                                            const rowUrls = shiftImages
+                                                                                .filter(img => img.journal_id === record.id)
+                                                                                .map(resolveImgUrl)
+                                                                                .filter(Boolean)
+                                                                            if (rowUrls.length === 0) return null
+                                                                            return (
+                                                                                <div className="flex items-center gap-1.5 flex-wrap pt-1">
+                                                                                    {rowUrls.map((imgUrl, imgIdx) => (
+                                                                                        <button
+                                                                                            key={imgIdx}
+                                                                                            type="button"
+                                                                                            onClick={() =>
+                                                                                                setPreviewContext({
+                                                                                                    urls: rowUrls,
+                                                                                                    index: imgIdx,
+                                                                                                    title: record.item_name,
+                                                                                                })
+                                                                                            }
+                                                                                            className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-lg overflow-hidden border border-stone-200 dark:border-zinc-700 hover:ring-2 hover:ring-indigo-500 transition shrink-0 bg-stone-100 dark:bg-zinc-800"
+                                                                                            title="Bấm để xem ảnh phóng to"
+                                                                                        >
+                                                                                            <img
+                                                                                                src={imgUrl}
+                                                                                                alt={record.item_name || 'Ảnh đợt'}
+                                                                                                className="w-full h-full object-cover"
+                                                                                                loading="lazy"
+                                                                                            />
+                                                                                        </button>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )
+                                                                        })()}
                                                                     </div>
                                                                 </div>
                                                             )
@@ -975,6 +1121,140 @@ export default function DoneSingleJobDetail({
                     </div>
                 </div>
             </div>
+
+            {previewContext && (() => {
+                const { urls, items, index, title, showDirectionFilter, directionFilter = 'all' } = previewContext
+                const allItems = items || urls.map(url => ({ url, direction: null as 'in' | 'out' | null }))
+                const inCount = allItems.filter(x => x.direction === 'in').length
+                const outCount = allItems.filter(x => x.direction === 'out').length
+                const activeItems =
+                    directionFilter === 'in'
+                        ? allItems.filter(x => x.direction === 'in')
+                        : directionFilter === 'out'
+                            ? allItems.filter(x => x.direction === 'out')
+                            : allItems
+                const safeIdx = Math.min(index, Math.max(0, activeItems.length - 1))
+                const hasPrev = safeIdx > 0
+                const hasNext = safeIdx < activeItems.length - 1
+                const currentItem = activeItems[safeIdx]
+                return (
+                <div
+                    className="fixed inset-0 z-50 bg-black/92 flex flex-col items-center justify-center p-4"
+                    onClick={() => setPreviewContext(null)}
+                >
+                    <div className="absolute top-4 left-4 flex items-center gap-2 flex-wrap pr-14" onClick={e => e.stopPropagation()}>
+                        <span className="px-3 py-1 rounded-full bg-white/15 text-white text-xs font-bold">
+                            {activeItems.length > 0 ? `${safeIdx + 1} / ${activeItems.length}` : '0 / 0'}
+                        </span>
+                        {currentItem?.direction === 'in' && (
+                            <span className="px-2.5 py-1 rounded-full bg-emerald-600 text-white text-[11px] font-extrabold">
+                                NHẬP
+                            </span>
+                        )}
+                        {currentItem?.direction === 'out' && (
+                            <span className="px-2.5 py-1 rounded-full bg-rose-600 text-white text-[11px] font-extrabold">
+                                XUẤT
+                            </span>
+                        )}
+                        {title && (
+                            <span className="hidden sm:inline px-3 py-1 rounded-full bg-white/10 text-stone-200 text-xs font-semibold truncate max-w-xs">
+                                {title}
+                            </span>
+                        )}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={() => setPreviewContext(null)}
+                        className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center text-lg font-bold"
+                        title="Đóng"
+                    >
+                        ✕
+                    </button>
+                    {showDirectionFilter && (
+                        <div
+                            className="mb-3 mt-10 flex items-center gap-1.5 bg-white/10 p-1 rounded-full border border-white/15"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {[
+                                { key: 'all', label: `Tất cả (${allItems.length})` },
+                                { key: 'in', label: `Nhập (${inCount})` },
+                                { key: 'out', label: `Xuất (${outCount})` },
+                            ].map(tab => {
+                                const active = directionFilter === tab.key
+                                return (
+                                    <button
+                                        key={tab.key}
+                                        type="button"
+                                        onClick={() =>
+                                            setPreviewContext(prev =>
+                                                prev ? { ...prev, directionFilter: tab.key as any, index: 0 } : null
+                                            )
+                                        }
+                                        className={`px-3 py-1 rounded-full text-xs font-bold transition ${
+                                            active
+                                                ? tab.key === 'in'
+                                                    ? 'bg-emerald-600 text-white'
+                                                    : tab.key === 'out'
+                                                        ? 'bg-rose-600 text-white'
+                                                        : 'bg-sky-600 text-white'
+                                                : 'text-stone-300 hover:text-white'
+                                        }`}
+                                    >
+                                        {tab.label}
+                                    </button>
+                                )
+                            })}
+                        </div>
+                    )}
+                    {hasPrev && (
+                        <button
+                            type="button"
+                            onClick={e => {
+                                e.stopPropagation()
+                                setPreviewContext(prev => (prev ? { ...prev, index: Math.max(0, safeIdx - 1) } : null))
+                            }}
+                            className="absolute left-3 sm:left-6 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-black/65 hover:bg-black/85 border border-white/25 text-white flex items-center justify-center transition"
+                            title="Ảnh trước"
+                        >
+                            <ChevronLeft className="w-6 h-6" />
+                        </button>
+                    )}
+                    {currentItem ? (
+                        <img
+                            src={currentItem.url}
+                            alt={title || 'Ảnh chi tiết'}
+                            className="max-w-full max-h-[78vh] rounded-xl object-contain shadow-2xl"
+                            onClick={e => e.stopPropagation()}
+                        />
+                    ) : (
+                        <div
+                            className="px-6 py-12 rounded-xl bg-white/10 text-stone-300 text-sm font-semibold"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            Không có ảnh {directionFilter === 'in' ? 'Nhập' : 'Xuất'} nào cho sản phẩm này.
+                        </div>
+                    )}
+                    {hasNext && (
+                        <button
+                            type="button"
+                            onClick={e => {
+                                e.stopPropagation()
+                                setPreviewContext(prev => (prev ? { ...prev, index: safeIdx + 1 } : null))
+                            }}
+                            className="absolute right-3 sm:right-6 top-1/2 -translate-y-1/2 z-10 w-11 h-11 rounded-full bg-black/65 hover:bg-black/85 border border-white/25 text-white flex items-center justify-center transition"
+                            title="Ảnh tiếp theo"
+                        >
+                            <ChevronRight className="w-6 h-6" />
+                        </button>
+                    )}
+                    {title && (
+                        <div className="sm:hidden mt-3 text-center text-xs font-bold text-stone-200">
+                            {title}
+                        </div>
+                    )}
+                </div>
+                )
+            })()}
         </div>
     )
 }

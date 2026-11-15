@@ -899,20 +899,40 @@ export async function getShiftJournals(
   systemCode?: string
 ): Promise<JournalRecord[]> {
   const cacheKey = `${CACHE_KEYS.JOURNALS_PREFIX}${shift.id}`
-  const cleanSys = getActiveSystemCode(systemCode || shift.system_code)
+  const baseSys = getActiveSystemCode(systemCode || shift.system_code)
+  const shiftSys = getShiftSystemCode(baseSys)
 
   if (shift.id.startsWith('local_')) {
     return getStorageJson<JournalRecord[]>(cacheKey, [])
   }
 
   try {
-    const { data, error } = await (supabase.from('delivery_journal') as any)
+    let { data, error } = await (supabase.from('delivery_journal') as any)
       .select('*')
-      .eq('system_code', cleanSys)
+      .or(`system_code.eq.${shiftSys},system_code.eq.${baseSys}`)
       .ilike('notes', `%[CV_ID: ${shift.id}]%`)
       .order('sent_at', { ascending: false })
 
     if (error) throw error
+
+    // Fallback cho ca tạo từ Web /so-lieu cũ chưa gắn tag [CV_ID: ...]
+    if ((!data || data.length === 0) && shift.opened_at) {
+      let fbQuery = (supabase.from('delivery_journal') as any)
+        .select('*')
+        .or(`system_code.eq.${shiftSys},system_code.eq.${baseSys}`)
+        .gte('sent_at', shift.opened_at)
+        .order('sent_at', { ascending: false })
+      if (shift.closed_at) {
+        fbQuery = fbQuery.lte('sent_at', shift.closed_at)
+      }
+      const fbRes = await fbQuery
+      if (!fbRes.error && Array.isArray(fbRes.data)) {
+        data = fbRes.data.filter((r: any) => {
+          const m = String(r.notes || '').match(/\[CV_ID:\s*([^\]]+)\]/)
+          return !m || m[1].trim() === shift.id
+        })
+      }
+    }
     const remoteRows: JournalRecord[] = (data || []).map((r: any) => ({
       ...r,
       direction: parseDirectionFromRow(r),

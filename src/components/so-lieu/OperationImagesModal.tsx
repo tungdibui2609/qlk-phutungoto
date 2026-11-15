@@ -8,6 +8,7 @@ import {
     uploadOperationImages,
     deleteOperationImage,
     getOperationImageDisplayUrl,
+    parseRefPhase,
 } from '@/lib/operationImages'
 
 export interface WebJournalImageTarget {
@@ -47,7 +48,7 @@ export default function OperationImagesModal({
     const [images, setImages] = useState<OperationImageRecord[]>([])
     const [loading, setLoading] = useState(false)
     const [uploading, setUploading] = useState(false)
-    const [filter, setFilter] = useState<'all' | 'in' | 'out' | 'shift'>('all')
+    const [filter, setFilter] = useState<'all' | 'journal' | 'ref' | 'in' | 'out' | 'shift'>('all')
     const [selectedImage, setSelectedImage] = useState<OperationImageRecord | null>(null)
     const cameraRef = useRef<HTMLInputElement>(null)
     const libraryRef = useRef<HTMLInputElement>(null)
@@ -125,10 +126,15 @@ export default function OperationImagesModal({
         : images
 
     const filtered = baseImages.filter((img) => {
+        const refPhase = parseRefPhase(img.notes)
         if (filter === 'all') return true
-        if (filter === 'in') return img.direction === 'in'
-        if (filter === 'out') return img.direction === 'out'
-        return img.scope === 'shift' || img.scope === 'sub_shift'
+        if (filter === 'ref') return refPhase !== null
+        if (filter === 'journal') {
+            return !refPhase && (img.scope === 'journal' || img.direction === 'in' || img.direction === 'out')
+        }
+        if (filter === 'in') return !refPhase && img.direction === 'in'
+        if (filter === 'out') return !refPhase && img.direction === 'out'
+        return !refPhase && img.scope !== 'journal' && !img.direction && (img.scope === 'shift' || img.scope === 'sub_shift')
     })
 
     return (
@@ -159,23 +165,32 @@ export default function OperationImagesModal({
                     <div className="flex flex-wrap items-center gap-1.5">
                         {[
                             { key: 'all', label: `Tất cả (${baseImages.length})` },
+                            { key: 'journal', label: 'Số liệu N/X' },
+                            { key: 'ref', label: 'Tham chiếu' },
                             { key: 'in', label: 'Nhập' },
                             { key: 'out', label: 'Xuất' },
-                            { key: 'shift', label: 'Chung CV / Đợt' },
-                        ].map((tab) => (
-                            <button
-                                key={tab.key}
-                                type="button"
-                                onClick={() => setFilter(tab.key as any)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                                    filter === tab.key
-                                        ? 'bg-sky-600 text-white'
-                                        : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-                                }`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
+                            { key: 'shift', label: 'Chung CV/Đợt' },
+                        ].map((tab) => {
+                            const active = filter === tab.key
+                            return (
+                                <button
+                                    key={tab.key}
+                                    type="button"
+                                    onClick={() => setFilter(tab.key as any)}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                                        active
+                                            ? tab.key === 'ref'
+                                                ? 'bg-amber-600 text-white'
+                                                : tab.key === 'journal'
+                                                    ? 'bg-emerald-600 text-white'
+                                                    : 'bg-sky-600 text-white'
+                                            : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                    }`}
+                                >
+                                    {tab.label}
+                                </button>
+                            )
+                        })}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -236,7 +251,9 @@ export default function OperationImagesModal({
                         </div>
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {filtered.map((img) => (
+                            {filtered.map((img) => {
+                                const refPhase = parseRefPhase(img.notes)
+                                return (
                                 <div
                                     key={img.id}
                                     onClick={() => setSelectedImage(img)}
@@ -248,17 +265,25 @@ export default function OperationImagesModal({
                                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                                     />
                                     <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 text-white">
-                                        <div className="flex items-center gap-1 mb-0.5">
-                                            {img.direction === 'in' && (
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500">NHẬP</span>
-                                            )}
-                                            {img.direction === 'out' && (
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500">XUẤT</span>
-                                            )}
-                                            {img.scope !== 'journal' && (
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500">
-                                                    {img.scope === 'sub_shift' ? 'ĐỢT' : 'CV'}
+                                        <div className="flex items-center gap-1 mb-0.5 flex-wrap">
+                                            {refPhase ? (
+                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-600">
+                                                    {refPhase === 'start' ? 'TC ĐẦU' : refPhase === 'end' ? 'TC CUỐI' : 'THAM CHIẾU'}
                                                 </span>
+                                            ) : (
+                                                <>
+                                                    {img.direction === 'in' && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500">NHẬP</span>
+                                                    )}
+                                                    {img.direction === 'out' && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500">XUẤT</span>
+                                                    )}
+                                                    {img.scope !== 'journal' && (
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500">
+                                                            {img.scope === 'sub_shift' ? 'ĐỢT' : 'CV'}
+                                                        </span>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                         <p className="text-[11px] font-semibold truncate">
@@ -266,7 +291,8 @@ export default function OperationImagesModal({
                                         </p>
                                     </div>
                                 </div>
-                            ))}
+                                )
+                            })}
                         </div>
                     )}
                 </div>

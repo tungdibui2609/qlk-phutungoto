@@ -16,6 +16,7 @@ import {
     FolderOpen,
     FolderPlus,
     Folder,
+    ChevronLeft,
     ChevronRight,
     ChevronDown,
     Grid3X3,
@@ -115,6 +116,11 @@ export default function SoLieuAlbumPage() {
     const [products, setProducts] = useState<{ sku: string; name: string; aliases?: string | null; internal_code?: string | null; internal_name?: string | null }[]>([])
     const [loading, setLoading] = useState(false)
     const [selectedImage, setSelectedImage] = useState<OperationImageRecord | null>(null)
+    const [viewerScopeList, setViewerScopeList] = useState<OperationImageRecord[] | null>(null)
+    const openViewer = (img: OperationImageRecord, list: OperationImageRecord[]) => {
+        setViewerScopeList(list)
+        setSelectedImage(img)
+    }
 
     const [shifts, setShifts] = useState<ShiftOption[]>([])
     const [uploadShiftId, setUploadShiftId] = useState('')
@@ -1704,7 +1710,7 @@ export default function SoLieuAlbumPage() {
                                         {isDirectRefView ? (
                                             <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
                                                 {album.items.map((img) => (
-                                                    <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
+                                                    <ImageTile key={img.id} img={img} onClick={() => openViewer(img, album.items)} />
                                                 ))}
                                             </div>
                                         ) : (
@@ -1759,7 +1765,7 @@ export default function SoLieuAlbumPage() {
                                                                     {isOpen && (
                                                                         <div className="p-2.5 pt-0 grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5 border-t border-amber-200/60 dark:border-amber-800/40 mt-1 pt-2.5">
                                                                             {ra.items.map((img) => (
-                                                                                <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
+                                                                                <ImageTile key={img.id} img={img} onClick={() => openViewer(img, ra.items)} />
                                                                             ))}
                                                                         </div>
                                                                     )}
@@ -1772,7 +1778,7 @@ export default function SoLieuAlbumPage() {
                                                 {regularItems.length > 0 && (
                                                     <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-2.5">
                                                         {regularItems.map((img) => (
-                                                            <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} />
+                                                            <ImageTile key={img.id} img={img} onClick={() => openViewer(img, regularItems)} />
                                                         ))}
                                                     </div>
                                                 )}
@@ -1785,7 +1791,7 @@ export default function SoLieuAlbumPage() {
                     ) : (
                         <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 gap-3">
                             {filteredImages.map((img) => (
-                                <ImageTile key={img.id} img={img} onClick={() => setSelectedImage(img)} showJob />
+                                <ImageTile key={img.id} img={img} onClick={() => openViewer(img, filteredImages)} showJob />
                             ))}
                         </div>
                     )}
@@ -1877,14 +1883,47 @@ export default function SoLieuAlbumPage() {
                     </div>
 
                     <div
-                        className="flex-1 flex items-center justify-center my-4 overflow-hidden"
+                        className="relative flex-1 flex items-center justify-center my-4 overflow-hidden"
                         onClick={(e) => e.stopPropagation()}
                     >
-                        <img
-                            src={getOperationImageDisplayUrl(selectedImage)}
-                            alt={selectedImage.item_name || 'Ảnh chứng minh'}
-                            className="max-w-full max-h-[80vh] object-contain rounded-lg"
-                        />
+                        {(() => {
+                            const navList = viewerScopeList && viewerScopeList.length > 0 ? viewerScopeList : filteredImages
+                            const curIdx = navList.findIndex((x) => x.id === selectedImage.id)
+                            const hasPrev = curIdx > 0
+                            const hasNext = curIdx >= 0 && curIdx < navList.length - 1
+                            return (
+                                <>
+                                    <div className="absolute top-2 left-2 z-10 px-3 py-1 rounded-full bg-black/60 border border-white/20 text-white text-xs font-bold">
+                                        {curIdx >= 0 ? `${curIdx + 1} / ${navList.length}` : '1 / 1'}
+                                    </div>
+                                    {hasPrev && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedImage(navList[curIdx - 1])}
+                                            className="absolute left-2 sm:left-6 z-10 w-11 h-11 rounded-full bg-black/65 hover:bg-black/85 border border-white/25 text-white flex items-center justify-center transition"
+                                            title="Ảnh trước"
+                                        >
+                                            <ChevronLeft className="w-6 h-6" />
+                                        </button>
+                                    )}
+                                    <img
+                                        src={getOperationImageDisplayUrl(selectedImage)}
+                                        alt={selectedImage.item_name || 'Ảnh chứng minh'}
+                                        className="max-w-full max-h-[80vh] object-contain rounded-lg"
+                                    />
+                                    {hasNext && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSelectedImage(navList[curIdx + 1])}
+                                            className="absolute right-2 sm:right-6 z-10 w-11 h-11 rounded-full bg-black/65 hover:bg-black/85 border border-white/25 text-white flex items-center justify-center transition"
+                                            title="Ảnh tiếp theo"
+                                        >
+                                            <ChevronRight className="w-6 h-6" />
+                                        </button>
+                                    )}
+                                </>
+                            )
+                        })()}
                     </div>
                 </div>
             )}

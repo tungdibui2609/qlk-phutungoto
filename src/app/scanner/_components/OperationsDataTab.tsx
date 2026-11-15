@@ -66,9 +66,11 @@ import {
   getActiveSystemCode,
 } from './operations/operationsService'
 import {
+  OperationImageRecord,
   uploadOperationImages,
   getShiftOperationImages,
   syncOfflineOperationImages,
+  getOperationImageDisplayUrl,
 } from './operations/operationImagesService'
 import {
   OperationNumberPadModal,
@@ -170,6 +172,7 @@ export function OperationsDataTab({
   const [allJournals, setAllJournals] = useState<JournalRecord[]>([])
   const [subShifts, setSubShifts] = useState<SubShiftRecord[]>([])
   const [reconcileSessions, setReconcileSessions] = useState<ReconcileSession[]>([])
+  const [shiftImages, setShiftImages] = useState<OperationImageRecord[]>([])
   const [shiftImageCount, setShiftImageCount] = useState(0)
 
   // Tìm kiếm & Ghim SP trong tab Đang làm
@@ -282,6 +285,7 @@ export function OperationsDataTab({
       setAllJournals([])
       setSubShifts([])
       setReconcileSessions([])
+      setShiftImages([])
       setShiftImageCount(0)
       return
     }
@@ -294,6 +298,7 @@ export function OperationsDataTab({
     setAllJournals(jList)
     setSubShifts(sList)
     setReconcileSessions(rList)
+    setShiftImages(imgs)
     setShiftImageCount(imgs.length)
   }, [activeSysCode])
 
@@ -556,7 +561,7 @@ export function OperationsDataTab({
     setAllJournals(prev => [createdJournal, ...prev])
 
     if (data.photos && data.photos.length > 0) {
-      await uploadOperationImages({
+      const uploaded = await uploadOperationImages({
         images: data.photos,
         systemCode: selectedShift.system_code,
         companyId: selectedShift.company_id || userObj.company_id,
@@ -572,7 +577,8 @@ export function OperationsDataTab({
         notes: data.notes,
         user: userObj,
       })
-      setShiftImageCount(c => c + data.photos!.length)
+      setShiftImages(prev => [...uploaded, ...prev])
+      setShiftImageCount(c => c + uploaded.length)
     }
 
     await refreshPendingQueueCount()
@@ -1390,6 +1396,18 @@ export function OperationsDataTab({
                       .map(j => {
                         const isIn = j.direction === 'in'
                         const cleanNote = extractCleanUserNote(j.notes)
+                        const jImages = shiftImages.filter(img => img.journal_id === j.id)
+                        const openJournalImages = () => {
+                          setImagesJournalTarget({
+                            id: j.id,
+                            itemName: j.item_name,
+                            itemSku: (j as any).item_sku || null,
+                            quantity: j.quantity_sent,
+                            unit: j.unit,
+                            direction: j.direction,
+                          })
+                          setImagesModalShift(selectedShift)
+                        }
                         return (
                           <div
                             key={j.id}
@@ -1419,24 +1437,39 @@ export function OperationsDataTab({
                                   📝 {cleanNote}
                                 </div>
                               )}
+                              {jImages.length > 0 && (
+                                <div className="flex items-center gap-1.5 mt-1.5 overflow-x-auto no-scrollbar">
+                                  {jImages.map(img => (
+                                    <button
+                                      key={img.id}
+                                      type="button"
+                                      onClick={openJournalImages}
+                                      className="relative w-11 h-11 rounded-lg overflow-hidden border border-slate-600 shrink-0 bg-slate-800"
+                                      title="Xem ảnh chứng minh"
+                                    >
+                                      <img
+                                        src={getOperationImageDisplayUrl(img)}
+                                        alt="proof"
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
 
                             <div className="flex items-center gap-1 shrink-0">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setImagesJournalTarget({
-                                    id: j.id,
-                                    itemName: j.item_name,
-                                    quantity: j.quantity_sent,
-                                    unit: j.unit,
-                                    direction: j.direction,
-                                  })
-                                  setImagesModalShift(selectedShift)
-                                }}
-                                className="p-1.5 rounded-lg bg-sky-500/15 text-sky-300"
+                                onClick={openJournalImages}
+                                className="relative p-1.5 rounded-lg bg-sky-500/15 text-sky-300"
                               >
                                 <Camera className="w-3.5 h-3.5" />
+                                {jImages.length > 0 && (
+                                  <span className="absolute -top-1 -right-1 min-w-[14px] h-3.5 px-1 rounded-full bg-sky-500 text-white text-[9px] font-extrabold flex items-center justify-center">
+                                    {jImages.length}
+                                  </span>
+                                )}
                               </button>
                               <button
                                 type="button"
@@ -1602,7 +1635,10 @@ export function OperationsDataTab({
                     onImagesChanged={() => {
                       if (selectedShift) {
                         getShiftOperationImages(selectedShift.id)
-                          .then(l => setShiftImageCount(l.length))
+                          .then(l => {
+                            setShiftImages(l)
+                            setShiftImageCount(l.length)
+                          })
                           .catch(() => {})
                       }
                     }}
@@ -2094,6 +2130,9 @@ export function OperationsDataTab({
         product={numPadTarget?.product || null}
         unit={numPadTarget?.unit || ''}
         availableUnits={numPadTarget?.product?.units}
+        systemCode={selectedShift?.system_code || systemCode}
+        jobName={selectedShift?.summary_data?.job_name || selectedShift?.notes || null}
+        userName={userProfile?.fullName || userObj?.full_name || userObj?.email || null}
         onClose={() => setNumPadTarget(null)}
         onConfirm={handleConfirmNumberPad}
       />
@@ -2205,8 +2244,11 @@ export function OperationsDataTab({
           setImagesJournalTarget(null)
         }}
         onChanged={count => {
-          if (imagesModalShift?.id === selectedShift?.id) {
+          if (selectedShift && imagesModalShift?.id === selectedShift.id) {
             setShiftImageCount(count)
+            getShiftOperationImages(selectedShift.id)
+              .then(l => setShiftImages(l))
+              .catch(() => {})
           }
         }}
       />

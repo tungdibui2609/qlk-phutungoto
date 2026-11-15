@@ -3514,8 +3514,11 @@ export default function SoLieuPage() {
             )}
 
             <OperationImagesModal
-                isOpen={Boolean(imageJournalTarget)}
-                onClose={() => setImageJournalTarget(null)}
+                isOpen={imagesModalOpen || Boolean(imageJournalTarget)}
+                onClose={() => {
+                    setImagesModalOpen(false)
+                    setImageJournalTarget(null)
+                }}
                 systemCode={currentSystem?.code || ''}
                 companyId={currentSystem?.company_id || profile?.company_id || null}
                 shiftId={(pageView === 'done' ? doneSelectedShift?.id : activeShift?.id) || ''}

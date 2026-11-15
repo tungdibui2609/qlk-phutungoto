@@ -4,6 +4,14 @@ export const OPERATION_IMAGES_BUCKET = 'operation-images'
 
 export type OperationImageScope = 'journal' | 'sub_shift' | 'shift'
 
+export function parseRefPhase(notes?: string | null): 'start' | 'end' | 'legacy' | null {
+    const m = notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+    if (!m) return null
+    if (m[2] === 'start') return 'start'
+    if (m[2] === 'end') return 'end'
+    return 'legacy'
+}
+
 export interface OperationImageRecord {
     id: string
     company_id?: string | null

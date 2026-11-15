@@ -1,4 +1,11 @@
 import { supabase } from '@/lib/supabaseClient'
+import {
+  applyOperationWatermark,
+  getWatermarkEnabled,
+  setWatermarkEnabled,
+} from '../OperationWatermarkOverlay'
+
+export { getWatermarkEnabled, setWatermarkEnabled }
 
 export interface OperationImageRecord {
   id: string
@@ -15,11 +22,10 @@ export interface OperationImageRecord {
   item_sku?: string | null
   quantity?: number | null
   unit?: string | null
+  storage_bucket?: string
   storage_path: string
   public_url: string
-  file_size_bytes?: number | null
-  width?: number | null
-  height?: number | null
+  file_size?: number | null
   mime_type?: string | null
   notes?: string | null
   captured_by?: string | null
@@ -62,10 +68,17 @@ export interface OperationDriveSettings {
   auto_delete_local_days?: number | null
 }
 
-const STORAGE_BUCKET = 'operation-proofs'
-const WATERMARK_ENABLED_KEY = 'op_watermark_enabled_v1'
+const STORAGE_BUCKET = 'operation-images'
 const LOCAL_AUTO_DELETE_DAYS_KEY = 'op_local_auto_delete_days_v1'
 const OFFLINE_IMAGES_KEY = 'op_offline_images_queue_v1'
+
+export function parseRefPhase(notes?: string | null): 'start' | 'end' | 'legacy' | null {
+  const m = notes?.match(/^\[THAM_CHIEU:([^\]:]+)(?::(start|end))?\]/)
+  if (!m) return null
+  if (m[2] === 'start') return 'start'
+  if (m[2] === 'end') return 'end'
+  return 'legacy'
+}
 
 export function normalizeBaseSystemCode(code?: string | null): string {
   if (!code) return 'KHO_DONG_LANH'
@@ -82,22 +95,6 @@ export function normalizeSearchText(str?: string | null): string {
     .replace(/[^a-z0-9\s\-_/.,]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-export async function getWatermarkEnabled(): Promise<boolean> {
-  try {
-    const v = localStorage.getItem(WATERMARK_ENABLED_KEY)
-    if (v === null) return true
-    return v === '1' || v === 'true'
-  } catch {
-    return true
-  }
-}
-
-export async function setWatermarkEnabled(enabled: boolean): Promise<void> {
-  try {
-    localStorage.setItem(WATERMARK_ENABLED_KEY, enabled ? '1' : '0')
-  } catch {}
 }
 
 export async function getLocalAutoDeleteDays(): Promise<number | null> {
@@ -125,7 +122,7 @@ export function getOperationImageDisplayUrl(img: OperationImageRecord): string {
   if (img.local_data_url) return img.local_data_url
   if (img.public_url) return img.public_url
   if (img.drive_file_id) {
-    return `https://drive.google.com/thumbnail?id=${img.drive_file_id}&sz=w1200`
+    return `https://lh3.googleusercontent.com/d/${img.drive_file_id}=w1600`
   }
   return ''
 }
@@ -182,114 +179,69 @@ async function processFileToPhoto(
     userName?: string | null
   }
 ): Promise<PickedOperationPhoto> {
-  const wmEnabled = await getWatermarkEnabled()
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
     reader.onerror = () => reject(new Error('Không thể đọc file ảnh'))
-    reader.onload = () => {
-      const srcUrl = String(reader.result || '')
-      const img = new window.Image()
-      img.onerror = () => reject(new Error('Không thể giải mã ảnh'))
-      img.onload = () => {
-        const maxDim = 1600
-        let w = img.naturalWidth || img.width || 1200
-        let h = img.naturalHeight || img.height || 900
-        if (w > maxDim || h > maxDim) {
-          if (w >= h) {
-            h = Math.round((h * maxDim) / w)
-            w = maxDim
-          } else {
-            w = Math.round((w * maxDim) / h)
-            h = maxDim
-          }
-        }
-
-        const canvas = document.createElement('canvas')
-        canvas.width = w
-        canvas.height = h
-        const ctx = canvas.getContext('2d')
-        if (!ctx) {
-          resolve({ dataUrl: srcUrl, width: w, height: h, fileSize: file.size, mimeType: 'image/jpeg' })
-          return
-        }
-
-        ctx.drawImage(img, 0, 0, w, h)
-
-        if (wmEnabled && watermarkMeta) {
-          const lines: string[] = []
-          const nowStr = new Date().toLocaleString('vi-VN')
-          const sysLabel = normalizeBaseSystemCode(watermarkMeta.systemCode)
-          lines.push(`🕒 ${nowStr} • ${sysLabel}`)
-          if (watermarkMeta.jobName) {
-            lines.push(`📋 CV: ${watermarkMeta.jobName}`)
-          }
-          if (watermarkMeta.itemName) {
-            const dirStr =
-              watermarkMeta.direction === 'in'
-                ? 'NHẬP (+)'
-                : watermarkMeta.direction === 'out'
-                  ? 'XUẤT (-)'
-                  : ''
-            const qtyStr =
-              watermarkMeta.quantity != null
-                ? `${watermarkMeta.quantity} ${watermarkMeta.unit || ''}`
-                : ''
-            lines.push(`📦 ${dirStr} ${watermarkMeta.itemName} ${qtyStr}`.trim())
-          }
-          if (watermarkMeta.userName) {
-            lines.push(`👤 ${watermarkMeta.userName}`)
-          }
-
-          const fontSize = Math.max(14, Math.round(Math.min(w, h) * 0.024))
-          const lineHeight = Math.round(fontSize * 1.38)
-          const pad = Math.round(fontSize * 0.8)
-          const boxH = lines.length * lineHeight + pad * 1.6
-
-          ctx.fillStyle = 'rgba(15, 23, 42, 0.72)'
-          ctx.fillRect(0, h - boxH, w, boxH)
-
-          ctx.font = `bold ${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`
-          ctx.fillStyle = '#f8fafc'
-          lines.forEach((line, i) => {
-            ctx.fillText(line, pad, h - boxH + pad + (i + 0.8) * lineHeight)
-          })
-        }
-
-        const outDataUrl = canvas.toDataURL('image/jpeg', 0.82)
-        canvas.toBlob(
-          blob => {
-            resolve({
-              dataUrl: outDataUrl,
-              blob: blob || undefined,
-              width: w,
-              height: h,
-              fileSize: blob?.size || file.size,
-              mimeType: 'image/jpeg',
-            })
-          },
-          'image/jpeg',
-          0.82
-        )
+    reader.onload = async () => {
+      try {
+        const srcUrl = String(reader.result || '')
+        const stampedUrl = await applyOperationWatermark({
+          uri: srcUrl,
+          systemCode: normalizeBaseSystemCode(watermarkMeta?.systemCode),
+          jobName: watermarkMeta?.jobName || null,
+          itemName: watermarkMeta?.itemName || null,
+          quantity: watermarkMeta?.quantity ?? null,
+          unit: watermarkMeta?.unit || null,
+          direction: watermarkMeta?.direction || null,
+          capturedByName: watermarkMeta?.userName || null,
+          capturedAt: new Date(),
+        })
+        const outUrl = stampedUrl || srcUrl
+        const blob = dataUrlToBlob(outUrl)
+        resolve({
+          dataUrl: outUrl,
+          blob,
+          width: 1080,
+          height: 1440,
+          fileSize: blob.size || file.size,
+          mimeType: 'image/jpeg',
+        })
+      } catch (e) {
+        reject(e instanceof Error ? e : new Error('Không thể xử lý ảnh'))
       }
-      img.src = srcUrl
     }
     reader.readAsDataURL(file)
   })
 }
 
-export async function capturePhotoWithCamera(): Promise<PickedOperationPhoto | null> {
-  const files = await pickFilesViaInput({ capture: true, multiple: false, maxCount: 1 })
-  if (!files.length) return null
-  return processFileToPhoto(files[0])
+export interface WatermarkMeta {
+  systemCode?: string
+  jobName?: string | null
+  itemName?: string | null
+  quantity?: number | null
+  unit?: string | null
+  direction?: 'in' | 'out' | null
+  userName?: string | null
 }
 
-export async function pickPhotosFromLibrary(maxCount = 8): Promise<PickedOperationPhoto[]> {
+export async function capturePhotoWithCamera(
+  watermarkMeta?: WatermarkMeta
+): Promise<PickedOperationPhoto | null> {
+  const files = await pickFilesViaInput({ capture: true, multiple: false, maxCount: 1 })
+  if (!files.length) return null
+  return processFileToPhoto(files[0], watermarkMeta)
+}
+
+export async function pickPhotosFromLibrary(
+  maxCount = 8,
+  watermarkMeta?: WatermarkMeta
+): Promise<PickedOperationPhoto[]> {
   const files = await pickFilesViaInput({ capture: false, multiple: true, maxCount })
   if (!files.length) return []
   const results: PickedOperationPhoto[] = []
   for (const f of files) {
     try {
-      const p = await processFileToPhoto(f)
+      const p = await processFileToPhoto(f, watermarkMeta)
       results.push(p)
     } catch {}
   }
@@ -348,12 +300,15 @@ export async function uploadOperationImages(params: {
       const { data: pubData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath)
       const publicUrl = pubData?.publicUrl || ''
 
+      const validJournalId =
+        params.journalId && !params.journalId.startsWith('local_') ? params.journalId : null
+
       const insertRow = {
         company_id: params.companyId || params.user?.company_id || null,
         system_code: baseSys,
         shift_id: params.shiftId,
-        sub_shift_id: params.subShiftId || null,
-        journal_id: params.journalId || null,
+        sub_shift_id: params.subShiftId && !params.subShiftId.startsWith('local_') ? params.subShiftId : null,
+        journal_id: validJournalId,
         folder_id: params.folderId || null,
         scope: params.scope,
         direction: params.direction || null,
@@ -362,11 +317,10 @@ export async function uploadOperationImages(params: {
         item_sku: params.itemSku || null,
         quantity: params.quantity ?? null,
         unit: params.unit || null,
+        storage_bucket: STORAGE_BUCKET,
         storage_path: storagePath,
         public_url: publicUrl,
-        file_size_bytes: img.fileSize || blob.size || null,
-        width: img.width || null,
-        height: img.height || null,
+        file_size: img.fileSize || blob.size || null,
         mime_type: 'image/jpeg',
         notes: params.notes || null,
         captured_by: params.user?.id || null,
@@ -374,10 +328,18 @@ export async function uploadOperationImages(params: {
         captured_at: now.toISOString(),
       }
 
-      const { data: rowData, error: dbErr } = await (supabase.from('operation_images') as any)
+      let { data: rowData, error: dbErr } = await (supabase.from('operation_images') as any)
         .insert([insertRow])
         .select('*')
         .single()
+      if (dbErr && dbErr.code === '23503' && insertRow.journal_id) {
+        const retryRes = await (supabase.from('operation_images') as any)
+          .insert([{ ...insertRow, journal_id: null }])
+          .select('*')
+          .single()
+        rowData = retryRes.data
+        dbErr = retryRes.error
+      }
       if (dbErr) throw dbErr
       createdRecords.push(rowData as OperationImageRecord)
     } catch (e) {
@@ -397,12 +359,11 @@ export async function uploadOperationImages(params: {
         item_sku: params.itemSku || null,
         quantity: params.quantity ?? null,
         unit: params.unit || null,
+        storage_bucket: STORAGE_BUCKET,
         storage_path: storagePath,
         public_url: img.dataUrl,
         local_data_url: img.dataUrl,
-        file_size_bytes: img.fileSize || null,
-        width: img.width || null,
-        height: img.height || null,
+        file_size: img.fileSize || null,
         mime_type: 'image/jpeg',
         notes: params.notes || null,
         captured_by: params.user?.id || null,
@@ -445,13 +406,18 @@ export async function syncOfflineOperationImages(): Promise<number> {
           .from(STORAGE_BUCKET)
           .getPublicUrl(item.storage_path)
 
+        const validJournalId =
+          item.journal_id && !item.journal_id.startsWith('local_') ? item.journal_id : null
+        const validSubShiftId =
+          item.sub_shift_id && !item.sub_shift_id.startsWith('local_') ? item.sub_shift_id : null
+
         const { error: dbErr } = await (supabase.from('operation_images') as any).insert([
           {
             company_id: item.company_id || null,
             system_code: item.system_code,
             shift_id: item.shift_id,
-            sub_shift_id: item.sub_shift_id || null,
-            journal_id: item.journal_id || null,
+            sub_shift_id: validSubShiftId,
+            journal_id: validJournalId,
             folder_id: item.folder_id || null,
             scope: item.scope,
             direction: item.direction || null,
@@ -460,11 +426,10 @@ export async function syncOfflineOperationImages(): Promise<number> {
             item_sku: item.item_sku || null,
             quantity: item.quantity ?? null,
             unit: item.unit || null,
+            storage_bucket: STORAGE_BUCKET,
             storage_path: item.storage_path,
             public_url: pubData?.publicUrl || '',
-            file_size_bytes: item.file_size_bytes || blob.size || null,
-            width: item.width || null,
-            height: item.height || null,
+            file_size: item.file_size || blob.size || null,
             mime_type: 'image/jpeg',
             notes: item.notes || null,
             captured_by: item.captured_by || null,
@@ -523,6 +488,20 @@ export async function listSystemOperationImages(params: {
   limit?: number
 }): Promise<OperationImageRecord[]> {
   const baseSys = normalizeBaseSystemCode(params.systemCode)
+  const localForSys: OperationImageRecord[] = (() => {
+    try {
+      const raw = localStorage.getItem(OFFLINE_IMAGES_KEY)
+      const list: OperationImageRecord[] = raw ? JSON.parse(raw) : []
+      return list.filter(
+        i =>
+          normalizeBaseSystemCode(i.system_code) === baseSys &&
+          (!params.companyId || !i.company_id || i.company_id === params.companyId)
+      )
+    } catch {
+      return []
+    }
+  })()
+
   try {
     let query = (supabase.from('operation_images') as any)
       .select('*')
@@ -536,9 +515,9 @@ export async function listSystemOperationImages(params: {
 
     const { data, error } = await query
     if (error) throw error
-    return (data || []) as OperationImageRecord[]
+    return [...localForSys, ...((data || []) as OperationImageRecord[])]
   } catch {
-    return []
+    return localForSys
   }
 }
 
@@ -717,9 +696,27 @@ export async function syncImagesToGoogleDrive(params: {
     }
 
     try {
-      const res = await fetch(img.public_url)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
+      let blob: Blob | null = null
+      if (img.local_data_url) {
+        blob = dataUrlToBlob(img.local_data_url)
+      } else {
+        try {
+          const res = await fetch(img.public_url)
+          if (res.ok) blob = await res.blob()
+        } catch {}
+        if (!blob && img.storage_path) {
+          const bucket = img.storage_bucket || STORAGE_BUCKET
+          const { data: dlData, error: dlErr } = await supabase.storage
+            .from(bucket)
+            .download(img.storage_path)
+          if (!dlErr && dlData) {
+            blob = dlData
+          }
+        }
+      }
+      if (!blob) {
+        throw new Error('Không tải được file ảnh từ máy chủ')
+      }
       const base64 = await blobToBase64(blob)
 
       const dt = new Date(img.captured_at || Date.now())
@@ -733,10 +730,11 @@ export async function syncImagesToGoogleDrive(params: {
         .slice(0, 40)
       const filename = `${safeItem}_${dt.getTime()}.jpg`
 
-      const driveRes = await fetch(webhookUrl, {
+      const driveRes = await fetch('/api/operations/drive-sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          webhookUrl,
           rootFolder,
           folderPath,
           filename,
@@ -746,8 +744,8 @@ export async function syncImagesToGoogleDrive(params: {
       })
 
       const driveJson = await driveRes.json()
-      if (!driveJson?.success) {
-        throw new Error(driveJson?.error || 'Apps Script trả về lỗi')
+      if (!driveRes.ok || !driveJson?.success) {
+        throw new Error(driveJson?.error || `HTTP ${driveRes.status}`)
       }
 
       await (supabase.from('operation_images') as any)
