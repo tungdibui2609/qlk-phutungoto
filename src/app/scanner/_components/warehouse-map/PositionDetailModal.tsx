@@ -76,14 +76,14 @@ export function PositionDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-end sm:items-center justify-center p-3 animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3 pb-[max(1.25rem,env(safe-area-inset-bottom))] animate-in fade-in duration-200"
       onClick={() => setSelectedPosDetail(null)}
     >
       <div
-        className="w-full max-w-md bg-[#111827] border border-cyan-500/40 rounded-2xl p-4 space-y-3 shadow-2xl max-h-[90vh] overflow-y-auto overscroll-y-contain"
+        className="w-full max-w-md bg-[#111827] border border-cyan-500/40 rounded-2xl shadow-2xl max-h-[84dvh] flex flex-col overflow-hidden"
         onClick={e => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+        <div className="shrink-0 flex items-center justify-between border-b border-slate-800 px-4 py-3">
           <div className="flex items-center gap-2">
             <MapPin size={18} className="text-cyan-400" />
             <h3 className="text-sm font-black text-white uppercase tracking-wider font-mono">
@@ -93,11 +93,13 @@ export function PositionDetailModal({
           <button
             type="button"
             onClick={() => setSelectedPosDetail(null)}
-            className="text-slate-400 hover:text-white"
+            className="p-1 text-slate-400 hover:text-white"
           >
             <X size={18} />
           </button>
         </div>
+
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain no-scrollbar px-4 py-3 space-y-3">
 
         {/* Status Pill */}
         {selectedPosDetail.lot_id ? (
@@ -294,32 +296,36 @@ export function PositionDetailModal({
           </div>
         )}
 
-        {onOpenDraftForPosition && (
+        </div>
+
+        <div className="shrink-0 border-t border-slate-800 px-4 py-3 space-y-2 bg-[#0f172a]/90">
+          {onOpenDraftForPosition && (
+            <button
+              type="button"
+              onClick={() => {
+                const posToDraft = selectedPosDetail
+                setSelectedPosDetail(null)
+                if (posToDraft) {
+                  onOpenDraftForPosition(posToDraft)
+                }
+              }}
+              className="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-xs font-black flex items-center justify-center gap-2 transition active:scale-[0.99]"
+            >
+              <ClipboardEdit size={15} className="text-amber-400" />
+              <span>
+                {hasDraftItem ? 'Sửa Ghi Nháp Vị Trí Này' : 'Ghi Nháp Điều Chỉnh Ô Này'}
+              </span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => {
-              const posToDraft = selectedPosDetail
-              setSelectedPosDetail(null)
-              if (posToDraft) {
-                onOpenDraftForPosition(posToDraft)
-              }
-            }}
-            className="w-full py-2.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-300 text-xs font-black flex items-center justify-center gap-2 transition active:scale-[0.99]"
+            onClick={() => setSelectedPosDetail(null)}
+            className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition"
           >
-            <ClipboardEdit size={15} className="text-amber-400" />
-            <span>
-              {hasDraftItem ? 'Sửa Ghi Nháp Vị Trí Này' : 'Ghi Nháp Điều Chỉnh Ô Này'}
-            </span>
+            Đóng
           </button>
-        )}
-
-        <button
-          type="button"
-          onClick={() => setSelectedPosDetail(null)}
-          className="w-full py-2.5 rounded-xl bg-slate-800 text-white text-xs font-bold hover:bg-slate-700 transition"
-        >
-          Đóng
-        </button>
+        </div>
       </div>
     </div>
   )

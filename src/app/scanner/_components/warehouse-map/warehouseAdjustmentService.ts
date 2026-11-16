@@ -82,43 +82,68 @@ export async function clearDraftProposal(): Promise<DraftProposal> {
   return fresh
 }
 
-async function resolveCurrentCompanyId(): Promise<string | null> {
-  try {
-    const { data: userData } = await supabase.auth.getUser()
-    const userId = userData?.user?.id
-    if (!userId) return null
-
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('company_id')
-      .eq('id', userId)
-      .maybeSingle()
-
-    if ((profile as any)?.company_id) return (profile as any).company_id
-  } catch {
-    // ignore
-  }
-  return null
-}
-
-async function resolveCurrentUserName(): Promise<string> {
+async function resolveCurrentUserInfo(): Promise<{
+  id: string | null
+  companyId: string | null
+  userName: string
+}> {
   try {
     const { data: userData } = await supabase.auth.getUser()
     const user = userData?.user
-    if (!user) return 'Kiểm kho Mobile'
+    if (!user) return { id: null, companyId: null, userName: 'Kiểm kho Mobile' }
 
     const { data: profile } = await supabase
       .from('user_profiles')
-      .select('full_name, email')
+      .select('company_id, full_name, email')
       .eq('id', user.id)
       .maybeSingle()
 
-    if ((profile as any)?.full_name) return (profile as any).full_name
-    if (user.email) return user.email.split('@')[0]
+    const companyId = (profile as any)?.company_id || null
+    const userName =
+      (profile as any)?.full_name ||
+      (user.email ? user.email.split('@')[0] : 'Kiểm kho Mobile')
+
+    return { id: user.id, companyId, userName }
   } catch {
-    // ignore
+    return { id: null, companyId: null, userName: 'Kiểm kho Mobile' }
   }
-  return 'Kiểm kho Mobile'
+}
+
+function buildPrimaryProposalPayload(raw: any, fallbackUserId?: string | null) {
+  const items = Array.isArray(raw.items) ? raw.items : []
+  return {
+    title: raw.title || `Đề xuất điều chỉnh (${items.length} vị trí)`,
+    notes: raw.notes !== undefined ? raw.notes : (raw.note ?? null),
+    status: raw.status || 'PENDING',
+    system_code: raw.system_code || 'KHO_DONG_LANH',
+    company_id: raw.company_id || null,
+    created_by: raw.created_by || fallbackUserId || null,
+    created_by_name: raw.created_by_name || 'Kiểm kho Mobile',
+    total_positions: typeof raw.total_positions === 'number' ? raw.total_positions : items.length,
+    items,
+    created_at: raw.created_at || new Date().toISOString(),
+  }
+}
+
+function buildShiftTaskFallbackPayload(primary: ReturnType<typeof buildPrimaryProposalPayload>) {
+  const now = new Date()
+  const code = `DC-${now.getFullYear().toString().slice(2)}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
+  return {
+    code,
+    system_code: primary.system_code || 'KHO_DONG_LANH',
+    company_id: primary.company_id || null,
+    title: primary.title,
+    content: JSON.stringify({
+      notes: primary.notes || '',
+      items: primary.items,
+    }),
+    priority: 'normal',
+    status: 'pending',
+    task_type: 'warehouse_adjustment',
+    created_by: primary.created_by || null,
+    created_by_name: primary.created_by_name || 'Kiểm kho Mobile',
+    images: [],
+  }
 }
 
 export async function submitAdjustmentProposalToServer(
@@ -133,22 +158,28 @@ export async function submitAdjustmentProposalToServer(
     return { success: false, message: 'Chưa có vị trí nào trong phiếu nháp!' }
   }
 
-  const companyId = await resolveCurrentCompanyId()
-  const userName = await resolveCurrentUserName()
+  const { id: userId, companyId, userName } = await resolveCurrentUserInfo()
 
-  const payload = {
-    title: draft.title || `Đề xuất điều chỉnh (${draft.items.length} vị trí)`,
-    note: customNote !== undefined ? customNote : draft.note || null,
-    status: 'PENDING',
-    system_code: 'KHO_DONG_LANH',
-    company_id: companyId,
-    created_by_name: userName,
-    items: draft.items,
-    created_at: new Date().toISOString(),
-  }
+  const payload = buildPrimaryProposalPayload(
+    {
+      title: draft.title || `Đề xuất điều chỉnh (${draft.items.length} vị trí)`,
+      notes: customNote !== undefined ? customNote : draft.note || null,
+      status: 'PENDING',
+      system_code: 'KHO_DONG_LANH',
+      company_id: companyId,
+      created_by: userId,
+      created_by_name: userName,
+      total_positions: draft.items.length,
+      items: draft.items,
+      created_at: new Date().toISOString(),
+    },
+    userId
+  )
 
   try {
-    const { error } = await (supabase as any).from('warehouse_position_proposals').insert(payload)
+    const { error } = await (supabase as any)
+      .from('warehouse_position_proposals')
+      .insert(payload)
 
     if (!error) {
       await clearDraftProposal()
@@ -158,16 +189,10 @@ export async function submitAdjustmentProposalToServer(
       }
     }
 
-    const fallbackPayload: any = {
-      system_code: 'KHO_DONG_LANH',
-      task_type: 'warehouse_adjustment',
-      status: 'pending',
-      notes: JSON.stringify(payload),
-      created_by: userName,
-    }
-    if (companyId) fallbackPayload.company_id = companyId
-
-    const { error: fallbackErr } = await (supabase as any).from('shift_tasks').insert(fallbackPayload)
+    const fallbackPayload = buildShiftTaskFallbackPayload(payload)
+    const { error: fallbackErr } = await (supabase as any)
+      .from('shift_tasks')
+      .insert(fallbackPayload)
 
     if (!fallbackErr) {
       await clearDraftProposal()
@@ -203,15 +228,35 @@ export async function syncOfflineAdjustmentProposals(): Promise<number> {
     const queue = safeGetLocalStorage<any[]>(OFFLINE_PROPOSALS_QUEUE_KEY, [])
     if (!Array.isArray(queue) || queue.length === 0) return 0
 
+    const { id: userId, companyId } = await resolveCurrentUserInfo()
     const remaining: any[] = []
     let synced = 0
 
-    for (const item of queue) {
-      const { error } = await (supabase as any).from('warehouse_position_proposals').insert(item)
+    for (const rawItem of queue) {
+      // Chuẩn hóa lại các phiếu cũ trong hàng đợi (từng lưu field 'note' thay vì 'notes')
+      const normalized = buildPrimaryProposalPayload(
+        {
+          ...rawItem,
+          company_id: rawItem.company_id || companyId,
+        },
+        userId
+      )
+      const { error } = await (supabase as any)
+        .from('warehouse_position_proposals')
+        .insert(normalized)
+
       if (!error) {
         synced++
       } else {
-        remaining.push(item)
+        const fallbackPayload = buildShiftTaskFallbackPayload(normalized)
+        const { error: fbErr } = await (supabase as any)
+          .from('shift_tasks')
+          .insert(fallbackPayload)
+        if (!fbErr) {
+          synced++
+        } else {
+          remaining.push(normalized)
+        }
       }
     }
 
@@ -236,7 +281,7 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
   try {
     const { data, error } = await (supabase as any)
       .from('warehouse_position_proposals')
-      .select('id, title, status, note, created_by_name, created_at, items')
+      .select('id, title, status, notes, created_by_name, created_at, items')
       .eq('system_code', 'KHO_DONG_LANH')
       .order('created_at', { ascending: false })
       .limit(50)
@@ -248,7 +293,7 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
           id: String(row.id),
           title: row.title || 'Phiếu đề xuất điều chỉnh',
           status: row.status || 'PENDING',
-          note: row.note || null,
+          note: row.notes || null,
           created_by: row.created_by_name || 'Kiểm kho Mobile',
           created_at: row.created_at || new Date().toISOString(),
           items: Array.isArray(row.items) ? row.items : [],
@@ -263,7 +308,7 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
   try {
     const { data: fallbackData, error: fbError } = await (supabase as any)
       .from('shift_tasks')
-      .select('id, status, notes, created_by, created_at')
+      .select('id, title, status, content, created_by_name, created_by, created_at')
       .eq('system_code', 'KHO_DONG_LANH')
       .eq('task_type', 'warehouse_adjustment')
       .order('created_at', { ascending: false })
@@ -273,13 +318,20 @@ export async function fetchSubmittedProposals(): Promise<SubmittedProposal[]> {
       fetchedOnlineSuccessfully = true
       for (const row of fallbackData) {
         try {
-          const parsed = row.notes ? JSON.parse(row.notes) : {}
+          const parsed = row.content ? JSON.parse(row.content) : {}
+          const rawSt = String(row.status || parsed.status || 'pending').toLowerCase()
+          const mappedStatus =
+            rawSt === 'completed' || rawSt === 'approved'
+              ? 'APPROVED'
+              : rawSt === 'cancelled' || rawSt === 'rejected'
+                ? 'REJECTED'
+                : 'PENDING'
           results.push({
             id: String(row.id),
-            title: parsed.title || 'Phiếu đề xuất điều chỉnh',
-            status: String(row.status || parsed.status || 'PENDING').toUpperCase(),
-            note: parsed.note || null,
-            created_by: row.created_by || parsed.created_by_name || 'Kiểm kho Mobile',
+            title: row.title || parsed.title || 'Phiếu đề xuất điều chỉnh',
+            status: mappedStatus,
+            note: parsed.notes || parsed.note || null,
+            created_by: row.created_by_name || parsed.created_by_name || row.created_by || 'Kiểm kho Mobile',
             created_at: row.created_at || parsed.created_at || new Date().toISOString(),
             items: Array.isArray(parsed.items) ? parsed.items : [],
             source: 'shift_tasks',
@@ -465,15 +517,7 @@ export async function submitHallLotUpdate(params: {
     systemCode = 'KHO_DONG_LANH',
   } = params
 
-  const companyId = await resolveCurrentCompanyId()
-  const createdByName = await resolveCurrentUserName()
-  let userId: string | null = null
-  try {
-    const { data: userData } = await supabase.auth.getUser()
-    userId = userData?.user?.id || null
-  } catch {
-    // ignore
-  }
+  const { id: userId, companyId, userName: createdByName } = await resolveCurrentUserInfo()
 
   const recordPayload: any = {
     system_code: systemCode,

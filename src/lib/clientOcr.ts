@@ -38,6 +38,17 @@ export async function recognizeClientSide(
   dictMap?: Record<string, Record<string, string>>
 ) {
   const worker = await getClientOcrWorker();
+  if (mode === 'stamp') {
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789-',
+      tessedit_pageseg_mode: '6', // SINGLE_BLOCK
+    });
+  } else {
+    await worker.setParameters({
+      tessedit_char_whitelist: '',
+      tessedit_pageseg_mode: '3', // AUTO
+    });
+  }
   const res = await worker.recognize(imageBase64);
   const rawText = res?.data?.text || '';
 

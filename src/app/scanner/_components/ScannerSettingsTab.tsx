@@ -34,6 +34,7 @@ import {
   triggerHaptic,
 } from './scannerUtils'
 import { getOfflineMeta } from '@/lib/scanner-db'
+import { scannerAlert, scannerConfirm } from './ScannerDialog'
 
 interface ScannerSettingsTabProps {
   activeTab: ScannerTab | string
@@ -166,7 +167,7 @@ export function ScannerSettingsTab({
     try {
       const res = await syncWarehouseMapOfflineWeb(systemCode || 'KHO_DONG_LANH')
       if (!res.success) {
-        alert(`Lỗi tải sơ đồ kho ngoại tuyến: ${res.message}`)
+        await scannerAlert({ title: 'Lỗi tải sơ đồ kho ngoại tuyến', message: res.message, variant: 'danger' })
         return
       }
       setMapOfflineInfo(await getWarehouseMapOfflineInfoAsync())
@@ -177,7 +178,7 @@ export function ScannerSettingsTab({
       )
       setTimeout(() => setSyncAllStatus(null), 4000)
     } catch (err: any) {
-      alert(`Lỗi tải sơ đồ kho ngoại tuyến: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi tải sơ đồ kho ngoại tuyến', message: err.message, variant: 'danger' })
     } finally {
       setSyncingMap(false)
     }
@@ -185,7 +186,11 @@ export function ScannerSettingsTab({
 
   const handleSyncAllOffline = async () => {
     if (!navigator.onLine) {
-      alert('Thiết bị đang ngoại tuyến. Vui lòng kết nối Wifi/4G trước ca làm việc để tải dữ liệu!')
+      await scannerAlert({
+        title: 'Thiết bị đang ngoại tuyến',
+        message: 'Vui lòng kết nối Wifi/4G trước ca làm việc để tải dữ liệu!',
+        variant: 'warning',
+      })
       return
     }
     setSyncingAll(true)
@@ -315,7 +320,14 @@ export function ScannerSettingsTab({
         <button
           type="button"
           onClick={async () => {
-            if (confirm('Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này không?')) {
+            const ok = await scannerConfirm({
+              title: 'Đăng xuất tài khoản?',
+              message: 'Bạn có chắc chắn muốn đăng xuất khỏi thiết bị này không?',
+              confirmText: 'Đăng xuất',
+              cancelText: 'Huỷ',
+              variant: 'danger',
+            })
+            if (ok) {
               await supabase.auth.signOut()
               window.location.href = '/login'
             }
@@ -689,13 +701,17 @@ export function ScannerSettingsTab({
             </button>
             <button
               type="button"
-              onClick={() => {
+              onClick={async () => {
                 try {
                   localStorage.setItem('config_supabase_url', technicianUrl.trim())
                   if (anonKeyInput.trim()) {
                     localStorage.setItem('config_supabase_anon_key', anonKeyInput.trim())
                   }
-                  alert('Đã lưu cấu hình máy chủ thành công!')
+                  await scannerAlert({
+                    title: 'Lưu thành công',
+                    message: 'Đã lưu cấu hình máy chủ thành công!',
+                    variant: 'success',
+                  })
                 } catch {}
               }}
               className="flex-1 py-2 rounded-xl bg-emerald-600 text-white text-xs font-bold hover:bg-emerald-500 transition flex items-center justify-center gap-1"

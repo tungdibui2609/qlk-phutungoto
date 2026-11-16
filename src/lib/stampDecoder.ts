@@ -293,11 +293,16 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
     let supplierCode = ''
     let provinceCode = ''
 
-    if (digitsOnlyL2.length >= 1) factoryCode = digitsOnlyL2.substring(0, 1)
-    if (digitsOnlyL2.length >= 5) rawPkgDate = digitsOnlyL2.substring(1, 5)
-    if (digitsOnlyL2.length >= 11) rawMatDate = digitsOnlyL2.substring(5, 11)
-    if (digitsOnlyL2.length >= 14) supplierCode = digitsOnlyL2.substring(11, 14)
-    if (digitsOnlyL2.length >= 16) provinceCode = digitsOnlyL2.substring(14, 16)
+    if (digitsOnlyL2.length >= 16) {
+        factoryCode = digitsOnlyL2.substring(0, 1)
+        rawPkgDate = digitsOnlyL2.substring(1, 5)
+        rawMatDate = digitsOnlyL2.substring(5, 11)
+        supplierCode = digitsOnlyL2.substring(11, 14)
+        provinceCode = digitsOnlyL2.substring(14, 16)
+    } else if (digitsOnlyL2.length >= 1) {
+        // Khi chưa đủ 16 số, chỉ nhận diện mã nhà máy đầu tiên nếu hợp lệ, tránh cắt sai ngày tháng
+        factoryCode = digitsOnlyL2.substring(0, 1)
+    }
 
     // Lookup names from dictionaries
     const fruitTypeName = dict.fruit_type?.[fruitTypeCode] || DEFAULT_STAMP_DICT.fruit_type[fruitTypeCode] || (fruitTypeCode ? `Mã ${fruitTypeCode}` : '')
@@ -337,19 +342,30 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
     // Packaging date (DD/MM)
     let packagingDateStr = meta.packaging_date || meta.pkg_date || ''
     if (!packagingDateStr && rawPkgDate.length === 4) {
-        packagingDateStr = `${rawPkgDate.substring(0, 2)}/${rawPkgDate.substring(2, 4)}`
+        const dd = parseInt(rawPkgDate.substring(0, 2), 10)
+        const mm = parseInt(rawPkgDate.substring(2, 4), 10)
+        if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+            packagingDateStr = `${rawPkgDate.substring(0, 2)}/${rawPkgDate.substring(2, 4)}`
+        }
     }
     const packagingDateComparable = parseDateToComparable(packagingDateStr || rawPkgDate)
 
     // Raw material date (DD/MM/YYYY)
     let rawMaterialDateStr = meta.raw_material_date || meta.production_date || ''
     if (!rawMaterialDateStr && rawMatDate.length === 6) {
-        rawMaterialDateStr = `${rawMatDate.substring(0, 2)}/${rawMatDate.substring(2, 4)}/20${rawMatDate.substring(4, 6)}`
+        const dd = parseInt(rawMatDate.substring(0, 2), 10)
+        const mm = parseInt(rawMatDate.substring(2, 4), 10)
+        if (dd >= 1 && dd <= 31 && mm >= 1 && mm <= 12) {
+            rawMaterialDateStr = `${rawMatDate.substring(0, 2)}/${rawMatDate.substring(2, 4)}/20${rawMatDate.substring(4, 6)}`
+        }
     }
     const rawMaterialDateComparable = parseDateToComparable(rawMaterialDateStr || rawMatDate)
 
     // Supplier
-    const supplierName = dict.supplier?.[supplierCode] || (supplierCode ? `NCC ${supplierCode}` : '')
+    const declaredSupplier = dict.supplier?.[supplierCode]
+    const supplierName = declaredSupplier
+        ? `${supplierCode} (${declaredSupplier})`
+        : (supplierCode ? `Mã NCC ${supplierCode}` : '')
 
     // Province / Region
     let provinceName = dict.province?.[provinceCode] || DEFAULT_STAMP_DICT.province[provinceCode] || ''
@@ -361,7 +377,9 @@ export function decodeStampBox(box: any, dictMap?: Record<string, Record<string,
     }
 
     const palletStt = meta.pallet_stt || ''
-    const fallbackTitle = [fruitTypeName, varietyName, productGradeName].filter(Boolean).join(' ') || ''
+    const fallbackTitle = digitsOnlyL1.length >= 12
+        ? [fruitTypeName, varietyName, freezeStyleName, productGradeName].filter(Boolean).join(' ')
+        : ''
     const productTitle = meta.product_name || box.products?.name || (isSpecial12 ? special12Name : fallbackTitle) || ''
     const shiftGroup = meta.shift_group || factoryName || ''
     const spec = meta.spec || packageSpecName || ''

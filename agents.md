@@ -126,3 +126,23 @@ Mọi migration hoặc câu lệnh SQL mới trên Supabase (`supabase_db_anywar
    - Mọi `FUNCTION` mới trong `public` PHẢI khai báo `SET search_path = public, extensions, pg_temp` (tránh lỗi `Function Search Path Mutable`).
    - Kiểm tra các index hiện có (`CREATE INDEX IF NOT EXISTS ...`) trước khi tạo mới để tránh `Duplicate Index`.
    - Luôn backup DB local (`pg_dump`) trước khi áp dụng thay đổi cấu trúc/RLS lên database đang chạy.
+
+# 🔄 QUY TẮC BẮT BUỘC: ĐỐI CHIẾU CHÉO 3 NỀN TẢNG (WEB SỐ LIỆU – WEB SCANNER – APP ANDROID)
+
+Hệ thống vận hành đồng thời trên 3 nền tảng dùng chung CSDL Supabase. Mọi đoạn chat mới PHẢI nắm rõ bản đồ đối chiếu này:
+
+1. **Bản đồ 3 nền tảng**:
+   - **Web Quản trị & Số liệu**: `d:\chanh thu\web\src\app\(dashboard)\...` (`so-lieu`, `warehouses/map`, `warehouses/pallets`, `sanxuat`...).
+   - **Web Scanner PWA (`/scanner`)**: `d:\chanh thu\web\src\app\scanner\...` và `src\lib\scanner-db.ts` — thiết kế giao diện & luồng thao tác **giống 100% App Android** (ẩn toàn bộ thanh cuộn mặc định qua `.scanner-app-shell` / `.no-scrollbar` / `.scrollbar-none`).
+   - **App Android (React Native / Expo)**: `d:\chanh thu\pallet-box-scanner` (và `d:\chanh thu\qlk-app` nếu liên quan). *(Nhớ quy tắc cấm tự động chạy `eas build` khi chưa có lệnh rõ ràng từ người dùng).*
+
+2. **Quy tắc "Sửa 1 nơi — Kiểm tra 2 nơi còn lại"**:
+   - Khi sửa hoặc thêm nghiệp vụ dùng chung (Số liệu sản xuất/giao nhận, Sơ đồ kho, Quét tem OCR/Dấu đóng mực, Album ảnh & đồng bộ Google Drive, Tìm kiếm theo `aliases`), Agent BẮT BUỘC kiểm tra xem 2 nền tảng còn lại đã có logic tương ứng chưa để đồng bộ hoặc thông báo cho người dùng.
+
+3. **Quy tắc "Chỗ này lỗi — Đối chiếu lấy từ chỗ chạy chuẩn"**:
+   - Khi một nền tảng gặp lỗi hoặc thiếu tính năng (ví dụ `/scanner` lệch UI, thiếu nút, lỗi sync hoặc khác luồng so với App Android / Web), Agent chủ động mở code ở nền tảng đang chạy ổn định (ví dụ `d:\chanh thu\pallet-box-scanner`) để đối chiếu và áp dụng chuẩn sang.
+
+4. **Các chuẩn kỹ thuật đặc thù đã chốt cho quy mô dữ liệu lớn trên `/scanner` & Mobile**:
+   - **Quy mô > 7.000 vị trí kho**: Mọi truy vấn `zones`, `positions`, `zone_positions` PHẢI phân trang bằng `.order(...)` + `.range(from, to)` theo trang 1.000 dòng (`fetchAllPagedRows`), chia batch `lots` có giới hạn luồng (`runWithConcurrency`), và lưu cache chính qua **IndexedDB** (`chanhthu_scanner_db` trong `src/lib/scanner-db.ts`) thay vì chỉ dựa vào `localStorage` (~5MB dễ tràn `QuotaExceededError`).
+   - **Đồng bộ ngầm hình ảnh**: Ảnh offline (`syncOfflineOperationImages`) và ảnh chờ đẩy Google Drive (`auto_sync_enabled` + `webhook_url`) phải tự động đồng bộ ngầm khi có mạng lại (`online` event), định kỳ, và khi mở Album ảnh.
+   - **Giao diện Mobile trên `/scanner`**: Tránh tràn ngang bằng `flex-wrap`, `min-w-0`, `overflow-x-hidden` và ẩn thanh cuộn bằng `.scanner-app-shell` / `.no-scrollbar`.

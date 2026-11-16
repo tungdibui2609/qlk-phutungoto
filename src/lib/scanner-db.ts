@@ -235,17 +235,79 @@ export async function searchLotsFromOfflineDb(query: string, limit = 20): Promis
 
 export async function addPendingPallet(pallet: Omit<OfflinePendingPallet, 'client_id' | 'created_at' | 'status'>): Promise<OfflinePendingPallet> {
     const db = await openDatabase()
-    const item: OfflinePendingPallet = {
-        ...pallet,
-        client_id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-        created_at: new Date().toISOString(),
-        status: 'pending_create'
-    }
+    const cleanStt = (pallet.stt || '').trim().toUpperCase()
 
     return new Promise((resolve, reject) => {
         const tx = db.transaction('pending_pallets', 'readwrite')
-        tx.objectStore('pending_pallets').put(item)
-        tx.oncomplete = () => resolve(item)
+        const store = tx.objectStore('pending_pallets')
+        const getAllReq = store.getAll()
+
+        let resultItem: OfflinePendingPallet | null = null
+
+        getAllReq.onsuccess = () => {
+            const all: OfflinePendingPallet[] = getAllReq.result || []
+            const existing = all.find(
+                p => (p.stt || '').trim().toUpperCase() === cleanStt && p.status !== 'syncing'
+            )
+
+            if (existing) {
+                const mergedBoxes = [...(existing.boxes || []), ...(pallet.boxes || [])]
+                existing.boxes = mergedBoxes
+                existing.boxes_count = mergedBoxes.length
+                existing.status = 'pending_create'
+                if (pallet.lot_code) existing.lot_code = pallet.lot_code
+                if (pallet.product_name) existing.product_name = pallet.product_name
+                if (pallet.sku) existing.sku = pallet.sku
+                existing.error_message = undefined
+                store.put(existing)
+                resultItem = existing
+            } else {
+                const item: OfflinePendingPallet = {
+                    ...pallet,
+                    stt: cleanStt,
+                    boxes_count: pallet.boxes?.length ?? pallet.boxes_count ?? 0,
+                    client_id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+                    created_at: new Date().toISOString(),
+                    status: 'pending_create'
+                }
+                store.put(item)
+                resultItem = item
+            }
+        }
+
+        tx.oncomplete = () => resolve(resultItem!)
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+export async function removeBoxFromPendingPallet(stt: string, boxCode: string): Promise<void> {
+    const db = await openDatabase()
+    const cleanStt = (stt || '').trim().toUpperCase()
+
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction('pending_pallets', 'readwrite')
+        const store = tx.objectStore('pending_pallets')
+        const getAllReq = store.getAll()
+
+        getAllReq.onsuccess = () => {
+            const all: OfflinePendingPallet[] = getAllReq.result || []
+            for (const p of all) {
+                if ((p.stt || '').trim().toUpperCase() === cleanStt && p.status !== 'syncing') {
+                    const filtered = (p.boxes || []).filter(b => b.code !== boxCode)
+                    if (filtered.length !== (p.boxes || []).length) {
+                        if (filtered.length === 0) {
+                            store.delete(p.client_id)
+                        } else {
+                            p.boxes = filtered
+                            p.boxes_count = filtered.length
+                            store.put(p)
+                        }
+                    }
+                }
+            }
+        }
+
+        tx.oncomplete = () => resolve()
         tx.onerror = () => reject(tx.error)
     })
 }

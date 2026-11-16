@@ -11,6 +11,34 @@ export function cleanStampNumericString(input: string): string {
   return s.replace(/[^0-9\-]/g, '');
 }
 
+function isSpecial12Line(cleanedLine: string, activeDict: Record<string, Record<string, string>>): boolean {
+  const digits = cleanedLine.replace(/[^0-9]/g, '');
+  if (digits.length < 12) return false;
+  const c12 = digits.substring(0, 12);
+  return !!(activeDict.special_12?.[c12] || DEFAULT_STAMP_DICT.special_12?.[c12]);
+}
+
+function scoreAsLine1(cleanedLine: string, activeDict: Record<string, Record<string, string>>): number {
+  const digits = cleanedLine.replace(/[^0-9]/g, '');
+  let score = 0;
+  if (isSpecial12Line(cleanedLine, activeDict)) score += 100;
+  if (/^\d{10,13}-\d{1,2}$/.test(cleanedLine)) score += 50;
+  else if (cleanedLine.includes('-')) score += 20;
+  if (digits.length >= 12 && digits.length <= 14) score += 25;
+  if (digits.length >= 15 && !cleanedLine.includes('-')) score -= 40;
+  return score;
+}
+
+function scoreAsLine2(cleanedLine: string, activeDict: Record<string, Record<string, string>>): number {
+  const digits = cleanedLine.replace(/[^0-9]/g, '');
+  let score = 0;
+  if (!cleanedLine.includes('-') && digits.length === 16) score += 60;
+  else if (!cleanedLine.includes('-') && digits.length >= 15 && digits.length <= 17) score += 40;
+  if (isSpecial12Line(cleanedLine, activeDict)) score -= 80;
+  if (cleanedLine.includes('-')) score -= 30;
+  return score;
+}
+
 export function parseStampLines(rawText: string, dictMap?: Record<string, Record<string, string>>) {
   const rawLines = (rawText || '').split('\n').map(l => l.trim()).filter(Boolean);
   const numericLines: string[] = [];
@@ -30,7 +58,7 @@ export function parseStampLines(rawText: string, dictMap?: Record<string, Record
   if (numericLines.length === 1 && numericLines[0].replace(/-/g, '').length >= 26) {
     const full = numericLines[0];
     const fullDigits = full.replace(/[^0-9]/g, '');
-    const isHeadSpecial12 = fullDigits.length >= 12 && !!activeDict.special_12?.[fullDigits.substring(0, 12)];
+    const isHeadSpecial12 = isSpecial12Line(full, activeDict);
 
     let l1Cut = 14;
     if (isHeadSpecial12) {
@@ -43,10 +71,40 @@ export function parseStampLines(rawText: string, dictMap?: Record<string, Record
     line1 = full.slice(0, l1Cut);
     line2 = full.slice(l1Cut);
   } else if (numericLines.length >= 2) {
-    line1 = numericLines[0];
-    line2 = numericLines[1];
+    // Chọn dòng tốt nhất cho Dòng 1 và Dòng 2 (tránh đảo ngược hoặc dính dòng nhiễu)
+    let bestL1Idx = 0;
+    let bestL1Score = -Infinity;
+    numericLines.forEach((l, idx) => {
+      const s = scoreAsLine1(l, activeDict);
+      if (s > bestL1Score) {
+        bestL1Score = s;
+        bestL1Idx = idx;
+      }
+    });
+
+    let bestL2Idx = bestL1Idx === 0 ? 1 : 0;
+    let bestL2Score = -Infinity;
+    numericLines.forEach((l, idx) => {
+      if (idx === bestL1Idx) return;
+      const s = scoreAsLine2(l, activeDict);
+      if (s > bestL2Score) {
+        bestL2Score = s;
+        bestL2Idx = idx;
+      }
+    });
+
+    line1 = numericLines[bestL1Idx];
+    line2 = numericLines[bestL2Idx];
   } else if (numericLines.length === 1) {
-    line1 = numericLines[0];
+    const single = numericLines[0];
+    const singleDigits = single.replace(/[^0-9]/g, '');
+    if (isSpecial12Line(single, activeDict)) {
+      line1 = single;
+    } else if (singleDigits.length >= 15 && !single.includes('-')) {
+      line2 = single;
+    } else {
+      line1 = single;
+    }
   }
 
   const decoded = decodeStampBox({

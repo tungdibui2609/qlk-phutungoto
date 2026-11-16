@@ -63,7 +63,19 @@ export async function POST(req: NextRequest) {
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
     const worker = await getWorker();
-    
+
+    if (mode === 'stamp') {
+      await worker.setParameters({
+        tessedit_char_whitelist: '0123456789-',
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+      });
+    } else {
+      await worker.setParameters({
+        tessedit_char_whitelist: '',
+        tessedit_pageseg_mode: Tesseract.PSM.AUTO,
+      });
+    }
+
     // Timeout sau 18 giây để tránh treo
     const recognizePromise = worker.recognize(imageBuffer);
     const timeoutPromise = new Promise((_, reject) =>

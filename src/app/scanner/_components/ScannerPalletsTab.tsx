@@ -33,6 +33,7 @@ import {
   getOfflineMeta,
   setOfflineMeta,
 } from '@/lib/scanner-db'
+import { scannerAlert, scannerConfirm } from './ScannerDialog'
 import {
   normalizeText,
   matchDate,
@@ -183,7 +184,11 @@ export function ScannerPalletsTab({
 
   const handleSyncOfflineCloud = async () => {
     if (!isOnline) {
-      alert('Thiết bị đang mất mạng. Vui lòng kết nối Wifi/4G để tải dữ liệu về máy!')
+      await scannerAlert({
+        title: 'Thiết bị đang mất mạng',
+        message: 'Vui lòng kết nối Wifi/4G để tải dữ liệu về máy!',
+        variant: 'warning',
+      })
       return
     }
     setSyncingOfflineCloud(true)
@@ -201,7 +206,7 @@ export function ScannerPalletsTab({
       triggerHaptic()
       triggerToast(`✅ Đã tải ${Array.isArray(list) ? list.length : palletsList.length} LOT & Từ điển gõ tắt về máy!`)
     } catch (err: any) {
-      alert(`Lỗi tải dữ liệu về máy: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi tải dữ liệu về máy', message: err.message, variant: 'danger' })
     } finally {
       setSyncingOfflineCloud(false)
     }
@@ -376,7 +381,14 @@ export function ScannerPalletsTab({
   // Thao tác xóa / nhân bản thùng trong Pallet ngoại tuyến (pendingPallets)
   const handleDeletePendingBox = async (boxIndexInArr: number) => {
     if (!selectedPendingPallet) return
-    if (!confirm(`Xóa thùng thứ ${boxIndexInArr + 1} khỏi Pallet ngoại tuyến ${selectedPendingPallet.stt}?`)) {
+    const ok = await scannerConfirm({
+      title: 'Xóa thùng khỏi hàng chờ?',
+      message: `Xóa thùng thứ ${boxIndexInArr + 1} khỏi Pallet ${selectedPendingPallet.stt}?`,
+      confirmText: 'Xóa thùng',
+      cancelText: 'Huỷ',
+      variant: 'danger',
+    })
+    if (!ok) {
       return
     }
     const nextBoxes = selectedPendingPallet.boxes.filter((_, idx) => idx !== boxIndexInArr)
@@ -870,8 +882,15 @@ export function ScannerPalletsTab({
                         <button
                           type="button"
                           onClick={() => {
+                            const isStampPallet =
+                              item.stt?.startsWith('G') ||
+                              item.boxes?.some(
+                                (b: any) =>
+                                  b?.metadata?.scan_type === 'stamp' ||
+                                  b?.code?.startsWith('STAMP-')
+                              )
                             setActivePalletStt(item.stt)
-                            setActiveTab('label')
+                            setActiveTab(isStampPallet ? 'stamp' : 'label')
                             loadCurrentPalletBoxes(item.stt)
                           }}
                           className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition flex items-center gap-1"
@@ -893,11 +912,14 @@ export function ScannerPalletsTab({
                         <button
                           type="button"
                           onClick={async () => {
-                            if (
-                              confirm(
-                                `Bạn có chắc muốn xóa Pallet ${item.stt} khỏi hàng đợi không?`
-                              )
-                            ) {
+                            const ok = await scannerConfirm({
+                              title: `Xóa Pallet ${item.stt}?`,
+                              message: `Bạn có chắc muốn xóa Pallet ${item.stt} khỏi hàng chờ không?`,
+                              confirmText: 'Xóa Pallet',
+                              cancelText: 'Huỷ',
+                              variant: 'danger',
+                            })
+                            if (ok) {
                               await removePendingPallet(item.client_id)
                               const updated = await getPendingPallets()
                               setPendingPallets(updated)

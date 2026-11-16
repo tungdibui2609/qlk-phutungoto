@@ -403,6 +403,21 @@ function LevelInventoryModal({
                       <span className="px-2 py-0.5 rounded bg-slate-800 border border-slate-600 text-xs font-black text-sky-300 font-mono">
                         {slot.code}
                       </span>
+                      {slot.zone_name && (() => {
+                        const cleanZone = String(slot.zone_name).replace(/^Ô\s*/i, '').trim()
+                        const posCode = String(slot.code || '')
+                        const rawSuffix = posCode ? posCode.slice(-2) : ''
+                        const posNum = rawSuffix && /^\d+$/.test(rawSuffix) ? String(parseInt(rawSuffix, 10)) : rawSuffix
+                        const m = cleanZone.match(/^([A-Za-z]+)(\d+)$/)
+                        const label = m
+                          ? `Ô ${m[2]} - ${m[1].toUpperCase()}${posNum}`
+                          : `Ô ${cleanZone}${posNum ? ` - ${posNum}` : ''}`
+                        return (
+                          <span className="px-2 py-0.5 rounded bg-rose-600 text-white text-[10px] font-black tracking-wide">
+                            {label}
+                          </span>
+                        )
+                      })()}
                       {slot.stt && (
                         <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-xs font-black text-amber-300">
                           STT: {slot.stt}

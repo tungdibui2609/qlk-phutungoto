@@ -4,6 +4,7 @@ import React from 'react'
 import { CheckCircle2, X, Copy, Save, RotateCcw, Sparkles, Fingerprint } from 'lucide-react'
 import type { PendingStampData } from './types'
 import { decodeStampBox } from '@/lib/stampDecoder'
+import { scannerAlert } from './ScannerDialog'
 
 interface StampModalsProps {
   activePalletStt: string
@@ -57,7 +58,7 @@ export function StampModals({
               <div className="flex items-center gap-2">
                 <CheckCircle2 size={18} className="text-emerald-400" />
                 <h3 className="text-xs font-black text-emerald-400 uppercase tracking-wider">
-                  ĐÃ ĐỌC ĐƯỢC CON DẤU MỰC
+                  ĐÃ ĐỌC ĐƯỢC CON DẤU
                 </h3>
               </div>
               <button
@@ -220,36 +221,37 @@ export function StampModals({
                     </p>
                   )}
 
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px] pt-1.5 border-t border-indigo-500/30">
-                    <div>
-                      <span className="text-indigo-300/70 block text-[10px]">Nhà máy:</span>
-                      <strong className="text-slate-100">{dec.factoryName || '---'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-indigo-300/70 block text-[10px]">Vùng NL (Tỉnh):</span>
-                      <strong className="text-slate-100">{dec.provinceName || '---'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-indigo-300/70 block text-[10px]">Ngày nhập NL:</span>
-                      <strong className="text-amber-300 font-mono">
-                        {dec.rawMaterialDateStr || '---'}
-                      </strong>
-                    </div>
-                    <div>
-                      <span className="text-indigo-300/70 block text-[10px]">Ngày đóng gói:</span>
-                      <strong className="text-slate-100 font-mono">
-                        {dec.packagingDateStr || '---'}
-                      </strong>
-                    </div>
-                    {dec.supplierCode && (
-                      <div className="col-span-2">
-                        <span className="text-indigo-300/70 text-[10px]">Nhà cung cấp: </span>
-                        <strong className="text-slate-200 font-mono">
-                          Mã NCC {dec.supplierCode}
-                        </strong>
-                      </div>
-                    )}
-                  </div>
+                  {(() => {
+                    const digitsL2 = pendingStamp.stamp_line2.replace(/[^0-9]/g, '')
+                    if (digitsL2.length > 0 && digitsL2.length < 16) {
+                      return (
+                        <p className="text-[11px] text-amber-300/90 italic pt-1 border-t border-indigo-500/30">
+                          Dòng 2 mới nhận diện {digitsL2.length}/16 số — vui lòng kiểm tra hoặc nhập bổ sung để giải mã nguồn gốc
+                        </p>
+                      )
+                    }
+                    const traceParts = [
+                      dec.factoryName,
+                      dec.packagingDateStr ? `ĐG: ${dec.packagingDateStr}` : '',
+                      dec.rawMaterialDateStr ? `Nhập NL: ${dec.rawMaterialDateStr}` : '',
+                      dec.supplierName ? `NCC: ${dec.supplierName}` : '',
+                      dec.provinceName ? `Vùng: ${dec.provinceName}` : '',
+                    ].filter(Boolean)
+
+                    if (traceParts.length === 0) {
+                      return (
+                        <p className="text-[11px] text-slate-400 italic pt-1 border-t border-indigo-500/30">
+                          Chưa đủ 16 số dòng 2 để giải mã nguồn gốc
+                        </p>
+                      )
+                    }
+
+                    return (
+                      <p className="text-[11px] text-slate-200 leading-relaxed pt-1 border-t border-indigo-500/30">
+                        {traceParts.join(' • ')}
+                      </p>
+                    )
+                  })()}
                 </div>
               )
             })()}
@@ -330,7 +332,7 @@ export function StampModals({
                     Điền đủ ({remainingBoxes})
                   </button>
                 )}
-                {['5', '10', '20', '30'].map(c => (
+                {['5', '10', '20'].map(c => (
                   <button
                     key={c}
                     type="button"
@@ -583,9 +585,13 @@ export function StampModals({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onClick={async () => {
                   if (!manualStampLine1.trim() && !manualStampLine2.trim()) {
-                    alert('Vui lòng nhập ít nhất 1 dòng số đóng dấu')
+                    await scannerAlert({
+                      title: 'Thiếu dữ liệu con dấu',
+                      message: 'Vui lòng nhập ít nhất 1 dòng số đóng dấu.',
+                      variant: 'warning',
+                    })
                     return
                   }
                   const dec = decodeStampBox(

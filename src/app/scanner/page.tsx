@@ -57,6 +57,7 @@ import {
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { decodeStampBox, DEFAULT_STAMP_DICT } from '@/lib/stampDecoder'
+import { parseStampLines } from '@/lib/ocrParser'
 import { decodeSTT } from '@/lib/numberUtils'
 import {
   savePalletsToOfflineDb,
@@ -67,6 +68,7 @@ import {
   addPendingPallet,
   getPendingPallets,
   removePendingPallet,
+  removeBoxFromPendingPallet,
   updatePendingPalletStatus,
   getOfflineMeta,
   setOfflineMeta,
@@ -98,6 +100,7 @@ import { playScanSound, triggerHaptic } from './_components/scannerUtils'
 import { ScannerPalletsTab } from './_components/ScannerPalletsTab'
 import { ScannerSettingsTab } from './_components/ScannerSettingsTab'
 import { StampModals } from './_components/StampModals'
+import { ScannerDialogHost, scannerAlert, scannerConfirm } from './_components/ScannerDialog'
 import { LabelModals } from './_components/LabelModals'
 import { PalletDetailModal } from './_components/PalletDetailModal'
 import { PalletSwitchModal } from './_components/PalletSwitchModal'
@@ -173,6 +176,7 @@ export default function WebScannerPage() {
 
   // Camera State
   const videoRef = useRef<HTMLVideoElement>(null)
+  const stampReticleRef = useRef<HTMLDivElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [cameraActive, setCameraActive] = useState<boolean>(false)
   const [cameraError, setCameraError] = useState<string | null>(null)
@@ -373,7 +377,16 @@ export default function WebScannerPage() {
 
       const cachedDict = localStorage.getItem('cached_stamp_dictionaries')
       if (cachedDict) {
-        setStampDictMap(JSON.parse(cachedDict))
+        const parsed = JSON.parse(cachedDict)
+        // Luôn merge với DEFAULT_STAMP_DICT để không bị mất quy tắc ngoại lệ mặc định
+        const merged: Record<string, Record<string, string>> = {}
+        Object.keys(DEFAULT_STAMP_DICT).forEach(cat => {
+          merged[cat] = { ...DEFAULT_STAMP_DICT[cat] }
+        })
+        Object.keys(parsed || {}).forEach(cat => {
+          merged[cat] = { ...(merged[cat] || {}), ...parsed[cat] }
+        })
+        setStampDictMap(merged)
       }
 
       const cachedProds = localStorage.getItem('cached_products')
@@ -382,6 +395,11 @@ export default function WebScannerPage() {
       }
     } catch (e) {
       console.warn('Lỗi đọc cache quy tắc dấu đóng:', e)
+    }
+
+    // Tự động đồng bộ ngầm quy tắc dấu đóng (bao gồm ngoại lệ 12 số) từ Supabase khi online
+    if (typeof navigator === 'undefined' || navigator.onLine) {
+      syncStampRulesSilent()
     }
 
     return () => {
@@ -446,9 +464,9 @@ export default function WebScannerPage() {
       const pending = await getPendingPallets()
       setPendingPallets(pending)
 
-      triggerToast(`⚡ Đã lưu ${count} thùng ngoại tuyến (Pallet ${palletStt})!`)
+      triggerToast(`✅ Đã lưu ${count} thùng vào Pallet ${palletStt} (Hàng chờ)!`)
     } catch (e: any) {
-      alert(`Lỗi lưu ngoại tuyến: ${e.message}`)
+      await scannerAlert({ title: 'Lỗi lưu hàng chờ', message: e.message, variant: 'danger' })
     }
   }
 
@@ -557,46 +575,52 @@ export default function WebScannerPage() {
     const cleanStt = stt.trim().toUpperCase()
 
     try {
-      // If offline, read directly from pending offline queue
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        const pending = await getPendingPallets()
-        const matching = pending.filter(p => p.stt === cleanStt)
-        if (matching.length > 0) {
-          const offlineBoxes: BoxItem[] = []
-          let overallIdx = 1
-          matching.forEach(p => {
-            p.boxes.forEach((b) => {
-              const meta = b.metadata || {}
-              offlineBoxes.push({
-                id: b.code,
-                code: b.code,
-                box_index: String(meta.box_index || overallIdx++),
-                quantity: b.weight,
-                unit: 'Kg',
-                sku: meta.sku || p.sku || 'SKU',
-                product_name: meta.product_name || p.product_name || 'Hàng lưu ngoại tuyến',
-                lot_code: meta.lot_code || meta.stamp_line2 || p.lot_code || 'LOT',
-                spec: meta.spec || '',
-                shift_group: meta.shift_group || '',
-                region: meta.region || '',
-                production_date: meta.production_date || '',
-                packaging_date: meta.packaging_date || '',
-                raw_material_date: meta.raw_material_date || '',
-                supplier: meta.supplier || '',
-                supplier_name: meta.supplier ? `Mã NCC ${meta.supplier}` : '',
-                scan_type: (meta.scan_type as any) || 'label',
-                stamp_line1: meta.stamp_line1,
-                stamp_line2: meta.stamp_line2,
-                is_special_12: meta.is_special_12,
-                special_12_code: meta.special_12_code,
-                special_12_name: meta.special_12_name,
-                created_at: b.time
-              })
-            })
+      // 1. Luôn đọc các thùng đang nằm trong Hàng chờ local (IndexedDB) của Pallet này
+      const pending = await getPendingPallets()
+      const matchingPending = pending.filter(p => (p.stt || '').trim().toUpperCase() === cleanStt)
+      const localBoxes: BoxItem[] = []
+      const seenCodes = new Set<string>()
+      let overallIdx = 1
+
+      matchingPending.forEach(p => {
+        ;(p.boxes || []).forEach((b, bIdx) => {
+          const meta = b.metadata || {}
+          if (b.code) seenCodes.add(b.code)
+          if (meta.pallet_tag) setActivePalletTag(meta.pallet_tag)
+          if (meta.pallet_notes) setActivePalletNotes(meta.pallet_notes)
+          if (meta.target_qty) setTargetQty(parseInt(meta.target_qty, 10) || 30)
+          localBoxes.push({
+            id: `offline_${p.client_id}_${bIdx}_${b.code}`,
+            code: b.code,
+            box_index: String(meta.box_index || overallIdx++),
+            quantity: b.weight,
+            unit: 'Kg',
+            sku: meta.sku || p.sku || 'SKU',
+            product_name: meta.product_name || p.product_name || 'Hàng lưu ngoại tuyến',
+            lot_code: meta.lot_code || meta.stamp_line2 || p.lot_code || 'LOT',
+            spec: meta.spec || '',
+            shift_group: meta.shift_group || '',
+            region: meta.region || '',
+            production_date: meta.production_date || '',
+            packaging_date: meta.packaging_date || '',
+            raw_material_date: meta.raw_material_date || '',
+            supplier: meta.supplier || '',
+            supplier_name: meta.supplier ? `Mã NCC ${meta.supplier}` : '',
+            scan_type: (meta.scan_type as any) || 'label',
+            stamp_line1: meta.stamp_line1,
+            stamp_line2: meta.stamp_line2,
+            is_special_12: meta.is_special_12,
+            special_12_code: meta.special_12_code,
+            special_12_name: meta.special_12_name,
+            created_at: b.time
           })
-          setCurrentBoxes(offlineBoxes)
-          return
-        }
+        })
+      })
+
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        localBoxes.sort((a, b) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
+        setCurrentBoxes(localBoxes)
+        return
       }
 
       const { data, error } = await supabase
@@ -626,51 +650,16 @@ export default function WebScannerPage() {
             setTargetQty(palletTarget)
           }
         }
-        const mapped = data.map((b: any, idx: number) => parseBoxLabelItem(b, idx, stampDictMap))
+        const cloudMapped = data
+          .filter((b: any) => !seenCodes.has(b.code))
+          .map((b: any, idx: number) => parseBoxLabelItem(b, idx, stampDictMap))
 
-        mapped.sort((a: BoxItem, b: BoxItem) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
-        setCurrentBoxes(mapped)
+        const merged = [...cloudMapped, ...localBoxes]
+        merged.sort((a: BoxItem, b: BoxItem) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
+        setCurrentBoxes(merged)
       } else {
-        // Fallback to pending pallets
-        const pending = await getPendingPallets()
-        const matching = pending.filter(p => p.stt === cleanStt)
-        if (matching.length > 0) {
-          const offlineBoxes: BoxItem[] = []
-          let overallIdx = 1
-          matching.forEach(p => {
-            p.boxes.forEach((b) => {
-              const meta = b.metadata || {}
-              offlineBoxes.push({
-                id: b.code,
-                code: b.code,
-                box_index: String(meta.box_index || overallIdx++),
-                quantity: b.weight,
-                unit: 'Kg',
-                sku: meta.sku || p.sku || 'SKU',
-                product_name: meta.product_name || p.product_name || 'Hàng lưu ngoại tuyến',
-                lot_code: meta.lot_code || meta.stamp_line2 || p.lot_code || 'LOT',
-                spec: meta.spec || '',
-                shift_group: meta.shift_group || '',
-                region: meta.region || '',
-                production_date: meta.production_date || '',
-                packaging_date: meta.packaging_date || '',
-                raw_material_date: meta.raw_material_date || '',
-                supplier: meta.supplier || '',
-                supplier_name: meta.supplier ? `Mã NCC ${meta.supplier}` : '',
-                scan_type: (meta.scan_type as any) || 'label',
-                stamp_line1: meta.stamp_line1,
-                stamp_line2: meta.stamp_line2,
-                is_special_12: meta.is_special_12,
-                special_12_code: meta.special_12_code,
-                special_12_name: meta.special_12_name,
-                created_at: b.time
-              })
-            })
-          })
-          setCurrentBoxes(offlineBoxes)
-        } else {
-          setCurrentBoxes([])
-        }
+        localBoxes.sort((a, b) => (parseInt(a.box_index, 10) || 0) - (parseInt(b.box_index, 10) || 0))
+        setCurrentBoxes(localBoxes)
       }
     } catch (e: any) {
       console.warn('Lỗi tải danh sách thùng của Pallet:', e)
@@ -720,8 +709,8 @@ export default function WebScannerPage() {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: { ideal: 'environment' },
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
         },
         audio: false
       })
@@ -778,10 +767,119 @@ export default function WebScannerPage() {
   }
 
   // ── Capture Frame & OCR Recognition ────────────────────────────
-  const captureFrame = (): string | null => {
+  const captureFrame = (mode: 'stamp' | 'label' = 'label'): string | null => {
     if (!videoRef.current) return null
     const v = videoRef.current
     if (v.videoWidth === 0 || v.videoHeight === 0) return null
+
+    // Với chế độ Dấu Mực: crop đúng vùng khung ngắm (có padding 10%), upscale & tăng tương phản
+    if (mode === 'stamp') {
+      let sx = 0
+      let sy = 0
+      let sw = v.videoWidth
+      let sh = v.videoHeight
+
+      const reticleEl = stampReticleRef.current
+      if (reticleEl) {
+        const vRect = v.getBoundingClientRect()
+        const rRect = reticleEl.getBoundingClientRect()
+        if (vRect.width > 0 && vRect.height > 0 && rRect.width > 0 && rRect.height > 0) {
+          // Video dùng object-cover nên cần map tọa độ từ khung hiển thị về pixel gốc của video
+          const scale = Math.max(vRect.width / v.videoWidth, vRect.height / v.videoHeight)
+          const renderedW = v.videoWidth * scale
+          const renderedH = v.videoHeight * scale
+          const offsetX = (renderedW - vRect.width) / 2
+          const offsetY = (renderedH - vRect.height) / 2
+
+          const rawSx = ((rRect.left - vRect.left) + offsetX) / scale
+          const rawSy = ((rRect.top - vRect.top) + offsetY) / scale
+          const rawSw = rRect.width / scale
+          const rawSh = rRect.height / scale
+
+          const padX = rawSw * 0.22
+          const padY = rawSh * 0.2
+          sx = Math.max(0, Math.floor(rawSx - padX))
+          sy = Math.max(0, Math.floor(rawSy - padY))
+          sw = Math.min(v.videoWidth - sx, Math.ceil(rawSw + padX * 2))
+          sh = Math.min(v.videoHeight - sy, Math.ceil(rawSh + padY * 2))
+        }
+      }
+
+      if (sw <= 0 || sh <= 0) {
+        sx = 0
+        sy = 0
+        sw = v.videoWidth
+        sh = v.videoHeight
+      }
+
+      // Upscale vùng crop lên độ phân giải chuẩn cho Tesseract (tối thiểu 1400px ngang)
+      const targetW = Math.min(1800, Math.max(1400, Math.round(sw * 2)))
+      const targetH = Math.max(1, Math.round((sh / sw) * targetW))
+
+      const canvas = document.createElement('canvas')
+      canvas.width = targetW
+      canvas.height = targetH
+      const ctx = canvas.getContext('2d')
+      if (!ctx) return null
+
+      ctx.drawImage(v, sx, sy, sw, sh, 0, 0, targetW, targetH)
+
+      // Tiền xử lý ảnh: chuyển grayscale + kéo giãn tương phản theo percentile (2%-96%) giúp mực đen nổi bật trên bìa carton
+      try {
+        const imgData = ctx.getImageData(0, 0, targetW, targetH)
+        const data = imgData.data
+        const pixelCount = targetW * targetH
+        const lumArr = new Uint8Array(pixelCount)
+        const hist = new Uint32Array(256)
+        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+          const lum = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2])
+          lumArr[p] = lum
+          hist[lum]++
+        }
+        const lowTarget = Math.floor(pixelCount * 0.02)
+        const highTarget = Math.floor(pixelCount * 0.96)
+        let acc = 0
+        let minLum = 0
+        let maxLum = 255
+        for (let v = 0; v < 256; v++) {
+          acc += hist[v]
+          if (acc >= lowTarget) { minLum = v; break }
+        }
+        acc = 0
+        for (let v = 255; v >= 0; v--) {
+          acc += pixelCount > 0 ? hist[v] : 0
+          if (acc >= pixelCount - highTarget) { maxLum = v; break }
+        }
+        const range = Math.max(24, maxLum - minLum)
+        for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+          let norm = (lumArr[p] - minLum) / range
+          norm = Math.max(0, Math.min(1, norm))
+          norm = norm < 0.42 ? norm * 0.78 : Math.min(1, 0.42 * 0.78 + (norm - 0.42) * 1.15)
+          const vByte = Math.max(0, Math.min(255, Math.round(norm * 255)))
+          data[i] = vByte
+          data[i + 1] = vByte
+          data[i + 2] = vByte
+        }
+        ctx.putImageData(imgData, 0, 0)
+      } catch {
+        // Fallback nếu trình duyệt chặn getImageData
+      }
+
+      // Thêm viền trắng (quiet zone) xung quanh ảnh để Tesseract không cắt mất ký tự đầu/cuối dòng
+      const quietPad = 36
+      const paddedCanvas = document.createElement('canvas')
+      paddedCanvas.width = targetW + quietPad * 2
+      paddedCanvas.height = targetH + quietPad * 2
+      const pCtx = paddedCanvas.getContext('2d')
+      if (pCtx) {
+        pCtx.fillStyle = '#ffffff'
+        pCtx.fillRect(0, 0, paddedCanvas.width, paddedCanvas.height)
+        pCtx.drawImage(canvas, quietPad, quietPad)
+        return paddedCanvas.toDataURL('image/jpeg', 0.94)
+      }
+
+      return canvas.toDataURL('image/jpeg', 0.94)
+    }
 
     const canvas = document.createElement('canvas')
     canvas.width = v.videoWidth
@@ -795,12 +893,17 @@ export default function WebScannerPage() {
 
   const handleCaptureAndRecognize = useCallback(async () => {
     if (!activePalletStt) {
-      alert('Chưa có Pallet!\n\nVui lòng bấm [Chọn / Nhập STT Pallet] trước khi quét tem thùng.')
+      await scannerAlert({
+        title: 'Chưa có Pallet',
+        message: 'Vui lòng bấm [Chọn / Nhập STT Pallet] trước khi quét tem thùng.',
+        variant: 'warning',
+      })
       setIsSwitchPalletModal(true)
       return
     }
 
-    const base64 = captureFrame()
+    const mode = activeTab === 'stamp' ? 'stamp' : 'label'
+    const base64 = captureFrame(mode)
     if (!base64) {
       triggerToast('Không thể lấy khung hình Camera')
       return
@@ -811,7 +914,6 @@ export default function WebScannerPage() {
     const timeoutId = setTimeout(() => controller.abort(), 22000)
 
     try {
-      const mode = activeTab === 'stamp' ? 'stamp' : 'label'
       let json: any = null
 
       const isOfflineMode = typeof navigator !== 'undefined' && !navigator.onLine
@@ -847,13 +949,19 @@ export default function WebScannerPage() {
 
       if (!json || !json.success) throw new Error(json?.error || 'Nhận diện thất bại')
 
-      playScanSound()
-      triggerHaptic()
-
       if (mode === 'stamp') {
-        const stampData = json.data
-        const l1 = stampData.stamp_line1 || ''
-        const l2 = stampData.stamp_line2 || ''
+        // Re-parse bằng stampDictMap mới nhất ở client để nhận diện chuẩn special_12 & đảo dòng nếu cần
+        const stampData = json.rawText
+          ? parseStampLines(json.rawText, stampDictMap)
+          : json.data
+        const l1 = stampData?.stamp_line1 || ''
+        const l2 = stampData?.stamp_line2 || ''
+        if (!l1 && !l2) {
+          triggerToast('Không đọc được dãy số con dấu. Vui lòng căn sát 2 dòng vào khung ngắm!')
+          return
+        }
+        playScanSound()
+        triggerHaptic()
         const localDecoded = decodeStampBox({
           metadata: { scan_type: 'stamp', stamp_line1: l1, stamp_line2: l2 }
         }, stampDictMap)
@@ -865,6 +973,8 @@ export default function WebScannerPage() {
         setStampWeight('20')
         setStampCount('1')
       } else {
+        playScanSound()
+        triggerHaptic()
         const labelData = json.data
         setPendingLabel(labelData)
         setLabelWeight(String(labelData.weight || 20))
@@ -959,37 +1069,17 @@ export default function WebScannerPage() {
         })
       }
 
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        await saveBoxesOffline(
-          rowsToInsert,
-          cleanStt,
-          l2,
-          dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
-          dec.isSpecial12 ? dec.special12Code : (dec.code || 'SKU'),
-          count,
-          'stamp'
-        )
-        setPendingStamp(null)
-        checkTargetReached(currentBoxes.length + count)
-        return
-      }
-
-      const { error } = await supabase.from('box_labels').insert(rowsToInsert as any)
-      if (error) {
-        console.warn('Lỗi mạng khi lưu thùng, tự động chuyển sang lưu offline:', error.message)
-        await saveBoxesOffline(
-          rowsToInsert,
-          cleanStt,
-          l2,
-          dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
-          dec.isSpecial12 ? dec.special12Code : (dec.code || 'SKU'),
-          count,
-          'stamp'
-        )
-      } else {
-        triggerToast(`✅ Đã lưu ${count} thùng con dấu vào Pallet ${cleanStt}!`)
-        loadCurrentPalletBoxes(cleanStt)
-      }
+      // Local-First (giống App Android): luôn lưu vào Hàng chờ (IndexedDB) trước,
+      // sau khi chốt Pallet người dùng qua menu Pallet Kho -> Chờ đẩy lên để đồng bộ lên Web mẹ.
+      await saveBoxesOffline(
+        rowsToInsert,
+        cleanStt,
+        l2,
+        dec.productTitle || (dec.isSpecial12 ? dec.special12Name : 'Sản phẩm đóng dấu'),
+        dec.isSpecial12 ? dec.special12Code : (dec.code || 'SKU'),
+        count,
+        'stamp'
+      )
 
       setPendingStamp(null)
       checkTargetReached(currentBoxes.length + count)
@@ -998,7 +1088,7 @@ export default function WebScannerPage() {
     }
   }
 
-  // ── Save Label Box to Supabase ────────────────────────────────
+  // ── Save Label Box (Local-First matching Android) ──────────────
   const handleSaveLabelBox = async (labelData: any, w: number, count: number) => {
     if (!activePalletStt) return
     const cleanStt = activePalletStt.trim().toUpperCase()
@@ -1039,59 +1129,50 @@ export default function WebScannerPage() {
         })
       }
 
-      if (typeof navigator !== 'undefined' && !navigator.onLine) {
-        await saveBoxesOffline(
-          rowsToInsert,
-          cleanStt,
-          labelData.lot_code,
-          labelData.product_name,
-          labelData.sku,
-          count,
-          'label'
-        )
-        setPendingLabel(null)
-        checkTargetReached(currentBoxes.length + count)
-        return
-      }
-
-      const { error } = await supabase.from('box_labels').insert(rowsToInsert as any)
-      if (error) {
-        console.warn('Lỗi mạng khi lưu tem, tự động chuyển sang lưu offline:', error.message)
-        await saveBoxesOffline(
-          rowsToInsert,
-          cleanStt,
-          labelData.lot_code,
-          labelData.product_name,
-          labelData.sku,
-          count,
-          'label'
-        )
-      } else {
-        triggerToast(`✅ Đã lưu ${count} thùng tem vào Pallet ${cleanStt}!`)
-        loadCurrentPalletBoxes(cleanStt)
-      }
+      await saveBoxesOffline(
+        rowsToInsert,
+        cleanStt,
+        labelData.lot_code,
+        labelData.product_name,
+        labelData.sku,
+        count,
+        'label'
+      )
 
       setPendingLabel(null)
       checkTargetReached(currentBoxes.length + count)
     } catch (err: any) {
-      alert(`Lỗi lưu tem: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi lưu tem', message: err.message, variant: 'danger' })
     }
   }
 
   // ── Target Reached Check ──────────────────────────────────────
   const checkTargetReached = (totalCount: number) => {
     if (totalCount >= targetQty) {
-      setTimeout(() => {
-        if (confirm(`🎉 ĐÃ ĐỦ PALLET!\n\nPallet ${activePalletStt} đã đạt chỉ tiêu ${totalCount}/${targetQty} thùng.\n\nBạn có muốn CHỐT PALLET này ngay không?`)) {
+      setTimeout(async () => {
+        const ok = await scannerConfirm({
+          title: '🎉 ĐÃ ĐỦ PALLET!',
+          message: `Pallet ${activePalletStt} đã đạt chỉ tiêu ${totalCount}/${targetQty} thùng.\n\nBạn có muốn CHỐT PALLET này ngay không?`,
+          confirmText: 'Chốt Pallet Ngay',
+          cancelText: 'Để sau',
+          variant: 'celebrate',
+        })
+        if (ok) {
           handleCompletePallet()
         }
       }, 400)
     }
   }
 
-  // ── Complete Pallet (Chốt Pallet) ──────────────────────────────
+  // ── Complete Pallet (Chốt Pallet -> Đưa vào Hàng chờ Pallet Kho) ──
   const handleCompletePallet = async () => {
-    triggerToast(`🎉 ĐÃ CHỐT HOÀN THÀNH PALLET ${activePalletStt}!`)
+    const completedStt = activePalletStt
+    try {
+      const updatedPending = await getPendingPallets()
+      setPendingPallets(updatedPending)
+    } catch {}
+
+    triggerToast(`🎉 ĐÃ CHỐT PALLET ${completedStt}! Đã chuyển vào Hàng chờ (Pallet Kho).`)
     // Reset session
     setActivePalletStt('')
     setActivePalletTag('')
@@ -1157,7 +1238,7 @@ export default function WebScannerPage() {
         setCloneModalVisible(false)
       }
     } catch (e: any) {
-      alert(`Lỗi nhân bản thùng: ${e.message}`)
+      await scannerAlert({ title: 'Lỗi nhân bản thùng', message: e.message, variant: 'danger' })
     } finally {
       setIsCloning(false)
     }
@@ -1165,11 +1246,24 @@ export default function WebScannerPage() {
 
   // ── Delete Box ────────────────────────────────────────────────
   const handleDeleteBox = async (boxId: string) => {
-    if (!confirm('Bạn có chắc muốn xóa thùng này khỏi Pallet không?')) return
+    const ok = await scannerConfirm({
+      title: 'Xóa thùng hàng?',
+      message: 'Bạn có chắc muốn xóa thùng này khỏi Pallet không?',
+      confirmText: 'Xóa thùng',
+      cancelText: 'Huỷ',
+      variant: 'danger',
+    })
+    if (!ok) return
     try {
       if (boxId.startsWith('offline_')) {
+        const targetBox = currentBoxes.find(b => b.id === boxId)
+        if (targetBox && activePalletStt) {
+          await removeBoxFromPendingPallet(activePalletStt, targetBox.code)
+          const updatedPending = await getPendingPallets()
+          setPendingPallets(updatedPending)
+        }
         setCurrentBoxes(prev => prev.filter(b => b.id !== boxId))
-        triggerToast('Đã xóa thùng ngoại tuyến')
+        triggerToast('Đã xóa thùng khỏi hàng chờ')
         return
       }
 
@@ -1178,7 +1272,7 @@ export default function WebScannerPage() {
       triggerToast('Đã xóa thùng thành công')
       loadCurrentPalletBoxes(activePalletStt)
     } catch (err: any) {
-      alert(`Lỗi xóa thùng: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi xóa thùng', message: err.message, variant: 'danger' })
     }
   }
 
@@ -1189,8 +1283,15 @@ export default function WebScannerPage() {
     const boxCount = currentBoxes.length
     const totalW = currentBoxes.reduce((s, b) => s + (b.quantity || 20), 0)
 
-    if (!targetStt && !confirm(`Xoá thùng Pallet ${stt}?\n\nBạn có chắc chắn muốn xoá toàn bộ ${boxCount} thùng (${totalW.toFixed(1)} Kg) của Pallet ${stt} để quét lại từ đầu không?`)) {
-      return
+    if (!targetStt) {
+      const ok = await scannerConfirm({
+        title: `Xoá thùng Pallet ${stt}?`,
+        message: `Bạn có chắc chắn muốn xoá toàn bộ ${boxCount} thùng (${totalW.toFixed(1)} Kg) của Pallet ${stt} để quét lại từ đầu không?`,
+        confirmText: 'Xoá toàn bộ',
+        cancelText: 'Giữ lại',
+        variant: 'danger',
+      })
+      if (!ok) return
     }
 
     try {
@@ -1216,7 +1317,7 @@ export default function WebScannerPage() {
       triggerToast(`Đã làm mới Pallet ${stt} về 0 thùng!`)
       loadAllPallets().catch(() => {})
     } catch (err: any) {
-      alert(`Lỗi làm mới Pallet: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi làm mới Pallet', message: err.message, variant: 'danger' })
     }
   }
 
@@ -1224,13 +1325,15 @@ export default function WebScannerPage() {
   const handleSwitchToStt = async (cleanStt: string, tagVal: string, notesVal: string, targetVal: number) => {
     const existing = palletsList.find(p => p.stt === cleanStt)
     if (existing && existing.boxes_count > 0) {
-      const wantReset = confirm(
-        `⚠️ STT ${cleanStt} ĐÃ CÓ TRONG HỆ THỐNG!\n\n` +
-        `STT ${cleanStt} hiện đang có ${existing.boxes_count} thùng (${existing.total_weight.toFixed(1)} Kg).\n\n` +
-        `Pallet này có bị xáo trộn hàng và bạn cần quét lại từ đầu không?\n\n` +
-        `• Bấm [OK] để: 🔄 Quét lại từ đầu (Xoá thùng cũ về 0)\n` +
-        `• Bấm [Cancel / Hủy] để: Tiếp tục quét thêm vào Pallet này`
-      )
+      const wantReset = await scannerConfirm({
+        title: `STT ${cleanStt} đã có trong hệ thống`,
+        message:
+          `STT ${cleanStt} hiện đang có ${existing.boxes_count} thùng (${existing.total_weight.toFixed(1)} Kg).\n\n` +
+          `Bạn muốn quét lại từ đầu (xoá thùng cũ về 0) hay tiếp tục quét thêm vào Pallet này?`,
+        confirmText: 'Quét lại từ đầu',
+        cancelText: 'Quét thêm tiếp',
+        variant: 'warning',
+      })
 
       if (wantReset) {
         await handleResetActivePallet(cleanStt)
@@ -1454,37 +1557,68 @@ export default function WebScannerPage() {
   }
 
   // ── Sync Stamp Dictionaries from Supabase ──────────────────────
+  const fetchAndMergeStampDictionaries = async () => {
+    const { data, error } = await (supabase
+      .from('stamp_dictionaries') as any)
+      .select('category, code, name')
+      .eq('is_active', true)
+
+    if (error) throw error
+    if (!data || data.length === 0) return 0
+
+    // Bắt đầu từ DEFAULT_STAMP_DICT rồi merge đè các quy tắc mới nhất từ Supabase
+    const mergedDict: Record<string, Record<string, string>> = {}
+    Object.keys(DEFAULT_STAMP_DICT).forEach(cat => {
+      mergedDict[cat] = { ...DEFAULT_STAMP_DICT[cat] }
+    })
+
+    ;(data as any[]).forEach((item: any) => {
+      const cat = String(item.category || '').trim()
+      const rawCode = String(item.code || '').trim()
+      const name = String(item.name || '').trim()
+      if (!cat || !rawCode) return
+      if (!mergedDict[cat]) mergedDict[cat] = {}
+      mergedDict[cat][rawCode] = name
+      // Với ngoại lệ 12 số, chuẩn hóa thêm key 12 chữ số thuần (phòng trường hợp DB lưu kèm dấu - hoặc khoảng trắng)
+      if (cat === 'special_12') {
+        const clean12 = rawCode.replace(/[^0-9]/g, '').slice(0, 12)
+        if (clean12.length === 12) {
+          mergedDict[cat][clean12] = name
+        }
+      }
+    })
+
+    setStampDictMap(mergedDict)
+    setStampRulesCount(data.length)
+    const now = new Date().toISOString()
+    setLastStampSync(now)
+
+    localStorage.setItem('cached_stamp_dictionaries', JSON.stringify(mergedDict))
+    localStorage.setItem('cached_stamp_rules_count', data.length.toString())
+    localStorage.setItem('last_stamp_sync_time', now)
+
+    return data.length
+  }
+
+  const syncStampRulesSilent = async () => {
+    try {
+      await fetchAndMergeStampDictionaries()
+    } catch (err) {
+      console.warn('[Scanner] Auto-sync stamp_dictionaries silent warning:', err)
+    }
+  }
+
   const handleSyncStampRules = async () => {
     setSyncingStamp(true)
     try {
-      const { data, error } = await (supabase
-        .from('stamp_dictionaries') as any)
-        .select('category, code, name')
-
-      if (error) throw error
-
-      if (data && data.length > 0) {
-        const newDict: Record<string, Record<string, string>> = {}
-        ;(data as any[]).forEach((item: any) => {
-          if (!newDict[item.category]) newDict[item.category] = {}
-          newDict[item.category][item.code] = item.name
-        })
-
-        setStampDictMap(newDict)
-        setStampRulesCount(data.length)
-        const now = new Date().toISOString()
-        setLastStampSync(now)
-
-        localStorage.setItem('cached_stamp_dictionaries', JSON.stringify(newDict))
-        localStorage.setItem('cached_stamp_rules_count', data.length.toString())
-        localStorage.setItem('last_stamp_sync_time', now)
-
-        triggerToast(`✅ Đã tải về ${data.length} quy tắc con dấu từ Web mẹ!`)
+      const count = await fetchAndMergeStampDictionaries()
+      if (count > 0) {
+        triggerToast(`✅ Đã tải về ${count} quy tắc con dấu từ Web mẹ!`)
       } else {
         triggerToast('Không có dữ liệu quy tắc con dấu trên máy chủ.')
       }
     } catch (err: any) {
-      alert(`Lỗi đồng bộ quy tắc dấu đóng: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi đồng bộ quy tắc dấu đóng', message: err.message, variant: 'danger' })
     } finally {
       setSyncingStamp(false)
     }
@@ -1560,7 +1694,7 @@ export default function WebScannerPage() {
 
       triggerToast(`✅ Đã lưu thành công ${palletCount} LOT/Pallet vào máy để xem ngoại tuyến!`)
     } catch (err: any) {
-      alert(`Lỗi tải dữ liệu LOT: ${err.message}`)
+      await scannerAlert({ title: 'Lỗi tải dữ liệu LOT', message: err.message, variant: 'danger' })
     } finally {
       setIsSyncingLots(false)
     }
@@ -1570,7 +1704,11 @@ export default function WebScannerPage() {
   const handleSyncPendingQueue = async () => {
     if (pendingPallets.length === 0) return
     if (!navigator.onLine) {
-      alert('Thiết bị đang không có mạng. Vui lòng kết nối Wifi hoặc 4G để đồng bộ!')
+      await scannerAlert({
+        title: 'Thiết bị đang ngoại tuyến',
+        message: 'Vui lòng kết nối Wifi hoặc 4G để đồng bộ Pallet lên Web mẹ!',
+        variant: 'warning',
+      })
       return
     }
 
@@ -1628,7 +1766,11 @@ export default function WebScannerPage() {
 
   const handleSyncSinglePending = async (item: OfflinePendingPallet) => {
     if (!navigator.onLine) {
-      alert('Thiết bị đang không có mạng!')
+      await scannerAlert({
+        title: 'Thiết bị đang ngoại tuyến',
+        message: 'Không có kết nối mạng để đẩy Pallet lên Web mẹ!',
+        variant: 'warning',
+      })
       return
     }
     try {
@@ -1662,7 +1804,7 @@ export default function WebScannerPage() {
       setPendingPallets(updated)
       triggerToast(`✅ Đã đồng bộ Pallet ${item.stt} lên Web mẹ thành công!`)
     } catch (e: any) {
-      alert(`Lỗi đồng bộ: ${e.message}`)
+      await scannerAlert({ title: 'Lỗi đồng bộ', message: e.message, variant: 'danger' })
     }
   }
 
@@ -2244,7 +2386,10 @@ export default function WebScannerPage() {
                   <span>Căn 2 dòng dấu mực vào khung dưới</span>
                 </div>
 
-                <div className="w-[88%] max-w-[300px] h-[115px] border-2 border-amber-400/80 rounded-xl relative shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col justify-between p-2.5 bg-amber-400/5">
+                <div
+                  ref={stampReticleRef}
+                  className="w-[88%] max-w-[300px] h-[115px] border-2 border-amber-400/80 rounded-xl relative shadow-[0_0_20px_rgba(245,158,11,0.25)] flex flex-col justify-between p-2.5 bg-amber-400/5"
+                >
                   <div className="absolute -top-1 -left-1 w-4 h-4 border-t-4 border-l-4 border-amber-400 rounded-tl-md"></div>
                   <div className="absolute -top-1 -right-1 w-4 h-4 border-t-4 border-r-4 border-amber-400 rounded-tr-md"></div>
                   <div className="absolute -bottom-1 -left-1 w-4 h-4 border-b-4 border-l-4 border-amber-400 rounded-bl-md"></div>
@@ -2934,6 +3079,8 @@ export default function WebScannerPage() {
         palletsList={palletsList}
         handleSwitchToStt={handleSwitchToStt}
       />
+
+      <ScannerDialogHost />
     </div>
   )
 }
