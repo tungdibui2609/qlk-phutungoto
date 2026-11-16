@@ -22,6 +22,8 @@ import {
   Square,
 } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
+import { saveWarehouseMapToOfflineDb, getWarehouseMapFromOfflineDb } from '@/lib/scanner-db'
+import { fetchAllPagedRows, runWithConcurrency, saveWarehouseMapMeta } from './scannerUtils'
 import HallLotInputModal, {
   HallOption,
   syncOfflineHallLotUpdatesWeb,
@@ -87,7 +89,7 @@ const INVENTORY_KEYS = {
   RESULTS: 'offline_inventory_results_v1',
   USERS_MAP: 'offline_inventory_users_map_v1',
   MEMBERS_MAP: 'offline_inventory_members_map_v1',
-  MAP_CACHE: 'warehouse_map_offline_cache_v7',
+  MAP_CACHE: 'warehouse_map_offline_cache_v8',
 }
 
 const isUUID = (str: string) =>
@@ -541,11 +543,20 @@ export function InventoryTab({
       if (sRaw) setSessions(JSON.parse(sRaw))
       const rRaw = localStorage.getItem(INVENTORY_KEYS.RESULTS)
       if (rRaw) setAllSessionResults(JSON.parse(rRaw))
-      const mRaw = localStorage.getItem(INVENTORY_KEYS.MAP_CACHE)
+      const mRaw =
+        localStorage.getItem(INVENTORY_KEYS.MAP_CACHE) ||
+        localStorage.getItem('warehouse_map_offline_cache_v7')
       if (mRaw) {
         const parsed = JSON.parse(mRaw)
         if (parsed?.zones) setZones(parsed.zones)
         if (parsed?.positions) setPositions(parsed.positions)
+      } else {
+        getWarehouseMapFromOfflineDb().then((idbSnap) => {
+          if (idbSnap && idbSnap.zones?.length > 0) {
+            setZones(idbSnap.zones)
+            setPositions(idbSnap.positions || [])
+          }
+        })
       }
     } catch {}
   }, [])
@@ -609,26 +620,37 @@ export function InventoryTab({
           }
         }
 
-        // 2. Nếu chưa có sơ đồ kho trong cache hoặc yêu cầu tải mới -> tải từ Supabase
+        // 2. Nếu chưa có sơ đồ kho trong cache hoặc yêu cầu tải mới -> tải từ Supabase (có phân trang cho 7000+ vị trí)
         const hasMap = zones.length > 0 && positions.length > 0
         if (!hasMap || forceRefreshMap) {
-          const [zRes, pRes, zpRes, pendRes] = await Promise.all([
-            (supabase.from('zones') as any)
-              .select('id, name, parent_id, system_type, display_order, is_hall')
-              .eq('system_type', 'KHO_DONG_LANH'),
-            (supabase.from('positions') as any)
-              .select('id, code, lot_id, system_type')
-              .eq('system_type', 'KHO_DONG_LANH'),
-            (supabase.from('zone_positions') as any).select('position_id, zone_id'),
+          const [rawZones, rawPositions, zpList, pendRes] = await Promise.all([
+            fetchAllPagedRows((from, to) =>
+              (supabase.from('zones') as any)
+                .select('id, name, parent_id, system_type, display_order, is_hall')
+                .eq('system_type', 'KHO_DONG_LANH')
+                .order('id', { ascending: true })
+                .range(from, to)
+            ),
+            fetchAllPagedRows((from, to) =>
+              (supabase.from('positions') as any)
+                .select('id, code, lot_id, system_type')
+                .eq('system_type', 'KHO_DONG_LANH')
+                .order('id', { ascending: true })
+                .range(from, to)
+            ),
+            fetchAllPagedRows((from, to) =>
+              (supabase.from('zone_positions') as any)
+                .select('position_id, zone_id')
+                .order('position_id', { ascending: true })
+                .order('zone_id', { ascending: true })
+                .range(from, to)
+            ),
             (supabase.from('pending_assignments') as any)
               .select('position_id, lot_stt, production_date')
               .eq('system_code', 'KHO_DONG_LANH')
               .eq('status', 'pending'),
           ])
 
-          const rawZones: ZoneItem[] = zRes.data || []
-          const rawPositions: any[] = pRes.data || []
-          const zpList: any[] = zpRes.data || []
           const zpMap = new Map<string, string[]>()
           zpList.forEach(item => {
             const arr = zpMap.get(item.position_id) || []
@@ -641,10 +663,13 @@ export function InventoryTab({
           )
           const lotMap = new Map<string, any>()
           if (occupiedLotIds.length > 0) {
-            const CHUNK = 80
+            const CHUNK = 120
+            const chunks: string[][] = []
             for (let i = 0; i < occupiedLotIds.length; i += CHUNK) {
-              const chunk = occupiedLotIds.slice(i, i + CHUNK)
-              const { data: lotsData } = await (supabase.from('lots') as any)
+              chunks.push(occupiedLotIds.slice(i, i + CHUNK))
+            }
+            const chunkResults = await runWithConcurrency(chunks, 6, (chunk) =>
+              (supabase.from('lots') as any)
                 .select(
                   `
                   id, code, daily_seq, packaging_date, peeling_date, quantity, metadata,
@@ -654,8 +679,9 @@ export function InventoryTab({
                 `
                 )
                 .in('id', chunk)
-
-              ;(lotsData || []).forEach((l: any) => {
+            )
+            chunkResults.forEach((res: any) => {
+              ;(res?.data || []).forEach((l: any) => {
                 const allItems = l.lot_items || []
                 const prodName =
                   l.products?.name ||
@@ -686,7 +712,7 @@ export function InventoryTab({
                   items: itemsList,
                 })
               })
-            }
+            })
           }
 
           const pendMap = new Map<string, any>()
@@ -723,13 +749,23 @@ export function InventoryTab({
 
           setZones(rawZones)
           setPositions(formattedPos)
+          const now = new Date().toISOString()
+          try {
+            await saveWarehouseMapToOfflineDb({
+              zones: rawZones,
+              positions: formattedPos,
+              cachedAt: now,
+              systemCode: 'KHO_DONG_LANH',
+            })
+            saveWarehouseMapMeta(rawZones, formattedPos, now)
+          } catch {}
           try {
             localStorage.setItem(
               INVENTORY_KEYS.MAP_CACHE,
               JSON.stringify({
                 zones: rawZones,
                 positions: formattedPos,
-                cachedAt: new Date().toISOString(),
+                cachedAt: now,
               })
             )
           } catch {}

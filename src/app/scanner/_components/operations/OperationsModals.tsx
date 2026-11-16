@@ -2973,10 +2973,10 @@ export function QuickSnapQueueModal({
           </div>
         ) : (
           <>
-          <div className="p-3 overflow-y-auto overscroll-contain space-y-3 flex-1">
+          <div className="p-3 overflow-y-auto overflow-x-hidden overscroll-contain space-y-3 flex-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
             {/* Dải thumbnail các ảnh chờ (ẩn khi đang gõ tìm kiếm để không bị bàn phím che) */}
             {!isTypingSearch && (
-              <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 {snaps.map((s, idx) => {
                   const isSel = activeSnap?.id === s.id
                   const t = new Date(s.capturedAt).toLocaleTimeString('vi-VN', {
@@ -3042,7 +3042,7 @@ export function QuickSnapQueueModal({
                 </div>
 
                 {openShifts.length > 1 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                     <span className="text-[10px] font-bold text-slate-500 shrink-0">Đổi CV:</span>
                     {openShifts.map(sh => {
                       const isCur = sh.id === activeSnap.shiftId
@@ -3090,7 +3090,7 @@ export function QuickSnapQueueModal({
                     ? `Sản phẩm của công việc (${shiftPinnedProducts.length}):`
                     : 'Chọn nhanh sản phẩm vừa làm:'}
                 </div>
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   {quickPickProducts.map(rp => {
                     const active = selectedProduct?.id === rp.id
                     return (
@@ -3120,7 +3120,7 @@ export function QuickSnapQueueModal({
             {/* Tìm SP với Autocomplete (hiển thị gợi ý ngay phía trên ô gõ để không bị bàn phím che) */}
             <div className="relative space-y-1">
               {suggestions.length > 0 && (
-                <div className="rounded-xl bg-[#1e293b] border border-indigo-500/40 max-h-56 overflow-y-auto divide-y divide-slate-700/60">
+                <div className="rounded-xl bg-[#1e293b] border border-indigo-500/40 max-h-56 overflow-y-auto divide-y divide-slate-700/60 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                   {suggestions.map(p => (
                     <button
                       key={p.id}
@@ -3184,7 +3184,7 @@ export function QuickSnapQueueModal({
                 <div className="text-xs font-extrabold text-white">{selectedProduct.name}</div>
 
                 {unitOptions.length > 0 && (
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                     <span className="text-[11px] font-bold text-slate-400 shrink-0">ĐVT:</span>
                     {unitOptions.map(u => (
                       <button
@@ -3203,14 +3203,14 @@ export function QuickSnapQueueModal({
                   </div>
                 )}
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <input
                     type="number"
                     inputMode="decimal"
                     value={qtyStr}
                     onChange={e => setQtyStr(e.target.value)}
                     placeholder="Nhập số lượng..."
-                    className="flex-1 px-3 py-2 rounded-xl bg-[#0f172a] border border-slate-700 text-sm font-black text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
+                    className="min-w-0 flex-1 px-3 py-2 rounded-xl bg-[#0f172a] border border-slate-700 text-sm font-black text-white placeholder-slate-500 focus:outline-none focus:border-indigo-400"
                   />
                   {[1, 5, 10, 20].map(d => (
                     <button
@@ -3222,7 +3222,7 @@ export function QuickSnapQueueModal({
                           return String(Math.round((c + d) * 100) / 100)
                         })
                       }
-                      className="px-2.5 py-2 rounded-lg bg-[#0f172a] border border-slate-700 text-indigo-300 text-xs font-extrabold"
+                      className="shrink-0 px-2 py-2 rounded-lg bg-[#0f172a] border border-slate-700 text-indigo-300 text-xs font-extrabold"
                     >
                       +{d}
                     </button>

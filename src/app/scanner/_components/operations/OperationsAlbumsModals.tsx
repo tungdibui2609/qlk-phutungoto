@@ -211,6 +211,33 @@ export function OperationImagesModal({
       setWatermarkEnabledState(wmEnabled)
       onChangedRef.current?.(list.length)
       cleanupExpiredLocalOriginals(shiftSystemCode, localDays).catch(() => {})
+
+      // Tự động đẩy ngầm lên Google Drive nếu đã bật auto_sync_enabled & có mạng
+      if (
+        typeof navigator !== 'undefined' &&
+        navigator.onLine &&
+        cfg.auto_sync_enabled &&
+        cfg.webhook_url?.trim()
+      ) {
+        const pendingDrive = list.filter(img => !img.is_offline && !img.drive_file_id)
+        if (pendingDrive.length > 0) {
+          setSyncingDrive(true)
+          void syncImagesToGoogleDrive({
+            images: pendingDrive,
+            systemCode: shiftSystemCode,
+            folders: folderList,
+          })
+            .then(async res => {
+              if (res.syncedCount > 0) {
+                const updated = await getShiftOperationImages(shiftId).catch(() => list)
+                setImages(updated)
+                onChangedRef.current?.(updated.length)
+              }
+            })
+            .catch(() => {})
+            .finally(() => setSyncingDrive(false))
+        }
+      }
     } finally {
       setLoading(false)
     }

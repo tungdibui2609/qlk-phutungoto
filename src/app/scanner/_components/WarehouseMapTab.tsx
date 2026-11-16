@@ -21,6 +21,8 @@ import {
 import { supabase } from '@/lib/supabaseClient'
 import { decodeSTT } from '@/lib/numberUtils'
 import { groupWarehouseData } from '@/lib/warehouseUtils'
+import { saveWarehouseMapToOfflineDb, getWarehouseMapFromOfflineDb } from '@/lib/scanner-db'
+import { fetchAllPagedRows, runWithConcurrency, saveWarehouseMapMeta } from './scannerUtils'
 import {
   matchPalletSearch,
   calculateSearchScore,
@@ -276,6 +278,19 @@ export default function WarehouseMapTab() {
             setLoading(false)
             setRefreshing(true)
           }
+        } else {
+          const idbCached = await getWarehouseMapFromOfflineDb()
+          if (idbCached && idbCached.zones && idbCached.zones.length > 0) {
+            setZones(idbCached.zones)
+            setPositions(idbCached.positions || [])
+            setCachedAt(idbCached.cachedAt || null)
+            if (!selectedWarehouseId) {
+              setSelectedWarehouseId('all')
+            }
+            hasCache = true
+            setLoading(false)
+            setRefreshing(true)
+          }
         }
       } catch {
         // ignore
@@ -287,25 +302,35 @@ export default function WarehouseMapTab() {
       }
 
       try {
-        const [zonesRes, posRes, zpRes, pendingRes] = await Promise.all([
-          (supabase.from('zones') as any)
-            .select('id, name, code, parent_id, system_type, display_order, is_hall')
-            .eq('system_type', 'KHO_DONG_LANH'),
-          (supabase.from('positions') as any)
-            .select('id, code, lot_id, system_type')
-            .eq('system_type', 'KHO_DONG_LANH'),
-          (supabase.from('zone_positions') as any).select('position_id, zone_id'),
+        const [rawZones, rawPositions, zpList, pendingRes] = await Promise.all([
+          fetchAllPagedRows((from, to) =>
+            (supabase.from('zones') as any)
+              .select('id, name, code, parent_id, system_type, display_order, is_hall')
+              .eq('system_type', 'KHO_DONG_LANH')
+              .order('id', { ascending: true })
+              .range(from, to)
+          ),
+          fetchAllPagedRows((from, to) =>
+            (supabase.from('positions') as any)
+              .select('id, code, lot_id, system_type')
+              .eq('system_type', 'KHO_DONG_LANH')
+              .order('id', { ascending: true })
+              .range(from, to)
+          ),
+          fetchAllPagedRows((from, to) =>
+            (supabase.from('zone_positions') as any)
+              .select('position_id, zone_id')
+              .order('position_id', { ascending: true })
+              .order('zone_id', { ascending: true })
+              .range(from, to)
+          ),
           (supabase.from('pending_assignments') as any)
             .select('position_id, lot_stt, production_date')
             .eq('system_code', 'KHO_DONG_LANH')
             .eq('status', 'pending'),
         ])
 
-        const rawZones: ZoneItem[] = zonesRes.data || []
         setZones(rawZones)
-
-        const rawPositions = posRes.data || []
-        const zpList = zpRes.data || []
         const pendingData = pendingRes.data || []
 
         const zpMap = new Map<string, string[]>()
@@ -321,34 +346,32 @@ export default function WarehouseMapTab() {
         const lotMap = new Map<string, any>()
 
         if (occupiedLotIds.length > 0) {
-          const CHUNK_SIZE = 80
-          const chunkPromises: Promise<any>[] = []
+          const CHUNK_SIZE = 120
+          const chunks: string[][] = []
           for (let i = 0; i < occupiedLotIds.length; i += CHUNK_SIZE) {
-            const chunk = occupiedLotIds.slice(i, i + CHUNK_SIZE)
-            chunkPromises.push(
-              (supabase.from('lots') as any)
-                .select(`
-                  id,
-                  code,
-                  daily_seq,
-                  packaging_date,
-                  peeling_date,
-                  raw_material_date,
-                  inbound_date,
-                  production_code,
-                  batch_code,
-                  notes,
-                  metadata,
-                  quantity,
-                  products ( name, sku, unit, aliases ),
-                  lot_items ( product_id, quantity, unit, products ( name, sku, unit, aliases ) ),
-                  lot_tags ( tag )
-                `)
-                .in('id', chunk)
-            )
+            chunks.push(occupiedLotIds.slice(i, i + CHUNK_SIZE))
           }
-
-          const chunkResults = await Promise.all(chunkPromises)
+          const chunkResults = await runWithConcurrency(chunks, 6, (chunk) =>
+            (supabase.from('lots') as any)
+              .select(`
+                id,
+                code,
+                daily_seq,
+                packaging_date,
+                peeling_date,
+                raw_material_date,
+                inbound_date,
+                production_code,
+                batch_code,
+                notes,
+                metadata,
+                quantity,
+                products ( name, sku, unit, aliases ),
+                lot_items ( product_id, quantity, unit, products ( name, sku, unit, aliases ) ),
+                lot_tags ( tag )
+              `)
+              .in('id', chunk)
+          )
           chunkResults.forEach((res: any) => {
             if (res.data) {
               res.data.forEach((l: any) => {
@@ -579,7 +602,21 @@ export default function WarehouseMapTab() {
           timestamp: Date.now(),
         }
 
+        // Lưu vào IndexedDB (dung lượng lớn) + metadata nhẹ
         try {
+          await saveWarehouseMapToOfflineDb({
+            zones: rawZones,
+            positions: formattedPositions,
+            cachedAt: now,
+            systemCode: 'KHO_DONG_LANH',
+          })
+          saveWarehouseMapMeta(rawZones, formattedPositions, now)
+        } catch (idbErr) {
+          console.warn('Lỗi lưu IndexedDB sơ đồ kho:', idbErr)
+        }
+
+        try {
+          localStorage.removeItem('warehouse_map_offline_cache_v7')
           const snapshot = {
             zones: rawZones,
             positions: formattedPositions,
@@ -589,7 +626,9 @@ export default function WarehouseMapTab() {
           setCachedAt(now)
           setIsOffline(false)
         } catch (e) {
-          console.warn('Lỗi lưu cache sơ đồ kho:', e)
+          console.warn('localStorage đầy, đã fallback IndexedDB:', e)
+          setCachedAt(now)
+          setIsOffline(false)
         }
 
         if (!selectedWarehouseId) {
@@ -611,7 +650,15 @@ export default function WarehouseMapTab() {
               setPositions(cached.positions || [])
               setCachedAt(cached.cachedAt || null)
               setIsOffline(true)
+              return
             }
+          }
+          const idbCached = await getWarehouseMapFromOfflineDb()
+          if (idbCached && idbCached.zones && idbCached.zones.length > 0) {
+            setZones(idbCached.zones)
+            setPositions(idbCached.positions || [])
+            setCachedAt(idbCached.cachedAt || null)
+            setIsOffline(true)
           }
         } catch {
           // ignore

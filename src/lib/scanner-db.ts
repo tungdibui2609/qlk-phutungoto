@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = 'chanhthu_scanner_db'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 export interface OfflinePallet {
     id: string
@@ -102,6 +102,11 @@ function openDatabase(): Promise<IDBDatabase> {
             // Store 4: Metadata (timestamps, counts, configs)
             if (!db.objectStoreNames.contains('meta')) {
                 db.createObjectStore('meta', { keyPath: 'key' })
+            }
+
+            // Store 5: Cached Warehouse Map (zones + positions) — tránh giới hạn 5MB của localStorage
+            if (!db.objectStoreNames.contains('warehouse_map')) {
+                db.createObjectStore('warehouse_map', { keyPath: 'key' })
             }
         }
 
@@ -315,4 +320,55 @@ export async function setOfflineMeta(key: string, value: any): Promise<void> {
             tx.onerror = () => reject(tx.error)
         })
     } catch {}
+}
+
+// ── WAREHOUSE MAP CACHE ────────────────────────────────────────────────────
+
+export interface OfflineWarehouseMapSnapshot {
+    zones: any[]
+    positions: any[]
+    cachedAt: string
+    systemCode?: string
+}
+
+export async function saveWarehouseMapToOfflineDb(
+    snapshot: OfflineWarehouseMapSnapshot,
+    cacheKey = 'default'
+): Promise<void> {
+    const db = await openDatabase()
+    return new Promise((resolve, reject) => {
+        const tx = db.transaction(['warehouse_map', 'meta'], 'readwrite')
+        tx.objectStore('warehouse_map').put({ key: cacheKey, ...snapshot })
+        tx.objectStore('meta').put({ key: 'warehouse_map_last_synced_at', value: snapshot.cachedAt })
+        tx.oncomplete = () => resolve()
+        tx.onerror = () => reject(tx.error)
+    })
+}
+
+export async function getWarehouseMapFromOfflineDb(
+    cacheKey = 'default'
+): Promise<OfflineWarehouseMapSnapshot | null> {
+    try {
+        const db = await openDatabase()
+        return new Promise((resolve) => {
+            const tx = db.transaction('warehouse_map', 'readonly')
+            const req = tx.objectStore('warehouse_map').get(cacheKey)
+            req.onsuccess = () => {
+                const res = req.result
+                if (res && Array.isArray(res.zones)) {
+                    resolve({
+                        zones: res.zones,
+                        positions: Array.isArray(res.positions) ? res.positions : [],
+                        cachedAt: res.cachedAt || '',
+                        systemCode: res.systemCode,
+                    })
+                } else {
+                    resolve(null)
+                }
+            }
+            req.onerror = () => resolve(null)
+        })
+    } catch {
+        return null
+    }
 }

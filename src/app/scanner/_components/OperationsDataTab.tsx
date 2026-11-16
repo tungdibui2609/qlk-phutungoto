@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Camera,
   CloudDownload,
@@ -77,6 +77,9 @@ import {
   getShiftOperationImages,
   syncOfflineOperationImages,
   getOperationImageDisplayUrl,
+  getDriveSettings,
+  listOperationFolders,
+  syncImagesToGoogleDrive,
 } from './operations/operationImagesService'
 import {
   QuickSnapItem,
@@ -325,6 +328,65 @@ export function OperationsDataTab({
   useEffect(() => {
     void loadSelectedShiftDetails(selectedShift)
   }, [selectedShift, loadSelectedShiftDetails])
+
+  // ── TỰ ĐỘNG ĐỒNG BỘ NGẦM ẢNH OFFLINE & GOOGLE DRIVE KHI CÓ MẠNG ──
+  const bgImageSyncLockRef = useRef(false)
+  const runBackgroundImageSync = useCallback(async () => {
+    if (bgImageSyncLockRef.current) return
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return
+    bgImageSyncLockRef.current = true
+    try {
+      await syncOperationsOfflineQueue().catch(() => {})
+      const syncedOffline = await syncOfflineOperationImages().catch(() => 0)
+      if (syncedOffline > 0) {
+        await refreshPendingQueueCount()
+      }
+
+      if (selectedShift) {
+        const imgs = await getShiftOperationImages(selectedShift.id).catch(() => [])
+        setShiftImages(imgs)
+        setShiftImageCount(imgs.length)
+
+        const cfg = await getDriveSettings(selectedShift.system_code).catch(() => null)
+        if (cfg?.auto_sync_enabled && cfg.webhook_url?.trim()) {
+          const pendingDrive = imgs.filter(img => !img.is_offline && !img.drive_file_id)
+          if (pendingDrive.length > 0) {
+            const folders = await listOperationFolders(
+              selectedShift.system_code,
+              selectedShift.company_id || userObj.company_id || null
+            ).catch(() => [])
+            const res = await syncImagesToGoogleDrive({
+              images: pendingDrive,
+              systemCode: selectedShift.system_code,
+              folders,
+            }).catch(() => null)
+            if (res && res.syncedCount > 0) {
+              const updated = await getShiftOperationImages(selectedShift.id).catch(() => imgs)
+              setShiftImages(updated)
+              setShiftImageCount(updated.length)
+            }
+          }
+        }
+      }
+    } finally {
+      bgImageSyncLockRef.current = false
+    }
+  }, [selectedShift, refreshPendingQueueCount, userObj.company_id])
+
+  useEffect(() => {
+    void runBackgroundImageSync()
+    const handleOnline = () => {
+      void runBackgroundImageSync()
+    }
+    window.addEventListener('online', handleOnline)
+    const timer = setInterval(() => {
+      void runBackgroundImageSync()
+    }, 45000)
+    return () => {
+      window.removeEventListener('online', handleOnline)
+      clearInterval(timer)
+    }
+  }, [runBackgroundImageSync])
 
   // Khi mở tab Đã hoàn thành ở chế độ daily / product / custom -> tải journals của pastShifts
   useEffect(() => {
@@ -1251,7 +1313,7 @@ export function OperationsDataTab({
         /* =========================================================
          * TAB 1: ĐANG LÀM (ACTIVE SHIFTS)
          * ========================================================= */
-        <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-3 pb-24">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-3 space-y-3 pb-24">
           {/* ── SELECTOR CÔNG VIỆC ĐANG LÀM (Chuẩn App Android) ── */}
           <div className="-mx-3 -mt-3">
             <div className="flex items-center px-3 py-2 bg-[#1e293b] border-b border-slate-700">
@@ -1402,8 +1464,8 @@ export function OperationsDataTab({
           {selectedShift && (
             <>
               {/* ── THANH TÌM KIẾM SẢN PHẨM (2 CHẾ ĐỘ: NHẬP / GHIM) + AUTOCOMPLETE ── */}
-              <div className="space-y-1.5 relative">
-                <div className="flex items-center gap-1.5">
+              <div className="space-y-1.5 relative min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
                   <div className="flex bg-[#1e293b] p-0.5 rounded-xl border border-slate-700 shrink-0">
                     <button
                       type="button"
@@ -1430,7 +1492,7 @@ export function OperationsDataTab({
                     </button>
                   </div>
 
-                  <div className="flex-1 flex items-center gap-1.5 px-3 h-9 rounded-xl bg-[#1e293b] border border-slate-700">
+                  <div className="flex-1 min-w-[160px] flex items-center gap-1.5 px-3 h-9 rounded-xl bg-[#1e293b] border border-slate-700">
                     <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                     <input
                       type="text"
@@ -2135,7 +2197,7 @@ export function OperationsDataTab({
             ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto overscroll-contain p-3 space-y-3 pb-24">
+          <div className="flex-1 overflow-y-auto overflow-x-hidden overscroll-contain p-3 space-y-3 pb-24">
             {/* SUB-MODE 1: TỪNG CÔNG VIỆC */}
             {doneMode === 'single' && (
               <>

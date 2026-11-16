@@ -27,6 +27,7 @@ import {
   DEFAULT_STAMP_DICT,
   normalizeText,
   getWarehouseMapOfflineInfo,
+  getWarehouseMapOfflineInfoAsync,
   syncWarehouseMapOfflineWeb,
   ensureProductsCatalogLoaded,
   playScanSound,
@@ -124,7 +125,7 @@ export function ScannerSettingsTab({
 
   const refreshMetadata = async () => {
     try {
-      setMapOfflineInfo(getWarehouseMapOfflineInfo())
+      setMapOfflineInfo(await getWarehouseMapOfflineInfoAsync())
       const sSync = localStorage.getItem('last_stamp_sync_time')
       if (sSync) setLastStampSync(sSync)
 
@@ -164,7 +165,11 @@ export function ScannerSettingsTab({
     setSyncingMap(true)
     try {
       const res = await syncWarehouseMapOfflineWeb(systemCode || 'KHO_DONG_LANH')
-      setMapOfflineInfo(getWarehouseMapOfflineInfo())
+      if (!res.success) {
+        alert(`Lỗi tải sơ đồ kho ngoại tuyến: ${res.message}`)
+        return
+      }
+      setMapOfflineInfo(await getWarehouseMapOfflineInfoAsync())
       playScanSound()
       triggerHaptic()
       setSyncAllStatus(
@@ -184,7 +189,7 @@ export function ScannerSettingsTab({
       return
     }
     setSyncingAll(true)
-    setSyncAllStatus('⏳ Đang tải đồng thời Quy tắc dấu + Danh sách LOT + Sơ đồ 6 kho...')
+    setSyncAllStatus('⏳ Đang tải đồng thời Quy tắc dấu + Danh sách LOT + Sơ đồ kho...')
     try {
       const [, , mapRes] = await Promise.all([
         handleSyncStampRules(),
@@ -193,6 +198,10 @@ export function ScannerSettingsTab({
         ensureProductsCatalogLoaded(true),
       ])
       await refreshMetadata()
+      if (!mapRes.success) {
+        setSyncAllStatus(`⚠️ Đã tải Quy tắc dấu & LOT, nhưng Sơ đồ kho lỗi: ${mapRes.message}`)
+        return
+      }
       playScanSound()
       triggerHaptic()
       setSyncAllStatus(

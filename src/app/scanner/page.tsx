@@ -1758,7 +1758,7 @@ export default function WebScannerPage() {
   // ── 2. Nếu chưa đăng nhập: Hiển thị màn hình Login (hoặc Cài đặt máy chủ) ──
   if (!userProfile) {
     return (
-      <div className="fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0f172a] text-slate-100 select-none overflow-hidden z-10">
+      <div className="scanner-app-shell fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0f172a] text-slate-100 select-none overflow-hidden z-10">
         {activeTab === 'settings' ? (
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             <div className="shrink-0 flex items-center justify-between px-3 py-2.5 bg-[#0c1322] border-b border-[#1e293b]">
@@ -1815,7 +1815,7 @@ export default function WebScannerPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0b1120] text-slate-100 select-none overflow-hidden z-10">
+    <div className="scanner-app-shell fixed inset-0 flex flex-col max-w-md mx-auto w-full bg-[#0b1120] text-slate-100 select-none overflow-hidden z-10">
       
       {/* ── TOP USER & COMPANY HEADER (Match Mobile App App.tsx) ───────── */}
       <div className="shrink-0 flex items-center justify-between px-3 py-1.5 bg-[#0c1322] border-b border-[#1e293b] text-xs gap-2">
