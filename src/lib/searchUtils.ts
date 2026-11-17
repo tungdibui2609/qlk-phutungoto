@@ -189,6 +189,19 @@ export function calculateSearchScore(data: any, term: string, extra?: Record<str
 
     // 1. Nếu là đối tượng, ưu tiên kiểm tra các trường chính TRƯỚC (KHÔNG JSON.stringify toàn bộ cây đối tượng)
     if (typeof targetData === 'object' && targetData) {
+        // 1.0 ƯU TIÊN SỐ 1 TUYỆT ĐỐI: Kiểm tra STT của LOT (VD: D110, #D110, Z258, 258...)
+        const cleanSttTerm = unaccentedTerm.replace(/^(#|stt[:\s-#]*)/i, '').trim();
+        if (targetData.stt && cleanSttTerm) {
+            const sttVal = normalizeSearchString(String(targetData.stt), true);
+            if (sttVal === cleanSttTerm) {
+                score += 5000;
+            } else if (sttVal.startsWith(cleanSttTerm)) {
+                score += 3800;
+            } else if (sttVal.includes(cleanSttTerm)) {
+                score += 2600;
+            }
+        }
+
         // 1a. ĐẶC BIỆT ƯU TIÊN: Kiểm tra trường gõ tắt (aliases / short_name)
         const rawAliases = targetData.aliases || targetData.short_name || targetData.alias;
         if (rawAliases) {
@@ -349,18 +362,45 @@ export function matchPalletSearch(pallet: any, query: string): boolean {
     const sku = String(pallet.sku || '').trim();
     const aliases = String(pallet.product_aliases || pallet.aliases || '').trim();
     const locationCode = String(pallet.location_code || pallet.code || '').trim();
-    const tag = String(pallet.tag || '').trim();
+    const tag = Array.isArray(pallet.tags)
+        ? pallet.tags.filter((t: any) => t && !String(t).startsWith('MERGED_')).join(' ')
+        : String(pallet.tag || '').trim();
     const notes = String(pallet.notes || '').trim();
 
-    // 1. Khớp trực tiếp trên STT, LOT Code, Vị trí kho và Tag (nhanh nhất)
     const sttUnacc = normalizeSearchString(stt, true);
     const lotUnacc = normalizeSearchString(lotCode, true);
     const locUnacc = normalizeSearchString(locationCode, true);
     const tagUnacc = normalizeSearchString(tag, true);
-    if (sttUnacc.includes(qUnacc) || lotUnacc.includes(qUnacc) || locUnacc.includes(qUnacc) || tagUnacc.includes(qUnacc)) return true;
 
-    // 2. Khớp chuỗi trên toàn bộ thông tin gộp
-    const fullText = [stt, lotCode, prodName, sku, aliases, locationCode, tag, notes].filter(Boolean).join(' ');
+    // 0. Nếu người dùng gõ tiền tố tìm đích danh STT (VD: "#D110", "stt D110", "stt: 258")
+    if (/^(#|stt[:\s-#]+)/i.test(rawQ)) {
+        const cleanSttQ = qUnacc.replace(/^(#|stt[:\s-#]*)/i, '').trim();
+        if (!cleanSttQ) return Boolean(sttUnacc);
+        return Boolean(sttUnacc && sttUnacc.includes(cleanSttQ));
+    }
+
+    // 1. Khớp trực tiếp trên STT, LOT Code, Vị trí kho và Tag (nhanh nhất)
+    if (
+        (sttUnacc && sttUnacc.includes(qUnacc)) ||
+        (lotUnacc && lotUnacc.includes(qUnacc)) ||
+        (locUnacc && locUnacc.includes(qUnacc)) ||
+        (tagUnacc && tagUnacc.includes(qUnacc))
+    ) {
+        return true;
+    }
+
+    // 1b. Khớp trực tiếp trên trường aliases (Tên viết tắt)
+    if (aliases) {
+        const normAlias = normalizeSearchString(aliases);
+        const unaccAlias = normalizeSearchString(aliases, true);
+        if (normAlias.includes(qNorm) || unaccAlias.includes(qUnacc)) return true;
+    }
+
+    // 2. Khớp chuỗi trên toàn bộ thông tin gộp (bao gồm cả danh sách từng dòng sản phẩm con nếu là Pallet hỗn hợp)
+    const itemsText = Array.isArray(pallet.items)
+        ? pallet.items.map((it: any) => `${it.product_name || ''} ${it.sku || ''} ${it.aliases || ''}`).join(' ')
+        : '';
+    const fullText = [stt, lotCode, prodName, sku, aliases, locationCode, tag, notes, itemsText].filter(Boolean).join(' ');
     const fullNorm = fullText.toLowerCase().normalize('NFC');
     const fullUnacc = normalizeSearchString(fullText, true);
 
@@ -369,7 +409,8 @@ export function matchPalletSearch(pallet: any, query: string): boolean {
     // 3. Tách từ & chữ cái đầu (Initials)
     const wordsNorm = fullNorm.split(/[^a-z0-9\u00C0-\u024F\u1EA0-\u1EF9]+/i).filter(Boolean);
     const wordsUnacc = fullUnacc.split(/[^a-z0-9]+/i).filter(Boolean);
-    const initials = wordsUnacc.map(w => w[0]).join('');
+    const prodWordsUnacc = normalizeSearchString(prodName, true).split(/[^a-z0-9]+/i).filter(Boolean);
+    const prodInitials = prodWordsUnacc.map(w => w[0]).join('');
 
     // 4. Kiểm tra chuỗi viết tắt (Acronym / Initials) khi gõ liền (VD: 'srmc', 'srmmc', 'cd')
     const qTokensUnacc = qUnacc.split(/\s+/).filter(Boolean);
@@ -377,7 +418,10 @@ export function matchPalletSearch(pallet: any, query: string): boolean {
 
     if (qTokensUnacc.length === 1) {
         const single = qTokensUnacc[0];
-        if (single.length >= 2 && isSubsequence(single, initials)) return true;
+        const isLikelySttCode = /^[a-z]?\d+$/i.test(single);
+        if (!isLikelySttCode && single.length >= 2 && prodInitials && isSubsequence(single, prodInitials)) {
+            return true;
+        }
     }
 
     // 5. Kiểm tra tiền tố của từng từ (Prefix matching): Mọi từ khóa người dùng gõ phải khớp tiền tố hoặc chứa trong ít nhất 1 từ

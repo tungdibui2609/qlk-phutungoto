@@ -1,5 +1,51 @@
 export type DateFilterType = 'packaging_date' | 'peeling_date' | 'raw_material_date' | 'inbound_date'
 
+export type WarehouseSearchMode = 'all' | 'name' | 'code' | 'tag' | 'stt'
+
+export const WAREHOUSE_SEARCH_MODES: {
+  id: WarehouseSearchMode
+  label: string
+  shortLabel: string
+  placeholder: string
+  subHint?: string
+}[] = [
+  {
+    id: 'all',
+    label: 'Tổng hợp',
+    shortLabel: 'Tổng hợp',
+    placeholder: 'Tìm nhanh (hỗ trợ tên viết tắt, mã, mã phụ, STT)...',
+    subHint: 'Hỗ trợ tên viết tắt',
+  },
+  {
+    id: 'name',
+    label: 'Theo Tên',
+    shortLabel: 'Theo Tên',
+    placeholder: 'Nhập tên sản phẩm hoặc tên viết tắt (đô c, ri6...)...',
+    subHint: 'Hỗ trợ tên viết tắt',
+  },
+  {
+    id: 'code',
+    label: 'Theo Mã',
+    shortLabel: 'Theo Mã',
+    placeholder: 'Nhập mã SP (SKU), mã LOT, mã vị trí...',
+    subHint: 'SKU, mã LOT, vị trí',
+  },
+  {
+    id: 'tag',
+    label: 'Theo Mã phụ',
+    shortLabel: 'Mã phụ',
+    placeholder: 'Nhập mã phụ (tag)...',
+    subHint: 'Tag đính kèm',
+  },
+  {
+    id: 'stt',
+    label: 'Theo STT',
+    shortLabel: 'Theo STT',
+    placeholder: 'Nhập số thứ tự STT (VD: G44, 25)...',
+    subHint: 'Số thứ tự LOT',
+  },
+]
+
 export const DATE_FILTER_OPTIONS: { id: DateFilterType; label: string; shortLabel: string; icon: string }[] = [
   { id: 'packaging_date', label: 'Ngày đóng gói (DD/MM)', shortLabel: 'Đóng gói', icon: '📦' },
   { id: 'peeling_date', label: 'Ngày sản xuất (bóc múi)', shortLabel: 'Sản xuất', icon: '🔪' },
@@ -35,6 +81,16 @@ export interface UniqueSttItem {
   productName: string | null
   sku: string | null
   lotCode: string | null
+}
+
+export interface UniqueTagItem {
+  tag: string
+  normTag: string
+  unaccTag: string
+  positionCount: number
+  totalQuantity: number
+  unitsMap: Map<string, number>
+  sampleProductName: string | null
 }
 
 export interface PositionProductSubItem {

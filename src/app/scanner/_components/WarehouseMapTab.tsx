@@ -36,6 +36,9 @@ import {
   DATE_FILTER_OPTIONS,
   type UniqueProductItem,
   type UniqueSttItem,
+  type UniqueTagItem,
+  type WarehouseSearchMode,
+  WAREHOUSE_SEARCH_MODES,
   type ZoneItem,
   type PositionItem,
   type WebWarehouseMapCache,
@@ -149,6 +152,7 @@ export default function WarehouseMapTab() {
 
   // Search state
   const [searchQuery, setSearchQuery] = useState<string>('')
+  const [searchMode, setSearchMode] = useState<WarehouseSearchMode>('all')
   const [searchTab, setSearchTab] = useState<'map' | 'breakdown'>('breakdown')
   const [expandedWhIds, setExpandedWhIds] = useState<Set<string>>(new Set())
   const [expandedAisleIds, setExpandedAisleIds] = useState<Set<string>>(new Set())
@@ -906,6 +910,49 @@ export default function WarehouseMapTab() {
     return Array.from(sttMap.values())
   }, [positions])
 
+  // ── Danh sách Mã phụ (Tags) duy nhất đang có trong kho (cho gợi ý & tìm kiếm Mã phụ) ──
+  const uniqueTags = useMemo(() => {
+    const tagMap = new Map<string, UniqueTagItem>()
+
+    for (let i = 0; i < positions.length; i++) {
+      const p = positions[i]
+      if (!p.lot_id) continue
+      const tags = p.tags && Array.isArray(p.tags) ? p.tags : []
+
+      for (let j = 0; j < tags.length; j++) {
+        const rawTag = String(tags[j] || '').trim()
+        if (!rawTag || rawTag.startsWith('MERGED_')) continue
+        const key = rawTag.toUpperCase()
+        const existing = tagMap.get(key)
+        const qty = p.quantity || 0
+        const uCat = getCleanUnitCategory(p.unit)
+
+        if (existing) {
+          existing.positionCount++
+          existing.totalQuantity += qty
+          existing.unitsMap.set(uCat, (existing.unitsMap.get(uCat) || 0) + qty)
+          if (!existing.sampleProductName && p.product_name) {
+            existing.sampleProductName = p.product_name
+          }
+        } else {
+          const uMap = new Map<string, number>()
+          if (qty > 0) uMap.set(uCat, qty)
+          tagMap.set(key, {
+            tag: rawTag,
+            normTag: normalizeSearchString(rawTag),
+            unaccTag: normalizeSearchString(rawTag, true),
+            positionCount: 1,
+            totalQuantity: qty,
+            unitsMap: uMap,
+            sampleProductName: p.product_name || null,
+          })
+        }
+      }
+    }
+
+    return Array.from(tagMap.values()).sort((a, b) => b.positionCount - a.positionCount)
+  }, [positions])
+
   const availableRegions = useMemo(() => {
     const regionCountMap = new Map<string, number>()
     positions.forEach(p => {
@@ -1160,39 +1207,165 @@ export default function WarehouseMapTab() {
         if (!matchedRegion) continue
       }
 
-      if (hasQuery) {
-        if (isExactProductQuery) {
-          const subItems = getPositionProductItems(p)
-          if (subItems.some(sub => sub.name === q)) {
-            matched.push({ pos: p, score: 2000 })
+    if (hasQuery) {
+        if (searchMode === 'name') {
+          // CHẾ ĐỘ: THEO TÊN (HỖ TRỢ ĐẦY ĐỦ TÊN VIẾT TẮT / ALIASES)
+          if (isExactProductQuery) {
+            const subItems = getPositionProductItems(p)
+            if (subItems.some(sub => sub.name === q)) {
+              matched.push({ pos: p, score: 2000 })
+            }
+            continue
           }
-          continue
-        }
 
-        if (isSttPrefixQuery) {
-          if (p.stt) {
-            const sttNorm = String(p.stt).trim().toLowerCase()
-            if (!cleanSttQuery || sttNorm.includes(cleanSttQuery)) {
-              const score =
-                sttNorm === cleanSttQuery
-                  ? 5000
-                  : sttNorm.startsWith(cleanSttQuery)
-                  ? 3800
-                  : 2600
-              matched.push({ pos: p, score })
+          const subItems = getPositionProductItems(p)
+          let isNameMatch = false
+          let bestScore = 0
+
+          for (let sIdx = 0; sIdx < subItems.length; sIdx++) {
+            const sub = subItems[sIdx]
+            const nameObj = {
+              name: sub.name,
+              aliases: sub.aliases || p.aliases,
+            }
+            if (matchSearch(nameObj, q)) {
+              isNameMatch = true
+              const sc = calculateSearchScore(nameObj, q)
+              if (sc > bestScore) bestScore = sc
             }
           }
-          continue
-        }
 
-        if (matchPalletSearch(p, q)) {
-          const score = calculateSearchScore(p, q, {
-            name: p.product_name,
-            code: p.code,
-            lot_code: p.lot_code,
-            aliases: p.aliases,
-          })
-          matched.push({ pos: p, score })
+          if (!isNameMatch && p.product_name) {
+            const palletNameObj = {
+              name: p.product_name,
+              aliases: p.aliases,
+            }
+            if (matchSearch(palletNameObj, q)) {
+              isNameMatch = true
+              bestScore = calculateSearchScore(palletNameObj, q)
+            }
+          }
+
+          if (isNameMatch) {
+            matched.push({ pos: p, score: bestScore || 100 })
+          }
+        } else if (searchMode === 'code') {
+          // CHẾ ĐỘ: THEO MÃ (SKU, MÃ LOT, MÃ VỊ TRÍ, BATCH CODE...)
+          const qCleanNorm = normalizeSearchString(q, true)
+          const posCodeNorm = normalizeSearchString(p.code, true)
+          const lotCodeNorm = p.lot_code ? normalizeSearchString(p.lot_code, true) : ''
+          const prodCodeNorm = p.production_code ? normalizeSearchString(p.production_code, true) : ''
+          const batchCodeNorm = p.batch_code ? normalizeSearchString(p.batch_code, true) : ''
+          const skuNorm = p.sku ? normalizeSearchString(p.sku, true) : ''
+
+          let isCodeMatch = false
+          let score = 0
+
+          if (posCodeNorm.includes(qCleanNorm)) {
+            isCodeMatch = true
+            score = posCodeNorm === qCleanNorm ? 4000 : 2500
+          } else if (lotCodeNorm && lotCodeNorm.includes(qCleanNorm)) {
+            isCodeMatch = true
+            score = lotCodeNorm === qCleanNorm ? 3800 : 2200
+          } else if (skuNorm && skuNorm.includes(qCleanNorm)) {
+            isCodeMatch = true
+            score = skuNorm === qCleanNorm ? 3500 : 2000
+          } else if (prodCodeNorm && prodCodeNorm.includes(qCleanNorm)) {
+            isCodeMatch = true
+            score = prodCodeNorm === qCleanNorm ? 3200 : 1800
+          } else if (batchCodeNorm && batchCodeNorm.includes(qCleanNorm)) {
+            isCodeMatch = true
+            score = batchCodeNorm === qCleanNorm ? 3000 : 1600
+          } else {
+            // Kiểm tra SKU từng dòng con nếu là pallet hỗn hợp
+            const subItems = getPositionProductItems(p)
+            for (let sIdx = 0; sIdx < subItems.length; sIdx++) {
+              const subSku = subItems[sIdx].sku ? normalizeSearchString(subItems[sIdx].sku!, true) : ''
+              if (subSku && subSku.includes(qCleanNorm)) {
+                isCodeMatch = true
+                score = subSku === qCleanNorm ? 3500 : 2000
+                break
+              }
+            }
+          }
+
+          if (isCodeMatch) {
+            matched.push({ pos: p, score })
+          }
+        } else if (searchMode === 'tag') {
+          // CHẾ ĐỘ: THEO MÃ PHỤ (TAG)
+          const qTagNorm = normalizeSearchString(q, true)
+          const tags = p.tags && Array.isArray(p.tags) ? p.tags : []
+          let isTagMatch = false
+          let score = 0
+
+          for (let tIdx = 0; tIdx < tags.length; tIdx++) {
+            const rawTag = String(tags[tIdx] || '').trim()
+            if (!rawTag || rawTag.startsWith('MERGED_')) continue
+            const tagNorm = normalizeSearchString(rawTag, true)
+            if (tagNorm === qTagNorm) {
+              isTagMatch = true
+              score = 4500
+              break
+            } else if (tagNorm.includes(qTagNorm)) {
+              isTagMatch = true
+              score = 3000
+            }
+          }
+
+          if (isTagMatch) {
+            matched.push({ pos: p, score })
+          }
+        } else if (searchMode === 'stt') {
+          // CHẾ ĐỘ: THEO STT CỦA LOT
+          if (p.stt) {
+            const rawStt = String(p.stt).trim()
+            const sttNorm = normalizeSearchString(rawStt, true)
+            const cleanQ = normalizeSearchString(q.replace(/^(#|stt[:\s-#]*)/i, '').trim(), true)
+
+            if (!cleanQ || sttNorm === cleanQ) {
+              matched.push({ pos: p, score: 5000 })
+            } else if (sttNorm.startsWith(cleanQ)) {
+              matched.push({ pos: p, score: 3800 })
+            } else if (sttNorm.includes(cleanQ)) {
+              matched.push({ pos: p, score: 2600 })
+            }
+          }
+        } else {
+          // CHẾ ĐỘ: TỔNG HỢP (HỖ TRỢ ĐẦY ĐỦ TÊN VIẾT TẮT, MÃ, MÃ PHỤ, STT, VỊ TRÍ)
+          if (isExactProductQuery) {
+            const subItems = getPositionProductItems(p)
+            if (subItems.some(sub => sub.name === q)) {
+              matched.push({ pos: p, score: 2000 })
+            }
+            continue
+          }
+
+          if (isSttPrefixQuery) {
+            if (p.stt) {
+              const sttNorm = String(p.stt).trim().toLowerCase()
+              if (!cleanSttQuery || sttNorm.includes(cleanSttQuery)) {
+                const score =
+                  sttNorm === cleanSttQuery
+                    ? 5000
+                    : sttNorm.startsWith(cleanSttQuery)
+                    ? 3800
+                    : 2600
+                matched.push({ pos: p, score })
+              }
+            }
+            continue
+          }
+
+          if (matchPalletSearch(p, q)) {
+            const score = calculateSearchScore(p, q, {
+              name: p.product_name,
+              code: p.code,
+              lot_code: p.lot_code,
+              aliases: p.aliases,
+            })
+            matched.push({ pos: p, score })
+          }
         }
       } else {
         matched.push({ pos: p, score: 100 })
@@ -1206,6 +1379,7 @@ export default function WarehouseMapTab() {
   }, [
     positions,
     searchQuery,
+    searchMode,
     filterDateType,
     filterStartDate,
     filterEndDate,
@@ -2098,7 +2272,10 @@ export default function WarehouseMapTab() {
       <WarehouseSearchBar
         uniqueProducts={uniqueProducts}
         uniqueStts={uniqueStts}
+        uniqueTags={uniqueTags}
         searchQuery={searchQuery}
+        searchMode={searchMode}
+        onSearchModeChange={setSearchMode}
         onExecuteSearch={handleExecuteSearch}
         onClearSearch={handleClearSearch}
         filterDateType={filterDateType}

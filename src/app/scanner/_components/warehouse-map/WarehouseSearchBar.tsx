@@ -1,16 +1,39 @@
 'use client'
 
 import React, { useState, useMemo, useRef, useEffect } from 'react'
-import { MapPin, Search, Calendar, X, ArrowRight, Sparkles, Filter } from 'lucide-react'
-import type { DateFilterType, UniqueProductItem, UniqueSttItem } from './types'
-import { DATE_FILTER_OPTIONS } from './types'
+import {
+  MapPin,
+  Search,
+  Calendar,
+  X,
+  ArrowRight,
+  Sparkles,
+  Filter,
+  Layers,
+  Package,
+  Hash,
+  Tag,
+  ChevronDown,
+  Check,
+} from 'lucide-react'
+import type {
+  DateFilterType,
+  UniqueProductItem,
+  UniqueSttItem,
+  UniqueTagItem,
+  WarehouseSearchMode,
+} from './types'
+import { DATE_FILTER_OPTIONS, WAREHOUSE_SEARCH_MODES } from './types'
 import { formatUnitsSummary } from './mapHelpers'
-import { normalizeSearchString } from '@/lib/searchUtils'
+import { normalizeSearchString, matchPalletSearch } from '@/lib/searchUtils'
 
 export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   uniqueProducts,
   uniqueStts = [],
+  uniqueTags = [],
   searchQuery,
+  searchMode = 'all',
+  onSearchModeChange,
   onExecuteSearch,
   onClearSearch,
   filterDateType,
@@ -30,7 +53,10 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
 }: {
   uniqueProducts: UniqueProductItem[]
   uniqueStts?: UniqueSttItem[]
+  uniqueTags?: UniqueTagItem[]
   searchQuery: string
+  searchMode?: WarehouseSearchMode
+  onSearchModeChange?: (mode: WarehouseSearchMode) => void
   onExecuteSearch: (query: string) => void
   onClearSearch: () => void
   filterDateType: DateFilterType
@@ -50,7 +76,11 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
 }) {
   const [inputValue, setInputValue] = useState(searchQuery)
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [showModeMenu, setShowModeMenu] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  const activeModeConfig =
+    WAREHOUSE_SEARCH_MODES.find(m => m.id === searchMode) || WAREHOUSE_SEARCH_MODES[0]
 
   // Sync with outside reset (e.g. when user clicks "Xóa tìm kiếm")
   useEffect(() => {
@@ -62,6 +92,7 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     const handleOutsideClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         setShowSuggestions(false)
+        setShowModeMenu(false)
       }
     }
     document.addEventListener('mousedown', handleOutsideClick)
@@ -70,11 +101,12 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
 
   // Fast pre-indexed STT suggestions (VD: gõ "25", "G55", "#25"...)
   const sttSuggestions = useMemo(() => {
+    if (searchMode !== 'all' && searchMode !== 'stt') return []
     const raw = inputValue.trim()
     if (!raw) return []
-    const qClean = raw.startsWith('#') ? raw.slice(1).trim() : raw
+    const qClean = raw.replace(/^(#|stt[:\s-#]*)/i, '').trim()
     if (!qClean) return []
-    const normQ = normalizeSearchString(qClean)
+    const normQ = normalizeSearchString(qClean, true)
     if (!normQ) return []
 
     const list: Array<{ item: UniqueSttItem; score: number }> = []
@@ -90,10 +122,35 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
     }
 
     return list.sort((a, b) => b.score - a.score).slice(0, 6)
-  }, [inputValue, uniqueStts])
+  }, [inputValue, uniqueStts, searchMode])
+
+  // Fast pre-indexed Tag (Mã phụ) suggestions
+  const tagSuggestions = useMemo(() => {
+    if (searchMode !== 'all' && searchMode !== 'tag') return []
+    const raw = inputValue.trim()
+    if (!raw || raw.startsWith('#')) return []
+    const normQ = normalizeSearchString(raw)
+    const unaccQ = normalizeSearchString(raw, true)
+    if (!normQ && !unaccQ) return []
+
+    const list: Array<{ item: UniqueTagItem; score: number }> = []
+    for (let i = 0; i < uniqueTags.length; i++) {
+      const t = uniqueTags[i]
+      if (t.normTag === normQ || t.unaccTag === unaccQ) {
+        list.push({ item: t, score: 4500 })
+      } else if (t.normTag.startsWith(normQ) || t.unaccTag.startsWith(unaccQ)) {
+        list.push({ item: t, score: 3200 - t.normTag.length })
+      } else if (t.normTag.includes(normQ) || t.unaccTag.includes(unaccQ)) {
+        list.push({ item: t, score: 2200 - t.normTag.length })
+      }
+    }
+
+    return list.sort((a, b) => b.score - a.score).slice(0, searchMode === 'tag' ? 8 : 4)
+  }, [inputValue, uniqueTags, searchMode])
 
   // Fast pre-indexed product suggestions (takes < 0.01ms, never lags typing)
   const suggestions = useMemo(() => {
+    if (searchMode !== 'all' && searchMode !== 'name' && searchMode !== 'code') return []
     const q = inputValue.trim()
     if (!q || q.length < 1 || q.startsWith('#')) return []
 
@@ -113,6 +170,26 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
       let score = 0
       let matchedAlias: string | undefined
 
+      if (searchMode === 'code') {
+        if (prod.normSku || prod.unaccSku) {
+          if (prod.normSku === normQ || prod.unaccSku === unaccQ) {
+            matched = true
+            score = 3000
+          } else if (prod.normSku.startsWith(normQ) || prod.unaccSku.startsWith(unaccQ)) {
+            matched = true
+            score = 2000
+          } else if (prod.normSku.includes(normQ) || prod.unaccSku.includes(unaccQ)) {
+            matched = true
+            score = 1000
+          }
+        }
+        if (matched) {
+          list.push({ product: prod, score })
+        }
+        continue
+      }
+
+      // Chế độ 'all' (Tổng hợp) và 'name' (Theo Tên): Hỗ trợ đầy đủ Tên viết tắt (aliases)
       // 1. Alias check (tên viết tắt / gõ tắt: VD "đô c" -> "đô c có hạt")
       for (let j = 0; j < prod.aliasList.length; j++) {
         const al = prod.aliasList[j]
@@ -148,8 +225,8 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         }
       }
 
-      // 3. SKU check
-      if (!matched && (prod.normSku || prod.unaccSku)) {
+      // 3. SKU check (chỉ trong chế độ 'all')
+      if (!matched && searchMode === 'all' && (prod.normSku || prod.unaccSku)) {
         if (prod.normSku === normQ || prod.unaccSku === unaccQ) {
           matched = true
           score = 1000
@@ -159,27 +236,71 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         }
       }
 
+      // 4. Smart multi-keyword / acronym alias check (VD: gõ "srmc", "do c", "mt a"...)
+      if (!matched) {
+        const isSmartMatch = matchPalletSearch(
+          {
+            product_name: prod.name,
+            aliases: prod.aliases,
+            sku: searchMode === 'all' ? prod.sku : '',
+          },
+          q
+        )
+        if (isSmartMatch) {
+          matched = true
+          score = 650
+          if (prod.aliasList.length > 0) {
+            matchedAlias = prod.aliasList[0].raw
+          }
+        }
+      }
+
       if (matched) {
         list.push({ product: prod, score, matchedAlias })
       }
     }
 
     return list.sort((a, b) => b.score - a.score).slice(0, 8)
-  }, [inputValue, uniqueProducts])
+  }, [inputValue, uniqueProducts, searchMode])
 
-  const totalSuggestionCount = sttSuggestions.length + suggestions.length
+  const totalSuggestionCount =
+    sttSuggestions.length + tagSuggestions.length + suggestions.length
 
-  const handleSelect = (name: string) => {
-    setInputValue(name)
+  const handleSelect = (prod: UniqueProductItem) => {
+    const val =
+      searchMode === 'code' && prod.sku && prod.sku !== '---' ? prod.sku : prod.name
+    setInputValue(val)
     setShowSuggestions(false)
-    onExecuteSearch(name)
+    onExecuteSearch(val)
   }
 
   const handleSelectStt = (stt: string) => {
-    const query = `#${stt}`
+    const query = searchMode === 'stt' ? stt : `#${stt}`
     setInputValue(query)
     setShowSuggestions(false)
     onExecuteSearch(query)
+  }
+
+  const handleSelectTag = (tag: string) => {
+    setInputValue(tag)
+    setShowSuggestions(false)
+    onExecuteSearch(tag)
+  }
+
+  const handleSelectMode = (mode: WarehouseSearchMode) => {
+    setShowModeMenu(false)
+    onSearchModeChange?.(mode)
+    if (inputValue.trim()) {
+      onExecuteSearch(inputValue.trim())
+    }
+  }
+
+  const renderModeIcon = (mode: WarehouseSearchMode, size = 13) => {
+    if (mode === 'name') return <Package size={size} className="text-emerald-400 shrink-0" />
+    if (mode === 'code') return <Hash size={size} className="text-purple-400 shrink-0" />
+    if (mode === 'tag') return <Tag size={size} className="text-amber-400 shrink-0" />
+    if (mode === 'stt') return <Hash size={size} className="text-rose-400 shrink-0" />
+    return <Layers size={size} className="text-cyan-400 shrink-0" />
   }
 
   const handleSubmit = (customTerm?: string) => {
@@ -192,42 +313,106 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
   return (
     <div ref={containerRef} className="p-2.5 bg-[#0e1626] border-b border-slate-800/80 shrink-0 relative z-30">
       <div className="relative flex items-center gap-1.5">
-        <div className="relative flex-1 flex items-center">
-          <Search size={15} className="absolute left-3 text-slate-400 pointer-events-none" />
-          <input
-            type="text"
-            value={inputValue}
-            onChange={e => {
-              setInputValue(e.target.value)
-              setShowSuggestions(true)
-            }}
-            onFocus={() => {
-              if (inputValue.trim().length > 0) setShowSuggestions(true)
-            }}
-            onKeyDown={e => {
-              if (e.key === 'Enter') {
-                e.preventDefault()
-                handleSubmit()
-              } else if (e.key === 'Escape') {
-                setShowSuggestions(false)
-              }
-            }}
-            placeholder="Nhập tên SP (đô, ri6...), STT, mã LOT, vị trí..."
-            className="w-full pl-9 pr-8 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-hidden focus:border-cyan-500 transition"
-          />
-          {inputValue && (
+        <div className="relative flex-1 flex items-center bg-slate-900 border border-slate-700 rounded-xl focus-within:border-cyan-500 transition p-0.5 min-w-0">
+          {/* Nút Chọn Chế Độ Tìm Kiếm (Chuẩn Web Mẹ - Hình 1) */}
+          <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => {
-                setInputValue('')
+                setShowModeMenu(prev => !prev)
                 setShowSuggestions(false)
-                onClearSearch()
               }}
-              className="absolute right-2.5 p-1 text-slate-400 hover:text-white"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-800 border border-slate-700/80 text-[11px] font-bold text-slate-100 transition active:scale-95 cursor-pointer"
+              title="Chọn chế độ tìm kiếm"
             >
-              <X size={14} />
+              {renderModeIcon(searchMode, 13)}
+              <span className="whitespace-nowrap">{activeModeConfig.shortLabel}</span>
+              <ChevronDown
+                size={12}
+                className={`text-slate-400 transition-transform ${showModeMenu ? 'rotate-180' : ''}`}
+              />
             </button>
-          )}
+
+            {showModeMenu && (
+              <div className="absolute top-full left-0 mt-1.5 w-48 bg-[#0b1324] border border-cyan-500/40 rounded-xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150">
+                <div className="px-2.5 py-1.5 bg-slate-900/90 border-b border-slate-800 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                  Chế độ tìm kiếm
+                </div>
+                <div className="divide-y divide-slate-800/60">
+                  {WAREHOUSE_SEARCH_MODES.map(mode => {
+                    const isSelected = mode.id === searchMode
+                    return (
+                      <button
+                        key={mode.id}
+                        type="button"
+                        onClick={() => handleSelectMode(mode.id)}
+                        className={`w-full px-3 py-2 text-left flex items-center justify-between gap-2 text-xs transition cursor-pointer ${
+                          isSelected
+                            ? 'bg-cyan-500/20 text-cyan-300 font-black'
+                            : 'text-slate-200 hover:bg-slate-800/80 font-semibold'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          {renderModeIcon(mode.id, 14)}
+                          <div className="min-w-0">
+                            <div className="truncate">{mode.label}</div>
+                            {mode.subHint && (
+                              <div className="text-[9.5px] text-slate-400 font-normal truncate">
+                                {mode.subHint}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        {isSelected && <Check size={14} className="text-cyan-400 shrink-0" />}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Ô nhập từ khóa */}
+          <div className="relative flex-1 flex items-center min-w-0">
+            <Search size={14} className="ml-2 text-slate-400 pointer-events-none shrink-0" />
+            <input
+              type="text"
+              value={inputValue}
+              onChange={e => {
+                setInputValue(e.target.value)
+                setShowSuggestions(true)
+                setShowModeMenu(false)
+              }}
+              onFocus={() => {
+                setShowModeMenu(false)
+                if (inputValue.trim().length > 0) setShowSuggestions(true)
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  handleSubmit()
+                } else if (e.key === 'Escape') {
+                  setShowSuggestions(false)
+                  setShowModeMenu(false)
+                }
+              }}
+              placeholder={activeModeConfig.placeholder}
+              className="w-full pl-2 pr-7 py-1.5 bg-transparent text-xs text-white placeholder-slate-500 focus:outline-hidden"
+            />
+            {inputValue && (
+              <button
+                type="button"
+                onClick={() => {
+                  setInputValue('')
+                  setShowSuggestions(false)
+                  onClearSearch()
+                }}
+                className="absolute right-1.5 p-1 text-slate-400 hover:text-white"
+              >
+                <X size={14} />
+              </button>
+            )}
+          </div>
         </div>
 
         <button
@@ -496,13 +681,24 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
         </div>
       )}
 
-      {/* ── DROPDOWN GỢI Ý TÌM KIẾM (STT + SẢN PHẨM) ── */}
+      {/* ── DROPDOWN GỢI Ý TÌM KIẾM (STT + MÃ PHỤ + SẢN PHẨM) ── */}
       {showSuggestions && inputValue.trim().length > 0 && (
         <div className="absolute top-full left-2.5 right-2.5 mt-1 bg-[#0b1324] border border-cyan-500/40 rounded-2xl shadow-2xl overflow-hidden z-50 animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md">
           <div className="px-3 py-2 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between text-[11px] font-bold text-cyan-400">
             <span className="flex items-center gap-1.5">
               <Sparkles size={13} className="text-amber-400" />
-              <span>GỢI Ý TÌM KIẾM ({totalSuggestionCount})</span>
+              <span>
+                {searchMode === 'name'
+                  ? 'GỢI Ý TÊN & TÊN VIẾT TẮT'
+                  : searchMode === 'code'
+                  ? 'GỢI Ý MÃ SẢN PHẨM'
+                  : searchMode === 'tag'
+                  ? 'GỢI Ý MÃ PHỤ (TAG)'
+                  : searchMode === 'stt'
+                  ? 'GỢI Ý SỐ THỨ TỰ (STT)'
+                  : 'GỢI Ý TÌM KIẾM'}{' '}
+                ({totalSuggestionCount})
+              </span>
             </span>
             <span className="text-[10px] font-normal text-slate-400">
               Chạm để chọn &amp; xem vị trí
@@ -553,30 +749,77 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
                 )
               })}
 
-              {/* 2. Gợi ý theo Sản phẩm */}
+              {/* 2. Gợi ý theo Mã phụ (Tag) */}
+              {tagSuggestions.map((tItem, tIdx) => {
+                const t = tItem.item
+                return (
+                  <div
+                    key={`tag-${tIdx}`}
+                    onClick={() => handleSelectTag(t.tag)}
+                    className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-black font-mono">
+                          🏷️ TAG: {t.tag}
+                        </span>
+                        {t.sampleProductName && (
+                          <span className="text-[11px] text-slate-300 truncate">
+                            {t.sampleProductName}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
+                          📍 {t.positionCount} vị trí
+                        </span>
+                        <span className="text-emerald-400 font-bold bg-emerald-950/60 px-1.5 py-0.2 rounded border border-emerald-800/40">
+                          📦 {formatUnitsSummary(t.unitsMap, { short: true })}
+                        </span>
+                      </p>
+                    </div>
+                    <ArrowRight size={15} className="text-amber-400 shrink-0" />
+                  </div>
+                )
+              })}
+
+              {/* 3. Gợi ý theo Sản phẩm / Mã */}
               {suggestions.map((item, idx) => (
                 <div
                   key={`prod-${idx}`}
-                  onClick={() => handleSelect(item.product.name)}
+                  onClick={() => handleSelect(item.product)}
                   className="p-3 hover:bg-cyan-950/40 cursor-pointer transition flex items-center justify-between gap-3 active:bg-cyan-900/50"
                 >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-bold text-xs text-white">
-                        {item.product.name}
-                      </span>
-                      {item.matchedAlias ? (
-                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold">
-                          ⚡ {item.matchedAlias}
-                        </span>
-                      ) : item.product.aliases ? (
-                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
-                          ⚡ {item.product.aliases}
-                        </span>
-                      ) : null}
+                      {searchMode === 'code' && item.product.sku && item.product.sku !== '---' ? (
+                        <>
+                          <span className="px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 text-[10px] font-black font-mono">
+                            SKU: {item.product.sku}
+                          </span>
+                          <span className="font-bold text-xs text-white">
+                            {item.product.name}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="font-bold text-xs text-white">
+                            {item.product.name}
+                          </span>
+                          {item.matchedAlias ? (
+                            <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-bold">
+                              ⚡ {item.matchedAlias}
+                            </span>
+                          ) : item.product.aliases ? (
+                            <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-bold">
+                              ⚡ {item.product.aliases}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
                     </div>
                     <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5 flex-wrap">
-                      {item.product.sku && (
+                      {item.product.sku && searchMode !== 'code' && (
                         <span className="text-slate-500 font-mono">SKU: {item.product.sku}</span>
                       )}
                       <span className="text-cyan-400 font-bold bg-cyan-950/60 px-1.5 py-0.2 rounded border border-cyan-800/40">
@@ -595,7 +838,8 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
             </div>
           ) : (
             <div className="p-3 text-center text-xs text-slate-400">
-              Không có STT hoặc sản phẩm nào khớp từ gõ tắt.
+              Không có gợi ý nhanh cho &quot;{inputValue.trim()}&quot; trong chế độ{' '}
+              <span className="text-cyan-300 font-bold">{activeModeConfig.label}</span>.
             </div>
           )}
 
@@ -606,7 +850,9 @@ export const WarehouseSearchBar = React.memo(function WarehouseSearchBar({
           >
             <div className="flex items-center gap-2">
               <Search size={13} className="text-cyan-400" />
-              <span>Tìm tất cả cho &quot;{inputValue.trim()}&quot; (STT, mã vị trí, mã lot...)</span>
+              <span>
+                Tìm [{activeModeConfig.label}] cho &quot;{inputValue.trim()}&quot;
+              </span>
             </div>
             <span className="text-[10px] px-2 py-0.5 rounded bg-slate-800 text-cyan-300 border border-slate-700 font-mono font-bold">
               Tìm ngay ↵
