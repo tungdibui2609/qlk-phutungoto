@@ -212,6 +212,11 @@ export default function WebScannerPage() {
   const [isManualStampModal, setIsManualStampModal] = useState<boolean>(false)
   const [manualStampLine1, setManualStampLine1] = useState<string>('')
   const [manualStampLine2, setManualStampLine2] = useState<string>('')
+  // Chụp gửi ảnh con dấu lên Web Mẹ (Server Gemini AI)
+  const [pendingStampPhoto, setPendingStampPhoto] = useState<string | null>(null)
+  const [queueBoxCount, setQueueBoxCount] = useState<string>('30')
+  const [queueBoxWeight, setQueueBoxWeight] = useState<string>('20')
+  const [uploadingStampPhoto, setUploadingStampPhoto] = useState<boolean>(false)
 
   // Pallet list tab (Tab 3)
   const [palletsList, setPalletsList] = useState<PalletItem[]>([])
@@ -1085,6 +1090,88 @@ export default function WebScannerPage() {
       checkTargetReached(currentBoxes.length + count)
     } catch (err: any) {
       console.warn('Exception khi lưu thùng con dấu:', err)
+    }
+  }
+
+  // ── Chụp ảnh con dấu gửi lên Web Mẹ (Server Gemini AI xử lý) ──
+  const handleCaptureStampPhotoForServer = async () => {
+    if (!activePalletStt) {
+      await scannerAlert({
+        title: 'Chưa có Pallet',
+        message: 'Vui lòng chọn hoặc nhập STT Pallet trước khi chụp ảnh con dấu!',
+        variant: 'warning',
+      })
+      setIsSwitchPalletModal(true)
+      return
+    }
+    const base64 = captureFrame('label')
+    if (!base64) {
+      triggerToast('Không thể lấy khung hình Camera')
+      return
+    }
+    playScanSound()
+    triggerHaptic()
+    setQueueBoxCount(String(targetQty || 30))
+    setQueueBoxWeight('20')
+    setPendingStampPhoto(base64)
+  }
+
+  const handleSubmitStampPhotoToQueue = async () => {
+    if (!pendingStampPhoto || !activePalletStt) return
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      await scannerAlert({
+        title: 'Thiết bị đang ngoại tuyến',
+        message: 'Cần có kết nối Wifi/4G để tải ảnh con dấu lên Web Mẹ.',
+        variant: 'warning',
+      })
+      return
+    }
+
+    setUploadingStampPhoto(true)
+    try {
+      const cleanStt = activePalletStt.trim().toUpperCase()
+      const res = await fetch(pendingStampPhoto)
+      const blob = await res.blob()
+      const filePath = `stamp-queue/${cleanStt}_${Date.now()}.jpg`
+
+      const { error: uploadErr } = await supabase.storage
+        .from('operation-images')
+        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true })
+
+      if (uploadErr) throw uploadErr
+
+      const { data: pubData } = supabase.storage
+        .from('operation-images')
+        .getPublicUrl(filePath)
+
+      const imageUrl = pubData?.publicUrl
+      if (!imageUrl) throw new Error('Không lấy được link ảnh sau khi tải lên')
+
+      const { error: insertErr } = await (supabase as any).from('stamp_scan_queue').insert({
+        system_code: systemCode || 'KHO_DONG_LANH',
+        pallet_stt: cleanStt,
+        pallet_tag: activePalletTag || null,
+        pallet_notes: activePalletNotes || null,
+        box_count: Math.max(1, parseInt(queueBoxCount, 10) || 30),
+        box_weight: parseFloat(queueBoxWeight) || 20,
+        image_url: imageUrl,
+        status: 'pending',
+        created_by: userProfile?.id || null,
+        created_by_name: userProfile?.fullName || 'Nhân viên kho',
+      })
+
+      if (insertErr) throw insertErr
+
+      setPendingStampPhoto(null)
+      triggerToast(`✅ Đã gửi ảnh dấu Pallet ${cleanStt} lên Web Mẹ (Gemini AI)!`)
+    } catch (err: any) {
+      await scannerAlert({
+        title: 'Lỗi gửi ảnh lên Web Mẹ',
+        message: err?.message || 'Không thể tải ảnh lên máy chủ',
+        variant: 'danger',
+      })
+    } finally {
+      setUploadingStampPhoto(false)
     }
   }
 
@@ -2467,6 +2554,16 @@ export default function WebScannerPage() {
               </button>
 
               <button
+                onClick={handleCaptureStampPhotoForServer}
+                disabled={isRecognizing || uploadingStampPhoto}
+                className="py-2 px-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1 shadow-md shadow-indigo-600/30 active:scale-[0.98] transition shrink-0"
+                title="Chụp ảnh gửi Web Mẹ để Gemini AI giải mã & tạo thùng"
+              >
+                <Sparkles size={14} />
+                <span>Gửi Web Mẹ</span>
+              </button>
+
+              <button
                 onClick={() => {
                   if (!activePalletStt) {
                     setIsSwitchPalletModal(true)
@@ -2476,7 +2573,7 @@ export default function WebScannerPage() {
                   setManualStampLine2('')
                   setIsManualStampModal(true)
                 }}
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1.5 active:scale-[0.98] transition shrink-0"
+                className="py-2 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1 active:scale-[0.98] transition shrink-0"
               >
                 <Fingerprint size={14} className="text-amber-400" />
                 <span>Nhập số</span>
@@ -3079,6 +3176,91 @@ export default function WebScannerPage() {
         palletsList={palletsList}
         handleSwitchToStt={handleSwitchToStt}
       />
+
+      {/* Modal gửi ảnh con dấu lên Web Mẹ (Server Gemini AI) */}
+      {pendingStampPhoto && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <div className="w-full max-w-md bg-[#111827] border border-indigo-500/50 rounded-2xl p-4 space-y-3 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div className="flex items-center gap-2">
+                <Sparkles size={18} className="text-indigo-400" />
+                <h3 className="text-xs font-black text-white uppercase tracking-wider">
+                  Gửi Ảnh Dấu Lên Web Mẹ (STT: {activePalletStt})
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingStampPhoto(null)}
+                className="p-1 text-slate-400 hover:text-white"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="rounded-xl overflow-hidden border border-slate-700 bg-black max-h-52 flex items-center justify-center">
+              <img
+                src={pendingStampPhoto}
+                alt="Ảnh dấu mực vừa chụp"
+                className="w-full max-h-52 object-contain"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                  Số lượng thùng
+                </label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={queueBoxCount}
+                  onChange={e => setQueueBoxCount(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[#1e293b] border border-slate-600 font-mono text-sm font-black text-white"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] font-bold text-slate-300 block mb-1">
+                  Khối lượng / thùng (Kg)
+                </label>
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={queueBoxWeight}
+                  onChange={e => setQueueBoxWeight(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg bg-[#1e293b] border border-slate-600 font-mono text-sm font-black text-white"
+                />
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400 leading-relaxed">
+              Ảnh sẽ được gửi lên hàng đợi Server để Web Mẹ dùng Gemini AI giải mã chính xác và tạo thùng vào Pallet <strong className="text-amber-300">{activePalletStt}</strong>.
+            </p>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setPendingStampPhoto(null)}
+                className="flex-1 py-2.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold hover:bg-slate-700 transition"
+              >
+                Chụp lại
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmitStampPhotoToQueue}
+                disabled={uploadingStampPhoto}
+                className="flex-[1.5] py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black flex items-center justify-center gap-1.5 shadow-lg shadow-indigo-600/30 disabled:opacity-60"
+              >
+                {uploadingStampPhoto ? (
+                  <Loader2 size={15} className="animate-spin" />
+                ) : (
+                  <Sparkles size={15} />
+                )}
+                <span>{uploadingStampPhoto ? 'Đang gửi...' : 'Gửi Lên Web Mẹ'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ScannerDialogHost />
     </div>

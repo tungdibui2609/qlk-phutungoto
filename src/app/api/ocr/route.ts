@@ -3,6 +3,11 @@ import Tesseract from 'tesseract.js';
 import path from 'path';
 import fs from 'fs';
 import { parseStampLines, parseBoxLabelText } from '@/lib/ocrParser';
+import {
+  resolveGeminiConfig,
+  recognizeStampWithGemini,
+  fetchServerStampDictionary,
+} from '@/lib/geminiStampOcr';
 
 let cachedWorker: any = null;
 let workerInitializing: Promise<any> | null = null;
@@ -60,6 +65,35 @@ export async function POST(req: NextRequest) {
     }
 
     const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+
+    // Khi mode === 'stamp', ưu tiên dùng Gemini Vision trên Server nếu đã kích hoạt API Key
+    if (mode === 'stamp') {
+      try {
+        const geminiCfg = await resolveGeminiConfig();
+        if (geminiCfg) {
+          const mimeMatch = image.match(/^data:(image\/\w+);base64,/);
+          const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          const gemRes = await recognizeStampWithGemini({
+            imageBase64: base64Data,
+            mimeType,
+            apiKey: geminiCfg.apiKey,
+            model: geminiCfg.model,
+          });
+          const dict = await fetchServerStampDictionary();
+          const stampData = parseStampLines(gemRes.rawText, dict);
+          return NextResponse.json({
+            success: true,
+            mode: 'stamp',
+            engine: 'gemini',
+            data: stampData,
+            rawText: gemRes.rawText,
+          });
+        }
+      } catch (gemErr: any) {
+        console.warn('[OCR Server] Gemini fallback sang Tesseract:', gemErr?.message);
+      }
+    }
+
     const imageBuffer = Buffer.from(base64Data, 'base64');
 
     const worker = await getWorker();

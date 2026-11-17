@@ -52,6 +52,7 @@ import {
 import { StampLiveSimulator } from './_components/StampLiveSimulator'
 import { StampDictionariesTab } from './_components/StampDictionariesTab'
 import { StampFormatSchemasTab } from './_components/StampFormatSchemasTab'
+import { StampQueueAiTab } from './_components/StampQueueAiTab'
 import { FormatBuilderModal } from './_components/FormatBuilderModal'
 import { DictionaryRuleModal } from './_components/DictionaryRuleModal'
 
@@ -79,8 +80,9 @@ export default function StampRulesPage() {
         )
     }
 
-    // Main navigation tab: 'dictionaries' vs 'formats'
-    const [mainTab, setMainTab] = useState<'dictionaries' | 'formats'>('dictionaries')
+    // Main navigation tab: 'dictionaries' vs 'formats' vs 'ai_queue'
+    const [mainTab, setMainTab] = useState<'dictionaries' | 'formats' | 'ai_queue'>('dictionaries')
+    const [aiQueuePendingCount, setAiQueuePendingCount] = useState<number>(0)
 
     // Rules state
     const [rules, setRules] = useState<StampRule[]>([])
@@ -1042,9 +1044,9 @@ export default function StampRulesPage() {
                 decodedSimulation={decodedSimulation}
             />
 
-            {/* 3. Main Switcher Tabs (Từ Điển vs Cấu Trúc Khuôn Định Dạng) */}
+            {/* 3. Main Switcher Tabs (Từ Điển vs Cấu Trúc Khuôn Định Dạng vs Hàng Đợi AI) */}
             <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3 gap-3 flex-wrap">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                     <button
                         onClick={() => setMainTab('dictionaries')}
                         className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
@@ -1067,6 +1069,17 @@ export default function StampRulesPage() {
                         <SlidersHorizontal size={16} />
                         <span>Khuôn Cấu Trúc Định Dạng Động ({formats.length})</span>
                     </button>
+                    <button
+                        onClick={() => setMainTab('ai_queue')}
+                        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
+                            mainTab === 'ai_queue'
+                                ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-indigo-500/25'
+                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                        }`}
+                    >
+                        <Sparkles size={16} />
+                        <span>Hàng Đợi Ảnh AI ({aiQueuePendingCount})</span>
+                    </button>
                 </div>
 
                 <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -1076,7 +1089,7 @@ export default function StampRulesPage() {
             </div>
 
             <StampDictionariesTab
-                mainTab={mainTab}
+                mainTab={mainTab as any}
                 rules={rules}
                 filteredRules={filteredRules}
                 isLoadingRules={isLoadingRules}
@@ -1092,7 +1105,7 @@ export default function StampRulesPage() {
             />
 
             <StampFormatSchemasTab
-                mainTab={mainTab}
+                mainTab={mainTab as any}
                 formats={formats}
                 activeFormatId={activeFormatId}
                 setActiveFormatId={setActiveFormatId}
@@ -1102,6 +1115,12 @@ export default function StampRulesPage() {
                 handleOpenEditFormat={handleOpenEditFormat}
                 handleDeleteFormat={handleDeleteFormat}
                 showToast={showToast}
+            />
+
+            <StampQueueAiTab
+                visible={mainTab === 'ai_queue'}
+                stampDictMap={dictMap}
+                onPendingCountChange={setAiQueuePendingCount}
             />
 
             <FormatBuilderModal
