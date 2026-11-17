@@ -1016,6 +1016,37 @@ export default function WebScannerPage() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [activeTab, handleCaptureAndRecognize])
 
+  // ── Lắng nghe Realtime Web Mẹ duyệt Pallet con dấu ───────────
+  useEffect(() => {
+    if (!systemCode) return
+    const channel = supabase
+      .channel('stamp_queue_realtime_scanner')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'stamp_scan_queue',
+          filter: `system_code=eq.${systemCode}`,
+        },
+        (payload: any) => {
+          const updated = payload?.new
+          if (updated && updated.status === 'approved') {
+            try {
+              playScanSound()
+              triggerHaptic()
+            } catch {}
+            triggerToast(`🎉 Web Mẹ đã duyệt Pallet STT ${updated.pallet_stt} (${updated.box_count} thùng)!`)
+          }
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [systemCode])
+
   // ── Save Stamp Box to Supabase ────────────────────────────────
   const handleSaveStampBox = async () => {
     if (!pendingStamp || !activePalletStt) return
@@ -1130,40 +1161,34 @@ export default function WebScannerPage() {
     setUploadingStampPhoto(true)
     try {
       const cleanStt = activePalletStt.trim().toUpperCase()
-      const res = await fetch(pendingStampPhoto)
-      const blob = await res.blob()
-      const filePath = `stamp-queue/${cleanStt}_${Date.now()}.jpg`
 
-      const { error: uploadErr } = await supabase.storage
-        .from('operation-images')
-        .upload(filePath, blob, { contentType: 'image/jpeg', upsert: true })
-
-      if (uploadErr) throw uploadErr
-
-      const { data: pubData } = supabase.storage
-        .from('operation-images')
-        .getPublicUrl(filePath)
-
-      const imageUrl = pubData?.publicUrl
-      if (!imageUrl) throw new Error('Không lấy được link ảnh sau khi tải lên')
-
-      const { error: insertErr } = await (supabase as any).from('stamp_scan_queue').insert({
-        system_code: systemCode || 'KHO_DONG_LANH',
-        pallet_stt: cleanStt,
-        pallet_tag: activePalletTag || null,
-        pallet_notes: activePalletNotes || null,
-        box_count: Math.max(1, parseInt(queueBoxCount, 10) || 30),
-        box_weight: parseFloat(queueBoxWeight) || 20,
-        image_url: imageUrl,
-        status: 'pending',
-        created_by: userProfile?.id || null,
-        created_by_name: userProfile?.fullName || 'Nhân viên kho',
+      const res = await fetch('/api/stamp-queue/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: pendingStampPhoto,
+          palletStt: cleanStt,
+          palletTag: activePalletTag || null,
+          palletNotes: activePalletNotes || null,
+          boxCount: Math.max(1, parseInt(queueBoxCount, 10) || 30),
+          boxWeight: parseFloat(queueBoxWeight) || 20,
+          systemCode: systemCode || 'KHO_DONG_LANH',
+          createdBy: userProfile?.id || null,
+          createdByName: userProfile?.fullName || 'Nhân viên kho',
+        }),
       })
 
-      if (insertErr) throw insertErr
+      const data = await res.json()
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Không thể tải ảnh con dấu lên máy chủ')
+      }
 
       setPendingStampPhoto(null)
-      triggerToast(`✅ Đã gửi ảnh dấu Pallet ${cleanStt} lên Web Mẹ (Gemini AI)!`)
+      triggerToast(
+        data.isGoogleDrive
+          ? `✅ Đã lưu Google Drive (CON_DAU) & gửi Pallet ${cleanStt} lên Web Mẹ!`
+          : `✅ Đã gửi ảnh dấu Pallet ${cleanStt} lên Web Mẹ (Gemini AI)!`
+      )
     } catch (err: any) {
       await scannerAlert({
         title: 'Lỗi gửi ảnh lên Web Mẹ',

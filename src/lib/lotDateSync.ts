@@ -316,6 +316,45 @@ export async function syncDatesFromBoxesToLot(targetLotId: string, boxes: any[])
             lotUpdates.metadata = lotMeta
         }
 
+        // 5. Đồng bộ ảnh con dấu Google Drive từ các thùng vào LOT (hiển thị trên trang Quản lý LOT)
+        const newStampImages: any[] = []
+        const seenFileIds = new Set<string>()
+
+        boxes.forEach(b => {
+            const meta = b.metadata || {}
+            const fileId = meta.drive_file_id
+            const link = meta.drive_view_url || meta.stamp_image_url
+            if (fileId && link && !seenFileIds.has(fileId)) {
+                seenFileIds.add(fileId)
+                newStampImages.push({
+                    name: `ConDau_STT_${meta.pallet_stt || 'Pallet'}.jpg`,
+                    link: link,
+                    fileId: fileId,
+                    uploadedAt: new Date().toISOString()
+                })
+            }
+        })
+
+        if (newStampImages.length > 0) {
+            const currentItemImages = lotMeta.item_images || {}
+            const targetProdId = lotData.product_id || 'default'
+            const existingList = Array.isArray(currentItemImages[targetProdId]) ? currentItemImages[targetProdId] : []
+            const existingIds = new Set(existingList.map((img: any) => img.fileId))
+            const toAdd = newStampImages.filter(img => !existingIds.has(img.fileId))
+
+            if (toAdd.length > 0) {
+                lotMeta.item_images = {
+                    ...currentItemImages,
+                    [targetProdId]: [...existingList, ...toAdd]
+                }
+                lotMeta.stamp_images = [
+                    ...(Array.isArray(lotMeta.stamp_images) ? lotMeta.stamp_images : []),
+                    ...toAdd
+                ]
+                lotUpdates.metadata = lotMeta
+            }
+        }
+
         if (Object.keys(lotUpdates).length > 0) {
             await (supabase.from('lots') as any).update(lotUpdates).eq('id', targetLotId)
         }

@@ -52,7 +52,6 @@ import {
 import { StampLiveSimulator } from './_components/StampLiveSimulator'
 import { StampDictionariesTab } from './_components/StampDictionariesTab'
 import { StampFormatSchemasTab } from './_components/StampFormatSchemasTab'
-import { StampQueueAiTab } from './_components/StampQueueAiTab'
 import { FormatBuilderModal } from './_components/FormatBuilderModal'
 import { DictionaryRuleModal } from './_components/DictionaryRuleModal'
 
@@ -80,9 +79,8 @@ export default function StampRulesPage() {
         )
     }
 
-    // Main navigation tab: 'dictionaries' vs 'formats' vs 'ai_queue'
-    const [mainTab, setMainTab] = useState<'dictionaries' | 'formats' | 'ai_queue'>('dictionaries')
-    const [aiQueuePendingCount, setAiQueuePendingCount] = useState<number>(0)
+    // Main navigation tab: 'dictionaries' vs 'formats'
+    const [mainTab, setMainTab] = useState<'dictionaries' | 'formats'>('dictionaries')
 
     // Rules state
     const [rules, setRules] = useState<StampRule[]>([])
@@ -1069,17 +1067,15 @@ export default function StampRulesPage() {
                         <SlidersHorizontal size={16} />
                         <span>Khuôn Cấu Trúc Định Dạng Động ({formats.length})</span>
                     </button>
-                    <button
-                        onClick={() => setMainTab('ai_queue')}
-                        className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm transition-all cursor-pointer ${
-                            mainTab === 'ai_queue'
-                                ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white shadow-md shadow-indigo-500/25'
-                                : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
-                        }`}
+                    <Link
+                        href="/warehouses/pallets"
+                        className="flex items-center gap-2 px-4 py-2.5 rounded-2xl font-bold text-xs sm:text-sm bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-md shadow-indigo-500/25 transition-all cursor-pointer"
+                        title="Mở Quản lý quét Pallet & Hàng đợi AI"
                     >
                         <Sparkles size={16} />
-                        <span>Hàng Đợi Ảnh AI ({aiQueuePendingCount})</span>
-                    </button>
+                        <span>Mở Quản Lý Quét Pallet (Hàng Đợi AI)</span>
+                        <ExternalLink size={14} className="opacity-75" />
+                    </Link>
                 </div>
 
                 <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
@@ -1115,12 +1111,6 @@ export default function StampRulesPage() {
                 handleOpenEditFormat={handleOpenEditFormat}
                 handleDeleteFormat={handleDeleteFormat}
                 showToast={showToast}
-            />
-
-            <StampQueueAiTab
-                visible={mainTab === 'ai_queue'}
-                stampDictMap={dictMap}
-                onPendingCountChange={setAiQueuePendingCount}
             />
 
             <FormatBuilderModal

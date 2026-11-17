@@ -31,6 +31,7 @@ import { EditPalletInfoModal } from './EditPalletInfoModal'
 import { ApproveOrEditLotModal } from './ApproveOrEditLotModal'
 import { LinkedPalletsTab } from './LinkedPalletsTab'
 import { UnlinkedPalletsTab } from './UnlinkedPalletsTab'
+import { StampQueueAiTab } from './StampQueueAiTab'
 
 import type {
     BoxLabelItem,
@@ -64,8 +65,9 @@ export default function PalletsPageContent() {
     const { profile } = useUser()
     const { showToast } = useToast()
 
-    // Tab state: 'linked' (Đã kết nối) | 'unlinked' (Chưa kết nối)
-    const [activeTab, setActiveTab] = useState<'linked' | 'unlinked'>('linked')
+    // Tab state: 'linked' (Đã kết nối) | 'unlinked' (Chưa kết nối) | 'ai_queue' (Quét Dấu AI)
+    const [activeTab, setActiveTab] = useState<'linked' | 'unlinked' | 'ai_queue'>('linked')
+    const [pendingAiCount, setPendingAiCount] = useState<number>(0)
 
     // Linked Pallets state
     const [linkedPallets, setLinkedPallets] = useState<PalletLot[]>([])
@@ -2192,6 +2194,23 @@ export default function PalletsPageContent() {
                                 </span>
                             )}
                         </button>
+
+                        <button
+                            onClick={() => { setActiveTab('ai_queue'); setShowMobileDetail(false); }}
+                            className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold transition-all ${
+                                activeTab === 'ai_queue'
+                                    ? 'bg-white dark:bg-zinc-900 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                                    : 'text-stone-600 dark:text-zinc-400 hover:text-stone-900 dark:hover:text-zinc-100'
+                            }`}
+                        >
+                            <Sparkles size={13} className="text-amber-500" />
+                            <span>Quét Dấu AI</span>
+                            {pendingAiCount > 0 && (
+                                <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 font-extrabold animate-pulse">
+                                    {pendingAiCount}
+                                </span>
+                            )}
+                        </button>
                     </div>
 
                     <button
@@ -2227,7 +2246,7 @@ export default function PalletsPageContent() {
                     handleOpenEditBox={handleOpenEditBox}
                     handleUnlinkBox={handleUnlinkBox}
                 />
-            ) : (
+            ) : activeTab === 'unlinked' ? (
                 <UnlinkedPalletsTab
                     isLoading={isLoading}
                     unlinkedGroups={unlinkedGroups}
@@ -2261,6 +2280,15 @@ export default function PalletsPageContent() {
                         setSelectedLotForLink(group.matchedLot?.id || null)
                     }}
                 />
+            ) : (
+                <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-stone-50/50 dark:bg-zinc-950/50">
+                    <StampQueueAiTab
+                        visible={activeTab === 'ai_queue'}
+                        stampDictMap={DEFAULT_STAMP_DICT}
+                        onPendingCountChange={setPendingAiCount}
+                        onApproved={fetchData}
+                    />
+                </div>
             )}
 
             <ManualLinkLotModal
