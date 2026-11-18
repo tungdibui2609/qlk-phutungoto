@@ -502,6 +502,44 @@ export function StampQueueAiTab({
     await loadQueue()
   }
 
+  const handleApproveGroup = async (group: {
+    key: string
+    pallet_stt: string
+    total_boxes: number
+    items: StampQueueItem[]
+  }) => {
+    setApprovingId(group.key)
+    try {
+      let createdBoxes = 0
+      for (const item of group.items) {
+        if (item.status !== 'approved') {
+          await approveSingleQueueItem(item)
+          createdBoxes += Number(item.box_count) || 30
+        }
+      }
+      notify(`🎉 Đã duyệt & tạo ${createdBoxes} thùng (${group.items.length} đợt con dấu) cho Pallet STT ${group.pallet_stt}!`)
+      await loadQueue()
+      if (onApproved) {
+        onApproved()
+      }
+    } catch (e: any) {
+      alert(`Lỗi duyệt tạo thùng: ${e.message}`)
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  const handleDeleteGroup = async (group: {
+    key: string
+    pallet_stt: string
+    items: StampQueueItem[]
+  }) => {
+    if (!confirm(`Xóa toàn bộ ${group.items.length} đợt con dấu của Pallet STT ${group.pallet_stt}?`)) return
+    const ids = group.items.map(i => i.id)
+    await (supabase as any).from('stamp_scan_queue').delete().in('id', ids)
+    await loadQueue()
+  }
+
   if (!visible) return null
 
   const filteredItems = items.filter(it => {
@@ -509,6 +547,57 @@ export function StampQueueAiTab({
     if (statusFilter === 'pending') return it.status === 'pending' || it.status === 'error'
     return it.status === statusFilter
   })
+
+  // Gom nhóm các con dấu theo pallet_stt để 1 Pallet nhiều sản phẩm cùng nằm trong 1 Thẻ duyệt
+  const groupedFilteredItems = items.length === 0 ? [] : (() => {
+    const map = new Map<string, {
+      key: string
+      pallet_stt: string
+      pallet_tag?: string | null
+      pallet_notes?: string | null
+      total_boxes: number
+      total_weight: number
+      created_by_name?: string | null
+      created_at: string
+      items: StampQueueItem[]
+      all_approved: boolean
+      all_decoded: boolean
+      has_error: boolean
+    }>()
+
+    for (const item of filteredItems) {
+      const key = (item.pallet_stt || '').trim().toUpperCase() || item.id
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          pallet_stt: item.pallet_stt,
+          pallet_tag: item.pallet_tag,
+          pallet_notes: item.pallet_notes,
+          total_boxes: 0,
+          total_weight: 0,
+          created_by_name: item.created_by_name,
+          created_at: item.created_at,
+          items: [],
+          all_approved: true,
+          all_decoded: true,
+          has_error: false,
+        })
+      }
+      const g = map.get(key)!
+      const count = Number(item.box_count) || 30
+      const weight = Number(item.box_weight) || 20
+      g.total_boxes += count
+      g.total_weight += count * weight
+      g.items.push(item)
+
+      if (!g.pallet_tag && item.pallet_tag) g.pallet_tag = item.pallet_tag
+      if (!g.pallet_notes && item.pallet_notes) g.pallet_notes = item.pallet_notes
+      if (item.status !== 'approved') g.all_approved = false
+      if (item.status !== 'decoded' && (!item.stamp_line1 || !item.stamp_line2)) g.all_decoded = false
+      if (item.status === 'error') g.has_error = true
+    }
+    return Array.from(map.values())
+  })()
 
   const pendingOrErrorCount = items.filter(i => i.status === 'pending' || i.status === 'error').length
   const decodedCount = items.filter(i => (i.status === 'decoded' || (i.stamp_line1 && i.stamp_line2)) && i.status !== 'approved').length
@@ -793,243 +882,488 @@ export function StampQueueAiTab({
         </div>
       </div>
 
-      {/* 3. Danh sách thẻ ảnh gửi lên từ kho */}
-      {filteredItems.length === 0 ? (
+      {/* 3. Danh sách thẻ ảnh gửi lên từ kho (Gom nhóm theo STT Pallet) */}
+      {groupedFilteredItems.length === 0 ? (
         <div className="p-12 text-center rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-slate-400">
           <ImageIcon size={40} className="mx-auto mb-2 opacity-50" />
           <p className="text-sm font-semibold">Hiện chưa có ảnh con dấu nào trong hàng đợi.</p>
           <p className="text-xs text-slate-500 mt-1">
-            Khi công nhân bấm "Gửi Web Mẹ" trên Web Scanner hoặc App Android, ảnh sẽ xuất hiện tại đây.
+            Khi công nhân bấm "Gửi Server" trên Web Scanner hoặc App Android, ảnh sẽ xuất hiện tại đây.
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {filteredItems.map(item => {
-            const dec =
-              item.decoded_json ||
-              decodeStampBox(
-                {
-                  metadata: {
-                    scan_type: 'stamp',
-                    stamp_line1: item.stamp_line1,
-                    stamp_line2: item.stamp_line2,
+          {groupedFilteredItems.map(group => {
+            if (group.items.length === 1) {
+              const item = group.items[0]
+              const dec =
+                item.decoded_json ||
+                decodeStampBox(
+                  {
+                    metadata: {
+                      scan_type: 'stamp',
+                      stamp_line1: item.stamp_line1,
+                      stamp_line2: item.stamp_line2,
+                    },
                   },
-                },
-                stampDictMap
-              )
+                  stampDictMap
+                )
 
-            const isGoogleDriveImage = !!item.drive_file_id || item.image_url?.includes('drive.google.com')
+              const isGoogleDriveImage = !!item.drive_file_id || item.image_url?.includes('drive.google.com')
 
-            return (
-              <div
-                key={item.id}
-                className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm flex flex-col justify-between gap-3"
-              >
-                <div className="flex gap-3">
-                  {/* Thumbnail ảnh */}
-                  <div
-                    onClick={() => setZoomImageUrl(item.image_url)}
-                    className="w-28 h-28 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden relative cursor-zoom-in shrink-0 border border-slate-200 dark:border-slate-700 group"
-                  >
-                    {item.image_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={
-                          item.cropped_image_url && !item.cropped_image_url.includes('drive.google.com/file/d/')
-                            ? item.cropped_image_url
-                            : item.drive_file_id
-                            ? `https://lh3.googleusercontent.com/d/${item.drive_file_id}`
-                            : item.image_url
-                        }
-                        alt="Con dấu"
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          if (item.drive_file_id) {
-                            const target = e.target as HTMLImageElement
-                            if (!target.dataset.tried) {
-                              target.dataset.tried = '1'
-                              target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w600`
-                            }
+              return (
+                <div
+                  key={item.id}
+                  className="p-4 rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-sm flex flex-col justify-between gap-3"
+                >
+                  <div className="flex gap-3">
+                    {/* Thumbnail ảnh */}
+                    <div
+                      onClick={() => setZoomImageUrl(item.image_url)}
+                      className="w-28 h-28 rounded-xl bg-slate-100 dark:bg-slate-800 overflow-hidden relative cursor-zoom-in shrink-0 border border-slate-200 dark:border-slate-700 group"
+                    >
+                      {item.image_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={
+                            item.cropped_image_url && !item.cropped_image_url.includes('drive.google.com/file/d/')
+                              ? item.cropped_image_url
+                              : item.drive_file_id
+                              ? `https://lh3.googleusercontent.com/d/${item.drive_file_id}`
+                              : item.image_url
                           }
-                        }}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-slate-400">
-                        <ImageIcon size={24} />
+                          alt="Con dấu"
+                          referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            if (item.drive_file_id) {
+                              const target = e.target as HTMLImageElement
+                              if (!target.dataset.tried) {
+                                target.dataset.tried = '1'
+                                target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w600`
+                              }
+                            }
+                          }}
+                          className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-slate-400">
+                          <ImageIcon size={24} />
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold">
+                        Phóng to
                       </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold">
-                      Phóng to
+                      {isGoogleDriveImage && (
+                        <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-blue-600/90 text-white text-[9px] font-bold flex items-center gap-0.5">
+                          <Cloud size={10} />
+                          <span>Drive</span>
+                        </div>
+                      )}
+                      {item.cropped_image_url && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setZoomImageUrl(item.cropped_image_url!)
+                          }}
+                          className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-emerald-600/90 hover:bg-emerald-700 text-white text-[9px] font-bold flex items-center gap-0.5 cursor-pointer shadow-xs z-10"
+                          title="Bấm để xem ảnh cắt khung ngắm (vùng AI đọc)"
+                        >
+                          <span>✂️ Crop AI</span>
+                        </div>
+                      )}
                     </div>
-                    {isGoogleDriveImage && (
-                      <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-md bg-blue-600/90 text-white text-[9px] font-bold flex items-center gap-0.5">
-                        <Cloud size={10} />
-                        <span>Drive</span>
-                      </div>
-                    )}
-                    {item.cropped_image_url && (
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setZoomImageUrl(item.cropped_image_url!)
-                        }}
-                        className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-emerald-600/90 hover:bg-emerald-700 text-white text-[9px] font-bold flex items-center gap-0.5 cursor-pointer shadow-xs z-10"
-                        title="Bấm để xem ảnh cắt khung ngắm (vùng AI đọc)"
-                      >
-                        <span>✂️ Crop AI</span>
-                      </div>
-                    )}
-                  </div>
 
-                  {/* Thông tin pallet & con dấu */}
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 text-xs font-black">
-                          STT: {item.pallet_stt}
-                        </span>
-                        {item.pallet_tag && (
-                          <span className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
-                            {item.pallet_tag}
+                    {/* Thông tin pallet & con dấu */}
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 rounded-lg bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 text-xs font-black">
+                            STT: {item.pallet_stt}
+                          </span>
+                          {item.pallet_tag && (
+                            <span className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[11px] font-bold">
+                              {item.pallet_tag}
+                            </span>
+                          )}
+                          <span className="text-[11px] text-slate-500">
+                            {item.box_count} thùng • {item.box_weight} Kg
+                          </span>
+                        </div>
+
+                        {/* Trạng thái */}
+                        {item.status === 'approved' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
+                            Đã tạo thùng
+                          </span>
+                        ) : item.status === 'decoded' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 text-[10px] font-bold">
+                            Đã đọc số
+                          </span>
+                        ) : item.status === 'error' ? (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-[10px] font-bold">
+                            Lỗi đọc
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[10px] font-bold animate-pulse">
+                            Chờ AI
                           </span>
                         )}
-                        <span className="text-[11px] text-slate-500">
-                          {item.box_count} thùng • {item.box_weight} Kg
-                        </span>
                       </div>
 
-                      {/* Trạng thái */}
-                      {item.status === 'approved' ? (
-                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold">
-                          Đã tạo thùng
-                        </span>
-                      ) : item.status === 'decoded' ? (
-                        <span className="px-2 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 text-[10px] font-bold">
-                          Đã đọc số
-                        </span>
-                      ) : item.status === 'error' ? (
-                        <span className="px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-[10px] font-bold">
-                          Lỗi đọc
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-[10px] font-bold animate-pulse">
-                          Chờ AI
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Ô nhập Dòng 1 & Dòng 2 */}
-                    <div className="space-y-1 pt-1">
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="w-14 text-slate-500 text-[11px] font-bold shrink-0">Dòng 1:</span>
-                        <input
-                          type="text"
-                          value={item.stamp_line1 || ''}
-                          onChange={e =>
-                            handleUpdateItemLines(item.id, e.target.value, item.stamp_line2 || '')
-                          }
-                          placeholder="Chưa đọc được Dòng 1"
-                          className="flex-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
-                        />
-                      </div>
-                      <div className="flex items-center gap-1.5 text-xs">
-                        <span className="w-14 text-slate-500 text-[11px] font-bold shrink-0">Dòng 2:</span>
-                        <input
-                          type="text"
-                          value={item.stamp_line2 || ''}
-                          onChange={e =>
-                            handleUpdateItemLines(item.id, item.stamp_line1 || '', e.target.value)
-                          }
-                          placeholder="Chưa đọc được Dòng 2"
-                          className="flex-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
-                        />
+                      {/* Ô nhập Dòng 1 & Dòng 2 */}
+                      <div className="space-y-1 pt-1">
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="w-14 text-slate-500 text-[11px] font-bold shrink-0">Dòng 1:</span>
+                          <input
+                            type="text"
+                            value={item.stamp_line1 || ''}
+                            onChange={e =>
+                              handleUpdateItemLines(item.id, e.target.value, item.stamp_line2 || '')
+                            }
+                            placeholder="Chưa đọc được Dòng 1"
+                            className="flex-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs">
+                          <span className="w-14 text-slate-500 text-[11px] font-bold shrink-0">Dòng 2:</span>
+                          <input
+                            type="text"
+                            value={item.stamp_line2 || ''}
+                            onChange={e =>
+                              handleUpdateItemLines(item.id, item.stamp_line1 || '', e.target.value)
+                            }
+                            placeholder="Chưa đọc được Dòng 2"
+                            className="flex-1 px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-xs font-mono text-slate-900 dark:text-white"
+                          />
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* Kết quả giải mã tiếng Việt */}
-                <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1">
-                  <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                  {/* Kết quả giải mã tiếng Việt */}
+                  <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 text-xs space-y-1">
+                    <div className="font-bold text-slate-900 dark:text-white flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                        <span>
+                          {dec.isSpecial12
+                            ? dec.special12Name
+                            : dec.productTitle || 'Chưa nhận diện sản phẩm'}
+                        </span>
+                      </div>
+                      {item.drive_view_url && (
+                        <a
+                          href={item.drive_view_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5"
+                          title="Mở ảnh gốc trên Google Drive"
+                        >
+                          <ExternalLink size={10} />
+                          <span>Xem Drive</span>
+                        </a>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5">
+                      <span>Quy cách: <b>{dec.spec || '---'}</b></span>
+                      <span>Đóng gói: <b>{dec.packagingDateStr || '---'}</b></span>
+                      <span>Nhập NL: <b>{dec.rawMaterialDateStr || '---'}</b></span>
+                      <span>Vùng: <b>{dec.provinceName || '---'}</b></span>
+                    </div>
+                  </div>
+
+                  {/* Footer nút hành động */}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(item.created_at).toLocaleTimeString('vi-VN', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })}{' '}
+                      • {item.created_by_name || 'Kho'}
+                    </span>
+
                     <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      <span>
-                        {dec.isSpecial12
-                          ? dec.special12Name
-                          : dec.productTitle || 'Chưa nhận diện sản phẩm'}
-                      </span>
-                    </div>
-                    {item.drive_view_url && (
-                      <a
-                        href={item.drive_view_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[10px] text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-0.5"
-                        title="Mở ảnh gốc trên Google Drive"
-                      >
-                        <ExternalLink size={10} />
-                        <span>Xem Drive</span>
-                      </a>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-3 gap-y-0.5">
-                    <span>Quy cách: <b>{dec.spec || '---'}</b></span>
-                    <span>Đóng gói: <b>{dec.packagingDateStr || '---'}</b></span>
-                    <span>Nhập NL: <b>{dec.rawMaterialDateStr || '---'}</b></span>
-                    <span>Vùng: <b>{dec.provinceName || '---'}</b></span>
-                  </div>
-                </div>
-
-                {/* Footer nút hành động */}
-                <div className="flex items-center justify-between pt-1 border-t border-slate-100 dark:border-slate-800">
-                  <span className="text-[10px] text-slate-400">
-                    {new Date(item.created_at).toLocaleTimeString('vi-VN', {
-                      hour: '2-digit',
-                      minute: '2-digit',
-                    })}{' '}
-                    • {item.created_by_name || 'Kho'}
-                  </span>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => handleDecodeGemini([item.id])}
-                      disabled={decodingId === item.id}
-                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1"
-                      title="Chỉ đọc lại ảnh này bằng Gemini"
-                    >
-                      {decodingId === item.id ? (
-                        <Loader2 size={13} className="animate-spin" />
-                      ) : (
-                        <Sparkles size={13} />
-                      )}
-                      <span>Đọc AI</span>
-                    </button>
-
-                    {item.status !== 'approved' && (
                       <button
                         type="button"
-                        onClick={() => handleApproveAndCreateBoxes(item)}
-                        disabled={approvingId === item.id || (!item.stamp_line1 && !item.stamp_line2)}
-                        className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+                        onClick={() => handleDecodeGemini([item.id])}
+                        disabled={decodingId === item.id}
+                        className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1"
+                        title="Chỉ đọc lại ảnh này bằng Gemini"
                       >
-                        {approvingId === item.id ? (
+                        {decodingId === item.id ? (
                           <Loader2 size={13} className="animate-spin" />
                         ) : (
-                          <PackagePlus size={13} />
+                          <Sparkles size={13} />
                         )}
-                        <span>Duyệt & Tạo {item.box_count} Thùng</span>
+                        <span>Đọc AI</span>
+                      </button>
+
+                      {item.status !== 'approved' && (
+                        <button
+                          type="button"
+                          onClick={() => handleApproveAndCreateBoxes(item)}
+                          disabled={approvingId === item.id || (!item.stamp_line1 && !item.stamp_line2)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 disabled:opacity-50"
+                        >
+                          {approvingId === item.id ? (
+                            <Loader2 size={13} className="animate-spin" />
+                          ) : (
+                            <PackagePlus size={13} />
+                          )}
+                          <span>Duyệt & Tạo {item.box_count} Thùng</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteItem(item.id)}
+                        className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+                        title="Xóa"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            // ── CARD GỘP: PALLET CHỨA NHIỀU ĐỢT CON DẤU / NHIỀU DÒNG SẢN PHẨM ──
+            return (
+              <div
+                key={group.key}
+                className="p-4 rounded-2xl border-2 border-amber-400/90 dark:border-amber-500/80 bg-white dark:bg-slate-900 shadow-md flex flex-col justify-between gap-3.5 col-span-1 md:col-span-2"
+              >
+                {/* Header Card gộp */}
+                <div className="flex items-center justify-between pb-2.5 border-b border-slate-200 dark:border-slate-800 flex-wrap gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-1 rounded-xl bg-indigo-600 text-white text-xs font-black tracking-wider">
+                      STT: {group.pallet_stt}
+                    </span>
+                    {group.pallet_tag && (
+                      <span className="px-2 py-0.5 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-xs font-bold">
+                        🏷️ {group.pallet_tag}
+                      </span>
+                    )}
+                    <span className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/40 text-xs font-bold flex items-center gap-1">
+                      <span>📦 Ghép {group.items.length} dòng sản phẩm</span>
+                    </span>
+                    <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400">
+                      Tổng: {group.total_boxes} thùng
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    {group.all_approved ? (
+                      <span className="px-2.5 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 text-xs font-bold">
+                        ✓ Đã tạo đủ thùng
+                      </span>
+                    ) : group.all_decoded ? (
+                      <span className="px-2.5 py-1 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-400 text-xs font-bold">
+                        ✓ Đã đọc đủ {group.items.length} con dấu
+                      </span>
+                    ) : group.has_error ? (
+                      <span className="px-2.5 py-1 rounded-full bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-400 text-xs font-bold">
+                        ⚠️ Có lỗi đọc
+                      </span>
+                    ) : (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-100 dark:bg-amber-950/60 text-amber-700 dark:text-amber-400 text-xs font-bold animate-pulse">
+                        Chờ AI giải mã
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Danh sách các đợt con dấu con */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {group.items.map((item, idx) => {
+                    const dec =
+                      item.decoded_json ||
+                      decodeStampBox(
+                        {
+                          metadata: {
+                            scan_type: 'stamp',
+                            stamp_line1: item.stamp_line1,
+                            stamp_line2: item.stamp_line2,
+                          },
+                        },
+                        stampDictMap
+                      )
+
+                    const isGoogleDriveImage = !!item.drive_file_id || item.image_url?.includes('drive.google.com')
+                    const isItemApproved = item.status === 'approved'
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-3 rounded-xl border ${
+                          isItemApproved
+                            ? 'border-emerald-300 dark:border-emerald-800/60 bg-emerald-50/30 dark:bg-emerald-950/20'
+                            : 'border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-800/40'
+                        } flex flex-col justify-between gap-2.5`}
+                      >
+                        {/* Header đợt */}
+                        <div className="flex items-center justify-between text-xs pb-1 border-b border-slate-200 dark:border-slate-700/60">
+                          <span className="font-extrabold text-amber-600 dark:text-amber-400">
+                            Dòng {idx + 1}: {item.box_count} thùng • {item.box_weight} Kg
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {isItemApproved ? (
+                              <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Đã tạo thùng</span>
+                            ) : item.stamp_line1 && item.stamp_line2 ? (
+                              <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">Đã đọc số</span>
+                            ) : (
+                              <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400">Chờ đọc</span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="p-1 text-rose-400 hover:text-rose-600"
+                              title="Xóa đợt này"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex gap-2.5">
+                          {/* Thumbnail */}
+                          <div
+                            onClick={() => setZoomImageUrl(item.image_url)}
+                            className="w-20 h-20 rounded-lg bg-slate-200 dark:bg-slate-900 overflow-hidden relative cursor-zoom-in shrink-0 border border-slate-300 dark:border-slate-700"
+                          >
+                            {item.image_url ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img
+                                src={
+                                  item.cropped_image_url && !item.cropped_image_url.includes('drive.google.com/file/d/')
+                                    ? item.cropped_image_url
+                                    : item.drive_file_id
+                                    ? `https://lh3.googleusercontent.com/d/${item.drive_file_id}`
+                                    : item.image_url
+                                }
+                                alt="Con dấu"
+                                referrerPolicy="no-referrer"
+                                onError={(e) => {
+                                  if (item.drive_file_id) {
+                                    const target = e.target as HTMLImageElement
+                                    if (!target.dataset.tried) {
+                                      target.dataset.tried = '1'
+                                      target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
+                                    }
+                                  }
+                                }}
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                <ImageIcon size={20} />
+                              </div>
+                            )}
+                            {isGoogleDriveImage && (
+                              <div className="absolute top-0.5 left-0.5 px-1 py-0.2 rounded bg-blue-600 text-white text-[8px] font-bold flex items-center gap-0.5">
+                                <Cloud size={8} />
+                                <span>Drive</span>
+                              </div>
+                            )}
+                            {item.cropped_image_url && (
+                              <div
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setZoomImageUrl(item.cropped_image_url!)
+                                }}
+                                className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-emerald-600 text-white text-[8px] font-bold cursor-pointer"
+                                title="Xem Crop"
+                              >
+                                <span>✂️ Crop</span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Nhập Dòng 1 & Dòng 2 */}
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <span className="w-12 text-slate-500 font-bold shrink-0">Dòng 1:</span>
+                              <input
+                                type="text"
+                                value={item.stamp_line1 || ''}
+                                onChange={e => handleUpdateItemLines(item.id, e.target.value, item.stamp_line2 || '')}
+                                placeholder="Chưa đọc"
+                                className="flex-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px]">
+                              <span className="w-12 text-slate-500 font-bold shrink-0">Dòng 2:</span>
+                              <input
+                                type="text"
+                                value={item.stamp_line2 || ''}
+                                onChange={e => handleUpdateItemLines(item.id, item.stamp_line1 || '', e.target.value)}
+                                placeholder="Chưa đọc"
+                                className="flex-1 px-1.5 py-0.5 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs font-mono"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Thông tin giải mã tiếng Việt */}
+                        <div className="p-2 rounded-lg bg-white dark:bg-slate-900/90 border border-slate-200/80 dark:border-slate-800 text-[11px] space-y-0.5">
+                          <div className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="line-clamp-1">{dec.isSpecial12 ? dec.special12Name : dec.productTitle || 'Chưa nhận diện'}</span>
+                          </div>
+                          <div className="text-[10px] text-slate-500 dark:text-slate-400 flex flex-wrap gap-x-2.5">
+                            <span>Quy cách: <b>{dec.spec || '---'}</b></span>
+                            <span>Đóng gói: <b>{dec.packagingDateStr || '---'}</b></span>
+                            <span>Nhập NL: <b>{dec.rawMaterialDateStr || '---'}</b></span>
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {/* Footer của Card Gộp */}
+                <div className="flex items-center justify-between pt-2 border-t border-slate-200 dark:border-slate-800 flex-wrap gap-2">
+                  <span className="text-[11px] text-slate-500">
+                    Khởi tạo: {new Date(group.created_at).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} • {group.created_by_name || 'Kho'}
+                  </span>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleDecodeGemini(group.items.map(i => i.id))}
+                      disabled={group.items.some(i => decodingId === i.id)}
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1"
+                      title="Đọc lại toàn bộ con dấu của Pallet này"
+                    >
+                      <Sparkles size={13} />
+                      <span>Đọc AI Tất Cả</span>
+                    </button>
+
+                    {!group.all_approved && (
+                      <button
+                        type="button"
+                        onClick={() => handleApproveGroup(group)}
+                        disabled={approvingId === group.key || group.items.some(i => !i.stamp_line1 && !i.stamp_line2)}
+                        className="px-3.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold flex items-center gap-1.5 shadow-sm disabled:opacity-50"
+                        title="Duyệt tất cả các dòng sản phẩm của Pallet này cùng lúc"
+                      >
+                        {approvingId === group.key ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <PackagePlus size={14} />
+                        )}
+                        <span>Duyệt & Tạo {group.total_boxes} Thùng ({group.items.length} Sản phẩm)</span>
                       </button>
                     )}
 
                     <button
                       type="button"
-                      onClick={() => handleDeleteItem(item.id)}
+                      onClick={() => handleDeleteGroup(group)}
                       className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-                      title="Xóa"
+                      title="Xóa toàn bộ Pallet này khỏi hàng đợi"
                     >
-                      <Trash2 size={15} />
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>

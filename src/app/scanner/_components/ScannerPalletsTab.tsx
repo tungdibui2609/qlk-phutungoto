@@ -37,6 +37,7 @@ import {
   getOfflineMeta,
   setOfflineMeta,
   getOfflineStampQueue,
+  saveOfflineStampQueueItem,
   syncSingleOfflineStampQueueItem,
   syncAllOfflineStampQueue,
   removeOfflineStampQueueItem,
@@ -753,6 +754,113 @@ export function ScannerPalletsTab({
     triggerToast(`✅ Đã nhân bản thêm ${count} thùng cho Pallet ${selectedPendingPallet.stt}`)
   }
 
+  // ── CHUYỂN PALLET CHỜ ĐẨY SANG CHỜ GIẢI MÃ (Web Scanner) ──
+  const handleMovePendingPalletToDecode = async (item: OfflinePendingPallet) => {
+    try {
+      const boxes = item.boxes || []
+      if (boxes.length === 0) {
+        await scannerAlert({
+          title: 'Không có dữ liệu',
+          message: `Pallet ${item.stt} không có thùng nào để chuyển.`,
+          variant: 'warning',
+        })
+        return
+      }
+
+      // Tìm ảnh con dấu từ các thùng trong Pallet
+      let photoBase64 = ''
+      let cropBase64: string | null = null
+
+      for (const b of boxes) {
+        const l2 = (b as any).stamp_line2 || b.metadata?.stamp_line2
+        if (l2 && (l2.startsWith('data:image') || l2.startsWith('blob:') || l2.startsWith('http'))) {
+          photoBase64 = l2
+          cropBase64 = l2
+          break
+        }
+        if ((b as any).metadata?.photo_base64) {
+          photoBase64 = (b as any).metadata.photo_base64
+          cropBase64 = (b as any).metadata?.crop_base64 || null
+          break
+        }
+      }
+
+      if (!photoBase64 && (item as any).photo_base64) {
+        photoBase64 = (item as any).photo_base64
+        cropBase64 = (item as any).crop_base64 || null
+      }
+
+      if (!photoBase64) {
+        await scannerAlert({
+          title: 'Không tìm thấy ảnh con dấu',
+          message: `Pallet "${item.stt}" không có ảnh con dấu lưu kèm.\n\nTính năng này chỉ áp dụng cho Pallet đóng dấu đã chụp ảnh để Server phân tích lại.`,
+          variant: 'warning',
+        })
+        return
+      }
+
+      const ok = await scannerConfirm({
+        title: `Chuyển Pallet ${item.stt} sang Chờ giải mã?`,
+        message: `Bạn có chắc muốn chuyển Pallet ${item.stt} (${boxes.length} thùng) sang hàng đợi Chờ giải mã không?\n\nPallet sẽ được rút khỏi mục Chờ đẩy và chuyển vào tab Chờ giải mã để Server phân tích lại con dấu.`,
+        confirmText: 'Chuyển ngay',
+        cancelText: 'Huỷ',
+        variant: 'info',
+      })
+
+      if (!ok) return
+
+      const queueId = `offline_stamp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`
+      const weight = (boxes[0] as any)?.quantity || 20
+      const storedSys = typeof window !== 'undefined' ? localStorage.getItem('config_system_code') : null
+
+      // 1. Lưu an toàn vào IndexedDB stamp_queue
+      await saveOfflineStampQueueItem({
+        id: queueId,
+        pallet_stt: item.stt,
+        pallet_tag: item.tag || null,
+        pallet_notes: item.notes || null,
+        box_count: boxes.length,
+        box_weight: weight,
+        photo_base64: photoBase64,
+        crop_base64: cropBase64,
+        system_code: storedSys || 'KHO_DONG_LANH',
+        created_at: new Date().toISOString(),
+        status: 'pending',
+      })
+
+      // 2. Xóa Pallet khỏi hàng chờ đẩy
+      await removePendingPallet(item.client_id)
+
+      // 3. Tải lại danh sách
+      const updatedPending = await getPendingPallets()
+      setPendingPallets(updatedPending)
+      await loadStampQueue()
+
+      // 4. Nếu đang online, kích hoạt đồng bộ ngầm lên Server luôn
+      if (isOnline) {
+        void syncSingleOfflineStampQueueItem(queueId).then(success => {
+          if (success) {
+            void loadStampQueue()
+          }
+        })
+      }
+
+      // 5. Đóng modal chi tiết nếu đang mở
+      setSelectedPendingPallet(null)
+
+      // 6. Chuyển sub-tab sang 'stamp_pending'
+      setPalletListSubTab('stamp_pending')
+      triggerToast(`🎉 Đã chuyển Pallet ${item.stt} (${boxes.length} thùng) sang Chờ giải mã!`)
+    } catch (err: any) {
+      console.error('[MoveToDecode] Error:', err)
+      await scannerAlert({
+        title: 'Lỗi chuyển giải mã',
+        message: err?.message || 'Có lỗi xảy ra khi chuyển pallet.',
+        variant: 'danger',
+      })
+    }
+  }
+
   if (activeTab !== 'pallets') return null
 
   return (
@@ -1360,6 +1468,16 @@ export function ScannerPalletsTab({
                         >
                           <Scan size={12} className="text-emerald-400" />
                           <span>Quét tiếp</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleMovePendingPalletToDecode(item)}
+                          className="px-2 py-1 rounded-lg bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/40 text-orange-300 text-xs font-bold transition flex items-center gap-1 active:scale-95"
+                          title="Chuyển Pallet này sang hàng đợi Chờ giải mã"
+                        >
+                          <Scan size={12} className="text-orange-400" />
+                          <span>Chuyển giải mã</span>
                         </button>
 
                         <button
@@ -2606,8 +2724,16 @@ export function ScannerPalletsTab({
             <div className="pt-2 border-t border-slate-800 flex gap-2 shrink-0">
               <button
                 type="button"
+                onClick={() => handleMovePendingPalletToDecode(selectedPendingPallet)}
+                className="flex-1 py-2 rounded-xl bg-orange-600/30 hover:bg-orange-600/40 border border-orange-500/50 text-orange-200 text-xs font-bold transition flex items-center justify-center gap-1.5 active:scale-95"
+              >
+                <Scan size={14} className="text-orange-400" />
+                <span>Chuyển sang Chờ giải mã</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setSelectedPendingPallet(null)}
-                className="flex-1 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold"
+                className="px-5 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs font-bold hover:bg-slate-700 transition"
               >
                 Đóng
               </button>
