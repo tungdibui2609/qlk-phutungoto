@@ -18,6 +18,9 @@ interface PalletSwitchModalProps {
   setNewNotesInput: React.Dispatch<React.SetStateAction<string>>
   newTargetQtyInput: number
   setNewTargetQtyInput: React.Dispatch<React.SetStateAction<number>>
+  defaultTargetQty?: number
+  autoCompleteOnFull?: boolean
+  setAutoCompleteOnFull?: (val: boolean) => void
   palletsList: PalletItem[]
   handleSwitchToStt: (
     cleanStt: string,
@@ -39,6 +42,9 @@ export function PalletSwitchModal({
   setNewNotesInput,
   newTargetQtyInput,
   setNewTargetQtyInput,
+  defaultTargetQty = 30,
+  autoCompleteOnFull = true,
+  setAutoCompleteOnFull,
   palletsList,
   handleSwitchToStt,
 }: PalletSwitchModalProps) {
@@ -151,48 +157,55 @@ export function PalletSwitchModal({
 
         <div className="space-y-3 overflow-y-auto overscroll-contain pr-1 flex-1">
           {/* Form nhập Pallet mới / cập nhật */}
-          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2.5">
-            <div>
-              <label className="text-[10px] text-slate-400 font-bold block mb-1">
-                MÃ STT PALLET MỚI HOẶC CẦN MỞ:
-              </label>
-              <input
-                type="text"
-                value={newSttInput}
-                onChange={e => setNewSttInput(e.target.value.toUpperCase())}
-                placeholder="VD: G23, G24, F100..."
-                className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm font-bold text-amber-400 uppercase focus:outline-hidden focus:border-amber-500"
-              />
-            </div>
+          <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+            {/* Hàng 1: STT PALLET & CHỈ TIÊU SỐ THÙNG (SONG SONG) */}
+            <div className="grid grid-cols-5 gap-2">
+              <div className="col-span-3">
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">
+                  MÃ STT PALLET *:
+                </label>
+                <input
+                  type="text"
+                  value={newSttInput}
+                  onChange={e => setNewSttInput(e.target.value.toUpperCase())}
+                  placeholder="VD: G23, F100..."
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-sm font-bold text-amber-400 uppercase focus:outline-hidden focus:border-amber-500"
+                />
+              </div>
 
-            <div>
-              <label className="text-[10px] text-slate-400 block mb-1">
-                Chỉ tiêu số thùng / Pallet (Mặc định: 30):
-              </label>
-              <input
-                type="number"
-                value={newTargetQtyInput}
-                onChange={e => setNewTargetQtyInput(parseInt(e.target.value, 10) || 30)}
-                placeholder="30"
-                className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white font-mono"
-              />
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {[20, 25, 30, 35, 40, 50].map(q => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => setNewTargetQtyInput(q)}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition ${newTargetQtyInput === q
-                        ? 'bg-emerald-600/30 border-emerald-500 text-emerald-300'
-                        : 'bg-slate-800 border-slate-700 text-slate-400 hover:text-white'
-                      }`}
-                  >
-                    {q} thùng
-                  </button>
-                ))}
+              <div className="col-span-2">
+                <label className="text-[10px] text-slate-400 font-bold block mb-1">
+                  CHỈ TIÊU ({defaultTargetQty || 30}):
+                </label>
+                <input
+                  type="number"
+                  value={newTargetQtyInput}
+                  onChange={e => setNewTargetQtyInput(parseInt(e.target.value, 10) || defaultTargetQty || 30)}
+                  placeholder={String(defaultTargetQty || 30)}
+                  className="w-full px-3 py-1.5 rounded-lg bg-slate-950 border border-slate-700 text-sm text-center text-white font-mono font-bold"
+                />
               </div>
             </div>
 
+            {/* Hàng 2: Dấu tích ghi nhớ tự động chốt */}
+            <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-950/20 border border-emerald-800/40 cursor-pointer hover:bg-emerald-950/40 transition select-none">
+              <input
+                type="checkbox"
+                checked={autoCompleteOnFull}
+                onChange={e => setAutoCompleteOnFull?.(e.target.checked)}
+                className="rounded accent-emerald-500 w-4 h-4 cursor-pointer"
+              />
+              <div className="flex-1">
+                <span className="text-xs font-bold text-emerald-300">
+                  Tự động chốt khi quét đủ {newTargetQtyInput || defaultTargetQty || 30} thùng
+                </span>
+                <span className="text-[10px] text-slate-400 block leading-tight">
+                  (Ghi nhớ lựa chọn này cho các lần quét sau)
+                </span>
+              </div>
+            </label>
+
+            {/* Hàng 3: Mã phụ (Tag) */}
             <div>
               <label className="text-[10px] text-orange-400 font-bold block mb-1">
                 MÃ PHỤ (TAG):
@@ -206,6 +219,7 @@ export function PalletSwitchModal({
               />
             </div>
 
+            {/* Hàng 4: Ghi chú Pallet / LOT hàng */}
             <div>
               <label className="text-[10px] text-blue-400 font-bold block mb-1">
                 GHI CHÚ PALLET / LOT HÀNG:

@@ -45,6 +45,8 @@ interface ScannerSettingsTabProps {
   setSystemCode: React.Dispatch<React.SetStateAction<string>>
   targetQty: number
   setTargetQty: React.Dispatch<React.SetStateAction<number>>
+  autoCompleteOnFull?: boolean
+  setAutoCompleteOnFull?: (val: boolean) => void
   stampRulesCount: number
   syncingStamp: boolean
   handleSyncStampRules: () => Promise<void>
@@ -82,6 +84,8 @@ export function ScannerSettingsTab({
   setSystemCode,
   targetQty,
   setTargetQty,
+  autoCompleteOnFull = true,
+  setAutoCompleteOnFull,
   stampRulesCount,
   syncingStamp,
   handleSyncStampRules,
@@ -604,7 +608,11 @@ export function ScannerSettingsTab({
           <input
             type="number"
             value={targetQty}
-            onChange={e => setTargetQty(parseInt(e.target.value, 10) || 30)}
+            onChange={e => {
+              const val = parseInt(e.target.value, 10) || 30
+              setTargetQty(val)
+              try { localStorage.setItem('config_default_target_box_qty', String(val)) } catch {}
+            }}
             className="w-full px-3 py-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-mono"
           />
           <div className="flex flex-wrap gap-1.5 mt-1.5">
@@ -612,7 +620,10 @@ export function ScannerSettingsTab({
               <button
                 type="button"
                 key={q}
-                onClick={() => setTargetQty(q)}
+                onClick={() => {
+                  setTargetQty(q)
+                  try { localStorage.setItem('config_default_target_box_qty', String(q)) } catch {}
+                }}
                 className={`px-2.5 py-1 rounded-md text-[10px] font-bold border transition ${
                   targetQty === q
                     ? 'bg-sky-600/30 border-sky-500 text-sky-300'
@@ -623,6 +634,24 @@ export function ScannerSettingsTab({
               </button>
             ))}
           </div>
+        </div>
+
+        <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+          <div>
+            <span className="text-xs text-slate-300 block font-bold">Tự động chốt khi đủ số thùng:</span>
+            <span className="text-[10px] text-slate-400 block">Đạt chỉ tiêu ({targetQty} thùng) sẽ tự động chốt Pallet</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setAutoCompleteOnFull?.(!autoCompleteOnFull)}
+            className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition ${
+              autoCompleteOnFull
+                ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400'
+                : 'bg-slate-800 border-slate-700 text-slate-500'
+            }`}
+          >
+            {autoCompleteOnFull ? 'BẬT' : 'TẮT'}
+          </button>
         </div>
 
         <div className="flex items-center justify-between pt-2 border-t border-slate-800">

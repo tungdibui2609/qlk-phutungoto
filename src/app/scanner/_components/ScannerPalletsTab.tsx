@@ -57,18 +57,20 @@ function formatStampThumbnail(
   cropSrc?: string | null,
   fileId?: string | null
 ): string {
-  if (cropSrc && !cropSrc.includes('drive.google.com/file/d/')) {
-    return cropSrc
+  const normCrop = cropSrc ? cropSrc.replace(/^https?:\/\/(?:127\.0\.0\.1|localhost):64321/, 'https://api.chanhthu.click') : null
+  if (normCrop && !normCrop.includes('drive.google.com/file/d/')) {
+    return normCrop
   }
   if (fileId) {
     return `https://lh3.googleusercontent.com/d/${fileId}`
   }
-  if (imgSrc) {
-    const m = imgSrc.match(/\/d\/([a-zA-Z0-9_-]+)/) || imgSrc.match(/id=([a-zA-Z0-9_-]+)/)
+  const normImg = imgSrc ? imgSrc.replace(/^https?:\/\/(?:127\.0\.0\.1|localhost):64321/, 'https://api.chanhthu.click') : null
+  if (normImg) {
+    const m = normImg.match(/\/d\/([a-zA-Z0-9_-]+)/) || normImg.match(/id=([a-zA-Z0-9_-]+)/)
     if (m && m[1]) {
       return `https://lh3.googleusercontent.com/d/${m[1]}`
     }
-    return imgSrc
+    return normImg
   }
   return ''
 }
@@ -168,6 +170,7 @@ export function ScannerPalletsTab({
   const [loadingStampQueue, setLoadingStampQueue] = useState(false)
   const [decodingQueueId, setDecodingQueueId] = useState<string | null>(null)
   const [isDecodingAllQueue, setIsDecodingAllQueue] = useState(false)
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null)
 
   const loadStampQueue = useCallback(async () => {
     try {
@@ -476,6 +479,84 @@ export function ScannerPalletsTab({
     return stampQueueItems.filter(i => i.status === 'decoded')
   }, [stampQueueItems])
 
+  // Gom nhóm các con dấu chờ giải mã theo cùng STT Pallet
+  const groupedStampPendingList = useMemo(() => {
+    const map = new Map<string, {
+      key: string
+      pallet_stt: string
+      pallet_tag?: string | null
+      pallet_notes?: string | null
+      total_boxes: number
+      total_weight: number
+      created_by_name?: string | null
+      created_at: string
+      items: StampQueueItem[]
+    }>()
+
+    for (const item of stampPendingList) {
+      const key = (item.pallet_stt || '').trim().toUpperCase() || item.id
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          pallet_stt: item.pallet_stt,
+          pallet_tag: item.pallet_tag,
+          pallet_notes: item.pallet_notes,
+          total_boxes: 0,
+          total_weight: 0,
+          created_by_name: item.created_by_name,
+          created_at: item.created_at,
+          items: []
+        })
+      }
+      const g = map.get(key)!
+      g.total_boxes += Number(item.box_count) || 0
+      g.total_weight += (Number(item.box_count) || 0) * (Number(item.box_weight) || 20)
+      g.items.push(item)
+      if (!g.pallet_tag && item.pallet_tag) g.pallet_tag = item.pallet_tag
+      if (!g.pallet_notes && item.pallet_notes) g.pallet_notes = item.pallet_notes
+    }
+    return Array.from(map.values())
+  }, [stampPendingList])
+
+  // Gom nhóm các con dấu đã giải mã theo cùng STT Pallet
+  const groupedStampDecodedList = useMemo(() => {
+    const map = new Map<string, {
+      key: string
+      pallet_stt: string
+      pallet_tag?: string | null
+      pallet_notes?: string | null
+      total_boxes: number
+      total_weight: number
+      created_by_name?: string | null
+      created_at: string
+      items: StampQueueItem[]
+    }>()
+
+    for (const item of stampDecodedList) {
+      const key = (item.pallet_stt || '').trim().toUpperCase() || item.id
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          pallet_stt: item.pallet_stt,
+          pallet_tag: item.pallet_tag,
+          pallet_notes: item.pallet_notes,
+          total_boxes: 0,
+          total_weight: 0,
+          created_by_name: item.created_by_name,
+          created_at: item.created_at,
+          items: []
+        })
+      }
+      const g = map.get(key)!
+      g.total_boxes += Number(item.box_count) || 0
+      g.total_weight += (Number(item.box_count) || 0) * (Number(item.box_weight) || 20)
+      g.items.push(item)
+      if (!g.pallet_tag && item.pallet_tag) g.pallet_tag = item.pallet_tag
+      if (!g.pallet_notes && item.pallet_notes) g.pallet_notes = item.pallet_notes
+    }
+    return Array.from(map.values())
+  }, [stampDecodedList])
+
   // Hỗ trợ Lịch chọn ngày
   const openDatePicker = (field: 'packaging' | 'production') => {
     setCalendarTargetField(field)
@@ -665,7 +746,7 @@ export function ScannerPalletsTab({
                   : 'bg-slate-800 text-slate-400'
               }`}
             >
-              {stampPendingList.length}
+              {groupedStampPendingList.length}
             </span>
           </button>
 
@@ -691,7 +772,7 @@ export function ScannerPalletsTab({
                   : 'bg-slate-800 text-slate-400'
               }`}
             >
-              {stampDecodedList.length}
+              {groupedStampDecodedList.length}
             </span>
           </button>
 
@@ -744,8 +825,8 @@ export function ScannerPalletsTab({
         {palletListSubTab === 'stamp_pending' && (
           <div className="flex items-center justify-between text-xs px-1">
             <span className="text-slate-400 text-[11px]">
-              Ảnh chờ AI đọc:{' '}
-              <strong className="text-orange-400">{stampPendingList.length}</strong>
+              Chờ AI đọc:{' '}
+              <strong className="text-orange-400">{stampPendingList.length} ảnh ({groupedStampPendingList.length} Pallet)</strong>
             </span>
             {stampPendingList.length > 0 && (
               <button
@@ -766,9 +847,9 @@ export function ScannerPalletsTab({
           <div className="flex items-center justify-between text-xs px-1">
             <span className="text-purple-300 text-[11px] font-bold flex items-center gap-1">
               <Sparkles size={12} />
-              <span>AI đã nhận diện xong: {stampDecodedList.length} Pallet</span>
+              <span>AI đã nhận diện xong: {groupedStampDecodedList.length} Pallet ({stampDecodedList.length} đợt con dấu)</span>
             </span>
-            <span className="text-slate-500 text-[10px]">Chờ Web Mẹ duyệt tạo Lot</span>
+            <span className="text-slate-500 text-[10px]">Chờ server duyệt tạo Lot</span>
           </div>
         )}
 
@@ -1030,52 +1111,105 @@ export function ScannerPalletsTab({
                   (s, b) => s + (Number(b.weight) || 0),
                   0
                 )
-                return (
-                  <div
-                    key={item.client_id}
-                    className="p-3 rounded-xl bg-[#111827] border border-amber-500/40 space-y-2 shadow-xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black font-mono text-xs">
-                          STT: {item.stt}
-                        </span>
-                        <span
-                          className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            item.status === 'failed'
-                              ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
-                              : item.status === 'syncing'
-                                ? 'text-sky-400 bg-sky-500/10 border-sky-500/30'
-                                : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
-                          }`}
-                        >
-                          {item.status === 'failed'
-                            ? '⚠️ Gửi lỗi'
-                            : item.status === 'syncing'
-                              ? '⏳ Đang gửi...'
-                              : `Chờ gửi (${item.boxes_count} thùng · ${totalWeight.toFixed(1)} Kg)`}
-                        </span>
-                      </div>
-                      <span className="text-[10px] text-slate-400 font-mono">
-                        {new Date(item.created_at).toLocaleTimeString('vi-VN')}
-                      </span>
-                    </div>
+                    const firstBox = (item.boxes || [])[0]
+                    const queueMatch = stampPendingList.find(q => q.pallet_stt === item.stt) || stampDecodedList.find(q => q.pallet_stt === item.stt)
+                    const line1 = firstBox?.metadata?.stamp_line1 || queueMatch?.stamp_line1
+                    const line2 = firstBox?.metadata?.stamp_line2 || queueMatch?.stamp_line2
+                    const imgSrc = formatStampThumbnail(
+                      firstBox?.metadata?.drive_file_id || queueMatch?.drive_file_id || firstBox?.metadata?.drive_view_url || queueMatch?.image_url,
+                      queueMatch?.cropped_image_url
+                    )
+                    const specText = firstBox?.metadata?.spec || queueMatch?.decoded_json?.spec
+                    const packDateText = firstBox?.metadata?.packaging_date || queueMatch?.decoded_json?.packagingDateStr
+                    const prodDateText = firstBox?.metadata?.production_date || queueMatch?.decoded_json?.rawMaterialDateStr
+                    const regionText = firstBox?.metadata?.region || queueMatch?.decoded_json?.provinceName
 
-                    <div className="text-xs text-white font-bold">
-                      {item.product_name || 'Hàng lưu ngoại tuyến'}
-                    </div>
+                    return (
+                      <div
+                        key={item.client_id}
+                        className="p-3 rounded-xl bg-[#111827] border border-amber-500/40 space-y-2.5 shadow-xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="px-2 py-0.5 rounded-md bg-amber-500 text-slate-950 font-black font-mono text-xs">
+                              STT: {item.stt}
+                            </span>
+                            <span
+                              className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                                item.status === 'failed'
+                                  ? 'text-rose-400 bg-rose-500/10 border-rose-500/30'
+                                  : item.status === 'syncing'
+                                    ? 'text-sky-400 bg-sky-500/10 border-sky-500/30'
+                                    : 'text-amber-400 bg-amber-500/10 border-amber-500/30'
+                              }`}
+                            >
+                              {item.status === 'failed'
+                                ? '⚠️ Gửi lỗi'
+                                : item.status === 'syncing'
+                                  ? '⏳ Đang gửi...'
+                                  : `Chờ gửi (${item.boxes_count} thùng · ${totalWeight.toFixed(1)} Kg)`}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-mono">
+                            {new Date(item.created_at).toLocaleTimeString('vi-VN')}
+                          </span>
+                        </div>
 
-                    <div className="text-[11px] text-slate-400 font-mono">
-                      Mã LOT:{' '}
-                      <strong className="text-sky-300">{item.lot_code || 'LOT'}</strong> · SKU:{' '}
-                      {item.sku || 'SKU'}
-                    </div>
+                        {/* Thân thẻ: Ảnh + Tên sản phẩm + 2 Dòng số */}
+                        <div className="flex gap-2.5">
+                          {imgSrc ? (
+                            <img
+                              src={imgSrc}
+                              alt="Con dấu"
+                              referrerPolicy="no-referrer"
+                              onClick={() => setPreviewImageUrl(imgSrc)}
+                              className="w-16 h-16 rounded-lg object-cover border border-slate-700 bg-black/40 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition"
+                              title="Bấm để phóng to xem rõ nét"
+                            />
+                          ) : null}
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="text-xs text-white font-bold line-clamp-2">
+                              {item.product_name || queueMatch?.decoded_json?.productTitle || 'Hàng lưu ngoại tuyến'}
+                            </div>
+                            <div className="text-[11px] text-sky-400 font-bold">
+                              {item.boxes_count} thùng · {totalWeight.toFixed(1)} Kg
+                            </div>
+                          </div>
+                        </div>
 
-                    {item.error_message && (
-                      <div className="text-[10px] text-rose-400 bg-rose-950/50 border border-rose-800/60 px-2 py-1 rounded">
-                        Lỗi: {item.error_message}
-                      </div>
-                    )}
+                        {/* 2 Dòng số nếu là con dấu */}
+                        {(line1 || line2) && (
+                          <div className="p-2 rounded-lg bg-black/40 border border-slate-800 text-[11px] font-mono space-y-0.5">
+                            <div>
+                              <span className="text-slate-500">Dòng 1: </span>
+                              <strong className="text-sky-300">{line1 || '---'}</strong>
+                            </div>
+                            <div>
+                              <span className="text-slate-500">Dòng 2: </span>
+                              <strong className="text-purple-300">{line2 || '---'}</strong>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Thông tin quét & thông tin khác */}
+                        <div className="space-y-1 text-[11px] text-slate-400">
+                          {(regionText || packDateText || prodDateText) && (
+                            <div className="flex flex-wrap gap-x-3 gap-y-1">
+                              {regionText && <span>Vùng: <strong className="text-slate-100">{regionText}</strong></span>}
+                              {packDateText && <span>Đóng gói: <strong className="text-slate-100">{packDateText}</strong></span>}
+                              {prodDateText && <span>Nhập NL: <strong className="text-slate-100">{prodDateText}</strong></span>}
+                            </div>
+                          )}
+                          <div className="flex flex-wrap gap-x-3 gap-y-1">
+                            <span>Người gửi: <strong className="text-slate-300">{(item as any).created_by_name || queueMatch?.created_by_name || 'Kho'}</strong></span>
+                          </div>
+                        </div>
+
+                        {item.error_message && (
+                          <div className="text-[10px] text-rose-400 bg-rose-950/50 border border-rose-800/60 px-2 py-1 rounded">
+                            Lỗi: {item.error_message}
+                          </div>
+                        )}
 
                     <div className="pt-2 border-t border-slate-800 flex items-center gap-1.5 justify-between flex-wrap">
                       <button
@@ -1155,7 +1289,7 @@ export function ScannerPalletsTab({
         {/* SUB-VIEW 2: STAMP PENDING LIST (Chờ giải mã) */}
         {palletListSubTab === 'stamp_pending' && (
           <>
-            {stampPendingList.length === 0 ? (
+            {groupedStampPendingList.length === 0 ? (
               <div className="p-8 text-center text-slate-500 space-y-2">
                 <CheckCircle2 size={36} className="mx-auto text-emerald-500 stroke-[1.5]" />
                 <p className="text-xs font-bold text-slate-300">
@@ -1164,113 +1298,213 @@ export function ScannerPalletsTab({
                 <p className="text-[11px] text-slate-500 max-w-xs mx-auto">
                   Tất cả ảnh con dấu gửi lên đã được AI giải mã xong hoặc chưa có lượt gửi mới.
                 </p>
-                {stampDecodedList.length > 0 && (
+                {groupedStampDecodedList.length > 0 && (
                   <button
                     type="button"
                     onClick={() => setPalletListSubTab('stamp_decoded')}
                     className="px-3 py-1.5 rounded-lg bg-purple-600/30 border border-purple-500/40 text-purple-300 text-xs font-bold transition hover:bg-purple-600/40 inline-flex items-center gap-1.5 mt-2"
                   >
                     <Sparkles size={13} />
-                    <span>Xem danh sách Đã giải mã ({stampDecodedList.length})</span>
+                    <span>Xem danh sách Đã giải mã ({groupedStampDecodedList.length})</span>
                   </button>
                 )}
               </div>
             ) : (
-              stampPendingList.map(item => {
-                const isDecoding = decodingQueueId === item.id
-                const isErr = item.status === 'error'
-                const imgSrc = formatStampThumbnail(item.image_url, item.cropped_image_url, item.drive_file_id)
+              groupedStampPendingList.map(group => {
+                if (group.items.length === 1) {
+                  const item = group.items[0]
+                  const isDecoding = decodingQueueId === item.id
+                  const isErr = item.status === 'error'
+                  const imgSrc = formatStampThumbnail(item.image_url, item.cropped_image_url, item.drive_file_id)
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`p-3 rounded-xl bg-slate-900 border ${
+                        isErr ? 'border-rose-500/60' : 'border-slate-800'
+                      } space-y-2 shadow-xs`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                          <span className="font-mono font-black text-xs text-orange-400">
+                            STT: {item.pallet_stt}
+                          </span>
+                          {item.pallet_tag && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                              🏷️ {item.pallet_tag}
+                            </span>
+                          )}
+                        </div>
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            isErr
+                              ? 'bg-rose-950 text-rose-300 border border-rose-800'
+                              : 'bg-orange-950 text-orange-300 border border-orange-800'
+                          }`}
+                        >
+                          {isErr ? '❌ Lỗi đọc AI' : '⏳ Đã gửi (Chờ AI đọc)'}
+                        </span>
+                      </div>
+
+                      <div className="flex gap-3">
+                        {imgSrc ? (
+                          <img
+                            src={imgSrc}
+                            alt="Con dấu"
+                            referrerPolicy="no-referrer"
+                            onClick={() => setPreviewImageUrl(imgSrc)}
+                            title="Bấm để phóng to xem rõ nét"
+                            onError={(e) => {
+                              const target = e.currentTarget
+                              if (item.drive_file_id && !target.dataset.tried) {
+                                target.dataset.tried = '1'
+                                target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
+                              }
+                            }}
+                            className="w-16 h-16 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition"
+                          />
+                        ) : (
+                          <div className="w-16 h-16 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 shrink-0">
+                            <Clock size={20} />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0 flex flex-col justify-between text-xs">
+                          <div>
+                            <div className="text-slate-300 font-semibold">
+                              Số lượng:{' '}
+                              <span className="text-emerald-400 font-bold">
+                                {item.box_count}
+                              </span>{' '}
+                              thùng • {item.box_weight} Kg
+                            </div>
+                            {isErr && item.error_message ? (
+                              <p className="text-rose-400 text-[11px] mt-0.5 line-clamp-2">
+                                ⚠️ {item.error_message}
+                              </p>
+                            ) : (
+                              <p className="text-slate-500 text-[11px] mt-0.5">
+                                Đã lưu ảnh an toàn trên Google Drive
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500">
+                            Gửi lúc: {item.created_at?.slice(0, 16).replace('T', ' ')}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-slate-500">
+                          Người gửi: {item.created_by_name || 'Kho'}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => handleDecodeItem(item.id)}
+                          disabled={isDecoding || !isOnline}
+                          className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                        >
+                          {isDecoding ? (
+                            <Loader2 size={12} className="animate-spin" />
+                          ) : (
+                            <Sparkles size={12} />
+                          )}
+                          <span>{isDecoding ? 'Đang giải mã...' : 'Giải mã AI'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Pallet ghép nhiều ảnh con dấu chờ giải mã
+                const hasErr = group.items.some(i => i.status === 'error')
+                const isGroupDecoding = group.items.some(i => decodingQueueId === i.id)
 
                 return (
                   <div
-                    key={item.id}
+                    key={group.key}
                     className={`p-3 rounded-xl bg-slate-900 border ${
-                      isErr ? 'border-rose-500/60' : 'border-slate-800'
-                    } space-y-2 shadow-xs`}
+                      hasErr ? 'border-rose-500/60' : 'border-amber-700/60'
+                    } space-y-2.5 shadow-xs`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                         <span className="font-mono font-black text-xs text-orange-400">
-                          STT: {item.pallet_stt}
+                          STT: {group.pallet_stt}
                         </span>
-                        {item.pallet_tag && (
+                        {group.pallet_tag && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
-                            🏷️ {item.pallet_tag}
+                            🏷️ {group.pallet_tag}
                           </span>
                         )}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-orange-950 text-orange-300 border border-orange-800 font-semibold">
+                          📦 Ghép {group.items.length} đợt con dấu
+                        </span>
                       </div>
-                      <span
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                          isErr
-                            ? 'bg-rose-950 text-rose-300 border border-rose-800'
-                            : 'bg-orange-950 text-orange-300 border border-orange-800'
-                        }`}
-                      >
-                        {isErr ? '❌ Lỗi đọc AI' : '⏳ Đã gửi (Chờ AI đọc)'}
+                      <span className="text-emerald-400 font-bold text-xs">
+                        Tổng: {group.total_boxes} thùng
                       </span>
                     </div>
 
-                    <div className="flex gap-3">
-                      {imgSrc ? (
-                        <img
-                          src={imgSrc}
-                          alt="Con dấu"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            const target = e.currentTarget
-                            if (item.drive_file_id && !target.dataset.tried) {
-                              target.dataset.tried = '1'
-                              target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
-                            }
-                          }}
-                          className="w-16 h-16 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-16 h-16 rounded-lg bg-slate-950 border border-slate-800 flex items-center justify-center text-slate-600 shrink-0">
-                          <Clock size={20} />
-                        </div>
-                      )}
-                      <div className="flex-1 min-w-0 flex flex-col justify-between text-xs">
-                        <div>
-                          <div className="text-slate-300 font-semibold">
-                            Số lượng:{' '}
-                            <span className="text-emerald-400 font-bold">
-                              {item.box_count}
-                            </span>{' '}
-                            thùng • {item.box_weight} Kg
+                    <div className="space-y-2">
+                      {group.items.map((sub, sIdx) => {
+                        const imgSrc = formatStampThumbnail(sub.image_url, sub.cropped_image_url, sub.drive_file_id)
+                        const isSubErr = sub.status === 'error'
+
+                        return (
+                          <div
+                            key={sub.id || sIdx}
+                            className={`p-2 rounded-lg bg-slate-950 border ${
+                              isSubErr ? 'border-rose-900' : 'border-slate-800'
+                            } flex gap-2.5 items-center`}
+                          >
+                            {imgSrc ? (
+                              <img
+                                src={imgSrc}
+                                alt="Con dấu"
+                                referrerPolicy="no-referrer"
+                                onClick={() => setPreviewImageUrl(imgSrc)}
+                                title="Bấm để phóng to xem rõ nét"
+                                className="w-12 h-12 rounded-lg object-cover bg-slate-900 border border-slate-700 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-lg bg-slate-900 border border-slate-700 flex items-center justify-center text-slate-600 shrink-0">
+                                <Clock size={16} />
+                              </div>
+                            )}
+                            <div className="flex-1 min-w-0 text-xs">
+                              <div className="flex items-center justify-between">
+                                <span className="font-bold text-orange-300 text-[11px]">Đợt {sIdx + 1}</span>
+                                <span className="font-bold text-emerald-400 text-[11px]">{sub.box_count} thùng • {sub.box_weight} Kg</span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5">
+                                Gửi lúc: {sub.created_at?.slice(0, 16).replace('T', ' ')}
+                              </div>
+                            </div>
                           </div>
-                          {isErr && item.error_message ? (
-                            <p className="text-rose-400 text-[11px] mt-0.5 line-clamp-2">
-                              ⚠️ {item.error_message}
-                            </p>
-                          ) : (
-                            <p className="text-slate-500 text-[11px] mt-0.5">
-                              Đã lưu ảnh an toàn trên Google Drive
-                            </p>
-                          )}
-                        </div>
-                        <div className="text-[10px] text-slate-500">
-                          Gửi lúc: {item.created_at?.slice(0, 16).replace('T', ' ')}
-                        </div>
-                      </div>
+                        )
+                      })}
                     </div>
 
                     <div className="pt-2 border-t border-slate-800 flex items-center justify-between gap-2">
                       <span className="text-[11px] text-slate-500">
-                        Người gửi: {item.created_by_name || 'Kho'}
+                        Người gửi: {group.created_by_name || 'Kho'}
                       </span>
                       <button
                         type="button"
-                        onClick={() => handleDecodeItem(item.id)}
-                        disabled={isDecoding || !isOnline}
+                        onClick={async () => {
+                          for (const it of group.items) {
+                            await handleDecodeItem(it.id)
+                          }
+                        }}
+                        disabled={isGroupDecoding || !isOnline}
                         className="px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-500 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
                       >
-                        {isDecoding ? (
+                        {isGroupDecoding ? (
                           <Loader2 size={12} className="animate-spin" />
                         ) : (
                           <Sparkles size={12} />
                         )}
-                        <span>{isDecoding ? 'Đang giải mã...' : 'Giải mã AI'}</span>
+                        <span>{isGroupDecoding ? 'Đang giải mã...' : `Giải mã AI (${group.items.length})`}</span>
                       </button>
                     </div>
                   </div>
@@ -1283,7 +1517,7 @@ export function ScannerPalletsTab({
         {/* SUB-VIEW 3: STAMP DECODED LIST (Đã giải mã) */}
         {palletListSubTab === 'stamp_decoded' && (
           <>
-            {stampDecodedList.length === 0 ? (
+            {groupedStampDecodedList.length === 0 ? (
               <div className="p-8 text-center text-slate-500 space-y-2">
                 <Sparkles size={36} className="mx-auto text-purple-400 stroke-[1.5]" />
                 <p className="text-xs font-bold text-slate-300">
@@ -1294,95 +1528,207 @@ export function ScannerPalletsTab({
                 </p>
               </div>
             ) : (
-              stampDecodedList.map(item => {
-                const dec = item.decoded_json || {}
-                const prodTitle = dec.productTitle || dec.special12Name || 'Sản phẩm con dấu'
-                const imgSrc = formatStampThumbnail(item.image_url, item.cropped_image_url, item.drive_file_id)
+              groupedStampDecodedList.map(group => {
+                if (group.items.length === 1) {
+                  const item = group.items[0]
+                  const dec = item.decoded_json || {}
+                  const prodTitle = dec.productTitle || dec.special12Name || 'Sản phẩm con dấu'
+                  const imgSrc = formatStampThumbnail(item.image_url, item.cropped_image_url, item.drive_file_id)
 
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-3 rounded-xl bg-slate-900 border border-purple-500/40 space-y-2.5 shadow-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                          <Sparkles size={14} className="text-purple-400 shrink-0" />
+                          <span className="font-mono font-black text-xs text-purple-200">
+                            STT: {item.pallet_stt}
+                          </span>
+                          {item.pallet_tag && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
+                              🏷️ {item.pallet_tag}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2.5">
+                        {imgSrc && (
+                          <img
+                            src={imgSrc}
+                            alt="Con dấu"
+                            referrerPolicy="no-referrer"
+                            onClick={() => setPreviewImageUrl(imgSrc)}
+                            title="Bấm để phóng to xem rõ nét"
+                            onError={(e) => {
+                              const target = e.currentTarget
+                              if (item.drive_file_id && !target.dataset.tried) {
+                                target.dataset.tried = '1'
+                                target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
+                              }
+                            }}
+                            className="w-16 h-16 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition"
+                          />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="text-white text-xs font-bold leading-snug line-clamp-2">
+                            {prodTitle}
+                          </div>
+                          <div className="text-sky-400 text-[11px] font-bold mt-1">
+                            {item.box_count} thùng • {item.box_weight} Kg
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 2 Dòng số đọc được */}
+                      <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono space-y-1">
+                        <div>
+                          <span className="text-slate-500">Dòng 1: </span>
+                          <span className="text-sky-300 font-bold">
+                            {item.stamp_line1 || '---'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Dòng 2: </span>
+                          <span className="text-purple-300 font-bold">
+                            {item.stamp_line2 || '---'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Thông tin giải mã chi tiết: Quét nằm trên, Người gửi nằm dưới */}
+                      <div className="space-y-1 text-[11px] text-slate-400">
+                        {/* Hàng trên: Thông tin quét từ con dấu */}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          {dec.provinceName && (
+                            <span>
+                              Vùng: <strong className="text-slate-100">{dec.provinceName}</strong>
+                            </span>
+                          )}
+                          {dec.packagingDateStr && (
+                            <span>
+                              Đóng gói: <strong className="text-slate-100">{dec.packagingDateStr}</strong>
+                            </span>
+                          )}
+                          {dec.rawMaterialDateStr && (
+                            <span>
+                              Nhập NL: <strong className="text-slate-100">{dec.rawMaterialDateStr}</strong>
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Hàng dưới: Thay Quy cách bằng Người gửi */}
+                        <div className="flex flex-wrap gap-x-3 gap-y-1">
+                          <span>
+                            Người gửi: <strong className="text-slate-300">{item.created_by_name || 'Kho'}</strong>
+                          </span>
+                          {item.pallet_notes && (
+                            <span className="truncate max-w-[200px]">
+                              Ghi chú: <strong className="text-slate-300">{item.pallet_notes}</strong>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="pt-2 border-t border-purple-900/40 flex items-center justify-between text-[11px]">
+                        <div className="flex items-center gap-1 text-purple-400 font-bold">
+                          <Clock size={12} />
+                          <span>Chờ server duyệt tạo Lot</span>
+                        </div>
+                        <span className="text-[10px] text-slate-500">
+                          {item.created_at?.slice(0, 16).replace('T', ' ')}
+                        </span>
+                      </div>
+                    </div>
+                  )
+                }
+
+                // Pallet ghép nhiều đợt con dấu đã giải mã
                 return (
                   <div
-                    key={item.id}
-                    className="p-3 rounded-xl bg-slate-900 border border-purple-500/40 space-y-2.5 shadow-xs"
+                    key={group.key}
+                    className="p-3 rounded-xl bg-slate-900 border-2 border-purple-500/60 space-y-2.5 shadow-md"
                   >
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                         <Sparkles size={14} className="text-purple-400 shrink-0" />
                         <span className="font-mono font-black text-xs text-purple-200">
-                          STT: {item.pallet_stt}
+                          STT: {group.pallet_stt}
                         </span>
-                        {item.pallet_tag && (
+                        {group.pallet_tag && (
                           <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold">
-                            🏷️ {item.pallet_tag}
+                            🏷️ {group.pallet_tag}
                           </span>
                         )}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 font-semibold">
+                          📦 Ghép {group.items.length} đợt con dấu
+                        </span>
                       </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800">
-                        ✨ Đã giải mã AI
+                      <span className="text-emerald-400 font-bold text-xs">
+                        Tổng: {group.total_boxes} thùng
                       </span>
                     </div>
 
-                    <div className="flex gap-2.5">
-                      {imgSrc && (
-                        <img
-                          src={imgSrc}
-                          alt="Con dấu"
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            const target = e.currentTarget
-                            if (item.drive_file_id && !target.dataset.tried) {
-                              target.dataset.tried = '1'
-                              target.src = `https://drive.google.com/thumbnail?id=${item.drive_file_id}&sz=w400`
-                            }
-                          }}
-                          className="w-16 h-16 rounded-lg object-cover bg-slate-950 border border-slate-800 shrink-0"
-                        />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="text-white text-xs font-bold leading-snug line-clamp-2">
-                          {prodTitle}
-                        </div>
-                        <div className="text-sky-400 text-[11px] font-bold mt-1">
-                          {item.box_count} thùng • {item.box_weight} Kg
-                        </div>
-                      </div>
+                    <div className="space-y-2">
+                      {group.items.map((sub, sIdx) => {
+                        const dec = sub.decoded_json || {}
+                        const prodTitle = dec.productTitle || dec.special12Name || 'Sản phẩm con dấu'
+                        const imgSrc = formatStampThumbnail(sub.image_url, sub.cropped_image_url, sub.drive_file_id)
+
+                        return (
+                          <div
+                            key={sub.id || sIdx}
+                            className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5"
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className="font-bold text-purple-300 text-[11px]">Đợt {sIdx + 1}</span>
+                              <span className="font-bold text-sky-400 text-[11px]">{sub.box_count} thùng • {sub.box_weight} Kg</span>
+                            </div>
+
+                            <div className="flex gap-2.5">
+                              {imgSrc && (
+                                <img
+                                  src={imgSrc}
+                                  alt="Con dấu"
+                                  referrerPolicy="no-referrer"
+                                  onClick={() => setPreviewImageUrl(imgSrc)}
+                                  title="Bấm để phóng to xem rõ nét"
+                                  className="w-12 h-12 rounded-lg object-cover bg-slate-900 border border-slate-700 shrink-0 cursor-pointer hover:opacity-90 active:scale-95 transition"
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="text-white text-xs font-bold leading-snug line-clamp-2">
+                                  {prodTitle}
+                                </div>
+                                {(sub.stamp_line1 || sub.stamp_line2) && (
+                                  <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                    L1: <strong className="text-sky-300">{sub.stamp_line1 || '---'}</strong> • L2: <strong className="text-purple-300">{sub.stamp_line2 || '---'}</strong>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Thông tin quét đợt này */}
+                            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-slate-400 pt-1 border-t border-slate-900">
+                              {dec.provinceName && <span>Vùng: <strong className="text-slate-100">{dec.provinceName}</strong></span>}
+                              {dec.packagingDateStr && <span>Đóng gói: <strong className="text-slate-100">{dec.packagingDateStr}</strong></span>}
+                              {dec.rawMaterialDateStr && <span>Nhập NL: <strong className="text-slate-100">{dec.rawMaterialDateStr}</strong></span>}
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
 
-                    {/* 2 Dòng số đọc được */}
-                    <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-[11px] font-mono space-y-1">
-                      <div>
-                        <span className="text-slate-500">Dòng 1: </span>
-                        <span className="text-sky-300 font-bold">
-                          {item.stamp_line1 || '---'}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Dòng 2: </span>
-                        <span className="text-purple-300 font-bold">
-                          {item.stamp_line2 || '---'}
-                        </span>
-                      </div>
-                    </div>
-
-                    {/* Thông tin giải mã chi tiết */}
+                    {/* Hàng dưới cùng: Người gửi */}
                     <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-400">
-                      {dec.spec && (
-                        <span>
-                          Quy cách: <strong className="text-slate-200">{dec.spec}</strong>
-                        </span>
-                      )}
-                      {dec.packagingDateStr && (
-                        <span>
-                          Đóng gói: <strong className="text-slate-200">{dec.packagingDateStr}</strong>
-                        </span>
-                      )}
-                      {dec.rawMaterialDateStr && (
-                        <span>
-                          Nhập NL: <strong className="text-slate-200">{dec.rawMaterialDateStr}</strong>
-                        </span>
-                      )}
-                      {dec.provinceName && (
-                        <span>
-                          Vùng: <strong className="text-slate-200">{dec.provinceName}</strong>
+                      <span>
+                        Người gửi: <strong className="text-slate-300">{group.created_by_name || 'Kho'}</strong>
+                      </span>
+                      {group.pallet_notes && (
+                        <span className="truncate max-w-[200px]">
+                          Ghi chú: <strong className="text-slate-300">{group.pallet_notes}</strong>
                         </span>
                       )}
                     </div>
@@ -1390,10 +1736,10 @@ export function ScannerPalletsTab({
                     <div className="pt-2 border-t border-purple-900/40 flex items-center justify-between text-[11px]">
                       <div className="flex items-center gap-1 text-purple-400 font-bold">
                         <Clock size={12} />
-                        <span>Chờ Web Mẹ duyệt tạo Lot</span>
+                        <span>Chờ server duyệt tạo Lot</span>
                       </div>
                       <span className="text-[10px] text-slate-500">
-                        {item.created_at?.slice(0, 16).replace('T', ' ')}
+                        {group.created_at?.slice(0, 16).replace('T', ' ')}
                       </span>
                     </div>
                   </div>
@@ -2086,6 +2432,33 @@ export function ScannerPalletsTab({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Modal phóng to ảnh con dấu full màn hình */}
+      {previewImageUrl && (
+        <div
+          className="fixed inset-0 z-50 bg-black/92 backdrop-blur-xs flex flex-col items-center justify-center p-4"
+          onClick={() => setPreviewImageUrl(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setPreviewImageUrl(null)}
+            className="absolute top-4 right-4 p-2.5 rounded-full bg-white/20 hover:bg-white/30 text-white transition cursor-pointer"
+            title="Đóng xem ảnh"
+          >
+            <X size={24} />
+          </button>
+          <img
+            src={previewImageUrl}
+            alt="Con dấu phóng to"
+            referrerPolicy="no-referrer"
+            className="max-w-full max-h-[82vh] object-contain rounded-xl shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          />
+          <p className="text-slate-400 text-xs font-medium mt-3">
+            Chạm vào nền tối để đóng
+          </p>
         </div>
       )}
     </div>

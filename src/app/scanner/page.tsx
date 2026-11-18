@@ -159,6 +159,15 @@ export default function WebScannerPage() {
   const [newTagInput, setNewTagInput] = useState<string>('')
   const [newNotesInput, setNewNotesInput] = useState<string>('')
   const [newTargetQtyInput, setNewTargetQtyInput] = useState<number>(30)
+  const [defaultTargetQty, setDefaultTargetQty] = useState<number>(30)
+  const [autoCompleteOnFull, setAutoCompleteOnFull] = useState<boolean>(true)
+
+  const handleToggleAutoComplete = (val: boolean) => {
+    setAutoCompleteOnFull(val)
+    try {
+      localStorage.setItem('config_auto_complete_pallet_on_full', val ? 'true' : 'false')
+    } catch {}
+  }
 
   // In-progress Pallet Startup Prompt Modal (Match Mobile App)
   const [inProgressPrompt, setInProgressPrompt] = useState<{
@@ -370,6 +379,20 @@ export default function WebScannerPage() {
 
     // Load cached stamp rules & meta
     try {
+      const savedDefTarget = localStorage.getItem('config_default_target_box_qty')
+      if (savedDefTarget) {
+        const parsed = parseInt(savedDefTarget, 10)
+        if (!isNaN(parsed) && parsed > 0) {
+          setDefaultTargetQty(parsed)
+          setTargetQty(parsed)
+          setNewTargetQtyInput(parsed)
+        }
+      }
+      const savedAutoChot = localStorage.getItem('config_auto_complete_pallet_on_full')
+      if (savedAutoChot !== null) {
+        setAutoCompleteOnFull(savedAutoChot === 'true')
+      }
+
       const savedStampTime = localStorage.getItem('last_stamp_sync_time')
       if (savedStampTime) setLastStampSync(savedStampTime)
 
@@ -1280,18 +1303,25 @@ export default function WebScannerPage() {
   // ── Target Reached Check ──────────────────────────────────────
   const checkTargetReached = (totalCount: number) => {
     if (totalCount >= targetQty) {
-      setTimeout(async () => {
-        const ok = await scannerConfirm({
-          title: '🎉 ĐÃ ĐỦ PALLET!',
-          message: `Pallet ${activePalletStt} đã đạt chỉ tiêu ${totalCount}/${targetQty} thùng.\n\nBạn có muốn CHỐT PALLET này ngay không?`,
-          confirmText: 'Chốt Pallet Ngay',
-          cancelText: 'Để sau',
-          variant: 'celebrate',
-        })
-        if (ok) {
+      if (autoCompleteOnFull) {
+        setTimeout(() => {
+          triggerToast(`🎉 Pallet ${activePalletStt} đã đủ ${totalCount}/${targetQty} thùng và được TỰ ĐỘNG CHỐT!`)
           handleCompletePallet()
-        }
-      }, 400)
+        }, 300)
+      } else {
+        setTimeout(async () => {
+          const ok = await scannerConfirm({
+            title: '🎉 ĐÃ ĐỦ PALLET!',
+            message: `Pallet ${activePalletStt} đã đạt chỉ tiêu ${totalCount}/${targetQty} thùng.\n\nBạn có muốn CHỐT PALLET này ngay không?`,
+            confirmText: 'Chốt Pallet Ngay',
+            cancelText: 'Để sau',
+            variant: 'celebrate',
+          })
+          if (ok) {
+            handleCompletePallet()
+          }
+        }, 400)
+      }
     }
   }
 
@@ -1315,7 +1345,7 @@ export default function WebScannerPage() {
       setNewSttInput('')
       setNewTagInput('')
       setNewNotesInput('')
-      setNewTargetQtyInput(30)
+      setNewTargetQtyInput(defaultTargetQty || 30)
       setIsSwitchPalletModal(true)
     }, 600)
   }
@@ -2054,6 +2084,8 @@ export default function WebScannerPage() {
               setSystemCode={setSystemCode}
               targetQty={targetQty}
               setTargetQty={setTargetQty}
+              autoCompleteOnFull={autoCompleteOnFull}
+              setAutoCompleteOnFull={handleToggleAutoComplete}
               stampRulesCount={stampRulesCount}
               syncingStamp={syncingStamp}
               handleSyncStampRules={handleSyncStampRules}
@@ -2835,6 +2867,8 @@ export default function WebScannerPage() {
           setSystemCode={setSystemCode}
           targetQty={targetQty}
           setTargetQty={setTargetQty}
+          autoCompleteOnFull={autoCompleteOnFull}
+          setAutoCompleteOnFull={handleToggleAutoComplete}
           stampRulesCount={stampRulesCount}
           syncingStamp={syncingStamp}
           handleSyncStampRules={handleSyncStampRules}
@@ -3217,6 +3251,9 @@ export default function WebScannerPage() {
         setNewNotesInput={setNewNotesInput}
         newTargetQtyInput={newTargetQtyInput}
         setNewTargetQtyInput={setNewTargetQtyInput}
+        defaultTargetQty={defaultTargetQty}
+        autoCompleteOnFull={autoCompleteOnFull}
+        setAutoCompleteOnFull={handleToggleAutoComplete}
         palletsList={palletsList}
         handleSwitchToStt={handleSwitchToStt}
       />
